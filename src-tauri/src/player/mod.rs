@@ -10,11 +10,26 @@
 //! `libmpv2::Mpv` declares `unsafe impl Send for Mpv {}` and
 //! `unsafe impl Sync for Mpv {}` (see libmpv2 6.0.0 `src/mpv.rs`), so a plain
 //! `Mutex<Option<Mpv>>` is `Send + Sync` and satisfies Tauri's `State`
-//! requirements directly. No dedicated OS thread / mpsc channel is needed.
+//! requirements directly.
+//!
+//! ## Event loop
+//! To observe playback (`time-pos`/`duration`, end-of-file) we spawn one
+//! background thread the first time an mpv core is created. Because libmpv2 6.0
+//! has no separate movable event context — `wait_event`/`observe_property` are
+//! methods on `Mpv`, and the returned `Event` borrows the handle — we can't move
+//! the pooled `Mpv` (which the `Mutex` must keep for `loadfile`). Instead the
+//! thread owns a second *client* handle (`Mpv::create_client`) onto the same
+//! core, with its own event queue. It emits Tauri events `player-progress`
+//! (`(pos, duration)`) and `player-ended` (on natural EOF only). See
+//! [`spawn_event_loop`].
 
 use std::sync::Mutex;
 
-use libmpv2::Mpv;
+use libmpv2::{
+    events::{Event, PropertyData},
+    Format, Mpv,
+};
+use tauri::{AppHandle, Emitter};
 
 /// Holds the live mpv instance behind a mutex so it is kept alive for the
 /// lifetime of the app. Dropping the `Mpv` destroys the mpv core and closes
@@ -38,22 +53,32 @@ impl PlayerHandle {
     /// `with_initializer`, because mpv only applies these at init time. We try
     /// `vo=gpu-next` first and transparently fall back to `vo=gpu` if creating
     /// the context with `gpu-next` fails.
-    pub fn play_own_window(&self, url: &str) -> Result<(), String> {
+    ///
+    /// `app` is used to emit `player-progress`/`player-ended` events from the
+    /// event loop (spawned once, on first launch). `start_seconds`, when set,
+    /// resumes playback that many seconds into the file (mpv's `start` option).
+    pub fn play_own_window(
+        &self,
+        url: &str,
+        app: AppHandle,
+        start_seconds: Option<f64>,
+    ) -> Result<(), String> {
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
 
         // If we already have an mpv core, just queue the new file into its
         // existing window.
         if let Some(mpv) = guard.as_ref() {
-            mpv.command("loadfile", &[url])
-                .map_err(|e| e.to_string())?;
+            load_file(mpv, url, start_seconds)?;
             return Ok(());
         }
 
         // First launch: build a fresh mpv core with good defaults.
         let mpv = create_mpv(None).map_err(|e| e.to_string())?;
 
-        mpv.command("loadfile", &[url])
-            .map_err(|e| e.to_string())?;
+        // Spawn the event loop ONCE, on first mpv creation, before loading.
+        spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
+
+        load_file(&mpv, url, start_seconds)?;
 
         *guard = Some(mpv);
         Ok(())
@@ -68,26 +93,99 @@ impl PlayerHandle {
     /// NOT set `force-window`: the supplied window *is* mpv's output surface.
     ///
     /// The `gpu-next` → `gpu` video-output fallback is preserved.
-    pub fn play_embedded(&self, url: &str, wid: i64) -> Result<(), String> {
+    ///
+    /// See [`play_own_window`](Self::play_own_window) for `app`/`start_seconds`.
+    pub fn play_embedded(
+        &self,
+        url: &str,
+        wid: i64,
+        app: AppHandle,
+        start_seconds: Option<f64>,
+    ) -> Result<(), String> {
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
 
         // If we already have an mpv core, just queue the new file into its
         // existing (embedded) window.
         if let Some(mpv) = guard.as_ref() {
-            mpv.command("loadfile", &[url])
-                .map_err(|e| e.to_string())?;
+            load_file(mpv, url, start_seconds)?;
             return Ok(());
         }
 
         // First launch: build a fresh mpv core bound to the given window.
         let mpv = create_mpv(Some(wid)).map_err(|e| e.to_string())?;
 
-        mpv.command("loadfile", &[url])
-            .map_err(|e| e.to_string())?;
+        // Spawn the event loop ONCE, on first mpv creation, before loading.
+        spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
+
+        load_file(&mpv, url, start_seconds)?;
 
         *guard = Some(mpv);
         Ok(())
     }
+}
+
+/// Load `url` into an existing mpv core, optionally resuming at `start_seconds`.
+///
+/// mpv's `start` option is read at file-load time, so we set it as a property
+/// just before `loadfile`. Setting it to `"none"` (or, on the first play, never
+/// having set it) means "play from the beginning".
+fn load_file(mpv: &Mpv, url: &str, start_seconds: Option<f64>) -> Result<(), String> {
+    // Always set `start` explicitly so a resumed file doesn't leak its start
+    // position onto the next (fresh) file loaded into the same core.
+    let start = match start_seconds {
+        Some(s) if s > 0.0 => format!("{s}"),
+        _ => "none".to_string(),
+    };
+    mpv.set_property("start", start.as_str())
+        .map_err(|e| e.to_string())?;
+    mpv.command("loadfile", &[url]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Spawn the mpv event-loop thread. Called exactly once, on first mpv creation.
+///
+/// ## Why a client handle, not the main `Mpv`
+/// libmpv2 6.0 exposes no separate movable `EventContext`: `observe_property`
+/// and `wait_event` are methods on `Mpv` itself, and the returned `Event`
+/// borrows the handle's internal event buffer. The main `Mpv` must stay in the
+/// `Mutex` (it's needed for every `loadfile`), so we can't move it into the
+/// thread. Instead we make a *client* handle (`create_client`) — a second
+/// handle onto the same mpv core with its own independent event queue — observe
+/// the properties on it, and move that client into the thread. `Mpv` is `Send`,
+/// so this compiles cleanly, and the client keeps the core alive alongside the
+/// main handle.
+fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2::Error> {
+    let client = mpv.create_client(Some("event-loop"))?;
+    client.observe_property("time-pos", Format::Double, 0)?;
+    client.observe_property("duration", Format::Double, 0)?;
+
+    std::thread::spawn(move || {
+        let mut duration = 0f64;
+        loop {
+            // Block up to 1s waiting for the next event on this client's queue.
+            match client.wait_event(1.0) {
+                Some(Ok(Event::PropertyChange { name, change, .. })) => match (name, change) {
+                    ("duration", PropertyData::Double(d)) => duration = d,
+                    ("time-pos", PropertyData::Double(pos)) => {
+                        let _ = app.emit("player-progress", (pos, duration));
+                    }
+                    _ => {}
+                },
+                // Only auto-advance on a natural end-of-file (Eof). Quit/Stop/
+                // Error/Redirect must NOT trigger the next episode.
+                Some(Ok(Event::EndFile(reason))) => {
+                    if reason == libmpv2::mpv_end_file_reason::Eof {
+                        let _ = app.emit("player-ended", ());
+                    }
+                }
+                // Core is going away — stop pumping so the thread can exit.
+                Some(Ok(Event::Shutdown)) => break,
+                _ => {}
+            }
+        }
+    });
+
+    Ok(())
 }
 
 impl Default for PlayerHandle {

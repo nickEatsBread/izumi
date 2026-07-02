@@ -7,8 +7,13 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-fn player_play(url: String, player: tauri::State<'_, player::PlayerHandle>) -> Result<(), String> {
-    player.play_own_window(&url)
+fn player_play(
+    url: String,
+    start_seconds: Option<f64>,
+    app: tauri::AppHandle,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<(), String> {
+    player.play_own_window(&url, app, start_seconds)
 }
 
 /// Play `url` embedded inside the Tauri app window: mpv renders into the host
@@ -21,12 +26,14 @@ fn player_play(url: String, player: tauri::State<'_, player::PlayerHandle>) -> R
 #[tauri::command]
 fn player_play_embedded(
     url: String,
+    start_seconds: Option<f64>,
+    app: tauri::AppHandle,
     window: tauri::WebviewWindow,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|e| e.to_string())?;
     let wid = hwnd.0 as isize as i64;
-    player.play_embedded(&url, wid)
+    player.play_embedded(&url, wid, app, start_seconds)
 }
 
 /// Open the provider's auth URL in a dedicated in-app webview window, then poll
