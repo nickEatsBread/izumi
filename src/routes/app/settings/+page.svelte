@@ -2,8 +2,8 @@
   import { addonUrls, normalizeBase } from '$lib/stremio/sources'
   import { anilistUser } from '$lib/anilist/account'
   import {
-    anilistToken, anilistClientId, anilistUserName,
-    malToken, malClientId, malUserName,
+    anilistToken, anilistUserName,
+    malToken, malUserName,
   } from '$lib/trackers/config'
   let input = $state('')
   function add() { const b = normalizeBase(input); if (b) { $addonUrls = [...$addonUrls, b]; input = '' } }
@@ -65,14 +65,10 @@
   </section>
   <section class="mb-8 max-w-2xl">
     <h2 class="mb-1 text-lg font-black">Accounts</h2>
-    <p class="mb-3 text-sm text-muted-foreground">Connect AniList and/or MyAnimeList to push your watch progress. A login window opens in-app; sign in and it captures your access automatically. Client IDs are prefilled but editable.</p>
+    <p class="mb-3 text-sm text-muted-foreground">Connect AniList and/or MyAnimeList to push your watch progress. A login window opens in-app; sign in and it captures your access automatically.</p>
 
     <div class="mb-6 rounded-md border border-border p-4">
       <h3 class="mb-2 font-bold">AniList</h3>
-      <div class="mb-2 flex gap-2">
-        <input bind:value={$anilistClientId} data-focusable placeholder="Client ID"
-               class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
-      </div>
       {#if $anilistToken && $anilistUserName}
         <div class="flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
           <span class="truncate">Connected as <span class="font-bold">{$anilistUserName}</span></span>
@@ -89,10 +85,6 @@
 
     <div class="rounded-md border border-border p-4">
       <h3 class="mb-2 font-bold">MyAnimeList</h3>
-      <div class="mb-2 flex gap-2">
-        <input bind:value={$malClientId} data-focusable placeholder="Client ID"
-               class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
-      </div>
       {#if $malToken && $malUserName}
         <div class="flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
           <span class="truncate">Connected as <span class="font-bold">{$malUserName}</span></span>

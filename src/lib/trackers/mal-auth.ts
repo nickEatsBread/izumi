@@ -1,5 +1,4 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
-import { get } from 'svelte/store'
 import { malToken, malRefresh, malClientId, malUserName } from './config'
 import { captureLogin, redirectUri } from './oauth'
 
@@ -8,16 +7,15 @@ function verifier(): string {
   return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '').slice(0, 100)
 }
 export async function connectMal() {
-  const clientId = get(malClientId)
-  if (!clientId) throw new Error('Enter your MAL Client ID first.')
+  if (!malClientId) throw new Error('Missing MAL Client ID (set PUBLIC_MAL_CLIENT_ID in .env).')
   const codeVerifier = verifier() // MAL PKCE is 'plain' -> challenge === verifier
-  const malAuthUrl = `https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=${clientId}&code_challenge=${codeVerifier}&code_challenge_method=plain&redirect_uri=${encodeURIComponent(redirectUri)}`
+  const malAuthUrl = `https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=${malClientId}&code_challenge=${codeVerifier}&code_challenge_method=plain&redirect_uri=${encodeURIComponent(redirectUri)}`
   const u = await captureLogin(malAuthUrl)
   const code = u.searchParams.get('code')
   if (!code) throw new Error('No authorization code returned.')
   const res = await httpFetch('https://myanimelist.net/v1/oauth2/token', {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: clientId, grant_type: 'authorization_code', code, code_verifier: codeVerifier, redirect_uri: redirectUri }).toString(),
+    body: new URLSearchParams({ client_id: malClientId, grant_type: 'authorization_code', code, code_verifier: codeVerifier, redirect_uri: redirectUri }).toString(),
   })
   const json = await res.json() as { access_token?: string; refresh_token?: string }
   if (!json.access_token) throw new Error('MAL token exchange failed.')
