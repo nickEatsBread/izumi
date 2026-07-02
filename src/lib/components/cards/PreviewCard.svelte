@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { banner, title, format, season } from '$lib/anilist/media'
+  import { goto } from '$app/navigation'
+  import { anilistToken } from '$lib/anilist/auth'
+  import { toggleFavourite, setStatus, anyTrackerConnected } from '$lib/trackers'
   import YoutubeTrailer from './YoutubeTrailer.svelte'
   import Play from 'lucide-svelte/icons/play'
   import Heart from 'lucide-svelte/icons/heart'
@@ -13,6 +16,13 @@
       ? media.trailer.id
       : undefined,
   )
+
+  // Favourite is AniList-only; bookmark (PLANNING) works on any connected tracker.
+  const canFavourite = $derived(!!$anilistToken)
+  const canBookmark = $derived(anyTrackerConnected())
+  let busy = $state(false)
+  async function favourite() { if (busy) return; busy = true; try { await toggleFavourite(media) } catch { /* ignore */ } finally { busy = false } }
+  async function bookmark() { if (busy) return; busy = true; try { await setStatus(media, 'PLANNING') } finally { busy = false } }
 </script>
 
 <div class="w-[17.5rem] overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border">
@@ -26,13 +36,18 @@
   <div class="p-3">
     <div class="truncate font-black">{title(media)}</div>
     <div class="mt-2 flex gap-2">
-      <button class="flex flex-1 items-center justify-center gap-1 rounded-md bg-primary py-1 text-sm font-bold text-primary-foreground">
+      <button onclick={() => goto(`/app/anime/${media.id}`)}
+              class="flex flex-1 items-center justify-center gap-1 rounded-md bg-primary py-1 text-sm font-bold text-primary-foreground">
         <Play size={14} /> Play
       </button>
-      <button aria-label="Favorite" class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground">
+      <button aria-label="Favorite" onclick={favourite} disabled={!canFavourite || busy}
+              title={canFavourite ? 'Favourite' : 'Connect AniList to favourite'}
+              class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground disabled:opacity-40">
         <Heart size={16} />
       </button>
-      <button aria-label="Add to list" class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground">
+      <button aria-label="Add to list" onclick={bookmark} disabled={!canBookmark || busy}
+              title={canBookmark ? 'Add to Planning' : 'Connect a tracker to bookmark'}
+              class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground disabled:opacity-40">
         <Plus size={16} />
       </button>
     </div>

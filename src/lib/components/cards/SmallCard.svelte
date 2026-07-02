@@ -7,6 +7,7 @@
   let hovered = $state(false)
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
+  let closeT: ReturnType<typeof setTimeout>
   const dot = (m: Media) => m.status === 'RELEASING' ? '#3db4f2' : m.status === 'NOT_YET_RELEASED' ? '#f79a63' : '#7bd555'
 
   // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and
@@ -18,18 +19,22 @@
     const top = Math.max(8, Math.min(r.top - 16, window.innerHeight - PH - 8))
     pos = { left, top }
   }
-  function enter() { place(); hovered = true }
-  function leave() { hovered = false }
+  // Hovercard bridge: opening cancels any pending close; leaving the card (or the
+  // preview) schedules a short delayed close so the pointer can travel card→preview
+  // without dismissing it. `keepOpen` (preview enter) cancels that pending close.
+  function open() { clearTimeout(closeT); place(); hovered = true }
+  function scheduleClose() { clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 120) }
+  function keepOpen() { clearTimeout(closeT) }
 
   // Any scroll (page or a carousel) dismisses the preview so it can't get stranded.
   $effect(() => {
     const close = () => { if (hovered) hovered = false }
     window.addEventListener('scroll', close, true)
-    return () => window.removeEventListener('scroll', close, true)
+    return () => { window.removeEventListener('scroll', close, true); clearTimeout(closeT) }
   })
 </script>
 
-<div bind:this={el} class="w-[152px] shrink-0" onpointerenter={enter} onpointerleave={leave} role="presentation">
+<div bind:this={el} class="w-[152px] shrink-0" onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
   <a href={`/app/anime/${media.id}`} data-focusable class="load-in group block w-[152px]">
     <div class="h-[228px] w-[152px] overflow-hidden rounded-md bg-muted">
       <img src={cover(media)} alt={title(media)} loading="lazy"
@@ -46,7 +51,8 @@
 </div>
 
 {#if hovered}
-  <div class="pointer-events-none fixed z-50" style={`left:${pos.left}px;top:${pos.top}px`}>
+  <div class="pointer-events-auto fixed z-50" style={`left:${pos.left}px;top:${pos.top}px`}
+       onpointerenter={keepOpen} onpointerleave={scheduleClose} role="presentation">
     <PreviewCard {media} />
   </div>
 {/if}
