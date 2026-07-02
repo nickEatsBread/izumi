@@ -7,11 +7,13 @@
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import { format, status, season } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
+  import { playEpisode, type PlayState } from '$lib/stremio/play'
 
   const client = getContextClient()
   const id = Number(page.params.id)
   const store = queryStore<{ Media: Media }>({ client, query: MEDIA_BY_ID, variables: { id } })
   let active = $state('Episodes')
+  let heroPlay = $state<PlayState>({ status: 'idle' })
 
   const fmtDate = (d?: { year?: number; month?: number; day?: number } | null) =>
     d?.year ? [d.year, d.month, d.day].filter(Boolean).join('-') : ''
@@ -23,8 +25,13 @@
   <div class="p-8 text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if $store.data?.Media}
   {@const m = $store.data.Media}
-  <Hero media={m} />
+  <Hero media={m} onplay={() => playEpisode(m.id, 1, (s) => (heroPlay = s))} />
   <div class="px-8 pb-16">
+    {#if heroPlay.status === 'resolving'}
+      <p class="mb-3 text-sm text-muted-foreground">Resolving stream…</p>
+    {:else if heroPlay.status === 'error'}
+      <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
+    {/if}
     <div class="mb-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
       <span>{format(m)}</span><span>·</span><span>{status(m)}</span><span>·</span>
       <span>{m.episodes ?? '?'} eps</span><span>·</span><span>{season(m)}</span>

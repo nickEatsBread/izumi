@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { banner, title } from '$lib/anilist/media'
-  let { media }: { media: Media } = $props()
+  let { media, onplay }: { media: Media; onplay?: () => void } = $props()
   let scrolled = $state(false)
   function onScroll() { scrolled = (globalThis.scrollY ?? 0) > 100 }
   $effect(() => {
@@ -15,7 +15,7 @@
   <div class="absolute bottom-6 left-8 max-w-xl">
     <h1 class="text-3xl font-black drop-shadow">{title(media)}</h1>
     <div class="mt-3 flex gap-2">
-      <button data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Play</button>
+      <button data-focusable onclick={() => onplay?.()} class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Play</button>
       <button data-focusable class="rounded-md bg-secondary px-4 py-2 font-bold">Info</button>
     </div>
   </div>
