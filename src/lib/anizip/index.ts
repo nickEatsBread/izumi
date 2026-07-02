@@ -21,19 +21,34 @@ export function parseEpisodes(res: AniZipResponse | undefined): Record<number, E
 
 const key = (id: number) => `anizip-${id}`
 
-/** Fetch (and idb-cache) AniZip mappings for an AniList id, returning per-episode
- *  metadata. Uses the Tauri HTTP plugin to avoid CORS/mixed-content issues.
- *  Best-effort: returns `{}` on any error. */
-export async function getEpisodeMeta(anilistId: number): Promise<Record<number, EpMeta>> {
+/** Fetch (and idb-cache) the raw AniZip mappings response for an AniList id.
+ *  Uses the Tauri HTTP plugin to avoid CORS/mixed-content issues. Reads the idb
+ *  cache first; on a miss, fetches + caches. Best-effort: returns `undefined` on
+ *  any error. Shared by both `getEpisodeMeta` and `getKitsuId` so they hit the
+ *  same cache. */
+export async function fetchAniZip(anilistId: number): Promise<AniZipResponse | undefined> {
   const cached = await get<AniZipResponse>(key(anilistId))
-  if (cached) return parseEpisodes(cached)
+  if (cached) return cached
   try {
     const r = await httpFetch(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
-    if (!r.ok) return {}
+    if (!r.ok) return undefined
     const j = (await r.json()) as AniZipResponse
     await set(key(anilistId), j)
-    return parseEpisodes(j)
+    return j
   } catch {
-    return {}
+    return undefined
   }
+}
+
+/** Per-episode metadata (thumbnail/title/rating) for an AniList id.
+ *  Best-effort: returns `{}` on any error. */
+export async function getEpisodeMeta(anilistId: number): Promise<Record<number, EpMeta>> {
+  return parseEpisodes(await fetchAniZip(anilistId))
+}
+
+/** The Kitsu id AniZip maps this AniList id to, if any. Used as a fallback when
+ *  the Fribb id list misses. Reuses the same cache as `getEpisodeMeta`. */
+export async function getKitsuId(anilistId: number): Promise<number | undefined> {
+  const res = await fetchAniZip(anilistId)
+  return res?.mappings?.kitsu_id
 }

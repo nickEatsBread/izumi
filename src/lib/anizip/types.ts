@@ -11,6 +11,7 @@ export interface AniZipEpisode {
 export interface AniZipResponse {
   episodes?: Record<string, AniZipEpisode>
   episodeCount?: number
+  mappings?: { kitsu_id?: number; mal_id?: number }
 }
 export interface EpMeta {
   image?: string

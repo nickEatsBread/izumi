@@ -4,6 +4,7 @@ import { get } from 'svelte/store'
 import { addonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, streamId } from './addon'
+import { getKitsuId } from '$lib/anizip'
 import { updateProgress } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
 import { title } from '$lib/anilist/media'
@@ -57,7 +58,10 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   if (!bases.length) return onState({ status: 'error', message: 'No sources configured — add an addon URL in Settings.' })
   onState({ status: 'resolving' })
   const idx = await getIndex()
-  const kitsu = lookupKitsu(idx, media.id)
+  // Prefer the Fribb id list; fall back to AniZip's mapping when it misses
+  // (some titles, e.g. "Rakudai Kenja no Gakuin Musou…", aren't in Fribb).
+  let kitsu = lookupKitsu(idx, media.id)
+  if (!kitsu) kitsu = await getKitsuId(media.id)
   if (!kitsu) return onState({ status: 'error', message: 'No Kitsu mapping for this title.' })
   const streams = await getStreams(bases, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')
   if (!streams.length) return onState({ status: 'error', message: 'No debrid streams found (check your debrid addon + key).' })
