@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: only dark;
+  --background: 240 10% 3.9%;   --foreground: 0 0% 98%;
+  --muted: 240 3.7% 15.9%;      --muted-foreground: 240 5% 64.9%;
+  --primary: 0 0% 98%;          --primary-foreground: 240 5.9% 10%;
+  --secondary: 240 3.7% 15.9%;  --secondary-foreground: 0 0% 98%;
+  --accent: 240 3.7% 15.9%;     --accent-foreground: 0 0% 98%;
+  --destructive: 0 62.8% 30.6%; --destructive-foreground: 0 0% 98%;
+  --border: 240 3.7% 15.9%;     --input: 240 3.7% 15.9%;  --ring: 240 4.9% 83.9%;
+  --card: 240 10% 3.9%;         --card-foreground: 0 0% 98%;
+  --radius: 0.5rem;
+}
+* { border-color: hsl(var(--border)); }
+html, body { background: transparent; color: hsl(var(--foreground)); font-family: 'Nunito Variable', sans-serif; scroll-behavior: smooth; }
+::-webkit-scrollbar { display: none; }
+.bg-striped { background: repeating-linear-gradient(-45deg, #202020 0 6px, #2a2a2a 6px 12px); }
+.bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }
+@keyframes load-in { from { transform: translate3d(0,1.2rem,0) scale(0.95); opacity: 0; } to { transform: none; opacity: 1; } }
+.load-in { animation: load-in 0.3s ease both; }
+*:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--ring)); border-radius: var(--radius); }
