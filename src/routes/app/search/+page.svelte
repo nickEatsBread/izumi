@@ -2,6 +2,10 @@
   import FilterBar from '$lib/components/search/FilterBar.svelte'
   import SearchResults from '$lib/components/search/SearchResults.svelte'
   import type { SearchFilters } from '$lib/anilist/detail-queries'
+  import { heroMedia } from '$lib/stores/hero'
+
+  // No hero on this page — clear the shared banner so it doesn't persist.
+  heroMedia.set(null)
 
   let filters = $state<SearchFilters>({})
   let debounced = $state<SearchFilters>({})

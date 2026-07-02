@@ -15,7 +15,8 @@
         "title": "izumi",
         "width": 1280,
         "height": 800,
-        "transparent": false
+        "transparent": false,
+        "decorations": false
       }
     ],
     "security": {

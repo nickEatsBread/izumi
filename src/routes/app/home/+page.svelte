@@ -6,10 +6,15 @@
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
+  import { heroMedia } from '$lib/stores/hero'
+  import { onDestroy } from 'svelte'
   import type { Media } from '$lib/anilist/types'
 
   const client = getContextClient()
   const sections = homeSections(new Date())
+
+  // The shared banner (BannerBg) follows the rotating hero slide on Home.
+  onDestroy(() => heroMedia.set(null))
 
   // Fetch several trending titles for the rotating hero; prefer ones with a banner.
   const heroStore = queryStore<{ Page: { media: Media[] } }>({
@@ -26,7 +31,7 @@
 
 <div class="pb-16">
   {#if heroMedias.length}
-    <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} />
+    <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} onchange={(m) => heroMedia.set(m)} />
   {:else}
     <div class="mb-6 h-[42vh] w-full animate-pulse bg-muted"></div>
   {/if}

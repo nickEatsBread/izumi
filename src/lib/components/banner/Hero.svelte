@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
-  import { banner, title } from '$lib/anilist/media'
-  let { medias, onplay }: { medias: Media[]; onplay?: (m: Media) => void } = $props()
+  import { title } from '$lib/anilist/media'
+  let {
+    medias,
+    onplay,
+    onchange,
+  }: { medias: Media[]; onplay?: (m: Media) => void; onchange?: (m: Media) => void } = $props()
 
   let i = $state(0)
   let progress = $state(0)
@@ -28,17 +32,17 @@
   })
 
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
+
+  // Publish the current slide to the parent (which pushes it into the shared
+  // banner via the heroMedia store). The banner image itself now lives in the
+  // global BannerBg layer, so this component only renders the overlay.
+  $effect(() => { if (current) onchange?.(current) })
 </script>
 
 {#if current}
-  <div class="relative mb-6 h-[42vh] w-full overflow-hidden transition-opacity duration-300 {scrolled ? 'opacity-40' : 'opacity-100'}">
-    {#key current.id}
-      <img src={banner(current)} alt="" class="absolute inset-0 h-full w-full animate-[fade_0.6s_ease] object-cover" />
-    {/key}
-    <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
-
-    <div class="absolute bottom-6 left-8 max-w-xl">
-      <h1 class="text-3xl font-black drop-shadow">{title(current)}</h1>
+  <div class="relative mb-6 flex h-[42vh] w-full flex-col justify-end px-8 pb-6 transition-opacity duration-300 {scrolled ? 'opacity-40' : 'opacity-100'}">
+    <div class="max-w-xl">
+      <h1 class="text-3xl font-black drop-shadow-lg">{title(current)}</h1>
       <div class="mt-3 flex gap-2">
         <button data-focusable onclick={() => onplay?.(current)} class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Play</button>
         <button data-focusable onclick={() => onplay?.(current)} class="rounded-md bg-secondary px-4 py-2 font-bold">Info</button>

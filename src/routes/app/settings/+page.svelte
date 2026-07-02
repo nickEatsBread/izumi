@@ -6,6 +6,10 @@
     malToken, malUserName,
   } from '$lib/trackers/config'
   import { episodeLayout, type EpisodeLayout } from '$lib/settings/ui'
+  import { heroMedia } from '$lib/stores/hero'
+
+  // No hero on this page — clear the shared banner so it doesn't persist.
+  heroMedia.set(null)
 
   const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
     { value: 'cards', label: 'Cards', hint: 'Thumbnails, titles, ratings and a watch-progress bar.' },

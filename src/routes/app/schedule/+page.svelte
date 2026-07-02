@@ -3,6 +3,10 @@
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import { weekRange } from '$lib/anilist/schedule'
   import ScheduleGrid from '$lib/components/schedule/ScheduleGrid.svelte'
+  import { heroMedia } from '$lib/stores/hero'
+
+  // No hero on this page — clear the shared banner so it doesn't persist.
+  heroMedia.set(null)
 
   const WEEK = 7 * 24 * 3600
 
