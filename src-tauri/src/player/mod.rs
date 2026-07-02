@@ -122,6 +122,33 @@ impl PlayerHandle {
         *guard = Some(mpv);
         Ok(())
     }
+
+    /// Stop playback and tear down the mpv core.
+    ///
+    /// Dropping the `Mpv` destroys the core, which closes its output surface and
+    /// releases the embedded `wid`. The event-loop thread observes `Shutdown` on
+    /// its client handle and exits. Used by `close_player`.
+    pub fn stop(&self) -> Result<(), String> {
+        *self.mpv.lock().map_err(|e| e.to_string())? = None;
+        Ok(())
+    }
+
+    /// Read a string mpv property (e.g. `pause`, `track-list`) from the live
+    /// core. Errors if no player is running. Used by `player_get_property`.
+    pub fn get_property(&self, name: &str) -> Result<String, String> {
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+        mpv.get_property::<String>(name).map_err(|e| e.to_string())
+    }
+
+    /// Run an arbitrary mpv command (e.g. `cycle pause`, `seek 10`) against the
+    /// live core. Errors if no player is running. Used by `player_command`, which
+    /// backs the custom on-screen controls.
+    pub fn command(&self, name: &str, args: &[&str]) -> Result<(), String> {
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+        mpv.command(name, args).map_err(|e| e.to_string())
+    }
 }
 
 /// Load `url` into an existing mpv core, optionally resuming at `start_seconds`.
