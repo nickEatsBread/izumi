@@ -5,9 +5,9 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:event:default",
     "opener:default",
-    "oauth:allow-start",
-    "oauth:allow-cancel",
+    "deep-link:default",
     "http:default",
     {
       "identifier": "http:default",

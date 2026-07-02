@@ -1,12 +1,12 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { get } from 'svelte/store'
 import { anilistToken, anilistClientId, anilistClientSecret, anilistUserName } from './config'
-import { loopbackLogin, redirectUri } from './oauth'
+import { deepLinkLogin, redirectUri } from './oauth'
 
 export async function connectAniList() {
   const clientId = get(anilistClientId), clientSecret = get(anilistClientSecret)
   if (!clientId || !clientSecret) throw new Error('Enter your AniList Client ID and Secret first.')
-  const cb = await loopbackLogin((state) =>
+  const cb = await deepLinkLogin((state) =>
     `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}`)
   const code = cb.searchParams.get('code')
   if (!code) throw new Error('No authorization code returned.')

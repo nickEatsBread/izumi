@@ -31,9 +31,14 @@ fn player_play_embedded(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}));
+    }
+    builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_oauth::init())
         .plugin(tauri_plugin_http::init())
         .manage(player::PlayerHandle::new())
         .invoke_handler(tauri::generate_handler![
@@ -41,6 +46,14 @@ pub fn run() {
             player_play,
             player_play_embedded
         ])
+        .setup(|_app| {
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = _app.deep_link().register_all();
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -7,4 +7,4 @@ export const malToken = persisted<string | null>('mal-token', null)
 export const malRefresh = persisted<string | null>('mal-refresh', null)
 export const malClientId = persisted('mal-client-id', '')
 export const malUserName = persisted('mal-viewer-name', '')
-export const REDIRECT_PORT = 41780
+export const REDIRECT_URI = 'https://animeclient.quack.co.uk/callback'
