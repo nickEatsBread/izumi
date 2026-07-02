@@ -3,7 +3,10 @@ import { MEDIA_FIELDS } from './fragments'
 
 export const MEDIA_BY_ID = gql`
   query MediaById($id: Int!) {
-    Media(id: $id, type: ANIME) { ...MediaFields }
+    Media(id: $id, type: ANIME) {
+      ...MediaFields
+      relations { edges { relationType node { ...MediaFields } } }
+    }
   }
   ${MEDIA_FIELDS}`
 

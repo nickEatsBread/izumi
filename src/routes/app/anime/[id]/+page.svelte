@@ -5,6 +5,7 @@
   import Hero from '$lib/components/banner/Hero.svelte'
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
+  import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { format, status, season } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
@@ -42,9 +43,22 @@
         {#each m.genres as g (g)}<span class="rounded-full bg-secondary px-3 py-1 text-xs">{g}</span>{/each}
       </div>
     {/if}
-    <Tabs tabs={['Episodes', 'Details']} bind:active />
+    <Tabs tabs={['Episodes', 'Relations', 'Details']} bind:active />
     {#if active === 'Episodes'}
       <EpisodeList count={m.episodes ?? 0} mediaId={m.id} />
+    {:else if active === 'Relations'}
+      {#if m.relations?.edges?.length}
+        <div class="flex flex-wrap gap-4">
+          {#each m.relations.edges as e (e.node.id)}
+            <div class="w-[152px]">
+              <div class="mb-1 text-[0.65rem] uppercase text-muted-foreground">{e.relationType.replaceAll('_', ' ').toLowerCase()}</div>
+              <SmallCard media={e.node} />
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <p class="text-muted-foreground">No related titles.</p>
+      {/if}
     {:else}
       <div class="max-w-3xl space-y-4">
         {#if m.description}

@@ -18,4 +18,5 @@ export interface Media {
   bannerImage?: string
   trailer?: { id?: string; site?: string } | null
   nextAiringEpisode?: { episode: number; timeUntilAiring: number } | null
+  relations?: { edges: { relationType: string; node: Media }[] }
 }
