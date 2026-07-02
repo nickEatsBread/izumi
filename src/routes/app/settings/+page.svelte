@@ -5,6 +5,12 @@
     anilistToken, anilistUserName,
     malToken, malUserName,
   } from '$lib/trackers/config'
+  import { episodeLayout, type EpisodeLayout } from '$lib/settings/ui'
+
+  const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
+    { value: 'cards', label: 'Cards', hint: 'Thumbnails, titles, ratings and a watch-progress bar.' },
+    { value: 'compact', label: 'Compact', hint: 'Simple text rows — denser, lighter on data.' },
+  ]
   let input = $state('')
   function add() { const b = normalizeBase(input); if (b) { $addonUrls = [...$addonUrls, b]; input = '' } }
   function remove(i: number) { $addonUrls = $addonUrls.filter((_, j) => j !== i) }
@@ -97,6 +103,27 @@
         </button>
       {/if}
       {#if malError}<p class="mt-2 text-sm text-destructive">{malError}</p>{/if}
+    </div>
+  </section>
+  <section class="mb-8 max-w-2xl">
+    <h2 class="mb-1 text-lg font-black">Appearance</h2>
+    <p class="mb-3 text-sm text-muted-foreground">Choose how the episode list is displayed on a title's detail page.</p>
+    <div class="grid gap-2 sm:grid-cols-2">
+      {#each layouts as opt (opt.value)}
+        <button
+          data-focusable
+          onclick={() => ($episodeLayout = opt.value)}
+          aria-pressed={$episodeLayout === opt.value}
+          class="rounded-md border p-3 text-left transition-colors
+            {$episodeLayout === opt.value ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}"
+        >
+          <div class="flex items-center justify-between">
+            <span class="font-bold">{opt.label}</span>
+            {#if $episodeLayout === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
+        </button>
+      {/each}
     </div>
   </section>
   <section class="max-w-2xl">
