@@ -33,6 +33,14 @@
     return () => { cancelled = true }
   })
 
+  // Only show per-episode thumbnails when AniZip actually has *distinct* per-ep
+  // art. If every episode maps to the same image (or none do), that's series art
+  // masquerading as thumbnails — hide it and render text-forward cards instead.
+  const showThumbs = $derived.by(() => {
+    const imgs = Object.values(meta).map((e) => e.image).filter(Boolean)
+    return new Set(imgs).size > 1
+  })
+
   let playState = $state<PlayState>({ status: 'idle' })
   const resolving = $derived(playState.status === 'resolving')
   function play(ep: number) { if (!resolving) playEpisode(media, ep, (s) => (playState = s)) }
@@ -58,6 +66,7 @@
           {media}
           {ep}
           meta={meta[ep]}
+          showThumb={showThumbs && !!meta[ep]?.image}
           released={ep <= aired}
           isNext={next?.episode === ep}
           {next}
