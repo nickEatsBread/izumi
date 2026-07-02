@@ -34,7 +34,7 @@
     {#if trailerId}
       <YoutubeTrailer id={trailerId} />
     {/if}
-    <div class="pointer-events-none absolute inset-0 bg-gradient-to-t from-card to-transparent"></div>
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent"></div>
   </div>
   <div class="p-3">
     <div class="truncate font-black">{title(media)}</div>

@@ -12,7 +12,8 @@ export function rankStreams(streams: Stream[]): Stream[] {
 // mixed-content restrictions and follow http->https redirects.
 export async function getStreams(bases: string[], id: string, type = 'series'): Promise<Stream[]> {
   const results = await Promise.all(bases.map(async base => {
-    const b = base.replace(/^http:\/\//i, 'https://')
+    // https + raw pipes (Torrentio ignores %7C-encoded config -> drops the debrid key).
+    const b = base.replace(/^http:\/\//i, 'https://').replace(/%7[Cc]/g, '|')
     try {
       const r = await httpFetch(`${b}/stream/${type}/${encodeURIComponent(id)}.json`)
       if (!r.ok) return []

@@ -40,9 +40,8 @@
       <img src={cover(media)} alt={title(media)} loading="lazy"
            class="h-full w-full object-cover transition group-hover:scale-105" />
     </div>
-    <div class="mt-1 flex items-start gap-1">
-      <span class="mt-1 h-2 w-2 shrink-0 rounded-full" style={`background:${dot(media)}`}></span>
-      <span class="line-clamp-2 text-[0.8rem] font-black leading-tight">{title(media)}</span>
+    <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
+      <span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{title(media)}
     </div>
     <div class="mt-0.5 flex justify-between text-[0.7rem] text-muted-foreground">
       <span>{season(media)}</span><span>{format(media)}</span>
