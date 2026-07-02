@@ -83,7 +83,7 @@
   {:else}
     <!-- Text-forward card: no per-episode image available. -->
     <div class="relative flex items-center gap-3 p-3">
-      <span class="grid h-9 w-9 shrink-0 place-items-center rounded bg-background/50 text-sm font-black">{ep}</span>
+      <span class="grid h-9 min-w-9 shrink-0 place-items-center rounded bg-background/50 px-1.5 text-xs font-black tabular-nums">{ep}</span>
       <div class="min-w-0 flex-1">
         <span class="block truncate text-sm font-bold">{epTitle}</span>
         {#if isNext}

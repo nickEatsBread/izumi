@@ -13,7 +13,7 @@
     { href: '/app/settings', icon: Settings, label: 'Settings', anim: 'group-hover:animate-[spin_0.6s_ease]' },
   ]
 </script>
-<nav class="fixed inset-y-0 left-0 z-30 flex w-14 flex-col items-center gap-2 bg-transparent py-3 pt-9 backdrop-blur">
+<nav class="fixed inset-y-0 left-0 z-30 flex w-14 flex-col items-center gap-2 bg-background py-3 pt-9">
   <a href="/app/home" class="group mb-3" data-focusable>
     <div class="transition-transform duration-200 group-hover:scale-110"><Logo /></div>
   </a>

@@ -65,15 +65,19 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   if (!kitsu) kitsu = await getKitsuId(media.id)
   if (!kitsu) kitsu = await kitsuIdFromMal(media.idMal)
   if (!kitsu) return onState({ status: 'error', message: 'No stream mapping for this title (no Kitsu id).' })
-  const streams = await getStreams(bases, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')
-  if (!streams.length) return onState({ status: 'error', message: 'No debrid streams found (check your debrid addon + key).' })
+  const { playable, total } = await getStreams(bases, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')
+  if (!playable.length) {
+    return onState({ status: 'error', message: total > 0
+      ? `Found ${total} torrents but no debrid links — check your debrid key/subscription in the addon URL.`
+      : 'No streams found for this title/episode yet.' })
+  }
   try {
     // Resume from the last saved position for this exact episode, if any.
     const startSeconds = episode != null ? getPosition(media.id, episode) : 0
     // Play into the dedicated transparent player window, which shows the custom
     // controls over the video. The now-playing title drives the overlay header.
     const nowPlaying = episode != null ? `${title(media)} — Episode ${episode}` : title(media)
-    await invoke('play_in_player', { url: streams[0].url, startSeconds: startSeconds || undefined, title: nowPlaying })
+    await invoke('play_in_player', { url: playable[0].url, startSeconds: startSeconds || undefined, title: nowPlaying })
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
     if (episode != null) await attach(media, episode, onState)
