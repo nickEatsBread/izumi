@@ -14,3 +14,16 @@ export function dragScroll(node: HTMLElement) {
     }
   }
 }
+
+export function hover(node: HTMLElement, handlers: { enter: () => void; leave: () => void }) {
+  const onEnter = () => handlers.enter()
+  const onLeave = () => handlers.leave()
+  node.addEventListener('pointerenter', onEnter)
+  node.addEventListener('pointerleave', onLeave)
+  return {
+    destroy() {
+      node.removeEventListener('pointerenter', onEnter)
+      node.removeEventListener('pointerleave', onLeave)
+    }
+  }
+}
