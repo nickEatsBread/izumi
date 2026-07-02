@@ -3,11 +3,25 @@
 
   let name = $state("");
   let greetMsg = $state("");
+  let playMsg = $state("");
+
+  const TEST_VIDEO_URL =
+    "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_1MB.mp4";
 
   async function greet(event: Event) {
     event.preventDefault();
     // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
     greetMsg = await invoke("greet", { name });
+  }
+
+  async function playTestVideo() {
+    playMsg = "Starting playback...";
+    try {
+      await invoke("player_play", { url: TEST_VIDEO_URL });
+      playMsg = "libmpv window opened.";
+    } catch (err) {
+      playMsg = `Playback failed: ${err}`;
+    }
   }
 </script>
 
@@ -32,6 +46,11 @@
     <button type="submit">Greet</button>
   </form>
   <p>{greetMsg}</p>
+
+  <div class="row">
+    <button type="button" onclick={playTestVideo}>Play test video</button>
+  </div>
+  <p>{playMsg}</p>
 </main>
 
 <style>

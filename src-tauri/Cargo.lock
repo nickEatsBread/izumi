@@ -1409,6 +1409,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 name = "izumi"
 version = "0.1.0"
 dependencies = [
+ "libmpv2",
  "serde",
  "serde_json",
  "tauri",
@@ -1897,6 +1898,21 @@ dependencies = [
  "cfg-if",
  "winapi",
 ]
+
+[[package]]
+name = "libmpv2"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f3d44c1c29b866d44453249d1d8b2822d891fdabd08359a5b85bb6944445e70"
+dependencies = [
+ "libmpv2-sys",
+]
+
+[[package]]
+name = "libmpv2-sys"
+version = "4.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edb32cabe7176b7d270b0dca6ff418b75187ae8d3854423e3d06fbff376841e4"
 
 [[package]]
 name = "libredox"
