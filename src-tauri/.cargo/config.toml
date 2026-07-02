@@ -1,0 +1,4 @@
+# libmpv lives at C:\libmpv (include/, libmpv-2.dll, mpv.lib generated from the DLL).
+# Forward slashes avoid TOML backslash-escaping. Only the MSVC target needs this.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-L", "native=C:/libmpv"]
