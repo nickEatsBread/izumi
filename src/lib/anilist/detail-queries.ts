@@ -1,10 +1,15 @@
 import { gql } from '@urql/core'
 import { MEDIA_FIELDS } from './fragments'
 
+// Detail page only: pull the viewer's list entry (progress/status) + favourite
+// flag. Kept off the shared MediaFields fragment so browse/card queries don't
+// over-fetch per-viewer data.
 export const MEDIA_BY_ID = gql`
   query MediaById($id: Int!) {
     Media(id: $id, type: ANIME) {
       ...MediaFields
+      isFavourite
+      mediaListEntry { progress status }
       relations { edges { relationType node { ...MediaFields } } }
     }
   }

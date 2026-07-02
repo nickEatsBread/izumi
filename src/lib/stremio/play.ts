@@ -29,7 +29,7 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
       const [pos, dur] = e.payload
       // Throttle position writes to ~once every 5s to avoid store churn.
       if (Date.now() - lastSave > 5000) {
-        savePosition(media.id, episode, pos)
+        savePosition(media.id, episode, pos, dur)
         lastSave = Date.now()
       }
       // Once we cross the watch threshold, mark this episode on the tracker(s)
