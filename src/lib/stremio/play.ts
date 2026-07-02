@@ -5,6 +5,7 @@ import { addonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, streamId } from './addon'
 import { getKitsuId } from '$lib/anizip'
+import { kitsuIdFromMal } from './kitsu'
 import { updateProgress } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
 import { title } from '$lib/anilist/media'
@@ -62,7 +63,8 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   // (some titles, e.g. "Rakudai Kenja no Gakuin Musou…", aren't in Fribb).
   let kitsu = lookupKitsu(idx, media.id)
   if (!kitsu) kitsu = await getKitsuId(media.id)
-  if (!kitsu) return onState({ status: 'error', message: 'No Kitsu mapping for this title.' })
+  if (!kitsu) kitsu = await kitsuIdFromMal(media.idMal)
+  if (!kitsu) return onState({ status: 'error', message: 'No stream mapping for this title (no Kitsu id).' })
   const streams = await getStreams(bases, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')
   if (!streams.length) return onState({ status: 'error', message: 'No debrid streams found (check your debrid addon + key).' })
   try {

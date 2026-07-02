@@ -3,6 +3,7 @@
   import { queryStore, getContextClient } from '@urql/svelte'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { MEDIA_BY_ID } from '$lib/anilist/detail-queries'
+  import Hero from '$lib/components/banner/Hero.svelte'
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
@@ -12,8 +13,6 @@
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
   import { setStatus, toggleFavourite } from '$lib/trackers'
-  import { heroMedia } from '$lib/stores/hero'
-  import { onDestroy } from 'svelte'
   import Heart from 'lucide-svelte/icons/heart'
   import BookmarkPlus from 'lucide-svelte/icons/bookmark-plus'
   import Share2 from 'lucide-svelte/icons/share-2'
@@ -27,11 +26,6 @@
   const store = queryStore<{ Media: Media }>({ client, query: MEDIA_BY_ID, variables: { id } })
   let active = $state('Episodes')
   let heroPlay = $state<PlayState>({ status: 'idle' })
-
-  // Drive the shared full-bleed banner (BannerBg) with this title. No title
-  // overlay here — the title lives in the info panel below, so it shows once.
-  $effect(() => { if ($store.data?.Media) heroMedia.set($store.data.Media) })
-  onDestroy(() => heroMedia.set(null))
 
   // Action-bar transient/optimistic state.
   let fav = $state<boolean | undefined>(undefined)
@@ -88,9 +82,9 @@
   {@const m = $store.data.Media}
   {@const isFav = fav ?? m.isFavourite ?? false}
   {@const trackerConnected = !!($anilistToken || $malToken)}
-  <!-- Top region shows the shared banner (BannerBg) with no title overlay;
-       the info panel below overlaps the banner's lower fade izumi-style. -->
-  <div class="px-8 pb-16 pt-[30vh]">
+  <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
+  <Hero medias={[m]} showOverlay={false} />
+  <div class="relative px-8 pb-16 -mt-[20vh]">
     {#if heroPlay.status === 'resolving'}
       <p class="mb-3 text-sm text-muted-foreground">Resolving stream…</p>
     {:else if heroPlay.status === 'error'}
