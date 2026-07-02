@@ -33,6 +33,8 @@ fn player_play_embedded(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_oauth::init())
+        .plugin(tauri_plugin_http::init())
         .manage(player::PlayerHandle::new())
         .invoke_handler(tauri::generate_handler![
             greet,

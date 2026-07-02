@@ -5,6 +5,18 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    "oauth:allow-start",
+    "oauth:allow-cancel",
+    "http:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://anilist.co/*" },
+        { "url": "https://graphql.anilist.co/*" },
+        { "url": "https://myanimelist.net/*" },
+        { "url": "https://api.myanimelist.net/*" }
+      ]
+    }
   ]
 }
