@@ -2,13 +2,14 @@
   // Simple 1..N episode grid. Clicking resolves a debrid stream (Stremio addon)
   // and hands the URL to mpv. Rich per-episode metadata/thumbnails are Plan 2c.
   import { playEpisode, type PlayState } from '$lib/stremio/play'
-  let { count, mediaId }: { count: number; mediaId: number } = $props()
+  import type { Media } from '$lib/anilist/types'
+  let { count, media }: { count: number; media: Media } = $props()
   const episodes = $derived(count > 0 ? Array.from({ length: count }, (_, i) => i + 1) : [])
   let state = $state<PlayState>({ status: 'idle' })
   const resolving = $derived(state.status === 'resolving')
   function play(ep: number) {
     if (resolving) return
-    playEpisode(mediaId, ep, (s) => (state = s))
+    playEpisode(media, ep, (s) => (state = s))
   }
 </script>
 {#if episodes.length}

@@ -26,7 +26,7 @@
   <div class="p-8 text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if $store.data?.Media}
   {@const m = $store.data.Media}
-  <Hero medias={[m]} onplay={() => playEpisode(m.id, 1, (s) => (heroPlay = s))} />
+  <Hero medias={[m]} onplay={() => playEpisode(m, 1, (s) => (heroPlay = s))} />
   <div class="px-8 pb-16">
     {#if heroPlay.status === 'resolving'}
       <p class="mb-3 text-sm text-muted-foreground">Resolving stream…</p>
@@ -45,7 +45,7 @@
     {/if}
     <Tabs tabs={['Episodes', 'Relations', 'Details']} bind:active />
     {#if active === 'Episodes'}
-      <EpisodeList count={m.episodes ?? 0} mediaId={m.id} />
+      <EpisodeList count={m.episodes ?? 0} media={m} />
     {:else if active === 'Relations'}
       {#if m.relations?.edges?.length}
         <div class="flex flex-wrap gap-4">
