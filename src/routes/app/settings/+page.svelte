@@ -1,6 +1,10 @@
 <script lang="ts">
   import { addonUrls, normalizeBase } from '$lib/stremio/sources'
   import { anilistUser } from '$lib/anilist/account'
+  import {
+    anilistToken, anilistClientId, anilistClientSecret, anilistUserName,
+    malToken, malClientId, malUserName,
+  } from '$lib/trackers/config'
   let input = $state('')
   function add() { const b = normalizeBase(input); if (b) { $addonUrls = [...$addonUrls, b]; input = '' } }
   function remove(i: number) { $addonUrls = $addonUrls.filter((_, j) => j !== i) }
@@ -8,6 +12,37 @@
   let userInput = $state($anilistUser)
   function saveUser() { $anilistUser = userInput.trim() }
   function clearUser() { $anilistUser = ''; userInput = '' }
+
+  // ----- Accounts (OAuth) -----
+  let aniBusy = $state(false)
+  let aniError = $state('')
+  let malBusy = $state(false)
+  let malError = $state('')
+
+  async function connectAniListClick() {
+    aniError = ''; aniBusy = true
+    try {
+      const { connectAniList } = await import('$lib/trackers/anilist-auth')
+      await connectAniList()
+    } catch (e) { aniError = e instanceof Error ? e.message : String(e) }
+    finally { aniBusy = false }
+  }
+  async function disconnectAniListClick() {
+    const { disconnectAniList } = await import('$lib/trackers/anilist-auth')
+    disconnectAniList()
+  }
+  async function connectMalClick() {
+    malError = ''; malBusy = true
+    try {
+      const { connectMal } = await import('$lib/trackers/mal-auth')
+      await connectMal()
+    } catch (e) { malError = e instanceof Error ? e.message : String(e) }
+    finally { malBusy = false }
+  }
+  async function disconnectMalClick() {
+    const { disconnectMal } = await import('$lib/trackers/mal-auth')
+    disconnectMal()
+  }
 </script>
 <div class="p-8">
   <h1 class="mb-4 text-2xl font-black">Settings</h1>
@@ -27,6 +62,52 @@
     {:else}
       <p class="mt-3 text-sm text-muted-foreground">No username set.</p>
     {/if}
+  </section>
+  <section class="mb-8 max-w-2xl">
+    <h2 class="mb-1 text-lg font-black">Accounts</h2>
+    <p class="mb-3 text-sm text-muted-foreground">Connect AniList and/or MyAnimeList to push your watch progress. Register a developer app with redirect URL <span class="font-mono">http://localhost:41780/callback</span>, paste the credentials, then Connect.</p>
+
+    <div class="mb-6 rounded-md border border-border p-4">
+      <h3 class="mb-2 font-bold">AniList</h3>
+      <div class="mb-2 flex gap-2">
+        <input bind:value={$anilistClientId} data-focusable placeholder="Client ID"
+               class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
+        <input bind:value={$anilistClientSecret} data-focusable type="password" placeholder="Client Secret"
+               class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
+      </div>
+      {#if $anilistToken && $anilistUserName}
+        <div class="flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
+          <span class="truncate">Connected as <span class="font-bold">{$anilistUserName}</span></span>
+          <button onclick={disconnectAniListClick} data-focusable class="ml-2 text-destructive">Disconnect</button>
+        </div>
+      {:else}
+        <button onclick={connectAniListClick} data-focusable disabled={aniBusy}
+                class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">
+          {aniBusy ? 'Connecting…' : 'Connect'}
+        </button>
+      {/if}
+      {#if aniError}<p class="mt-2 text-sm text-destructive">{aniError}</p>{/if}
+    </div>
+
+    <div class="rounded-md border border-border p-4">
+      <h3 class="mb-2 font-bold">MyAnimeList</h3>
+      <div class="mb-2 flex gap-2">
+        <input bind:value={$malClientId} data-focusable placeholder="Client ID"
+               class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
+      </div>
+      {#if $malToken && $malUserName}
+        <div class="flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
+          <span class="truncate">Connected as <span class="font-bold">{$malUserName}</span></span>
+          <button onclick={disconnectMalClick} data-focusable class="ml-2 text-destructive">Disconnect</button>
+        </div>
+      {:else}
+        <button onclick={connectMalClick} data-focusable disabled={malBusy}
+                class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">
+          {malBusy ? 'Connecting…' : 'Connect'}
+        </button>
+      {/if}
+      {#if malError}<p class="mt-2 text-sm text-destructive">{malError}</p>{/if}
+    </div>
   </section>
   <section class="max-w-2xl">
     <h2 class="mb-1 text-lg font-black">Sources</h2>
