@@ -21,4 +21,5 @@ html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); 
 .bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }
 @keyframes load-in { from { transform: translate3d(0,1.2rem,0) scale(0.95); opacity: 0; } to { transform: none; opacity: 1; } }
 .load-in { animation: load-in 0.3s ease both; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 *:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--ring)); border-radius: var(--radius); }

@@ -25,7 +25,7 @@
   <div class="p-8 text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if $store.data?.Media}
   {@const m = $store.data.Media}
-  <Hero media={m} onplay={() => playEpisode(m.id, 1, (s) => (heroPlay = s))} />
+  <Hero medias={[m]} onplay={() => playEpisode(m.id, 1, (s) => (heroPlay = s))} />
   <div class="px-8 pb-16">
     {#if heroPlay.status === 'resolving'}
       <p class="mb-3 text-sm text-muted-foreground">Resolving stream…</p>

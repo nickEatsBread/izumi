@@ -1,15 +1,36 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { title, cover, season, format } from '$lib/anilist/media'
-  import { hover } from '$lib/nav/actions'
   import PreviewCard from './PreviewCard.svelte'
   let { media }: { media: Media } = $props()
+
   let hovered = $state(false)
+  let pos = $state({ left: 0, top: 0 })
+  let el: HTMLElement
   const dot = (m: Media) => m.status === 'RELEASING' ? '#3db4f2' : m.status === 'NOT_YET_RELEASED' ? '#f79a63' : '#7bd555'
+
+  // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and
+  // clamped to the viewport so it never gets cut off by the sidebar or edges.
+  const PW = 280, PH = 340, SIDEBAR = 64
+  function place() {
+    const r = el.getBoundingClientRect()
+    const left = Math.max(SIDEBAR, Math.min(r.left + r.width / 2 - PW / 2, window.innerWidth - PW - 8))
+    const top = Math.max(8, Math.min(r.top - 16, window.innerHeight - PH - 8))
+    pos = { left, top }
+  }
+  function enter() { place(); hovered = true }
+  function leave() { hovered = false }
+
+  // Any scroll (page or a carousel) dismisses the preview so it can't get stranded.
+  $effect(() => {
+    const close = () => { if (hovered) hovered = false }
+    window.addEventListener('scroll', close, true)
+    return () => window.removeEventListener('scroll', close, true)
+  })
 </script>
-<div class="relative w-[152px] shrink-0" use:hover={{ enter: () => hovered = true, leave: () => hovered = false }}>
-  <a href={`/app/anime/${media.id}`} data-focusable
-     class="load-in group block w-[152px]">
+
+<div bind:this={el} class="w-[152px] shrink-0" onpointerenter={enter} onpointerleave={leave} role="presentation">
+  <a href={`/app/anime/${media.id}`} data-focusable class="load-in group block w-[152px]">
     <div class="h-[228px] w-[152px] overflow-hidden rounded-md bg-muted">
       <img src={cover(media)} alt={title(media)} loading="lazy"
            class="h-full w-full object-cover transition group-hover:scale-105" />
@@ -22,9 +43,10 @@
       <span>{season(media)}</span><span>{format(media)}</span>
     </div>
   </a>
-  {#if hovered}
-    <div class="pointer-events-none absolute -top-4 left-1/2 z-40 -translate-x-1/2">
-      <PreviewCard {media} />
-    </div>
-  {/if}
 </div>
+
+{#if hovered}
+  <div class="pointer-events-none fixed z-50" style={`left:${pos.left}px;top:${pos.top}px`}>
+    <PreviewCard {media} />
+  </div>
+{/if}
