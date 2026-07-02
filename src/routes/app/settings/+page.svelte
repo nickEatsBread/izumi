@@ -2,7 +2,7 @@
   import { addonUrls, normalizeBase } from '$lib/stremio/sources'
   import { anilistUser } from '$lib/anilist/account'
   import {
-    anilistToken, anilistClientId, anilistClientSecret, anilistUserName,
+    anilistToken, anilistClientId, anilistUserName,
     malToken, malClientId, malUserName,
   } from '$lib/trackers/config'
   let input = $state('')
@@ -65,14 +65,12 @@
   </section>
   <section class="mb-8 max-w-2xl">
     <h2 class="mb-1 text-lg font-black">Accounts</h2>
-    <p class="mb-3 text-sm text-muted-foreground">Connect AniList and/or MyAnimeList to push your watch progress. Register a developer app with redirect URL <span class="font-mono">http://localhost:41780/callback</span>, paste the credentials, then Connect.</p>
+    <p class="mb-3 text-sm text-muted-foreground">Connect AniList and/or MyAnimeList to push your watch progress. A login window opens in-app; sign in and it captures your access automatically. Client IDs are prefilled but editable.</p>
 
     <div class="mb-6 rounded-md border border-border p-4">
       <h3 class="mb-2 font-bold">AniList</h3>
       <div class="mb-2 flex gap-2">
         <input bind:value={$anilistClientId} data-focusable placeholder="Client ID"
-               class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
-        <input bind:value={$anilistClientSecret} data-focusable type="password" placeholder="Client Secret"
                class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
       </div>
       {#if $anilistToken && $anilistUserName}

@@ -1,7 +1,7 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { get } from 'svelte/store'
 import { malToken, malRefresh, malClientId, malUserName } from './config'
-import { deepLinkLogin, redirectUri } from './oauth'
+import { captureLogin, redirectUri } from './oauth'
 
 function verifier(): string {
   const b = new Uint8Array(64); crypto.getRandomValues(b)
@@ -11,9 +11,9 @@ export async function connectMal() {
   const clientId = get(malClientId)
   if (!clientId) throw new Error('Enter your MAL Client ID first.')
   const codeVerifier = verifier() // MAL PKCE is 'plain' -> challenge === verifier
-  const cb = await deepLinkLogin((state) =>
-    `https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=${clientId}&code_challenge=${codeVerifier}&code_challenge_method=plain&state=${state}&redirect_uri=${encodeURIComponent(redirectUri)}`)
-  const code = cb.searchParams.get('code')
+  const malAuthUrl = `https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=${clientId}&code_challenge=${codeVerifier}&code_challenge_method=plain&redirect_uri=${encodeURIComponent(redirectUri)}`
+  const u = await captureLogin(malAuthUrl)
+  const code = u.searchParams.get('code')
   if (!code) throw new Error('No authorization code returned.')
   const res = await httpFetch('https://myanimelist.net/v1/oauth2/token', {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

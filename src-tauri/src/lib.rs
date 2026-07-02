@@ -29,31 +29,60 @@ fn player_play_embedded(
     player.play_embedded(&url, wid)
 }
 
+/// Open the provider's auth URL in a dedicated in-app webview window, then poll
+/// that window's URL until it reaches `redirect_prefix`. Returns the full
+/// redirect URL (query + fragment), so callers can read `?code=` or
+/// `#access_token=` themselves. Closes the window when done.
+#[tauri::command]
+async fn oauth_capture(
+    app: tauri::AppHandle,
+    auth_url: String,
+    redirect_prefix: String,
+) -> Result<String, String> {
+    use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+    let url = auth_url.parse().map_err(|_| "invalid auth url".to_string())?;
+    // reuse/replace any existing "oauth" window
+    if let Some(w) = app.get_webview_window("oauth") {
+        let _ = w.close();
+    }
+    let win = WebviewWindowBuilder::new(&app, "oauth", WebviewUrl::External(url))
+        .title("Sign in")
+        .inner_size(520.0, 760.0)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut waited: u64 = 0;
+    let result = loop {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        waited += 400;
+        match win.url() {
+            Ok(u) => {
+                let s = u.to_string();
+                if s.starts_with(&redirect_prefix) {
+                    break Ok(s);
+                }
+            }
+            Err(_) => break Err("Login window was closed.".to_string()),
+        }
+        if waited > 300_000 {
+            break Err("Login timed out.".to_string());
+        }
+    };
+    let _ = win.close();
+    result
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|_app, _argv, _cwd| {}));
-    }
-    builder
-        .plugin(tauri_plugin_deep_link::init())
+    tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .manage(player::PlayerHandle::new())
         .invoke_handler(tauri::generate_handler![
             greet,
             player_play,
-            player_play_embedded
+            player_play_embedded,
+            oauth_capture
         ])
-        .setup(|_app| {
-            #[cfg(any(windows, target_os = "linux"))]
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
-                let _ = _app.deep_link().register_all();
-            }
-            Ok(())
-        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
