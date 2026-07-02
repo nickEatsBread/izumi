@@ -3,7 +3,9 @@
   import { queryStore, getContextClient } from '@urql/svelte'
   import { PAGE_QUERY, homeSections } from '$lib/anilist/queries'
   import HomeRow from '$lib/components/cards/HomeRow.svelte'
+  import ListRow from '$lib/components/cards/ListRow.svelte'
   import Hero from '$lib/components/banner/Hero.svelte'
+  import { anilistUser } from '$lib/anilist/account'
   import type { Media } from '$lib/anilist/types'
 
   const client = getContextClient()
@@ -27,6 +29,13 @@
     <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} />
   {:else}
     <div class="mb-6 h-[42vh] w-full animate-pulse bg-muted"></div>
+  {/if}
+
+  {#if $anilistUser}
+    {#key $anilistUser}
+      <ListRow title="Continue Watching" userName={$anilistUser} status="CURRENT" />
+      <ListRow title="Your List" userName={$anilistUser} status="PLANNING" />
+    {/key}
   {/if}
 
   {#each sections as s (s.key)}
