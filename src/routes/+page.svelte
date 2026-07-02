@@ -17,8 +17,8 @@
   async function playTestVideo() {
     playMsg = "Starting playback...";
     try {
-      await invoke("player_play", { url: TEST_VIDEO_URL });
-      playMsg = "libmpv window opened.";
+      await invoke("player_play_embedded", { url: TEST_VIDEO_URL });
+      playMsg = "Playing embedded in window (behind this overlay).";
     } catch (err) {
       playMsg = `Playback failed: ${err}`;
     }
@@ -54,6 +54,23 @@
 </main>
 
 <style>
+/* Transparent window compositing: the webview must have a transparent
+   background so mpv (rendering into the same native window, behind the
+   webview) shows through. Any opaque background on html/body/:root would
+   hide the video entirely. */
+:global(html),
+:global(body) {
+  background: transparent !important;
+}
+
+/* Semi-transparent overlay bar so it is visually obvious the UI is floating
+   on top of the moving video rather than replacing it. */
+.container {
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  min-height: 100vh;
+}
+
 .logo.vite:hover {
   filter: drop-shadow(0 0 2em #747bff);
 }
