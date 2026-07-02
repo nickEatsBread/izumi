@@ -6,6 +6,7 @@ import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, streamId } from './addon'
 import { updateProgress } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
+import { title } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
@@ -61,7 +62,10 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   try {
     // Resume from the last saved position for this exact episode, if any.
     const startSeconds = episode != null ? getPosition(media.id, episode) : 0
-    await invoke('player_play', { url: streams[0].url, startSeconds: startSeconds || undefined })
+    // Play into the dedicated transparent player window, which shows the custom
+    // controls over the video. The now-playing title drives the overlay header.
+    const nowPlaying = episode != null ? `${title(media)} — Episode ${episode}` : title(media)
+    await invoke('play_in_player', { url: streams[0].url, startSeconds: startSeconds || undefined, title: nowPlaying })
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
     if (episode != null) await attach(media, episode, onState)
