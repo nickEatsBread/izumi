@@ -13,7 +13,10 @@
     { href: '/app/settings', icon: Settings, label: 'Settings', anim: 'group-hover:animate-[spin_0.6s_ease]' },
   ]
 </script>
-<nav class="fixed inset-y-0 left-0 z-30 flex w-14 flex-col items-center gap-2 bg-background py-3 pt-9">
+<!-- Soft scrim: keeps the icons legible over the banner while fading into it,
+     instead of a hard black rail (blends like izumi). -->
+<div class="pointer-events-none fixed inset-y-0 left-0 z-20 w-32 bg-gradient-to-r from-background via-background/50 to-transparent"></div>
+<nav class="fixed inset-y-0 left-0 z-30 flex w-14 flex-col items-center gap-2 py-3 pt-9 drop-shadow-md">
   <a href="/app/home" class="group mb-3" data-focusable>
     <div class="transition-transform duration-200 group-hover:scale-110"><Logo /></div>
   </a>

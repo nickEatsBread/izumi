@@ -56,7 +56,7 @@
   ></iframe>
   {#if playing}
     <button
-      onclick={() => { muted = !muted; send(muted ? 'mute' : 'unMute') }}
+      onclick={(e) => { e.stopPropagation(); muted = !muted; send(muted ? 'mute' : 'unMute') }}
       class="pointer-events-auto absolute right-1 top-1 z-10 rounded-md bg-black/50 p-1 text-white"
       aria-label={muted ? 'Unmute' : 'Mute'}
     >
