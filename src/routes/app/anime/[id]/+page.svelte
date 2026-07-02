@@ -45,7 +45,7 @@
     {/if}
     <Tabs tabs={['Episodes', 'Relations', 'Details']} bind:active />
     {#if active === 'Episodes'}
-      <EpisodeList count={m.episodes ?? 0} media={m} />
+      <EpisodeList media={m} />
     {:else if active === 'Relations'}
       {#if m.relations?.edges?.length}
         <div class="flex flex-wrap gap-4">

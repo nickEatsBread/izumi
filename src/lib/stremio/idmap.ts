@@ -1,3 +1,4 @@
+import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { get, set } from 'idb-keyval'
 export interface MapEntry { anilist_id?: number; kitsu_id?: number; mal_id?: number }
 export type Index = Map<number, MapEntry>
@@ -17,7 +18,7 @@ export async function getIndex(): Promise<Index> {
   const ts = (await get<number>(TS)) ?? 0
   let data = await get<MapEntry[]>(KEY)
   if (!data || Date.now() - ts > 7 * 864e5) {
-    try { data = await (await fetch(URL)).json(); await set(KEY, data); await set(TS, Date.now()) }
+    try { data = await (await httpFetch(URL)).json(); await set(KEY, data); await set(TS, Date.now()) }
     catch { data = data ?? [] }
   }
   cached = buildIndex(data!); return cached

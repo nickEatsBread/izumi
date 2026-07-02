@@ -45,6 +45,6 @@
     allow="autoplay"
     credentialless
     {src}
-    class="pointer-events-none absolute inset-0 h-full w-full border-0 transition-opacity duration-500 {playing ? 'opacity-100' : 'opacity-0'}"
+    class="pointer-events-none absolute left-0 top-1/2 h-[calc(100%+200px)] w-full -translate-y-1/2 border-0 transition-opacity duration-500 {playing ? 'opacity-100' : 'opacity-0'}"
   ></iframe>
 {/if}

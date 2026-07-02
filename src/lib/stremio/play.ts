@@ -45,7 +45,9 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
       // Finished: forget the resume point, then auto-advance if there's a next
       // episode (bounded by the known total, if any).
       clearPosition(media.id, episode)
-      if (episode < (media.episodes ?? 0)) playEpisode(media, episode + 1, onState)
+      // Advance only within *aired* episodes (nextAiringEpisode-1 for ongoing shows).
+      const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? 0)
+      if (episode < airedTotal) playEpisode(media, episode + 1, onState)
     }),
   )
 }
@@ -57,7 +59,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   const idx = await getIndex()
   const kitsu = lookupKitsu(idx, media.id)
   if (!kitsu) return onState({ status: 'error', message: 'No Kitsu mapping for this title.' })
-  const streams = await getStreams(bases, streamId(kitsu, episode))
+  const streams = await getStreams(bases, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')
   if (!streams.length) return onState({ status: 'error', message: 'No debrid streams found (check your debrid addon + key).' })
   try {
     // Resume from the last saved position for this exact episode, if any.
