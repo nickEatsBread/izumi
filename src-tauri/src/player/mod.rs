@@ -126,9 +126,12 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
                 init.set_option("wid", wid)?;
             }
             // Own window: make an actual window appear even before/without video
-            // geometry info.
+            // geometry info, and open it fullscreen so streams play edge-to-edge
+            // with mpv's native on-screen controller (pause/seek). Fullscreen is
+            // an init-time option, like `force-window`/`vo`.
             None => {
                 init.set_option("force-window", "yes")?;
+                init.set_option("fullscreen", "yes")?;
             }
         }
         // Preferred GPU video output.
