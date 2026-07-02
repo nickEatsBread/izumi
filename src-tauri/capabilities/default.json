@@ -10,15 +10,9 @@
     "core:window:allow-close",
     "core:window:allow-start-dragging",
     "opener:default",
-    "http:default",
     {
       "identifier": "http:default",
-      "allow": [
-        { "url": "https://anilist.co/*" },
-        { "url": "https://graphql.anilist.co/*" },
-        { "url": "https://myanimelist.net/*" },
-        { "url": "https://api.myanimelist.net/*" }
-      ]
+      "allow": [{ "url": "https://**" }]
     }
   ]
 }

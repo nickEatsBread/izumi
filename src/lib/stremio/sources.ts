@@ -1,6 +1,10 @@
 import { persisted } from 'svelte-persisted-store'
 export const addonUrls = persisted<string[]>('stremio-addon-urls', [])
-// Force https only (the webview blocks mixed-content http). Pass the config path
-// verbatim — Torrentio parses its own pipe-separated config either encoded or raw.
-export const normalizeBase = (u: string) =>
-  u.trim().replace(/^http:\/\//i, 'https://').replace(/\/manifest\.json\/?$/i, '').replace(/\/$/, '')
+// Normalize a pasted addon URL to an absolute https base (strip trailing
+// /manifest.json). Forcing a scheme matters: a scheme-less base would resolve
+// relative to the app page and hit the wrong host.
+export const normalizeBase = (u: string) => {
+  let s = u.trim().replace(/\/manifest\.json\/?$/i, '').replace(/\/$/, '').replace(/^http:\/\//i, 'https://')
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s
+  return s
+}

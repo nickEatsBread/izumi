@@ -15,7 +15,9 @@ export function rankStreams(streams: Stream[]): Stream[] {
 // the debrid key didn't resolve any links".
 export async function getStreams(bases: string[], id: string, type = 'series'): Promise<{ playable: Stream[]; total: number }> {
   const results = await Promise.all(bases.map(async base => {
-    const b = base.replace(/^http:\/\//i, 'https://')   // https only; config passed verbatim
+    // Ensure an absolute https base (existing saved URLs may be http or scheme-less).
+    let b = base.replace(/^http:\/\//i, 'https://')
+    if (!/^https?:\/\//i.test(b)) b = 'https://' + b
     try {
       const r = await httpFetch(`${b}/stream/${type}/${encodeURIComponent(id)}.json`)
       if (!r.ok) return []
