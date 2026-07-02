@@ -1,0 +1,15 @@
+/*
+ * Player-window transparency. The global app.css paints html/body opaque
+ * (`background: hsl(var(--background))`); this file — imported only by the
+ * `/player` route — overrides that so mpv (rendered into the same native
+ * window via --wid) shows through the WebView2 surface. Loaded only in the
+ * player window because it is a route-local import.
+ *
+ * Kept as a plain imported stylesheet rather than a component <style> block:
+ * vite-preprocess miscomputes the <style> byte offset when the script uses
+ * inline TS generics, so a scoped block breaks the build. This is equivalent.
+ */
+html,
+body {
+  background: transparent !important;
+}
