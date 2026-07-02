@@ -8,7 +8,7 @@
 </script>
 
 {#if $heroMedia && src}
-  <div class="pointer-events-none fixed inset-x-0 top-0 -z-10 h-[55vh] w-full">
+  <div class="pointer-events-none fixed inset-x-0 top-0 -z-20 h-[55vh] w-full">
     {#key $heroMedia.id}
       <img
         src={src}

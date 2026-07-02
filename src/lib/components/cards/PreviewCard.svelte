@@ -21,11 +21,14 @@
   const canFavourite = $derived(!!$anilistToken)
   const canBookmark = $derived(anyTrackerConnected())
   let busy = $state(false)
-  async function favourite() { if (busy) return; busy = true; try { await toggleFavourite(media) } catch { /* ignore */ } finally { busy = false } }
-  async function bookmark() { if (busy) return; busy = true; try { await setStatus(media, 'PLANNING') } finally { busy = false } }
+  async function favourite(e: Event) { e.stopPropagation(); if (busy) return; busy = true; try { await toggleFavourite(media) } catch { /* ignore */ } finally { busy = false } }
+  async function bookmark(e: Event) { e.stopPropagation(); if (busy) return; busy = true; try { await setStatus(media, 'PLANNING') } finally { busy = false } }
+  const openDetail = () => goto(`/app/anime/${media.id}`)
 </script>
 
-<div class="w-[17.5rem] overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border">
+<div class="w-[17.5rem] cursor-pointer overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border"
+     onclick={openDetail} role="link" tabindex="0"
+     onkeydown={(e) => { if (e.key === 'Enter') openDetail() }}>
   <div class="relative h-40 overflow-hidden bg-muted">
     <img src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
     {#if trailerId}
