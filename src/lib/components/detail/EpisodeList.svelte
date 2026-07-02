@@ -33,9 +33,9 @@
     return () => { cancelled = true }
   })
 
-  let state = $state<PlayState>({ status: 'idle' })
-  const resolving = $derived(state.status === 'resolving')
-  function play(ep: number) { if (!resolving) playEpisode(media, ep, (s) => (state = s)) }
+  let playState = $state<PlayState>({ status: 'idle' })
+  const resolving = $derived(playState.status === 'resolving')
+  function play(ep: number) { if (!resolving) playEpisode(media, ep, (s) => (playState = s)) }
 
   function countdown(sec?: number) {
     if (!sec) return ''
@@ -45,10 +45,10 @@
 </script>
 
 {#if total > 0}
-  {#if state.status === 'resolving'}
+  {#if playState.status === 'resolving'}
     <p class="mb-3 text-sm text-muted-foreground">Resolving stream…</p>
-  {:else if state.status === 'error'}
-    <p class="mb-3 text-sm text-destructive">{state.message}</p>
+  {:else if playState.status === 'error'}
+    <p class="mb-3 text-sm text-destructive">{playState.message}</p>
   {/if}
 
   {#if $episodeLayout === 'cards'}

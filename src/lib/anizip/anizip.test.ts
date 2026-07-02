@@ -15,6 +15,6 @@ describe('parseEpisodes', () => {
     expect(m[1].image).toBe('i.jpg')
     expect(m[1].rating).toBeCloseTo(7.8)
   })
-  it('ignores non-numeric (special) keys', () => expect(parseEpisodes(RES as any).S1).toBeUndefined())
+  it('ignores non-numeric (special) keys', () => expect((parseEpisodes(RES as any) as any).S1).toBeUndefined())
   it('empty on missing', () => expect(Object.keys(parseEpisodes(undefined as any)).length).toBe(0))
 })
