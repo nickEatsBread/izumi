@@ -17,6 +17,9 @@ const limitedFetch: typeof fetch = (input, init) =>
 
 export const anilist = new Client({
   url: 'https://graphql.anilist.co',
+  // AniList's GraphQL endpoint only accepts POST. urql v6 defaults
+  // preferGetMethod to 'within-url-limit' (GET for short queries) -> 404.
+  preferGetMethod: false,
   exchanges: [
     cacheExchange({}),
     authExchange(async (utils) => ({
