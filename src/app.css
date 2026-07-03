@@ -16,6 +16,10 @@
 }
 * { border-color: hsl(var(--border)); }
 html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: 'Nunito Variable', sans-serif; scroll-behavior: smooth; }
+/* Clip horizontal overflow at the page level so the full-bleed Hero banner
+   (w-screen) can bleed under the sidebar without a horizontal scrollbar — the
+   clip is here, NOT on <main>, so it doesn't crop the bleed. */
+body { overflow-x: clip; }
 ::-webkit-scrollbar { display: none; }
 .bg-striped { background: repeating-linear-gradient(-45deg, #202020 0 6px, #2a2a2a 6px 12px); }
 .bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }

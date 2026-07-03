@@ -5,7 +5,10 @@
     anilistToken, anilistUserName,
     malToken, malUserName,
   } from '$lib/trackers/config'
-  import { episodeLayout, type EpisodeLayout } from '$lib/settings/ui'
+  import {
+    episodeLayout, autoSkip, preferredAudioLang, preferredSubLang,
+    autoSelectSource, preferredQuality, type EpisodeLayout,
+  } from '$lib/settings/ui'
   import { heroMedia } from '$lib/stores/hero'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
@@ -129,6 +132,74 @@
         </button>
       {/each}
     </div>
+  </section>
+  <section class="mb-8 max-w-2xl">
+    <h2 class="mb-1 text-lg font-black">Playback</h2>
+    <p class="mb-3 text-sm text-muted-foreground">Languages, source selection, and openings/endings.</p>
+
+    <!-- Preferred track languages (mpv auto-selects these) -->
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">Audio language</span>
+        <select data-focusable bind:value={$preferredAudioLang} class="rounded-md bg-input px-3 py-2 text-sm">
+          <option value="jpn">Japanese</option>
+          <option value="eng">English</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">Subtitle language</span>
+        <select data-focusable bind:value={$preferredSubLang} class="rounded-md bg-input px-3 py-2 text-sm">
+          <option value="eng">English</option>
+          <option value="jpn">Japanese</option>
+          <option value="none">Off</option>
+        </select>
+      </label>
+    </div>
+    <p class="mt-1 text-xs text-muted-foreground">The player auto-selects these tracks when the file has them.</p>
+
+    <!-- Auto-select source -->
+    <button
+      data-focusable
+      onclick={() => ($autoSelectSource = !$autoSelectSource)}
+      aria-pressed={$autoSelectSource}
+      class="mt-4 flex w-full items-center justify-between rounded-md border border-border p-3 text-left transition-colors hover:bg-secondary"
+    >
+      <div>
+        <div class="font-bold">Auto-select best source</div>
+        <p class="mt-1 text-xs text-muted-foreground">Skip the source picker and play the best match for your preferred quality.</p>
+      </div>
+      <span class="relative ml-4 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {$autoSelectSource ? 'bg-primary' : 'bg-input'}">
+        <span class="inline-block h-5 w-5 transform rounded-full bg-white transition-transform {$autoSelectSource ? 'translate-x-5' : 'translate-x-0.5'}"></span>
+      </span>
+    </button>
+    {#if $autoSelectSource}
+      <label class="mt-3 flex flex-col gap-1">
+        <span class="text-sm font-bold">Preferred quality</span>
+        <select data-focusable bind:value={$preferredQuality} class="rounded-md bg-input px-3 py-2 text-sm">
+          <option value="2160">4K</option>
+          <option value="1080">1080p</option>
+          <option value="720">720p</option>
+          <option value="480">480p</option>
+          <option value="any">Any (highest available)</option>
+        </select>
+      </label>
+    {/if}
+
+    <!-- Auto-skip OP/ED -->
+    <button
+      data-focusable
+      onclick={() => ($autoSkip = !$autoSkip)}
+      aria-pressed={$autoSkip}
+      class="mt-4 flex w-full items-center justify-between rounded-md border border-border p-3 text-left transition-colors hover:bg-secondary"
+    >
+      <div>
+        <div class="font-bold">Auto-skip openings &amp; endings</div>
+        <p class="mt-1 text-xs text-muted-foreground">Automatically skip OP/ED/recap segments (AniSkip). Off shows a manual Skip button instead.</p>
+      </div>
+      <span class="relative ml-4 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {$autoSkip ? 'bg-primary' : 'bg-input'}">
+        <span class="inline-block h-5 w-5 transform rounded-full bg-white transition-transform {$autoSkip ? 'translate-x-5' : 'translate-x-0.5'}"></span>
+      </span>
+    </button>
   </section>
   <section class="max-w-2xl">
     <h2 class="mb-1 text-lg font-black">Sources</h2>

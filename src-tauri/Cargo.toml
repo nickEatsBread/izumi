@@ -26,3 +26,15 @@ libmpv2 = "6.0.0"
 tauri-plugin-http = "2.5.9"
 tokio = { version = "1", features = ["time"] }
 
+# Raw Win32 for true borderless fullscreen + mpv-child input passthrough, and the
+# WebView2 COM call to make the webview background transparent (Stremio's model:
+# opaque window + transparent webview). windows 0.61 + webview2-com 0.38 match
+# Tauri 2.11's own versions so the `with_webview` controller interface unifies.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_WindowsAndMessaging",
+] }
+webview2-com = "0.38"
+

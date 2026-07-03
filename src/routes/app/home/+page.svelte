@@ -4,9 +4,10 @@
   import { PAGE_QUERY, homeSections } from '$lib/anilist/queries'
   import HomeRow from '$lib/components/cards/HomeRow.svelte'
   import ListRow from '$lib/components/cards/ListRow.svelte'
+  import MalListRow from '$lib/components/cards/MalListRow.svelte'
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
-  import { anilistUserName } from '$lib/trackers/config'
+  import { anilistUserName, malToken } from '$lib/trackers/config'
   import type { Media } from '$lib/anilist/types'
 
   const client = getContextClient()
@@ -41,6 +42,12 @@
       <ListRow title="Continue Watching" userName={listUser} status="CURRENT" />
       <ListRow title="Your List" userName={listUser} status="PLANNING" />
     {/key}
+  {/if}
+  <!-- MAL-sourced rows for MAL-primary users (auto-hide when empty, so they don't
+       duplicate the AniList rows for single-tracker users). -->
+  {#if $malToken}
+    <MalListRow title="Continue Watching" status="watching" />
+    <MalListRow title="Your List" status="plan_to_watch" />
   {/if}
 
   {#each sections as s (s.key)}

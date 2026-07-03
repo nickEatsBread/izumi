@@ -1,4 +1,5 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { get } from 'svelte/store'
 import { malToken, malRefresh, malClientId, malUserName } from './config'
 import { captureLogin, redirectUri } from './oauth'
 
@@ -25,3 +26,46 @@ export async function connectMal() {
   malUserName.set(w.name ?? 'MAL user')
 }
 export function disconnectMal() { malToken.set(null); malRefresh.set(null); malUserName.set('') }
+
+// MAL access tokens expire ~hourly. Exchange the stored refresh token for a new
+// access token (and rotate the refresh token). Returns the new access token, or
+// null if there's no refresh token / it's been revoked.
+export async function refreshMal(): Promise<string | null> {
+  const rt = get(malRefresh)
+  if (!rt || !malClientId) return null
+  try {
+    const res = await httpFetch('https://myanimelist.net/v1/oauth2/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: malClientId, grant_type: 'refresh_token', refresh_token: rt }).toString(),
+    })
+    if (!res.ok) return null
+    const json = await res.json() as { access_token?: string; refresh_token?: string }
+    if (!json.access_token) return null
+    malToken.set(json.access_token)
+    if (json.refresh_token) malRefresh.set(json.refresh_token)
+    return json.access_token
+  }
+  catch { return null }
+}
+
+// Authorized MAL request that transparently refreshes the access token once on a
+// 401 and retries. Returns null when MAL isn't connected. Use for every
+// user-scoped MAL v2 call so hourly token expiry doesn't silently break sync.
+export async function malFetch(
+  input: string,
+  init: Parameters<typeof httpFetch>[1] = {},
+): Promise<Response | null> {
+  const token = get(malToken)
+  if (!token) return null
+  const withAuth = (t: string) => ({
+    ...init,
+    headers: { ...(init?.headers as Record<string, string> ?? {}), Authorization: `Bearer ${t}` },
+  })
+  let r = await httpFetch(input, withAuth(token))
+  if (r.status === 401) {
+    const nt = await refreshMal()
+    if (!nt) return r
+    r = await httpFetch(input, withAuth(nt))
+  }
+  return r
+}

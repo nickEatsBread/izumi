@@ -12,7 +12,7 @@
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
-  import { setStatus, toggleFavourite } from '$lib/trackers'
+  import { setStatus, toggleFavourite, getMalProgress } from '$lib/trackers'
   import Heart from 'lucide-svelte/icons/heart'
   import BookmarkPlus from 'lucide-svelte/icons/bookmark-plus'
   import Share2 from 'lucide-svelte/icons/share-2'
@@ -24,6 +24,25 @@
   const client = getContextClient()
   const id = Number(page.params.id)
   const store = queryStore<{ Media: Media }>({ client, query: MEDIA_BY_ID, variables: { id } })
+
+  // MAL read-back: pull the viewer's watched-episode count from MAL and merge it
+  // into the AniList media, so progress shows even when the user tracks on MAL
+  // (AniList's mediaListEntry is null/0 then). Take whichever tracker is further
+  // along. `media` is what the whole page renders — badge, resume, episode marks.
+  let malEntry = $state<{ progress: number; status: string } | null>(null)
+  $effect(() => {
+    const base = $store.data?.Media
+    malEntry = null
+    if (base?.idMal) getMalProgress(base.idMal).then((e) => (malEntry = e))
+  })
+  const media = $derived.by(() => {
+    const base = $store.data?.Media
+    if (!base) return base
+    const malP = malEntry?.progress ?? 0
+    if (malP <= (base.mediaListEntry?.progress ?? 0)) return base
+    return { ...base, mediaListEntry: { progress: malP, status: base.mediaListEntry?.status ?? malEntry?.status } }
+  })
+
   let active = $state('Episodes')
   let heroPlay = $state<PlayState>({ status: 'idle' })
 
@@ -78,8 +97,8 @@
   <div class="h-[42vh] w-full animate-pulse bg-muted"></div>
 {:else if $store.error}
   <div class="p-8 text-muted-foreground">Failed to load: {$store.error.message}</div>
-{:else if $store.data?.Media}
-  {@const m = $store.data.Media}
+{:else if media}
+  {@const m = media}
   {@const isFav = fav ?? m.isFavourite ?? false}
   {@const trackerConnected = !!($anilistToken || $malToken)}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
