@@ -46,6 +46,24 @@ jobs:
       - name: Build AppImage (release + devtools, no updater signing)
         run: npm run tauri build -- --features devtools --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
+      # linuxdeploy bundles host mesa/EGL/GBM/wayland helper libs that clash with the
+      # Steam Deck's newer Mesa → EGL_BAD_PARAMETER / white screen. Strip them so the
+      # app uses the Deck's own graphics stack, then repackage.
+      - name: Strip bundled graphics libs + repackage
+        run: |
+          cd src-tauri/target/release/bundle/appimage
+          APP=$(ls *.AppImage | head -1)
+          echo "repackaging $APP"
+          ./"$APP" --appimage-extract >/dev/null
+          L=squashfs-root/usr/lib
+          rm -f "$L"/libEGL* "$L"/libGL* "$L"/libGLX* "$L"/libOpenGL* "$L"/libGLdispatch* \
+                "$L"/libgbm* "$L"/libglapi* "$L"/libdrm* "$L"/libwayland* 2>/dev/null || true
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool squashfs-root "$APP"
+          rm -rf squashfs-root
+          echo "done: $(ls -la "$APP")"
+
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
