@@ -69,16 +69,12 @@ jobs:
             args: ''
           - platform: windows-latest
             args: '--config {"bundle":{"resources":["libmpv-2.dll"]}}'
-          - platform: macos-latest
-            args: '--target universal-apple-darwin --config {"bundle":{"macOS":{"frameworks":["libmpv.2.dylib"]}}}'
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -103,19 +99,13 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      - name: libmpv (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          brew install mpv
-          echo "LIBRARY_PATH=$(brew --prefix)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
-          # Stage the dylib for bundle.macOS.frameworks (tauri.macos.conf.json). NOTE:
-          # brew's dylib is single-arch — a universal build likely needs a lipo'd fat
-          # dylib, and the .app may need an install_name_tool rpath fix. Verify it runs.
-          cp "$(brew --prefix)/lib/libmpv.2.dylib" src-tauri/libmpv.2.dylib || true
+      # Windows: libmpv2-sys links `-l mpv` (needs mpv.lib) and the app needs
+      # libmpv-2.dll at runtime. Set up MSVC (lib.exe), fetch the latest libmpv dev
+      # build from shinchiro, make mpv.lib from the def, put it on LIB, stage the DLL.
+      - name: Setup MSVC (lib.exe)
+        if: matrix.platform == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
 
-      # Windows links mpv.lib and needs libmpv-2.dll at runtime. Mirror your proven
-      # local recipe (windows-build-env): download a libmpv dev build, generate mpv.lib
-      # from mpv.def, put it on LIB, and bundle libmpv-2.dll beside the exe.
       - name: libmpv (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
@@ -123,15 +113,21 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $dir = "$env:RUNNER_TEMP\libmpv"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          # TODO: pin to the exact libmpv dev build your local setup uses.
-          $asset = 'https://downloads.sourceforge.net/project/mpv-player-windows/libmpv/mpv-dev-x86_64-20240128-git-d9ff204.7z'
-          Invoke-WebRequest -Uri $asset -OutFile "$dir\libmpv.7z"
-          & 7z x "$dir\libmpv.7z" -o"$dir" -y
-          if (Test-Path "$dir\mpv.def") {
-            lib /def:"$dir\mpv.def" /name:libmpv-2.dll /out:"$dir\mpv.lib" /machine:x64
-          }
-          echo "LIB=$dir;$env:LIB" >> $env:GITHUB_ENV
-          Copy-Item "$dir\libmpv-2.dll" "$env:GITHUB_WORKSPACE\src-tauri\libmpv-2.dll" -Force
+          $hdr = @{ 'User-Agent' = 'izumi-ci' }
+          $rel = Invoke-RestMethod 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' -Headers $hdr
+          $asset = $rel.assets | Where-Object { $_.name -like 'mpv-dev-x86_64-2*' -and $_.name -notlike '*v3*' } | Select-Object -First 1
+          if (-not $asset) { throw 'no mpv-dev-x86_64 asset in latest release' }
+          Write-Host "libmpv dev build: $($asset.name)"
+          Invoke-WebRequest $asset.browser_download_url -OutFile "$dir\libmpv.7z" -Headers $hdr
+          7z x "$dir\libmpv.7z" -o"$dir" -y
+          $def = (Get-ChildItem -Path $dir -Recurse -Filter 'mpv.def'      | Select-Object -First 1).FullName
+          $dll = (Get-ChildItem -Path $dir -Recurse -Filter 'libmpv-2.dll' | Select-Object -First 1).FullName
+          if (-not $def) { throw 'mpv.def not found in archive' }
+          if (-not $dll) { throw 'libmpv-2.dll not found in archive' }
+          $libdir = Split-Path $def
+          lib /def:"$def" /name:libmpv-2.dll /out:"$libdir\mpv.lib" /machine:x64
+          echo "LIB=$libdir;$env:LIB" >> $env:GITHUB_ENV
+          Copy-Item "$dll" "$env:GITHUB_WORKSPACE\src-tauri\libmpv-2.dll" -Force
 
       - name: Install JS deps
         run: npm ci

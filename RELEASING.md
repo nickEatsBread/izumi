@@ -90,7 +90,7 @@ from triggering workflows, so without the PAT the tag is created but you re-run
    git tag v0.3.0-beta.1 && git push origin v0.3.0-beta.1
    ```
 3. CI (`release.yml`) creates the release (deleting the old rolling `beta` first for
-   betas), builds Windows / Linux (AppImage) / macOS (universal), uploads signed
+   betas), builds Windows / Linux (AppImage), uploads signed
    artifacts + a merged `latest.json`, then publishes it.
 
 ## How the app updates
