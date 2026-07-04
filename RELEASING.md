@@ -63,6 +63,18 @@ ignores them; the Worker returns `403` if they're missing/wrong.
 
 ## Cutting a release
 
+**Automated (recommended).** Actions tab → **version bump** → *Run workflow* → pick
+`patch` / `minor` / `major` / `beta`. It bumps every manifest, commits, tags, and pushes;
+the tag triggers `release.yml`.
+
+One-time setup so the tag auto-triggers the build: create a PAT **as nickEatsBread**
+(classic token with `repo` + `workflow`, or fine-grained with contents:write + workflow)
+and add it as the repo secret **`RELEASE_PAT`**. GitHub blocks `GITHUB_TOKEN`-pushed tags
+from triggering workflows, so without the PAT the tag is created but you re-run
+`release.yml` manually.
+
+### Manual
+
 1. Bump the version in **all three** (keep in sync):
    - `src-tauri/tauri.conf.json` → `version`
    - `package.json` → `version`
