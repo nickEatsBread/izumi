@@ -65,4 +65,7 @@ glib = "0.18"
 epoxy = "0.1"
 gl = "0.14"
 webkit2gtk = { version = "2.0", features = ["v2_40"] }
+# mpv render update-callback (render thread) -> main context redraw, via an async
+# channel (glib's MainContext::channel is deprecated).
+async-channel = "2"
 

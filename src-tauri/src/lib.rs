@@ -53,6 +53,8 @@ async fn player_embed(
     };
     #[cfg(not(windows))]
     let wid: i64 = 0;
+    #[cfg(not(windows))]
+    let _ = &main;
     player.play_embedded(&url, wid, app.clone(), start_seconds, alang, slang)?;
     #[cfg(windows)]
     resize_mpv_child(main_raw);
@@ -486,6 +488,8 @@ fn player_diag(app: AppHandle, player: tauri::State<'_, player::PlayerHandle>) -
             }
         }
     }
+    #[cfg(not(windows))]
+    let _ = &app;
     serde_json::to_string(&m).map_err(|e| e.to_string())
 }
 

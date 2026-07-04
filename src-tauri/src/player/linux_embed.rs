@@ -100,15 +100,15 @@ fn setup(
     vbox.pack_start(&overlay, true, true, 0);
     overlay.show_all();
 
-    // Redraw signalling: mpv's update callback (render thread) -> glib channel -> main
-    // thread -> queue_render. glib's channel Sender is Send+Clone; the receiver runs on
-    // the main context.
-    let (tx, rx) = glib::MainContext::channel::<()>(glib::Priority::DEFAULT);
+    // Redraw signalling: mpv's update callback (render thread) -> async channel ->
+    // main-context task -> queue_render. (glib's MainContext::channel is deprecated.)
+    let (tx, rx) = async_channel::unbounded::<()>();
     {
         let ga = glarea.clone();
-        rx.attach(None, move |_| {
-            ga.queue_render();
-            glib::ControlFlow::Continue
+        glib::spawn_future_local(async move {
+            while rx.recv().await.is_ok() {
+                ga.queue_render();
+            }
         });
     }
 
@@ -148,7 +148,7 @@ fn setup(
     Ok(())
 }
 
-fn make_mpv(url: &str, tx: glib::Sender<()>) -> Result<EmbedState, String> {
+fn make_mpv(url: &str, tx: async_channel::Sender<()>) -> Result<EmbedState, String> {
     // vo=libmpv is REQUIRED for the render API.
     let mpv = Mpv::with_initializer(|init| {
         init.set_property("vo", "libmpv")?;
@@ -171,7 +171,7 @@ fn make_mpv(url: &str, tx: glib::Sender<()>) -> Result<EmbedState, String> {
 
     // Wake the GLArea when a new frame is ready. MUST NOT call mpv from in here.
     render.set_update_callback(move || {
-        let _ = tx.send(());
+        let _ = tx.send_blocking(());
     });
 
     mpv.command("loadfile", &[url, "replace"]).map_err(|e| e.to_string())?;
