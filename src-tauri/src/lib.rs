@@ -618,8 +618,12 @@ fn player_play_embedded(
     window: tauri::WebviewWindow,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
-    let hwnd = window.hwnd().map_err(|e| e.to_string())?;
-    let wid = hwnd.0 as isize as i64;
+    // Windows: embed mpv into the host window's HWND. Other platforms aren't ported
+    // yet, so wid=0 lets mpv open its own window (mirrors player_play_embedded_pos).
+    #[cfg(windows)]
+    let wid: i64 = window.hwnd().map_err(|e| e.to_string())?.0 as isize as i64;
+    #[cfg(not(windows))]
+    let wid: i64 = { let _ = &window; 0 };
     player.play_embedded(&url, wid, app, start_seconds, None, None)
 }
 
