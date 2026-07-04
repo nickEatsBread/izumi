@@ -18,6 +18,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# Enable the webview inspector in RELEASE builds (used by the build-linux test
+# workflow via `--features devtools`; NOT enabled in the shipped release).
+devtools = ["tauri/devtools"]
+
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"

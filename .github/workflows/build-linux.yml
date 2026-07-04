@@ -40,15 +40,16 @@ jobs:
       - name: Install JS deps
         run: npm ci
 
-      # --debug so the AppImage has devtools (to invoke the spike command); AppImage
-      # only (skip deb/rpm) and no updater signing → faster test builds.
-      - name: Build AppImage (debug, no updater signing)
-        run: npm run tauri build -- --debug --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      # RELEASE build (small binary → fast AppImage bundling; a --debug build is huge
+      # and makes linuxdeploy crawl). devtools via the Cargo feature so the inspector
+      # still works to invoke the spike. AppImage only, no updater signing.
+      - name: Build AppImage (release + devtools, no updater signing)
+        run: npm run tauri build -- --features devtools --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: izumi-linux-appimage
           path: |
-            src-tauri/target/debug/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
