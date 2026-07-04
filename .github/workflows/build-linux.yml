@@ -40,9 +40,10 @@ jobs:
       - name: Install JS deps
         run: npm ci
 
-      # --debug so the AppImage has devtools (to invoke the spike command); no signing.
+      # --debug so the AppImage has devtools (to invoke the spike command); AppImage
+      # only (skip deb/rpm) and no updater signing → faster test builds.
       - name: Build AppImage (debug, no updater signing)
-        run: npm run tauri build -- --debug --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: npm run tauri build -- --debug --bundles appimage --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
