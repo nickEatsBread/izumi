@@ -54,3 +54,15 @@ windows = { version = "0.61", features = [
 ] }
 webview2-com = "0.38"
 
+# Linux: embed mpv via its OpenGL render API into a GtkGLArea under the transparent
+# webview (gamescope/Wayland-safe, unlike --wid). gtk3/gdk/glib match Tauri 2.11's
+# webkitgtk stack; epoxy provides GL proc addresses (libmpv render get_proc_address);
+# the `gl` crate is used only to read the GLArea's bound framebuffer id.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", features = ["v3_24"] }
+gdk = "0.18"
+glib = "0.18"
+epoxy = "0.1"
+gl = "0.14"
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
+

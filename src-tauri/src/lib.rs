@@ -627,6 +627,22 @@ fn player_play_embedded(
     player.play_embedded(&url, wid, app, start_seconds, None, None)
 }
 
+/// Linux-only phase-1 spike: embed mpv into the app window via GtkGLArea + the OpenGL
+/// render API (gamescope/Wayland-safe). Errors on other platforms. Call from the
+/// frontend on Linux to test whether video renders inside the window.
+#[tauri::command]
+fn player_embed_linux(window: tauri::WebviewWindow, url: String) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        player::linux_embed::embed_and_play(&window, &url)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (window, url);
+        Err("linux-only".into())
+    }
+}
+
 /// Open the provider's auth URL in a dedicated in-app webview window, then poll
 /// that window's URL until it reaches `redirect_prefix`. Returns the full
 /// redirect URL (query + fragment), so callers can read `?code=` or
@@ -786,6 +802,7 @@ pub fn run() {
             greet,
             player_play,
             player_play_embedded,
+            player_embed_linux,
             player_embed,
             close_player,
             spawn_external_player,

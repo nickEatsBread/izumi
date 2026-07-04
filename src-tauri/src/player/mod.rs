@@ -24,6 +24,9 @@
 //! [`spawn_event_loop`].
 
 mod headless;
+// Linux mpv-in-GtkGLArea embed (phase 1 spike; see linux_embed.rs).
+#[cfg(target_os = "linux")]
+pub mod linux_embed;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
