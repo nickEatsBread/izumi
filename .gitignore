@@ -15,3 +15,7 @@ docs/
 *.key
 izumi_updater.key
 .env.local
+
+# Native libmpv binaries staged into src-tauri/ at build time (bundled by CI, not committed)
+src-tauri/*.dll
+src-tauri/*.dylib
