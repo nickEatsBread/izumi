@@ -16,6 +16,9 @@ async function rd(method: string, path: string, key: string, body?: string): Pro
     headers: { Authorization: `Bearer ${key}`, ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     body,
   })
+  // 451 = Real-Debrid has this exact torrent/infohash blocked for legal reasons
+  // (DMCA). It is per-file, not your account/IP — a different release usually works.
+  if (status === 451) throw new Error('Real-Debrid blocked this release (DMCA/legal) — pick a different source.')
   if (!ok) throw new Error(`Real-Debrid request failed (${status}).`)
   return json
 }
