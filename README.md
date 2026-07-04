@@ -1,12 +1,5 @@
 <p align="center">
-  <img src="static/brand/izumi-mark-color.svg" width="112" alt="izumi" />
-</p>
-
-<h1 align="center">izumi</h1>
-
-<p align="center">
-  A controller-first anime client — native mpv playback,
-  Stremio-addon support, and AniList/MAL tracking.
+  <img src="https://socialify.git.ci/nickEatsBread/izumi/image?description=1&descriptionEditable=A%20controller-first%20anime%20client%20%E2%80%94%20native%20mpv%20playback%2C%20Stremio-addon%20support%2C%20and%20AniList%2FMAL%20tracking.&font=Jost&logo=https%3A%2F%2Fraw.githubusercontent.com%2FnickEatsBread%2Fizumi%2Fmain%2Fbrand%2Fpng%2Fizumi-mark-color-512.png&name=1&owner=1&pattern=Plus&theme=Light" alt="izumi" width="880" />
 </p>
 
 ---
