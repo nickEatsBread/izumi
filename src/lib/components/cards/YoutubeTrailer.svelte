@@ -56,7 +56,7 @@
     title="Trailer"
     onload={() => (poll = setInterval(handshake, 100))}
     allow="autoplay"
-    credentialless
+    {...{ credentialless: true } as Record<string, unknown>}
     {src}
     class="pointer-events-none absolute left-0 top-1/2 h-[calc(100%+200px)] w-full -translate-y-1/2 border-0 transition-opacity duration-500 {playing ? 'opacity-100' : 'opacity-0'}"
   ></iframe>
