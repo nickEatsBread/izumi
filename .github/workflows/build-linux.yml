@@ -1,0 +1,52 @@
+name: build-linux
+
+# Manual: build a Linux AppImage as a downloadable artifact (no release, no signing) so
+# the mpv-embed spike can be tested on the Steam Deck. Actions tab -> build-linux -> Run.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: libmpv + GTK + Tauri deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libmpv-dev \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libepoxy-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Build AppImage (no updater signing)
+        run: npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: izumi-linux-appimage
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
