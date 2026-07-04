@@ -1,22 +1,37 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
-  import { banner, title } from '$lib/anilist/media'
+  import { banner, title, format, status, season } from '$lib/anilist/media'
+  import Play from 'lucide-svelte/icons/play'
+  import Info from 'lucide-svelte/icons/info'
+  import Heart from 'lucide-svelte/icons/heart'
+
+  // Bottom-left content column + clean linear scrims, polished with:
+  // coverImage.color accent, rating-tinted score, blur-in image, rich badge row,
+  // genre pills, and a Watch/Details/Favorite trio. Detail pages pass one media
+  // with showOverlay=false (backdrop only).
   let {
     medias,
     onplay,
+    oninfo,
+    onfav,
     showOverlay = true,
-  }: { medias: Media[]; onplay?: (m: Media) => void; showOverlay?: boolean } = $props()
+  }: {
+    medias: Media[]
+    onplay?: (m: Media) => void
+    oninfo?: (m: Media) => void
+    onfav?: (m: Media) => void
+    showOverlay?: boolean
+  } = $props()
 
   let i = $state(0)
   let progress = $state(0)
   let scrolled = $state(false)
   let start: number | null = null
-  const DURATION = 8000
+  const DURATION = 15000 // a 15s cadence
 
   function go(n: number) { i = n; progress = 0; start = null }
 
-  // Rotate + track scroll only when there's an overlay (Home). Detail passes one
-  // media with showOverlay=false (banner backdrop only).
+  // rAF auto-advance + scroll fade, only when there's an overlay (Home).
   $effect(() => {
     const n = medias.length
     if (!n || !showOverlay) return
@@ -34,35 +49,85 @@
   })
 
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
+  // Accent: tint everything off the cover's dominant color; theme fallback.
+  const accent = $derived(current?.coverImage?.color || 'hsl(346.6 79.12% 51.18%)')
+  const scoreColor = (s?: number) =>
+    s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
+  const cleanDesc = (d?: string) => (d ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
 </script>
 
 {#if current}
-  <div class="relative mb-6 h-[55vh] transition-opacity duration-300 {scrolled ? 'opacity-40' : 'opacity-100'}">
-    <!-- Full-bleed banner: breaks out of main's left margin (behind the translucent
-         sidebar) and up under the frameless titlebar. -->
+  <div
+    class="relative mb-6 h-[55vh] transition-opacity duration-500 {scrolled ? 'opacity-40' : 'opacity-100'}"
+    style="--accent:{accent}"
+  >
+    <!-- Full-bleed banner: breaks out of main's left margin (behind the sidebar)
+         and up under the frameless titlebar. Keyed for a crossfade. -->
     <div class="absolute -left-14 -top-8 h-[calc(100%+2rem)] w-screen overflow-hidden">
       {#key current.id}
-        <img src={banner(current)} alt="" class="absolute inset-0 h-full w-full animate-[fade_0.6s_ease] object-cover" style="object-position:center 20%" />
+        <img src={banner(current)} alt=""
+             class="absolute inset-0 h-full w-full animate-[heroIn_0.6s_ease] object-cover"
+             style="object-position:center 20%" />
       {/key}
+      <!-- Dual linear scrims: bright top-right, dark bottom-left. -->
       <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
-      <div class="absolute inset-y-0 left-0 w-40 bg-gradient-to-r from-background/60 to-transparent"></div>
+      <div class="absolute inset-y-0 left-0 w-[45%] bg-gradient-to-r from-background/85 via-background/40 to-transparent"></div>
     </div>
 
     {#if showOverlay}
-      <div class="absolute inset-x-0 bottom-0 px-8 pb-6">
-        <div class="max-w-xl">
-          <h1 class="text-3xl font-black drop-shadow-lg">{title(current)}</h1>
-          <div class="mt-3 flex gap-2">
-            <button data-focusable onclick={() => onplay?.(current)} class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Play</button>
-            <button data-focusable onclick={() => onplay?.(current)} class="rounded-md bg-secondary px-4 py-2 font-bold">Info</button>
+      <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-8 pb-8">
+        <div class="max-w-2xl">
+          <h1 class="truncate text-4xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
+
+          <!-- Metadata row: bullet-separators + format/status/season/score -->
+          <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90
+                      [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
+            {#if format(current)}<span>{format(current)}</span>{/if}
+            {#if current.episodes && current.episodes !== 1}<span>{current.episodes} Episodes</span>{/if}
+            {#if status(current)}<span>{status(current)}</span>{/if}
+            {#if season(current)}<span>{season(current)}</span>{/if}
+            {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}%</span>{/if}
+          </div>
+
+          {#if current.description}
+            <p class="mt-3 line-clamp-3 max-w-xl text-sm text-white/70 drop-shadow">{cleanDesc(current.description)}</p>
+          {/if}
+
+          {#if current.genres?.length}
+            <div class="mt-3 flex flex-wrap gap-2">
+              {#each current.genres.slice(0, 4) as g}
+                <span class="rounded-full bg-white/10 px-3 py-0.5 text-xs font-bold" style="color:var(--accent)">{g}</span>
+              {/each}
+            </div>
+          {/if}
+
+          <div class="mt-4 flex items-center gap-2">
+            <button data-focusable onclick={() => onplay?.(current)}
+                    class="flex items-center gap-2 rounded-md px-5 py-2 font-bold text-black shadow-lg transition-transform hover:scale-105"
+                    style="background:var(--accent)">
+              <Play size={18} fill="currentColor" /> Watch Now
+            </button>
+            <button data-focusable onclick={() => oninfo?.(current)}
+                    class="flex items-center gap-2 rounded-md bg-white/10 px-4 py-2 font-bold text-white backdrop-blur transition-colors hover:bg-white/20">
+              <Info size={18} /> Details
+            </button>
+            {#if onfav}
+              <button data-focusable onclick={() => onfav?.(current)} aria-label="Favorite"
+                      class="rounded-md bg-white/10 p-2.5 text-white backdrop-blur transition-colors hover:bg-white/20">
+                <Heart size={18} fill={current.isFavourite ? 'currentColor' : 'transparent'}
+                       style={current.isFavourite ? 'color:var(--accent)' : ''} />
+              </button>
+            {/if}
           </div>
         </div>
+
         {#if medias.length > 1}
-          <div class="absolute bottom-6 right-8 flex gap-1.5">
+          <div class="absolute bottom-8 right-8 flex gap-1.5">
             {#each medias as _, idx}
               <button data-focusable onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
-                      class="h-1 w-8 overflow-hidden rounded-full bg-white/25">
-                <div class="h-full bg-white" style={`width:${idx < i ? 100 : idx === i ? progress * 100 : 0}%`}></div>
+                      class="h-1 overflow-hidden rounded-full bg-white/25 transition-all duration-700"
+                      style="width:{idx === i ? '3rem' : '1.5rem'}">
+                <div class="h-full" style="width:{idx < i ? 100 : idx === i ? progress * 100 : 0}%;background:var(--accent)"></div>
               </button>
             {/each}
           </div>

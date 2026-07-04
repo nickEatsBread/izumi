@@ -1,6 +1,6 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { get } from 'svelte/store'
-import { malToken, malRefresh, malClientId, malUserName } from './config'
+import { malToken, malRefresh, malClientId, malUserName, malUserAvatar } from './config'
 import { captureLogin, redirectUri } from './oauth'
 
 function verifier(): string {
@@ -21,11 +21,21 @@ export async function connectMal() {
   const json = await res.json() as { access_token?: string; refresh_token?: string }
   if (!json.access_token) throw new Error('MAL token exchange failed.')
   malToken.set(json.access_token); malRefresh.set(json.refresh_token ?? null)
-  const who = await httpFetch('https://api.myanimelist.net/v2/users/@me?fields=name', { headers: { Authorization: `Bearer ${json.access_token}` } })
-  const w = await who.json() as { name?: string }
-  malUserName.set(w.name ?? 'MAL user')
+  await refreshMalViewer()
+  if (!get(malUserName)) malUserName.set('MAL user')
 }
-export function disconnectMal() { malToken.set(null); malRefresh.set(null); malUserName.set('') }
+
+// Pull the MAL viewer's name + profile picture and persist them, so the sidebar
+// shows the real avatar. Safe no-op when MAL isn't connected (malFetch returns null).
+export async function refreshMalViewer(): Promise<void> {
+  const who = await malFetch('https://api.myanimelist.net/v2/users/@me?fields=name,picture')
+  if (!who || !who.ok) return
+  const w = await who.json() as { name?: string; picture?: string }
+  if (w.name) malUserName.set(w.name)
+  malUserAvatar.set(w.picture ?? '')
+}
+
+export function disconnectMal() { malToken.set(null); malRefresh.set(null); malUserName.set(''); malUserAvatar.set('') }
 
 // MAL access tokens expire ~hourly. Exchange the stored refresh token for a new
 // access token (and rotate the refresh token). Returns the new access token, or

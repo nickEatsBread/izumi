@@ -1,5 +1,7 @@
 import { gql } from '@urql/core'
+import { get } from 'svelte/store'
 import { MEDIA_FIELDS } from './fragments'
+import { showAdult } from '$lib/settings/ui'
 
 // Detail page only: pull the viewer's list entry (progress/status) + favourite
 // flag. Kept off the shared MediaFields fragment so browse/card queries don't
@@ -15,6 +17,8 @@ export const MEDIA_BY_ID = gql`
   }
   ${MEDIA_FIELDS}`
 
+// SFW variant (excludes adult). See queries.ts for why we need two variants
+// instead of an `isAdult` variable.
 export const SEARCH_QUERY = gql`
   query Search($page: Int = 1, $perPage: Int = 30, $search: String, $genre_in: [String], $season: MediaSeason, $seasonYear: Int, $format_in: [MediaFormat], $status_in: [MediaStatus], $sort: [MediaSort]) {
     Page(page: $page, perPage: $perPage) {
@@ -23,6 +27,23 @@ export const SEARCH_QUERY = gql`
     }
   }
   ${MEDIA_FIELDS}`
+
+// "Show 18+" variant — drops the isAdult argument so AniList returns both.
+const SEARCH_QUERY_ALL = gql`
+  query SearchAll($page: Int = 1, $perPage: Int = 30, $search: String, $genre_in: [String], $season: MediaSeason, $seasonYear: Int, $format_in: [MediaFormat], $status_in: [MediaStatus], $sort: [MediaSort]) {
+    Page(page: $page, perPage: $perPage) {
+      pageInfo { hasNextPage currentPage }
+      media(type: ANIME, search: $search, genre_in: $genre_in, season: $season, seasonYear: $seasonYear, format_in: $format_in, status_in: $status_in, sort: $sort) { ...MediaFields }
+    }
+  }
+  ${MEDIA_FIELDS}`
+
+/** Search query for the current adult setting. Evaluated at store-creation time. */
+export const searchQuery = () => (get(showAdult) ? SEARCH_QUERY_ALL : SEARCH_QUERY)
+
+/** The full, authoritative list of AniList genres (so the filter isn't a stale
+ *  hardcoded subset). Returns a plain string[]. */
+export const GENRE_COLLECTION = gql`query GenreCollection { GenreCollection }`
 
 export const SCHEDULE_QUERY = gql`
   query Schedule($start: Int!, $end: Int!, $page: Int = 1) {

@@ -8,13 +8,19 @@
   import { onMount } from 'svelte'
   import VolumeX from 'lucide-svelte/icons/volume-x'
   import Volume2 from 'lucide-svelte/icons/volume-2'
+  import { trailerMuted } from '$lib/stores/trailer'
   let { id }: { id: string } = $props()
 
   let frame: HTMLIFrameElement
   let playing = $state(false)
   let dead = $state(false)
-  let muted = $state(true)
   let poll: ReturnType<typeof setInterval> | undefined
+
+  // Apply the session-wide mute state to THIS trailer whenever it (or the shared
+  // state) changes — so unmuting one card carries to every trailer you hover next.
+  $effect(() => {
+    if (playing) send($trailerMuted ? 'mute' : 'unMute')
+  })
 
   // No `loop=1&playlist=` — that param injects the prev/next skip buttons. We
   // loop manually via the JS API on the ENDED event instead (see onMessage).
@@ -56,11 +62,11 @@
   ></iframe>
   {#if playing}
     <button
-      onclick={(e) => { e.stopPropagation(); muted = !muted; send(muted ? 'mute' : 'unMute') }}
+      onclick={(e) => { e.stopPropagation(); $trailerMuted = !$trailerMuted }}
       class="pointer-events-auto absolute right-1 top-1 z-10 rounded-md bg-black/50 p-1 text-white"
-      aria-label={muted ? 'Unmute' : 'Mute'}
+      aria-label={$trailerMuted ? 'Unmute' : 'Mute'}
     >
-      {#if muted}<VolumeX size={14} />{:else}<Volume2 size={14} />{/if}
+      {#if $trailerMuted}<VolumeX size={14} />{:else}<Volume2 size={14} />{/if}
     </button>
   {/if}
 {/if}

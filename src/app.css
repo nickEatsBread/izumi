@@ -26,6 +26,14 @@ body { overflow-x: clip; }
 @keyframes load-in { from { transform: translate3d(0,1.2rem,0) scale(0.95); opacity: 0; } to { transform: none; opacity: 1; } }
 .load-in { animation: load-in 0.3s ease both; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes heroIn { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: blur(0); } }
+/* Skeleton shimmer (swipe) for loading placeholders. */
+@keyframes skeleton-swipe { 100% { transform: translateX(100%); } }
+.skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); }
+.skeloader::before { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent); animation: skeleton-swipe 1.5s infinite; }
+/* Hover-preview card fade/scale-in (smooth crossfade between adjacent cards). */
+@keyframes preview-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+.preview-in { animation: preview-in 0.14s ease-out both; }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg); } 75% { transform: rotate(12deg); } }
 @keyframes bounce-sm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes swing { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-10deg); } 60% { transform: rotate(6deg); } }

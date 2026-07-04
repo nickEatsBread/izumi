@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { title, cover, season, format } from '$lib/anilist/media'
+  import { fade } from 'svelte/transition'
+  import { cubicOut } from 'svelte/easing'
   import PreviewCard from './PreviewCard.svelte'
   let { media }: { media: Media } = $props()
 
@@ -22,23 +24,33 @@
   // Hovercard bridge: opening cancels any pending close; leaving the card (or the
   // preview) schedules a short delayed close so the pointer can travel card→preview
   // without dismissing it. `keepOpen` (preview enter) cancels that pending close.
-  function open() { clearTimeout(closeT); place(); hovered = true }
-  function scheduleClose() { clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 120) }
+  // `suppressed` blocks opening for a beat after a carousel arrow is used, so
+  // clicking an arrow (which scrolls a card under the cursor) can't pop a preview.
+  let suppressed = false
+  function open() { if (suppressed) return; clearTimeout(closeT); place(); hovered = true }
+  function scheduleClose() { clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 60) }
   function keepOpen() { clearTimeout(closeT) }
 
-  // Any scroll (page or a carousel) dismisses the preview so it can't get stranded.
+  // Any scroll (page or a carousel) or a carousel-arrow interaction dismisses the
+  // preview so it can't get stranded / pop the card beneath the arrow.
   $effect(() => {
     const close = () => { if (hovered) hovered = false }
+    const onNav = () => { hovered = false; suppressed = true; setTimeout(() => (suppressed = false), 500) }
     window.addEventListener('scroll', close, true)
-    return () => { window.removeEventListener('scroll', close, true); clearTimeout(closeT) }
+    window.addEventListener('carousel-nav', onNav)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('carousel-nav', onNav)
+      clearTimeout(closeT)
+    }
   })
 </script>
 
 <div bind:this={el} class="w-[152px] shrink-0" onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
   <a href={`/app/anime/${media.id}`} data-focusable class="load-in group block w-[152px]">
     <div class="h-[228px] w-[152px] overflow-hidden rounded-md bg-muted">
-      <img src={cover(media)} alt={title(media)} loading="lazy"
-           class="h-full w-full object-cover transition group-hover:scale-105" />
+      <img src={cover(media)} alt={title(media)} decoding="async"
+           class="h-full w-full object-cover transition-transform duration-150 ease-out transform-gpu will-change-transform group-hover:scale-105" />
     </div>
     <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
       <span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{title(media)}
@@ -50,7 +62,8 @@
 </div>
 
 {#if hovered}
-  <div class="pointer-events-auto fixed z-50" style={`left:${pos.left}px;top:${pos.top}px`}
+  <div class="pointer-events-auto fixed z-50 will-change-[transform,opacity]" style={`left:${pos.left}px;top:${pos.top}px`}
+       in:fade={{ duration: 140, easing: cubicOut }} out:fade={{ duration: 120, easing: cubicOut }}
        onpointerenter={keepOpen} onpointerleave={scheduleClose} role="presentation">
     <PreviewCard {media} />
   </div>

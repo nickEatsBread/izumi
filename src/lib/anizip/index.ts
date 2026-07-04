@@ -1,6 +1,10 @@
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { phttp } from '$lib/net/http'
 import { get, set } from 'idb-keyval'
 import type { AniZipResponse, EpMeta } from './types'
+
+// AniZip episode titles use backticks in place of apostrophes ("I`m Luffy!") —
+// normalize to a real apostrophe.
+const cleanTitle = (t?: string) => t?.replace(/`/g, '’')
 
 /** Convert a raw AniZip response into a `{ episodeNumber -> EpMeta }` map,
  *  dropping non-numeric keys (specials like `S1`). */
@@ -11,9 +15,11 @@ export function parseEpisodes(res: AniZipResponse | undefined): Record<number, E
     if (!Number.isInteger(n)) continue
     out[n] = {
       image: e.image,
-      title: e.title?.en ?? e.title?.['x-jat'],
+      title: cleanTitle(e.title?.en ?? e.title?.['x-jat']),
       rating: e.rating ? Number(e.rating) : undefined,
       overview: e.overview ?? e.summary,
+      season: e.seasonNumber,
+      abs: e.absoluteEpisodeNumber,
     }
   }
   return out
@@ -30,7 +36,7 @@ export async function fetchAniZip(anilistId: number): Promise<AniZipResponse | u
   const cached = await get<AniZipResponse>(key(anilistId))
   if (cached) return cached
   try {
-    const r = await httpFetch(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
+    const r = await phttp(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
     if (!r.ok) return undefined
     const j = (await r.json()) as AniZipResponse
     await set(key(anilistId), j)
@@ -51,4 +57,16 @@ export async function getEpisodeMeta(anilistId: number): Promise<Record<number, 
 export async function getKitsuId(anilistId: number): Promise<number | undefined> {
   const res = await fetchAniZip(anilistId)
   return res?.mappings?.kitsu_id
+}
+
+/** Compact `{ episode -> { season, abs } }` map used by the stream season-verifier.
+ *  Torrentio numbers a Kitsu entry's episodes sequentially against TVDB and spills
+ *  into the next season once an episode exceeds the mapped season's length; pairing
+ *  the requested episode with its AniZip season/absolute number lets us de-rank any
+ *  returned file whose parsed season/number disagrees. Best-effort: `{}` on error. */
+export async function getEpisodeSeasonMap(anilistId: number): Promise<Record<number, { season?: number; abs?: number }>> {
+  const m = parseEpisodes(await fetchAniZip(anilistId))
+  const out: Record<number, { season?: number; abs?: number }> = {}
+  for (const [k, e] of Object.entries(m)) out[Number(k)] = { season: e.season, abs: e.abs }
+  return out
 }

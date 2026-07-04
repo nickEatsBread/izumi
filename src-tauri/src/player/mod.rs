@@ -23,19 +23,76 @@
 //! (`(pos, duration)`) and `player-ended` (on natural EOF only). See
 //! [`spawn_event_loop`].
 
-use std::sync::Mutex;
+mod headless;
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use libmpv2::{
     events::{Event, PropertyData},
     Format, Mpv,
 };
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+
+use headless::HeadlessMpv;
+
+/// The mpv/libmpv version string, for the About page.
+pub fn libmpv_version() -> String {
+    headless::version()
+}
+
+/// Scrub-preview thumbnail state for one stream. Tiles are produced ON DEMAND — when
+/// the seekbar asks for the tile under the cursor, the warm headless libmpv decoder
+/// ([`HeadlessMpv`]) seeks + software-renders THAT position and we cache it as
+/// `t_<i>.jpg`. Position-uniform: hovering the end of the bar is as fast as the start.
+/// `interval`/`frames` give the time↔index grid.
+struct TileJob {
+    dir: PathBuf,
+    interval: u32,
+    frames: u32,
+    url: String, // debrid stream url or local path (SECRET — never logged)
+}
+
+/// Reply to `player_thumb_tile`. `status` = `ready|pending|failed|none`; when `ready`,
+/// `data_url` is that ONE small tile (few KB) and `index` its grid position.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbTile {
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data_url: Option<String>,
+    index: u32,
+}
+
+/// Reply to `player_thumb_info` — the geometry + coverage the seekbar needs to map a
+/// hover time to a tile index and know when generation has finished.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbInfo {
+    status: String, // running | done | failed | none
+    interval: u32,
+    frames: u32,
+}
 
 /// Holds the live mpv instance behind a mutex so it is kept alive for the
 /// lifetime of the app. Dropping the `Mpv` destroys the mpv core and closes
 /// its window, so we must retain it in state.
 pub struct PlayerHandle {
     mpv: Mutex<Option<Mpv>>,
+    /// URL of what's currently playing.
+    current_url: Mutex<Option<String>>,
+    /// Scrub-preview thumbnail jobs, keyed by stream cache key (infoHash or
+    /// media-episode). Holds the url + geometry so tiles can be produced on demand.
+    sprite_jobs: Arc<Mutex<HashMap<String, TileJob>>>,
+    /// On-demand thumbnail grabs in flight — capped at 1 so a scrub can't spawn a
+    /// storm of renders / range requests that starve mpv playback. `Arc` so the
+    /// detached grab thread can reset it when it finishes.
+    thumb_inflight: Arc<std::sync::atomic::AtomicUsize>,
+    /// Warm scrub-thumbnail decoder — a second, headless libmpv core (software render).
+    /// The sole thumbnail engine (no ffmpeg). Lazily started on the first hover.
+    headless: Arc<HeadlessMpv>,
 }
 
 impl PlayerHandle {
@@ -43,6 +100,10 @@ impl PlayerHandle {
     pub fn new() -> Self {
         PlayerHandle {
             mpv: Mutex::new(None),
+            current_url: Mutex::new(None),
+            sprite_jobs: Arc::new(Mutex::new(HashMap::new())),
+            thumb_inflight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            headless: Arc::new(HeadlessMpv::new()),
         }
     }
 
@@ -104,6 +165,9 @@ impl PlayerHandle {
         alang: Option<String>,
         slang: Option<String>,
     ) -> Result<(), String> {
+        // Remember the URL — the next hover renders fresh frames against the new file.
+        *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
+
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
 
         // If we already have an mpv core, just queue the new file into its
@@ -142,7 +206,89 @@ impl PlayerHandle {
             let _ = mpv.command("quit", &[]);
         }
         *guard = None;
+        // Drop the current url and tear down the headless thumbnail decoder.
+        *self.current_url.lock().map_err(|e| e.to_string())? = None;
+        self.headless.stop();
         Ok(())
+    }
+
+    /// Register a scrub-preview thumbnail job for the current stream, keyed by `key`
+    /// (infoHash or media-episode). `duration` (seconds) comes from mpv so we don't
+    /// re-probe. Tiles are produced ON DEMAND in [`thumb_tile`] by the headless decoder;
+    /// this just records the url + the time↔index grid. `cache_root` is `<app-cache>/thumbs`.
+    pub fn start_sprite(&self, key: String, duration: f64, cache_root: PathBuf) {
+        if key.is_empty() || duration <= 1.0 {
+            return;
+        }
+        let url = match self.current_url.lock().ok().and_then(|g| g.clone()) {
+            Some(u) => u,
+            None => return,
+        };
+        // One tile every `interval`s, bounded to <=144 grid positions (>=10s spacing).
+        let interval = ((duration / 144.0).ceil() as u32).max(10);
+        let frames = (((duration / interval as f64).ceil()) as u32).clamp(1, 144);
+        let dir = cache_root.join(sanitize_key(&key));
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(mut jobs) = self.sprite_jobs.lock() {
+            if jobs.len() > 64 {
+                jobs.clear();
+            }
+            jobs.insert(key, TileJob { dir, interval, frames, url });
+        }
+    }
+
+    /// The tile for hover time `time` (seconds). Returns INSTANTLY — never blocks the
+    /// command/IPC thread. Disk-cache hit → `ready`; otherwise it kicks off ONE detached
+    /// grab via the warm headless libmpv decoder (software render — no ffmpeg, no window)
+    /// and returns `pending`; the seekbar keeps its shimmer + re-polls until the tile
+    /// lands on disk. Concurrency 1 so a scrub can't storm the decoder.
+    pub fn thumb_tile(&self, key: &str, time: f64) -> Result<ThumbTile, String> {
+        use std::sync::atomic::Ordering;
+        let (dir, interval, frames, url) = {
+            let jobs = self.sprite_jobs.lock().map_err(|e| e.to_string())?;
+            match jobs.get(key) {
+                Some(j) => (j.dir.clone(), j.interval, j.frames, j.url.clone()),
+                None => return Ok(ThumbTile { status: "none".into(), data_url: None, index: 0 }),
+            }
+        };
+        let i = ((time / interval as f64).round() as i64).clamp(0, frames as i64 - 1) as u32;
+        let path = dir.join(format!("t_{i}.jpg"));
+
+        // Disk-cache hit (EOI-verified so a half-written file reads as not-ready).
+        if let Ok(bytes) = std::fs::read(&path) {
+            if bytes.len() > 2 && bytes[bytes.len() - 2] == 0xFF && bytes[bytes.len() - 1] == 0xD9 {
+                return Ok(ThumbTile { status: "ready".into(), data_url: Some(format!("data:image/jpeg;base64,{}", b64(&bytes))), index: i });
+            }
+        }
+
+        // Miss → spawn ONE detached grab if none is running (concurrency 1). The warm
+        // headless decoder seeks + software-renders THIS position; we write the tile
+        // atomically and the seekbar re-polls until it lands. Returns immediately so
+        // hover/skim never stalls the UI or other Tauri commands.
+        if self.thumb_inflight.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            let inflight = self.thumb_inflight.clone();
+            let headless = self.headless.clone();
+            let time_at = i as f64 * interval as f64;
+            std::thread::spawn(move || {
+                if let Ok(bytes) = headless.screenshot(&url, time_at) {
+                    if !bytes.is_empty() {
+                        write_tile_atomic(&path, &bytes);
+                    }
+                }
+                inflight.store(0, Ordering::SeqCst);
+            });
+        }
+        Ok(ThumbTile { status: "pending".into(), data_url: None, index: i })
+    }
+
+    /// Geometry for `key` so the seekbar can map hover-time → tile index. `running`
+    /// once a job is registered (tiles produced on demand); `none` otherwise.
+    pub fn thumb_info(&self, key: &str) -> Result<ThumbInfo, String> {
+        let jobs = self.sprite_jobs.lock().map_err(|e| e.to_string())?;
+        Ok(match jobs.get(key) {
+            Some(j) => ThumbInfo { status: "running".into(), interval: j.interval, frames: j.frames },
+            None => ThumbInfo { status: "none".into(), interval: 0, frames: 0 },
+        })
     }
 
     /// Read a string mpv property (e.g. `pause`, `track-list`) from the live
@@ -160,6 +306,18 @@ impl PlayerHandle {
         let guard = self.mpv.lock().map_err(|e| e.to_string())?;
         let mpv = guard.as_ref().ok_or("no player")?;
         mpv.command(name, args).map_err(|e| e.to_string())
+    }
+
+    /// Save a screenshot of the current frame (with subtitles) into `dir`. The
+    /// caller resolves + creates `dir` (the app Pictures folder). Used by
+    /// `player_screenshot`.
+    pub fn screenshot(&self, dir: &str) -> Result<(), String> {
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+        let _ = mpv.set_property("screenshot-directory", dir);
+        // "subtitles" = the rendered frame including subs (mpv's default screenshot
+        // mode), which is what a viewer expects to capture.
+        mpv.command("screenshot", &["subtitles"]).map_err(|e| e.to_string())
     }
 
     /// Return the current track list as a JSON array (`[{id,type,title,lang,
@@ -194,8 +352,24 @@ impl PlayerHandle {
             let selected: bool = mpv
                 .get_property(&format!("track-list/{i}/selected"))
                 .unwrap_or(false);
+            // Extra fields so the UI can DISAMBIGUATE tracks that share a title/lang
+            // (e.g. two "English" audio tracks that differ by codec/channels — the
+            // "Your Name" case). Absent fields swallow to defaults.
+            let codec: String = mpv
+                .get_property(&format!("track-list/{i}/codec"))
+                .unwrap_or_default();
+            let channels: i64 = mpv
+                .get_property(&format!("track-list/{i}/audio-channels"))
+                .unwrap_or(0);
+            let default: bool = mpv
+                .get_property(&format!("track-list/{i}/default"))
+                .unwrap_or(false);
+            let forced: bool = mpv
+                .get_property(&format!("track-list/{i}/forced"))
+                .unwrap_or(false);
             arr.push(serde_json::json!({
                 "id": id, "type": ty, "title": title, "lang": lang, "selected": selected,
+                "codec": codec, "channels": channels, "default": default, "forced": forced,
             }));
         }
         serde_json::to_string(&arr).map_err(|e| e.to_string())
@@ -289,6 +463,13 @@ fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2::Error> {
     client.observe_property("demuxer-cache-time", Format::Double, 0)?;
     client.observe_property("pause", Format::Flag, 0)?;
     client.observe_property("paused-for-cache", Format::Flag, 0)?;
+    // Loading/stall signals the overlay composes into one spinner state:
+    // `core-idle` = no frame is being shown (pre-first-frame OR a stall);
+    // `seeking` = mid-seek, frame not ready (buffering between segments);
+    // `eof-reached` = at true end, so the loader clears instead of sticking.
+    client.observe_property("core-idle", Format::Flag, 0)?;
+    client.observe_property("seeking", Format::Flag, 0)?;
+    client.observe_property("eof-reached", Format::Flag, 0)?;
 
     std::thread::spawn(move || {
         let mut duration = 0f64;
@@ -308,6 +489,15 @@ fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2::Error> {
                     }
                     ("paused-for-cache", PropertyData::Flag(buffering)) => {
                         let _ = app.emit("player-buffering", buffering);
+                    }
+                    ("core-idle", PropertyData::Flag(v)) => {
+                        let _ = app.emit("player-core-idle", v);
+                    }
+                    ("seeking", PropertyData::Flag(v)) => {
+                        let _ = app.emit("player-seeking", v);
+                    }
+                    ("eof-reached", PropertyData::Flag(v)) => {
+                        let _ = app.emit("player-eof", v);
                     }
                     _ => {}
                 },
@@ -344,6 +534,42 @@ fn create_mpv(wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         Ok(mpv) => Ok(mpv),
         Err(_) => new_mpv_with_vo("gpu", wid),
     }
+}
+
+/// Keep a cache key safe as a single directory name (infoHash is hex; a
+/// media-episode key like `12345-3` is also safe — this just hardens it).
+fn sanitize_key(key: &str) -> String {
+    key.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .take(80)
+        .collect()
+}
+
+/// Write JPEG `bytes` to `out` atomically (temp file + rename) so a reader never sees
+/// a half-written tile. Returns true on success. Used for headless-decoder tiles.
+fn write_tile_atomic(out: &Path, bytes: &[u8]) -> bool {
+    let tmp = out.with_extension("part.jpg");
+    if std::fs::write(&tmp, bytes).is_ok() && std::fs::rename(&tmp, out).is_ok() {
+        return true;
+    }
+    let _ = std::fs::remove_file(&tmp);
+    false
+}
+
+/// Minimal standard-alphabet base64 (avoids a crate) for the thumbnail data URL.
+fn b64(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity((data.len() + 2) / 3 * 4);
+    for c in data.chunks(3) {
+        let n = ((c[0] as u32) << 16)
+            | ((*c.get(1).unwrap_or(&0) as u32) << 8)
+            | (*c.get(2).unwrap_or(&0) as u32);
+        s.push(T[(n >> 18 & 63) as usize] as char);
+        s.push(T[(n >> 12 & 63) as usize] as char);
+        s.push(if c.len() > 1 { T[(n >> 6 & 63) as usize] as char } else { '=' });
+        s.push(if c.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    s
 }
 
 /// Create an mpv instance using the given video output driver. All the
@@ -394,6 +620,15 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // FFmpeg) natively demuxes MKV and decodes HEVC/AV1/H.264, so "arbitrary
         // debrid MKV/HEVC" already works — these options just make it optimal.
         init.set_option("hwdec", "auto")?;
+        // Render the video to EXACTLY the embedded child surface — never DPI-scale it.
+        // On a Windows display at 125%/150% scaling, mpv otherwise renders the video
+        // larger than the window and crops it (the "zoomed in" bug). We hand mpv real
+        // pixel-sized child windows, so it must not re-apply the OS scale factor.
+        let _ = init.set_option("hidpi-window-scale", "no");
+        // Contain (letterbox), never zoom/crop by default — 'fill' fit sets panscan=1.
+        let _ = init.set_option("keepaspect", "yes");
+        let _ = init.set_option("video-zoom", "0");
+        let _ = init.set_option("panscan", "0");
         // --- HDR / Dolby Vision (match stremio-shell-ng's mpv config) ---
         // d3d11 output pipeline (Windows-only) drives HDR passthrough/tone-mapping;
         // tone-mapping maps HDR/DV to SDR displays so premium 4K encodes don't look
@@ -406,11 +641,30 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         }
         init.set_option("target-colorspace-hint", "auto")?;
         init.set_option("tone-mapping", "bt.2390")?;
+
+        // --- Picture quality (gpu-next / libplacebo) ---
+        // Best-effort (`let _`) so an older libmpv that lacks one of these just keeps
+        // its default instead of failing init. Cheap + safe on an iGPU / Steam Deck
+        // (the heavy GLSL upscalers like ArtCNN/FSRCNNX are intentionally NOT set).
+        // Video is never stretched: we don't touch `keepaspect` (defaults to yes), so
+        // mpv preserves aspect (letterbox) and high-quality-scales to the window.
+        // ewa_lanczossharp = sharp upscale (1080p→4K) with anti-ringing; mitchell =
+        // clean 4K→1080p downscale (no ringing); sharp chroma; deband kills banding in
+        // dark anime gradients; dither at the true panel depth.
+        let _ = init.set_option("scale", "ewa_lanczossharp");
+        let _ = init.set_option("scale-antiring", "0.6");
+        let _ = init.set_option("dscale", "mitchell");
+        let _ = init.set_option("cscale", "ewa_lanczossharp");
+        let _ = init.set_option("deband", "yes");
+        let _ = init.set_option("dither-depth", "auto");
         // Never let mpv hide the OS cursor. When embedded, the WebView2 overlay
         // sits above mpv and grabs mouse-move events, so mpv's autohide timer
         // expires and the cursor vanishes even while the user is moving it. `no`
         // keeps the cursor visible; the webview drives its own idle-hide.
         init.set_option("cursor-autohide", "no")?;
+        // Screenshots (player screenshot button) as PNG; the directory is set per-shot
+        // from Rust (app Pictures dir) since mpv init can't resolve the app path here.
+        let _ = init.set_option("screenshot-format", "png");
 
         // --- Network streaming (debrid HTTP URLs with range-request support) ---
         // Real-Debrid links are seekable via HTTP ranges, but mpv sometimes marks
@@ -422,9 +676,35 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         init.set_option("cache", "yes")?;
         init.set_option("force-seekable", "yes")?;
         init.set_option("demuxer-seekable-cache", "yes")?;
-        // 512 MiB forward cache; plenty for scrubbing without unbounded memory.
+        // Large forward + back BACKGROUND cache (a CEILING, not a pre-fill gate — it
+        // does NOT delay the first frame). 512 MiB ahead for scrubbing; 128 MiB back
+        // for instant short backward seeks.
         init.set_option("demuxer-max-bytes", "536870912")?;
-        init.set_option("demuxer-readahead-secs", "20")?;
+        init.set_option("demuxer-max-back-bytes", "134217728")?;
+
+        // FAST START: the first frame is gated by libavformat PROBING, not the cache.
+        // mpv leaves probesize/analyzeduration at 0 → FFmpeg's own defaults apply
+        // (~5 MB probe + up to ~5 s analysis) which mpv downloads/waits on BEFORE the
+        // first frame — that's the "buffers too much before starting" delay. Cap them
+        // so playback starts after a small probe, but keep them GENEROUS enough to
+        // still detect anime's secondary subtitle/audio tracks (2 MiB / 1 s — do NOT
+        // go lower, and never use probe-info=nostreams, which drops sub/audio tracks).
+        init.set_option("demuxer-lavf-probesize", "2097152")?;
+        init.set_option("demuxer-lavf-analyzeduration", "1")?;
+        // Fewer tiny HTTP round-trips when reading the MKV Cues / MP4 moov (which live
+        // at the file tail) on open.
+        init.set_option("stream-buffer-size", "262144")?;
+        // NOTE: demuxer-readahead-secs is intentionally NOT set — with cache=yes it's
+        // overridden by cache-secs (max of both), so a big value did nothing but
+        // mislead; the real ceiling is demuxer-max-bytes above.
+
+        // Fail a dead CDN socket sooner than the 60s default, and auto-reconnect on
+        // mid-stream drops (protocol AVOptions go through stream-lavf-o, not demuxer).
+        init.set_option("network-timeout", "30")?;
+        init.set_option(
+            "stream-lavf-o",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
+        )?;
         Ok(())
     })
 }

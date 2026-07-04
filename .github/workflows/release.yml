@@ -1,0 +1,161 @@
+name: release
+
+# Tag-driven releases, all hosted on GitHub Releases:
+#   v1.2.3         -> stable release  (updater "stable" channel = releases/latest)
+#   v1.2.3-beta.1  -> rolling "beta" pre-release (updater "beta" channel)
+#
+# Any tag containing "-" is a beta: it is published to a single, rolling `beta`
+# pre-release (overwritten each time) so the updater's beta endpoint stays static at
+# .../releases/download/beta/latest.json.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.result }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: Resolve channel + target tag
+        id: meta
+        run: |
+          if [[ "${{ github.ref_name }}" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "tag=beta" >> "$GITHUB_OUTPUT"          # rolling beta tag
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Delete previous rolling beta release (beta only)
+        if: steps.meta.outputs.prerelease == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete beta --repo "${{ github.repository }}" --yes --cleanup-tag || true
+
+      - name: Create draft release
+        id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = '${{ steps.meta.outputs.tag }}';
+            const pre = ${{ steps.meta.outputs.prerelease }};
+            const pushed = context.ref.replace('refs/tags/', '');
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              target_commitish: context.sha,
+              name: pre ? `izumi beta (${pushed})` : `izumi ${tag}`,
+              body: 'Download an installer for your platform below. The app auto-updates.',
+              draft: true,
+              prerelease: pre,
+            });
+            return data.id;
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: windows-latest
+            args: ''
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # libmpv2-sys links `-l mpv`, so libmpv must be on the linker path.
+      - name: libmpv + Tauri deps (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libmpv-dev \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: libmpv (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          brew install mpv
+          echo "LIBRARY_PATH=$(brew --prefix)/lib:${LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+
+      # Windows links mpv.lib and needs libmpv-2.dll at runtime. Mirror your proven
+      # local recipe (windows-build-env): download a libmpv dev build, generate mpv.lib
+      # from mpv.def, put it on LIB, and bundle libmpv-2.dll beside the exe.
+      - name: libmpv (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = "$env:RUNNER_TEMP\libmpv"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          # TODO: pin to the exact libmpv dev build your local setup uses.
+          $asset = 'https://downloads.sourceforge.net/project/mpv-player-windows/libmpv/mpv-dev-x86_64-20240128-git-d9ff204.7z'
+          Invoke-WebRequest -Uri $asset -OutFile "$dir\libmpv.7z"
+          & 7z x "$dir\libmpv.7z" -o"$dir" -y
+          if (Test-Path "$dir\mpv.def") {
+            lib /def:"$dir\mpv.def" /name:libmpv-2.dll /out:"$dir\mpv.lib" /machine:x64
+          }
+          echo "LIB=$dir;$env:LIB" >> $env:GITHUB_ENV
+          Copy-Item "$dir\libmpv-2.dll" "$env:GITHUB_WORKSPACE\src-tauri\libmpv-2.dll" -Force
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Build + upload to release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # From `npm run tauri signer generate`; store as repo secrets.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  publish-release:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release (un-draft)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ needs.create-release.outputs.release_id }},
+              draft: false,
+              prerelease: ${{ needs.create-release.outputs.prerelease }},
+            });

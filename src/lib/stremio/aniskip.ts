@@ -1,7 +1,7 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 
 // AniSkip OP/ED/recap "skip times" for an episode, used to draw seekbar segments
-// and drive the "Skip Opening/Ending" button. Same source izumi uses.
+// and drive the "Skip Opening/Ending" button.
 export type SkipType = 'op' | 'ed' | 'recap'
 export interface Segment { start: number; end: number; type: SkipType; label: string }
 

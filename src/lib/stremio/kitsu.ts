@@ -1,4 +1,4 @@
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { phttp } from '$lib/net/http'
 
 // Kitsu's own DB maps more titles than the Fribb/AniZip lists, so when those miss,
 // resolve a Kitsu anime id straight from the MAL id (AniList gives us media.idMal).
@@ -10,7 +10,7 @@ export async function kitsuIdFromMal(malId?: number | null): Promise<number | un
       'https://kitsu.io/api/edge/mappings' +
       '?filter%5BexternalSite%5D=myanimelist%2Fanime' +
       `&filter%5BexternalId%5D=${malId}&include=item`
-    const r = await httpFetch(url, { headers: { Accept: 'application/vnd.api+json' } })
+    const r = await phttp(url, { headers: { Accept: 'application/vnd.api+json' } })
     if (!r.ok) return undefined
     const j = (await r.json()) as { included?: Array<{ id?: string }> }
     const id = j.included?.[0]?.id

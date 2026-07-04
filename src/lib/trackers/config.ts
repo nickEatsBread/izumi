@@ -15,6 +15,8 @@ export const REDIRECT_URI = PUBLIC_OAUTH_REDIRECT_URI
 
 // Runtime auth state (persisted to localStorage).
 export const anilistUserName = persisted('anilist-viewer-name', '')
+export const anilistUserAvatar = persisted('anilist-viewer-avatar', '')
 export const malToken = persisted<string | null>('mal-token', null)
 export const malRefresh = persisted<string | null>('mal-refresh', null)
 export const malUserName = persisted('mal-viewer-name', '')
+export const malUserAvatar = persisted('mal-viewer-avatar', '')

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { queryStore, getContextClient } from '@urql/svelte'
-  import { PAGE_QUERY, homeSections } from '$lib/anilist/queries'
+  import { pageQuery, homeSections } from '$lib/anilist/queries'
   import HomeRow from '$lib/components/cards/HomeRow.svelte'
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import MalListRow from '$lib/components/cards/MalListRow.svelte'
@@ -20,7 +20,7 @@
   // Fetch several trending titles for the rotating hero; prefer ones with a banner.
   const heroStore = queryStore<{ Page: { media: Media[] } }>({
     client,
-    query: PAGE_QUERY,
+    query: pageQuery(),
     variables: { perPage: 15, sort: ['TRENDING_DESC'] },
   })
   const heroMedias = $derived.by(() => {
@@ -32,7 +32,7 @@
 
 <div class="pb-16">
   {#if heroMedias.length}
-    <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} />
+    <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} oninfo={(m) => goto(`/app/anime/${m.id}`)} />
   {:else}
     <div class="mb-6 h-[42vh] w-full animate-pulse bg-muted"></div>
   {/if}

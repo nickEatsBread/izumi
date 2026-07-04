@@ -1,0 +1,30 @@
+<script lang="ts">
+  import { enableDoH, doHUrl, transferSpeedLimit } from '$lib/settings/ui'
+  import Toggle from '$lib/components/settings/Toggle.svelte'
+</script>
+
+<div class="p-8">
+  <h2 class="mb-1 text-xl font-black">Network</h2>
+  <p class="mb-4 text-sm text-muted-foreground">Advanced networking. Limited effect with debrid streaming — see notes.</p>
+
+  <div class="max-w-2xl space-y-3">
+    <Toggle label="Use DNS over HTTPS" desc="Resolves hostnames via the DoH endpoint below for source/addon, metadata (AniZip/Kitsu) and download requests, falling back to the system resolver if it's unreachable. AniList/MAL browse and mpv playback still use the OS resolver." value={$enableDoH} onToggle={() => ($enableDoH = !$enableDoH)} />
+    {#if $enableDoH}
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">DNS-over-HTTPS URL</span>
+        <input type="text" data-focusable bind:value={$doHUrl} placeholder="https://cloudflare-dns.com/dns-query" class="rounded-md bg-input px-3 py-2 text-sm" />
+      </label>
+    {/if}
+
+    <label class="flex items-center justify-between rounded-md border border-border p-3">
+      <div class="pr-4">
+        <div class="font-bold">Transfer speed limit</div>
+        <p class="mt-1 text-xs text-muted-foreground">Applies to torrent downloads. Inert with debrid streaming (Real-Debrid serves over its own CDN — nothing local to throttle).</p>
+      </div>
+      <span class="flex items-center gap-2">
+        <input type="number" min="1" max="1000" data-focusable bind:value={$transferSpeedLimit} class="w-24 rounded-md bg-input px-3 py-2 text-right text-sm" />
+        <span class="text-sm text-muted-foreground">Mb/s</span>
+      </span>
+    </label>
+  </div>
+</div>

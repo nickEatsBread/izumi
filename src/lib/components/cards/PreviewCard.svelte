@@ -26,7 +26,7 @@
   const openDetail = () => goto(`/app/anime/${media.id}`)
 </script>
 
-<div class="w-[17.5rem] cursor-pointer overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border"
+<div class="preview-in w-[17.5rem] cursor-pointer overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border"
      onclick={openDetail} role="link" tabindex="0"
      onkeydown={(e) => { if (e.key === 'Enter') openDetail() }}>
   <div class="relative h-40 overflow-hidden bg-muted">

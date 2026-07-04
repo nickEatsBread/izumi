@@ -1,3 +1,3 @@
-<svg viewBox="0 0 66.145833 66.145833" class="h-7 w-7 text-theme" xmlns="http://www.w3.org/2000/svg">
-  <path fill="currentColor" d="M.00000117 61.5156237V4.6302097l66.145831 37.041664v19.84375l-47.624995-26.72291v16.40416zm66.145831-30.42707-23.547916-13.229174 23.547916-13.22917Z"/>
-</svg>
+<!-- izumi mark (brand asset in static/brand). Gradient mark — not currentColor-tintable,
+     so it's an <img> rather than an inline path. -->
+<img src="/brand/izumi-mark-color.svg" alt="izumi" class="h-7 w-7" draggable="false" />

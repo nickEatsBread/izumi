@@ -6,3 +6,12 @@ src-tauri/target/
 src-tauri/gen/
 .DS_Store
 *.log
+
+docs/
+
+/distnet/
+
+# Updater signing keys
+*.key
+izumi_updater.key
+.env.local

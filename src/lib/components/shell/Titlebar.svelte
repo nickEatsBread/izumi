@@ -1,12 +1,25 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window'
+  import { onMount } from 'svelte'
   import Minus from 'lucide-svelte/icons/minus'
   import Square from 'lucide-svelte/icons/square'
+  import Copy from 'lucide-svelte/icons/copy'
   import X from 'lucide-svelte/icons/x'
 
   const win = getCurrentWindow()
+  // Track the real window state so the button shows maximize vs restore correctly —
+  // maximize/unmaximize/drag-snap all fire a resize event, which we re-sync on.
+  let maximized = $state(false)
+  const sync = async () => { try { maximized = await win.isMaximized() } catch { /* web preview */ } }
+  onMount(() => {
+    sync()
+    let un: (() => void) | undefined
+    win.onResized(() => sync()).then((f) => (un = f)).catch(() => {})
+    return () => un?.()
+  })
+
   const minimize = () => win.minimize()
-  const maximize = () => win.toggleMaximize()
+  const toggle = async () => { await win.toggleMaximize().catch(() => {}); sync() }
   const close = () => win.close()
 </script>
 
@@ -27,11 +40,11 @@
     <Minus size={15} />
   </button>
   <button
-    onclick={maximize}
-    aria-label="Maximize"
+    onclick={toggle}
+    aria-label={maximized ? 'Restore' : 'Maximize'}
     class="grid h-8 w-11 place-items-center text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
   >
-    <Square size={12} />
+    {#if maximized}<Copy size={12} />{:else}<Square size={12} />{/if}
   </button>
   <button
     onclick={close}
