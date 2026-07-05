@@ -1,0 +1,92 @@
+id: com.nicho.izumi
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node22
+command: izumi
+
+# Why Flatpak (not AppImage) for the Steam Deck: the GNOME runtime provides webkit2gtk-4.1
+# + gtk3 + mesa/EGL + pipewire as a version-matched set. We never bundle those host-coupled
+# libs, so the two AppImage failures on SteamOS disappear by construction:
+#   - bundled mesa/EGL vs the Deck's newer Mesa  → EGL_BAD_PARAMETER / white screen
+#   - bundled libpipewire vs the Deck's libjack  → "undefined symbol: pw_log_topic_register"
+# Full anime codecs (h264/h265/aac) come from the runtime's codecs-extra, not a bundled ffmpeg.
+finish-args:
+  - --share=network          # streaming, AniList/MAL, debrid
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio      # audio via the host PipeWire pulse socket (no bundled libpipewire)
+  - --device=dri             # host GL/VAAPI — webkit compositing + the mpv render path
+  - --filesystem=xdg-download # offline downloads
+  # WebKitGTK 2.42+ DMA-BUF renderer white-screens under gamescope/constrained compositors.
+  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+# libmpv links ffmpeg internally; the runtime + codecs-extra (already on the Deck at branch
+# 25.08-extra) provide the codecs, so we do NOT build or bundle ffmpeg.
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+
+modules:
+  # ----- the two mpv deps the GNOME runtime lacks -----
+  - name: libass
+    buildsystem: meson
+    config-opts:
+      - -Ddefault_library=shared
+    sources:
+      - type: git
+        url: https://github.com/libass/libass.git
+        tag: '0.17.5'
+
+  - name: libplacebo
+    buildsystem: meson
+    config-opts:
+      - -Dvulkan=disabled
+      - -Dshaderc=disabled
+      - -Ddemos=false
+    sources:
+      - type: git
+        url: https://github.com/haasn/libplacebo.git
+        tag: v7.360.1
+        commit: cee9b076f2c63104ccfd497fa79c39a867293ec4
+
+  # ----- libmpv (no CLI player). pipewire DISABLED so mpv uses the pulse socket instead of
+  #       preferring a pipewire AO — the canonical fix for the pw_log_topic_register class of
+  #       crash (Stremio flathub PR#8, Jellyfin mpv-build). -----
+  - name: mpv
+    buildsystem: meson
+    config-opts:
+      - -Dlibmpv=true
+      - -Dcplayer=false
+      - -Dpipewire=disabled
+      - -Dlua=disabled
+      - -Djavascript=disabled
+    sources:
+      - type: git
+        url: https://github.com/mpv-player/mpv.git
+        tag: v0.40.0
+
+  # ----- izumi (Tauri app). Network build (self-hosted bundle, not Flathub → no vendoring).
+  #       Builds the local checkout, so on the Deck: clone, cd flatpak, flatpak-builder. -----
+  - name: izumi
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+      env:
+        CARGO_HOME: /run/build/izumi/cargo
+    build-commands:
+      - npm ci
+      - npm run tauri build -- --no-bundle
+      - install -Dm755 src-tauri/target/release/izumi /app/bin/izumi
+      - install -Dm644 flatpak/com.nicho.izumi.desktop /app/share/applications/com.nicho.izumi.desktop
+      - install -Dm644 flatpak/com.nicho.izumi.metainfo.xml /app/share/metainfo/com.nicho.izumi.metainfo.xml
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/com.nicho.izumi.png
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.nicho.izumi.png
+      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/com.nicho.izumi.png
+    sources:
+      - type: dir
+        path: ..

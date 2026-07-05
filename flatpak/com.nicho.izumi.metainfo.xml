@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.nicho.izumi</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <name>izumi</name>
+  <summary>Controller-first desktop anime client</summary>
+  <description>
+    <p>
+      izumi is a controller-first desktop anime client with a native mpv player,
+      AniList and MyAnimeList tracking, and Stremio-addon sourcing. Built for the
+      Steam Deck and other gamepad-first setups.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.nicho.izumi.desktop</launchable>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+    <category>Player</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <url type="homepage">https://github.com/nickEatsBread/izumi</url>
+  <url type="bugtracker">https://github.com/nickEatsBread/izumi/issues</url>
+  <developer id="com.nicho">
+    <name>nickEatsBread</name>
+  </developer>
+  <releases>
+    <release version="0.1.0" date="2026-07-05"/>
+  </releases>
+</component>

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=izumi
+GenericName=Anime Client
+Comment=Controller-first desktop anime client
+Exec=izumi
+Icon=com.nicho.izumi
+Terminal=false
+Categories=AudioVideo;Video;Player;
+Keywords=anime;video;streaming;player;
+StartupWMClass=izumi
