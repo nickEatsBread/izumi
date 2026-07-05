@@ -1,6 +1,6 @@
 id: com.nicho.izumi
 runtime: org.gnome.Platform
-runtime-version: '49'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -89,6 +89,8 @@ modules:
         LIBRARY_PATH: /app/lib
     build-commands:
       - npm ci
+      # Prod builds NEVER include the webview inspector. For a debug build with devtools,
+      # use flatpak/dev-build.sh (it injects --features devtools) — do not add it here.
       - npm run tauri build -- --no-bundle
       - install -Dm755 src-tauri/target/release/izumi /app/bin/izumi
       - install -Dm644 flatpak/com.nicho.izumi.desktop /app/share/applications/com.nicho.izumi.desktop
