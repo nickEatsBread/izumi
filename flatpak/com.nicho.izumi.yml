@@ -29,6 +29,11 @@ finish-args:
 
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+  # The freedesktop 25.08 SDK defaults meson's libdir to lib64, but flatpak's pkg-config
+  # and linker only search /app/lib — so libplacebo/mpv would install their .pc + .so where
+  # nothing finds them. Force every module to /app/lib.
+  config-opts:
+    - --libdir=lib
 
 modules:
   # ----- the two mpv deps the GNOME runtime lacks -----
@@ -78,6 +83,10 @@ modules:
         - --share=network
       env:
         CARGO_HOME: /run/build/izumi/cargo
+        # libmpv2-sys emits `-lmpv` but not a search path; our mpv module installed
+        # libmpv.so.2 to /app/lib, which isn't on cc's default link path. (Runtime is
+        # fine — flatpak has /app/lib on its ld path.)
+        LIBRARY_PATH: /app/lib
     build-commands:
       - npm ci
       - npm run tauri build -- --no-bundle
