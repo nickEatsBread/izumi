@@ -1,8 +1,7 @@
 import { persisted } from 'svelte-persisted-store'
-// Seed a fresh install with a popular Stremio stream addon so there's something to
-// resolve out of the box; users add/remove their own in Settings. Torrentio pairs with
-// the debrid key entered in Settings to return cached streams.
-export const addonUrls = persisted<string[]>('stremio-addon-urls', ['https://torrentio.strem.fun'])
+// No default sources — ever. A fresh install ships with an EMPTY source list; the user
+// adds their own stream addon URL(s) in Settings. Nothing is provided out of the box.
+export const addonUrls = persisted<string[]>('stremio-addon-urls', [])
 // Normalize a pasted addon URL to an absolute https base (strip trailing
 // /manifest.json). Forcing a scheme matters: a scheme-less base would resolve
 // relative to the app page and hit the wrong host.
