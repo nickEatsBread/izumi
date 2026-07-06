@@ -65,3 +65,35 @@ export class TriggerScrubber {
     this.wasPressed = pressed
   }
 }
+
+const TRIGGER_ON = 0.3 // analog trigger considered "pressed" above this value
+
+// Start polling the Deck triggers and driving seek/scrub. Returns a stop function.
+// `debug` logs gamepad connect + first presses so we can confirm input reaches the webview.
+export function startGamepadSeek(d: SeekDeps, debug = false): () => void {
+  const l2 = new TriggerScrubber(-1, d)
+  const r2 = new TriggerScrubber(+1, d)
+  let raf = 0
+  let loggedPad = false
+
+  const pressedVal = (b: GamepadButton | undefined) =>
+    !!b && (b.pressed || b.value > TRIGGER_ON)
+
+  const loop = () => {
+    const pads = navigator.getGamepads?.() ?? []
+    for (const pad of pads) {
+      if (!pad) continue
+      if (debug && !loggedPad) { loggedPad = true; console.log('[gp] pad:', pad.id, 'buttons:', pad.buttons.length) }
+      const now = performance.now()
+      const L = pressedVal(pad.buttons[6])
+      const R = pressedVal(pad.buttons[7])
+      if (debug && (L || R)) console.log('[gp] L2', L, 'R2', R)
+      l2.update(L, now)
+      r2.update(R, now)
+      break // first connected pad only
+    }
+    raf = requestAnimationFrame(loop)
+  }
+  raf = requestAnimationFrame(loop)
+  return () => cancelAnimationFrame(raf)
+}
