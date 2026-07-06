@@ -3,6 +3,7 @@
   import { get } from 'svelte/store'
   import { onDestroy } from 'svelte'
   import { spriteKey } from '$lib/player/session'
+  import { scrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
   import type { Segment } from '$lib/stremio/aniskip'
 
   // Seekbar for the libmpv player. Renders stacked layers (buffered,
@@ -18,6 +19,7 @@
     segments,
     chapters,
     onseek,
+    gm = false,
   }: {
     pos: number
     dur: number
@@ -25,6 +27,7 @@
     segments: Segment[]
     chapters: { time: number; title: string }[]
     onseek: (t: number) => void
+    gm?: boolean
   } = $props()
 
   let el = $state<HTMLDivElement>()
@@ -150,6 +153,11 @@
   const bufferPct = $derived(pct(buffer))
   const hoverPct = $derived(pct(hoverT))
   const seekActive = $derived(hovering || seeking)
+  // In game mode the grabbed state is shared: touch handlers below AND the L2/R2 poller both
+  // write the `scrub` store; the bar renders from it. Desktop keeps the local hover/seeking.
+  const gmGrab = $derived(gm && $scrub.active)
+  const grabbed = $derived(gm ? gmGrab : seekActive)
+  const scrubT = $derived(gm && $scrub.active ? $scrub.time : hoverT)
   const barSegments = $derived.by(() => {
     const src = chapterRanges.length ? chapterRanges : [{ start: 0, end: dur || 1, title: '' }]
     const out: { size: number; offset: number; scale: number; title: string }[] = []
@@ -176,24 +184,38 @@
   // the vacated rect → the ghost trail. This is the real fix for the trail on Linux/WebKit.
   const tipX = $derived.by(() => {
     if (barW <= 0 || dur <= 0) return 0
-    return Math.min(barW - 100, Math.max(100, (hoverT / dur) * barW))
+    return Math.min(barW - 100, Math.max(100, (scrubT / dur) * barW))
+  })
+
+  // A gamepad-driven scrub has no pointer events, so drive the thumbnail + tooltip width
+  // from the store instead (touch already does this via the pointer handlers).
+  $effect(() => {
+    if (gm && $scrub.active && $scrub.source === 'pad') {
+      if (el) barW = el.getBoundingClientRect().width
+      requestTile($scrub.time)
+    }
   })
   function onmove(e: PointerEvent) {
     hovering = true
     hoverT = timeAt(e.clientX)
     requestTile(hoverT)
+    if (gm && $scrub.active) moveScrub(hoverT)
   }
   function ondown(e: PointerEvent) {
-    seeking = true
     hoverT = timeAt(e.clientX)
     requestTile(hoverT)
     el?.setPointerCapture(e.pointerId)
+    if (gm) beginScrub(hoverT, 'touch')
+    else seeking = true
   }
   function onup(e: PointerEvent) {
-    if (!seeking) return
-    seeking = false
     el?.releasePointerCapture(e.pointerId)
-    onseek(hoverT)
+    if (gm) {
+      if ($scrub.active) endScrub()
+    } else if (seeking) {
+      seeking = false
+      onseek(hoverT)
+    }
   }
 </script>
 
@@ -216,25 +238,31 @@
        full-width bars translated left inside an overflow-clip so each shows only its
        slice of the chapter. -->
   {#each barSegments as chap, i (i)}
-    {@const active = seekActive && hoverPct > chap.offset && hoverPct < chap.offset + chap.size}
-    <div class="flex shrink-0 items-center justify-center py-3" style="width:{chap.size}%">
-      <div class="relative h-1 w-full overflow-hidden rounded-[2px] {i ? 'ml-0.5' : ''}">
+    {@const inChap = grabbed && (gm ? pct(scrubT) : hoverPct) > chap.offset && (gm ? pct(scrubT) : hoverPct) < chap.offset + chap.size}
+    {@const active = gm ? inChap : (seekActive && hoverPct > chap.offset && hoverPct < chap.offset + chap.size)}
+    <div class="flex shrink-0 items-center justify-center {gm ? 'py-4' : 'py-3'}" style="width:{chap.size}%">
+      <div class="relative {gm ? 'h-[7px]' : 'h-1'} w-full overflow-hidden rounded-[2px] {i ? 'ml-0.5' : ''}">
         <!-- empty track -->
-        <div class="absolute left-0 top-1/2 h-0.5 w-full -translate-y-1/2 bg-white/25 transition-[height] duration-75" class:h-1={active}></div>
+        <div class="absolute left-0 top-1/2 {gm ? 'h-[5px]' : 'h-0.5'} w-full -translate-y-1/2 bg-white/25 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[7px]={active && gm}></div>
         <!-- buffered -->
-        <div class="absolute left-0 top-1/2 h-0.5 w-full bg-white/40 transition-[height] duration-75" class:h-1={active}
+        <div class="absolute left-0 top-1/2 {gm ? 'h-[5px]' : 'h-0.5'} w-full bg-white/40 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[7px]={active && gm}
              style="transform:translate({skewclamp(chap.scale * (bufferPct - chap.offset)) - 100}%, -50%)"></div>
-        <!-- hover preview -->
-        {#if seekActive}
-          <div class="absolute left-0 top-1/2 h-0.5 w-full bg-white/60 transition-[height] duration-75" class:h-1={active}
-               style="transform:translate({skewclamp(chap.scale * (hoverPct - chap.offset)) - 100}%, -50%)"></div>
+        <!-- hover/scrub preview -->
+        {#if grabbed}
+          <div class="absolute left-0 top-1/2 {gm ? 'h-[5px]' : 'h-0.5'} w-full bg-white/60 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[7px]={active && gm}
+               style="transform:translate({skewclamp(chap.scale * ((gm ? pct(scrubT) : hoverPct) - chap.offset)) - 100}%, -50%)"></div>
         {/if}
         <!-- played -->
-        <div class="absolute left-0 top-1/2 h-0.5 w-full bg-white transition-[height] duration-75" class:h-1={active}
+        <div class="absolute left-0 top-1/2 {gm ? 'h-[5px]' : 'h-0.5'} w-full bg-white {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[7px]={active && gm}
              style="transform:translate({skewclamp(chap.scale * (progressPct - chap.offset)) - 100}%, -50%)"></div>
       </div>
     </div>
   {/each}
+
+  {#if gm && grabbed && dur > 0}
+    <div class="pointer-events-none absolute top-1/2 z-20 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
+         style="left:{pct(scrubT)}%"></div>
+  {/if}
 
   <!-- OP/ED/recap tints (AniSkip) overlaid on the segmented track. -->
   {#each segments as s}
@@ -244,7 +272,7 @@
   <!-- Hover tooltip: the frame at the cursor with chapter title (top) +
        timestamp (bottom) overlaid; a loading shimmer for positions whose tile isn't
        generated yet (never blank/white). -->
-  {#if (hovering || seeking) && dur > 0}
+  {#if grabbed && dur > 0}
     <div class="pointer-events-none absolute bottom-9 left-0 flex" style="transform:translateX(calc({tipX}px - 50%));will-change:transform">
       <div class="overflow-hidden rounded-lg border border-white bg-neutral-200 shadow-lg">
         <div class="relative">
@@ -256,10 +284,10 @@
               <div class="absolute inset-0 animate-pulse bg-gradient-to-r from-neutral-300 via-neutral-100 to-neutral-300"></div>
             </div>
           {/if}
-          {#if labelAt(hoverT)}
-            <div class="absolute left-1/2 top-0 max-w-40 -translate-x-1/2 truncate rounded-b-lg bg-white/90 px-2 py-1 text-xs text-zinc-900">{labelAt(hoverT)}</div>
+          {#if labelAt(scrubT)}
+            <div class="absolute left-1/2 top-0 max-w-40 -translate-x-1/2 truncate rounded-b-lg bg-white/90 px-2 py-1 text-xs text-zinc-900">{labelAt(scrubT)}</div>
           {/if}
-          <div class="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-lg bg-white/90 px-2 py-1 font-mono text-sm leading-none tabular-nums text-zinc-900">{fmt(hoverT)}</div>
+          <div class="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-lg bg-white/90 px-2 py-1 font-mono text-sm leading-none tabular-nums text-zinc-900">{fmt(scrubT)}</div>
         </div>
       </div>
     </div>
