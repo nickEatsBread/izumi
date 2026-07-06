@@ -25,6 +25,9 @@ finish-args:
                              # of falling to XWayland — required for the layer-shell overlay.
   - --socket=pulseaudio      # audio via the host PipeWire pulse socket (no bundled libpipewire)
   - --device=dri             # host GL/VAAPI — webkit compositing + the mpv render path
+  - --device=all             # /dev/input — the webview Gamepad API reads the Deck controller
+                             # (L2/R2 seek in Game mode); without it the sandbox hides all pads.
+                             # (This flatpak version lacks the narrower --device=input.)
   - --filesystem=xdg-download # offline downloads
 
 # libmpv links ffmpeg internally; the runtime + codecs-extra (already on the Deck at branch
