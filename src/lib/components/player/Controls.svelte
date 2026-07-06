@@ -157,7 +157,7 @@
       </div>
     {/if}
 
-    <Seekbar {pos} {dur} {buffer} {segments} {chapters} onseek={seekTo} />
+    <Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} />
 
     <div class="mt-1 flex items-center gap-3 text-white">
       {#if hasPrev}
