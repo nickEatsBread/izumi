@@ -31,6 +31,8 @@
     chapters,
     cmd,
     onclose,
+    gm = false,
+    ontoggleplay,
   }: {
     pos: number
     dur: number
@@ -40,7 +42,13 @@
     chapters: { time: number; title: string }[]
     cmd: (name: string, args?: string[]) => void
     onclose: () => void
+    // Game mode (Deck/gamescope touch player): no windowed/fullscreen toggle, and the
+    // play button must swap the fullscreen video back in (not just unpause under a black
+    // screen). `ontoggleplay` overrides the default cycle-pause when provided.
+    gm?: boolean
+    ontoggleplay?: () => void
   } = $props()
+  const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
 
   const fmt = (s: number) => {
     if (!Number.isFinite(s) || s < 0) s = 0
@@ -135,7 +143,9 @@
 <div class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
   <!-- (No back button — the sidebar/nav exits playback.) -->
 
-  <!-- Bottom control bar -->
+  <!-- Bottom control bar: a gradient that floats over the video. Works identically on Desktop
+       (subsurface below the webview) and Game mode (gamescope layer-shell surface below the
+       webview) — the compositor blends the transparent webview over the video either way. -->
   <div class="pointer-events-auto absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20">
     <!-- Now-playing title (bottom-left, above the seekbar) -->
     {#if np.animeTitle}
@@ -153,7 +163,7 @@
       {#if hasPrev}
         <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={() => playPrev()} aria-label="Previous episode"><SkipBack size={20} fill="currentColor" /></button>
       {/if}
-      <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={() => cmd('cycle', ['pause'])} aria-label={paused ? 'Play' : 'Pause'}>
+      <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}>
         {#if paused}<Play size={22} fill="currentColor" />{:else}<Pause size={22} fill="currentColor" />{/if}
       </button>
       {#if hasNext}
@@ -182,7 +192,12 @@
         <div class="relative">
           <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={() => { showOptions = !showOptions; showTracks = false }} aria-label="Playback options"><Settings size={20} /></button>
           {#if showOptions}
-            <div class="absolute bottom-full right-0 mb-2 w-64 rounded-lg bg-black/90 p-3 text-sm text-white shadow-xl backdrop-blur">
+            <!-- NO backdrop-blur: backdrop-filter samples pixels behind the element, but the
+                 video is a separate Wayland subsurface the webview can't see, so it blurs an
+                 empty/black backdrop → dark ghost boxes. Promote to its own compositing layer
+                 (translateZ/will-change) so show/hide is a clean recomposite, not a parent-
+                 layer repaint that never clears. -->
+            <div class="absolute bottom-full right-0 mb-2 w-64 rounded-lg bg-neutral-900/95 p-3 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]">
               <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Speed</p>
               <div class="mb-3 flex flex-wrap gap-1">
                 {#each speeds as s}
@@ -212,7 +227,7 @@
         <div class="relative">
           <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={loadTracks} aria-label="Subtitle and audio tracks"><Captions size={20} /></button>
           {#if showTracks}
-            <div class="absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-black/90 p-2 text-sm text-white shadow-xl backdrop-blur">
+            <div class="absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900/95 p-2 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]">
               <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Audio</p>
               {#if audios.length}
                 {#each audios as t (t.id)}
@@ -239,10 +254,13 @@
         <!-- Screenshot the current frame → Pictures/izumi -->
         <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={screenshot} aria-label="Screenshot"><Camera size={20} /></button>
 
-        <!-- Fullscreen (user-initiated; player opens windowed) -->
-        <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
-          {#if $fullscreen}<Minimize size={20} />{:else}<Maximize size={20} />{/if}
-        </button>
+        <!-- Fullscreen (user-initiated; player opens windowed). Hidden in game mode —
+             the Deck player is always fullscreen, there is no windowed state. -->
+        {#if !gm}
+          <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
+            {#if $fullscreen}<Minimize size={20} />{:else}<Maximize size={20} />{/if}
+          </button>
+        {/if}
       </div>
     </div>
   </div>

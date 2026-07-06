@@ -51,13 +51,36 @@ async fn player_embed(
         let container = MPV_CONTAINER.load(std::sync::atomic::Ordering::Relaxed);
         (m, if container != 0 { container as i64 } else { m as i64 })
     };
-    #[cfg(not(windows))]
-    let wid: i64 = 0;
-    #[cfg(not(windows))]
-    let _ = &main;
-    player.play_embedded(&url, wid, app.clone(), start_seconds, alang, slang)?;
     #[cfg(windows)]
-    resize_mpv_child(main_raw);
+    {
+        player.play_embedded(&url, wid, app.clone(), start_seconds, alang, slang)?;
+        resize_mpv_child(main_raw);
+    }
+    // Linux/Wayland: embed mpv into a wl_subsurface placed BELOW the (transparent)
+    // webview via the OpenGL render API, WITHOUT touching the webview's GTK tree
+    // (reparenting it crashes webkit). The core lives in PlayerHandle, so controls
+    // + progress events work exactly as on Windows. Make the webview background
+    // transparent first so the video shows through the player's video area.
+    #[cfg(target_os = "linux")]
+    {
+        let _ = main.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+        if player::linux_embed::is_wayland(&main) {
+            // Desktop / KWin (native Wayland): mpv in a wl_subsurface below the transparent
+            // webview, HTML controls floating over it.
+            player.play_embedded_render(&url, app.clone(), start_seconds, alang, slang, &main)?;
+        } else {
+            // Game mode / gamescope (XWayland X11): no wl_subsurface — embed mpv via `--wid`
+            // into a fullscreen X11 CONTAINER window we own (so it can be shown/hidden for the
+            // touch-controls swap + made input-transparent). Fullscreen; no windowed layout.
+            let size = main.inner_size().map_err(|e| e.to_string())?;
+            let xid = player::linux_x11::ensure_container(&main, size.width, size.height)?;
+            player.play_embedded(&url, xid, app.clone(), start_seconds, alang, slang)?;
+        }
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = (&player, &main, &app, &start_seconds, &alang, &slang, &url);
+    }
     Ok(())
 }
 
@@ -66,10 +89,50 @@ async fn player_embed(
 /// torn down by the frontend (`playing = false`).
 #[tauri::command]
 fn close_player(player: tauri::State<'_, player::PlayerHandle>) -> Result<(), String> {
-    // Stop the mpv core (destroys its child inside the container). The container itself
-    // is created once on the UI thread and reused for the app's lifetime — the next play
-    // re-embeds a fresh mpv child into it.
+    // Stop the mpv core. On Linux this also tears down the embed subsurface +
+    // render context (via `PlayerHandle::stop` → `linux_embed::detach`) before the
+    // core is quit. On Windows it destroys mpv's child inside the container (which
+    // is created once on the UI thread and reused for the next play).
+    #[cfg(target_os = "linux")]
+    player::linux_x11::destroy_container();
     player.stop()
+}
+
+/// Game mode (gamescope / Steam Deck) detection — the frontend renders a fullscreen layout
+/// (no sidebar, full-width overlay). Detected by gamescope's env marker, which is set whether
+/// we connected natively (Wayland, the layer-shell overlay path) or fell back to XWayland.
+#[tauri::command]
+fn player_is_game_mode(app: AppHandle) -> bool {
+    let _ = &app;
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+/// Game mode: start/stop compositing the HTML controls onto the video via an mpv overlay.
+/// gamescope can't blend a transparent app surface, so the frontend calls this whenever the
+/// controls show/hide and mpv bakes a snapshot of them over the video (see linux_overlay).
+#[tauri::command]
+fn player_gm_overlay(app: AppHandle, visible: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(win) = app.get_webview_window("main") {
+            if visible {
+                player::linux_overlay::start(app.clone(), win);
+            } else {
+                player::linux_overlay::stop(app.clone());
+            }
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app, visible);
+    }
 }
 
 /// Launch an external video player (the user's chosen executable) with the stream
@@ -631,22 +694,6 @@ fn player_play_embedded(
     player.play_embedded(&url, wid, app, start_seconds, None, None)
 }
 
-/// Linux-only phase-1 spike: embed mpv into the app window via GtkGLArea + the OpenGL
-/// render API (gamescope/Wayland-safe). Errors on other platforms. Call from the
-/// frontend on Linux to test whether video renders inside the window.
-#[tauri::command]
-fn player_embed_linux(window: tauri::WebviewWindow, url: String) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        player::linux_embed::embed_and_play(&window, &url)
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (window, url);
-        Err("linux-only".into())
-    }
-}
-
 /// Open the provider's auth URL in a dedicated in-app webview window, then poll
 /// that window's URL until it reaches `redirect_prefix`. Returns the full
 /// redirect URL (query + fragment), so callers can read `?code=` or
@@ -767,16 +814,74 @@ async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), S
     Ok(())
 }
 
+/// Turn OFF WebKitGTK's damage-propagation feature flags (`PropagateDamagingInformation`,
+/// `UnifyDamagedRegions`) — enabled by DEFAULT in WebKitGTK 2.50 (which the Deck's GNOME-49
+/// runtime now ships: libwebkit2gtk-4.1.so.0.21.8). They pass only CHANGED rectangles to the
+/// system compositor, so on our TRANSPARENT web view a moving element's VACATED region is
+/// never recomposited — the scrub-tooltip ghost trail + lingering menus that only a window
+/// resize clears (Tauri #12800 / WebKitGTK transparent-view class of bug). With them off, the
+/// whole frame is composited every time. There is no env var for this; we toggle the runtime
+/// feature via the WebKitFeature C API, which our pinned webkit2gtk crate doesn't expose → FFI.
+#[cfg(target_os = "linux")]
+unsafe fn disable_webkit_damage(settings: *mut std::ffi::c_void) {
+    use std::ffi::CStr;
+    use std::os::raw::{c_char, c_int, c_void};
+    extern "C" {
+        fn webkit_settings_get_all_features() -> *mut c_void;
+        fn webkit_feature_list_get_length(list: *mut c_void) -> usize;
+        fn webkit_feature_list_get(list: *mut c_void, index: usize) -> *mut c_void;
+        fn webkit_feature_get_identifier(feature: *mut c_void) -> *const c_char;
+        fn webkit_settings_set_feature_enabled(
+            settings: *mut c_void,
+            feature: *mut c_void,
+            enabled: c_int,
+        );
+        fn webkit_feature_list_unref(list: *mut c_void);
+    }
+    let list = webkit_settings_get_all_features();
+    if list.is_null() {
+        return;
+    }
+    let n = webkit_feature_list_get_length(list);
+    for i in 0..n {
+        let f = webkit_feature_list_get(list, i);
+        if f.is_null() {
+            continue;
+        }
+        let idp = webkit_feature_get_identifier(f);
+        if idp.is_null() {
+            continue;
+        }
+        let id = CStr::from_ptr(idp).to_string_lossy();
+        if id == "PropagateDamagingInformation" || id == "UnifyDamagedRegions" {
+            webkit_settings_set_feature_enabled(settings, f, 0);
+        }
+    }
+    webkit_feature_list_unref(list);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Linux: WebKitGTK 2.42+ defaults to a DMABUF renderer that fails to create an EGL
-    // display on some GPU/driver stacks (Steam Deck included) → white screen / an
-    // EGL_BAD_PARAMETER abort. Disable it BEFORE any GTK/webview init — WebKit reads
-    // this only at webview creation, so setting it later is a no-op. Leave overridable.
-    #[cfg(target_os = "linux")]
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    }
+    // Linux: the embedded player composites mpv (a wl_subsurface) BELOW the webview,
+    // needing a native Wayland session — so we do NOT force GDK_BACKEND=x11 (Desktop mode
+    // / KWin gives us Wayland). We DELIBERATELY do NOT set WEBKIT_DISABLE_DMABUF_RENDERER
+    // or WEBKIT_DISABLE_COMPOSITING_MODE:
+    //   - WEBKIT_DISABLE_COMPOSITING_MODE turns OFF accelerated compositing, which defeats
+    //     the CSS layer promotion (`will-change: transform`) that keeps the MOVING scrub
+    //     tooltip from leaving a ghost trail — the promoted layer must be a real compositor
+    //     layer for moving it to recomposite-and-clear the old position.
+    //   - WEBKIT_DISABLE_DMABUF_RENDERER forces a non-native software surface; on the Deck's
+    //     AMD/Wayland stack the native DMABUF accelerated path is the RELIABLE one, and
+    //     disabling it breaks the transparent overlay. The AppImage-era white-screen these
+    //     once guarded against was a bundled-mesa clash; the Flatpak uses the runtime's
+    //     matched mesa (+ --device=dri), so it doesn't recur.
+    //
+    // Steam Deck GAME MODE (gamescope): do NOT force the app onto gamescope's native Wayland
+    // socket. Although gamescope exposes wayland + layer-shell, its window management is
+    // XWayland-centric: a native-Wayland GTK/webkit TOPLEVEL is never presented (no seat —
+    // `gdk_seat_get_keyboard` assertion — and no visible window; the session even tore down).
+    // So the app stays an XWayland X11 client (visible), and the controls-over-video overlay
+    // is solved a different way (self-composite), not by routing through gamescope's compositor.
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
@@ -806,7 +911,35 @@ pub fn run() {
                     });
                 }
             }
-            #[cfg(not(windows))]
+            // Linux: make the WebView background fully TRANSPARENT so the mpv video
+            // subsurface below shows through the player's transparent areas. Accelerated
+            // compositing is left ON (default) — it's REQUIRED for the frontend's
+            // compositing-layer promotion (`will-change: transform` on the moving scrub
+            // tooltip + popup menus) to actually recomposite-and-clear old positions;
+            // forcing software rendering (policy=Never) makes that promotion a no-op and the
+            // ghost trail returns. The menus must NOT use backdrop-filter (it samples a
+            // backdrop the webview can't see — the video is a separate subsurface).
+            #[cfg(target_os = "linux")]
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.with_webview(|pw| {
+                    use glib::object::ObjectType;
+                    use webkit2gtk::WebViewExt;
+                    let wv = pw.inner();
+                    wv.set_background_color(&gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
+                    // THE root fix for the ghost trails: turn off WebKitGTK 2.50 damage
+                    // propagation (see disable_webkit_damage).
+                    if let Some(settings) = wv.settings() {
+                        let sptr = settings.as_ptr() as *mut std::ffi::c_void;
+                        unsafe { disable_webkit_damage(sptr) };
+                    }
+                });
+                // One-shot compositor capability probe (logs to izumi-embed.log). Decides the
+                // Game-mode video-overlay architecture from measured facts — does gamescope's
+                // XWayland report an RGBA/composited screen, and does its Wayland socket expose
+                // wl_subcompositor. No-op effect on the running player; pure diagnostics.
+                player::linux_embed::probe_compositor(&win);
+            }
+            #[cfg(not(any(windows, target_os = "linux")))]
             let _ = app;
             Ok(())
         })
@@ -814,9 +947,10 @@ pub fn run() {
             greet,
             player_play,
             player_play_embedded,
-            player_embed_linux,
             player_embed,
             close_player,
+            player_is_game_mode,
+            player_gm_overlay,
             spawn_external_player,
             player_get_property,
             player_sprite_start,

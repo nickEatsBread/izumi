@@ -24,9 +24,23 @@
 //! [`spawn_event_loop`].
 
 mod headless;
-// Linux mpv-in-GtkGLArea embed (phase 1 spike; see linux_embed.rs).
+// Linux embedded player: a wl_subsurface placed below the (transparent) webview,
+// rendered by mpv's OpenGL render API. Never touches the webview's GTK tree.
 #[cfg(target_os = "linux")]
 pub mod linux_embed;
+// Linux playback: a SEPARATE mpv process driven over JSON IPC. Dormant fallback,
+// not wired into the UX — kept for headless/X11 situations the embed can't cover.
+#[cfg(target_os = "linux")]
+pub mod linux_proc;
+// Game mode (gamescope / XWayland X11): raw X11 container window for mpv `--wid` — no
+// wl_subsurface there, so the video is a fullscreen child window we show/hide for the swap.
+#[cfg(target_os = "linux")]
+pub mod linux_x11;
+// Game mode controls-over-video: gamescope won't blend a transparent app surface, so we
+// snapshot the webview's HTML controls and push them to mpv as a `overlay-add` layer that
+// mpv bakes over the video in its own opaque surface. See linux_overlay.rs.
+#[cfg(target_os = "linux")]
+pub mod linux_overlay;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -181,13 +195,57 @@ impl PlayerHandle {
             return Ok(());
         }
 
-        // First launch: build a fresh mpv core bound to the given window.
-        let mpv = create_mpv(Some(wid)).map_err(|e| e.to_string())?;
+        // First launch: build a fresh mpv core. A real window handle (Windows HWND /
+        // container, always > 0) embeds into it; wid <= 0 (non-Windows, no embed yet)
+        // means "no host window" → create_mpv(None) so mpv opens its OWN fullscreen
+        // window. Passing Some(0) here told mpv to embed into X-window 0 (the root),
+        // which aborts libmpv init on Wayland → the command panicked → invoke rejected
+        // with null.
+        let mpv = create_mpv(if wid > 0 { Some(wid) } else { None }).map_err(|e| e.to_string())?;
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
 
         set_langs(&mpv, &alang, &slang);
+        load_file(&mpv, url, start_seconds)?;
+
+        *guard = Some(mpv);
+        Ok(())
+    }
+
+    /// Linux embedded playback: create (or reuse) an mpv core with `vo=libmpv`
+    /// and render it into a `wl_subsurface` placed below the transparent webview
+    /// (see [`linux_embed`]). The core lives here — so `command`/`get_property`/
+    /// `tracks`/… and the progress event loop all work exactly as on Windows.
+    ///
+    /// First call: build the core, spawn the event loop, [`attach`](linux_embed::attach)
+    /// the subsurface/render context bound to it, then `loadfile`. Later calls
+    /// (next-episode auto-advance) reuse the core and just `loadfile`.
+    #[cfg(target_os = "linux")]
+    pub fn play_embedded_render(
+        &self,
+        url: &str,
+        app: AppHandle,
+        start_seconds: Option<f64>,
+        alang: Option<String>,
+        slang: Option<String>,
+        window: &tauri::WebviewWindow,
+    ) -> Result<(), String> {
+        *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
+
+        let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        if let Some(mpv) = guard.as_ref() {
+            set_langs(mpv, &alang, &slang);
+            load_file(mpv, url, start_seconds)?;
+            return Ok(());
+        }
+
+        let mpv = new_mpv_libmpv().map_err(|e| e.to_string())?;
+        spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
+        set_langs(&mpv, &alang, &slang);
+        // Bind the render context to this core BEFORE it moves into the mutex.
+        // `attach` borrows `&mpv` only for the (blocking) duration of the call.
+        linux_embed::attach(&mpv, window)?;
         load_file(&mpv, url, start_seconds)?;
 
         *guard = Some(mpv);
@@ -204,6 +262,12 @@ impl PlayerHandle {
     /// the core is fully destroyed. Then we drop the main handle. Used by
     /// `close_player`.
     pub fn stop(&self) -> Result<(), String> {
+        // Free the render context (which references the core) BEFORE the core is
+        // quit/dropped — required for the `'static` lifetime extension in
+        // `linux_embed::attach` to stay sound. No-op if nothing is embedded.
+        #[cfg(target_os = "linux")]
+        linux_embed::detach();
+
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
         if let Some(mpv) = guard.as_ref() {
             let _ = mpv.command("quit", &[]);
@@ -309,6 +373,31 @@ impl PlayerHandle {
         let guard = self.mpv.lock().map_err(|e| e.to_string())?;
         let mpv = guard.as_ref().ok_or("no player")?;
         mpv.command(name, args).map_err(|e| e.to_string())
+    }
+
+    /// Add/replace a raw-memory OSD overlay on the video (Game-mode controls). `addr` is the
+    /// address of a premultiplied-BGRA buffer of `w`×`h` (bytes = `stride`×`h`) that MUST stay
+    /// valid + at a stable address until [`overlay_remove`] or the next `overlay_add` for `id`
+    /// (mpv reads it each frame, it does not copy). See `overlay-add` in the mpv manual.
+    #[cfg(target_os = "linux")]
+    pub fn overlay_add(&self, id: i64, x: i64, y: i64, addr: usize, w: i64, h: i64, stride: i64) -> Result<(), String> {
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+        let (ids, xs, ys) = (id.to_string(), x.to_string(), y.to_string());
+        let file = format!("&{addr}");
+        let (ws, hs, ss) = (w.to_string(), h.to_string(), stride.to_string());
+        // overlay-add <id> <x> <y> <file> <offset> <fmt> <w> <h> <stride>
+        mpv.command("overlay-add", &[&ids, &xs, &ys, &file, "0", "bgra", &ws, &hs, &ss])
+            .map_err(|e| e.to_string())
+    }
+
+    /// Remove the OSD overlay with the given `id` (Game-mode controls hidden).
+    #[cfg(target_os = "linux")]
+    pub fn overlay_remove(&self, id: i64) -> Result<(), String> {
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+        mpv.command("overlay-remove", &[&id.to_string()])
+            .map_err(|e| e.to_string())
     }
 
     /// Save a screenshot of the current frame (with subtitles) into `dir`. The
@@ -450,7 +539,7 @@ fn set_langs(mpv: &Mpv, alang: &Option<String>, slang: &Option<String>) {
 /// the properties on it, and move that client into the thread. `Mpv` is `Send`,
 /// so this compiles cleanly, and the client keeps the core alive alongside the
 /// main handle.
-fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2::Error> {
+pub(crate) fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2::Error> {
     // Pass `None`, NOT `Some("event-loop")`. libmpv2 6.0.0's `create_client`
     // has a use-after-free: `CString::new(name)?.as_ptr()` drops the CString
     // before `mpv_create_client` reads the name, so a *named* client passes a
@@ -533,10 +622,87 @@ impl Default for PlayerHandle {
 /// When `wid` is `Some`, mpv renders into that existing native window (embedded
 /// mode); when `None`, mpv creates and manages its own window.
 fn create_mpv(wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
+    // Linux own-window (wid=None): webkit's renderer already holds a GL/EGL context in
+    // THIS process; a second GL context from mpv's gpu vo crashes the renderer on the
+    // Deck's Mesa. Use a non-GL output (wayland shared-memory, X11 fallback) — software
+    // presentation, no GL context to clash. (Windows embeds via wid and keeps gpu.)
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if wid.is_none() {
+        return new_mpv_with_vo("wlshm", wid).or_else(|_| new_mpv_with_vo("x11", wid));
+    }
     match new_mpv_with_vo("gpu-next", wid) {
         Ok(mpv) => Ok(mpv),
         Err(_) => new_mpv_with_vo("gpu", wid),
     }
+}
+
+/// Build an mpv core for the Linux embedded player: `vo=libmpv` (required by the
+/// OpenGL render API — [`linux_embed`] renders it into a `wl_subsurface`) with no
+/// window of its own. mpv handles NO input (the HTML overlay owns the controls);
+/// streaming/quality options mirror the embedded Windows path.
+#[cfg(target_os = "linux")]
+fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
+    // mpv_create() returns NULL unless LC_NUMERIC == "C"; GTK sets the process
+    // locale from the environment, so force it back before creating the core.
+    unsafe {
+        extern "C" {
+            fn setlocale(
+                category: std::os::raw::c_int,
+                locale: *const std::os::raw::c_char,
+            ) -> *mut std::os::raw::c_char;
+        }
+        // glibc: LC_NUMERIC == 1.
+        setlocale(1, c"C".as_ptr());
+    }
+    Mpv::with_initializer(|init| {
+        // vo=libmpv is the ONLY MANDATORY option — the render API can't work without
+        // it. Every other option is BEST-EFFORT (`let _ =`): mpv option availability
+        // drifts across versions/builds (e.g. `demuxer-seekable-cache` was deprecated
+        // in 0.32 and removed by 0.40), and set_option returns OPTION_NOT_FOUND (-5) for
+        // an unknown name — which, if propagated, aborts core creation and kills playback
+        // for a mere tuning knob. So we never let a non-essential option fail the core.
+        init.set_option("vo", "libmpv")?;
+        // Decode on the GPU but copy frames to system memory for GL upload (auto-copy) —
+        // avoids VAAPI GL interop that color-corrupts on some drivers.
+        let _ = init.set_option("hwdec", "auto-copy");
+        // Pure render surface — never handle input; the overlay drives mpv.
+        let _ = init.set_option("input-cursor", "no");
+        let _ = init.set_option("input-vo-keyboard", "no");
+        let _ = init.set_option("input-default-bindings", "no");
+        let _ = init.set_option("osc", "no");
+        let _ = init.set_option("cursor-autohide", "no");
+        // Contain (letterbox), never zoom/crop by default.
+        let _ = init.set_option("keepaspect", "yes");
+        let _ = init.set_option("video-zoom", "0");
+        let _ = init.set_option("panscan", "0");
+        // HDR / tone-mapping (SDR panels) — same as the Windows path.
+        let _ = init.set_option("target-colorspace-hint", "auto");
+        let _ = init.set_option("tone-mapping", "bt.2390");
+        // Picture quality (libplacebo).
+        let _ = init.set_option("scale", "ewa_lanczossharp");
+        let _ = init.set_option("scale-antiring", "0.6");
+        let _ = init.set_option("dscale", "mitchell");
+        let _ = init.set_option("cscale", "ewa_lanczossharp");
+        let _ = init.set_option("deband", "yes");
+        let _ = init.set_option("dither-depth", "auto");
+        let _ = init.set_option("screenshot-format", "png");
+        // Network streaming (seekable debrid HTTP URLs): force seekability + a large
+        // demuxer cache so scrubbing fetches new ranges instead of looping the buffered
+        // window, with a small fast-start probe.
+        let _ = init.set_option("cache", "yes");
+        let _ = init.set_option("force-seekable", "yes");
+        let _ = init.set_option("demuxer-max-bytes", "536870912");
+        let _ = init.set_option("demuxer-max-back-bytes", "134217728");
+        let _ = init.set_option("demuxer-lavf-probesize", "2097152");
+        let _ = init.set_option("demuxer-lavf-analyzeduration", "1");
+        let _ = init.set_option("stream-buffer-size", "262144");
+        let _ = init.set_option("network-timeout", "30");
+        let _ = init.set_option(
+            "stream-lavf-o",
+            "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
+        );
+        Ok(())
+    })
 }
 
 /// Keep a cache key safe as a single directory name (infoHash is hex; a
@@ -601,11 +767,11 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
                 // its child window steals mouse/keyboard from the WebView2 controls
                 // on top (the "lack of control" / windowed feel). All input is owned
                 // by the HTML overlay; we drive mpv via commands only.
-                init.set_option("input-cursor", "no")?;
-                init.set_option("input-vo-keyboard", "no")?;
-                init.set_option("input-default-bindings", "no")?;
-                init.set_option("window-dragging", "no")?;
-                init.set_option("osc", "no")?;
+                let _ = init.set_option("input-cursor", "no");
+                let _ = init.set_option("input-vo-keyboard", "no");
+                let _ = init.set_option("input-default-bindings", "no");
+                let _ = init.set_option("window-dragging", "no");
+                let _ = init.set_option("osc", "no");
             }
             // Own window: make an actual window appear even before/without video
             // geometry info, and open it fullscreen so streams play edge-to-edge
@@ -622,7 +788,23 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // and Dolby-Vision profiles use the GPU decoder like Stremio does. mpv (via
         // FFmpeg) natively demuxes MKV and decodes HEVC/AV1/H.264, so "arbitrary
         // debrid MKV/HEVC" already works — these options just make it optimal.
-        init.set_option("hwdec", "auto")?;
+        // GL-interop hwdec (`auto`) needs mpv's own GL context; a non-GL vo (wlshm/x11)
+        // must copy frames back to system memory so it never creates a GL/EGL context
+        // (which would clash with webkit's renderer on Linux). `auto-copy` still HW-decodes.
+        let hwdec = if vo.starts_with("gpu") { "auto" } else { "auto-copy" };
+        let _ = init.set_option("hwdec", hwdec);
+        // Linux X11 embed (gamescope Game mode / XWayland): force EGL-on-X11. mpv's default
+        // gpu-context auto-selection tries GLX first, which fails to create a context on an
+        // embedded window under XWayland → audio plays but NO video. x11egl is the reliable
+        // path. (Windows sets gpu-context=d3d11 below; the Wayland subsurface path uses
+        // new_mpv_libmpv, not this builder.)
+        #[cfg(target_os = "linux")]
+        if wid.is_some() {
+            let _ = init.set_option("gpu-context", "x11egl");
+            // TEMP diagnostic: surface mpv's vo init to stderr (izumi run.log).
+            let _ = init.set_option("terminal", "yes");
+            let _ = init.set_option("msg-level", "all=v");
+        }
         // Render the video to EXACTLY the embedded child surface — never DPI-scale it.
         // On a Windows display at 125%/150% scaling, mpv otherwise renders the video
         // larger than the window and crops it (the "zoomed in" bug). We hand mpv real
@@ -642,8 +824,8 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
             init.set_option("d3d11-output-format", "auto")?;
             init.set_option("d3d11-output-csp", "auto")?;
         }
-        init.set_option("target-colorspace-hint", "auto")?;
-        init.set_option("tone-mapping", "bt.2390")?;
+        let _ = init.set_option("target-colorspace-hint", "auto");
+        let _ = init.set_option("tone-mapping", "bt.2390");
 
         // --- Picture quality (gpu-next / libplacebo) ---
         // Best-effort (`let _`) so an older libmpv that lacks one of these just keeps
@@ -664,7 +846,7 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // sits above mpv and grabs mouse-move events, so mpv's autohide timer
         // expires and the cursor vanishes even while the user is moving it. `no`
         // keeps the cursor visible; the webview drives its own idle-hide.
-        init.set_option("cursor-autohide", "no")?;
+        let _ = init.set_option("cursor-autohide", "no");
         // Screenshots (player screenshot button) as PNG; the directory is set per-shot
         // from Rust (app Pictures dir) since mpv init can't resolve the app path here.
         let _ = init.set_option("screenshot-format", "png");
@@ -676,14 +858,16 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // cache so seeking into not-yet-loaded regions actually fetches the new
         // range instead of looping over the buffered one, and so the seekbar has
         // a real "loaded" extent to show.
-        init.set_option("cache", "yes")?;
-        init.set_option("force-seekable", "yes")?;
-        init.set_option("demuxer-seekable-cache", "yes")?;
+        let _ = init.set_option("cache", "yes");
+        let _ = init.set_option("force-seekable", "yes");
+        // Best-effort: removed from mpv by 0.40 (deprecated 0.32) → OPTION_NOT_FOUND on
+        // newer libmpv would otherwise abort init.
+        let _ = init.set_option("demuxer-seekable-cache", "yes");
         // Large forward + back BACKGROUND cache (a CEILING, not a pre-fill gate — it
         // does NOT delay the first frame). 512 MiB ahead for scrubbing; 128 MiB back
         // for instant short backward seeks.
-        init.set_option("demuxer-max-bytes", "536870912")?;
-        init.set_option("demuxer-max-back-bytes", "134217728")?;
+        let _ = init.set_option("demuxer-max-bytes", "536870912");
+        let _ = init.set_option("demuxer-max-back-bytes", "134217728");
 
         // FAST START: the first frame is gated by libavformat PROBING, not the cache.
         // mpv leaves probesize/analyzeduration at 0 → FFmpeg's own defaults apply
@@ -692,22 +876,22 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // so playback starts after a small probe, but keep them GENEROUS enough to
         // still detect anime's secondary subtitle/audio tracks (2 MiB / 1 s — do NOT
         // go lower, and never use probe-info=nostreams, which drops sub/audio tracks).
-        init.set_option("demuxer-lavf-probesize", "2097152")?;
-        init.set_option("demuxer-lavf-analyzeduration", "1")?;
+        let _ = init.set_option("demuxer-lavf-probesize", "2097152");
+        let _ = init.set_option("demuxer-lavf-analyzeduration", "1");
         // Fewer tiny HTTP round-trips when reading the MKV Cues / MP4 moov (which live
         // at the file tail) on open.
-        init.set_option("stream-buffer-size", "262144")?;
+        let _ = init.set_option("stream-buffer-size", "262144");
         // NOTE: demuxer-readahead-secs is intentionally NOT set — with cache=yes it's
         // overridden by cache-secs (max of both), so a big value did nothing but
         // mislead; the real ceiling is demuxer-max-bytes above.
 
         // Fail a dead CDN socket sooner than the 60s default, and auto-reconnect on
         // mid-stream drops (protocol AVOptions go through stream-lavf-o, not demuxer).
-        init.set_option("network-timeout", "30")?;
-        init.set_option(
+        let _ = init.set_option("network-timeout", "30");
+        let _ = init.set_option(
             "stream-lavf-o",
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
-        )?;
+        );
         Ok(())
     })
 }

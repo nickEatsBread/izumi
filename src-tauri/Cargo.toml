@@ -59,19 +59,29 @@ windows = { version = "0.61", features = [
 ] }
 webview2-com = "0.38"
 
-# Linux: embed mpv via its OpenGL render API into a GtkGLArea under the transparent
-# webview (gamescope/Wayland-safe, unlike --wid). gtk3/gdk/glib match Tauri 2.11's
-# webkitgtk stack; epoxy provides GL proc addresses (libmpv render get_proc_address);
-# the `gl` crate is used only to read the GLArea's bound framebuffer id.
+# Linux: embed mpv via its OpenGL render API into a wl_subsurface placed below the
+# transparent webview (see player/linux_embed.rs). gtk3/gdk/glib match Tauri 2.11's
+# webkitgtk stack (window/CSD geometry + main-thread dispatch); khronos-egl builds our
+# own EGL context on the subsurface; wayland-client/-egl create the subsurface tree;
+# raw-window-handle pulls the toplevel wl_surface/wl_display out of the Tauri window;
+# the `gl` crate is used for the clear/viewport around mpv's render.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
 gdk = "0.18"
 glib = "0.18"
-epoxy = "0.1"
 gl = "0.14"
+khronos-egl = { version = "6", features = ["dynamic"] }
+wayland-client = "0.31"
+wayland-egl = "0.32"
+# Steam Deck Game mode (gamescope): gamescope exposes NO wl_subcompositor (so the subsurface
+# path above can't run) but DOES expose zwlr_layer_shell_v1 + dmabuf. We render the video into
+# a layer-shell BACKGROUND surface and keep the transparent webview toplevel on top → gamescope
+# composites controls over fullscreen video, same UX as Desktop. (Measured on gamescope 3.16.)
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+raw-window-handle = "0.6"
 # Pinned to the exact version wry/Tauri 2.11 links (must unify — one `web_kit2` links key).
+# Used to force HardwareAccelerationPolicy::Never so WebKit renders the UI in software:
+# with accelerated compositing on, WebKit's layer subsurfaces don't clear on a transparent
+# view, leaving ghost rectangles (menus/tooltips) until a resize.
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
-# mpv render update-callback (render thread) -> main context redraw, via an async
-# channel (glib's MainContext::channel is deprecated).
-async-channel = "2"
 

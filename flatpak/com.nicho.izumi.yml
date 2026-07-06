@@ -1,6 +1,6 @@
 id: com.nicho.izumi
 runtime: org.gnome.Platform
-runtime-version: '50'
+runtime-version: '49'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
@@ -16,13 +16,16 @@ command: izumi
 finish-args:
   - --share=network          # streaming, AniList/MAL, debrid
   - --share=ipc
-  - --socket=wayland
-  - --socket=fallback-x11
+  - --socket=wayland         # native Wayland: Desktop/KWin composites the video subsurface
+                             # below the webview; Game mode (gamescope) composites the video
+                             # LAYER-SHELL surface below the webview — both need Wayland.
+  - --socket=fallback-x11    # X11-only sessions (and XWayland) still get a display
+  - --filesystem=xdg-run/gamescope-0  # gamescope's own Wayland socket (Game mode), so the app
+                             # can connect natively to it (WAYLAND_DISPLAY=gamescope-0) instead
+                             # of falling to XWayland — required for the layer-shell overlay.
   - --socket=pulseaudio      # audio via the host PipeWire pulse socket (no bundled libpipewire)
   - --device=dri             # host GL/VAAPI — webkit compositing + the mpv render path
   - --filesystem=xdg-download # offline downloads
-  # WebKitGTK 2.42+ DMA-BUF renderer white-screens under gamescope/constrained compositors.
-  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 # libmpv links ffmpeg internally; the runtime + codecs-extra (already on the Deck at branch
 # 25.08-extra) provide the codecs, so we do NOT build or bundle ffmpeg.
@@ -58,14 +61,33 @@ modules:
         tag: v7.360.1
         commit: cee9b076f2c63104ccfd497fa79c39a867293ec4
 
+  # ----- libXpresent: the ONE X11 dev lib the GNOME 49 SDK lacks that mpv's `x11` output
+  #       needs. Without it mpv's meson auto-disables ALL X11 support → mpv is Wayland-only →
+  #       under gamescope (Game mode, XWayland X11) mpv can't create a GPU context and plays
+  #       audio with NO video. Building it here (→ /app/lib) lets mpv build + link X11. -----
+  - name: libXpresent
+    buildsystem: autotools
+    # The global `--libdir=lib` (for meson's lib64 default) is a RELATIVE path, which
+    # autotools configure rejects ("expected an absolute directory name"). Override it to
+    # the absolute /app/lib for this autotools module so it installs where mpv/ld look.
+    build-options:
+      config-opts:
+        - --libdir=/app/lib
+    sources:
+      - type: git
+        url: https://gitlab.freedesktop.org/xorg/lib/libxpresent.git
+        tag: libXpresent-1.0.1
+
   # ----- libmpv (no CLI player). pipewire DISABLED so mpv uses the pulse socket instead of
   #       preferring a pipewire AO — the canonical fix for the pw_log_topic_register class of
-  #       crash (Stremio flathub PR#8, Jellyfin mpv-build). -----
+  #       crash (Stremio flathub PR#8, Jellyfin mpv-build). X11 ENABLED so mpv works under
+  #       gamescope Game mode (XWayland) via `--wid` + gpu-context=x11egl — not just Wayland. -----
   - name: mpv
     buildsystem: meson
     config-opts:
-      - -Dlibmpv=true
-      - -Dcplayer=false
+      - -Dlibmpv=true       # the app still links libmpv (scrub-thumbnail core)
+      - -Dcplayer=true      # AND the mpv binary (/app/bin/mpv)
+      - -Dx11=enabled       # X11 video output/context — REQUIRED for Game mode (gamescope/XWayland)
       - -Dpipewire=disabled
       - -Dlua=disabled
       - -Djavascript=disabled

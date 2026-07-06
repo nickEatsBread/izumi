@@ -48,6 +48,16 @@ export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; info
 // window state via the Rust command's return value.
 export const fullscreen = writable(false)
 
+// Game mode (gamescope / Steam Deck): the app runs fullscreen with a TOUCH player
+// and no windowed layout — video takes the whole screen, no sidebar/titlebar chrome
+// while playing. Resolved once from Rust (`player_is_game_mode`) at boot. When true it
+// implies "always fullscreen" for the chrome-hiding + video-inset logic.
+export const gameMode = writable(false)
+export async function initGameMode() {
+  try { gameMode.set(await invoke<boolean>('player_is_game_mode')) }
+  catch { /* non-linux / no window yet — stays false (Desktop/windowed) */ }
+}
+
 export async function toggleFullscreen() {
   try { fullscreen.set(await invoke<boolean>('player_toggle_fullscreen')) }
   catch (e) { console.warn('toggle fullscreen', e) }

@@ -5,7 +5,7 @@
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
   import PlayerOverlay from '$lib/components/player/PlayerOverlay.svelte'
   import StreamPicker from '$lib/components/player/StreamPicker.svelte'
-  import { playing, fullscreen } from '$lib/player/session'
+  import { playing, fullscreen, gameMode, initGameMode } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl } from '$lib/settings/ui'
   import { beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
@@ -21,6 +21,7 @@
   $effect(() => {
     initInput()
     initDpadNav()
+    initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
     // (persisted to idb after), so a fresh install's FIRST play doesn't eat it on the
@@ -66,7 +67,8 @@
   // exposed the opaque window background as a black band under the titlebar.
   // Full-frame in fullscreen (chrome hidden) and 0 in browse. Physical px = CSS × DPR.
   $effect(() => {
-    const left = $playing && !$fullscreen ? Math.round(56 * $uiScale * window.devicePixelRatio) : 0
+    // Game mode = always fullscreen video (no sidebar rail), so no inset there either.
+    const left = $playing && !$fullscreen && !$gameMode ? Math.round(56 * $uiScale * window.devicePixelRatio) : 0
     invoke('player_set_inset', { left, top: 0 }).catch(() => {})
   })
   // Navigating away (e.g. a sidebar link) exits playback and restores the browse UI.
@@ -80,9 +82,10 @@
 
 <!-- Solid app floor; hidden while playing so mpv (behind the webview) shows. -->
 {#if !$playing}<Background />{/if}
-<!-- Chrome hides only in fullscreen playback (edge-to-edge video); stays visible
-     and clickable over windowed playback. -->
-{#if !($playing && $fullscreen)}
+<!-- Chrome hides in fullscreen playback (edge-to-edge video); stays visible and
+     clickable over windowed playback. Game mode (Deck/gamescope) is always fullscreen
+     touch — no sidebar/titlebar while playing, just the content. -->
+{#if !($playing && ($fullscreen || $gameMode))}
   <Sidebar />
   <Titlebar />
   <OnlineBanner />

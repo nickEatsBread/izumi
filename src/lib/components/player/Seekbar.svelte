@@ -31,6 +31,7 @@
   let hovering = $state(false)
   let seeking = $state(false)
   let hoverT = $state(0)
+  let barW = $state(0) // seekbar pixel width, for transform-based tooltip positioning
 
   // --- Scrub-preview thumbnails (on-demand) -----------------------------------
   // Rust produces the tile UNDER THE CURSOR on demand (one input-seek ffmpeg per
@@ -164,8 +165,19 @@
   function timeAt(clientX: number): number {
     if (!el || dur <= 0) return 0
     const r = el.getBoundingClientRect()
+    barW = r.width
     return Math.min(dur, Math.max(0, ((clientX - r.left) / r.width) * dur))
   }
+
+  // Tooltip X in PIXELS (clamped to keep the 192px popup on-screen). We position via
+  // `transform: translateX()` (not `left`) so WebKit treats the tooltip as its own
+  // compositing layer: moving a layer is a RECOMPOSITE that clears the old position,
+  // whereas moving via `left` repaints in the transparent parent layer and never clears
+  // the vacated rect → the ghost trail. This is the real fix for the trail on Linux/WebKit.
+  const tipX = $derived.by(() => {
+    if (barW <= 0 || dur <= 0) return 0
+    return Math.min(barW - 100, Math.max(100, (hoverT / dur) * barW))
+  })
   function onmove(e: PointerEvent) {
     hovering = true
     hoverT = timeAt(e.clientX)
@@ -233,8 +245,8 @@
        timestamp (bottom) overlaid; a loading shimmer for positions whose tile isn't
        generated yet (never blank/white). -->
   {#if (hovering || seeking) && dur > 0}
-    <div class="pointer-events-none absolute bottom-9 flex" style="left:clamp(100px, {pct(hoverT)}%, calc(100% - 100px))">
-      <div class="-translate-x-1/2 overflow-hidden rounded-lg border border-white bg-neutral-200 shadow-lg">
+    <div class="pointer-events-none absolute bottom-9 left-0 flex" style="transform:translateX(calc({tipX}px - 50%));will-change:transform">
+      <div class="overflow-hidden rounded-lg border border-white bg-neutral-200 shadow-lg">
         <div class="relative">
           {#if thumbSrc}
             <img src={thumbSrc} alt="" class="block w-48" />

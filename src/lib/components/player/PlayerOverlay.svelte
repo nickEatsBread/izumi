@@ -6,7 +6,7 @@
   import Controls from './Controls.svelte'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource } from '$lib/player/session'
+  import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
   import { autoSkip, seekDuration, videoFit, uiScale } from '$lib/settings/ui'
   import { get } from 'svelte/store'
@@ -41,6 +41,17 @@
 
   let visible = $state(true)
   let hideT: ReturnType<typeof setTimeout>
+
+  // Game mode (gamescope / Steam Deck): the video is a fullscreen layer-shell surface and the
+  // transparent webview composites OVER it — so the player behaves EXACTLY like Desktop
+  // fullscreen (controls FLOAT over live video, both visible at once). `gmMode` only drives
+  // fullscreen chrome (no sidebar) + full-width overlay; there is no dock/swap. On the
+  // touchscreen a tap reveals the (auto-hiding) controls; on Desktop a click toggles pause.
+  const gmMode = $derived($gameMode)
+  function onOverlayTap() {
+    if (gmMode) poke()
+    else cmd('cycle', ['pause'])
+  }
 
   // ONE loading boolean, never sticky: true while bringing up the first frame, on
   // a cache stall, or mid-seek — but never while the user paused or at real EOF.
@@ -135,6 +146,15 @@
     cmd('set', ['cursor-autohide', controlsVisible ? 'no' : 'always'])
   })
 
+  // Game mode (gamescope): gamescope won't blend the transparent webview over the video, so
+  // mpv bakes a snapshot of the webview's UI onto the video via an overlay instead. Toggle it
+  // whenever there's visible UI to show (controls / skip button / toast); the Rust side keeps
+  // the snapshot refreshed at ~15fps while active. No effect off Linux/Game mode.
+  const overlayActive = $derived(gmMode && $playing && (controlsVisible || showSkip || !!$playerNotice))
+  $effect(() => {
+    invoke('player_gm_overlay', { visible: overlayActive }).catch(() => {})
+  })
+
   // TEMP diagnostic: log mpv's actual render-surface size vs the window on first frame,
   // so a "zoomed" render can be pinned to DPI (osd-width ≫ window×DPR) vs a size mismatch.
   let diagged = false
@@ -204,10 +224,10 @@
      visible and clickable while playing. Cursor stays visible (mpv autohide off). -->
 <div
   class="fixed inset-y-0 right-0 z-20 cursor-pointer"
-  class:left-14={!$fullscreen}
-  class:left-0={$fullscreen}
+  class:left-14={!$fullscreen && !gmMode}
+  class:left-0={$fullscreen || gmMode}
   class:cursor-none={!controlsVisible}
-  onclick={() => cmd('cycle', ['pause'])}
+  onclick={onOverlayTap}
   role="presentation"
 >
   <!-- Loading/buffering. Black backdrop ONLY before the first frame (covers the
@@ -247,6 +267,6 @@
   {/if}
 
   {#if controlsVisible}
-    <Controls {pos} {dur} {buffer} {paused} {segments} {chapters} {cmd} onclose={close} />
+    <Controls {pos} {dur} {buffer} {paused} {segments} {chapters} {cmd} onclose={close} gm={gmMode} />
   {/if}
 </div>
