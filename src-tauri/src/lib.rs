@@ -270,6 +270,43 @@ async fn http_get(url: String, headers: Option<std::collections::HashMap<String,
     Ok(HttpReply { status, body })
 }
 
+#[derive(serde::Serialize)]
+pub struct HttpFullReply {
+    status: u16,
+    headers: std::collections::HashMap<String, String>,
+    body: String,
+}
+
+/// Pooled HTTP POST that returns status + headers + body as PLAIN data (no streamed
+/// resource). Used by the AniList GraphQL client: the webview `fetch` is CORS-bound
+/// (breaks when AniList drops `Access-Control-Allow-Origin`), and `@tauri-apps/plugin-http`'s
+/// `fetch` returns a lazily-read resource whose rid gets invalidated under urql's concurrent
+/// queries ("resource id N is invalid"). This materializes everything up front — the JS side
+/// wraps it in a real `Response`. Reuses the shared pool (warm TLS). NEVER logs the url.
+#[tauri::command]
+async fn http_post(
+    url: String,
+    body: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<HttpFullReply, String> {
+    let mut req = http_client().post(&url).body(body);
+    if let Some(h) = headers {
+        for (k, v) in h {
+            req = req.header(k, v);
+        }
+    }
+    let resp = req.send().await.map_err(|_| "request failed".to_string())?;
+    let status = resp.status().as_u16();
+    let mut hdrs = std::collections::HashMap::new();
+    for (k, v) in resp.headers() {
+        if let Ok(vs) = v.to_str() {
+            hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
+        }
+    }
+    let body = resp.text().await.map_err(|_| "read failed".to_string())?;
+    Ok(HttpFullReply { status, headers: hdrs, body })
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -958,6 +995,7 @@ pub fn run() {
             player_thumb_info,
             player_prefetch,
             http_get,
+            http_post,
             set_doh,
             updater_check,
             updater_install,
