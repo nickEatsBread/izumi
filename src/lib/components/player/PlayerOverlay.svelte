@@ -11,7 +11,7 @@
   import { autoSkip, seekDuration, videoFit, uiScale } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
-  import { startGamepadSeek } from '$lib/player/gamepad'
+  import { startNativeGamepadSeek } from '$lib/player/gamepad'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -100,10 +100,11 @@
   // The shared scrub store commits through the same absolute seek as touch/skip.
   initScrub((t) => seekTo(t))
 
-  // Game mode: poll the Deck triggers (L2/R2) while a video is playing.
+  // Game mode: read the Deck triggers (L2/R2) via the Rust backend while a video is playing
+  // (the webview's own Gamepad API doesn't see the Deck controller under gamescope).
   $effect(() => {
     if (!gmMode || !$playing) return
-    const stop = startGamepadSeek({
+    const stop = startNativeGamepadSeek({
       getPos: () => pos,
       getDur: () => dur,
       seek: (t) => seekTo(t),
@@ -111,7 +112,7 @@
       moveScrub: (t) => moveScrub(t),
       endScrub: () => endScrub(),
       onActivity: () => poke(),
-    }, true) // debug=true for the first on-device run; will be flipped to false after verification
+    })
     return stop
   })
 

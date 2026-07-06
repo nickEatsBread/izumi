@@ -79,6 +79,10 @@ wayland-egl = "0.32"
 # composites controls over fullscreen video, same UX as Desktop. (Measured on gamescope 3.16.)
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 raw-window-handle = "0.6"
+# Steam Deck L2/R2 seek: webkit2gtk's own Gamepad API (libmanette) doesn't reliably see the
+# Deck's (Steam-virtual) controller, so we read it directly via evdev in the Rust backend and
+# forward the trigger state to the webview. gilrs handles enumeration + Xbox trigger mapping.
+gilrs = "0.11"
 # Pinned to the exact version wry/Tauri 2.11 links (must unify — one `web_kit2` links key).
 # Used to force HardwareAccelerationPolicy::Never so WebKit renders the UI in software:
 # with accelerated compositing on, WebKit's layer subsurfaces don't clear on a transparent

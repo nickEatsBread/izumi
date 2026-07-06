@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from './repeat'
 
 // Tunables (seconds + ms). Ramp/interval numbers govern how fast a held trigger scrubs;
@@ -96,4 +98,36 @@ export function startGamepadSeek(d: SeekDeps, debug = false): () => void {
   }
   raf = requestAnimationFrame(loop)
   return () => cancelAnimationFrame(raf)
+}
+
+// Steam Deck path: the webview's Gamepad API doesn't see the Deck controller, so the Rust
+// backend reads it via evdev and emits `gamepad-trigger` = [l2, r2] booleans. We feed those
+// into the same TriggerScrubbers, driven by a rAF loop (so the accelerating hold-scrub still
+// ticks). Returns a stop function. Used in Game mode instead of startGamepadSeek.
+export function startNativeGamepadSeek(d: SeekDeps): () => void {
+  const l2 = new TriggerScrubber(-1, d)
+  const r2 = new TriggerScrubber(+1, d)
+  const held = { L: false, R: false }
+  let raf = 0
+  let unlisten: (() => void) | null = null
+
+  invoke('gamepad_start').catch(() => {})
+  listen<[boolean, boolean]>('gamepad-trigger', (e) => {
+    held.L = e.payload[0]
+    held.R = e.payload[1]
+  }).then((u) => { unlisten = u })
+
+  const loop = () => {
+    const now = performance.now()
+    l2.update(held.L, now)
+    r2.update(held.R, now)
+    raf = requestAnimationFrame(loop)
+  }
+  raf = requestAnimationFrame(loop)
+
+  return () => {
+    cancelAnimationFrame(raf)
+    unlisten?.()
+    invoke('gamepad_stop').catch(() => {})
+  }
 }

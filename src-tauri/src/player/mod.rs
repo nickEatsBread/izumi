@@ -41,6 +41,10 @@ pub mod linux_x11;
 // mpv bakes over the video in its own opaque surface. See linux_overlay.rs.
 #[cfg(target_os = "linux")]
 pub mod linux_overlay;
+// Steam Deck L2/R2 seek: read the (Steam-virtual) gamepad via evdev in the backend and forward
+// the trigger state to the webview — webkit2gtk's own Gamepad API doesn't see it. See gamepad_linux.rs.
+#[cfg(target_os = "linux")]
+pub mod gamepad_linux;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

@@ -135,6 +135,23 @@ fn player_gm_overlay(app: AppHandle, visible: bool) {
     }
 }
 
+/// Start/stop the backend gamepad reader (Steam Deck L2/R2 seek). The webview's own Gamepad
+/// API doesn't see the Deck controller under gamescope, so we read it via evdev in Rust and
+/// emit `gamepad-trigger` events the frontend feeds into the seek logic (see gamepad_linux).
+#[tauri::command]
+fn gamepad_start(app: AppHandle) {
+    #[cfg(target_os = "linux")]
+    player::gamepad_linux::start(app);
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
+}
+
+#[tauri::command]
+fn gamepad_stop() {
+    #[cfg(target_os = "linux")]
+    player::gamepad_linux::stop();
+}
+
 /// Launch an external video player (the user's chosen executable) with the stream
 /// URL as its sole argument — passes exactly the URL and no
 /// flags. Used when "external player" is enabled in settings; playback then happens
@@ -988,6 +1005,8 @@ pub fn run() {
             close_player,
             player_is_game_mode,
             player_gm_overlay,
+            gamepad_start,
+            gamepad_stop,
             spawn_external_player,
             player_get_property,
             player_sprite_start,
