@@ -49,6 +49,9 @@ export const autoplayNext = persisted<boolean>('player-autoplay-next', true)
 export const bingePreload = persisted<boolean>('player-binge-preload', true)
 /** Seconds the -N/+N buttons and arrow keys seek. */
 export const seekDuration = persisted<number>('player-seek-seconds', 10)
+/** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
+ *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
+export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
 /** How video fits the player area. 'best' = keep aspect (letterbox, default); 'fill' =
  *  crop to fill the frame (mpv panscan). */
 export type VideoFit = 'best' | 'fill'

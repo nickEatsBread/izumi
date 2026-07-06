@@ -4,6 +4,7 @@
   import { onDestroy } from 'svelte'
   import { spriteKey } from '$lib/player/session'
   import { scrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
+  import { scrubThumbnails } from '$lib/settings/ui'
   import type { Segment } from '$lib/stremio/aniskip'
 
   // Seekbar for the libmpv player. Renders stacked layers (buffered,
@@ -91,6 +92,9 @@
   // itself runs in Rust (~a keyframe seek), so the tooltip shows a shimmer for that
   // brief moment then flips to the frame. `pending` (grab capped) → re-poll this spot.
   function requestTile(t: number) {
+    // Thumbnails disabled in settings → skip the on-demand frame grab entirely (lighter on
+    // the Deck iGPU); the tooltip shows just the time + chapter.
+    if (!get(scrubThumbnails)) { thumbSrc = ''; return }
     const my = ++reqSeq
     const i = interval > 0 ? Math.round(t / interval) : -1
     if (i >= 0 && tileCache.has(i)) { thumbSrc = tileCache.get(i)!; return }
@@ -274,22 +278,30 @@
        generated yet (never blank/white). -->
   {#if grabbed && dur > 0}
     <div class="pointer-events-none absolute bottom-9 left-0 flex" style="transform:translateX(calc({tipX}px - 50%));will-change:transform">
-      <div class="overflow-hidden rounded-lg border border-white bg-neutral-200 shadow-lg">
-        <div class="relative">
-          {#if thumbSrc}
-            <img src={thumbSrc} alt="" class="block w-48" />
-          {:else}
-            <!-- Tile not ready yet: loading shimmer (never an episode still). -->
-            <div class="relative overflow-hidden bg-neutral-300" style="width:192px;height:108px">
-              <div class="absolute inset-0 animate-pulse bg-gradient-to-r from-neutral-300 via-neutral-100 to-neutral-300"></div>
-            </div>
-          {/if}
-          {#if labelAt(scrubT)}
-            <div class="absolute left-1/2 top-0 max-w-40 -translate-x-1/2 truncate rounded-b-lg bg-white/90 px-2 py-1 text-xs text-zinc-900">{labelAt(scrubT)}</div>
-          {/if}
-          <div class="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-lg bg-white/90 px-2 py-1 font-mono text-sm leading-none tabular-nums text-zinc-900">{fmt(scrubT)}</div>
+      {#if $scrubThumbnails}
+        <div class="overflow-hidden rounded-lg border border-white bg-neutral-200 shadow-lg">
+          <div class="relative">
+            {#if thumbSrc}
+              <img src={thumbSrc} alt="" class="block w-48" />
+            {:else}
+              <!-- Tile not ready yet: loading shimmer (never an episode still). -->
+              <div class="relative overflow-hidden bg-neutral-300" style="width:192px;height:108px">
+                <div class="absolute inset-0 animate-pulse bg-gradient-to-r from-neutral-300 via-neutral-100 to-neutral-300"></div>
+              </div>
+            {/if}
+            {#if labelAt(scrubT)}
+              <div class="absolute left-1/2 top-0 max-w-40 -translate-x-1/2 truncate rounded-b-lg bg-white/90 px-2 py-1 text-xs text-zinc-900">{labelAt(scrubT)}</div>
+            {/if}
+            <div class="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-t-lg bg-white/90 px-2 py-1 font-mono text-sm leading-none tabular-nums text-zinc-900">{fmt(scrubT)}</div>
+          </div>
         </div>
-      </div>
+      {:else}
+        <!-- Thumbnails off: compact time (+ chapter) chip, no frame preview. -->
+        <div class="flex flex-col items-center gap-0.5 rounded-lg bg-white/90 px-2.5 py-1.5 shadow-lg">
+          {#if labelAt(scrubT)}<div class="max-w-40 truncate text-xs text-zinc-600">{labelAt(scrubT)}</div>{/if}
+          <div class="font-mono text-sm leading-none tabular-nums text-zinc-900">{fmt(scrubT)}</div>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>
