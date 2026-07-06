@@ -10,6 +10,8 @@
   import { playPrev, playNext } from '$lib/stremio/play'
   import { autoSkip, seekDuration, videoFit, uiScale } from '$lib/settings/ui'
   import { get } from 'svelte/store'
+  import { initScrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
+  import { startGamepadSeek } from '$lib/player/gamepad'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -94,6 +96,25 @@
   // Exact absolute seek so auto-skip/skip land past the segment (a keyframe seek could
   // snap back into it and re-skip forever).
   const seekTo = (t: number) => cmd('seek', [Math.max(0, t).toFixed(3), 'absolute+exact'])
+
+  // The shared scrub store commits through the same absolute seek as touch/skip.
+  initScrub((t) => seekTo(t))
+
+  // Game mode: poll the Deck triggers (L2/R2) while a video is playing.
+  $effect(() => {
+    if (!gmMode || !$playing) return
+    const stop = startGamepadSeek({
+      getPos: () => pos,
+      getDur: () => dur,
+      seek: (t) => seekTo(t),
+      beginScrub: (t) => beginScrub(t, 'pad'),
+      moveScrub: (t) => moveScrub(t),
+      endScrub: () => endScrub(),
+      onActivity: () => poke(),
+    }, true) // debug=true for the first on-device run; will be flipped to false after verification
+    return stop
+  })
+
   async function close() {
     await exitFullscreen()
     playing.set(false)
