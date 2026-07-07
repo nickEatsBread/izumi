@@ -51,7 +51,11 @@ body { overflow-x: clip; }
 .gamemode [data-focusable]:focus:has(.focus-cover) { box-shadow: none; }
 .gamemode [data-focusable]:focus .focus-cover {
   box-shadow: 0 0 0 3px #fff;
-  transform: scale(1.06);
+  /* Bottom-anchored pop: the cover grows UP + sideways, its bottom edge stays put just above
+     the title, so the ring never covers the title. The row is given top padding in game mode
+     (Carousel) so the grown top + ring isn't clipped by the horizontally-scrolling track. */
+  transform: scale(1.04);
+  transform-origin: center bottom;
   transition: transform 140ms ease, box-shadow 140ms ease;
   position: relative;
   z-index: 10;

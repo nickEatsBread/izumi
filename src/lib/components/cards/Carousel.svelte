@@ -64,7 +64,7 @@
   </div>
   <div class="relative">
     <div bind:this={scroller} use:dragScroll onwheel={onWheel} onscroll={update}
-         class="flex gap-3 overflow-x-scroll px-8 pb-2">
+         class="flex gap-3 overflow-x-scroll px-8 pb-2" class:pt-3={gm}>
       {@render children()}
     </div>
 
