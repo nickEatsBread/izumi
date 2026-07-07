@@ -2,14 +2,14 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, spriteKey, bingeSource } from '$lib/player/session'
+import { playing } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
-import { playNext, playPrev } from '$lib/stremio/play'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
-// keyboard nav (browse) or player commands (playback). L2/R2 are handled separately by the
-// player's seek scrub (see player/gamepad.ts). Directions repeat (accelerating) while held.
+// keyboard nav. Directions repeat (accelerating) while held; in the player they seek. The
+// player itself owns A/B/L1/R1 (context-aware skip/pause/back — see PlayerOverlay) and L2/R2
+// (the seek scrub — see player/gamepad.ts), so we only act on those when the player is closed.
 
 type Dir = 'up' | 'down' | 'left' | 'right'
 const DIRS: Dir[] = ['up', 'down', 'left', 'right']
@@ -20,12 +20,6 @@ function keydown(key: string) {
 }
 function playerCmd(name: string, args: string[] = []) {
   invoke('player_command', { name, args }).catch(() => {})
-}
-function closePlayer() {
-  playing.set(false)
-  spriteKey.set(null)
-  bingeSource.set(null)
-  invoke('close_player').catch(() => {})
 }
 
 /// Start the translator. Returns a stop function. Runs for the whole app while in Game mode.
@@ -59,18 +53,12 @@ export function startGamepadNav(): () => void {
       fireDir(dir)
       return
     }
+    // A/B only act in browse; the player owns them (and L1/R1, L2/R2) itself.
+    if (inPlayer()) return
     switch (name) {
-      case 'a':
-        if (inPlayer()) playerCmd('cycle', ['pause'])
-        else (document.activeElement as HTMLElement | null)?.click()
-        break
-      case 'b':
-        if (inPlayer()) closePlayer()
-        else history.back()
-        break
-      case 'l1': if (inPlayer()) playPrev(); break
-      case 'r1': if (inPlayer()) playNext(); break
-      // l2/r2: handled by the player seek scrub. start/select: reserved.
+      case 'a': (document.activeElement as HTMLElement | null)?.click(); break
+      case 'b': history.back(); break
+      // l1/r1/l2/r2/start/select: player-only or reserved.
     }
   }
 

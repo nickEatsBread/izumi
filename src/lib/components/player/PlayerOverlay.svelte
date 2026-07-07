@@ -8,6 +8,7 @@
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
+  import { goto } from '$app/navigation'
   import { autoSkip, seekDuration, videoFit, uiScale } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
@@ -165,7 +166,9 @@
   // transparent video — so CSS `cursor:none` doesn't reach it. Drive mpv's OWN cursor
   // from the idle state instead: shown while the controls are up, hidden when idle.
   $effect(() => {
-    cmd('set', ['cursor-autohide', controlsVisible ? 'no' : 'always'])
+    // Game mode is a touchscreen — never show a cursor over the video (mpv owns the cursor
+    // there, so CSS can't reach it); keep it fully hidden. Desktop toggles it with the controls.
+    cmd('set', ['cursor-autohide', gmMode ? 'always' : controlsVisible ? 'no' : 'always'])
   })
 
   // Game mode (gamescope): gamescope won't blend the transparent webview over the video, so
@@ -175,6 +178,30 @@
   const overlayActive = $derived(gmMode && $playing && (controlsVisible || showSkip || !!$playerNotice))
   $effect(() => {
     invoke('player_gm_overlay', { visible: overlayActive }).catch(() => {})
+  })
+
+  // Game mode controller: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1
+  // to us here so A can be context-aware). A = skip the intro/OP-ED when that button is showing,
+  // else play/pause. B = leave the player and go to the home screen. L1/R1 = previous/next episode.
+  $effect(() => {
+    if (!gmMode || !$playing) return
+    let un: (() => void) | null = null
+    listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
+      if (!e.payload.pressed) return
+      switch (e.payload.name) {
+        case 'a':
+          if (showSkip && currentSeg) seekTo(currentSeg.end + 0.5)
+          else cmd('cycle', ['pause'])
+          break
+        case 'b':
+          close()
+          goto('/app/home')
+          break
+        case 'l1': playPrev(); break
+        case 'r1': playNext(); break
+      }
+    }).then((u) => { un = u })
+    return () => un?.()
   })
 
   // TEMP diagnostic: log mpv's actual render-surface size vs the window on first frame,
@@ -248,7 +275,7 @@
   class="fixed inset-y-0 right-0 z-20 cursor-pointer"
   class:left-14={!$fullscreen && !gmMode}
   class:left-0={$fullscreen || gmMode}
-  class:cursor-none={!controlsVisible}
+  class:cursor-none={gmMode || !controlsVisible}
   onclick={onOverlayTap}
   role="presentation"
 >
