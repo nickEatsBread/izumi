@@ -292,9 +292,13 @@
       class="pointer-events-none absolute inset-0 flex items-center justify-center"
       class:bg-black={!firstFrame}
     >
+      <!-- Game mode: stepped spin (8 frames/s) — a continuously-animating spinner makes every
+           overlay snapshot differ, so the unchanged-frame skip never fires exactly when the
+           device is busiest (buffering). Desktop keeps the smooth spin. -->
       <div
         in:fade={{ duration: 200, delay: firstFrame ? 500 : 0 }}
         class="size-12 animate-spin rounded-full border-4 border-white/25 border-t-white"
+        style={gmMode ? 'animation-timing-function: steps(8)' : ''}
       ></div>
     </div>
   {/if}

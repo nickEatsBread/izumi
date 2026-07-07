@@ -98,7 +98,10 @@
     const my = ++reqSeq
     const i = interval > 0 ? Math.round(t / interval) : -1
     if (i >= 0 && tileCache.has(i)) { thumbSrc = tileCache.get(i)!; return }
-    thumbSrc = ''
+    // Cache miss: KEEP showing the previous frame while skimming (VacuumTube-style) instead
+    // of flashing to the shimmer — calmer to look at, and (Game mode) a stable image means
+    // the overlay snapshot is byte-identical between updates, so the changed-frame check in
+    // linux_overlay can skip the mpv re-upload. Shimmer only when there's no frame at all yet.
     const run = async () => {
       if (my !== reqSeq) return
       const key = get(spriteKey)
@@ -284,9 +287,11 @@
             {#if thumbSrc}
               <img src={thumbSrc} alt="" class="block w-48" />
             {:else}
-              <!-- Tile not ready yet: loading shimmer (never an episode still). -->
+              <!-- Tile not ready yet: loading shimmer (never an episode still). Static in game
+                   mode — an animated gradient makes every overlay snapshot differ, defeating the
+                   unchanged-frame skip and burning the web process mid-scrub. -->
               <div class="relative overflow-hidden bg-neutral-300" style="width:192px;height:108px">
-                <div class="absolute inset-0 animate-pulse bg-gradient-to-r from-neutral-300 via-neutral-100 to-neutral-300"></div>
+                <div class="absolute inset-0 bg-gradient-to-r from-neutral-300 via-neutral-100 to-neutral-300" class:animate-pulse={!gm}></div>
               </div>
             {/if}
             {#if labelAt(scrubT)}

@@ -20,7 +20,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -43,6 +43,17 @@ const FPS: u64 = 15;
 /// by [`stop`]). Cleanly handles rapid show/hide toggles without stacking timers.
 static GEN: AtomicU64 = AtomicU64::new(0);
 
+/// In-flight guard: webkit renders a snapshot in the WEB process (the same process that runs
+/// JS + input handling). On the Deck a 1280x800 raster can take longer than the timer period —
+/// without this guard requests pile up, the web process drowns, and every touch/JS interaction
+/// (the seekbar skim, the spinner) crawls. With it, the loop self-paces to what the device can
+/// actually render.
+static BUSY: AtomicBool = AtomicBool::new(false);
+
+/// Force the next completed snapshot to be pushed even if identical — set on [`start`] because
+/// a `stop` removed the mpv overlay, so the first frame after a restart must always re-add.
+static FORCE: AtomicBool = AtomicBool::new(false);
+
 /// Persistent premultiplied-BGRA buffer that mpv references each frame (it does NOT copy — see
 /// `overlay-add`). Allocated once at the video size and never reallocated, so the pointer handed
 /// to mpv stays valid. Only written on the GTK main thread; a torn read by mpv's renderer is at
@@ -53,17 +64,23 @@ static BUF: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 /// while running (it just supersedes the previous loop).
 pub fn start(app: AppHandle, window: tauri::WebviewWindow) {
     let my_gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    FORCE.store(true, Ordering::SeqCst);
     // with_webview runs on the GTK main thread — the only place the WebKit view + a glib timer
     // may be touched.
     let _ = window.with_webview(move |pw| {
         let wv = pw.inner(); // webkit2gtk::WebView (owned handle), stays on this thread
+        BUSY.store(true, Ordering::SeqCst);
         snapshot_once(&wv, &app);
         let app = app.clone();
         glib::timeout_add_local(Duration::from_millis(1000 / FPS), move || {
             if GEN.load(Ordering::SeqCst) != my_gen {
                 return glib::ControlFlow::Break;
             }
-            snapshot_once(&wv, &app);
+            // Skip the tick if the previous snapshot hasn't completed — never queue renders
+            // behind a slow one (self-pacing; see BUSY).
+            if !BUSY.swap(true, Ordering::SeqCst) {
+                snapshot_once(&wv, &app);
+            }
             glib::ControlFlow::Continue
         });
     });
@@ -79,7 +96,8 @@ pub fn stop(app: AppHandle) {
 
 /// Take one snapshot of the webview and push it to mpv as the controls overlay. Async — the
 /// snapshot completes on the GTK main thread, where we convert cairo ARGB32 (native-endian =
-/// premultiplied BGRA) directly into mpv's overlay format.
+/// premultiplied BGRA) directly into mpv's overlay format. Unchanged frames are dropped (memcmp
+/// against the previous buffer) so a static control bar costs mpv nothing between fades.
 fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
     let app = app.clone();
     wv.snapshot(
@@ -87,26 +105,37 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
         SnapshotOptions::TRANSPARENT_BACKGROUND,
         None::<&gtk::gio::Cancellable>,
         move |res| {
-            let Ok(surface) = res else { return };
-            let Ok(mut img) = cairo::ImageSurface::try_from(surface) else { return };
-            let (w, h, stride) = (img.width() as i64, img.height() as i64, img.stride() as i64);
-            if w <= 0 || h <= 0 || stride <= 0 {
-                return;
-            }
-            let need = (stride * h) as usize;
-            let addr = {
-                let Ok(data) = img.data() else { return };
-                let Ok(mut buf) = BUF.lock() else { return };
-                if buf.len() != need {
-                    buf.clear();
-                    buf.resize(need, 0);
+            // Inner fn so every early-return still releases the in-flight guard below.
+            let push = |res: Result<cairo::Surface, glib::Error>| -> Option<()> {
+                let surface = res.ok()?;
+                let mut img = cairo::ImageSurface::try_from(surface).ok()?;
+                let (w, h, stride) = (img.width() as i64, img.height() as i64, img.stride() as i64);
+                if w <= 0 || h <= 0 || stride <= 0 {
+                    return None;
                 }
-                buf.copy_from_slice(&data[..need]);
-                buf.as_ptr() as usize
+                let need = (stride * h) as usize;
+                let data = img.data().ok()?;
+                let (addr, changed) = {
+                    let mut buf = BUF.lock().ok()?;
+                    if buf.len() == need && buf[..] == data[..need] {
+                        (buf.as_ptr() as usize, false) // identical frame — nothing to re-upload
+                    } else {
+                        if buf.len() != need {
+                            buf.clear();
+                            buf.resize(need, 0);
+                        }
+                        buf.copy_from_slice(&data[..need]);
+                        (buf.as_ptr() as usize, true)
+                    }
+                };
+                if changed || FORCE.swap(false, Ordering::SeqCst) {
+                    let ph = app.try_state::<PlayerHandle>()?;
+                    let _ = ph.overlay_add(OVERLAY_ID, 0, 0, addr, w, h, stride);
+                }
+                Some(())
             };
-            if let Some(ph) = app.try_state::<PlayerHandle>() {
-                let _ = ph.overlay_add(OVERLAY_ID, 0, 0, addr, w, h, stride);
-            }
+            let _ = push(res);
+            BUSY.store(false, Ordering::SeqCst);
         },
     );
 }
