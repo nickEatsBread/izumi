@@ -3,6 +3,8 @@
   import { title, cover, season, format } from '$lib/anilist/media'
   import { fade } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
+  import { get } from 'svelte/store'
+  import { gameMode } from '$lib/player/session'
   import PreviewCard from './PreviewCard.svelte'
   let { media }: { media: Media } = $props()
 
@@ -27,7 +29,9 @@
   // `suppressed` blocks opening for a beat after a carousel arrow is used, so
   // clicking an arrow (which scrolls a card under the cursor) can't pop a preview.
   let suppressed = false
-  function open() { if (suppressed) return; clearTimeout(closeT); place(); hovered = true }
+  // Game mode (Deck): no hover-trailer previews — touch/controller has no hover, and the
+  // autoplaying trailer is a PC-only affordance.
+  function open() { if (suppressed || get(gameMode)) return; clearTimeout(closeT); place(); hovered = true }
   function scheduleClose() { clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 60) }
   function keepOpen() { clearTimeout(closeT) }
 
@@ -48,7 +52,7 @@
 
 <div bind:this={el} class="w-[152px] shrink-0" onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
   <a href={`/app/anime/${media.id}`} data-focusable class="load-in group block w-[152px]">
-    <div class="h-[228px] w-[152px] overflow-hidden rounded-md bg-muted">
+    <div class="focus-cover h-[228px] w-[152px] overflow-hidden rounded-md bg-muted">
       <img src={cover(media)} alt={title(media)} decoding="async"
            class="h-full w-full object-cover transition-transform duration-150 ease-out transform-gpu will-change-transform group-hover:scale-105" />
     </div>

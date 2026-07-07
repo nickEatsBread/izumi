@@ -2,8 +2,12 @@
   import type { Snippet } from 'svelte'
   import { dragScroll } from '$lib/nav/actions'
   import { wheelScrollAcross } from '$lib/settings/ui'
+  import { gameMode } from '$lib/player/session'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
+  // Game mode (Deck): controller/touch scrolls the row directly, so the mouse-only
+  // page arrows are hidden.
+  const gm = $derived($gameMode)
   // `viewMoreHref` (optional): renders a "View more" link by the title.
   let { title, viewMoreHref, children }: { title: string; viewMoreHref?: string; children: Snippet } = $props()
 
@@ -68,13 +72,13 @@
          z-[60] sits ABOVE the card hover-preview (z-50) so the preview can't intercept
          the click; entering an arrow dismisses any open preview so it doesn't pop the
          card underneath. -->
-    {#if canLeft}
+    {#if canLeft && !gm}
       <button aria-label="Scroll left" onclick={() => page(-1)} onpointerenter={dismissPreview}
               class="absolute left-2 top-[45%] z-[60] grid size-9 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-black/70 text-white opacity-0 shadow-lg backdrop-blur transition hover:bg-black/90 group-hover/carousel:opacity-100">
         <ChevronLeft size={20} />
       </button>
     {/if}
-    {#if canRight}
+    {#if canRight && !gm}
       <button aria-label="Scroll right" onclick={() => page(1)} onpointerenter={dismissPreview}
               class="absolute right-2 top-[45%] z-[60] grid size-9 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-black/70 text-white opacity-0 shadow-lg backdrop-blur transition hover:bg-black/90 group-hover/carousel:opacity-100">
         <ChevronRight size={20} />
