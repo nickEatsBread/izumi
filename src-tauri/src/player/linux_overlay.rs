@@ -22,7 +22,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gtk::cairo;
 use gtk::glib;
@@ -42,6 +42,11 @@ const FPS: u64 = 15;
 /// stops as soon as it sees a newer generation (superseded by another `start`, or invalidated
 /// by [`stop`]). Cleanly handles rapid show/hide toggles without stacking timers.
 static GEN: AtomicU64 = AtomicU64::new(0);
+
+/// PROFILING (temporary): count frames + wall-clock of the last log, so we can log the real
+/// raster/processing cost + effective fps on the Deck and size the fix from data, not guesses.
+static PROF_N: AtomicU64 = AtomicU64::new(0);
+static PROF_LAST: Mutex<Option<Instant>> = Mutex::new(None);
 
 /// In-flight guard: webkit renders a snapshot in the WEB process (the same process that runs
 /// JS + input handling). On the Deck a 1280x800 raster can take longer than the timer period —
@@ -100,11 +105,14 @@ pub fn stop(app: AppHandle) {
 /// against the previous buffer) so a static control bar costs mpv nothing between fades.
 fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
     let app = app.clone();
+    let t_req = Instant::now();
     wv.snapshot(
         SnapshotRegion::Visible,
         SnapshotOptions::TRANSPARENT_BACKGROUND,
         None::<&gtk::gio::Cancellable>,
         move |res| {
+            let raster = t_req.elapsed();
+            let t_proc = Instant::now();
             // Inner fn so every early-return still releases the in-flight guard below.
             let push = |res: Result<cairo::Surface, glib::Error>| -> Option<()> {
                 let surface = res.ok()?;
@@ -136,6 +144,21 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
             };
             let _ = push(res);
             BUSY.store(false, Ordering::SeqCst);
+            // PROFILING: every 20 frames, log raster + processing cost + effective fps.
+            let n = PROF_N.fetch_add(1, Ordering::Relaxed) + 1;
+            if n % 20 == 0 {
+                if let Ok(mut last) = PROF_LAST.lock() {
+                    let now = Instant::now();
+                    let fps = last.map(|t| 20_000.0 / now.duration_since(t).as_millis().max(1) as f64);
+                    *last = Some(now);
+                    crate::player::linux_embed::elog(&format!(
+                        "overlay-prof: raster={}ms proc={}ms ~{:.0}fps",
+                        raster.as_millis(),
+                        t_proc.elapsed().as_millis(),
+                        fps.unwrap_or(0.0),
+                    ));
+                }
+            }
         },
     );
 }
