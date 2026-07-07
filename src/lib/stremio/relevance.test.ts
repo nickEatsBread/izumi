@@ -87,4 +87,16 @@ describe('likelyOtherProduction (One Piece anime vs 2023 live action)', () => {
   it('no-op without a known anime year and not absolute-numbered', () => {
     expect(likelyOtherProduction(s('One.Piece.2023.S01E01.mkv'), undefined)).toBe(false)
   })
+  // A shared kitsu id can pull an OLDER film into a newer series (the 1995 Ghost in the
+  // Shell movie under the 2026 "Koukaku Kidoutai" series).
+  it('drops an older same-title film polluting a newer series', () => {
+    expect(likelyOtherProduction(s('Ghost in the Shell 1995 (UHD BD 1080p FLAC HDR10 x265).mkv'), 2026)).toBe(true)
+    expect(likelyOtherProduction(s('GHOST IN THE SHELL 1995 4K HDR REMASTERED BluRay 1080p HEVC 10bit DTS.mkv'), 2026)).toBe(true)
+  })
+  it('keeps the real series episode of that newer series', () => {
+    expect(likelyOtherProduction(s('[DKB] The Ghost in the Shell - S01E01 [1080p][HEVC x265 10bit].mkv'), 2026)).toBe(false)
+  })
+  it('never drops a plain absolute-numbered episode even with an off release year', () => {
+    expect(likelyOtherProduction(s('[Erai-raws] Some Anime - 12 (2019) [1080p].mkv'), 2026)).toBe(false)
+  })
 })

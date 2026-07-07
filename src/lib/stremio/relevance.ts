@@ -69,11 +69,19 @@ export function isEpisodeExtra(stream: Stream): boolean {
 export function likelyOtherProduction(stream: Stream, animeYear?: number, absoluteNumbered = false): boolean {
   const name = nameOf(stream)
   const hasSceneEp = /\bS\d{1,2}E\d{1,3}\b/i.test(name)
-  if (!hasSceneEp) return false // anime = absolute numbering
-  if (absoluteNumbered) return true // long-runner + SxxExx ⇒ not the anime
+  if (hasSceneEp && absoluteNumbered) return true // long-runner + SxxExx ⇒ not the anime
   if (!animeYear) return false
   const years = [...name.matchAll(/\b(19\d{2}|20\d{2})\b/g)].map((m) => Number(m[1]))
     .filter((y) => y >= 1950 && y <= 2035)
   if (!years.length || years.includes(animeYear)) return false
-  return years.some((y) => y > animeYear + 1)
+  // Scene-numbered file + a NEWER disambiguation year ⇒ a remake/live-action after the anime
+  // ("One.Piece.2023.S01E01" under the 1999 anime's id).
+  if (hasSceneEp) return years.some((y) => y > animeYear + 1)
+  // No scene episode: a plain absolute-numbered episode ("[Group] Title - 067") is legit, so
+  // keep anything with a "- NNN" episode number. But a MOVIE-like file (no episode number)
+  // whose only year is clearly OFF from the anime's debut is a different production sharing the
+  // kitsu id — e.g. the 1995 Ghost in the Shell film polluting the 2026 series. Drop it.
+  const bare = name.replace(/^\s*\[[^\]]*\]\s*/, '')
+  if (/-\s*\d{1,4}(?:v\d)?\b/.test(bare)) return false
+  return years.some((y) => y < animeYear - 1 || y > animeYear + 1)
 }
