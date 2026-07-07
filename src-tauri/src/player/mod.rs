@@ -695,8 +695,11 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // window, with a small fast-start probe.
         let _ = init.set_option("cache", "yes");
         let _ = init.set_option("force-seekable", "yes");
-        let _ = init.set_option("demuxer-max-bytes", "536870912");
-        let _ = init.set_option("demuxer-max-back-bytes", "134217728");
+        // Rolling stream buffer (a few minutes of anime) — NOT the whole file. mpv's own
+        // default is ~150 MiB; VLC/HTML5 keep a modest buffer too. The old 512 MiB could hold
+        // an entire episode in RAM on a handheld, which is the memory bloat we're avoiding.
+        let _ = init.set_option("demuxer-max-bytes", "134217728");
+        let _ = init.set_option("demuxer-max-back-bytes", "33554432");
         let _ = init.set_option("demuxer-lavf-probesize", "2097152");
         let _ = init.set_option("demuxer-lavf-analyzeduration", "1");
         let _ = init.set_option("stream-buffer-size", "262144");
@@ -870,8 +873,11 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // Large forward + back BACKGROUND cache (a CEILING, not a pre-fill gate — it
         // does NOT delay the first frame). 512 MiB ahead for scrubbing; 128 MiB back
         // for instant short backward seeks.
-        let _ = init.set_option("demuxer-max-bytes", "536870912");
-        let _ = init.set_option("demuxer-max-back-bytes", "134217728");
+        // Rolling stream buffer (a few minutes of anime) — NOT the whole file. mpv's own
+        // default is ~150 MiB; VLC/HTML5 keep a modest buffer too. The old 512 MiB could hold
+        // an entire episode in RAM on a handheld, which is the memory bloat we're avoiding.
+        let _ = init.set_option("demuxer-max-bytes", "134217728");
+        let _ = init.set_option("demuxer-max-back-bytes", "33554432");
 
         // FAST START: the first frame is gated by libavformat PROBING, not the cache.
         // mpv leaves probesize/analyzeduration at 0 → FFmpeg's own defaults apply
