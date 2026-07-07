@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from './repeat'
 
@@ -101,9 +100,10 @@ export function startGamepadSeek(d: SeekDeps, debug = false): () => void {
 }
 
 // Steam Deck path: the webview's Gamepad API doesn't see the Deck controller, so the Rust
-// backend reads it via evdev and emits `gamepad-trigger` = [l2, r2] booleans. We feed those
-// into the same TriggerScrubbers, driven by a rAF loop (so the accelerating hold-scrub still
-// ticks). Returns a stop function. Used in Game mode instead of startGamepadSeek.
+// backend reads it via evdev and emits `gamepad-input` = { name, pressed }. We pick out l2/r2
+// and feed the TriggerScrubbers, driven by a rAF loop (so the accelerating hold-scrub still
+// ticks). The reader itself is started app-wide (see nav/gamepad.ts + the app layout); this
+// only subscribes. Returns a stop function. Used in Game mode.
 export function startNativeGamepadSeek(d: SeekDeps): () => void {
   const l2 = new TriggerScrubber(-1, d)
   const r2 = new TriggerScrubber(+1, d)
@@ -111,10 +111,9 @@ export function startNativeGamepadSeek(d: SeekDeps): () => void {
   let raf = 0
   let unlisten: (() => void) | null = null
 
-  invoke('gamepad_start').catch(() => {})
-  listen<[boolean, boolean]>('gamepad-trigger', (e) => {
-    held.L = e.payload[0]
-    held.R = e.payload[1]
+  listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
+    if (e.payload.name === 'l2') held.L = e.payload.pressed
+    else if (e.payload.name === 'r2') held.R = e.payload.pressed
   }).then((u) => { unlisten = u })
 
   const loop = () => {
@@ -128,6 +127,5 @@ export function startNativeGamepadSeek(d: SeekDeps): () => void {
   return () => {
     cancelAnimationFrame(raf)
     unlisten?.()
-    invoke('gamepad_stop').catch(() => {})
   }
 }

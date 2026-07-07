@@ -10,6 +10,7 @@
   import { beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav } from '$lib/nav'
+  import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
   import { fetchManifest } from '$lib/stremio/manifest'
@@ -18,6 +19,14 @@
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
   import { get } from 'svelte/store'
   let { children } = $props()
+  // Game mode (Deck): start the backend controller reader + the app-wide gamepad→nav
+  // translator once gamescope/Deck mode is resolved. Reacts to the async gameMode store.
+  $effect(() => {
+    if (!$gameMode) return
+    invoke('gamepad_start').catch(() => {})
+    const stop = startGamepadNav()
+    return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
+  })
   $effect(() => {
     initInput()
     initDpadNav()
