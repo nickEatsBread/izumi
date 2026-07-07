@@ -31,7 +31,7 @@
 {/if}
 <!-- Playing: a solid opaque rail so the video sits to its right and never shows
      through the sidebar. -->
-<nav class="fixed inset-y-0 left-0 z-30 flex w-14 flex-col items-center gap-2 py-3 pt-9 {$playing ? 'bg-background' : 'drop-shadow-md'}">
+<nav data-nav-sidebar class="fixed inset-y-0 left-0 z-30 flex w-14 flex-col items-center gap-2 py-3 pt-9 {$playing ? 'bg-background' : 'drop-shadow-md'}">
   <a href="/app/home" class="group mb-3" data-focusable>
     <div class="transition-transform duration-200 group-hover:scale-110"><Logo /></div>
   </a>

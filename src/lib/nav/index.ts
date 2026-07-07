@@ -14,7 +14,17 @@ export function initDpadNav() {
     const active = document.activeElement as HTMLElement
     const cur = active?.getBoundingClientRect?.() ?? els[0]?.getBoundingClientRect()
     if (!cur) return
-    const cands: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
+    // Region gate: the sidebar is a separate nav region (a fixed left rail). Up/down should
+    // stay INSIDE the current region — moving between content rows must never jump to the
+    // sidebar, and moving within the sidebar stays in it. The sidebar is reached deliberately
+    // by pressing LEFT at a row's edge, so left/right are left unrestricted.
+    const inSidebar = (el: Element | null) => !!el?.closest('[data-nav-sidebar]')
+    const vertical = dir === 'up' || dir === 'down'
+    const activeInSidebar = inSidebar(active)
+    const cands: ElCand[] = els
+      .filter(el => el !== active)
+      .filter(el => !vertical || inSidebar(el) === activeInSidebar)
+      .map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
     const pick = pickInDirection(cur, cands, dir)
     if (pick?.el) {
       // Focus WITHOUT the browser's instant jump-scroll, then smoothly center the target
