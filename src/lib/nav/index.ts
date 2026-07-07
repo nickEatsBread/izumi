@@ -16,6 +16,14 @@ export function initDpadNav() {
     if (!cur) return
     const cands: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
     const pick = pickInDirection(cur, cands, dir)
-    if (pick?.el) { pick.el.focus(); e.preventDefault() }
+    if (pick?.el) {
+      // Focus WITHOUT the browser's instant jump-scroll, then smoothly center the target
+      // (both axes: the row scrolls horizontally, the page vertically) — the VacuumTube /
+      // YouTube-TV feel. scrollIntoView walks every scroll ancestor, so nested carousels
+      // and the page both animate.
+      pick.el.focus({ preventScroll: true })
+      pick.el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+      e.preventDefault()
+    }
   })
 }

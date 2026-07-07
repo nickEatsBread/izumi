@@ -58,8 +58,13 @@
   // behind the webview and is unaffected, so the sidebar-inset math below scales by
   // the same factor to keep the video hole aligned with the (zoomed) sidebar rail.
   $effect(() => {
+    // Game mode (gamescope): scale the browse UI up ~25% for the Deck's small screen +
+    // controller distance. Not while the player is up (its controls are already sized for
+    // touch). `gamemode` class drives the no-cursor + focus-highlight rules in app.css.
+    const z = $uiScale * ($gameMode && !$playing ? 1.25 : 1)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(document.documentElement.style as any).zoom = String($uiScale)
+    ;(document.documentElement.style as any).zoom = String(z)
+    document.documentElement.classList.toggle('gamemode', $gameMode)
   })
 
   // Single-window player: mpv renders into THIS window, behind the webview. When
