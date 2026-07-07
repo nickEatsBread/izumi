@@ -270,12 +270,15 @@
 
 <!-- Transparent full-window overlay: mpv shows through, controls composite on top.
      z-20 keeps it below the sidebar nav (z-30) and titlebar (z-50), so those stay
-     visible and clickable while playing. Cursor stays visible (mpv autohide off). -->
+     visible and clickable while playing. Cursor hides when the controls auto-hide over the
+     video (and always in game mode). cursor-pointer/none are mutually exclusive so neither
+     conflicting utility wins by stylesheet order. -->
 <div
-  class="fixed inset-y-0 right-0 z-20 cursor-pointer"
+  class="fixed inset-y-0 right-0 z-20"
+  class:cursor-pointer={!gmMode && controlsVisible}
+  class:cursor-none={gmMode || !controlsVisible}
   class:left-14={!$fullscreen && !gmMode}
   class:left-0={$fullscreen || gmMode}
-  class:cursor-none={gmMode || !controlsVisible}
   onclick={onOverlayTap}
   role="presentation"
 >
