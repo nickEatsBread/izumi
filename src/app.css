@@ -29,7 +29,10 @@ body { overflow-x: clip; }
    moves into a row. Keep the browse calm and instant. */
 .gamemode .load-in { animation: none; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes heroIn { from { opacity: 0; filter: blur(6px); } to { opacity: 1; filter: blur(0); } }
+/* Opacity-only (no `filter: blur`): WebKitGTK blurs the WHOLE page during CSS filter
+   animations (Tauri #9088), and the hero re-fires this on every hero change ({#key}), which
+   left the Deck UI soft. A plain fade avoids the bug on both Deck modes. */
+@keyframes heroIn { from { opacity: 0; } to { opacity: 1; } }
 /* Skeleton shimmer (swipe) for loading placeholders. */
 @keyframes skeleton-swipe { 100% { transform: translateX(100%); } }
 .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); }
