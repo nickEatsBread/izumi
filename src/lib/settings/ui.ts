@@ -7,6 +7,11 @@ export type EpisodeLayout = 'cards' | 'compact'
 /** Persisted episode-list layout preference (default: rich cards). */
 export const episodeLayout = persisted<EpisodeLayout>('episode-layout', 'cards')
 
+/** Which title to show for anime across the app (see `title()` in anilist/media). */
+export type TitleLanguage = 'romaji' | 'english'
+/** Persisted title-language preference (default: Romaji). */
+export const titleLanguage = persisted<TitleLanguage>('title-language', 'romaji')
+
 /**
  * Auto-skip OP/ED/recap segments (from AniSkip) during playback. When on, the
  * player seeks past a segment automatically the first time the playhead enters it

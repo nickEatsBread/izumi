@@ -1,6 +1,16 @@
+import { get } from 'svelte/store'
+import { titleLanguage } from '$lib/settings/ui'
 import type { Media } from './types'
 
-export const title = (m: Media) => m.title.userPreferred || m.title.english || m.title.romaji || 'TBA'
+// Title in the user's preferred language (Settings → Interface). Romaji-first or English-first,
+// each falling back to the other (then userPreferred) so a missing variant never shows 'TBA'.
+// Reads the setting live; new titles pick up a change as you navigate/browse.
+export const title = (m: Media) => {
+  const t = m.title
+  return get(titleLanguage) === 'english'
+    ? t.english || t.romaji || t.userPreferred || 'TBA'
+    : t.romaji || t.english || t.userPreferred || 'TBA'
+}
 
 export const banner = (m: Media) =>
   m.bannerImage
