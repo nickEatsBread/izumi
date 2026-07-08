@@ -14,7 +14,8 @@
   import Check from 'lucide-svelte/icons/check'
 
   let {
-    media, ep, meta, showThumb, released, isNext, filler = false, dl, next, onplay, ondownload,
+    media, ep, meta, showThumb, released, isNext, filler = false, dl, next, onplay,
+    selecting = false, selectedEp = false,
   }: {
     media: Media
     ep: number
@@ -26,7 +27,10 @@
     dl?: DownloadItem
     next?: { episode: number; timeUntilAiring: number } | null
     onplay: (ep: number) => void
-    ondownload?: (ep: number) => void
+    // Download select mode (driven by EpisodeList): a tap toggles selection instead of
+    // playing, and the card shows a checkbox instead of the play affordance.
+    selecting?: boolean
+    selectedEp?: boolean
   } = $props()
 
   const img = $derived(meta?.image)
@@ -59,23 +63,22 @@
   }
 </script>
 
-{#snippet dlBtn(cls: string)}
-  {#if released && ondownload}
-    <button
-      type="button"
-      data-focusable
-      title={dlTip}
-      onclick={(e) => { e.stopPropagation(); ondownload?.(ep) }}
-      class="{cls} z-20 grid size-7 place-items-center rounded-full bg-black/70 text-white transition hover:bg-black
-        {dl ? '' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100'}"
-    >
-      {#if !dl}<Download size={14} />
-      {:else if dl.status === 'error'}<Download size={14} class="text-destructive" />
+{#snippet statusBadge(cls: string)}
+  {#if selecting && released}
+    <!-- Select mode: checkbox (the card tap toggles it — see EpisodeList). -->
+    <span class="{cls} z-20 grid size-7 place-items-center rounded-full border-2 transition-colors
+      {selectedEp ? 'border-theme bg-theme text-black' : 'border-white/80 bg-black/50 text-transparent'}">
+      <Check size={15} />
+    </span>
+  {:else if dl}
+    <!-- Read-only download status (the trigger now lives in EpisodeList's select mode). -->
+    <span class="{cls} z-20 grid size-7 place-items-center rounded-full bg-black/70 text-white" title={dlTip}>
+      {#if dl.status === 'error'}<Download size={14} class="text-destructive" />
       {:else if dl.status === 'queued'}<Loader size={14} class="animate-spin" />
-      {:else if dl.status === 'downloading'}<span class="text-[0.55rem] font-black tabular-nums">{dlPct}</span>
+      {:else if dl.status === 'downloading'}<span class="text-[0.55rem] font-black tabular-nums text-blue-300">{dlPct}</span>
       {:else if dl.status === 'paused'}<Pause size={13} class="text-amber-400" />
       {:else}<Check size={14} class="text-green-400" />{/if}
-    </button>
+    </span>
   {/if}
 {/snippet}
 
@@ -86,9 +89,10 @@
   aria-disabled={!released}
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
-  title={released ? `Play — ${epTitle}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
+  title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${epTitle}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
   class="group flex flex-col overflow-hidden rounded-lg text-left
-    {released ? 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'}"
+    {released ? 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'}
+    {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
 >
   {#if showThumb && img}
     <div class="relative aspect-video w-full overflow-hidden bg-muted">
@@ -100,21 +104,24 @@
 
       <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{ep}</span>
 
-      {@render dlBtn('absolute right-2 top-2')}
-
-      {#if rating != null}
-        <span class:blur-sm={spoiler} class="absolute right-11 top-2 rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
-      {/if}
+      <!-- Top-right corner: rating + download status packed together so a missing badge
+           leaves NO gap (the rating used to be offset to clear a fixed download-icon slot). -->
+      <div class="absolute right-2 top-2 flex items-center gap-1.5">
+        {#if rating != null}
+          <span class:blur-sm={spoiler} class="rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
+        {/if}
+        {@render statusBadge('')}
+      </div>
 
       {#if filler}
         <span class="absolute bottom-2 right-2 z-10 rounded bg-yellow-400 px-1.5 py-0.5 text-[0.6rem] font-black text-black">FILLER</span>
       {/if}
 
-      {#if released}
+      {#if released && !selecting}
         <span class="absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover:opacity-100">
           <span class="grid h-11 w-11 place-items-center rounded-full bg-white/90 text-black">▶</span>
         </span>
-      {:else}
+      {:else if !released}
         <span class="absolute bottom-2 left-2 text-[0.7rem] font-bold text-theme">
           {isNext ? `airing in ${countdown(next?.timeUntilAiring)}` : 'Not aired'}
         </span>
@@ -155,7 +162,7 @@
         <span class:blur-sm={spoiler} class="shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
       {/if}
 
-      {@render dlBtn('shrink-0')}
+      {@render statusBadge('shrink-0')}
 
       {#if dling}
         <span class="absolute inset-x-0 bottom-0 h-1 bg-white/20"><span class="block h-full bg-blue-400 transition-[width] duration-300 ease-out" style={`width:${dlPct}%`}></span></span>
