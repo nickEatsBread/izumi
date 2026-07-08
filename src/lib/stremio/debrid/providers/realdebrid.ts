@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, VIDEO, JUNK, poll } from '../http'
+import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll } from '../http'
 import type { DebridProvider } from '../types'
 
 // Real-Debrid. Flow: addMagnet → selectFiles(all) [RD is the only one that requires
@@ -19,7 +19,13 @@ async function rd(method: string, path: string, key: string, body?: string): Pro
   // 451 = Real-Debrid has this exact torrent/infohash blocked for legal reasons
   // (DMCA). It is per-file, not your account/IP — a different release usually works.
   if (status === 451) throw new Error('Real-Debrid blocked this release (DMCA/legal) — pick a different source.')
-  if (!ok) throw new Error(`Real-Debrid request failed (${status}).`)
+  // error_code 35 = `infringing_file`: RD's content filter (May 2026) rejected this file by
+  // name/pattern. Same user-facing meaning as 451 — a different release usually works.
+  if (!ok) {
+    const code = json && typeof json === 'object' ? (json as { error_code?: number }).error_code : undefined
+    if (code === 35) throw new Error('Real-Debrid blocked this release (infringing file) — pick a different source.')
+    throw new Error(`Real-Debrid request failed (${status}).`)
+  }
   return json
 }
 
@@ -30,7 +36,19 @@ export const realdebrid: DebridProvider = {
   credential: 'apikey',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Extensions.')
-    const { id } = await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }
+    // Reuse an already-DOWNLOADED torrent for this hash instead of re-adding. A fresh addMagnet
+    // makes RD re-cache from scratch, which is why replaying a finished episode showed
+    // "downloading" again even though it completed before. If a completed entry exists, skip
+    // straight to picking the file + unrestricting.
+    const hash = hashOf(hashOrMagnet)
+    let id: string | undefined
+    try {
+      const list = await rd('GET', '/torrents?limit=100', key) as Array<{ id: string; hash?: string; status: string }>
+      id = list.find((t) => t.hash?.toLowerCase() === hash && t.status === 'downloaded')?.id
+    } catch { /* list unavailable — fall through to addMagnet */ }
+    if (!id) {
+      id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
+    }
     let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
     if (info.status === 'waiting_files_selection' || !(info.files ?? []).some((f) => f.selected)) {
       await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: 'all' }))
@@ -49,7 +67,13 @@ export const realdebrid: DebridProvider = {
     const idx = selected.indexOf(chosen)
     const link = info.links?.[idx] ?? info.links?.[0]
     if (!link) throw new Error('Debrid returned no link.')
-    const { download } = await rd('POST', '/unrestrict/link', key, form({ link })) as { download: string }
-    return download
+    const un = await rd('POST', '/unrestrict/link', key, form({ link })) as { download: string; filesize?: number }
+    // Copyright decoy guard: when a release is taken down, RD serves a tiny placeholder clip
+    // ("removed by copyright holder") in place of the real file — which otherwise just PLAYS.
+    // The torrent still advertises the real size, so a served file far smaller than that (here
+    // <50% of the torrent's bytes) is the decoy. Reject it so the user can pick another source.
+    if (chosen.bytes > 0 && un.filesize && un.filesize < chosen.bytes * 0.5)
+      throw new Error('Real-Debrid served a copyright-removed placeholder for this release — pick a different source.')
+    return un.download
   },
 }
