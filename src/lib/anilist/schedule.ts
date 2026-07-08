@@ -1,8 +1,11 @@
 import type { Media } from './types'
 export interface Airing { airingAt: number; episode: number; media: Media }
+// Week window anchored to the user's LOCAL Monday 00:00 (not UTC), so groupByDay's
+// start-relative day index buckets airings into the columns the user actually sees in their
+// timezone. Airing TIMES are already shown local (toLocaleTimeString in DayColumn).
 export function weekRange(now: Date) {
-  const d = new Date(now); const day = (d.getUTCDay() + 6) % 7 // Monday=0
-  d.setUTCHours(0, 0, 0, 0); d.setUTCDate(d.getUTCDate() - day)
+  const d = new Date(now); const day = (d.getDay() + 6) % 7 // local Monday=0
+  d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - day)
   const start = Math.floor(d.getTime() / 1000)
   return { start, end: start + 7 * 24 * 3600 }
 }
