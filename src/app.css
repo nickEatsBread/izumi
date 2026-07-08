@@ -49,8 +49,16 @@ body { overflow-x: clip; }
    touchscreen as MOUSE events (no native touch scroll), so a drag would otherwise select
    text instead of scrolling. `initTouchScroll` does the scrolling; this kills the selection. */
 .gamemode, .gamemode * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; -webkit-touch-callout: none; }
-/* Default focus indicator = ring the focused element. */
-.gamemode [data-focusable]:focus { outline: none; box-shadow: 0 0 0 3px #fff; border-radius: var(--radius); }
+/* NOTE: `content-visibility: auto` virtualization was removed — on the Deck's WebKit it forced
+   `contain: paint`, which CLIPPED the focus ring + cover-pop (thin/half borders cover-to-cover)
+   and PAINTED off-screen cards a frame late while scrolling (a black flash on the browse page).
+   Scroll perf is handled by the node-scoped drag listeners + per-frame write batching instead.
+   If long-list lag returns, add real windowing (render only in-view items + spacers), which has
+   neither artifact. */
+/* Default focus indicator = ring the focused element. The box-shadow follows the element's
+   OWN border-radius (no override here) so a round button (play/pause) keeps a round ring
+   instead of a squared-off rounded-rect. */
+.gamemode [data-focusable]:focus { outline: none; box-shadow: 0 0 0 3px #fff; }
 /* Cards mark their cover art with .focus-cover: ring + pop the COVER only, not the whole
    card (title/metadata stay put) — the mobile/TV tile-highlight the VacuumTube/CrunchyDeck
    players use. :has suppresses the whole-element ring so it doesn't double up. */
