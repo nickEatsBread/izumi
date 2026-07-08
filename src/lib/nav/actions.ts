@@ -4,28 +4,41 @@ import { gameMode, playing } from '$lib/player/session'
 export function dragScroll(node: HTMLElement) {
   let down = false, moved = false, startX = 0, startLeft = 0
   // Desktop mouse-drag-to-scroll. In Game mode the app-wide `initTouchScroll` owns ALL
-  // scrolling (the Deck webview reports touch as mouse events, so both this and that would
-  // fire on one drag) — so bail here when game mode is on and let the global handler drive.
-  const onDown = (e: PointerEvent) => { if (get(gameMode) || e.button !== 0) return; down = true; moved = false; startX = e.clientX; startLeft = node.scrollLeft }
+  // scrolling, so this bails there. Listeners live on the NODE — NOT on window — so a page with
+  // many carousels doesn't pile up global pointermove handlers, which made scrolling lag more
+  // and more the further you'd navigated (the accumulating-lag bug).
+  const onDown = (e: PointerEvent) => {
+    if (get(gameMode) || get(playing) || e.button !== 0) return
+    down = true; moved = false; startX = e.clientX; startLeft = node.scrollLeft
+  }
   const onMove = (e: PointerEvent) => {
     if (!down) return
     const dx = e.clientX - startX
-    if (Math.abs(dx) > 5) moved = true
-    node.scrollLeft = startLeft - dx
+    // Capture the pointer ONLY once a real drag begins (>5px), so the drag can continue off the
+    // node. Do NOT capture on pointerdown: while a pointer is captured the browser dispatches
+    // the `click` to the CAPTURE target (this carousel) instead of the card's <a>/button, which
+    // silently swallows card navigation — you couldn't open a title or reach the player.
+    if (!moved && Math.abs(dx) > 5) {
+      moved = true
+      try { node.setPointerCapture(e.pointerId) } catch { /* capture unsupported — fine while over the node */ }
+    }
+    if (moved) node.scrollLeft = startLeft - dx
   }
-  const onUp = () => { down = false }
+  const onUp = (e: PointerEvent) => { down = false; try { node.releasePointerCapture(e.pointerId) } catch { /* wasn't captured */ } }
   // If the pointer actually dragged, swallow the click so it doesn't open a card.
   // Capture phase so it runs before the card's own click handler.
   const onClick = (e: MouseEvent) => { if (moved) { e.preventDefault(); e.stopPropagation(); moved = false } }
   node.addEventListener('pointerdown', onDown)
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp)
+  node.addEventListener('pointermove', onMove)
+  node.addEventListener('pointerup', onUp)
+  node.addEventListener('pointercancel', onUp)
   node.addEventListener('click', onClick, true)
   return {
     destroy() {
       node.removeEventListener('pointerdown', onDown)
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
+      node.removeEventListener('pointermove', onMove)
+      node.removeEventListener('pointerup', onUp)
+      node.removeEventListener('pointercancel', onUp)
       node.removeEventListener('click', onClick, true)
     }
   }
@@ -62,14 +75,18 @@ export function initTouchScroll() {
     }
     accDx = 0; accDy = 0
   }
-  // Nearest ancestor that actually scrolls on `ax`; falls back to the document scroller.
-  function scrollableOn(from: Element | null, ax: 'x' | 'y'): HTMLElement {
+  // Nearest ancestor that actually scrolls on `ax`. Vertical falls back to the document
+  // scroller (the page). Horizontal does NOT fall back to the document: the page is
+  // `overflow-x: clip`, so a horizontal drag with no scrollable carousel under the finger must
+  // be a no-op — otherwise it drags the whole document sideways into overflow and the client
+  // looks like it shrinks (dragging from the right edge). null = don't scroll on this axis.
+  function scrollableOn(from: Element | null, ax: 'x' | 'y'): HTMLElement | null {
     for (let n = from as HTMLElement | null; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
       const s = getComputedStyle(n)
       if (ax === 'x' && n.scrollWidth > n.clientWidth + 2 && /(auto|scroll)/.test(s.overflowX)) return n
       if (ax === 'y' && n.scrollHeight > n.clientHeight + 2 && /(auto|scroll)/.test(s.overflowY)) return n
     }
-    return doc()
+    return ax === 'y' ? doc() : null
   }
   const glide = () => {
     const damp = 0.94, min = 0.02
