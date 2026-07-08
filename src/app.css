@@ -45,7 +45,10 @@ body { overflow-x: clip; }
 /* Steam Deck (Game mode): touchscreen + controller — never show a mouse cursor, and make
    controller focus obvious. The focused tile pops + gets a bright ring (VacuumTube /
    YouTube-TV style); z-index keeps the grown tile above its neighbours. */
-.gamemode, .gamemode * { cursor: none !important; }
+/* Never a cursor, and never text selection: the Deck's embedded WebKit delivers the
+   touchscreen as MOUSE events (no native touch scroll), so a drag would otherwise select
+   text instead of scrolling. `initTouchScroll` does the scrolling; this kills the selection. */
+.gamemode, .gamemode * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; -webkit-touch-callout: none; }
 /* Default focus indicator = ring the focused element. */
 .gamemode [data-focusable]:focus { outline: none; box-shadow: 0 0 0 3px #fff; border-radius: var(--radius); }
 /* Cards mark their cover art with .focus-cover: ring + pop the COVER only, not the whole

@@ -1,6 +1,12 @@
+import { get } from 'svelte/store'
+import { gameMode, playing } from '$lib/player/session'
+
 export function dragScroll(node: HTMLElement) {
   let down = false, moved = false, startX = 0, startLeft = 0
-  const onDown = (e: PointerEvent) => { if (e.button !== 0) return; down = true; moved = false; startX = e.clientX; startLeft = node.scrollLeft }
+  // Desktop mouse-drag-to-scroll. In Game mode the app-wide `initTouchScroll` owns ALL
+  // scrolling (the Deck webview reports touch as mouse events, so both this and that would
+  // fire on one drag) — so bail here when game mode is on and let the global handler drive.
+  const onDown = (e: PointerEvent) => { if (get(gameMode) || e.button !== 0) return; down = true; moved = false; startX = e.clientX; startLeft = node.scrollLeft }
   const onMove = (e: PointerEvent) => {
     if (!down) return
     const dx = e.clientX - startX
@@ -23,6 +29,77 @@ export function dragScroll(node: HTMLElement) {
       node.removeEventListener('click', onClick, true)
     }
   }
+}
+
+// App-wide drag-to-scroll for Game mode (Steam Deck). The embedded WebKit webview delivers
+// the touchscreen as MOUSE/pointer events with no native kinetic scrolling — so nothing
+// scrolls on a finger drag (and, without user-select:none, it selects text). This makes a
+// finger drag scroll the page like a normal webpage: it locks to an axis, scrolls the nearest
+// scrollable ancestor on that axis (a carousel row horizontally, else the page vertically),
+// glides with momentum on release, and swallows the trailing click so a swipe never opens a
+// card. No-ops outside Game mode (Desktop uses the wheel + `dragScroll`) and while the player
+// is open (that owns its own touch). Call once at app start.
+export function initTouchScroll() {
+  let downX = 0, downY = 0, lastX = 0, lastY = 0, lastT = 0
+  let axis: 'x' | 'y' | null = null
+  let target: HTMLElement | null = null
+  let vx = 0, vy = 0
+  let active = false, dragged = false
+  let raf = 0
+
+  const doc = () => document.scrollingElement as HTMLElement
+  // Nearest ancestor that actually scrolls on `ax`; falls back to the document scroller.
+  function scrollableOn(from: Element | null, ax: 'x' | 'y'): HTMLElement {
+    for (let n = from as HTMLElement | null; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const s = getComputedStyle(n)
+      if (ax === 'x' && n.scrollWidth > n.clientWidth + 2 && /(auto|scroll)/.test(s.overflowX)) return n
+      if (ax === 'y' && n.scrollHeight > n.clientHeight + 2 && /(auto|scroll)/.test(s.overflowY)) return n
+    }
+    return doc()
+  }
+  const glide = () => {
+    const damp = 0.94, min = 0.02
+    if (!target) return
+    if (axis === 'x') { if (Math.abs(vx) < min) return; target.scrollLeft -= vx * 16; vx *= damp }
+    else { if (Math.abs(vy) < min) return; target.scrollTop -= vy * 16; vy *= damp }
+    raf = requestAnimationFrame(glide)
+  }
+  const onDown = (e: PointerEvent) => {
+    if (e.button !== 0 || !get(gameMode) || get(playing)) return
+    cancelAnimationFrame(raf)
+    active = true; dragged = false; axis = null; target = null; vx = vy = 0
+    downX = lastX = e.clientX; downY = lastY = e.clientY; lastT = performance.now()
+  }
+  const onMove = (e: PointerEvent) => {
+    if (!active) return
+    const x = e.clientX, y = e.clientY
+    if (!axis) {
+      const adx = Math.abs(x - downX), ady = Math.abs(y - downY)
+      if (adx < 8 && ady < 8) return
+      axis = adx > ady ? 'x' : 'y'
+      target = scrollableOn(e.target as Element, axis)
+      dragged = true
+    }
+    const now = performance.now(), dt = Math.max(1, now - lastT)
+    const dx = x - lastX, dy = y - lastY
+    if (target) {
+      if (axis === 'x') { target.scrollLeft -= dx; vx = dx / dt } else { target.scrollTop -= dy; vy = dy / dt }
+    }
+    lastX = x; lastY = y; lastT = now
+    e.preventDefault()
+  }
+  const onUp = () => {
+    if (!active) return
+    active = false
+    if (dragged && target) raf = requestAnimationFrame(glide)
+  }
+  const onClickCapture = (e: MouseEvent) => { if (dragged) { e.preventDefault(); e.stopPropagation(); dragged = false } }
+
+  window.addEventListener('pointerdown', onDown, true)
+  window.addEventListener('pointermove', onMove, { passive: false })
+  window.addEventListener('pointerup', onUp, true)
+  window.addEventListener('pointercancel', onUp, true)
+  window.addEventListener('click', onClickCapture, true)
 }
 
 export function hover(node: HTMLElement, handlers: { enter: () => void; leave: () => void }) {
