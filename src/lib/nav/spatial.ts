@@ -1,7 +1,10 @@
 export type Dir = 'up' | 'down' | 'left' | 'right'
 export interface Cand { id: string; rect: DOMRect }
 const center = (r: DOMRect) => ({ x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 })
-export function pickInDirection<T extends Cand>(cur: DOMRect, cands: T[], dir: Dir): T | null {
+// `cone` (default true) keeps the pick within ~45° of the pressed direction. Pass false for a
+// deliberate REGION crossing (e.g. LEFT at a row's edge → the sidebar, which may sit well above
+// or below the current row) where only the half-plane, not the alignment, should matter.
+export function pickInDirection<T extends Cand>(cur: DOMRect, cands: T[], dir: Dir, cone = true): T | null {
   const c = center(cur)
   const vertical = dir === 'up' || dir === 'down'
   const sign = dir === 'down' || dir === 'right' ? 1 : -1
@@ -13,7 +16,7 @@ export function pickInDirection<T extends Cand>(cur: DOMRect, cands: T[], dir: D
     const along = (vertical ? dy : dx) * sign
     if (along <= 0) continue
     const cross = Math.abs(vertical ? dx : dy)
-    if (cross > along) continue // stay within ~45° of the pressed direction
+    if (cone && cross > along) continue // stay within ~45° of the pressed direction
     // Weight the off-axis distance heavily (×4) so a well-ALIGNED target (the next row
     // straight down / the neighbour straight across) beats a diagonal one that's merely
     // euclidean-closer — e.g. a sidebar link sitting below-and-left.
