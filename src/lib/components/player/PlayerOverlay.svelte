@@ -409,7 +409,8 @@
     <button
       data-focusable
       transition:fade={{ duration: 150 }}
-      class="absolute bottom-28 right-8 z-10 rounded-lg border border-white/20 bg-black/70 px-5 py-2.5 text-sm font-bold text-white backdrop-blur transition hover:bg-black/90"
+      class="absolute z-10 border border-white/20 bg-black/70 font-bold text-white backdrop-blur transition hover:bg-black/90
+        {gmMode ? 'bottom-32 right-10 rounded-2xl px-9 py-5 text-2xl' : 'bottom-28 right-8 rounded-lg px-5 py-2.5 text-sm'}"
       onclick={(e) => { e.stopPropagation(); seekTo(currentSeg.end + 0.5) }}
     >
       Skip {currentSeg.label}
