@@ -59,14 +59,15 @@
   let selected = $state(-1)
   $effect(() => { if (selected < 0) selected = todayIdx >= 0 ? todayIdx : 0 })
 
-  // Game mode: L2/R2 step the selected day (wrapping).
+  // Game mode: L1/R1 (bumpers) step the selected day (wrapping). Bumpers are clean digital
+  // buttons — one press = one step — unlike the analog triggers, which fire on every value tick.
   $effect(() => {
     if (!gm) return
     let un: (() => void) | null = null
     listen<{ name: string; pressed: boolean }>('gamepad-input', (ev) => {
       if (!ev.payload.pressed) return
-      if (ev.payload.name === 'l2') selected = (selected + 6) % 7
-      else if (ev.payload.name === 'r2') selected = (selected + 1) % 7
+      if (ev.payload.name === 'l1') selected = (selected + 6) % 7
+      else if (ev.payload.name === 'r1') selected = (selected + 1) % 7
     }).then((u) => { un = u })
     return () => un?.()
   })
@@ -94,7 +95,7 @@
       </button>
     {/each}
   </div>
-  <p class="mb-3 text-xs text-muted-foreground">L2 / R2 to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
+  <p class="mb-3 text-xs text-muted-foreground">L1 / R1 to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
   <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={days[selected]} big />
 {:else}
   <!-- Desktop: the full week grid. -->
