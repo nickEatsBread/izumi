@@ -45,9 +45,23 @@ export function initTouchScroll() {
   let target: HTMLElement | null = null
   let vx = 0, vy = 0
   let active = false, dragged = false
-  let raf = 0
+  let raf = 0        // momentum glide
+  let dragRaf = 0    // batched drag apply
+  let accDx = 0, accDy = 0 // pending delta to apply on the next frame
 
   const doc = () => document.scrollingElement as HTMLElement
+  // Apply the deltas accumulated since the last frame in ONE scroll write. A touch digitizer
+  // fires several pointermove events per frame; scrolling on each repaints the whole page
+  // several times per frame (cheap for a small row, but drops frames on the full home page —
+  // the "slow / twitchy" vertical scroll). Coalescing to one write per frame fixes that.
+  const flush = () => {
+    dragRaf = 0
+    if (target) {
+      if (axis === 'x') target.scrollLeft -= accDx
+      else target.scrollTop -= accDy
+    }
+    accDx = 0; accDy = 0
+  }
   // Nearest ancestor that actually scrolls on `ax`; falls back to the document scroller.
   function scrollableOn(from: Element | null, ax: 'x' | 'y'): HTMLElement {
     for (let n = from as HTMLElement | null; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
@@ -66,8 +80,8 @@ export function initTouchScroll() {
   }
   const onDown = (e: PointerEvent) => {
     if (e.button !== 0 || !get(gameMode) || get(playing)) return
-    cancelAnimationFrame(raf)
-    active = true; dragged = false; axis = null; target = null; vx = vy = 0
+    cancelAnimationFrame(raf); cancelAnimationFrame(dragRaf); dragRaf = 0
+    active = true; dragged = false; axis = null; target = null; vx = vy = 0; accDx = 0; accDy = 0
     downX = lastX = e.clientX; downY = lastY = e.clientY; lastT = performance.now()
   }
   const onMove = (e: PointerEvent) => {
@@ -82,15 +96,17 @@ export function initTouchScroll() {
     }
     const now = performance.now(), dt = Math.max(1, now - lastT)
     const dx = x - lastX, dy = y - lastY
-    if (target) {
-      if (axis === 'x') { target.scrollLeft -= dx; vx = dx / dt } else { target.scrollTop -= dy; vy = dy / dt }
-    }
+    // Accumulate the delta + track velocity; the actual scroll write happens once per frame
+    // in `flush` (see above) instead of on every event.
+    if (axis === 'x') { accDx += dx; vx = dx / dt } else { accDy += dy; vy = dy / dt }
     lastX = x; lastY = y; lastT = now
+    if (!dragRaf) dragRaf = requestAnimationFrame(flush)
     e.preventDefault()
   }
   const onUp = () => {
     if (!active) return
     active = false
+    if (dragRaf) { cancelAnimationFrame(dragRaf); flush() } // apply the last accumulated batch
     if (dragged && target) raf = requestAnimationFrame(glide)
   }
   const onClickCapture = (e: MouseEvent) => { if (dragged) { e.preventDefault(); e.stopPropagation(); dragged = false } }
