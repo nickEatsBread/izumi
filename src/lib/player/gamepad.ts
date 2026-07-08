@@ -1,4 +1,5 @@
 import { listen } from '@tauri-apps/api/event'
+import { invoke } from '@tauri-apps/api/core'
 import { RepeatTimer } from './repeat'
 
 // Tunables (seconds + ms). Ramp/interval numbers govern how fast a held trigger scrubs;
@@ -22,7 +23,10 @@ export interface SeekDeps {
   onActivity: () => void
 }
 
-const clamp = (t: number, dur: number) => Math.max(0, Math.min(dur, t))
+const clamp = (t: number, dur: number) =>
+  Number.isFinite(dur) && dur > 0
+    ? Math.max(0, Math.min(dur, t))
+    : Math.max(0, t)
 
 // One trigger (dir = -1 rewind / +1 forward). Fed one frame at a time.
 export class TriggerScrubber {
@@ -110,11 +114,24 @@ export function startNativeGamepadSeek(d: SeekDeps): () => void {
   const held = { L: false, R: false }
   let raf = 0
   let unlisten: (() => void) | null = null
+  let disposed = false
+
+  invoke('gamepad_start').catch(() => {})
 
   listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
     if (e.payload.name === 'l2') held.L = e.payload.pressed
     else if (e.payload.name === 'r2') held.R = e.payload.pressed
-  }).then((u) => { unlisten = u })
+  }).then(async (u) => {
+    if (disposed) { u(); return }
+    unlisten = u
+    try {
+      const state = await invoke<{ l2: boolean; r2: boolean }>('gamepad_trigger_state')
+      if (!disposed) {
+        held.L = state.l2
+        held.R = state.r2
+      }
+    } catch { /* best effort: live events will still update state */ }
+  })
 
   const loop = () => {
     const now = performance.now()
@@ -125,6 +142,7 @@ export function startNativeGamepadSeek(d: SeekDeps): () => void {
   raf = requestAnimationFrame(loop)
 
   return () => {
+    disposed = true
     cancelAnimationFrame(raf)
     unlisten?.()
   }

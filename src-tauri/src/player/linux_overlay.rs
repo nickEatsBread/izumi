@@ -1,22 +1,18 @@
 //! Game mode (gamescope / XWayland X11) controls-over-video compositor.
 //!
-//! gamescope will NOT blend a transparent app surface over the video — measured on-device:
-//! the app toplevel is a 24-bit (no-alpha) window, gamescope ignores `_NET_WM_WINDOW_OPACITY`
-//! on it, and it only alpha-composites its OWN flagged overlay slots (mangoapp/Steam), never
-//! an arbitrary client surface. So the Desktop approach (float a transparent webview over the
-//! mpv `--wid` child) is impossible here, and the video child is structurally ABOVE the webview
-//! content anyway.
+//! gamescope will not blend an arbitrary transparent app surface over the video. In Game mode
+//! the mpv child is also structurally above the webview, so the desktop "transparent controls
+//! over video" path cannot work there.
 //!
-//! Instead mpv bakes the controls INTO its own opaque video surface: we snapshot the webview's
-//! (transparent-background) HTML controls with `webkit_web_view_get_snapshot` and push each
-//! frame to mpv as a premultiplied-BGRA `overlay-add`. mpv composites controls over the video
-//! in the one surface gamescope presents. This keeps the wry webview (and every `invoke()` IPC
-//! path) — the webview is only a pixel source; the `--wid` container stays input-transparent so
-//! taps fall through to the real HTML controls behind the video, keeping visual + hit-target
-//! aligned.
+//! Instead mpv bakes the controls into its own opaque video surface: we snapshot the webview's
+//! transparent-background HTML controls with WebKit and push each frame to mpv as a
+//! premultiplied-BGRA `overlay-add`. The real HTML controls still receive input behind the
+//! video because the mpv container is input-transparent; this module is only the pixel bridge.
 //!
-//! Cost is the webview snapshot; we run it only while controls are visible, throttled to
-//! [`FPS`], driven from the frontend toggling [`start`]/[`stop`].
+//! Snapshotting runs only while controls are visible. The cadence is low while the controls are
+//! idle and faster only while the seekbar is actively being scrubbed. Completed snapshots are
+//! cropped to the non-transparent bounds before being handed to mpv, which avoids uploading a
+//! full viewport of transparent pixels for a bottom control bar.
 
 #![cfg(target_os = "linux")]
 
@@ -31,59 +27,53 @@ use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
 use crate::player::PlayerHandle;
 
-/// mpv OSD overlay slot for the controls.
 const OVERLAY_ID: i64 = 1;
-/// Snapshot cadence while controls are visible. A control bar is low-frequency; this is not a
-/// full-screen video readback, so 15 fps is smooth for fades/seekbar ticks without thrashing
-/// the Deck iGPU.
-const FPS: u64 = 15;
+const IDLE_FPS: u64 = 12;
+const SCRUB_FPS: u64 = 30;
 
-/// Generation guard: each [`start`] bumps this and binds its timer to the new value; a timer
-/// stops as soon as it sees a newer generation (superseded by another `start`, or invalidated
-/// by [`stop`]). Cleanly handles rapid show/hide toggles without stacking timers.
 static GEN: AtomicU64 = AtomicU64::new(0);
+static BUSY: AtomicBool = AtomicBool::new(false);
+static FAST: AtomicBool = AtomicBool::new(false);
+static FORCE: AtomicBool = AtomicBool::new(false);
 
-/// PROFILING (temporary): count frames + wall-clock of the last log, so we can log the real
-/// raster/processing cost + effective fps on the Deck and size the fix from data, not guesses.
 static PROF_N: AtomicU64 = AtomicU64::new(0);
 static PROF_LAST: Mutex<Option<Instant>> = Mutex::new(None);
 
-/// In-flight guard: webkit renders a snapshot in the WEB process (the same process that runs
-/// JS + input handling). On the Deck a 1280x800 raster can take longer than the timer period —
-/// without this guard requests pile up, the web process drowns, and every touch/JS interaction
-/// (the seekbar skim, the spinner) crawls. With it, the loop self-paces to what the device can
-/// actually render.
-static BUSY: AtomicBool = AtomicBool::new(false);
-
-/// Force the next completed snapshot to be pushed even if identical — set on [`start`] because
-/// a `stop` removed the mpv overlay, so the first frame after a restart must always re-add.
-static FORCE: AtomicBool = AtomicBool::new(false);
-
-/// Persistent premultiplied-BGRA buffer that mpv references each frame (it does NOT copy — see
-/// `overlay-add`). Allocated once at the video size and never reallocated, so the pointer handed
-/// to mpv stays valid. Only written on the GTK main thread; a torn read by mpv's renderer is at
-/// worst one frame of a control bar (imperceptible).
+/// Persistent premultiplied-BGRA crop buffer. mpv reads this memory by address.
 static BUF: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+/// Last uploaded crop geometry: x, y, width, height, stride.
+static GEOM: Mutex<Option<(i64, i64, i64, i64, i64)>> = Mutex::new(None);
 
-/// Begin snapshotting the webview's controls into an mpv overlay at [`FPS`]. Safe to call again
-/// while running (it just supersedes the previous loop).
-pub fn start(app: AppHandle, window: tauri::WebviewWindow) {
+/// Begin snapshotting the webview controls into an mpv overlay. Safe to call again while
+/// running; each call supersedes the previous timer loop.
+pub fn start(app: AppHandle, window: tauri::WebviewWindow, fast: bool) {
     let my_gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    FAST.store(fast, Ordering::SeqCst);
     FORCE.store(true, Ordering::SeqCst);
-    // with_webview runs on the GTK main thread — the only place the WebKit view + a glib timer
-    // may be touched.
+
     let _ = window.with_webview(move |pw| {
-        let wv = pw.inner(); // webkit2gtk::WebView (owned handle), stays on this thread
+        let wv = pw.inner();
         BUSY.store(true, Ordering::SeqCst);
         snapshot_once(&wv, &app);
+
         let app = app.clone();
-        glib::timeout_add_local(Duration::from_millis(1000 / FPS), move || {
+        let mut last_tick = Instant::now();
+        glib::timeout_add_local(Duration::from_millis(1000 / SCRUB_FPS), move || {
             if GEN.load(Ordering::SeqCst) != my_gen {
                 return glib::ControlFlow::Break;
             }
-            // Skip the tick if the previous snapshot hasn't completed — never queue renders
-            // behind a slow one (self-pacing; see BUSY).
+
+            let fps = if FAST.load(Ordering::Relaxed) { SCRUB_FPS } else { IDLE_FPS };
+            let interval = Duration::from_millis(1000 / fps);
+            let now = Instant::now();
+            if now.duration_since(last_tick) < interval {
+                return glib::ControlFlow::Continue;
+            }
+
+            // Never queue a second WebKit snapshot behind a slow one; the loop self-paces to
+            // what the Deck can actually raster.
             if !BUSY.swap(true, Ordering::SeqCst) {
+                last_tick = now;
                 snapshot_once(&wv, &app);
             }
             glib::ControlFlow::Continue
@@ -93,16 +83,48 @@ pub fn start(app: AppHandle, window: tauri::WebviewWindow) {
 
 /// Stop the overlay loop and remove the controls from the video.
 pub fn stop(app: AppHandle) {
-    GEN.fetch_add(1, Ordering::SeqCst); // invalidate any running timer
+    GEN.fetch_add(1, Ordering::SeqCst);
+    FAST.store(false, Ordering::SeqCst);
+    if let Ok(mut geom) = GEOM.lock() {
+        *geom = None;
+    }
     if let Some(ph) = app.try_state::<PlayerHandle>() {
         let _ = ph.overlay_remove(OVERLAY_ID);
     }
 }
 
-/// Take one snapshot of the webview and push it to mpv as the controls overlay. Async — the
-/// snapshot completes on the GTK main thread, where we convert cairo ARGB32 (native-endian =
-/// premultiplied BGRA) directly into mpv's overlay format. Unchanged frames are dropped (memcmp
-/// against the previous buffer) so a static control bar costs mpv nothing between fades.
+fn alpha_bounds(data: &[u8], w: usize, h: usize, stride: usize) -> Option<(usize, usize, usize, usize)> {
+    if w == 0 || h == 0 || stride < w.checked_mul(4)? {
+        return None;
+    }
+
+    let mut min_x = w;
+    let mut min_y = h;
+    let mut max_x = 0usize;
+    let mut max_y = 0usize;
+    let mut found = false;
+
+    for y in 0..h {
+        let row = y.checked_mul(stride)?;
+        if row.checked_add(w * 4)? > data.len() {
+            return None;
+        }
+        for x in 0..w {
+            // cairo ARGB32 on little-endian is premultiplied BGRA in memory.
+            if data[row + x * 4 + 3] != 0 {
+                found = true;
+                min_x = min_x.min(x);
+                min_y = min_y.min(y);
+                max_x = max_x.max(x);
+                max_y = max_y.max(y);
+            }
+        }
+    }
+
+    found.then_some((min_x, min_y, max_x - min_x + 1, max_y - min_y + 1))
+}
+
+/// Take one WebKit snapshot and push the non-transparent crop to mpv as an overlay.
 fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
     let app = app.clone();
     let t_req = Instant::now();
@@ -113,7 +135,7 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
         move |res| {
             let raster = t_req.elapsed();
             let t_proc = Instant::now();
-            // Inner fn so every early-return still releases the in-flight guard below.
+
             let push = |res: Result<cairo::Surface, glib::Error>| -> Option<()> {
                 let surface = res.ok()?;
                 let mut img = cairo::ImageSurface::try_from(surface).ok()?;
@@ -121,30 +143,67 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
                 if w <= 0 || h <= 0 || stride <= 0 {
                     return None;
                 }
+
                 let need = (stride * h) as usize;
                 let data = img.data().ok()?;
+                let Some((x, y, cw, ch)) =
+                    alpha_bounds(&data[..need], w as usize, h as usize, stride as usize)
+                else {
+                    let force = FORCE.swap(false, Ordering::SeqCst);
+                    let had_overlay = GEOM.lock().ok().and_then(|mut geom| geom.take()).is_some();
+                    if force || had_overlay {
+                        let ph = app.try_state::<PlayerHandle>()?;
+                        let _ = ph.overlay_remove(OVERLAY_ID);
+                    }
+                    return Some(());
+                };
+
+                let row_bytes = cw * 4;
+                let need_crop = row_bytes * ch;
+                let geom = (x as i64, y as i64, cw as i64, ch as i64, row_bytes as i64);
+                let geom_changed = GEOM.lock().ok().map(|g| *g != Some(geom)).unwrap_or(true);
+
                 let (addr, changed) = {
                     let mut buf = BUF.lock().ok()?;
-                    if buf.len() == need && buf[..] == data[..need] {
-                        (buf.as_ptr() as usize, false) // identical frame — nothing to re-upload
-                    } else {
-                        if buf.len() != need {
-                            buf.clear();
-                            buf.resize(need, 0);
-                        }
-                        buf.copy_from_slice(&data[..need]);
-                        (buf.as_ptr() as usize, true)
+                    let mut changed = buf.len() != need_crop || geom_changed;
+                    if buf.len() != need_crop {
+                        buf.clear();
+                        buf.resize(need_crop, 0);
                     }
+
+                    for row in 0..ch {
+                        let src_start = (y + row) * stride as usize + x * 4;
+                        let src_end = src_start + row_bytes;
+                        let dst_start = row * row_bytes;
+                        let dst_end = dst_start + row_bytes;
+
+                        if !changed && buf[dst_start..dst_end] != data[src_start..src_end] {
+                            changed = true;
+                        }
+                        if changed {
+                            buf[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
+                        }
+                    }
+                    (buf.as_ptr() as usize, changed)
                 };
-                if changed || FORCE.swap(false, Ordering::SeqCst) {
+
+                if geom_changed {
+                    if let Ok(mut g) = GEOM.lock() {
+                        *g = Some(geom);
+                    }
+                }
+
+                let force = FORCE.swap(false, Ordering::SeqCst);
+                if changed || geom_changed || force {
                     let ph = app.try_state::<PlayerHandle>()?;
-                    let _ = ph.overlay_add(OVERLAY_ID, 0, 0, addr, w, h, stride);
+                    let _ = ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);
                 }
                 Some(())
             };
+
             let _ = push(res);
             BUSY.store(false, Ordering::SeqCst);
-            // PROFILING: every 20 frames, log raster + processing cost + effective fps.
+
             let n = PROF_N.fetch_add(1, Ordering::Relaxed) + 1;
             if n % 20 == 0 {
                 if let Ok(mut last) = PROF_LAST.lock() {
@@ -152,10 +211,11 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
                     let fps = last.map(|t| 20_000.0 / now.duration_since(t).as_millis().max(1) as f64);
                     *last = Some(now);
                     crate::player::linux_embed::elog(&format!(
-                        "overlay-prof: raster={}ms proc={}ms ~{:.0}fps",
+                        "overlay-prof: raster={}ms proc={}ms ~{:.0}fps fast={}",
                         raster.as_millis(),
                         t_proc.elapsed().as_millis(),
                         fps.unwrap_or(0.0),
+                        FAST.load(Ordering::Relaxed),
                     ));
                 }
             }

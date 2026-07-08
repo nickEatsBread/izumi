@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { fade } from 'svelte/transition'
   import { listen } from '@tauri-apps/api/event'
   import { invoke } from '@tauri-apps/api/core'
@@ -8,10 +8,9 @@
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
-  import { goto } from '$app/navigation'
   import { autoSkip, seekDuration, videoFit, uiScale } from '$lib/settings/ui'
   import { get } from 'svelte/store'
-  import { initScrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
+  import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { startNativeGamepadSeek } from '$lib/player/gamepad'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
@@ -171,18 +170,112 @@
     cmd('set', ['cursor-autohide', gmMode ? 'always' : controlsVisible ? 'no' : 'always'])
   })
 
-  // Game mode (gamescope): gamescope won't blend the transparent webview over the video, so
-  // mpv bakes a snapshot of the webview's UI onto the video via an overlay instead. Toggle it
-  // whenever there's visible UI to show (controls / skip button / toast); the Rust side keeps
-  // the snapshot refreshed at ~15fps while active. No effect off Linux/Game mode.
-  const overlayActive = $derived(gmMode && $playing && (controlsVisible || showSkip || !!$playerNotice))
+  // Game mode (gamescope): static HTML controls are snapshotted into mpv, but the moving
+  // states that made the Deck hitch (loading + active scrub) are native mpv ASS overlays.
+  // Bitmap overlays always sit above ASS in mpv, so the snapshot path is disabled while the
+  // native dynamic overlay is active.
+  const gmDynamicActive = $derived(gmMode && $playing && (loading || $scrubActive))
+  const overlayActive = $derived(gmMode && $playing && !gmDynamicActive && (controlsVisible || showSkip || !!$playerNotice))
   $effect(() => {
-    invoke('player_gm_overlay', { visible: overlayActive }).catch(() => {})
+    invoke('player_gm_overlay', { visible: overlayActive, fast: false }).catch(() => {})
+  })
+
+  let gmDynRaf = 0
+  let gmDynInFlight = false
+  let gmDynDirty = false
+  let gmDynDisposed = false
+  let gmDynLastVisible = false
+  let gmScrubBasePos = $state(0)
+  let gmScrubBaseBuffer = $state(0)
+  let gmScrubWasActive = false
+
+  $effect(() => {
+    const active = gmMode && $scrub.active
+    if (active && !gmScrubWasActive) {
+      gmScrubBasePos = pos
+      gmScrubBaseBuffer = buffer
+    }
+    gmScrubWasActive = active
+  })
+
+  const gmScrubFreezesProgress = $derived(gmMode && $scrub.active)
+  const gmDynamicPos = $derived(gmScrubFreezesProgress ? gmScrubBasePos : pos)
+  const gmDynamicBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
+  const controlsPos = $derived(gmScrubFreezesProgress ? $scrub.time : pos)
+  const controlsBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
+
+  const hiddenGmDynamicState = () => ({
+    visible: false,
+    loading: false,
+    firstFrame: false,
+    scrubbing: false,
+    pos: 0,
+    dur: 0,
+    buffer: 0,
+    scrubTime: 0,
+    smoothScrub: false,
+    width: 1,
+    height: 1,
+  })
+
+  function currentGmDynamicState() {
+    const s = get(scrub)
+    const visible = gmMode && get(playing) && (loading || s.active)
+    return {
+      visible,
+      loading: visible && loading,
+      firstFrame,
+      scrubbing: visible && s.active,
+      pos: gmDynamicPos,
+      dur,
+      buffer: gmDynamicBuffer,
+      scrubTime: s.active ? s.time : pos,
+      smoothScrub: s.source === 'pad',
+      width: Math.max(1, window.innerWidth || 1),
+      height: Math.max(1, window.innerHeight || 1),
+    }
+  }
+
+  function scheduleGmDynamicOverlay() {
+    if (typeof window === 'undefined' || gmDynDisposed || gmDynRaf) return
+    if (!(gmMode && get(playing) && (loading || get(scrub).active)) && !gmDynLastVisible) return
+    gmDynRaf = requestAnimationFrame(() => {
+      gmDynRaf = 0
+      if (gmDynInFlight) {
+        gmDynDirty = true
+        return
+      }
+
+      const state = currentGmDynamicState()
+      if (!state.visible && !gmDynLastVisible) return
+      gmDynInFlight = true
+      gmDynLastVisible = state.visible
+      invoke('player_gm_dynamic_overlay', { state })
+        .catch(() => {})
+        .finally(() => {
+          gmDynInFlight = false
+          if (gmDynDirty && !gmDynDisposed) {
+            gmDynDirty = false
+            scheduleGmDynamicOverlay()
+          }
+        })
+    })
+  }
+
+  $effect(() => {
+    gmMode; $playing; loading; firstFrame; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source
+    scheduleGmDynamicOverlay()
+  })
+
+  onDestroy(() => {
+    gmDynDisposed = true
+    if (gmDynRaf) cancelAnimationFrame(gmDynRaf)
+    if (gmDynLastVisible) invoke('player_gm_dynamic_overlay', { state: hiddenGmDynamicState() }).catch(() => {})
   })
 
   // Game mode controller: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1
   // to us here so A can be context-aware). A = skip the intro/OP-ED when that button is showing,
-  // else play/pause. B = leave the player and go to the home screen. L1/R1 = previous/next episode.
+  // else play/pause. B = leave the player (back to the series page). L1/R1 = previous/next episode.
   $effect(() => {
     if (!gmMode || !$playing) return
     let un: (() => void) | null = null
@@ -194,8 +287,9 @@
           else cmd('cycle', ['pause'])
           break
         case 'b':
+          // Reveals the page underneath (the series page you launched from), NOT home —
+          // the overlay never changed route, so closing is enough.
           close()
-          goto('/app/home')
           break
         case 'l1': playPrev(); break
         case 'r1': playNext(); break
@@ -286,7 +380,7 @@
        white webview + the transparent hole). Mid-playback stalls show just the
        spinner over the frozen frame, with a 500ms fade-in so quick seeks don't
        flash a spinner (an anti-flash trick). -->
-  {#if loading}
+  {#if loading && !gmMode}
     <div
       transition:fade={{ duration: 150 }}
       class="pointer-events-none absolute inset-0 flex items-center justify-center"
@@ -323,6 +417,8 @@
   {/if}
 
   {#if controlsVisible}
-    <Controls {pos} {dur} {buffer} {paused} {segments} {chapters} {cmd} onclose={close} gm={gmMode} />
+    <div class:opacity-0={gmDynamicActive}>
+      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {chapters} {cmd} onclose={close} gm={gmMode} />
+    </div>
   {/if}
 </div>

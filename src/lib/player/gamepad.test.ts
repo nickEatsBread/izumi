@@ -50,4 +50,12 @@ describe('TriggerScrubber', () => {
     s.update(true, SEEK.initialDelay)
     expect(d.moveScrub).toHaveBeenLastCalledWith(1000)
   })
+
+  it('does not clamp to zero while duration is still unknown', () => {
+    const d = deps(100, 0)
+    const s = new TriggerScrubber(+1, d)
+    s.update(true, 0)
+    s.update(false, 100)
+    expect(d.seek).toHaveBeenCalledWith(110)
+  })
 })

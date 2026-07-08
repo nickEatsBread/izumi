@@ -11,6 +11,7 @@
 #![cfg(target_os = "linux")]
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use gilrs::{Axis, Button, EventType, Gilrs};
@@ -18,9 +19,13 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+static TRIGGERS: OnceLock<Mutex<TriggerState>> = OnceLock::new();
 
 /// Analog trigger / stick press + release thresholds (gilrs reports 0.0..=1.0 and -1.0..=1.0).
+/// Triggers use hysteresis too (ON > OFF) so a slow pull hovering near the threshold can't
+/// flip-flop and emit a burst of press events.
 const TRIGGER_ON: f32 = 0.3;
+const TRIGGER_OFF: f32 = 0.2;
 const STICK_ON: f32 = 0.6;
 const STICK_OFF: f32 = 0.4;
 
@@ -28,6 +33,36 @@ const STICK_OFF: f32 = 0.4;
 struct Input {
     name: &'static str,
     pressed: bool,
+}
+
+#[derive(Default, Serialize, Clone)]
+pub struct TriggerState {
+    pub l2: bool,
+    pub r2: bool,
+}
+
+pub fn trigger_state() -> TriggerState {
+    TRIGGERS
+        .get_or_init(|| Mutex::new(TriggerState::default()))
+        .lock()
+        .map(|s| s.clone())
+        .unwrap_or_default()
+}
+
+fn set_trigger_state(input: &Input) {
+    if input.name != "l2" && input.name != "r2" {
+        return;
+    }
+    if let Ok(mut state) = TRIGGERS
+        .get_or_init(|| Mutex::new(TriggerState::default()))
+        .lock()
+    {
+        if input.name == "l2" {
+            state.l2 = input.pressed;
+        } else {
+            state.r2 = input.pressed;
+        }
+    }
 }
 
 /// Merged direction state: a direction is "pressed" if the d-pad OR the left stick says so, so
@@ -91,7 +126,15 @@ pub fn start(app: AppHandle) {
                 gilrs.gamepads().count()
             ));
             let mut dirs = Dirs::default();
+            // Edge-detected trigger state: gilrs fires ButtonChanged on EVERY analog tick, so a
+            // single trigger pull crosses TRIGGER_ON many times. Emit `gamepad-input` only when the
+            // boolean pressed state actually flips — otherwise consumers that step per-event (the
+            // schedule day switch) jumped several days on one pull. The player seek reads the held
+            // bool, so it's unaffected.
+            let mut l2_on = false;
+            let mut r2_on = false;
             let emit = |app: &AppHandle, i: &Input| {
+                set_trigger_state(i);
                 crate::player::linux_embed::elog(&format!("gamepad: {}={}", i.name, i.pressed));
                 let _ = app.emit("gamepad-input", i.clone());
             };
@@ -116,11 +159,14 @@ pub fn start(app: AppHandle) {
                             for c in dirs.resolve() { emit(&app, &c); }
                         }
                         // Analog triggers report as ButtonChanged (0..1); everything else as press/release.
+                        // Only emit on a boolean edge (with hysteresis) — see l2_on/r2_on above.
                         EventType::ButtonChanged(Button::LeftTrigger2, v, _) => {
-                            emit(&app, &Input { name: "l2", pressed: v > TRIGGER_ON });
+                            let now = if l2_on { v > TRIGGER_OFF } else { v > TRIGGER_ON };
+                            if now != l2_on { l2_on = now; emit(&app, &Input { name: "l2", pressed: now }); }
                         }
                         EventType::ButtonChanged(Button::RightTrigger2, v, _) => {
-                            emit(&app, &Input { name: "r2", pressed: v > TRIGGER_ON });
+                            let now = if r2_on { v > TRIGGER_OFF } else { v > TRIGGER_ON };
+                            if now != r2_on { r2_on = now; emit(&app, &Input { name: "r2", pressed: now }); }
                         }
                         EventType::ButtonPressed(b, _) => {
                             if let Some(n) = btn_name(b) { emit(&app, &Input { name: n, pressed: true }); }

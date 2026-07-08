@@ -36,6 +36,7 @@
   let seeking = $state(false)
   let hoverT = $state(0)
   let barW = $state(0) // seekbar pixel width, for transform-based tooltip positioning
+  let barLeft = 0
 
   // --- Scrub-preview thumbnails (on-demand) -----------------------------------
   // Rust produces the tile UNDER THE CURSOR on demand (one input-seek ffmpeg per
@@ -52,6 +53,7 @@
   let reqTimer: ReturnType<typeof setTimeout> | undefined
   let started = false
   let reqSeq = 0
+  const thumbsEnabled = $derived($scrubThumbnails && !gm)
   function stopThumbs() {
     if (infoPoll) { clearInterval(infoPoll); infoPoll = undefined }
     if (reqTimer) { clearTimeout(reqTimer); reqTimer = undefined }
@@ -60,6 +62,15 @@
   $effect(() => {
     const key = $spriteKey
     const d = dur
+    if (!thumbsEnabled) {
+      stopThumbs()
+      tileCache.clear()
+      thumbSrc = ''
+      interval = 0
+      started = false
+      activeKey = null
+      return
+    }
     if (key !== activeKey) {
       // New stream → reset.
       stopThumbs()
@@ -94,7 +105,7 @@
   function requestTile(t: number) {
     // Thumbnails disabled in settings → skip the on-demand frame grab entirely (lighter on
     // the Deck iGPU); the tooltip shows just the time + chapter.
-    if (!get(scrubThumbnails)) { thumbSrc = ''; return }
+    if (!thumbsEnabled) { thumbSrc = ''; return }
     const my = ++reqSeq
     const i = interval > 0 ? Math.round(t / interval) : -1
     if (i >= 0 && tileCache.has(i)) { thumbSrc = tileCache.get(i)!; return }
@@ -177,11 +188,27 @@
     return out
   })
 
+  function measureBar() {
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    barLeft = r.left
+    barW = r.width
+  }
+
+  $effect(() => {
+    if (!el) return
+    measureBar()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => measureBar())
+    ro.observe(el)
+    return () => ro.disconnect()
+  })
+
   function timeAt(clientX: number): number {
     if (!el || dur <= 0) return 0
-    const r = el.getBoundingClientRect()
-    barW = r.width
-    return Math.min(dur, Math.max(0, ((clientX - r.left) / r.width) * dur))
+    if (barW <= 0) measureBar()
+    const w = barW || 1
+    return Math.min(dur, Math.max(0, ((clientX - barLeft) / w) * dur))
   }
 
   // Tooltip X in PIXELS (clamped to keep the 192px popup on-screen). We position via
@@ -198,21 +225,27 @@
   // from the store instead (touch already does this via the pointer handlers).
   $effect(() => {
     if (gm && $scrub.active && $scrub.source === 'pad') {
-      if (el) barW = el.getBoundingClientRect().width
+      if (barW <= 0) measureBar()
       requestTile($scrub.time)
     }
   })
   function onmove(e: PointerEvent) {
     hovering = true
-    hoverT = timeAt(e.clientX)
-    requestTile(hoverT)
-    if (gm && $scrub.active) moveScrub(hoverT)
+    const t = timeAt(e.clientX)
+    requestTile(t)
+    if (gm && $scrub.active) {
+      moveScrub(t)
+      return
+    }
+    hoverT = t
   }
   function ondown(e: PointerEvent) {
-    hoverT = timeAt(e.clientX)
-    requestTile(hoverT)
+    measureBar()
+    const t = timeAt(e.clientX)
+    hoverT = t
+    requestTile(t)
     el?.setPointerCapture(e.pointerId)
-    if (gm) beginScrub(hoverT, 'touch')
+    if (gm) beginScrub(t, 'touch')
     else seeking = true
   }
   function onup(e: PointerEvent) {
@@ -281,7 +314,7 @@
        generated yet (never blank/white). -->
   {#if grabbed && dur > 0}
     <div class="pointer-events-none absolute bottom-9 left-0 flex" style="transform:translateX(calc({tipX}px - 50%));will-change:transform">
-      {#if $scrubThumbnails}
+      {#if thumbsEnabled}
         <div class="overflow-hidden rounded-lg border border-white bg-neutral-200 shadow-lg">
           <div class="relative">
             {#if thumbSrc}

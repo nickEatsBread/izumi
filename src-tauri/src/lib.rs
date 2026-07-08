@@ -13,6 +13,22 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 #[derive(Default)]
 struct FsWasMax(std::sync::Mutex<bool>);
 
+#[derive(Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GmDynamicOverlay {
+    pub(crate) visible: bool,
+    pub(crate) loading: bool,
+    pub(crate) first_frame: bool,
+    pub(crate) scrubbing: bool,
+    pub(crate) pos: f64,
+    pub(crate) dur: f64,
+    pub(crate) buffer: f64,
+    pub(crate) scrub_time: f64,
+    pub(crate) smooth_scrub: bool,
+    pub(crate) width: f64,
+    pub(crate) height: f64,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -118,12 +134,12 @@ fn player_is_game_mode(app: AppHandle) -> bool {
 /// gamescope can't blend a transparent app surface, so the frontend calls this whenever the
 /// controls show/hide and mpv bakes a snapshot of them over the video (see linux_overlay).
 #[tauri::command]
-fn player_gm_overlay(app: AppHandle, visible: bool) {
+fn player_gm_overlay(app: AppHandle, visible: bool, fast: Option<bool>) {
     #[cfg(target_os = "linux")]
     {
         if let Some(win) = app.get_webview_window("main") {
             if visible {
-                player::linux_overlay::start(app.clone(), win);
+                player::linux_overlay::start(app.clone(), win, fast.unwrap_or(false));
             } else {
                 player::linux_overlay::stop(app.clone());
             }
@@ -131,8 +147,18 @@ fn player_gm_overlay(app: AppHandle, visible: bool) {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, visible);
+        let _ = (app, visible, fast);
     }
+}
+
+/// Game mode dynamic overlay: loading and active scrub are rendered inside mpv as ASS OSD.
+/// This keeps the moving Deck UI off the expensive WebKit snapshot/readback path.
+#[tauri::command]
+fn player_gm_dynamic_overlay(app: AppHandle, state: GmDynamicOverlay) {
+    #[cfg(target_os = "linux")]
+    player::gm_osd::update(app, state);
+    #[cfg(not(target_os = "linux"))]
+    let _ = (app, state);
 }
 
 /// Start/stop the backend gamepad reader (Steam Deck L2/R2 seek). The webview's own Gamepad
@@ -150,6 +176,28 @@ fn gamepad_start(app: AppHandle) {
 fn gamepad_stop() {
     #[cfg(target_os = "linux")]
     player::gamepad_linux::stop();
+}
+
+#[derive(Default, serde::Serialize)]
+struct GamepadTriggerState {
+    l2: bool,
+    r2: bool,
+}
+
+#[tauri::command]
+fn gamepad_trigger_state() -> GamepadTriggerState {
+    #[cfg(target_os = "linux")]
+    {
+        let state = player::gamepad_linux::trigger_state();
+        GamepadTriggerState {
+            l2: state.l2,
+            r2: state.r2,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        GamepadTriggerState::default()
+    }
 }
 
 /// Launch an external video player (the user's chosen executable) with the stream
@@ -196,6 +244,31 @@ fn player_sprite_start(
     let cache_root = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("thumbs");
     player.start_sprite(key, duration, cache_root);
     Ok(())
+}
+
+fn dir_size(p: &std::path::Path) -> u64 {
+    let mut total = 0;
+    if let Ok(rd) = std::fs::read_dir(p) {
+        for e in rd.flatten() {
+            let path = e.path();
+            if path.is_dir() { total += dir_size(&path); }
+            else if let Ok(m) = e.metadata() { total += m.len(); }
+        }
+    }
+    total
+}
+
+/// Clear the on-disk scrub-thumbnail cache (`<app-cache>/thumbs`) — the sprite JPEGs generated
+/// while skimming the seek bar. They regenerate on demand, so this only frees space. Returns
+/// the number of bytes freed.
+#[tauri::command]
+fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("thumbs");
+    let freed = dir_size(&dir);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    Ok(freed)
 }
 
 /// The scrub-preview tile for hover `time` (seconds) on stream `key`. Returns
@@ -1005,13 +1078,16 @@ pub fn run() {
             close_player,
             player_is_game_mode,
             player_gm_overlay,
+            player_gm_dynamic_overlay,
             gamepad_start,
             gamepad_stop,
+            gamepad_trigger_state,
             spawn_external_player,
             player_get_property,
             player_sprite_start,
             player_thumb_tile,
             player_thumb_info,
+            clear_video_cache,
             player_prefetch,
             http_get,
             http_post,

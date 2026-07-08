@@ -13,6 +13,7 @@
   import SkipBack from 'lucide-svelte/icons/skip-back'
   import SkipForward from 'lucide-svelte/icons/skip-forward'
   import Camera from 'lucide-svelte/icons/camera'
+  import ArrowLeft from 'lucide-svelte/icons/arrow-left'
   import { fullscreen, toggleFullscreen, nowPlaying, playerNotice } from '$lib/player/session'
   import { videoFit } from '$lib/settings/ui'
   import { playPrev, playNext } from '$lib/stremio/play'
@@ -141,7 +142,15 @@
 
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
 <div class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
-  <!-- (No back button — the sidebar/nav exits playback.) -->
+  <!-- Back: leave the player and return to the page underneath (the series page). Top-left over
+       a short gradient so it's legible on bright frames. Shown on Desktop AND Game mode (the Deck
+       B button does the same) — previously there was no in-player exit control at all. -->
+  <div class="pointer-events-auto absolute inset-x-0 top-0 flex items-center bg-gradient-to-b from-black/70 to-transparent px-4 py-3">
+    <button data-focusable onclick={onclose} aria-label="Back"
+            class="flex items-center gap-1.5 rounded-full bg-black/40 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white backdrop-blur transition hover:bg-black/70">
+      <ArrowLeft size={20} /> Back
+    </button>
+  </div>
 
   <!-- Bottom control bar: a gradient that floats over the video. Works identically on Desktop
        (subsurface below the webview) and Game mode (gamescope layer-shell surface below the

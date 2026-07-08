@@ -41,6 +41,10 @@ pub mod linux_x11;
 // mpv bakes over the video in its own opaque surface. See linux_overlay.rs.
 #[cfg(target_os = "linux")]
 pub mod linux_overlay;
+// Game mode dynamic overlay: loading + active scrub are rendered as mpv ASS OSD so those
+// fast-moving states do not require WebKit snapshots/readbacks.
+#[cfg(target_os = "linux")]
+pub mod gm_osd;
 // Steam Deck L2/R2 seek: read the (Steam-virtual) gamepad via evdev in the backend and forward
 // the trigger state to the webview — webkit2gtk's own Gamepad API doesn't see it. See gamepad_linux.rs.
 #[cfg(target_os = "linux")]
@@ -404,6 +408,93 @@ impl PlayerHandle {
             .map_err(|e| e.to_string())
     }
 
+    /// Add/update/remove an ASS OSD overlay. This uses mpv's named-argument command API
+    /// because `osd-overlay` explicitly requires `mpv_command_node()`.
+    #[cfg(target_os = "linux")]
+    pub fn osd_overlay_ass(&self, id: i64, data: &str, res_x: i64, res_y: i64, z: i64) -> Result<(), String> {
+        self.osd_overlay(id, "ass-events", data, res_x, res_y, z)
+    }
+
+    /// Remove an ASS OSD overlay added with [`osd_overlay_ass`].
+    #[cfg(target_os = "linux")]
+    pub fn osd_overlay_remove(&self, id: i64) -> Result<(), String> {
+        self.osd_overlay(id, "none", "", 0, 0, 0)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn osd_overlay(&self, id: i64, format: &str, data: &str, res_x: i64, res_y: i64, z: i64) -> Result<(), String> {
+        use std::ffi::{CStr, CString};
+        use std::os::raw::c_char;
+        use std::ptr;
+
+        use libmpv2_sys as sys;
+
+        fn node_string(s: &CString) -> sys::mpv_node {
+            sys::mpv_node {
+                u: sys::mpv_node__bindgen_ty_1 { string: s.as_ptr() as *mut c_char },
+                format: sys::mpv_format_MPV_FORMAT_STRING,
+            }
+        }
+
+        fn node_i64(v: i64) -> sys::mpv_node {
+            sys::mpv_node {
+                u: sys::mpv_node__bindgen_ty_1 { int64: v },
+                format: sys::mpv_format_MPV_FORMAT_INT64,
+            }
+        }
+
+        fn mpv_err(code: i32) -> String {
+            unsafe {
+                let ptr = sys::mpv_error_string(code);
+                if ptr.is_null() {
+                    return format!("mpv error {code}");
+                }
+                format!("mpv error {code}: {}", CStr::from_ptr(ptr).to_string_lossy())
+            }
+        }
+
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+
+        let key_names = ["name", "id", "format", "data", "res_x", "res_y", "z"];
+        let keys: Vec<CString> = key_names
+            .iter()
+            .map(|k| CString::new(*k))
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?;
+        let mut key_ptrs: Vec<*mut c_char> = keys.iter().map(|k| k.as_ptr() as *mut c_char).collect();
+
+        let name = CString::new("osd-overlay").map_err(|e| e.to_string())?;
+        let format = CString::new(format).map_err(|e| e.to_string())?;
+        let data = CString::new(data).map_err(|e| e.to_string())?;
+
+        let mut values = vec![
+            node_string(&name),
+            node_i64(id),
+            node_string(&format),
+            node_string(&data),
+            node_i64(res_x),
+            node_i64(res_y),
+            node_i64(z),
+        ];
+        let mut list = sys::mpv_node_list {
+            num: values.len() as i32,
+            values: values.as_mut_ptr(),
+            keys: key_ptrs.as_mut_ptr(),
+        };
+        let mut root = sys::mpv_node {
+            u: sys::mpv_node__bindgen_ty_1 { list: &mut list },
+            format: sys::mpv_format_MPV_FORMAT_NODE_MAP,
+        };
+
+        let code = unsafe { sys::mpv_command_node(mpv.ctx.as_ptr(), &mut root, ptr::null_mut()) };
+        if code < 0 {
+            Err(mpv_err(code))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Save a screenshot of the current frame (with subtitles) into `dir`. The
     /// caller resolves + creates `dir` (the app Pictures folder). Used by
     /// `player_screenshot`.
@@ -695,6 +786,13 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // window, with a small fast-start probe.
         let _ = init.set_option("cache", "yes");
         let _ = init.set_option("force-seekable", "yes");
+        // Hold the last frame PAUSED at end-of-file instead of unloading — on a network
+        // stream, unloading leaves mpv churning the demuxer trying to read past EOF (the
+        // "infinite buffer" at the last episode). Auto-advance is unaffected: the end-file
+        // EOF event fires first; when there's no next episode, playback just pauses on the
+        // final frame. Matches the Linux subprocess player.
+        let _ = init.set_option("keep-open", "yes");
+        let _ = init.set_option("keep-open-pause", "yes");
         // Rolling stream buffer (a few minutes of anime) — NOT the whole file. mpv's own
         // default is ~150 MiB; VLC/HTML5 keep a modest buffer too. The old 512 MiB could hold
         // an entire episode in RAM on a handheld, which is the memory bloat we're avoiding.
@@ -867,6 +965,13 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // a real "loaded" extent to show.
         let _ = init.set_option("cache", "yes");
         let _ = init.set_option("force-seekable", "yes");
+        // Hold the last frame PAUSED at end-of-file instead of unloading — on a network
+        // stream, unloading leaves mpv churning the demuxer trying to read past EOF (the
+        // "infinite buffer" at the last episode). Auto-advance is unaffected: the end-file
+        // EOF event fires first; when there's no next episode, playback just pauses on the
+        // final frame. Matches the Linux subprocess player.
+        let _ = init.set_option("keep-open", "yes");
+        let _ = init.set_option("keep-open-pause", "yes");
         // Best-effort: removed from mpv by 0.40 (deprecated 0.32) → OPTION_NOT_FOUND on
         // newer libmpv would otherwise abort init.
         let _ = init.set_option("demuxer-seekable-cache", "yes");
