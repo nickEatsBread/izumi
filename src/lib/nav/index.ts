@@ -10,7 +10,11 @@ export function initDpadNav() {
     const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
     const dir = map[e.key]
     if (!dir) { if (e.key === 'Enter') (document.activeElement as HTMLElement)?.click(); return }
-    const els = [...document.querySelectorAll<HTMLElement>('[data-focusable]')].filter(el => el.checkVisibility?.() ?? true)
+    // Focus trap: while a modal marks itself `data-nav-trap` (e.g. the exit prompt), confine
+    // navigation to its focusables so the d-pad/stick can't wander onto the browse behind it.
+    const trap = document.querySelector('[data-nav-trap]')
+    const root: ParentNode = trap ?? document
+    const els = [...root.querySelectorAll<HTMLElement>('[data-focusable]')].filter(el => el.checkVisibility?.() ?? true)
     const active = document.activeElement as HTMLElement
     const cur = active?.getBoundingClientRect?.() ?? els[0]?.getBoundingClientRect()
     if (!cur) return

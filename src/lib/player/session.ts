@@ -30,6 +30,10 @@ export const nowPlaying = writable<{
   airedTotal: null,
 })
 
+// Exit-confirm prompt (Game mode): pressing Back (B) on the home screen opens this instead
+// of doing nothing — there's nowhere further back to go, so we ask before quitting the app.
+export const exitPrompt = writable(false)
+
 // Transient toast shown in the player overlay (e.g. "Loading next episode…",
 // "Next episode has no cached source"). Cleared automatically by the overlay.
 export const playerNotice = writable<string>('')

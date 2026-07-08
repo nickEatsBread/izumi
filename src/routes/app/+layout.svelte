@@ -5,11 +5,12 @@
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
   import PlayerOverlay from '$lib/components/player/PlayerOverlay.svelte'
   import StreamPicker from '$lib/components/player/StreamPicker.svelte'
+  import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
   import { playing, fullscreen, gameMode, initGameMode } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl } from '$lib/settings/ui'
   import { beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
-  import { initInput, initDpadNav } from '$lib/nav'
+  import { initInput, initDpadNav, initTouchScroll } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
@@ -30,6 +31,7 @@
   $effect(() => {
     initInput()
     initDpadNav()
+    initTouchScroll() // Game-mode drag-to-scroll (Deck touch = mouse events, no native scroll)
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
@@ -101,7 +103,9 @@
      touch — no sidebar/titlebar while playing, just the content. -->
 {#if !($playing && ($fullscreen || $gameMode))}
   <Sidebar />
-  <Titlebar />
+  <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
+       minimize/maximize/close icons are meaningless + unreachable there). -->
+  {#if !$gameMode}<Titlebar />{/if}
   <OnlineBanner />
 {/if}
 <!-- No `overflow-x-clip` here: it would clip the Hero banner's full-bleed
@@ -111,3 +115,4 @@
 <main class="relative ml-14 min-h-screen" class:hidden={$playing}>{@render children()}</main>
 {#if $playing}<PlayerOverlay />{/if}
 <StreamPicker />
+<ExitPrompt />

@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing } from '$lib/player/session'
+import { playing, exitPrompt } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
@@ -53,11 +53,23 @@ export function startGamepadNav(): () => void {
       fireDir(dir)
       return
     }
+    // The exit prompt (if open) captures A/B: A activates the focused button (Exit/Cancel);
+    // B cancels it. Handled before the player check so it works from anywhere.
+    if (get(exitPrompt)) {
+      if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
+      else if (name === 'b') exitPrompt.set(false)
+      return
+    }
     // A/B only act in browse; the player owns them (and L1/R1, L2/R2) itself.
     if (inPlayer()) return
     switch (name) {
       case 'a': (document.activeElement as HTMLElement | null)?.click(); break
-      case 'b': history.back(); break
+      // Back: go up the history, UNLESS we're on the home screen (nothing further back) —
+      // there, open the exit-confirm prompt instead of silently going nowhere.
+      case 'b':
+        if (location.pathname.replace(/\/$/, '') === '/app/home') exitPrompt.set(true)
+        else history.back()
+        break
       // l1/r1/l2/r2/start/select: player-only or reserved.
     }
   }
