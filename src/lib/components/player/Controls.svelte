@@ -15,7 +15,7 @@
   import Camera from 'lucide-svelte/icons/camera'
   import ArrowLeft from 'lucide-svelte/icons/arrow-left'
   import { fullscreen, toggleFullscreen, nowPlaying, playerNotice } from '$lib/player/session'
-  import { videoFit } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop } from '$lib/settings/ui'
   import { playPrev, playNext } from '$lib/stremio/play'
 
   const np = $derived($nowPlaying)
@@ -50,6 +50,12 @@
     ontoggleplay?: () => void
   } = $props()
   const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
+
+  // Game mode (Deck) scales the controls up for a touchscreen at arm's length: bigger
+  // secondary icon buttons + icons, and the title can move to the top of the player.
+  const iconBtn = $derived(`grid place-items-center rounded-full transition hover:bg-white/15 ${gm ? 'size-12' : 'size-10'}`)
+  const icSize = $derived(gm ? 24 : 20)
+  const titleTop = $derived(gm && $playerTitleTop)
 
   const fmt = (s: number) => {
     if (!Number.isFinite(s) || s < 0) s = 0
@@ -140,52 +146,68 @@
   }
 </script>
 
+<!-- Now-playing title, reused above the seek bar (default) or at the top (Game-mode option). -->
+{#snippet titleBlock(big: boolean)}
+  {#if np.animeTitle}
+    <div class="flex min-w-0 flex-col gap-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.6)]">
+      <span class="line-clamp-1 font-semibold text-white {big ? 'text-2xl' : 'text-lg'}">{np.animeTitle}</span>
+      {#if np.episode != null}
+        <span class="font-light text-white/60 {big ? 'text-base' : 'text-sm'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</span>
+      {/if}
+    </div>
+  {/if}
+{/snippet}
+
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
 <div class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
-  <!-- Back: leave the player and return to the page underneath (the series page). Top-left over
-       a short gradient so it's legible on bright frames. Shown on Desktop AND Game mode (the Deck
-       B button does the same) — previously there was no in-player exit control at all. -->
-  <div class="pointer-events-auto absolute inset-x-0 top-0 flex items-center bg-gradient-to-b from-black/70 to-transparent px-4 py-3">
-    <button data-focusable onclick={onclose} aria-label="Back"
-            class="flex items-center gap-1.5 rounded-full bg-black/40 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white backdrop-blur transition hover:bg-black/70">
-      <ArrowLeft size={20} /> Back
-    </button>
-  </div>
+  <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
+       redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
+       title. Rendered only when it has something to show. -->
+  {#if !gm || titleTop}
+    <div class="pointer-events-auto absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent px-4 py-3">
+      {#if !gm}
+        <button data-focusable onclick={onclose} aria-label="Back"
+                class="flex shrink-0 items-center gap-1.5 rounded-full bg-black/40 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white backdrop-blur transition hover:bg-black/70">
+          <ArrowLeft size={icSize} /> Back
+        </button>
+      {/if}
+      {#if titleTop}<div class="min-w-0 flex-1">{@render titleBlock(true)}</div>{/if}
+    </div>
+  {/if}
 
   <!-- Bottom control bar: a gradient that floats over the video. Works identically on Desktop
        (subsurface below the webview) and Game mode (gamescope layer-shell surface below the
        webview) — the compositor blends the transparent webview over the video either way. -->
   <div class="pointer-events-auto absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20">
-    <!-- Now-playing title (bottom-left, above the seekbar) -->
-    {#if np.animeTitle}
-      <div class="mb-2 flex flex-col gap-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.6)]">
-        <span class="line-clamp-1 text-lg font-semibold text-white">{np.animeTitle}</span>
-        {#if np.episode != null}
-          <span class="text-sm font-light text-white/60">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</span>
-        {/if}
-      </div>
+    <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
+         in Game mode to match the enlarged controls. -->
+    {#if !titleTop}
+      <div class="mb-2">{@render titleBlock(gm)}</div>
     {/if}
 
     <Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} />
 
-    <div class="mt-1 flex items-center gap-3 text-white">
+    <div class="mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
       {#if hasPrev}
-        <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={() => playPrev()} aria-label="Previous episode"><SkipBack size={20} fill="currentColor" /></button>
+        <button data-focusable class={iconBtn} onclick={() => playPrev()} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
       {/if}
-      <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}>
-        {#if paused}<Play size={22} fill="currentColor" />{:else}<Pause size={22} fill="currentColor" />{/if}
+      <!-- Play/pause: Game mode gets a filled white circle (no outline) — the primary,
+           thumb-sized touch target; Desktop keeps the subtle hover-only button. -->
+      <button data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
+              class="grid place-items-center rounded-full transition {gm ? 'size-16 bg-white text-black hover:bg-white/90' : 'size-10 hover:bg-white/15'}">
+        {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
       </button>
       {#if hasNext}
-        <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={() => playNext()} aria-label="Next episode"><SkipForward size={20} fill="currentColor" /></button>
+        <button data-focusable class={iconBtn} onclick={() => playNext()} aria-label="Next episode"><SkipForward size={icSize} fill="currentColor" /></button>
       {/if}
 
-      <span class="ml-1 select-none font-mono text-sm tabular-nums">{fmt(pos)} / {fmt(dur)}</span>
+      <span class="ml-1 select-none font-mono tabular-nums {gm ? 'text-lg' : 'text-sm'}">{fmt(pos)} / {fmt(dur)}</span>
 
       <div class="ml-auto flex items-center gap-3">
         <!-- Volume -->
         <div class="group/vol flex items-center gap-1">
-          <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
-            {#if muted}<VolumeX size={20} />{:else}<Volume2 size={20} />{/if}
+          <button data-focusable class={iconBtn} onclick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
+            {#if muted}<VolumeX size={icSize} />{:else}<Volume2 size={icSize} />{/if}
           </button>
           <input
             data-focusable
@@ -199,7 +221,7 @@
 
         <!-- Playback options: speed, audio/subtitle delay, subtitle size -->
         <div class="relative">
-          <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={() => { showOptions = !showOptions; showTracks = false }} aria-label="Playback options"><Settings size={20} /></button>
+          <button data-focusable class={iconBtn} onclick={() => { showOptions = !showOptions; showTracks = false }} aria-label="Playback options"><Settings size={icSize} /></button>
           {#if showOptions}
             <!-- NO backdrop-blur: backdrop-filter samples pixels behind the element, but the
                  video is a separate Wayland subsurface the webview can't see, so it blurs an
@@ -234,7 +256,7 @@
 
         <!-- Subtitle / audio track menu -->
         <div class="relative">
-          <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={loadTracks} aria-label="Subtitle and audio tracks"><Captions size={20} /></button>
+          <button data-focusable class={iconBtn} onclick={loadTracks} aria-label="Subtitle and audio tracks"><Captions size={icSize} /></button>
           {#if showTracks}
             <div class="absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900/95 p-2 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]">
               <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Audio</p>
@@ -261,13 +283,13 @@
         </div>
 
         <!-- Screenshot the current frame → Pictures/izumi -->
-        <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={screenshot} aria-label="Screenshot"><Camera size={20} /></button>
+        <button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
 
         <!-- Fullscreen (user-initiated; player opens windowed). Hidden in game mode —
              the Deck player is always fullscreen, there is no windowed state. -->
         {#if !gm}
-          <button data-focusable class="grid size-10 place-items-center rounded-full transition hover:bg-white/15" onclick={toggleFullscreen} aria-label="Toggle fullscreen">
-            {#if $fullscreen}<Minimize size={20} />{:else}<Maximize size={20} />{/if}
+          <button data-focusable class={iconBtn} onclick={toggleFullscreen} aria-label="Toggle fullscreen">
+            {#if $fullscreen}<Minimize size={icSize} />{:else}<Maximize size={icSize} />{/if}
           </button>
         {/if}
       </div>

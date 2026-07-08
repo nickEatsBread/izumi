@@ -58,7 +58,10 @@
   // ONE loading boolean, never sticky: true while bringing up the first frame, on
   // a cache stall, or mid-seek — but never while the user paused or at real EOF.
   const loading = $derived(!eof && !paused && (buffering || seeking || (coreIdle && (!firstFrame || pos > 0))))
-  const controlsVisible = $derived(visible || paused || loading)
+  // Keep the controls in the DOM while scrubbing (even if the 3s auto-hide fired during a long
+  // trigger hold) so the seek bar element stays measurable — otherwise the native scrub bar
+  // loses its geometry and jumps to the fallback position lower on screen.
+  const controlsVisible = $derived(visible || paused || loading || $scrubActive)
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
   // A segment auto-skips only when the setting is on AND it's not the FIRST debut
   // of that OP/ED (per AnimeThemes). Recap always skips. When it WON'T auto-skip,
@@ -185,6 +188,9 @@
   let gmDynDirty = false
   let gmDynDisposed = false
   let gmDynLastVisible = false
+  // Last known seek bar geometry (CSS px), so the native scrub bar keeps its place if the
+  // element is momentarily unmeasurable.
+  let lastBar = { x: 0, y: 0, w: 0 }
   let gmScrubBasePos = $state(0)
   let gmScrubBaseBuffer = $state(0)
   let gmScrubWasActive = false
@@ -216,11 +222,21 @@
     smoothScrub: false,
     width: 1,
     height: 1,
+    barX: 0,
+    barY: 0,
+    barW: 0,
+    barH: 0,
   })
 
   function currentGmDynamicState() {
     const s = get(scrub)
     const visible = gmMode && get(playing) && (loading || s.active)
+    // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
+    // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
+    // separate mini-skimmer. Cache the last valid rect so a momentary DOM absence never drops
+    // the bar to the fallback position (the "drifts down" bug).
+    const rect = document.querySelector('[aria-label="Seek"]')?.getBoundingClientRect()
+    if (rect && rect.width > 0) lastBar = { x: rect.left, y: rect.top + rect.height / 2, w: rect.width }
     return {
       visible,
       loading: visible && loading,
@@ -233,6 +249,10 @@
       smoothScrub: s.source === 'pad',
       width: Math.max(1, window.innerWidth || 1),
       height: Math.max(1, window.innerHeight || 1),
+      barX: lastBar.x,
+      barY: lastBar.y,
+      barW: lastBar.w,
+      barH: 10,
     }
   }
 
@@ -336,9 +356,20 @@
       listen<boolean>('player-seeking', (e) => (seeking = e.payload)),
       listen<boolean>('player-eof', (e) => (eof = e.payload)),
     ]
+    // Safety net: end any active scrub on a window-level pointer release. If a seekbar drag
+    // runs off the element/screen edge, its own pointerup can be missed — leaving the scrub
+    // "active" forever, which pins the controls at opacity-0 (they vanish). Ending it here
+    // guarantees recovery no matter where the finger lifts.
+    const endStuckScrub = () => { if (get(scrub).active) endScrub() }
+    window.addEventListener('pointerup', endStuckScrub)
+    window.addEventListener('pointercancel', endStuckScrub)
+    window.addEventListener('blur', endStuckScrub)
     poke()
     return () => {
       uns.forEach((u) => u.then((f) => f()))
+      window.removeEventListener('pointerup', endStuckScrub)
+      window.removeEventListener('pointercancel', endStuckScrub)
+      window.removeEventListener('blur', endStuckScrub)
       clearTimeout(hideT)
     }
   })
@@ -368,7 +399,7 @@
      video (and always in game mode). cursor-pointer/none are mutually exclusive so neither
      conflicting utility wins by stylesheet order. -->
 <div
-  class="fixed inset-y-0 right-0 z-20"
+  class="fixed inset-y-0 right-0 z-20 touch-none overscroll-none select-none"
   class:cursor-pointer={!gmMode && controlsVisible}
   class:cursor-none={gmMode || !controlsVisible}
   class:left-14={!$fullscreen && !gmMode}

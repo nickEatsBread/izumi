@@ -2,7 +2,7 @@
   import {
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
-    scrubThumbnails, titleLanguage,
+    scrubThumbnails, titleLanguage, playerTitleTop,
   } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
@@ -105,6 +105,10 @@
       </select>
       <span class="text-xs text-muted-foreground">Show anime titles in Romaji (e.g. Shingeki no Kyojin) or English (Attack on Titan). Falls back to the other when a title has only one.</span>
     </label>
+
+    <div class="mt-3">
+      <Toggle label="Title at top of player (Game mode)" desc="On the Deck, show the now-playing title at the top of the player (by the Back button) instead of just above the seek bar." value={$playerTitleTop} onToggle={() => ($playerTitleTop = !$playerTitleTop)} />
+    </div>
   </div>
 
   <h2 class="mb-1 mt-8 text-xl font-black">Storage</h2>

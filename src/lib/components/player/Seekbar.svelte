@@ -280,27 +280,27 @@
   {#each barSegments as chap, i (i)}
     {@const inChap = grabbed && (gm ? pct(scrubT) : hoverPct) > chap.offset && (gm ? pct(scrubT) : hoverPct) < chap.offset + chap.size}
     {@const active = gm ? inChap : (seekActive && hoverPct > chap.offset && hoverPct < chap.offset + chap.size)}
-    <div class="flex shrink-0 items-center justify-center {gm ? 'py-4' : 'py-3'}" style="width:{chap.size}%">
-      <div class="relative {gm ? 'h-[7px]' : 'h-1'} w-full overflow-hidden rounded-[2px] {i ? 'ml-0.5' : ''}">
+    <div class="flex shrink-0 items-center justify-center {gm ? 'py-5' : 'py-3'}" style="width:{chap.size}%">
+      <div class="relative {gm ? 'h-[10px]' : 'h-1'} w-full overflow-hidden rounded-[3px] {i ? 'ml-0.5' : ''}">
         <!-- empty track -->
-        <div class="absolute left-0 top-1/2 {gm ? 'h-[5px]' : 'h-0.5'} w-full -translate-y-1/2 bg-white/25 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[7px]={active && gm}></div>
+        <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full -translate-y-1/2 bg-white/25 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}></div>
         <!-- buffered -->
-        <div class="absolute left-0 top-1/2 {gm ? 'h-[5px]' : 'h-0.5'} w-full bg-white/40 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[7px]={active && gm}
+        <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full bg-white/40 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}
              style="transform:translate({skewclamp(chap.scale * (bufferPct - chap.offset)) - 100}%, -50%)"></div>
         <!-- hover/scrub preview -->
         {#if grabbed}
-          <div class="absolute left-0 top-1/2 {gm ? 'h-[5px]' : 'h-0.5'} w-full bg-white/60 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[7px]={active && gm}
+          <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full bg-white/60 {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}
                style="transform:translate({skewclamp(chap.scale * ((gm ? pct(scrubT) : hoverPct) - chap.offset)) - 100}%, -50%)"></div>
         {/if}
         <!-- played -->
-        <div class="absolute left-0 top-1/2 {gm ? 'h-[5px]' : 'h-0.5'} w-full bg-white {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[7px]={active && gm}
+        <div class="absolute left-0 top-1/2 {gm ? 'h-[8px]' : 'h-0.5'} w-full bg-white {gm ? '' : 'transition-[height] duration-75'}" class:h-1={active && !gm} class:!h-[10px]={active && gm}
              style="transform:translate({skewclamp(chap.scale * (progressPct - chap.offset)) - 100}%, -50%)"></div>
       </div>
     </div>
   {/each}
 
   {#if gm && grabbed && dur > 0}
-    <div class="pointer-events-none absolute top-1/2 z-20 h-[18px] w-[18px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
+    <div class="pointer-events-none absolute top-1/2 z-20 h-[22px] w-[22px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow"
          style="left:{pct(scrubT)}%"></div>
   {/if}
 

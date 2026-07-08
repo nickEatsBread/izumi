@@ -76,6 +76,12 @@
     const bg = $playing ? 'transparent' : ''
     document.documentElement.style.background = bg
     document.body.style.background = bg
+    // Lock page scroll while the player is open. On the Deck a drag in the video area was
+    // being taken as a native pan/rubber-band that shoved the (fixed) overlay + video out of
+    // place; with the document non-scrollable there's nothing to pan.
+    const lock = $playing ? 'hidden' : ''
+    document.documentElement.style.overflow = lock
+    document.body.style.overflow = lock
   })
   // Inset the video to the RIGHT of the 56px sidebar rail while playing windowed, so
   // it never renders under the black sidebar. NOT inset at the top: the video fills

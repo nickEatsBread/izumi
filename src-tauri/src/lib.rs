@@ -27,6 +27,12 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) smooth_scrub: bool,
     pub(crate) width: f64,
     pub(crate) height: f64,
+    // The HTML seek bar's on-screen geometry (CSS px, same space as width/height) so the
+    // native scrub bar is drawn exactly where the player's own bar is — a seamless handoff.
+    pub(crate) bar_x: f64,
+    pub(crate) bar_y: f64, // vertical CENTRE of the bar
+    pub(crate) bar_w: f64,
+    pub(crate) bar_h: f64,
 }
 
 #[tauri::command]

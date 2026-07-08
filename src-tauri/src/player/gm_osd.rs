@@ -209,34 +209,49 @@ fn build_ass(state: &GmDynamicOverlay, w: f64, h: f64, phase: u32) -> String {
 }
 
 fn scrub_overlay(state: &GmDynamicOverlay, w: f64, h: f64, lines: &mut Vec<String>) {
-    let band_h = 150.0_f64.min(h * 0.28).max(110.0);
-    let band_y = (h - band_h).max(0.0);
-    push(lines, rect(0.0, band_y, w, band_h, "000000", "70"));
+    // Draw the scrub bar ON the player's own seek bar (geometry sent from the frontend) so the
+    // native bar is a seamless continuation of the HTML one — dragging feels like dragging the
+    // player's bar, not a separate mini-skimmer. Fall back to a computed layout if absent.
+    let (x, y, bw, bh) = if state.bar_w > 0.0 {
+        (state.bar_x, state.bar_y, state.bar_w, state.bar_h.clamp(6.0, 18.0))
+    } else {
+        let pad = (w * 0.06).clamp(54.0, 96.0);
+        (pad, h - 76.0, (w - pad * 2.0).max(1.0), 8.0)
+    };
 
-    let pad = (w * 0.06).clamp(54.0, 96.0);
-    let x = pad;
-    let y = h - 76.0;
-    let bw = (w - pad * 2.0).max(1.0);
-    let bh = 7.0;
+    // Soft bottom gradient for legibility over bright frames (matches the HTML controls'
+    // from-black → transparent gradient). Drawn as MANY thin bands with a smoothly-eased alpha
+    // so there are no visible steps/boxes (the earlier 6-band version looked blocky). ASS
+    // alpha: 00 = opaque, FF = transparent.
+    let grad_top = (y - h * 0.18).max(0.0);
+    let span = (h - grad_top).max(1.0);
+    let bands = 24usize;
+    for i in 0..bands {
+        let f = (i as f64 + 0.5) / bands as f64; // 0 (top) → 1 (bottom)
+        let opacity = 0.72 * f * f; // eased: barely-there at the top, ~0.72 at the bottom
+        let a = ((1.0 - opacity) * 255.0).round().clamp(0.0, 255.0) as i64;
+        let by = grad_top + span * (i as f64 / bands as f64);
+        let bh_band = span / bands as f64 + 1.0;
+        push(lines, rect(0.0, by, w, bh_band, "000000", &format!("{a:02X}")));
+    }
 
-    let pos_pct = pct(state.pos, state.dur);
     let buffer_pct = pct(state.buffer, state.dur);
     let scrub_pct = pct(state.scrub_time, state.dur);
+    let top = y - bh / 2.0;
 
-    push(lines, rect(x, y - bh / 2.0, bw, bh, "FFFFFF", "CA"));
+    // Track (white/25) · buffered (white/40) · played to the scrub point (opaque) — the same
+    // fills the HTML seek bar uses.
+    push(lines, rect(x, top, bw, bh, "FFFFFF", "BF"));
     if buffer_pct > 0.0 {
-        push(lines, rect(x, y - bh / 2.0, bw * buffer_pct, bh, "FFFFFF", "A8"));
+        push(lines, rect(x, top, bw * buffer_pct, bh, "FFFFFF", "99"));
     }
-    if pos_pct > 0.0 {
-        push(lines, rect(x, y - bh / 2.0, bw * pos_pct, bh, "FFFFFF", "28"));
-    }
-    push(lines, rect(x, y - bh / 2.0, bw * scrub_pct, bh, "FFFFFF", "58"));
+    push(lines, rect(x, top, bw * scrub_pct, bh, "FFFFFF", "00"));
 
+    // Handle (matches the HTML ~22px knob) + the scrubbed time floating just above it.
     let knob_x = x + bw * scrub_pct;
-    push(lines, circle(knob_x, y, 9.5, "FFFFFF", "00"));
-
-    let time = format!("{} / {}", fmt_time(state.scrub_time), fmt_time(state.dur));
-    push(lines, text(w / 2.0, y - 36.0, 30.0, &time));
+    push(lines, circle(knob_x, y, 11.0, "FFFFFF", "00"));
+    let time = fmt_time(state.scrub_time);
+    push(lines, text(knob_x.clamp(60.0, w - 60.0), y - 42.0, 32.0, &time));
 }
 
 fn loading_overlay(phase: u32, w: f64, h: f64, lines: &mut Vec<String>) {

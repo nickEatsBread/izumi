@@ -12,6 +12,10 @@ export type TitleLanguage = 'romaji' | 'english'
 /** Persisted title-language preference (default: Romaji). */
 export const titleLanguage = persisted<TitleLanguage>('title-language', 'romaji')
 
+/** Game-mode player: place the now-playing title at the TOP of the player (by the Back
+ *  button) instead of just above the seek bar. Default off (title above the seek bar). */
+export const playerTitleTop = persisted<boolean>('player-title-top', false)
+
 /**
  * Auto-skip OP/ED/recap segments (from AniSkip) during playback. When on, the
  * player seeks past a segment automatically the first time the playhead enters it
