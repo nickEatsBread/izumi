@@ -65,7 +65,16 @@
     // touch). `gamemode` class drives the no-cursor + focus-highlight rules in app.css.
     const z = $uiScale * ($gameMode && !$playing ? 1.25 : 1)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(document.documentElement.style as any).zoom = String(z)
+    const rootStyle = document.documentElement.style as any
+    if ($gameMode) {
+      // Native WebKit page zoom (compositor-scrolled) rather than CSS `zoom` on the scroll
+      // root — CSS zoom re-rasterizes the whole page on every scroll, which is what made
+      // vertical scrolling crawl on the Deck. Native zoom scrolls like a zoomed desktop page.
+      rootStyle.zoom = '1'
+      invoke('set_webview_zoom', { level: z }).catch(() => {})
+    } else {
+      rootStyle.zoom = String(z)
+    }
     document.documentElement.classList.toggle('gamemode', $gameMode)
   })
 

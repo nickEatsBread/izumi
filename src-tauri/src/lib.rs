@@ -277,6 +277,24 @@ fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
     Ok(freed)
 }
 
+/// Set the WebKit page zoom (Linux). Used in Game mode instead of CSS `zoom` on the scroll
+/// root — CSS zoom forces WebKit to re-rasterize the whole page on every scroll (the slow
+/// vertical scrolling on the Deck), whereas native page zoom scrolls on the compositor,
+/// exactly like a zoomed page in a desktop browser. No-op on non-Linux (no gamescope there).
+#[tauri::command]
+fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.with_webview(move |pw| {
+            use webkit2gtk::WebViewExt;
+            pw.inner().set_zoom_level(level);
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (&app, level);
+    Ok(())
+}
+
 /// The scrub-preview tile for hover `time` (seconds) on stream `key`. Returns
 /// `{status: ready|pending|failed|none, dataUrl?, index}` — `ready` carries that ONE
 /// small tile JPEG (few KB), `pending` means its frame isn't generated yet (seekbar
@@ -1094,6 +1112,7 @@ pub fn run() {
             player_thumb_tile,
             player_thumb_info,
             clear_video_cache,
+            set_webview_zoom,
             player_prefetch,
             http_get,
             http_post,
