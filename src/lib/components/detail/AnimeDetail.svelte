@@ -9,6 +9,7 @@
   import { title, cover, format, status, season, ratingBg } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
+  import { focusOnMount } from '$lib/nav'
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
   import { setStatus, toggleFavourite, getMalProgress } from '$lib/trackers'
@@ -143,7 +144,7 @@
 
         <!-- Action bar -->
         <div class="flex flex-wrap items-center gap-2">
-          <button data-focusable onclick={() => playEpisode(m, resumeEp(m), (s) => (heroPlay = s))}
+          <button data-focusable use:focusOnMount onclick={() => playEpisode(m, resumeEp(m), (s) => (heroPlay = s))}
                   class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">
             <Play size={16} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${resumeEp(m)}` : 'Play'}
           </button>

@@ -6,11 +6,12 @@
   import PlayerOverlay from '$lib/components/player/PlayerOverlay.svelte'
   import StreamPicker from '$lib/components/player/StreamPicker.svelte'
   import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
+  import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import { playing, fullscreen, gameMode, initGameMode } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl } from '$lib/settings/ui'
   import { beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
-  import { initInput, initDpadNav, initTouchScroll } from '$lib/nav'
+  import { initInput, initDpadNav, initTouchScroll, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
@@ -24,6 +25,7 @@
   // translator once gamescope/Deck mode is resolved. Reacts to the async gameMode store.
   $effect(() => {
     if (!$gameMode) return
+    suppressNativeTooltips() // no native `title` hover popups under controller/touch
     invoke('gamepad_start').catch(() => {})
     const stop = startGamepadNav()
     return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
@@ -131,3 +133,4 @@
 {#if $playing}<PlayerOverlay />{/if}
 <StreamPicker />
 <ExitPrompt />
+<OnScreenKeyboard />

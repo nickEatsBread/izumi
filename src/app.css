@@ -28,6 +28,14 @@ body { overflow-x: clip; }
 /* Game mode (Deck): no card entrance animation — its fade/slide flashes as controller focus
    moves into a row. Keep the browse calm and instant. */
 .gamemode .load-in { animation: none; }
+/* Game mode magnifies the browse UI (page zoom) and snapshots the player UI 1:1 into mpv. Both
+   RESAMPLE any element WebKit puts on its own GPU compositing layer — composited layers skip
+   WebKit's crisp contents-scale path (bug 27684) and drop to grayscale AA, so promoted text/images
+   render chunky/aliased while base-layer content stays sharp. `will-change` only ever exists here
+   as a hover/animation perf hint, and there is no hover under controller nav, so it never helps in
+   Game mode and always risks the pixelation. Neutralize it globally. (The player controls are
+   handled separately by forcing WebKit's non-accelerated crisp path while the player is up.) */
+.gamemode *, .gamemode *::before, .gamemode *::after { will-change: auto !important; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 /* Opacity-only (no `filter: blur`): WebKitGTK blurs the WHOLE page during CSS filter
    animations (Tauri #9088), and the hero re-fires this on every hero change ({#key}), which
@@ -62,6 +70,11 @@ body { overflow-x: clip; }
    OWN border-radius (no override here) so a round button (play/pause) keeps a round ring
    instead of a squared-off rounded-rect. */
 .gamemode [data-focusable]:focus { outline: none; box-shadow: 0 0 0 3px #fff; }
+/* Buttons whose fill already matches the ring colour (the solid-white play/pause circle) would
+   look like they ENLARGE when the outer white ring merges with the fill. Ring them on the INSIDE
+   instead — a dark inset ring shows focus without changing the button's apparent size (CrunchyDeck
+   keeps the button size fixed). Higher specificity (extra class) beats the default rule above. */
+.gamemode [data-focusable].focus-ring-inset:focus { box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.4); }
 /* Cards mark their cover art with .focus-cover: ring + pop the COVER only, not the whole
    card (title/metadata stay put) — the mobile/TV tile-highlight the VacuumTube/CrunchyDeck
    players use. :has suppresses the whole-element ring so it doesn't double up. */

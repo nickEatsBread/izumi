@@ -8,7 +8,7 @@
   import { onDestroy } from 'svelte'
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
-  import { streamPicker } from '$lib/player/session'
+  import { streamPicker, gameMode } from '$lib/player/session'
   import { rankInfos, pickBest, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { playStream, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource } from '$lib/settings/ui'
@@ -66,12 +66,23 @@
   // Reset per EPISODE only — NOT on every progressive stream update (which would keep
   // wiping the filter / restarting the countdown). Keyed by media+episode.
   let lastKey = ''
+  let focusedBest = false
   $effect(() => {
     const k = pick ? `${pick.media.id}:${pick.episode}` : ''
     if (k !== lastKey) {
       lastKey = k
       busy = false; error = ''; filter = ''; showAll = false
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
+      focusedBest = false
+    }
+  })
+
+  // Game mode: once the recommended (Best) source appears, move controller focus onto it so the
+  // d-pad starts on the source you'll most likely pick and A selects it. Only once per open.
+  $effect(() => {
+    if (best && $gameMode && !focusedBest) {
+      focusedBest = true
+      requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-best-source]')?.focus({ preventScroll: true }))
     }
   })
 
@@ -130,7 +141,7 @@
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
   >
-    <div class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div data-nav-trap class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
       <!-- Banner-headed title (shrink-0 so a tall list never squeezes it) -->
       <div class="relative shrink-0 overflow-hidden border-b border-border">
         {#if banner(pick.media)}
@@ -216,6 +227,7 @@
           {@const disabled = busy || info.cached === 'down'}
           <div
             data-focusable
+            data-best-source={isBest ? '' : undefined}
             role="button"
             tabindex="0"
             aria-disabled={disabled}

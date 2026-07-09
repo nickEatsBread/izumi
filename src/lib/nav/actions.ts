@@ -96,7 +96,10 @@ export function initTouchScroll() {
     raf = requestAnimationFrame(glide)
   }
   const onDown = (e: PointerEvent) => {
-    if (e.button !== 0 || !get(gameMode) || get(playing)) return
+    // Runs in the player too (not just browse): there we scroll NOTHING but still swallow the drag
+    // (preventDefault below) so a finger swipe on the video area can't pan the document into
+    // horizontal overflow — the "whole app slides/shrinks" bug.
+    if (e.button !== 0 || !get(gameMode)) return
     cancelAnimationFrame(raf); cancelAnimationFrame(dragRaf); dragRaf = 0
     active = true; dragged = false; axis = null; target = null; vx = vy = 0; accDx = 0; accDy = 0
     downX = lastX = e.clientX; downY = lastY = e.clientY; lastT = performance.now()
@@ -108,7 +111,8 @@ export function initTouchScroll() {
       const adx = Math.abs(x - downX), ady = Math.abs(y - downY)
       if (adx < 8 && ady < 8) return
       axis = adx > ady ? 'x' : 'y'
-      target = scrollableOn(e.target as Element, axis)
+      // In the player, scroll nothing (the swipe is swallowed below); browse finds a real target.
+      target = get(playing) ? null : scrollableOn(e.target as Element, axis)
       dragged = true
     }
     const now = performance.now(), dt = Math.max(1, now - lastT)
@@ -133,6 +137,26 @@ export function initTouchScroll() {
   window.addEventListener('pointerup', onUp, true)
   window.addEventListener('pointercancel', onUp, true)
   window.addEventListener('click', onClickCapture, true)
+}
+
+// Game mode: kill the native `title` hover tooltips (the little accessibility popups). With a
+// controller the emulated pointer hovers everything and pops them up over the UI. We strip the
+// title on pointer-enter (stashing it in data-title so nothing is lost) so the tooltip's delay
+// timer finds no title to show. Idempotent; call once. No-op outside Game mode.
+let tooltipsSuppressed = false
+export function suppressNativeTooltips() {
+  if (tooltipsSuppressed || !get(gameMode)) return
+  tooltipsSuppressed = true
+  window.addEventListener('pointerover', (e) => {
+    const el = (e.target as HTMLElement | null)?.closest?.('[title]') as HTMLElement | null
+    if (el?.title) { el.dataset.title = el.title; el.removeAttribute('title') }
+  }, true)
+}
+
+// Focus this element on mount when in Game mode (controller/d-pad), so a series page lands on
+// Play and modals land on their primary action. rAF so layout has settled. No-op for mouse/desktop.
+export function focusOnMount(node: HTMLElement) {
+  if (get(gameMode)) requestAnimationFrame(() => node.focus({ preventScroll: true }))
 }
 
 export function hover(node: HTMLElement, handlers: { enter: () => void; leave: () => void }) {
