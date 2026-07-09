@@ -59,6 +59,35 @@ export async function getKitsuId(anilistId: number): Promise<number | undefined>
   return res?.mappings?.kitsu_id
 }
 
+/** Production-specific ids for source extensions (AnimeTosho indexes by AniDB, some by TVDB).
+ *  Resolved from the SAME AniZip response the season map uses, so no extra round-trip. Passing
+ *  the AniDB anime id (+ absolute/season episode) lets an id-based extension resolve the RIGHT
+ *  title and a freshly-aired episode with no dependency on the kitsu→imdb mapping having
+ *  propagated (the reason the addon path misses new/ambiguous titles). Best-effort: `{}`. */
+export interface ExtIds {
+  anidbAid?: number
+  tvdbId?: number // show id
+  tvdbEId?: number // episode id
+  tmdbId?: string
+  imdbId?: string
+  season?: number
+  absoluteEpisodeNumber?: number
+}
+export async function getExtensionIds(anilistId: number, episode?: number): Promise<ExtIds> {
+  const res = await fetchAniZip(anilistId)
+  const m = res?.mappings
+  const ep = episode != null ? res?.episodes?.[String(episode)] : undefined
+  return {
+    anidbAid: m?.anidb_id,
+    tvdbId: m?.thetvdb_id,
+    tvdbEId: ep?.tvdbId,
+    tmdbId: m?.themoviedb_id ?? undefined,
+    imdbId: m?.imdb_id ?? undefined,
+    season: ep?.seasonNumber,
+    absoluteEpisodeNumber: ep?.absoluteEpisodeNumber,
+  }
+}
+
 /** Compact `{ episode -> { season, abs } }` map used by the stream season-verifier.
  *  Torrentio numbers a Kitsu entry's episodes sequentially against TVDB and spills
  *  into the next season once an episode exceeds the mapped season's length; pairing

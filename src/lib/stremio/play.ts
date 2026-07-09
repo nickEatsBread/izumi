@@ -4,8 +4,8 @@ import { get } from 'svelte/store'
 import { addonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, fetchAddonStreams, streamId, pickBest, parseSeasonEp, isWrongSeason, isUncached, describe, type Stream } from './addon'
-import { relevant, likelyOtherProduction, isEpisodeExtra } from './relevance'
-import { getKitsuId, getEpisodeSeasonMap } from '$lib/anizip'
+import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie } from './relevance'
+import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf } from '$lib/downloads/state'
@@ -14,7 +14,7 @@ import { queryExtensions } from '$lib/extensions/manager'
 import type { TorrentResult } from '$lib/extensions/types'
 import { updateProgress } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
-import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource } from '$lib/player/session'
+import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, extensionUrls, bingePreload,
@@ -164,11 +164,16 @@ function refineStreams(media: Media, raw: Stream[]): Stream[] {
   // media.episodes is still null.
   const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? 0)
   const absoluteNumbered = (media.episodes ?? airedTotal) > 60
+  // A MULTI-EPISODE SERIES (not a movie/single-ep OVA): a standalone-movie file (no episode/batch
+  // marker) is a different production sharing the id — e.g. the 1995 GitS film / GitS 2: Innocence
+  // under the 2026 series. Drop those; keep every S01E01 + season pack. Not applied to movies.
+  const isSeries = media.format !== 'MOVIE' && (media.episodes ?? airedTotal) > 1
   return dedupeStreams(
     collapseBatches(raw)
       .filter((s) => relevant(s, wantedTitles))
       .filter((s) => !likelyOtherProduction(s, animeYear, absoluteNumbered))
-      .filter((s) => !isEpisodeExtra(s)),
+      .filter((s) => !isEpisodeExtra(s))
+      .filter((s) => !isSeries || !isStandaloneMovie(s)),
   )
 }
 
@@ -224,9 +229,22 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
 // that folds into the picker after the addons (a multi-source trickle).
 async function extToStreams(media: Media, episode: number | undefined, kitsu: number): Promise<Stream[]> {
   try {
+    // Resolve the production-specific AniZip ids (AniDB/TVDB + absolute episode) so ID-based
+    // extensions (e.g. AnimeTosho by AniDB) hit the RIGHT title + a freshly-aired episode. Cached
+    // with the season map, so no extra round-trip. Titles include synonyms for string-search
+    // providers. This is what lets extensions resolve new/ambiguous anime the kitsu:id:ep addon
+    // path misses.
+    const ids = await getExtensionIds(media.id, episode)
+    const titles = [...new Set(
+      [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
+        .filter((t): t is string => !!t && t.length > 3),
+    )]
     const ext = await queryExtensions({
       anilistId: media.id, malId: media.idMal ?? undefined, kitsuId: kitsu,
-      titles: [title(media), media.title.romaji, media.title.english].filter((t): t is string => !!t),
+      anidbAid: ids.anidbAid, tvdbId: ids.tvdbId, tvdbEId: ids.tvdbEId,
+      tmdbId: ids.tmdbId, imdbId: ids.imdbId, season: ids.season,
+      absoluteEpisodeNumber: ids.absoluteEpisodeNumber,
+      titles,
       episode, episodeCount: media.episodes ?? undefined,
       resolution: get(preferredQuality) === 'any' ? undefined : get(preferredQuality),
     })
@@ -402,6 +420,8 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 // Play a specific chosen stream: embed mpv into the main window + wire progress /
 // resume / auto next-episode. Closes the picker.
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
+  // Remember what's playing so the player's "Change source" can re-open the picker for it.
+  nowPlayingMedia.set({ media, episode })
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
   // visible in it); auto-next calls this with no picker open.
   // Extension / P2P results carry only an infoHash — resolve it to a cached HTTP url

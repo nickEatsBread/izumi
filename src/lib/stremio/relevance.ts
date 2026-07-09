@@ -85,3 +85,21 @@ export function likelyOtherProduction(stream: Stream, animeYear?: number, absolu
   if (/-\s*\d{1,4}(?:v\d)?\b/.test(bare)) return false
   return years.some((y) => y < animeYear - 1 || y > animeYear + 1)
 }
+
+// An episode/season marker: S01E01, 1x01, "- 067" (absolute), "Episode/EP 3". Zero-padding + a
+// leading [Group] tag are fine. NOT resolutions (1x → season ≤ 99; a bare NNNN is skipped).
+const EPISODE_MARKER = /\bS\d{1,2}E\d{1,3}\b|\b\d{1,2}x\d{1,3}\b|\s[-–]\s?\d{1,4}(?:v\d)?(?:\b|_)|\bepisode\s?\d+\b|\bep\s?\d{1,3}\b/i
+// A season/complete/range PACK marker (legit, kept): batch, complete, "Season N", a bare "S01"
+// pack (S01 not followed by E), volumes, an "NN-NN" episode range, BD Box.
+const BATCH_MARKER = /\bbatch\b|\bcomplete\b|\bseason\b|\bS\d{1,2}(?![\dE])\b|\bvol(?:ume)?\.?\s?\d+\b|\b\d{1,3}\s?[-–~]\s?\d{1,3}\b|\bBD\s?box\b/i
+
+// A STANDALONE MOVIE/film file: no episode marker AND no batch/season marker. When the request
+// is a MULTI-EPISODE SERIES, such a file is a different production sharing the id — the year-less
+// 1995 "Ghost in the Shell" BluRay rip, or "Ghost in the Shell 2: Innocence", polluting the 2026
+// SERIES. Season packs (legit) carry a batch marker and are kept; single episodes carry an
+// episode marker and are kept. Only apply this to multi-episode series (see refineStreams) — a
+// real movie/OVA request WANTS the marker-less file.
+export function isStandaloneMovie(stream: Stream): boolean {
+  const name = nameOf(stream)
+  return !EPISODE_MARKER.test(name) && !BATCH_MARKER.test(name)
+}

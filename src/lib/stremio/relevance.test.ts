@@ -1,8 +1,25 @@
 import { describe, it, expect } from 'vitest'
-import { relevant, likelyOtherProduction, isEpisodeExtra } from './relevance'
+import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie } from './relevance'
 import type { Stream } from './parse'
 
 const s = (filename: string): Stream => ({ behaviorHints: { filename } })
+
+describe('isStandaloneMovie (year-less film sharing a series id — the Ghost in the Shell bug)', () => {
+  it('flags a standalone film (no episode/batch marker)', () => {
+    expect(isStandaloneMovie(s('GHOST IN THE SHELL 4KAV1 LOSELESS AC3 BLURAYRIP JIBBY'))).toBe(true)
+    expect(isStandaloneMovie(s('Ghost in the Shell 4K2160.www.newpct1.com.mkv'))).toBe(true)
+    expect(isStandaloneMovie(s('[Shiniori-Raws] Ghost In The Shell 2 Innocence (UHD-BD 4k 3840x1632 x265 Nvenc 10bit Dolby TrueHD)'))).toBe(true)
+  })
+  it('keeps a real series episode', () => {
+    expect(isStandaloneMovie(s('[Reza] THE GHOST IN THE SHELL (2026) - S01E01.mkv'))).toBe(false)
+    expect(isStandaloneMovie(s('[DKB] The Ghost in the Shell - S01E01 [1080p][HEVC x265 10bit]'))).toBe(false)
+    expect(isStandaloneMovie(s('[SubsPlease] Dr Stone - 01 (1080p)'))).toBe(false) // absolute-numbered
+  })
+  it('keeps a season/complete pack', () => {
+    expect(isStandaloneMovie(s('[Judas] One Piece (Complete Batch) [1080p]'))).toBe(false)
+    expect(isStandaloneMovie(s('Attack on Titan S01 1080p BluRay'))).toBe(false)
+  })
+})
 
 describe('relevant', () => {
   const hellMode = [
