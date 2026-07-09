@@ -2,6 +2,9 @@
 mod doh;
 mod download;
 mod player;
+// Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
+#[cfg(target_os = "linux")]
+mod steam_osk;
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -25,6 +28,10 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) buffer: f64,
     pub(crate) scrub_time: f64,
     pub(crate) smooth_scrub: bool,
+    // True when the scrub is driven by the L2/R2 trigger (stepped, indirect) rather than a
+    // finger on the touchscreen (direct). Picks the tween time-constant in gm_osd: a longer
+    // one smooths the trigger's 5s steps, a short one keeps the touch knob glued to the finger.
+    pub(crate) pad_scrub: bool,
     pub(crate) width: f64,
     pub(crate) height: f64,
     // The HTML seek bar's on-screen geometry (CSS px, same space as width/height) so the
@@ -293,6 +300,56 @@ fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
     #[cfg(not(target_os = "linux"))]
     let _ = (&app, level);
     Ok(())
+}
+
+/// Show the Steam Deck floating on-screen keyboard over a focused field (window-pixel rect).
+/// Returns true if the Steam OSK was shown; false → the frontend uses its built-in HTML keyboard.
+/// `mode`: 0 single-line, 1 multi-line, 2 email, 3 numeric.
+#[tauri::command]
+fn steam_show_osk(x: i32, y: i32, w: i32, h: i32, mode: i32) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        steam_osk::show(x, y, w, h, mode)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (x, y, w, h, mode);
+        false
+    }
+}
+
+/// Toggle the WebView's hardware-acceleration policy (Linux, Game mode only). In Game mode the
+/// player controls are NEVER shown on screen by WebKit: the opaque mpv X11 container sits above the
+/// webview, and a snapshot of the (transparent) HTML controls is pushed into mpv as an overlay. GPU
+/// accelerated compositing therefore buys NOTHING for the player UI, yet it captures every element
+/// WebKit puts on its own compositing layer (the audio/subtitle + options menus, popovers) at
+/// reduced fidelity — grayscale AA + a bilinear resample of the layer texture — which is the
+/// pixelated menu text. Forcing the non-accelerated (shared-memory) path while the player is up
+/// renders the whole overlay crisp, so the snapshot is sharp.
+///
+/// This is safe HERE (unlike the global default, which keeps accel ON to fix a Desktop ghost trail
+/// — see the webview setup): the Game-mode menus UNMOUNT (Svelte `{#if}`) rather than hide, so the
+/// accel-only anti-ghost layer promotion isn't needed, and the one element that relied on it (the
+/// moving scrub tooltip) is drawn as a native mpv OSD in Game mode, not HTML. `enabled=true`
+/// restores the on-demand default for the browse UI, which needs accel for smooth page-zoom
+/// scrolling; Desktop never calls this (its controls are live-composited). No-op on non-Linux.
+#[tauri::command]
+fn set_webview_accel(app: AppHandle, enabled: bool) {
+    #[cfg(target_os = "linux")]
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.with_webview(move |pw| {
+            use webkit2gtk::{HardwareAccelerationPolicy, SettingsExt, WebViewExt};
+            if let Some(settings) = pw.inner().settings() {
+                settings.set_hardware_acceleration_policy(if enabled {
+                    HardwareAccelerationPolicy::OnDemand
+                } else {
+                    HardwareAccelerationPolicy::Never
+                });
+            }
+        });
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (&app, enabled);
 }
 
 /// The scrub-preview tile for hover `time` (seconds) on stream `key`. Returns
@@ -1074,12 +1131,18 @@ pub fn run() {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.with_webview(|pw| {
                     use glib::object::ObjectType;
-                    use webkit2gtk::WebViewExt;
+                    use webkit2gtk::{SettingsExt, WebViewExt};
                     let wv = pw.inner();
                     wv.set_background_color(&gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
                     // THE root fix for the ghost trails: turn off WebKitGTK 2.50 damage
                     // propagation (see disable_webkit_damage).
                     if let Some(settings) = wv.settings() {
+                        // Smooth (animated) wheel/keyboard scrolling via WebKit's async-scrolling
+                        // thread. NOTE: this only smooths WHEEL/programmatic scroll — the Deck's
+                        // touch-as-mouse drag (handled by initTouchScroll) still bypasses the
+                        // compositor scroller; a fully native touch-scroll needs synthesized GDK
+                        // smooth-scroll / wl_touch (a larger change, see notes).
+                        settings.set_enable_smooth_scrolling(true);
                         let sptr = settings.as_ptr() as *mut std::ffi::c_void;
                         unsafe { disable_webkit_damage(sptr) };
                     }
@@ -1113,6 +1176,8 @@ pub fn run() {
             player_thumb_info,
             clear_video_cache,
             set_webview_zoom,
+            set_webview_accel,
+            steam_show_osk,
             player_prefetch,
             http_get,
             http_post,

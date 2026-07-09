@@ -29,6 +29,12 @@ finish-args:
                              # (L2/R2 seek in Game mode); without it the sandbox hides all pads.
                              # (This flatpak version lacks the narrower --device=input.)
   - --filesystem=xdg-download # offline downloads
+  # Steam Deck on-screen keyboard: reach the host Steam install to dlopen libsteam_api.so and talk
+  # to the Steam client pipe (Steamworks ShowFloatingGamepadTextInput). ~/.steam is a symlink into
+  # ~/.local/share/Steam; grant both so the pipe + the .so resolve. Falls back to the HTML keyboard
+  # if Steam is unreachable.
+  - --filesystem=~/.steam
+  - --filesystem=~/.local/share/Steam:ro
 
 # libmpv links ffmpeg internally; the runtime + codecs-extra (already on the Deck at branch
 # 25.08-extra) provide the codecs, so we do NOT build or bundle ffmpeg.
@@ -112,6 +118,10 @@ modules:
         # libmpv.so.2 to /app/lib, which isn't on cc's default link path. (Runtime is
         # fine — flatpak has /app/lib on its ld path.)
         LIBRARY_PATH: /app/lib
+        # Belt-and-suspenders: LIBRARY_PATH was intermittently NOT propagated to the final
+        # rust-lld invocation (→ "unable to find library -lmpv"). Pass the search path through
+        # RUSTFLAGS too so rustc always emits `-L /app/lib` to the linker, deterministically.
+        RUSTFLAGS: -L/app/lib
     build-commands:
       - npm ci
       # Prod builds NEVER include the webview inspector. For a debug build with devtools,

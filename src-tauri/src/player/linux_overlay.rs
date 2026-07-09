@@ -29,7 +29,10 @@ use crate::player::PlayerHandle;
 
 const OVERLAY_ID: i64 = 1;
 const IDLE_FPS: u64 = 12;
-const SCRUB_FPS: u64 = 30;
+// "Fast" cadence used while a menu is open / controls are interactive. A snapshot costs only
+// ~9ms (raster ~5ms + crop/diff ~4ms) on the Deck, so 60fps fits the 16ms budget — 30fps made
+// controller menu navigation feel laggy (~33ms per d-pad step).
+const SCRUB_FPS: u64 = 60;
 
 static GEN: AtomicU64 = AtomicU64::new(0);
 static BUSY: AtomicBool = AtomicBool::new(false);
