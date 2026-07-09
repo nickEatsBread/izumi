@@ -231,7 +231,12 @@
   })
   function onmove(e: PointerEvent) {
     hovering = true
-    const t = timeAt(e.clientX)
+    // WebKitGTK frame-aligns pointermove, so e.clientX can be a frame stale; the LAST coalesced
+    // sample is the freshest finger position at no extra event cost. (getPredictedEvents() is a
+    // no-op on non-iOS WebKit, so we don't predict.) Feature-detected — falls back to the event.
+    const coalesced = e.getCoalescedEvents?.()
+    const clientX = coalesced && coalesced.length ? coalesced[coalesced.length - 1].clientX : e.clientX
+    const t = timeAt(clientX)
     requestTile(t)
     if (gm && $scrub.active) {
       moveScrub(t)

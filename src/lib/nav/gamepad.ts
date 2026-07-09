@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, exitPrompt } from '$lib/player/session'
+import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
@@ -37,6 +37,7 @@ export function startGamepadNav(): () => void {
   // A direction fires once on press, then repeats while held. In the player, left/right seek
   // (up/down are unused); everywhere else it drives focus nav via izumi's window keydown handler.
   function fireDir(dir: Dir) {
+    if (get(trackMenuOpen)) return // the track menu owns the pad while open
     if (inPlayer()) {
       if (dir === 'left') playerCmd('seek', [String(-get(seekDuration)), 'relative+exact'])
       else if (dir === 'right') playerCmd('seek', [String(get(seekDuration)), 'relative+exact'])
@@ -46,6 +47,9 @@ export function startGamepadNav(): () => void {
   }
 
   function onPress(name: string) {
+    // Track menu open (Game mode ☰): it captures ALL buttons — d-pad, A, B, ☰ — so nothing
+    // here should drive focus nav / seek / back while it's up.
+    if (get(trackMenuOpen)) return
     if (DIRS.includes(name as Dir)) {
       const dir = name as Dir
       held[dir] = true
@@ -53,11 +57,25 @@ export function startGamepadNav(): () => void {
       fireDir(dir)
       return
     }
+    // The on-screen keyboard (if up) owns A/B: A types the focused key; B closes it. D-pad nav
+    // already ran above (trapped to the keyboard via data-nav-trap).
+    if (get(oskOpen)) {
+      if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
+      else if (name === 'b') window.dispatchEvent(new Event('osk-close'))
+      return
+    }
     // The exit prompt (if open) captures A/B: A activates the focused button (Exit/Cancel);
     // B cancels it. Handled before the player check so it works from anywhere.
     if (get(exitPrompt)) {
       if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
       else if (name === 'b') exitPrompt.set(false)
+      return
+    }
+    // The source picker (opened by Play) captures A/B: A picks the focused source; B closes the
+    // picker instead of navigating the page back (which would leave the series entirely).
+    if (get(streamPicker)) {
+      if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
+      else if (name === 'b') streamPicker.set(null)
       return
     }
     // A/B only act in browse; the player owns them (and L1/R1, L2/R2) itself.
