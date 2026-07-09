@@ -69,6 +69,8 @@ jobs:
             args: ''
           - platform: windows-latest
             args: '--config {"bundle":{"resources":["libmpv-2.dll"]}}'
+          - platform: macos-14        # Apple Silicon (arm64) — unsigned .dmg
+            args: ''
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -131,6 +133,38 @@ jobs:
           echo "LIB=$libdir;$env:LIB" >> $env:GITHUB_ENV
           Copy-Item "$dll" "$env:GITHUB_WORKSPACE\src-tauri\libmpv-2.dll" -Force
 
+      # macOS: libmpv2-sys links `-l mpv`; Homebrew provides libmpv + headers. But a user's Mac has
+      # no Homebrew, and brew's libmpv hardcodes /opt/homebrew load paths and pulls a large dep tree
+      # (ffmpeg / libass / libplacebo). So: rewrite libmpv's install-name id to @rpath so the app
+      # records a RELOCATABLE load path, then dylibbundler copies libmpv + ALL its non-system deps
+      # into a Frameworks staging dir (each id rewritten to @rpath). Those get bundled into the .app
+      # (frameworks list below) and resolved at runtime via an @executable_path/../Frameworks rpath.
+      # Unsigned (no Apple Developer cert): the bundler ad-hoc signs; users right-click > Open once.
+      - name: libmpv + dylib bundling (macOS)
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          set -euo pipefail
+          brew update
+          brew install mpv dylibbundler
+          BREW="$(brew --prefix)"
+          echo "PKG_CONFIG_PATH=$BREW/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LIBRARY_PATH=$BREW/lib" >> "$GITHUB_ENV"
+          # Runtime search path for the dylibs bundled under the app's Frameworks folder.
+          echo "RUSTFLAGS=-C link-arg=-Wl,-rpath,@executable_path/../Frameworks" >> "$GITHUB_ENV"
+          # Record a relocatable load path in the app instead of /opt/homebrew/...
+          chmod +w "$BREW/lib/libmpv.2.dylib"
+          install_name_tool -id @rpath/libmpv.2.dylib "$BREW/lib/libmpv.2.dylib"
+          # Stage libmpv + its recursive non-system deps with @rpath ids for bundling.
+          STAGE="$GITHUB_WORKSPACE/src-tauri/macos-frameworks"
+          mkdir -p "$STAGE"
+          cp "$BREW/lib/libmpv.2.dylib" "$STAGE/"
+          chmod +w "$STAGE/libmpv.2.dylib"
+          dylibbundler -of -b -x "$STAGE/libmpv.2.dylib" -d "$STAGE" -p "@rpath/"
+          # Compact JSON (NO spaces — survives tauri-action splitting args on spaces) listing every
+          # staged dylib for Tauri's macOS `frameworks` bundler. Consumed by the build step's args.
+          FW="$(python3 -c "import glob,json;print(json.dumps(sorted(glob.glob('$STAGE/*.dylib')),separators=(',',':')))")"
+          echo "MAC_ARGS=--config {\"bundle\":{\"macOS\":{\"frameworks\":$FW}}}" >> "$GITHUB_ENV"
+
       - name: Install JS deps
         run: npm ci
 
@@ -144,7 +178,8 @@ jobs:
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           includeUpdaterJson: true
-          args: ${{ matrix.args }}
+          # macOS injects the dynamically-built frameworks list (MAC_ARGS) from the bundling step.
+          args: ${{ startsWith(matrix.platform, 'macos') && env.MAC_ARGS || matrix.args }}
 
   publish-release:
     needs: [create-release, build]

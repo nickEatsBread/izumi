@@ -19,6 +19,7 @@ izumi_updater.key
 # Native libmpv binaries staged into src-tauri/ at build time (bundled by CI, not committed)
 src-tauri/*.dll
 src-tauri/*.dylib
+src-tauri/macos-frameworks/
 
 # Local Flatpak bundle artifact (built + deployed, not committed)
 izumi.flatpak
