@@ -194,6 +194,65 @@ jobs:
           # macOS injects the dynamically-built frameworks list (MAC_ARGS) from the bundling step.
           args: ${{ startsWith(matrix.platform, 'macos') && env.MAC_ARGS || matrix.args }}
 
+  # The Steam Deck build is a Flatpak (NOT the desktop-Linux deb/rpm/AppImage above): SteamOS is
+  # immutable and its system libs clash with a bundled AppImage (white screen), so the Deck uses the
+  # GNOME runtime's matched webkit/gtk/mesa/pipewire. Built here the same way as locally, attached to
+  # the release as its own asset. Runs independently of `build`, so a hiccup here never blocks the
+  # desktop release; it just uploads the Deck bundle when ready.
+  flatpak:
+    needs: create-release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flatpak + flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      # Cache the built runtime/SDK downloads + the module build tree so reruns skip the ~15min
+      # mpv/libplacebo/libass compile. Keyed on the manifest — a dep bump invalidates it.
+      - name: Cache flatpak build
+        uses: actions/cache@v4
+        with:
+          path: |
+            flatpak/.flatpak-builder
+            ~/.local/share/flatpak
+          key: flatpak-${{ hashFiles('flatpak/com.nicho.izumi.yml') }}
+          restore-keys: flatpak-
+
+      # Stable tag `vX.Y.Z` -> that tag; any pre-release (`-`) -> the rolling `beta` release.
+      - name: Resolve release tag
+        id: meta
+        run: |
+          if [[ "${{ github.ref_name }}" == *-* ]]; then
+            echo "tag=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build the Steam Deck Flatpak bundle
+        run: |
+          # dbus-run-session: flatpak's --user ops need a session bus (absent on bare runners).
+          # --install-deps-from=flathub pulls the GNOME 49 runtime/SDK + rust/node SDK extensions the
+          # manifest pins (no hardcoded branch here). --disable-rofiles-fuse avoids fuse-in-CI issues.
+          dbus-run-session -- bash -euxo pipefail -c '
+            flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+            cd flatpak
+            flatpak-builder --user --install-deps-from=flathub --force-clean --disable-rofiles-fuse \
+              --repo=_repo _build com.nicho.izumi.yml
+            flatpak build-bundle _repo \
+              "../izumi-${{ steps.meta.outputs.tag }}-steamdeck.flatpak" \
+              com.nicho.izumi --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+          '
+
+      - name: Attach the Flatpak to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            izumi-*.flatpak --repo "${{ github.repository }}" --clobber
+
   publish-release:
     needs: [create-release, build]
     runs-on: ubuntu-latest
