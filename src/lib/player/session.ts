@@ -30,9 +30,26 @@ export const nowPlaying = writable<{
   airedTotal: null,
 })
 
+// The Media + episode currently playing, so the player's "Change source" option can re-open the
+// source picker for it mid-playback (the picker's onState/pick then swaps the stream in place).
+export const nowPlayingMedia = writable<{ media: Media; episode: number | undefined } | null>(null)
+
+// True while the Game-mode on-screen keyboard is up. The controller translator routes A (type the
+// focused key) / B (close) to it, and directional nav stays trapped on its keys.
+export const oskOpen = writable(false)
+
 // Exit-confirm prompt (Game mode): pressing Back (B) on the home screen opens this instead
 // of doing nothing — there's nowhere further back to go, so we ask before quitting the app.
 export const exitPrompt = writable(false)
+
+// Game-mode track menu (Deck ☰ button): the controller-navigable audio/subtitle picker.
+// While true it CAPTURES the pad — the app-wide nav translator and the player's own A/B/L1/R1
+// handlers early-return so d-pad/A/B drive the menu instead of seeking/pausing/focus-nav.
+export const trackMenuOpen = writable(false)
+
+// True while any player popover (playback options / track list in Controls) is open. Drives the
+// Game-mode snapshot overlay to its FAST (60fps) cadence so navigating those menus isn't laggy.
+export const playerMenuOpen = writable(false)
 
 // Transient toast shown in the player overlay (e.g. "Loading next episode…",
 // "Next episode has no cached source"). Cleared automatically by the overlay.
