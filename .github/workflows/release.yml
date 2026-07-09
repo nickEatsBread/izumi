@@ -124,11 +124,24 @@ jobs:
           Write-Host "libmpv dev build: $($asset.name)"
           Invoke-WebRequest $asset.browser_download_url -OutFile "$dir\libmpv.7z" -Headers $hdr
           7z x "$dir\libmpv.7z" -o"$dir" -y
-          $def = (Get-ChildItem -Path $dir -Recurse -Filter 'mpv.def'      | Select-Object -First 1).FullName
           $dll = (Get-ChildItem -Path $dir -Recurse -Filter 'libmpv-2.dll' | Select-Object -First 1).FullName
-          if (-not $def) { throw 'mpv.def not found in archive' }
           if (-not $dll) { throw 'libmpv-2.dll not found in archive' }
-          $libdir = Split-Path $def
+          $libdir = Split-Path $dll
+          # Newer shinchiro dev archives no longer ship mpv.def (only libmpv.dll.a, a GNU import
+          # lib MSVC's link can't consume). Use it if present; otherwise synthesize a .def from the
+          # DLL's exports (via dumpbin) so lib.exe can produce the MSVC import lib mpv.lib.
+          $def = (Get-ChildItem -Path $dir -Recurse -Filter 'mpv.def' | Select-Object -First 1).FullName
+          if (-not $def) {
+            $def = "$libdir\mpv.def"
+            'EXPORTS' | Set-Content $def
+            & dumpbin /nologo /exports "$dll" |
+              Select-String '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\w+)\s*$' |
+              ForEach-Object { $_.Matches[0].Groups[1].Value } |
+              Add-Content $def
+            $count = ((Get-Content $def).Count - 1)
+            if ($count -lt 1) { throw "synthesized mpv.def has no exports" }
+            Write-Host "synthesized mpv.def with $count exports"
+          }
           lib /def:"$def" /name:libmpv-2.dll /out:"$libdir\mpv.lib" /machine:x64
           echo "LIB=$libdir;$env:LIB" >> $env:GITHUB_ENV
           Copy-Item "$dll" "$env:GITHUB_WORKSPACE\src-tauri\libmpv-2.dll" -Force
