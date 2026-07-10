@@ -1,5 +1,5 @@
 import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll } from '../http'
-import type { DebridProvider, DebridInfo } from '../types'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // Real-Debrid. Flow: addMagnet → selectFiles(all) [RD is the only one that requires
 // this] → poll info until 'downloaded' → pick largest video → unrestrict/link. RD
@@ -41,6 +41,24 @@ export function rdStatus(info: { status: string; progress?: number; seeders?: nu
     total: info.bytes,
     raw: info.status,
   }
+}
+
+interface RdListEntry { id: string; filename: string; hash: string; bytes: number; progress?: number; status: string; added?: string }
+
+/** Pure map of an RD /torrents list entry to a DebridItem. */
+export function rdListItem(e: RdListEntry): DebridItem {
+  return {
+    id: e.id, name: e.filename, size: e.bytes, hash: e.hash?.toLowerCase(),
+    status: rdStatus({ status: e.status, progress: e.progress }).stage,
+    progress: e.progress,
+    addedAt: e.added ? (Date.parse(e.added) || undefined) : undefined,
+  }
+}
+
+/** Pure map of an RD info file to a DebridFile. */
+export function rdFile(f: { id: number; path: string; bytes: number }): DebridFile {
+  const name = f.path.split('/').pop() || f.path
+  return { id: String(f.id), name, size: f.bytes, playable: VIDEO.test(name) && !JUNK.test(name) }
 }
 
 export const realdebrid: DebridProvider = {
@@ -87,5 +105,35 @@ export const realdebrid: DebridProvider = {
     if (chosen.bytes > 0 && un.filesize && un.filesize < chosen.bytes * 0.5)
       throw new Error('Real-Debrid served a copyright-removed placeholder for this release — pick a different source.')
     return un.download
+  },
+  async listItems(key) {
+    if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Extensions.')
+    const list = await rd('GET', '/torrents?limit=100', key) as RdListEntry[]
+    return (Array.isArray(list) ? list : []).map(rdListItem)
+  },
+  async listFiles(key, item) {
+    const info = await rd('GET', `/torrents/info/${item.id}`, key) as RdInfo
+    return (info.files ?? []).map(rdFile)
+  },
+  async resolveFile(key, item, file, opts) {
+    let info = await rd('GET', `/torrents/info/${item.id}`, key) as RdInfo
+    if (!(info.files ?? []).some((f) => f.selected)) {
+      await rd('POST', `/torrents/selectFiles/${item.id}`, key, form({ files: 'all' }))
+      info = await rd('GET', `/torrents/info/${item.id}`, key) as RdInfo
+    }
+    const selected = (info.files ?? []).filter((f) => f.selected)
+    const idx = selected.findIndex((f) => String(f.id) === file.id)
+    const chosen = selected[idx]
+    if (!chosen) throw new Error("That file isn't available in this torrent.")
+    const link = info.links?.[idx] ?? info.links?.[0]
+    if (!link) throw new Error('Debrid returned no link.')
+    const un = await rd('POST', '/unrestrict/link', key, form({ link })) as { download: string; filesize?: number }
+    // Same copyright-decoy guard as resolveHash: a served file far smaller than the torrent's is a placeholder.
+    if (chosen.bytes > 0 && un.filesize && un.filesize < chosen.bytes * 0.5)
+      throw new Error('Real-Debrid served a copyright-removed placeholder for this file — pick another source.')
+    return un.download
+  },
+  async deleteItem(key, item) {
+    await rd('DELETE', `/torrents/delete/${item.id}`, key)
   },
 }
