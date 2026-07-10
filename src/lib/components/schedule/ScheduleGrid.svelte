@@ -1,14 +1,17 @@
 <script lang="ts">
-  // Fetches the WHOLE week's airing schedule (paginated — a week is far more than one 50-item
-  // page, which is why the later days used to be empty) and renders it two ways: the 7-column
-  // grid on Desktop, and a scaled one-day-at-a-time view on the Steam Deck (Game mode) where
-  // L2/R2 step between days and the current day is highlighted.
+  // Fetches the WHOLE week's airing schedule (paginated) and renders it three ways:
+  //  - Game mode (Deck): one scaled day at a time, L1/R1 step between days.
+  //  - Desktop 'days':   the same day-at-a-time view, mouse-clickable tabs, no hint.
+  //  - Desktop 'agenda': a full-width vertical list of day sections (AgendaWeek).
+  // The desktop choice is the persisted `scheduleLayout` setting; Game mode ignores it.
   import { getContextClient } from '@urql/svelte'
   import { listen } from '@tauri-apps/api/event'
   import { SCHEDULE_QUERY } from '$lib/anilist/detail-queries'
   import { groupByDay, weekRange, type Airing } from '$lib/anilist/schedule'
   import { gameMode } from '$lib/player/session'
+  import { scheduleLayout } from '$lib/settings/ui'
   import DayColumn from './DayColumn.svelte'
+  import AgendaWeek from './AgendaWeek.svelte'
 
   let { start, end }: { start: number; end: number } = $props()
 
@@ -16,6 +19,7 @@
   const FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
   const client = getContextClient()
   const gm = $derived($gameMode)
+  const layout = $derived($scheduleLayout)
 
   let airings = $state<Airing[]>([])
   let loading = $state(true)
@@ -55,12 +59,12 @@
     new Date((start + i * 24 * 3600) * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
   const hasUnaired = (i: number) => days[i]?.some((a) => a.airingAt * 1000 > Date.now()) ?? false
 
-  // Deck day-view: show one day at a time, defaulting to today.
+  // Day-view selected day, defaulting to today.
   let selected = $state(-1)
   $effect(() => { if (selected < 0) selected = todayIdx >= 0 ? todayIdx : 0 })
 
-  // Game mode: L1/R1 (bumpers) step the selected day (wrapping). Bumpers are clean digital
-  // buttons — one press = one step — unlike the analog triggers, which fire on every value tick.
+  // Game mode only: L1/R1 (bumpers) step the selected day (wrapping). Bumpers are clean
+  // digital buttons — one press = one step — unlike the analog triggers.
   $effect(() => {
     if (!gm) return
     let un: (() => void) | null = null
@@ -73,16 +77,7 @@
   })
 </script>
 
-{#if loading}
-  <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
-    {#each Array.from({ length: 7 }) as _}
-      <div class="h-64 animate-pulse rounded-md bg-muted"></div>
-    {/each}
-  </div>
-{:else if error}
-  <p class="text-muted-foreground">Failed to load schedule: {error}</p>
-{:else if gm}
-  <!-- Steam Deck: day tabs + one scaled day. -->
+{#snippet dayView(showHint: boolean)}
   <div class="mb-4 flex gap-1.5">
     {#each SHORT as d, i (d)}
       <button data-focusable onclick={() => (selected = i)}
@@ -95,13 +90,24 @@
       </button>
     {/each}
   </div>
-  <p class="mb-3 text-xs text-muted-foreground">L1 / R1 to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
+  {#if showHint}
+    <p class="mb-3 text-xs text-muted-foreground">L1 / R1 to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
+  {/if}
   <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={days[selected]} big />
-{:else}
-  <!-- Desktop: the full week grid. -->
+{/snippet}
+
+{#if loading}
   <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
-    {#each FULL as label, i (label)}
-      <DayColumn {label} airings={days[i]} today={i === todayIdx} />
+    {#each Array.from({ length: 7 }) as _}
+      <div class="h-64 animate-pulse rounded-md bg-muted"></div>
     {/each}
   </div>
+{:else if error}
+  <p class="text-muted-foreground">Failed to load schedule: {error}</p>
+{:else if gm}
+  {@render dayView(true)}
+{:else if layout === 'days'}
+  {@render dayView(false)}
+{:else}
+  <AgendaWeek {days} {start} {todayIdx} />
 {/if}
