@@ -2,6 +2,7 @@
 // so they run unmodified in izumi's Web Worker. Installed on `self` by worker.ts for kind:"seanime".
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as cheerio from 'cheerio'
+import CryptoJSLib from 'crypto-js'
 
 // goquery-shaped selection wrapper over cheerio. Matches Seanime's DocSelection surface — notably,
 // each()/map()/filter() callbacks receive a WRAPPED DocSelection (single element), not a raw node.
@@ -78,3 +79,6 @@ class BufferShim {
   }
 }
 export const Buffer = BufferShim
+
+// crypto-js verbatim (AES/enc/mode/pad/MD5/…) — providers use it as-is to decrypt sources.
+export const CryptoJS = CryptoJSLib

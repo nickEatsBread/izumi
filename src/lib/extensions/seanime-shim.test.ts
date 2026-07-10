@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { LoadDoc } from './seanime-shim'
+import { LoadDoc, CryptoJS } from './seanime-shim'
 import { Buffer as BufferShim } from './seanime-shim'
 
 const HTML = `
@@ -65,5 +65,11 @@ describe('Buffer polyfill', () => {
   })
   it('defaults to utf8', () => {
     expect(BufferShim.from('abc').toString()).toBe('abc')
+  })
+})
+
+describe('CryptoJS', () => {
+  it('exposes crypto-js (MD5 smoke test)', () => {
+    expect(CryptoJS.MD5('hello').toString()).toBe('5d41402abc4b2a76b9719d911017c592')
   })
 })
