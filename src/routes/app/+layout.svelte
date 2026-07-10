@@ -5,6 +5,7 @@
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
   import PlayerOverlay from '$lib/components/player/PlayerOverlay.svelte'
   import StreamPicker from '$lib/components/player/StreamPicker.svelte'
+  import DebridCaching from '$lib/components/player/DebridCaching.svelte'
   import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import { playing, fullscreen, gameMode, initGameMode } from '$lib/player/session'
@@ -132,5 +133,6 @@
 <main class="relative ml-14 min-h-screen" class:hidden={$playing}>{@render children()}</main>
 {#if $playing}<PlayerOverlay />{/if}
 <StreamPicker />
+<DebridCaching />
 <ExitPrompt />
 <OnScreenKeyboard />
