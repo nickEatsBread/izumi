@@ -27,6 +27,7 @@ export const offcloud: DebridProvider = {
     const add = await oc('POST', '/cloud', key, form({ url: magnetOf(hashOrMagnet) }))
     if (add.status === 'error' || !add.requestId) throw new Error(add.error ?? 'Offcloud rejected the magnet (cloud add-on required?).')
     const rid = add.requestId
+    // Offcloud exposes only a textual stage (no %/seeders/speed) — stage-only DebridInfo.
     await poll(async () => {
       const st = await oc('POST', '/cloud/status', key, form({ requestId: rid }))
       const s = st.status?.status ?? st.status
