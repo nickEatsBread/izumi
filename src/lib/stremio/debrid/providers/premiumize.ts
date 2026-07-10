@@ -1,5 +1,5 @@
 import { jfetch, magnetOf, pickLargestVideo, poll } from '../http'
-import type { DebridProvider } from '../types'
+import type { DebridProvider, DebridInfo } from '../types'
 
 // Premiumize. apikey query param on every call. FAST PATH: /transfer/directdl
 // returns direct links immediately for cached torrents (no cloud clutter, no
@@ -24,6 +24,18 @@ function flattenContent(content: any[]): PmFile[] {
     else out.push({ name: c.path ?? c.name ?? '', bytes: c.size ?? 0, link: c.link, stream_link: c.stream_link })
   }
   return out
+}
+
+/** Pure map of a Premiumize transfer entry to a DebridInfo. Premiumize exposes progress
+ *  (0..1) and a free-text `message`, but not structured seeders/speed. */
+export function pmStatus(t: { status?: string; progress?: number; message?: string }): DebridInfo {
+  if (t.status === 'finished' || t.status === 'seeding') return { stage: 'ready', progress: 100, raw: t.status }
+  if (t.status === 'error' || t.status === 'timeout') return { stage: 'error', raw: t.status }
+  return {
+    stage: t.status === 'queued' ? 'queued' : 'downloading',
+    progress: (t.progress ?? 0) * 100,
+    raw: t.message ?? t.status,
+  }
 }
 
 export const premiumize: DebridProvider = {
@@ -51,9 +63,7 @@ export const premiumize: DebridProvider = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const t = (await pm('GET', '/transfer/list', key)).transfers?.find((x: any) => x.id === cr.id)
       folderId = t?.folder_id; fileId = t?.file_id
-      if (t?.status === 'finished' || t?.status === 'seeding') return { stage: 'ready', progress: 100, raw: t.status }
-      if (t?.status === 'error' || t?.status === 'timeout') return { stage: 'error', raw: t.status }
-      return { stage: t?.status === 'queued' ? 'queued' : 'downloading', progress: (t?.progress ?? 0) * 100, raw: t?.status }
+      return pmStatus(t ?? {})
     }, opts)
     let files: PmFile[]
     if (folderId) files = flattenContent((await pm('GET', `/folder/list?id=${folderId}`, key)).content ?? [])
