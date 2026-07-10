@@ -10,6 +10,11 @@ export type DebridStage = 'queued' | 'downloading' | 'ready' | 'error'
 export interface DebridInfo {
   stage: DebridStage
   progress?: number // 0–100 when the provider reports it
+  seeders?: number // active seeders, when the provider reports them
+  speed?: number // download speed in BYTES/sec
+  downloaded?: number // bytes fetched so far
+  total?: number // total bytes of the file/torrent
+  filename?: string // the file being cached, when known
   raw?: string // provider's raw status, for honest display/debugging
 }
 
