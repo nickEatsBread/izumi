@@ -82,7 +82,8 @@ function normalizeManifest(raw: any, manifestUrl: string): ExtensionConfig[] {
   for (const e of entries) {
     if (!e || typeof e !== 'object') continue
     const codeSpec = e.code ?? e.main
-    if (!codeSpec || (e.type && e.type !== 'torrent')) continue
+    if (!codeSpec) continue
+    if (e.type && e.type !== 'torrent' && e.type !== 'onlinestream-provider') continue
     out.push({
       id: String(e.id ?? e.name ?? codeSpec),
       name: String(e.name ?? e.id ?? 'Extension'),
@@ -169,7 +170,7 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
     const id = ++ext.seq
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ext.waits.set(id, (m: any) => resolve(!m.error))
-    worker.postMessage({ type: 'load', id, code, settings: cfg.settings })
+    worker.postMessage({ type: 'load', id, code, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : undefined })
   })
   return ext
 }
@@ -217,4 +218,31 @@ export async function queryExtensions(query: TorrentQuery): Promise<TorrentResul
     }
     return out
   } catch { return [] }
+}
+
+// Raw multi-arg call for Seanime onlinestream providers: source[method](...args), returning the
+// raw result (object OR array). 20s cap → null on timeout. (Torrent uses `call()` which coerces.)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function callRaw(ext: RunningExt, method: string, args: unknown[]): Promise<any> {
+  return new Promise((resolve) => {
+    const id = ++ext.seq
+    const t = setTimeout(() => { ext.waits.delete(id); resolve(null) }, 20000)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ext.waits.set(id, (m: any) => { clearTimeout(t); resolve(m.results) })
+    ext.worker.postMessage({ type: 'query', id, method, args })
+  })
+}
+
+/** The live onlinestream-provider extensions, each with a bound multi-arg `call`. The
+ *  orchestrator (stremio/onlinestream) drives search/findEpisodes/findEpisodeServer through it. */
+export async function runningStreamExtensions(): Promise<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  { id: string; name: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
+> {
+  if (!get(extensionUrls).length) return []
+  const exts = await ensureRunning()
+  const live = (await Promise.all(
+    exts.map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
+  )).filter(Boolean) as RunningExt[]
+  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
 }
