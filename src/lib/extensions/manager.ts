@@ -175,19 +175,29 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
   return ext
 }
 
+// In-flight build so concurrent callers (torrent wave + streaming wave in the same play) share ONE
+// build instead of one racing ahead and reading a half-built `running`. `running`/`builtFrom` are
+// published only AFTER the build completes.
+let buildPromise: Promise<RunningExt[]> | null = null
 async function ensureRunning(): Promise<RunningExt[]> {
   const key = JSON.stringify(get(extensionUrls))
   if (running && builtFrom === key) return running
-  running?.forEach((e) => e.worker.terminate())
-  running = []
-  builtFrom = key
-  for (const cfg of await loadConfigs()) {
-    try {
-      const code = await fetchModuleCode(cfg.code)
-      if (code) running.push(spawn(cfg, code))
-    } catch { /* skip */ }
-  }
-  return running
+  if (buildPromise) return buildPromise
+  buildPromise = (async () => {
+    running?.forEach((e) => e.worker.terminate())
+    const next: RunningExt[] = []
+    for (const cfg of await loadConfigs()) {
+      try {
+        const code = await fetchModuleCode(cfg.code)
+        if (code) next.push(spawn(cfg, code))
+      } catch { /* skip */ }
+    }
+    running = next
+    builtFrom = key
+    return next
+  })()
+  try { return await buildPromise }
+  finally { buildPromise = null }
 }
 
 function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<TorrentResult[]> {
