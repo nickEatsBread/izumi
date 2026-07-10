@@ -18,8 +18,10 @@
   import ArrowDownWideNarrow from 'lucide-svelte/icons/arrow-down-wide-narrow'
   import MonitorCog from 'lucide-svelte/icons/monitor-cog'
   import Copy from 'lucide-svelte/icons/copy'
+  import Check from 'lucide-svelte/icons/check'
   import Play from 'lucide-svelte/icons/play'
   import Database from 'lucide-svelte/icons/database'
+  import { copyToClipboard } from '$lib/util/clipboard'
 
   const pick = $derived($streamPicker)
   const all = $derived(pick ? rankInfos(pick.streams, $preferredStreamSort) : ([] as StreamInfo[]))
@@ -112,9 +114,16 @@
     if (best) choose(best)
     else error = 'No cached source to auto-select.'
   }
+  let copiedKey = $state<string | null>(null)
   function copyLink(e: MouseEvent, info: StreamInfo) {
     e.stopPropagation()
-    navigator.clipboard?.writeText(info.stream.url ?? info.stream.infoHash ?? '').catch(() => {})
+    // Prefer the resolved URL; for an uncached torrent copy a real magnet (pasteable into a client),
+    // not the bare infoHash. Uses the webview-safe helper (navigator.clipboard is absent on the Deck).
+    const link = info.stream.url ?? (info.stream.infoHash ? `magnet:?xt=urn:btih:${info.stream.infoHash}` : '')
+    if (!link || !copyToClipboard(link)) return
+    const k = keyOf(info)
+    copiedKey = k
+    setTimeout(() => { if (copiedKey === k) copiedKey = null }, 1200)
   }
   function close() { if (!busy) streamPicker.set(null) }
 
@@ -259,7 +268,7 @@
                 {#if info.batch}<Database size={13} class="shrink-0 text-indigo-300" />{/if}
                 <span class="ml-auto flex shrink-0 items-center gap-2">
                   {#if info.addon && !info.logo}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
-                  <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title="Copy link" aria-label="Copy link" class="text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-foreground"><Copy size={14} /></button>
+                  <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-0 transition group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
                   <Play size={14} class="text-muted-foreground opacity-0 transition group-hover:opacity-100" />
                 </span>
               </span>

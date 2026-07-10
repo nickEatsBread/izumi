@@ -10,6 +10,7 @@
   import type { Media } from '$lib/anilist/types'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import { focusOnMount } from '$lib/nav'
+  import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
   import { setStatus, toggleFavourite, getMalProgress } from '$lib/trackers'
@@ -88,12 +89,12 @@
     try { await setStatus(m, 'PLANNING'); bookmarked = true } catch { /* ignore */ }
     finally { bookmarkBusy = false }
   }
-  async function onShare(m: Media) {
-    try {
-      await navigator.clipboard.writeText(`https://anilist.co/anime/${m.id}`)
+  function onShare(m: Media) {
+    // navigator.clipboard is absent in the WebKitGTK webview — use the webview-safe helper.
+    if (copyToClipboard(`https://anilist.co/anime/${m.id}`)) {
       copied = true
       setTimeout(() => (copied = false), 1500)
-    } catch { /* ignore */ }
+    }
   }
 </script>
 
