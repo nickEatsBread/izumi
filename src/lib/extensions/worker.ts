@@ -46,8 +46,13 @@ self.onmessage = async (e: MessageEvent<any>) => {
       // Seanime providers are a bare `class Provider {}` (no export) using a global `fetch`
       // (already overridden above) + occasionally `$sleep`. Instantiate it + provide $sleep.
       if (msg.kind === 'seanime') {
+        const shim = await import('./seanime-shim')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(globalThis as any).$sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+        const g = globalThis as any
+        g.$sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+        g.LoadDoc = shim.LoadDoc
+        g.Buffer = shim.Buffer
+        g.CryptoJS = shim.CryptoJS
         code = `${code}\n;export default (typeof Provider !== 'undefined' ? new Provider() : {});`
       }
       const blob = new Blob([code], { type: 'application/javascript' })
