@@ -192,11 +192,14 @@ async function resolveKitsu(media: Media): Promise<number | undefined> {
   return kitsu
 }
 
-async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: { season?: number; abs?: number }; kitsu: number }> {
+async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: { season?: number; abs?: number }; kitsu?: number }> {
   const bases = get(addonUrls)
   if (!bases.length) throw new Error('No sources configured — add an addon URL in Settings.')
   const kitsu = await resolveKitsu(media)
-  if (!kitsu) throw new Error('No stream mapping for this title (no Kitsu id).')
+  // No Kitsu id ⇒ addons (which index by it) can't be queried. Auto-advance is cached-addon-only,
+  // so return nothing and let the caller fall back to the manual picker (its title/id extension
+  // search can still find a title that isn't in Kitsu).
+  if (!kitsu) return { streams: [], cachedCount: 0 }
 
   // Fetch streams and the AniZip season map CONCURRENTLY (independent round-trips).
   const seasonP = episode != null ? getEpisodeSeasonMap(media.id) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
@@ -227,7 +230,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
 // yet refined — the caller's refine pass dedupes/season-verifies them together with
 // the addon streams). Best-effort: [] on failure/none. This is the slower SECOND wave
 // that folds into the picker after the addons (a multi-source trickle).
-async function extToStreams(media: Media, episode: number | undefined, kitsu: number): Promise<Stream[]> {
+async function extToStreams(media: Media, episode: number | undefined, kitsu?: number): Promise<Stream[]> {
   try {
     // Resolve the production-specific AniZip ids (AniDB/TVDB + absolute episode) so ID-based
     // extensions (e.g. AnimeTosho by AniDB) hit the RIGHT title + a freshly-aired episode. Cached
@@ -328,12 +331,16 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     }
 
     const bases = get(addonUrls)
-    if (!bases.length) throw new Error('No sources configured — add an addon URL in Settings.')
+    const hasExt = get(extensionUrls).length > 0
+    if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL in Settings.')
     const kitsu = await resolveKitsu(media)
-    if (!kitsu) throw new Error('No stream mapping for this title (no Kitsu id).')
+    // Addons index by Kitsu id; extensions search by title/MAL/AniDB. A title with no Kitsu id
+    // (e.g. an OVA that isn't in Kitsu) can still be sourced by extensions, so only hard-fail when
+    // there's no Kitsu id AND no extension to fall back on. When kitsu is missing we skip the addon
+    // queries entirely and let the extension wave do the sourcing.
+    if (!kitsu && !hasExt) throw new Error('No addon mapping for this title (not in Kitsu). Add a source extension to find it by title.')
 
     const type = media.format === 'MOVIE' ? 'movie' : 'series'
-    const id = streamId(kitsu, episode)
     const seasonP = episode != null ? getEpisodeSeasonMap(media.id) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
 
     // Fold each addon's streams into the picker AS IT RESPONDS (one
@@ -360,16 +367,19 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // it lands — a genuine multi-source trickle + live re-sort, not a
     // late extension dump. `resolving` only flips false once ALL sources settle (so
     // the autoplay countdown targets the FINAL best pick).
-    const hasExt = get(extensionUrls).length > 0
-    let pending = bases.length + (hasExt ? 1 : 0)
+    // Addons only when we have the Kitsu id they need; the extension wave always runs if configured.
+    let pending = (kitsu != null ? bases.length : 0) + (hasExt ? 1 : 0)
     await new Promise<void>((resolve) => {
       if (!pending) return resolve()
       const done = () => { if (--pending === 0) resolve() }
-      for (const base of bases) {
-        fetchAddonStreams(base, id, type)
-          .then((r) => { acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(true) })
-          .catch(() => {})
-          .finally(done)
+      if (kitsu != null) {
+        const id = streamId(kitsu, episode)
+        for (const base of bases) {
+          fetchAddonStreams(base, id, type)
+            .then((r) => { acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(true) })
+            .catch(() => {})
+            .finally(done)
+        }
       }
       if (hasExt) {
         extToStreams(media, episode, kitsu)
