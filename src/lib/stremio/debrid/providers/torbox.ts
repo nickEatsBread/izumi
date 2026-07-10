@@ -1,5 +1,5 @@
-import { jfetch, magnetOf, pickLargestVideo, poll } from '../http'
-import type { DebridProvider, DebridInfo } from '../types'
+import { jfetch, magnetOf, pickLargestVideo, poll, VIDEO, JUNK } from '../http'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // TorBox. Auto-selects; readiness via booleans; per-file link via requestdl (which
 // takes the key as a QUERY param, unlike the Bearer-header calls). Envelope:
@@ -32,6 +32,25 @@ export function tbStatus(t: { download_finished?: boolean; download_present?: bo
   }
 }
 
+interface TbTorrent { id: number | string; name?: string; hash?: string; size?: number; files?: Array<{ id: number; short_name?: string; name?: string; size?: number }>; download_finished?: boolean; download_present?: boolean; active?: boolean; progress?: number; download_speed?: number; seeds?: number; download_state?: string; created_at?: string }
+
+/** Pure map of a TorBox mylist torrent to a DebridItem. */
+export function tbListItem(t: TbTorrent): DebridItem {
+  const info = tbStatus(t)
+  return {
+    id: String(t.id), name: t.name ?? '', size: t.size ?? 0, hash: t.hash?.toLowerCase(),
+    status: info.stage, progress: info.progress,
+    addedAt: t.created_at ? (Date.parse(t.created_at) || undefined) : undefined,
+    fileCount: t.files?.length,
+  }
+}
+
+/** Pure map of a TorBox file to a DebridFile. */
+export function tbFile(f: { id: number; short_name?: string; name?: string; size?: number }): DebridFile {
+  const name = f.short_name ?? f.name ?? ''
+  return { id: String(f.id), name, size: f.size ?? 0, playable: VIDEO.test(name) && !JUNK.test(name) }
+}
+
 export const torbox: DebridProvider = {
   id: 'torbox',
   name: 'TorBox',
@@ -58,5 +77,29 @@ export const torbox: DebridProvider = {
     const dl = await tb('GET', `/torrents/requestdl?token=${encodeURIComponent(key)}&torrent_id=${id}&file_id=${best.id}`, key)
     if (typeof dl !== 'string') throw new Error('TorBox returned no link.')
     return dl
+  },
+  async listItems(key) {
+    if (!key) throw new Error('No TorBox API key set — add it in Settings → Extensions.')
+    const r = await tb('GET', '/torrents/mylist?bypass_cache=true', key)
+    const arr = Array.isArray(r) ? r : (r ? [r] : [])
+    return arr.map(tbListItem)
+  },
+  async listFiles(key, item) {
+    const r = await tb('GET', `/torrents/mylist?bypass_cache=true&id=${item.id}`, key)
+    const t = Array.isArray(r) ? r[0] : r
+    return (t?.files ?? []).map(tbFile)
+  },
+  async resolveFile(key, item, file) {
+    const dl = await tb('GET', `/torrents/requestdl?token=${encodeURIComponent(key)}&torrent_id=${item.id}&file_id=${file.id}`, key)
+    if (typeof dl !== 'string') throw new Error('TorBox returned no link for that file.')
+    return dl
+  },
+  async deleteItem(key, item) {
+    const { json } = await jfetch(`${BASE}/torrents/controltorrent`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ torrent_id: Number(item.id), operation: 'delete' }),
+    })
+    if (json?.success === false) throw new Error(json?.detail ?? 'TorBox delete failed.')
   },
 }

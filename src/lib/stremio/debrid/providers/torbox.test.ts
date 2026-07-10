@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tbStatus } from './torbox'
+import { tbStatus, tbListItem, tbFile } from './torbox'
 
 describe('tbStatus', () => {
   it('download_finished = ready', () => {
@@ -21,5 +21,19 @@ describe('tbStatus', () => {
   })
   it('inactive = queued', () => {
     expect(tbStatus({ active: false, progress: 0 }).stage).toBe('queued')
+  })
+})
+
+describe('tbListItem', () => {
+  it('maps a finished torrent to ready with fileCount', () => {
+    const it_ = tbListItem({ id: 9, name: 'Show', hash: 'CAFE', size: 300, files: [{ id: 0 }, { id: 1 }], download_finished: true, created_at: '2026-07-02T00:00:00.000Z' })
+    expect(it_).toMatchObject({ id: '9', name: 'Show', size: 300, status: 'ready', hash: 'cafe', fileCount: 2 })
+    expect(it_.addedAt).toBe(Date.parse('2026-07-02T00:00:00.000Z'))
+  })
+})
+
+describe('tbFile', () => {
+  it('prefers short_name and flags videos', () => {
+    expect(tbFile({ id: 2, short_name: 'ep02.mkv', name: 'long/ep02.mkv', size: 40 })).toEqual({ id: '2', name: 'ep02.mkv', size: 40, playable: true })
   })
 })
