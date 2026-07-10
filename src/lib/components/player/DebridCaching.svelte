@@ -32,14 +32,13 @@
 
       {#if pct != null}
         <div class="text-6xl font-black tabular-nums">{pct}<span class="text-2xl">%</span></div>
-        <div class="h-2 w-full overflow-hidden rounded-full bg-white/15">
+        <div class="h-2 w-full overflow-hidden rounded-full bg-primary/20">
           <div class="h-full rounded-full bg-primary transition-[width] duration-500" style="width:{pct}%"></div>
         </div>
+        <p class="text-sm text-white/70">{stageLabel}</p>
       {:else}
         <div class="text-lg text-white/70">{stageLabel}</div>
       {/if}
-
-      <p class="text-sm text-white/70">{stageLabel}</p>
 
       <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-sm text-white/80">
         {#if c.info.seeders != null}

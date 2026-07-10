@@ -35,17 +35,27 @@ export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; st
   return { ok: r.ok, status: r.status, json }
 }
 
-/** Standard poll loop. `probe` returns DebridInfo; resolves when stage==='ready'. */
+/** Standard poll loop. `probe` returns DebridInfo; resolves when stage==='ready'.
+ *  Aborts near-instantly: the abort check does not rely on throwIfAborted, and the
+ *  between-polls sleep rejects immediately when opts.signal fires. */
 export async function poll(probe: () => Promise<DebridInfo>, opts: ResolveOpts = {}): Promise<void> {
   const pollMs = opts.pollMs ?? 3000
   const deadline = Date.now() + (opts.timeoutMs ?? 600_000)
+  const aborted = () => { if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError') }
   for (;;) {
-    opts.signal?.throwIfAborted?.()
+    aborted()
     const info = await probe()
     if (info.stage === 'ready') return
     if (info.stage === 'error') throw new Error(`Torrent unavailable on debrid (${info.raw ?? 'error'}).`)
     opts.onStatus?.(info)
     if (Date.now() > deadline) throw new Error('Debrid download timed out — try a cached source.')
-    await new Promise((r) => setTimeout(r, pollMs))
+    // Abortable sleep: resolve on the timer, OR reject immediately if the signal aborts.
+    await new Promise<void>((resolve, reject) => {
+      const sig = opts.signal
+      if (sig?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
+      const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) }
+      const t = setTimeout(() => { sig?.removeEventListener?.('abort', onAbort); resolve() }, pollMs)
+      sig?.addEventListener?.('abort', onAbort, { once: true })
+    })
   }
 }
