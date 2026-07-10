@@ -18,6 +18,26 @@ export interface DebridInfo {
   raw?: string // provider's raw status, for honest display/debugging
 }
 
+/** One torrent/magnet on the debrid account. `status` reuses the DebridStage vocabulary. */
+export interface DebridItem {
+  id: string          // provider-specific torrent id
+  name: string        // release/torrent name
+  size: number        // total bytes (0 when the provider's list omits it)
+  status: DebridStage // 'queued' | 'downloading' | 'ready' | 'error'
+  progress?: number   // 0–100 while downloading
+  hash?: string       // btih infohash (lower-cased) when exposed
+  addedAt?: number    // epoch ms, for newest-first sort
+  fileCount?: number  // when the list endpoint carries it (skips listFiles for single-file)
+}
+
+/** One file inside a torrent. `id` is the key resolveFile needs (numeric id, or a direct link). */
+export interface DebridFile {
+  id: string
+  name: string
+  size: number
+  playable: boolean   // is a video file (VIDEO regex, minus JUNK)
+}
+
 export interface ResolveOpts {
   onStatus?: (info: DebridInfo) => void
   pollMs?: number // default 3000
@@ -37,4 +57,12 @@ export interface DebridProvider extends DebridProviderMeta {
   /** Resolve a torrent hash or magnet to a direct playable URL. MUST throw a
    *  user-facing Error on failure and NEVER leak the key in the message. */
   resolveHash(key: string, hashOrMagnet: string, opts?: ResolveOpts): Promise<string>
+  /** Account torrents/magnets, newest first. Absent = "listing not supported". */
+  listItems?(key: string): Promise<DebridItem[]>
+  /** Files inside one torrent. Fetched lazily when a row is opened. */
+  listFiles?(key: string, item: DebridItem): Promise<DebridFile[]>
+  /** Resolve ONE chosen file to a direct playable URL. Drives debridCaching via opts.onStatus. */
+  resolveFile?(key: string, item: DebridItem, file: DebridFile, opts?: ResolveOpts): Promise<string>
+  /** Remove a torrent from the account. */
+  deleteItem?(key: string, item: DebridItem): Promise<void>
 }
