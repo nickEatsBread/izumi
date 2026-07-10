@@ -42,7 +42,15 @@ self.onmessage = async (e: MessageEvent<any>) => {
   const msg = e.data
   try {
     if (msg.type === 'load') {
-      const blob = new Blob([msg.code], { type: 'application/javascript' })
+      let code: string = msg.code
+      // Seanime providers are a bare `class Provider {}` (no export) using a global `fetch`
+      // (already overridden above) + occasionally `$sleep`. Instantiate it + provide $sleep.
+      if (msg.kind === 'seanime') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(globalThis as any).$sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+        code = `${code}\n;export default (typeof Provider !== 'undefined' ? new Provider() : {});`
+      }
+      const blob = new Blob([code], { type: 'application/javascript' })
       const blobUrl = URL.createObjectURL(blob)
       const mod = await import(/* @vite-ignore */ blobUrl)
       URL.revokeObjectURL(blobUrl)
@@ -51,10 +59,19 @@ self.onmessage = async (e: MessageEvent<any>) => {
       postMessage({ type: 'loaded', id: msg.id })
     } else if (msg.type === 'query') {
       if (!source) throw new Error('extension not loaded')
-      const q = { ...msg.query, fetch: bridgedFetch }
-      const fn = source[msg.method]
-      const results = typeof fn === 'function' ? await fn.call(source, q) : []
-      postMessage({ type: 'result', id: msg.id, results: Array.isArray(results) ? results : [] })
+      let results: unknown
+      if (Array.isArray(msg.args)) {
+        // Seanime multi-arg call: source.method(...args) with the real args (e.g.
+        // findEpisodeServer(episode, server)). Return the RAW result (may be an object).
+        const fn = source[msg.method]
+        results = typeof fn === 'function' ? await fn.apply(source, msg.args) : null
+      } else {
+        // izumi torrent extension: single query object with a bridged fetch attached.
+        const q = { ...msg.query, fetch: bridgedFetch }
+        const fn = source[msg.method]
+        results = typeof fn === 'function' ? await fn.call(source, q) : []
+      }
+      postMessage({ type: 'result', id: msg.id, results })
     } else if (msg.type === 'fetch-result') {
       const w = pending.get(msg.reqId)
       if (w) { pending.delete(msg.reqId); msg.error ? w.reject(new Error(msg.error)) : w.resolve(msg.res) }
