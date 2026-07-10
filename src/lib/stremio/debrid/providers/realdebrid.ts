@@ -1,5 +1,5 @@
 import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll } from '../http'
-import type { DebridProvider } from '../types'
+import type { DebridProvider, DebridInfo } from '../types'
 
 // Real-Debrid. Flow: addMagnet → selectFiles(all) [RD is the only one that requires
 // this] → poll info until 'downloaded' → pick largest video → unrestrict/link. RD
@@ -7,7 +7,7 @@ import type { DebridProvider } from '../types'
 
 const BASE = 'https://api.real-debrid.com/rest/1.0'
 interface RdFile { id: number; path: string; bytes: number; selected: number }
-interface RdInfo { id: string; status: string; progress: number; files?: RdFile[]; links?: string[] }
+interface RdInfo { id: string; status: string; progress: number; seeders?: number; speed?: number; bytes?: number; files?: RdFile[]; links?: string[] }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function rd(method: string, path: string, key: string, body?: string): Promise<any> {
@@ -27,6 +27,20 @@ async function rd(method: string, path: string, key: string, body?: string): Pro
     throw new Error(`Real-Debrid request failed (${status}).`)
   }
   return json
+}
+
+/** Pure map of RD's /torrents/info payload to a DebridInfo (testable, no HTTP). */
+export function rdStatus(info: { status: string; progress?: number; seeders?: number; speed?: number; bytes?: number }): DebridInfo {
+  if (info.status === 'downloaded') return { stage: 'ready', progress: 100, raw: info.status }
+  if (/error|virus|dead/i.test(info.status)) return { stage: 'error', raw: info.status }
+  return {
+    stage: /queued|waiting/i.test(info.status) ? 'queued' : 'downloading',
+    progress: info.progress,
+    seeders: info.seeders,
+    speed: info.speed,
+    total: info.bytes,
+    raw: info.status,
+  }
 }
 
 export const realdebrid: DebridProvider = {
@@ -56,9 +70,7 @@ export const realdebrid: DebridProvider = {
     }
     await poll(async () => {
       info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
-      if (info.status === 'downloaded') return { stage: 'ready', progress: 100, raw: info.status }
-      if (/error|virus|dead/i.test(info.status)) return { stage: 'error', raw: info.status }
-      return { stage: /queued|waiting/i.test(info.status) ? 'queued' : 'downloading', progress: info.progress, raw: info.status }
+      return rdStatus(info)
     }, opts)
     const selected = (info.files ?? []).filter((f) => f.selected)
     const videos = selected.filter((f) => VIDEO.test(f.path) && !JUNK.test(f.path))
