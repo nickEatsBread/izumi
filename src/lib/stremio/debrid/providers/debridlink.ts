@@ -1,5 +1,5 @@
 import { jfetch, form, magnetOf, hashOf, pickLargestVideo, poll } from '../http'
-import type { DebridProvider } from '../types'
+import type { DebridProvider, DebridInfo } from '../types'
 
 // Debrid-Link. Simplest torrent flow: add magnet → poll /seedbox/list until 100% →
 // files[].downloadUrl is DIRECT (no select, no unlock). Envelope: { success, value }.
@@ -15,6 +15,20 @@ async function dl(method: string, path: string, key: string, body?: string): Pro
   })
   if (json?.success === false) throw new Error(json?.error ?? 'Debrid-Link request failed.')
   return json
+}
+
+/** Pure map of a Debrid-Link seedbox entry to a DebridInfo. `peersConnected` is the
+ *  closest DL exposes to a seeder count; fields absent on some accounts stay undefined. */
+export function dlStatus(t: { downloadPercent?: number; totalSize?: number; downloaded?: number; peersConnected?: number } | undefined): DebridInfo {
+  const pct = t?.downloadPercent ?? 0
+  if (pct >= 100) return { stage: 'ready', progress: 100 }
+  return {
+    stage: pct > 0 ? 'downloading' : 'queued',
+    progress: t?.downloadPercent,
+    total: t?.totalSize,
+    downloaded: t?.downloaded,
+    seeders: t?.peersConnected,
+  }
 }
 
 export const debridlink: DebridProvider = {
@@ -34,8 +48,7 @@ export const debridlink: DebridProvider = {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const t = list.find((x: any) => (x.hashString ?? '').toLowerCase() === want) ?? list.find((x: any) => x.id === addedId)
       files = t?.files ?? []
-      if ((t?.downloadPercent ?? 0) >= 100) return { stage: 'ready', progress: 100 }
-      return { stage: (t?.downloadPercent ?? 0) > 0 ? 'downloading' : 'queued', progress: t?.downloadPercent }
+      return dlStatus(t)
     }, opts)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mapped = files.map((f: any) => ({ name: f.name ?? '', bytes: f.size ?? 0, downloadUrl: f.downloadUrl }))
