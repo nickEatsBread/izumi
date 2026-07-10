@@ -107,6 +107,7 @@
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
       if (s.status === 'playing') streamPicker.set(null)
       else if (s.status === 'error') { error = s.message ?? 'Playback failed.'; busy = false }
+      else if (s.status === 'idle') { busy = false } // caching canceled — re-enable the list
     })
   }
   function autoBest() {
