@@ -1,5 +1,10 @@
 import type { Stream } from './parse'
 import { titleTokens } from './relevance'
+import { get } from 'svelte/store'
+import type { Media } from '$lib/anilist/types'
+import { title } from '$lib/anilist/media'
+import { preferredAudioLang } from '$lib/settings/ui'
+import { runningStreamExtensions } from '$lib/extensions/manager'
 
 // Seanime onlinestream-provider SDK shapes (github.com/5rahim/seanime,
 // internal/extension/hibike/onlinestream/types.go). Fields we consume.
@@ -42,4 +47,37 @@ export function videoSourceToStream(
     __subtitles: vs.subtitles ?? [],
     behaviorHints: { filename: `${epTitle ? epTitle + ' ' : ''}${quality}`.trim() },
   }
+}
+
+/** Resolve direct (non-debrid) streaming sources for an episode from every configured Seanime
+ *  onlinestream provider, in parallel. Best-effort: [] when none configured / all fail. Episode
+ *  only (these providers are episode-indexed). */
+export async function resolveOnlineStreams(media: Media, episode: number | undefined): Promise<Stream[]> {
+  if (episode == null) return []
+  const exts = await runningStreamExtensions()
+  if (!exts.length) return []
+  const titles = [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
+    .filter((t): t is string => !!t && t.length > 1)
+  const preferDub = get(preferredAudioLang) === 'eng'
+  const per = await Promise.all(exts.map(async (ext): Promise<Stream[]> => {
+    try {
+      const results = (await ext.call('search', { query: titles[0], dub: preferDub, year: media.seasonYear ?? undefined })) as SnSearchResult[] | null
+      const best = pickSearchResult(results ?? [], titles)
+      if (!best) return []
+      const eps = (await ext.call('findEpisodes', best.id)) as SnEpisode[] | null
+      const ep = pickEpisode(eps ?? [], episode)
+      if (!ep) return []
+      const settings = (await ext.call('getSettings').catch(() => null)) as SnSettings | null
+      const servers = settings?.episodeServers?.length ? settings.episodeServers : ['default']
+      for (const server of servers) {
+        const es = (await ext.call('findEpisodeServer', ep, server).catch(() => null)) as SnEpisodeServer | null
+        if (es?.videoSources?.length) {
+          return es.videoSources.map((vs) => videoSourceToStream(vs, es.server ?? server, es.headers ?? {}, ext.name, ep.title))
+        }
+      }
+      return []
+    }
+    catch { return [] }
+  }))
+  return per.flat()
 }
