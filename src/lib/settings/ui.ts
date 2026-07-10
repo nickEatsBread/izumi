@@ -82,6 +82,11 @@ export const uiScale = persisted<number>('ui-scale', 1)
 /** Include 18+ / adult titles in browse + search (AniList isAdult filter). */
 export const showAdult = persisted<boolean>('show-adult', false)
 
+/** Desktop Schedule layout: 'agenda' (full-width day sections, default) or 'days'
+ *  (day tabs + one big day). Ignored in Game mode — the Deck always shows one day. */
+export type ScheduleLayout = 'agenda' | 'days'
+export const scheduleLayout = persisted<ScheduleLayout>('schedule-layout', 'agenda')
+
 // --- Updates ---
 /** Auto-updater release channel: 'stable' (normal GitHub releases) or 'beta'
  *  (GitHub pre-releases). Drives which endpoint the updater checks. */
