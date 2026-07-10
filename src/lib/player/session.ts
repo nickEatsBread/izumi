@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import type { Media } from '$lib/anilist/types'
 import type { Stream } from '$lib/stremio/addon'
+import type { DebridInfo } from '$lib/stremio/debrid/types'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
@@ -50,6 +51,18 @@ export const trackMenuOpen = writable(false)
 // True while any player popover (playback options / track list in Controls) is open. Drives the
 // Game-mode snapshot overlay to its FAST (60fps) cadence so navigating those menus isn't laggy.
 export const playerMenuOpen = writable(false)
+
+// Active debrid caching session: set while an UNCACHED torrent downloads at the debrid
+// service, drives the full-screen DebridCaching progress screen. `cancel` aborts the poll
+// (the torrent keeps caching at the service, so returning later is instant). null = idle.
+export const debridCaching = writable<null | {
+  provider: string
+  title: string
+  episode?: number
+  cover?: string
+  info: DebridInfo
+  cancel: () => void
+}>(null)
 
 // Transient toast shown in the player overlay (e.g. "Loading next episode…",
 // "Next episode has no cached source"). Cleared automatically by the overlay.
