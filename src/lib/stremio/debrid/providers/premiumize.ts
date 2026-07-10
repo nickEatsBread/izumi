@@ -1,5 +1,5 @@
-import { jfetch, magnetOf, pickLargestVideo, poll } from '../http'
-import type { DebridProvider, DebridInfo } from '../types'
+import { jfetch, magnetOf, pickLargestVideo, poll, VIDEO, JUNK } from '../http'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // Premiumize. apikey query param on every call. FAST PATH: /transfer/directdl
 // returns direct links immediately for cached torrents (no cloud clutter, no
@@ -38,6 +38,21 @@ export function pmStatus(t: { status?: string; progress?: number; message?: stri
   }
 }
 
+interface PmTransfer { id: string; name?: string; status?: string; progress?: number; message?: string; folder_id?: string; file_id?: string; src?: string }
+
+/** Pure map of a Premiumize transfer to a DebridItem. Transfers carry no size; hash from src. */
+export function pmListItem(t: PmTransfer): DebridItem {
+  const info = pmStatus(t)
+  const hash = t.src?.match(/urn:btih:([a-z0-9]+)/i)?.[1]?.toLowerCase()
+  return { id: t.id, name: t.name ?? '', size: 0, hash, status: info.stage, progress: info.progress }
+}
+
+/** Pure map of a Premiumize file to a DebridFile. The direct link is the file id. */
+export function pmFile(f: PmFile): DebridFile {
+  const link = f.link ?? f.stream_link ?? ''
+  return { id: link, name: f.name, size: f.bytes, playable: VIDEO.test(f.name) && !JUNK.test(f.name) }
+}
+
 export const premiumize: DebridProvider = {
   id: 'premiumize',
   name: 'Premiumize',
@@ -72,5 +87,29 @@ export const premiumize: DebridProvider = {
     const best = pickLargestVideo(files)
     if (!best?.link && !best?.stream_link) throw new Error('No playable file in that torrent.')
     return (best.link ?? best.stream_link)!
+  },
+  async listItems(key) {
+    if (!key) throw new Error('No Premiumize API key set — add it in Settings → Extensions.')
+    const r = await pm('GET', '/transfer/list', key)
+    return (r?.transfers ?? []).map(pmListItem)
+  },
+  async listFiles(key, item) {
+    // Re-fetch the transfer to get its folder_id / file_id, then resolve the file list.
+    const list = await pm('GET', '/transfer/list', key)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const t = list?.transfers?.find((x: any) => x.id === item.id)
+    let files: PmFile[] = []
+    if (t?.folder_id) files = flattenContent((await pm('GET', `/folder/list?id=${t.folder_id}`, key)).content ?? [])
+    else if (t?.file_id) { const d = await pm('GET', `/item/details?id=${t.file_id}`, key); files = [{ name: d.name ?? '', bytes: d.size ?? 0, link: d.link, stream_link: d.stream_link }] }
+    return files.map(pmFile)
+  },
+  async resolveFile(_key, _item, file) {
+    if (!file.id) throw new Error('No playable link for that file.')
+    return file.id // Premiumize links are already direct.
+  },
+  async deleteItem(key, item) {
+    const fd = new FormData(); fd.set('id', item.id)
+    const r = await pm('POST', '/transfer/delete', key, fd)
+    if (r?.status !== 'success') throw new Error(r?.message ?? 'Premiumize delete failed.')
   },
 }
