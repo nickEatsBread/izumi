@@ -1,5 +1,5 @@
-import { jfetch, form, magnetOf, pickLargestVideo, poll } from '../http'
-import type { DebridProvider, DebridInfo } from '../types'
+import { jfetch, form, magnetOf, pickLargestVideo, poll, VIDEO, JUNK } from '../http'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // AllDebrid. Auto-selects files; ready = statusCode===4; the file link MUST be
 // unlocked. Envelope: { status:'success'|'error', data, error }.
@@ -32,6 +32,32 @@ export function adStatus(s: { statusCode: number; status: string; downloaded?: n
   }
 }
 
+interface AdMagnet { id: number | string; filename: string; size?: number; status: string; statusCode: number; downloaded?: number; seeders?: number; downloadSpeed?: number; hash?: string; uploadDate?: number }
+
+/** Pure map of an AllDebrid magnet entry to a DebridItem. uploadDate is epoch SECONDS. */
+export function adListItem(m: AdMagnet): DebridItem {
+  const info = adStatus(m)
+  return {
+    id: String(m.id), name: m.filename, size: m.size ?? 0, hash: m.hash?.toLowerCase(),
+    status: info.stage, progress: info.progress,
+    addedAt: m.uploadDate ? m.uploadDate * 1000 : undefined,
+  }
+}
+
+/** Pure flatten of AllDebrid's nested file tree to DebridFile[]. The direct link is the file id. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function adFiles(tree: any[]): DebridFile[] {
+  const out: DebridFile[] = []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ;(function walk(ns: any[]) {
+    for (const n of ns) {
+      if (n.e) walk(n.e)
+      else out.push({ id: n.l, name: n.n, size: n.s ?? 0, playable: VIDEO.test(n.n) && !JUNK.test(n.n) })
+    }
+  })(tree ?? [])
+  return out
+}
+
 export const alldebrid: DebridProvider = {
   id: 'alldebrid',
   name: 'AllDebrid',
@@ -56,5 +82,24 @@ export const alldebrid: DebridProvider = {
     if (!best?.link) throw new Error('No playable file in that torrent.')
     const unlocked = await ad('/v4/link/unlock', key, form({ link: best.link }))
     return unlocked.link ?? unlocked.download
+  },
+  async listItems(key) {
+    if (!key) throw new Error('No AllDebrid API key set — add it in Settings → Extensions.')
+    const data = await ad('/v4.1/magnet/status', key, form({}))
+    const arr = Array.isArray(data?.magnets) ? data.magnets : (data?.magnets ? [data.magnets] : [])
+    return arr.map(adListItem)
+  },
+  async listFiles(key, item) {
+    const data = await ad('/v4/magnet/files', key, form({ 'id[]': item.id }))
+    return adFiles(data?.magnets?.[0]?.files ?? [])
+  },
+  async resolveFile(key, _item, file) {
+    const unlocked = await ad('/v4/link/unlock', key, form({ link: file.id }))
+    const url = unlocked.link ?? unlocked.download
+    if (!url) throw new Error('AllDebrid returned no link for that file.')
+    return url
+  },
+  async deleteItem(key, item) {
+    await ad('/v4/magnet/delete', key, form({ id: String(item.id) }))
   },
 }
