@@ -1,10 +1,15 @@
 <script lang="ts">
-  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, type EpisodeLayout } from '$lib/settings/ui'
+  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, type EpisodeLayout, type ScheduleLayout } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
   const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
     { value: 'cards', label: 'Cards', hint: 'Thumbnails, titles, ratings and a watch-progress bar.' },
     { value: 'compact', label: 'Compact', hint: 'Simple text rows — denser, lighter on data.' },
+  ]
+
+  const scheduleLayouts: { value: ScheduleLayout; label: string; hint: string }[] = [
+    { value: 'agenda', label: 'Agenda', hint: 'One long list — each day is a full-width section. Big and easy to read.' },
+    { value: 'days', label: 'Day at a time', hint: 'Tabs across the top; one day shown large. Matches the Deck view.' },
   ]
 </script>
 
@@ -26,6 +31,25 @@
           <div class="flex items-center justify-between">
             <span class="font-bold">{opt.label}</span>
             {#if $episodeLayout === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
+        </button>
+      {/each}
+    </div>
+
+    <p class="mb-1 text-sm font-bold">Schedule layout <span class="font-normal text-muted-foreground">(desktop)</span></p>
+    <div class="mb-4 grid gap-2 sm:grid-cols-2">
+      {#each scheduleLayouts as opt (opt.value)}
+        <button
+          data-focusable
+          onclick={() => ($scheduleLayout = opt.value)}
+          aria-pressed={$scheduleLayout === opt.value}
+          class="rounded-md border p-3 text-left transition-colors
+            {$scheduleLayout === opt.value ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}"
+        >
+          <div class="flex items-center justify-between">
+            <span class="font-bold">{opt.label}</span>
+            {#if $scheduleLayout === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
           </div>
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>
