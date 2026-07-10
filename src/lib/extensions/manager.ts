@@ -81,7 +81,8 @@ function normalizeManifest(raw: any, manifestUrl: string): ExtensionConfig[] {
   const out: ExtensionConfig[] = []
   for (const e of entries) {
     if (!e || typeof e !== 'object') continue
-    const codeSpec = e.code ?? e.main
+    // Seanime manifests carry the module URL in `payloadURI` (a full https URL), not `code`/`main`.
+    const codeSpec = e.code ?? e.main ?? e.payloadURI
     if (!codeSpec) continue
     if (e.type && e.type !== 'torrent' && e.type !== 'onlinestream-provider') continue
     out.push({
@@ -89,7 +90,7 @@ function normalizeManifest(raw: any, manifestUrl: string): ExtensionConfig[] {
       name: String(e.name ?? e.id ?? 'Extension'),
       version: e.version,
       type: e.type,
-      code: resolveCodeUrl(e, manifestUrl),
+      code: e.payloadURI ? String(e.payloadURI) : resolveCodeUrl(e, manifestUrl),
       icon: e.icon,
       description: e.description,
       settings: e.settings,
