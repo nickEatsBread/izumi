@@ -6,7 +6,9 @@
   import Gauge from 'lucide-svelte/icons/gauge'
 
   const c = $derived($debridCaching)
-  const pct = $derived(c?.info.progress != null ? Math.max(0, Math.min(100, Math.round(c.info.progress))) : null)
+  // Show the EXACT percent the provider reports — no rounding — so a torrent at 99.x% never
+  // reads as a finished "100%". Only clamped to the 0–100 range.
+  const pct = $derived(c?.info.progress != null ? Math.max(0, Math.min(100, c.info.progress)) : null)
   const stageLabel = $derived(
     c?.info.stage === 'queued' ? 'Queued at the source…'
     : c?.info.stage === 'downloading' ? 'Caching to the debrid cloud…'
@@ -16,8 +18,9 @@
 </script>
 
 {#if c}
-  <!-- Full-screen over everything (picker sits underneath). NO backdrop-blur (Deck WebKit). -->
-  <div class="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-black/90 px-6 text-white">
+  <!-- Full-screen over everything, FULLY OPAQUE so the source picker underneath doesn't bleed
+       through. NO backdrop-blur (Deck WebKit). -->
+  <div class="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-black px-6 text-white">
     {#if c.cover}
       <!-- static darkened cover as the backdrop (no blur filter) -->
       <img src={c.cover} alt="" class="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-15" />

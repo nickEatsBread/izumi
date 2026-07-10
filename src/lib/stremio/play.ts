@@ -452,7 +452,10 @@ export async function playStream(media: Media, episode: number | undefined, stre
       episode,
       cover: cover(media),
       info: { stage: 'queued' },
-      cancel: () => controller.abort(),
+      // Optimistic cancel: close the screen IMMEDIATELY on the first click, then abort the poll in
+      // the background. The eventual AbortError just settles playStream to 'idle' (re-enabling the
+      // picker); a late onStatus can't resurrect the screen because the store is already null.
+      cancel: () => { debridCaching.set(null); controller.abort() },
     })
     try {
       const url = await resolveHash(provider, key, stream.infoHash, {
