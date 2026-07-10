@@ -25,6 +25,11 @@ export interface Stream {
   // or by the extensions layer (base64 icon + extension name), for the picker.
   __logo?: string
   __addonName?: string
+  // Direct streaming source (Seanime onlinestream-provider): plays its `url` straight in libmpv
+  // with no debrid. __headers → mpv http-header-fields; __subtitles → external sub tracks.
+  __stream?: boolean
+  __headers?: Record<string, string>
+  __subtitles?: { url: string; lang?: string }[]
 }
 
 export type CacheState = 'instant' | 'uncached' | 'down'
