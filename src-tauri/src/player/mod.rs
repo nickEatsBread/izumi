@@ -68,6 +68,16 @@ pub fn libmpv_version() -> String {
     headless::version()
 }
 
+/// An external subtitle track (VTT/ASS URL) the source provided alongside a raw
+/// HLS/HTTP stream (e.g. a Seanime online-stream episode). Threaded from the
+/// frontend through `player_embed` → `play_embedded`/`play_embedded_render` →
+/// `load_file`, which `sub-add`s each one after `loadfile`.
+#[derive(serde::Deserialize, Clone)]
+pub struct Subtitle {
+    pub url: String,
+    pub lang: Option<String>,
+}
+
 /// Scrub-preview thumbnail state for one stream. Tiles are produced ON DEMAND — when
 /// the seekbar asks for the tile under the cursor, the warm headless libmpv decoder
 /// ([`HeadlessMpv`]) seeks + software-renders THAT position and we cache it as
@@ -154,7 +164,7 @@ impl PlayerHandle {
         // If we already have an mpv core, just queue the new file into its
         // existing window.
         if let Some(mpv) = guard.as_ref() {
-            load_file(mpv, url, start_seconds)?;
+            load_file(mpv, url, start_seconds, &None, &[])?;
             return Ok(());
         }
 
@@ -164,7 +174,7 @@ impl PlayerHandle {
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
 
-        load_file(&mpv, url, start_seconds)?;
+        load_file(&mpv, url, start_seconds, &None, &[])?;
 
         *guard = Some(mpv);
         Ok(())
@@ -189,17 +199,20 @@ impl PlayerHandle {
         start_seconds: Option<f64>,
         alang: Option<String>,
         slang: Option<String>,
+        headers: Option<HashMap<String, String>>,
+        subtitles: Option<Vec<Subtitle>>,
     ) -> Result<(), String> {
         // Remember the URL — the next hover renders fresh frames against the new file.
         *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
 
+        let subs = subtitles.unwrap_or_default();
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
 
         // If we already have an mpv core, just queue the new file into its
         // existing (embedded) window.
         if let Some(mpv) = guard.as_ref() {
             set_langs(mpv, &alang, &slang);
-            load_file(mpv, url, start_seconds)?;
+            load_file(mpv, url, start_seconds, &headers, &subs)?;
             return Ok(());
         }
 
@@ -215,7 +228,7 @@ impl PlayerHandle {
         spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
 
         set_langs(&mpv, &alang, &slang);
-        load_file(&mpv, url, start_seconds)?;
+        load_file(&mpv, url, start_seconds, &headers, &subs)?;
 
         *guard = Some(mpv);
         Ok(())
@@ -238,13 +251,16 @@ impl PlayerHandle {
         alang: Option<String>,
         slang: Option<String>,
         window: &tauri::WebviewWindow,
+        headers: Option<HashMap<String, String>>,
+        subtitles: Option<Vec<Subtitle>>,
     ) -> Result<(), String> {
         *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
 
+        let subs = subtitles.unwrap_or_default();
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
         if let Some(mpv) = guard.as_ref() {
             set_langs(mpv, &alang, &slang);
-            load_file(mpv, url, start_seconds)?;
+            load_file(mpv, url, start_seconds, &headers, &subs)?;
             return Ok(());
         }
 
@@ -254,7 +270,7 @@ impl PlayerHandle {
         // Bind the render context to this core BEFORE it moves into the mutex.
         // `attach` borrows `&mpv` only for the (blocking) duration of the call.
         linux_embed::attach(&mpv, window)?;
-        load_file(&mpv, url, start_seconds)?;
+        load_file(&mpv, url, start_seconds, &headers, &subs)?;
 
         *guard = Some(mpv);
         Ok(())
@@ -591,7 +607,17 @@ impl PlayerHandle {
 /// mpv's `start` option is read at file-load time, so we set it as a property
 /// just before `loadfile`. Setting it to `"none"` (or, on the first play, never
 /// having set it) means "play from the beginning".
-fn load_file(mpv: &Mpv, url: &str, start_seconds: Option<f64>) -> Result<(), String> {
+///
+/// `headers` (e.g. `Referer` for HLS CDNs — Seanime online-stream sources) are
+/// applied as mpv's `http-header-fields` before `loadfile`; `subtitles` (external
+/// VTT/ASS URLs the source provided) are `sub-add`ed after.
+fn load_file(
+    mpv: &Mpv,
+    url: &str,
+    start_seconds: Option<f64>,
+    headers: &Option<HashMap<String, String>>,
+    subtitles: &[Subtitle],
+) -> Result<(), String> {
     // Always set `start` explicitly so a resumed file doesn't leak its start
     // position onto the next (fresh) file loaded into the same core.
     let start = match start_seconds {
@@ -600,7 +626,19 @@ fn load_file(mpv: &Mpv, url: &str, start_seconds: Option<f64>) -> Result<(), Str
     };
     mpv.set_property("start", start.as_str())
         .map_err(|e| e.to_string())?;
+    // HTTP headers (e.g. Referer for HLS CDNs). mpv wants a comma-separated "Key: Value" list.
+    // Always set it (empty clears any previous file's headers so they don't leak).
+    let hdr = headers
+        .as_ref()
+        .map(|h| h.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(","))
+        .unwrap_or_default();
+    let _ = mpv.set_property("http-header-fields", hdr.as_str());
     mpv.command("loadfile", &[url]).map_err(|e| e.to_string())?;
+    // External subtitle tracks (VTT/ASS URLs the source provided).
+    for sub in subtitles {
+        let lang = sub.lang.as_deref().unwrap_or("und");
+        let _ = mpv.command("sub-add", &[sub.url.as_str(), "auto", lang, lang]);
+    }
     Ok(())
 }
 
