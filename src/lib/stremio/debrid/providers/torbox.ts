@@ -1,5 +1,5 @@
 import { jfetch, magnetOf, pickLargestVideo, poll } from '../http'
-import type { DebridProvider } from '../types'
+import type { DebridProvider, DebridInfo } from '../types'
 
 // TorBox. Auto-selects; readiness via booleans; per-file link via requestdl (which
 // takes the key as a QUERY param, unlike the Bearer-header calls). Envelope:
@@ -18,6 +18,20 @@ async function tb(method: string, path: string, key: string, body?: FormData): P
   return json?.data
 }
 
+/** Pure map of a TorBox mylist entry to a DebridInfo. */
+export function tbStatus(t: { download_finished?: boolean; download_present?: boolean; download_state?: string; active?: boolean; progress?: number; download_speed?: number; seeds?: number; size?: number }): DebridInfo {
+  if (t.download_finished || t.download_present) return { stage: 'ready', progress: 100 }
+  if (/error|dead/i.test(t.download_state ?? '')) return { stage: 'error', raw: t.download_state }
+  return {
+    stage: t.active ? 'downloading' : 'queued',
+    progress: (t.progress ?? 0) * 100,
+    speed: t.download_speed,
+    seeders: t.seeds,
+    total: t.size,
+    raw: t.download_state,
+  }
+}
+
 export const torbox: DebridProvider = {
   id: 'torbox',
   name: 'TorBox',
@@ -34,9 +48,7 @@ export const torbox: DebridProvider = {
       const r = await tb('GET', `/torrents/mylist?bypass_cache=true&id=${id}`, key)
       const t = Array.isArray(r) ? r[0] : r
       files = t?.files ?? []
-      if (t?.download_finished || t?.download_present) return { stage: 'ready', progress: 100 }
-      if (/error|dead/i.test(t?.download_state ?? '')) return { stage: 'error', raw: t?.download_state }
-      return { stage: t?.active ? 'downloading' : 'queued', progress: (t?.progress ?? 0) * 100, raw: t?.download_state }
+      return tbStatus(t ?? {})
     }, opts)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mapped = files.map((f: any) => ({ name: f.short_name ?? f.name ?? '', bytes: f.size ?? 0, id: f.id }))
