@@ -535,6 +535,32 @@ const noticeState = (s: PlayState) => {
   else playerNotice.set('')
 }
 
+/** Play a raw debrid URL that has no AniList Media (the Cloud library). Embeds mpv,
+ *  sets nowPlaying with null ids so no progress-tracking / next-episode fires, and
+ *  honors the external-player setting exactly like playStream. */
+export async function playRawUrl(url: string, label: string, onState: (s: PlayState) => void = noticeState) {
+  if (!url) return onState({ status: 'error', message: 'That file has no playable link.' })
+  try {
+    // External player: hand off and stop (no embed, no tracking).
+    if (get(enableExternalPlayer)) {
+      const path = get(externalPlayerPath)
+      if (!path) return onState({ status: 'error', message: 'No external player selected — set its path in Settings.' })
+      await invoke('spawn_external_player', { path, url })
+      return onState({ status: 'playing' })
+    }
+    // These items carry no Media, so Prev/Next must not act on a stale one.
+    currentMedia = null
+    nowPlayingMedia.set(null)
+    nowPlaying.set({ title: label, animeTitle: label, id: null, malId: null, episode: null, total: null, airedTotal: null })
+    spriteKey.set(null)   // no per-file scrub sprites for cloud items
+    bingeSource.set(null) // no release-continuity chain
+    await invoke('player_embed', { url, alang: get(preferredAudioLang), slang: get(preferredSubLang) })
+    playing.set(true)
+    onState({ status: 'playing' })
+  }
+  catch (e) { onState({ status: 'error', message: String(e) }) }
+}
+
 /** Play the previous episode (in-player button). No-op past episode 1. */
 export function playPrev(onState: (s: PlayState) => void = noticeState) {
   const ep = get(nowPlaying).episode
