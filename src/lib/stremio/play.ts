@@ -10,6 +10,7 @@ import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf } from '$lib/downloads/state'
 import { resolveHash, providerName } from './debrid'
+import { resolveOnlineStreams } from './onlinestream'
 import { queryExtensions } from '$lib/extensions/manager'
 import type { TorrentResult } from '$lib/extensions/types'
 import { updateProgress } from '$lib/trackers'
@@ -170,10 +171,10 @@ function refineStreams(media: Media, raw: Stream[]): Stream[] {
   const isSeries = media.format !== 'MOVIE' && (media.episodes ?? airedTotal) > 1
   return dedupeStreams(
     collapseBatches(raw)
-      .filter((s) => relevant(s, wantedTitles))
-      .filter((s) => !likelyOtherProduction(s, animeYear, absoluteNumbered))
-      .filter((s) => !isEpisodeExtra(s))
-      .filter((s) => !isSeries || !isStandaloneMovie(s)),
+      .filter((s) => s.__stream || relevant(s, wantedTitles))
+      .filter((s) => s.__stream || !likelyOtherProduction(s, animeYear, absoluteNumbered))
+      .filter((s) => s.__stream || !isEpisodeExtra(s))
+      .filter((s) => s.__stream || !isSeries || !isStandaloneMovie(s)),
   )
 }
 
@@ -368,7 +369,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // late extension dump. `resolving` only flips false once ALL sources settle (so
     // the autoplay countdown targets the FINAL best pick).
     // Addons only when we have the Kitsu id they need; the extension wave always runs if configured.
-    let pending = (kitsu != null ? bases.length : 0) + (hasExt ? 1 : 0)
+    let pending = (kitsu != null ? bases.length : 0) + (hasExt ? 2 : 0)
     await new Promise<void>((resolve) => {
       if (!pending) return resolve()
       const done = () => { if (--pending === 0) resolve() }
@@ -383,6 +384,12 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       }
       if (hasExt) {
         extToStreams(media, episode, kitsu)
+          .then((s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })
+          .catch(() => {})
+          .finally(done)
+      }
+      if (hasExt) {
+        resolveOnlineStreams(media, episode)
           .then((s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })
           .catch(() => {})
           .finally(done)
@@ -515,6 +522,8 @@ export async function playStream(media: Media, episode: number | undefined, stre
       startSeconds: startSeconds || undefined,
       alang: get(preferredAudioLang),
       slang: get(preferredSubLang),
+      headers: stream.__stream ? stream.__headers : undefined,
+      subtitles: stream.__stream ? stream.__subtitles : undefined,
     })
     playing.set(true)
     onState({ status: 'playing' })
