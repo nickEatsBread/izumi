@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen } from '$lib/player/session'
+import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
@@ -38,6 +38,7 @@ export function startGamepadNav(): () => void {
   // (up/down are unused); everywhere else it drives focus nav via izumi's window keydown handler.
   function fireDir(dir: Dir) {
     if (get(trackMenuOpen)) return // the track menu owns the pad while open
+    if (get(debridCaching)) return // the caching screen owns the pad
     if (inPlayer()) {
       if (dir === 'left') playerCmd('seek', [String(-get(seekDuration)), 'relative+exact'])
       else if (dir === 'right') playerCmd('seek', [String(get(seekDuration)), 'relative+exact'])
@@ -50,6 +51,11 @@ export function startGamepadNav(): () => void {
     // Track menu open (Game mode ☰): it captures ALL buttons — d-pad, A, B, ☰ — so nothing
     // here should drive focus nav / seek / back while it's up.
     if (get(trackMenuOpen)) return
+    // The debrid caching screen captures the pad: B cancels, everything else is ignored.
+    if (get(debridCaching)) {
+      if (name === 'b') get(debridCaching)?.cancel()
+      return
+    }
     if (DIRS.includes(name as Dir)) {
       const dir = name as Dir
       held[dir] = true
