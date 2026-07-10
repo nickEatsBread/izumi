@@ -48,3 +48,33 @@ export function LoadDoc(html: string): DocSelection {
   const $ = cheerio.load(html)
   return new DocSelection($, $.root())
 }
+
+// Minimal Node-`Buffer` stand-in for the `Buffer.from(x, enc).toString(enc)` idiom providers use to
+// decode base64 embed blobs. Backed by the Worker's atob/btoa + TextEncoder/Decoder.
+class BufferShim {
+  private constructor(private bytes: Uint8Array) {}
+  static from(input: string, enc: string = 'utf8'): BufferShim {
+    if (enc === 'base64') {
+      const bin = atob(input.replace(/-/g, '+').replace(/_/g, '/'))
+      const arr = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+      return new BufferShim(arr)
+    }
+    if (enc === 'hex') {
+      const arr = new Uint8Array(Math.floor(input.length / 2))
+      for (let i = 0; i < arr.length; i++) arr[i] = parseInt(input.substr(i * 2, 2), 16)
+      return new BufferShim(arr)
+    }
+    return new BufferShim(new TextEncoder().encode(input))
+  }
+  toString(enc: string = 'utf8'): string {
+    if (enc === 'base64') {
+      let bin = ''
+      for (const b of this.bytes) bin += String.fromCharCode(b)
+      return btoa(bin)
+    }
+    if (enc === 'hex') return Array.from(this.bytes).map((b) => b.toString(16).padStart(2, '0')).join('')
+    return new TextDecoder().decode(this.bytes)
+  }
+}
+export const Buffer = BufferShim

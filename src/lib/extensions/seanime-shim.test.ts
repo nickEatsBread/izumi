@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { LoadDoc } from './seanime-shim'
+import { Buffer as BufferShim } from './seanime-shim'
 
 const HTML = `
 <div id="root">
@@ -47,5 +48,22 @@ describe('LoadDoc / DocSelection', () => {
     expect(none.length).toBe(0)
     expect(none.text()).toBe('')
     expect(none.attr('href')).toBeUndefined()
+  })
+})
+
+describe('Buffer polyfill', () => {
+  it('base64 -> utf8 round-trips', () => {
+    const b64 = BufferShim.from('hello world', 'utf8').toString('base64')
+    expect(b64).toBe('aGVsbG8gd29ybGQ=')
+    expect(BufferShim.from(b64, 'base64').toString('utf8')).toBe('hello world')
+  })
+  it('decodes an iframe-style base64 blob to utf8', () => {
+    expect(BufferShim.from('PGlmcmFtZT4=', 'base64').toString('utf8')).toBe('<iframe>')
+  })
+  it('hex round-trips', () => {
+    expect(BufferShim.from('ff00aa', 'hex').toString('hex')).toBe('ff00aa')
+  })
+  it('defaults to utf8', () => {
+    expect(BufferShim.from('abc').toString()).toBe('abc')
   })
 })
