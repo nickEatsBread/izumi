@@ -14,13 +14,13 @@ import { queryExtensions } from '$lib/extensions/manager'
 import type { TorrentResult } from '$lib/extensions/types'
 import { updateProgress } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
-import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia } from '$lib/player/session'
+import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, extensionUrls, bingePreload,
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
-import { title } from '$lib/anilist/media'
+import { title, cover } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
@@ -442,15 +442,33 @@ export async function playStream(media: Media, episode: number | undefined, stre
     const pname = providerName(provider)
     if (!key) return onState({ status: 'error', message: `This source needs a ${pname} key — add it in Settings → Extensions.` })
     onState({ status: 'resolving' })
-    playerNotice.set(`Resolving on ${pname}…`)
+    // Show the full-screen caching progress instead of a silent picker spin: an uncached
+    // torrent takes minutes to cache at the service. The AbortController lets Cancel stop the
+    // poll (the torrent keeps caching at the service, so a later retry is instant).
+    const controller = new AbortController()
+    debridCaching.set({
+      provider: pname,
+      title: title(media),
+      episode,
+      cover: cover(media),
+      info: { stage: 'queued' },
+      cancel: () => controller.abort(),
+    })
     try {
       const url = await resolveHash(provider, key, stream.infoHash, {
-        onStatus: (i) => playerNotice.set(`${pname}: ${i.stage}${i.progress ? ` ${Math.round(i.progress)}%` : ''}`),
+        signal: controller.signal,
+        timeoutMs: 30 * 60 * 1000,
+        onStatus: (i) => debridCaching.update((c) => (c ? { ...c, info: i } : c)),
       })
       stream = { ...stream, url }
-      playerNotice.set('')
+      debridCaching.set(null)
     }
-    catch (e) { playerNotice.set(''); return onState({ status: 'error', message: e instanceof Error ? e.message : String(e) }) }
+    catch (e) {
+      debridCaching.set(null)
+      // User-initiated cancel: quietly return to the picker, no error toast.
+      if (e instanceof Error && e.name === 'AbortError') return onState({ status: 'idle' })
+      return onState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
+    }
   }
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
   try {
