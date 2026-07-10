@@ -4,6 +4,7 @@
   import Calendar from 'lucide-svelte/icons/calendar'
   import Search from 'lucide-svelte/icons/search'
   import Download from 'lucide-svelte/icons/download'
+  import Cloud from 'lucide-svelte/icons/cloud'
   import Settings from 'lucide-svelte/icons/settings'
   import LogIn from 'lucide-svelte/icons/log-in'
   import { page } from '$app/state'
@@ -16,6 +17,7 @@
     { href: '/app/schedule', icon: Calendar, label: 'Schedule', anim: 'group-hover:animate-[swing_0.5s_ease]' },
     { href: '/app/search', icon: Search, label: 'Search', anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
     { href: '/app/downloads', icon: Download, label: 'Downloads', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
+    { href: '/app/cloud', icon: Cloud, label: 'Cloud', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
   ]
   // Logged in via AniList/MAL (OAuth name, manual username, or MAL). Show the real
   // profile picture from the connected account; fall back to the name initial only
