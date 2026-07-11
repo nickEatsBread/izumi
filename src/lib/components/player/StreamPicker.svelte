@@ -11,7 +11,7 @@
   import { streamPicker, gameMode } from '$lib/player/session'
   import { rankInfos, pickBest, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { playStream, type PlayState } from '$lib/stremio/play'
-  import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource } from '$lib/settings/ui'
+  import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectAnimate } from '$lib/settings/ui'
   import { title, banner, cover } from '$lib/anilist/media'
   import Search from 'lucide-svelte/icons/search'
   import Zap from 'lucide-svelte/icons/zap'
@@ -88,9 +88,15 @@
     }
   })
 
-  // Start the countdown once resolving finishes with a best cached pick + auto-select on.
+  // Animate the countdown, unless the user turned it off or the OS asks for reduced motion.
+  const prefersReduce = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const animate = $derived($autoSelectAnimate && !prefersReduce)
+
+  // Start the countdown once resolving finishes with a best cached pick + auto-select on. With the
+  // animation off, skip the fill entirely and pick immediately.
   $effect(() => {
     if (autoState === 'idle' && !resolving && !!best && !busy && $autoSelectSource) {
+      if (!animate) { autoState = 'off'; autoBest(); return }
       autoState = 'counting'
       autoStart = performance.now()
       autoTimer = setInterval(() => {

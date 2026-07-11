@@ -40,6 +40,9 @@ export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'eng')
 /** Skip the source picker and auto-play the best source at (or near) the preferred
  *  quality. Off = always show the picker. */
 export const autoSelectSource = persisted<boolean>('auto-select-source', false)
+/** Animate the auto-select countdown (the filling Auto-button bar + pulse). Off = pick instantly
+ *  with no animation. Also auto-disabled when the OS requests reduced motion. */
+export const autoSelectAnimate = persisted<boolean>('auto-select-animate', true)
 export type Quality = '2160' | '1080' | '720' | '480' | 'any'
 export const preferredQuality = persisted<Quality>('preferred-quality', '1080')
 

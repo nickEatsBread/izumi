@@ -1,6 +1,6 @@
 <script lang="ts">
   import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
-  import { autoSelectSource, preferredQuality } from '$lib/settings/ui'
+  import { autoSelectSource, autoSelectAnimate, preferredQuality } from '$lib/settings/ui'
   import { fetchManifest } from '$lib/stremio/manifest'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import Globe from 'lucide-svelte/icons/globe'
@@ -17,8 +17,9 @@
   <p class="mb-4 text-sm text-muted-foreground">Stremio addons (Torrentio/Comet) backed by your debrid, and how sources are chosen.</p>
 
   <div class="mb-6 max-w-2xl space-y-3">
-    <Toggle label="Auto-select best source" desc="Skip the source picker and play the best cached match for your preferred quality." value={$autoSelectSource} onToggle={() => ($autoSelectSource = !$autoSelectSource)} />
+    <Toggle label="Auto-select best source" desc="Skip the picker and play the best cached match for your preferred quality — after a short countdown when the picker is shown." value={$autoSelectSource} onToggle={() => ($autoSelectSource = !$autoSelectSource)} />
     {#if $autoSelectSource}
+      <Toggle label="Animate the auto-select countdown" desc="Show the filling progress bar while the best source is auto-selected. Off = pick instantly with no animation (also disabled when your system requests reduced motion)." value={$autoSelectAnimate} onToggle={() => ($autoSelectAnimate = !$autoSelectAnimate)} />
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Preferred quality</span>
         <select data-focusable bind:value={$preferredQuality} class="rounded-md bg-input px-3 py-2 text-sm">
