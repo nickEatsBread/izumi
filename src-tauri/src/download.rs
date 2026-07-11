@@ -57,62 +57,132 @@ pub async fn download_start(
         }
         map.insert(id.clone(), cancel.clone());
     }
+    // Run the transfer, then ALWAYS drop the job from the registry — done, paused, OR error — so a
+    // failed download can be retried. (The old code left the id registered on a stream error, and
+    // the guard above then silently swallowed every retry as "already-running".)
+    let out = run_download(&app, &id, &url, &dir, &filename, &cancel).await;
+    if let Ok(mut map) = state.0.lock() {
+        map.remove(&id);
+    }
+    out
+}
 
-    let dir = std::path::PathBuf::from(&dir);
+async fn run_download(
+    app: &AppHandle,
+    id: &str,
+    url: &str,
+    dir: &str,
+    filename: &str,
+    cancel: &Arc<AtomicBool>,
+) -> Result<String, String> {
+    let dir = std::path::PathBuf::from(dir);
     tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
-    let final_path = dir.join(sanitize(&filename));
+    let final_path = dir.join(sanitize(filename));
     let part = final_path.with_extension("part");
 
-    // Resume: if a partial exists, request the remainder. Uses the shared pooled
-    // client so downloads honor the DNS-over-HTTPS setting too.
-    let start = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
-    let mut req = crate::http_client().get(&url);
-    if start > 0 {
-        req = req.header("Range", format!("bytes={start}-"));
-    }
-    let resp = req.send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        state.0.lock().map_err(|e| e.to_string())?.remove(&id);
-        return Err(format!("Download failed (HTTP {}).", resp.status().as_u16()));
-    }
-    let total = resp.content_length().map(|l| l + start).unwrap_or(0);
-
+    // Append to (or create) the .part; `received` = what we already have on disk (prior-session
+    // resume). The download client has NO total timeout — only a per-read idle timeout — so a
+    // multi-GB 4K file isn't aborted mid-transfer.
     let mut file = tokio::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&part)
         .await
         .map_err(|e| e.to_string())?;
-
-    let mut received = start;
-    let mut stream = resp.bytes_stream();
+    let mut received = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
+    let mut total: u64 = 0;
     let mut last_emit = Instant::now();
-    let mut last_bytes = start;
+    let mut last_bytes = received;
 
-    while let Some(chunk) = stream.next().await {
-        if cancel.load(Ordering::Relaxed) {
-            let _ = file.flush().await;
-            let _ = app.emit("download-paused", (&id, received));
-            return Ok("paused".into()); // .part kept for resume
+    // Resilient transfer: a big debrid file can still hit a mid-stream reset / idle timeout. Flush
+    // what we have and resume from `received` via a Range request. The budget is CONSECUTIVE failures
+    // without progress (any received chunk resets it), so a long download with the odd hiccup keeps
+    // going, but a truly stuck one gives up.
+    const MAX_RETRIES: u32 = 6;
+    let mut attempt: u32 = 0;
+    loop {
+        let mut req = crate::download_http_client().get(url);
+        if received > 0 {
+            req = req.header("Range", format!("bytes={received}-"));
         }
-        let bytes = chunk.map_err(|e| e.to_string())?;
-        file.write_all(&bytes).await.map_err(|e| e.to_string())?;
-        received += bytes.len() as u64;
-        if last_emit.elapsed().as_millis() > 300 {
-            let secs = last_emit.elapsed().as_secs_f64().max(0.001);
-            let speed = ((received - last_bytes) as f64 / secs) as u64;
-            let _ = app.emit("download-progress", (&id, received, total, speed));
-            last_emit = Instant::now();
-            last_bytes = received;
+        let resp = match req.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                if attempt < MAX_RETRIES && !cancel.load(Ordering::Relaxed) {
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+                    continue;
+                }
+                return Err(e.to_string());
+            }
+        };
+        let status = resp.status();
+        // 416 Range Not Satisfiable on a resume = the .part already holds the whole file → finish.
+        if status.as_u16() == 416 && received > 0 {
+            break;
         }
+        if !status.is_success() {
+            return Err(format!("Download failed (HTTP {}).", status.as_u16()));
+        }
+        if total == 0 {
+            total = resp.content_length().map(|l| l + received).unwrap_or(0);
+        }
+
+        let mut stream = resp.bytes_stream();
+        let mut interrupted = false;
+        while let Some(chunk) = stream.next().await {
+            if cancel.load(Ordering::Relaxed) {
+                let _ = file.flush().await;
+                let _ = app.emit("download-paused", (id, received));
+                return Ok("paused".into()); // .part kept for resume
+            }
+            match chunk {
+                Ok(bytes) => {
+                    file.write_all(&bytes).await.map_err(|e| e.to_string())?;
+                    received += bytes.len() as u64;
+                    attempt = 0; // progress → reset the retry budget
+                    if last_emit.elapsed().as_millis() > 300 {
+                        let secs = last_emit.elapsed().as_secs_f64().max(0.001);
+                        let speed = ((received - last_bytes) as f64 / secs) as u64;
+                        let _ = app.emit("download-progress", (id, received, total, speed));
+                        last_emit = Instant::now();
+                        last_bytes = received;
+                    }
+                }
+                Err(e) => {
+                    // Mid-stream body error (connection drop / idle timeout) → resume below.
+                    let _ = file.flush().await;
+                    if attempt < MAX_RETRIES && !cancel.load(Ordering::Relaxed) {
+                        interrupted = true;
+                        break;
+                    }
+                    return Err(e.to_string());
+                }
+            }
+        }
+        if interrupted {
+            attempt += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+            continue;
+        }
+        // Stream ended cleanly. Done if we have the whole file (or the length was unknown);
+        // otherwise the server closed early → resume.
+        if total == 0 || received >= total {
+            break;
+        }
+        if attempt < MAX_RETRIES && !cancel.load(Ordering::Relaxed) {
+            attempt += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+            continue;
+        }
+        return Err("Download ended before the full file arrived.".into());
     }
 
     file.flush().await.map_err(|e| e.to_string())?;
     drop(file);
     tokio::fs::rename(&part, &final_path).await.map_err(|e| e.to_string())?;
-    state.0.lock().map_err(|e| e.to_string())?.remove(&id);
     let fp = final_path.to_string_lossy().into_owned();
-    let _ = app.emit("download-done", (&id, fp.clone(), received));
+    let _ = app.emit("download-done", (id, fp.clone(), received));
     Ok(fp)
 }
 

@@ -390,14 +390,23 @@ fn player_thumb_info(
 // rebuilds the client (with or without the DoH resolver) and swaps it in. Callers take
 // a cheap clone (reqwest::Client is Arc-backed) rather than a borrow.
 static HTTP: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> = std::sync::OnceLock::new();
+static HTTP_DL: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> = std::sync::OnceLock::new();
 
-fn build_http_client(doh: Option<String>) -> reqwest::Client {
+fn build_http_client(doh: Option<String>, download: bool) -> reqwest::Client {
     let mut b = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-        .connect_timeout(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(if download { 15 } else { 10 }))
         .pool_max_idle_per_host(8)
         .tcp_keepalive(std::time::Duration::from_secs(90));
+    // API/metadata requests get a short TOTAL timeout. Downloads MUST NOT — a multi-GB 4K file takes
+    // minutes to hours, and a total timeout aborts the transfer mid-stream ("error decoding response
+    // body"), which broke every non-trivial download. Downloads instead use a per-read IDLE timeout:
+    // a stalled connection still fails promptly (→ resume), but a long healthy transfer isn't killed.
+    b = if download {
+        b.read_timeout(std::time::Duration::from_secs(60))
+    } else {
+        b.timeout(std::time::Duration::from_secs(30))
+    };
     if let Some(url) = doh {
         b = b.dns_resolver(std::sync::Arc::new(doh::DohResolver::new(url)));
     }
@@ -405,11 +414,18 @@ fn build_http_client(doh: Option<String>) -> reqwest::Client {
 }
 
 fn http_lock() -> &'static std::sync::RwLock<reqwest::Client> {
-    HTTP.get_or_init(|| std::sync::RwLock::new(build_http_client(None)))
+    HTTP.get_or_init(|| std::sync::RwLock::new(build_http_client(None, false)))
+}
+fn http_dl_lock() -> &'static std::sync::RwLock<reqwest::Client> {
+    HTTP_DL.get_or_init(|| std::sync::RwLock::new(build_http_client(None, true)))
 }
 
 pub(crate) fn http_client() -> reqwest::Client {
     http_lock().read().unwrap().clone()
+}
+/// A client tuned for large file downloads: no total timeout (only a per-read idle timeout).
+pub(crate) fn download_http_client() -> reqwest::Client {
+    http_dl_lock().read().unwrap().clone()
 }
 
 /// Rebuild the shared HTTP client with DNS-over-HTTPS on or off. Called by the
@@ -420,7 +436,8 @@ pub(crate) fn http_client() -> reqwest::Client {
 #[tauri::command]
 fn set_doh(enabled: bool, url: String) {
     let doh = if enabled && url.trim().starts_with("http") { Some(url.trim().to_string()) } else { None };
-    *http_lock().write().unwrap() = build_http_client(doh);
+    *http_lock().write().unwrap() = build_http_client(doh.clone(), false);
+    *http_dl_lock().write().unwrap() = build_http_client(doh, true);
 }
 
 /// Set the player's demuxer cache ceiling (bytes) from the user's setting; applied on the next
