@@ -66,7 +66,7 @@
     <div class="absolute -left-14 -top-8 h-[calc(100%+2rem)] w-screen overflow-hidden">
       {#key current.id}
         <img src={banner(current)} alt=""
-             class="absolute inset-0 h-full w-full animate-[heroIn_0.6s_ease] object-cover"
+             class="absolute inset-0 h-full w-full animate-[heroIn_0.6s_ease] object-cover opacity-70"
              style="object-position:center 20%" />
       {/key}
       <!-- Dual linear scrims: bright top-right, dark bottom-left. -->
