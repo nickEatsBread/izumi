@@ -26,11 +26,6 @@
       <img src={c.cover} alt="" class="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-15" />
     {/if}
 
-    <!-- Ambient downloading glow: a soft single-hue wash that fades in once from the
-         bottom. Blurred + alpha-only (to-sky/0, not to-transparent) so the gradient
-         doesn't band on the dark backdrop; no perpetual animation (banding shimmered). -->
-    <div class="glow pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-sky-500/20 to-sky-500/0 blur-2xl"></div>
-
     <div class="relative flex w-full max-w-md flex-col items-center gap-5 text-center">
       <div class="flex items-center gap-2 text-sm uppercase tracking-wide text-white/60">
         <Loader size={16} class="animate-spin" /> Caching via {c.provider}
@@ -72,8 +67,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  @keyframes glowIn { from { opacity: 0 } to { opacity: 1 } }
-  .glow { animation: glowIn 1.2s ease-out; }
-</style>
