@@ -44,7 +44,10 @@
   onMount(() => {
     if (audio) audio.volume = 0.5
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // Pause on teardown: when a video starts, the parent {#if} unmounts this whole
+    // component, and removing the <audio> from the DOM does NOT stop playback — so
+    // explicitly pause here to honour "music stops when a video plays".
+    return () => { window.removeEventListener('keydown', onKey); audio?.pause() }
   })
 </script>
 
