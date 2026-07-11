@@ -1,5 +1,6 @@
 <script lang="ts">
   import Sidebar from '$lib/components/shell/Sidebar.svelte'
+  import BottomNav from '$lib/components/shell/BottomNav.svelte'
   import Background from '$lib/components/shell/Background.svelte'
   import Titlebar from '$lib/components/shell/Titlebar.svelte'
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
@@ -21,7 +22,7 @@
   import { enabledAddonUrls } from '$lib/stremio/sources'
   import { refreshAniListAvatar } from '$lib/trackers/anilist-auth'
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
-  import { isAndroid, initPlatform } from '$lib/platform'
+  import { isAndroid, isMobile, initPlatform } from '$lib/platform'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { get } from 'svelte/store'
   let { children } = $props()
@@ -128,10 +129,11 @@
      clickable over windowed playback. Game mode (Deck/gamescope) is always fullscreen
      touch — no sidebar/titlebar while playing, just the content. -->
 {#if !($playing && ($fullscreen || $gameMode))}
-  <Sidebar />
+  <!-- Mobile: a bottom tab bar instead of the left rail. -->
+  {#if $isMobile}<BottomNav />{:else}<Sidebar />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
-       minimize/maximize/close icons are meaningless + unreachable there). -->
-  {#if !$gameMode}<Titlebar />{/if}
+       minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
+  {#if !$gameMode && !$isMobile}<Titlebar />{/if}
   <OnlineBanner />
 {/if}
 <!-- Lo-fi speaker: only while an uncached torrent is caching at the debrid service
@@ -141,7 +143,7 @@
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
-<main class="relative ml-14 min-h-screen" class:hidden={$playing}>{@render children()}</main>
+<main class="relative min-h-screen" class:ml-14={!$isMobile} class:mb-16={$isMobile} class:hidden={$playing}>{@render children()}</main>
 {#if $playing}<PlayerOverlay />{/if}
 <StreamPicker />
 <DebridCaching />
