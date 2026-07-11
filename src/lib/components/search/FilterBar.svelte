@@ -68,7 +68,7 @@
     class="rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
   >
     <option value="">Any Year</option>
-    {#each YEARS as y (y)}<option value={y}>{y}</option>{/each}
+    {#each YEARS as y (y)}<option value={String(y)}>{y}</option>{/each}
   </select>
   <select
     data-focusable
