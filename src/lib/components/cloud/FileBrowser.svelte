@@ -18,11 +18,11 @@
 </script>
 
 {#if $cloudFiles}
-  <div class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-6" data-nav-trap>
-    <div class="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-background p-5 shadow-xl">
+  <div class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-3 sm:p-6" data-nav-trap>
+    <div class="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-xl border border-border bg-background p-4 shadow-xl sm:p-5">
       <div class="mb-3 flex items-center justify-between gap-3">
         <h2 class="min-w-0 truncate text-lg font-black">{$cloudFiles.item.name}</h2>
-        <button data-focusable title="Close" onclick={() => cloudFiles.set(null)} class="grid size-8 shrink-0 place-items-center rounded-md hover:bg-accent"><X size={16} /></button>
+        <button data-focusable title="Close" onclick={() => cloudFiles.set(null)} class="grid size-10 shrink-0 place-items-center rounded-md hover:bg-accent sm:size-8"><X size={16} /></button>
       </div>
       <div class="space-y-1 overflow-y-auto">
         {#each $cloudFiles.files as f (f.id)}

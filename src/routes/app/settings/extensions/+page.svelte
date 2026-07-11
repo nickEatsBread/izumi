@@ -19,7 +19,7 @@
   const cleanSpec = (u: string) => u.replace(/^gh:/, '')
 </script>
 
-<div class="p-8">
+<div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Extensions</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">
     Community source extensions, resolved through your chosen debrid service (no torrent client). Their results appear in the source picker alongside your addons (marked uncached until the debrid resolves them).

@@ -58,15 +58,15 @@
   $effect(() => { void prov; load() })
 </script>
 
-<div class="p-8">
+<div class="p-4 sm:p-8">
   <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-2xl font-black">Cloud</h1>
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center justify-end gap-3">
       <span class="text-sm text-muted-foreground">{providerName(prov)} · {items.length} items · {fmtBytes(totalBytes)}</span>
-      <button data-focusable title="Refresh" onclick={load} class="grid size-8 place-items-center rounded-md hover:bg-accent"><RotateCw size={15} /></button>
-      <label class="flex items-center gap-2 rounded-lg bg-secondary px-3 py-1.5">
+      <button data-focusable title="Refresh" onclick={load} class="grid size-10 place-items-center rounded-md hover:bg-accent sm:size-8"><RotateCw size={15} /></button>
+      <label class="flex w-full items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 sm:w-auto">
         <Search size={15} class="text-muted-foreground" />
-        <input bind:value={filter} data-focusable placeholder="Filter…" class="w-40 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+        <input bind:value={filter} data-focusable placeholder="Filter…" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground sm:w-40" />
       </label>
     </div>
   </div>
@@ -100,9 +100,9 @@
           </div>
           <div class="flex shrink-0 items-center gap-1">
             {#if i.status === 'ready'}
-              <button data-focusable title="Play" onclick={() => play(i)} class="grid size-8 place-items-center rounded-md hover:bg-accent"><Play size={16} /></button>
+              <button data-focusable title="Play" onclick={() => play(i)} class="grid size-10 place-items-center rounded-md hover:bg-accent sm:size-8"><Play size={16} /></button>
             {/if}
-            <button data-focusable title={confirmId === i.id ? 'Click again to confirm' : 'Remove from account'} onclick={() => remove(i)} class="grid size-8 place-items-center rounded-md hover:bg-accent {confirmId === i.id ? 'text-destructive' : ''}"><Trash2 size={16} /></button>
+            <button data-focusable title={confirmId === i.id ? 'Click again to confirm' : 'Remove from account'} onclick={() => remove(i)} class="grid size-10 place-items-center rounded-md hover:bg-accent sm:size-8 {confirmId === i.id ? 'text-destructive' : ''}"><Trash2 size={16} /></button>
           </div>
         </div>
       {/each}

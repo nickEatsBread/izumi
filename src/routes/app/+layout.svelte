@@ -138,7 +138,7 @@
 {/if}
 <!-- Lo-fi speaker: only while an uncached torrent is caching at the debrid service
      (the loading screen). Sits above the caching overlay (z-[60]). Desktop only. -->
-{#if $debridCaching && !$gameMode}<LofiPlayer />{/if}
+{#if $debridCaching && !$gameMode && !$isMobile}<LofiPlayer />{/if}
 <!-- No `overflow-x-clip` here: it would clip the Hero banner's full-bleed
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
@@ -151,7 +151,7 @@
 <OnScreenKeyboard />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->
 {#if $watchToast}
-  <div class="fixed inset-x-0 bottom-4 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
+  <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
     <span class="truncate">{$watchToast.text}</span>
     <button data-focusable onclick={() => $watchToast?.undo()} class="shrink-0 font-bold text-theme">Undo</button>
   </div>

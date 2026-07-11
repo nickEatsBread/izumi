@@ -45,7 +45,7 @@
   }
 </script>
 
-<div class="p-8">
+<div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">History</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">
     izumi keeps your watch history and progress on this device, so Continue Watching and resume work

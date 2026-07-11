@@ -20,6 +20,10 @@ html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); 
    (w-screen) can bleed under the sidebar without a horizontal scrollbar — the
    clip is here, NOT on <main>, so it doesn't crop the bleed. */
 body { overflow-x: clip; }
+/* Mobile (Android edge-to-edge WebView): inset the page content below the status bar.
+   Applied to <main> so every route clears the status bar; the bottom tab bar handles
+   the gesture-area inset itself. Needs viewport-fit=cover (app.html) to resolve non-zero. */
+@media (max-width: 640px) { main { padding-top: env(safe-area-inset-top); } }
 ::-webkit-scrollbar { display: none; }
 .bg-striped { background: repeating-linear-gradient(-45deg, #202020 0 6px, #2a2a2a 6px 12px); }
 .bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }

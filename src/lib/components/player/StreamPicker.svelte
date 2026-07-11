@@ -182,7 +182,7 @@
               {#if resolving}<span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
-          <button data-focusable onclick={close} disabled={busy} class="grid size-8 shrink-0 place-items-center rounded-lg bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white disabled:opacity-40" aria-label="Close">✕</button>
+          <button data-focusable onclick={close} disabled={busy} class="grid size-10 shrink-0 place-items-center rounded-lg bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white disabled:opacity-40 sm:size-8" aria-label="Close">✕</button>
         </div>
       </div>
 
@@ -283,8 +283,8 @@
                 {#if info.batch}<Database size={13} class="shrink-0 text-indigo-300" />{/if}
                 <span class="ml-auto flex shrink-0 items-center gap-2">
                   {#if info.addon && !info.logo}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
-                  <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-0 transition group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
-                  <Play size={14} class="text-muted-foreground opacity-0 transition group-hover:opacity-100" />
+                  <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
+                  <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
                 </span>
               </span>
 

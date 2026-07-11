@@ -3,7 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- viewport-fit=cover so env(safe-area-inset-*) resolves non-zero on Android edge-to-edge
+         (status-bar / gesture-area insets); without it the mobile safe-area padding is a no-op. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>izumi</title>
     %sveltekit.head%
   </head>

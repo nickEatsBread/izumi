@@ -43,13 +43,15 @@
     <ChevronDown size={14} class="text-muted-foreground transition-transform {open ? 'rotate-180' : ''}" />
   </button>
   {#if open}
-    <div class="absolute left-0 top-full z-50 mt-1 max-h-72 w-56 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-2xl">
+    <!-- Mobile: center the panel under the trigger and cap its width to the viewport so a
+         right-side select's checklist can't overflow off-screen (body clips overflow-x). -->
+    <div class="absolute left-1/2 top-full z-50 mt-1 max-h-72 w-56 max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-card p-1 shadow-2xl sm:left-0 sm:translate-x-0">
       {#each options as o (o)}
         {@const on = selected.includes(o)}
         <button
           data-focusable
           onclick={() => toggle(o)}
-          class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+          class="flex w-full items-center gap-2 rounded px-2 py-2.5 text-left text-sm transition-colors hover:bg-accent sm:py-1.5"
         >
           <span class="grid size-4 shrink-0 place-items-center rounded border {on ? 'border-theme bg-theme text-white' : 'border-muted-foreground/40'}">
             {#if on}<Check size={11} strokeWidth={3} />{/if}

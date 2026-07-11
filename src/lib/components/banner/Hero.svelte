@@ -66,12 +66,14 @@
 
 {#if current}
   <div
-    class="relative mb-6 h-[55vh] transition-opacity duration-500 {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class="relative mb-6 h-[42vh] transition-opacity duration-500 sm:h-[55vh] {scrolled ? 'opacity-40' : 'opacity-100'}"
     style="--accent:{accent}"
   >
-    <!-- Full-bleed banner: breaks out of main's left margin (behind the sidebar)
-         and up under the frameless titlebar. Keyed for a crossfade. -->
-    <div class="absolute -left-14 -top-8 h-[calc(100%+2rem)] w-screen overflow-hidden">
+    <!-- Full-bleed banner: on desktop it breaks out of main's left margin (behind the
+         sidebar) and up under the frameless titlebar. On mobile there's no sidebar/titlebar,
+         so anchor it flush to the viewport edge (left-0/top-0) — the desktop -left-14 would
+         otherwise leave a black band on the right. Keyed for a crossfade. -->
+    <div class="absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
       {#key current.id}
         <img src={banner(current)} alt=""
              class="absolute inset-0 h-full w-full animate-[heroIn_0.6s_ease] object-cover opacity-70"
@@ -83,9 +85,9 @@
     </div>
 
     {#if showOverlay}
-      <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-8 pb-8">
+      <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-8 sm:px-8">
         <div class="max-w-2xl">
-          <h1 class="truncate text-4xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
+          <h1 class="truncate text-2xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)] sm:text-4xl">{title(current)}</h1>
 
           <!-- Metadata row: bullet-separators + format/status/season/score -->
           <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90
@@ -130,7 +132,9 @@
         </div>
 
         {#if medias.length > 1}
-          <div class="absolute bottom-8 right-8 flex gap-1.5">
+          <!-- Slide pips: hover/click targets are a desktop affordance; on mobile the row
+               auto-advances (and would collide with the Watch/Details buttons), so hide them. -->
+          <div class="absolute bottom-8 right-8 hidden gap-1.5 sm:flex">
             {#each medias as _, idx}
               <button data-focusable onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
                       class="h-1 overflow-hidden rounded-full bg-white/25 transition-all duration-700"

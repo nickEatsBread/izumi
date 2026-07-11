@@ -59,7 +59,7 @@
     <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">Ep {ep}</span>
 
     <!-- Center play affordance (hover), swapped for a spinner while a source resolves. -->
-    <span class="absolute inset-0 grid place-items-center transition-opacity {resolving ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}">
+    <span class="absolute inset-0 grid place-items-center transition-opacity {resolving ? 'opacity-100' : 'opacity-90 sm:opacity-0 sm:group-hover:opacity-100'}">
       <span class="grid size-12 place-items-center rounded-full bg-white/90 text-black">
         {#if resolving}<Loader size={22} class="animate-spin" />{:else}<Play size={22} class="translate-x-0.5 fill-current" />{/if}
       </span>

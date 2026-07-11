@@ -75,30 +75,30 @@
 
     <div class="flex shrink-0 items-center gap-1">
       {#if d.status === 'done'}
-        <button data-focusable title="Play" onclick={() => playLocal(d)} class="grid size-8 place-items-center rounded-md hover:bg-accent"><Play size={16} /></button>
-        <button data-focusable title="Reveal in folder" onclick={() => revealDownload(d.id)} class="grid size-8 place-items-center rounded-md hover:bg-accent"><FolderOpen size={16} /></button>
-        <button data-focusable title="Delete file" onclick={() => deleteDownload(d.id)} class="grid size-8 place-items-center rounded-md text-destructive hover:bg-accent"><Trash2 size={16} /></button>
+        <button data-focusable title="Play" onclick={() => playLocal(d)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><Play size={16} /></button>
+        <button data-focusable title="Reveal in folder" onclick={() => revealDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><FolderOpen size={16} /></button>
+        <button data-focusable title="Delete file" onclick={() => deleteDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 text-destructive hover:bg-accent"><Trash2 size={16} /></button>
       {:else if d.status === 'downloading'}
-        <button data-focusable title="Pause" onclick={() => pauseDownload(d.id)} class="grid size-8 place-items-center rounded-md hover:bg-accent"><Pause size={16} /></button>
-        <button data-focusable title="Cancel" onclick={() => cancelDownload(d.id)} class="grid size-8 place-items-center rounded-md hover:bg-accent"><X size={16} /></button>
+        <button data-focusable title="Pause" onclick={() => pauseDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><Pause size={16} /></button>
+        <button data-focusable title="Cancel" onclick={() => cancelDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><X size={16} /></button>
       {:else if d.status === 'paused' || d.status === 'error'}
-        <button data-focusable title={d.status === 'error' ? 'Retry' : 'Resume'} onclick={() => resumeDownload(d.id)} class="grid size-8 place-items-center rounded-md hover:bg-accent"><RotateCw size={16} /></button>
-        <button data-focusable title="Cancel" onclick={() => cancelDownload(d.id)} class="grid size-8 place-items-center rounded-md hover:bg-accent"><X size={16} /></button>
+        <button data-focusable title={d.status === 'error' ? 'Retry' : 'Resume'} onclick={() => resumeDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><RotateCw size={16} /></button>
+        <button data-focusable title="Cancel" onclick={() => cancelDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><X size={16} /></button>
       {:else}
-        <button data-focusable title="Cancel" onclick={() => cancelDownload(d.id)} class="grid size-8 place-items-center rounded-md hover:bg-accent"><X size={16} /></button>
+        <button data-focusable title="Cancel" onclick={() => cancelDownload(d.id)} class="grid size-10 place-items-center rounded-md sm:size-8 hover:bg-accent"><X size={16} /></button>
       {/if}
     </div>
   </div>
 {/snippet}
 
-<div class="p-8">
+<div class="p-4 sm:p-8">
   <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-2xl font-black">Downloads</h1>
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center justify-end gap-3">
       <span class="text-sm text-muted-foreground">{fmtBytes(totalBytes)} used · {done.length} saved</span>
-      <label class="flex items-center gap-2 rounded-lg bg-secondary px-3 py-1.5">
+      <label class="flex w-full items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 sm:w-auto">
         <Search size={15} class="text-muted-foreground" />
-        <input bind:value={filter} data-focusable placeholder="Filter…" class="w-40 bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+        <input bind:value={filter} data-focusable placeholder="Filter…" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground sm:w-40" />
       </label>
     </div>
   </div>

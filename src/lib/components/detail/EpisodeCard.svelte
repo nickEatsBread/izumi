@@ -118,7 +118,7 @@
       {/if}
 
       {#if released && !selecting}
-        <span class="absolute inset-0 grid place-items-center opacity-0 transition-opacity group-hover:opacity-100">
+        <span class="absolute inset-0 grid place-items-center opacity-90 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
           <span class="grid h-11 w-11 place-items-center rounded-full bg-white/90 text-black">▶</span>
         </span>
       {:else if !released}

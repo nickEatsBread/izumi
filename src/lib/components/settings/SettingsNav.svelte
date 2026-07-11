@@ -27,13 +27,15 @@
     href === '/app/settings' ? $page.url.pathname === href : $page.url.pathname.startsWith(href)
 </script>
 
-<nav class="flex flex-col gap-1">
+<!-- Desktop: vertical list. Mobile: a horizontally-scrolling tab strip (the settings
+     layout stacks the rail above the content there). -->
+<nav class="flex flex-row gap-1 overflow-x-auto sm:flex-col sm:overflow-visible">
   {#each items as it (it.href)}
     {@const Icon = it.icon}
     <a
       href={it.href}
       data-focusable
-      class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-bold transition-colors
+      class="flex shrink-0 items-center gap-3 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-bold transition-colors
         {active(it.href) ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'}"
     >
       <Icon size={18} /> {it.title}

@@ -4,7 +4,7 @@
   const fmt = (d: string) => new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 </script>
 
-<div class="mx-auto max-w-2xl p-8">
+<div class="mx-auto max-w-2xl p-4 sm:p-8">
   <h1 class="text-xl font-bold">Changelog</h1>
   <p class="mt-1 text-sm text-muted-foreground">Recent changes, straight from the commit history.</p>
 

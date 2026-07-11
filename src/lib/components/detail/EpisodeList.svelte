@@ -223,10 +223,10 @@
   {#if pages > 1}
     <div class="mt-4 flex items-center gap-3 text-sm">
       <button data-focusable disabled={page === 0} onclick={() => (page -= 1)}
-              class="rounded bg-secondary px-3 py-1 disabled:opacity-40">Prev</button>
+              class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Prev</button>
       <span class="text-muted-foreground">Episodes {startIdx + 1}–{startIdx + eps.length} of {total} · page {page + 1}/{pages}</span>
       <button data-focusable disabled={page >= pages - 1} onclick={() => (page += 1)}
-              class="rounded bg-secondary px-3 py-1 disabled:opacity-40">Next</button>
+              class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Next</button>
     </div>
   {/if}
 {:else if next?.episode}

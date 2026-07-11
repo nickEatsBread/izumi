@@ -37,7 +37,7 @@
   const key = $derived(JSON.stringify(debounced) + '|' + $showAdult)
 </script>
 
-<div class="p-8">
+<div class="p-4 sm:p-8">
   <FilterBar bind:filters />
   <div class="mt-6">
     {#key key}

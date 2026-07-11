@@ -3,7 +3,7 @@
   import Toggle from '$lib/components/settings/Toggle.svelte'
 </script>
 
-<div class="p-8">
+<div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Network</h2>
   <p class="mb-4 text-sm text-muted-foreground">Advanced networking. Limited effect with debrid streaming — see notes.</p>
 

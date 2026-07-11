@@ -101,7 +101,7 @@
   {@const trackerConnected = !!($anilistToken || $malToken)}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
   <Hero medias={[m]} showOverlay={false} />
-  <div class="relative px-8 pb-16 -mt-[20vh]">
+  <div class="relative -mt-[20vh] px-4 pb-16 sm:px-8">
     {#if heroPlay.status === 'resolving'}
       <p class="mb-3 text-sm text-muted-foreground">Resolving stream…</p>
     {:else if heroPlay.status === 'error'}
@@ -232,7 +232,7 @@
                 allow="autoplay; encrypted-media" allowfullscreen></iframe>
       </div>
       <button data-focusable onclick={() => (showTrailer = false)}
-              class="absolute right-4 top-4 rounded-md bg-secondary px-3 py-2 text-sm font-bold">Close</button>
+              class="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-md bg-secondary px-3 py-2 text-sm font-bold">Close</button>
     </div>
   {/if}
 {:else}

@@ -37,7 +37,7 @@
   }
 </script>
 
-<div class="p-8">
+<div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Accounts</h2>
   <p class="mb-4 text-sm text-muted-foreground">Read-only AniList username for Home, or connect AniList/MyAnimeList to sync progress.</p>
 

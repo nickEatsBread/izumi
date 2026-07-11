@@ -27,12 +27,12 @@
 
 {#if !$online}
   <div transition:slide={{ duration: 250 }}
-       class="fixed left-14 right-0 top-8 z-40 flex h-7 items-center justify-center gap-2 bg-neutral-900 text-xs font-semibold text-white shadow-md">
+       class="fixed left-0 right-0 top-[env(safe-area-inset-top)] z-40 flex h-7 items-center justify-center gap-2 bg-neutral-900 text-xs font-semibold text-white shadow-md sm:left-14 sm:top-8">
     <CloudOff size={14} /> Offline — check your connection
   </div>
 {:else if showBack}
   <div transition:slide={{ duration: 250 }}
-       class="fixed left-14 right-0 top-8 z-40 flex h-7 items-center justify-center gap-2 bg-green-600 text-xs font-semibold text-white shadow-md">
+       class="fixed left-0 right-0 top-[env(safe-area-inset-top)] z-40 flex h-7 items-center justify-center gap-2 bg-green-600 text-xs font-semibold text-white shadow-md sm:left-14 sm:top-8">
     <Wifi size={14} /> Back online
   </div>
 {/if}
