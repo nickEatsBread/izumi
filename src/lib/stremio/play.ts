@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
-import { addonUrls } from './sources'
+import { enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, fetchAddonStreams, streamId, pickBest, parseSeasonEp, isWrongSeason, isUncached, describe, type Stream } from './addon'
 import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie } from './relevance'
@@ -19,7 +19,7 @@ import { savePosition, getPosition, clearPosition, watched } from '$lib/player/p
 import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
-  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, extensionUrls, bingePreload,
+  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { title, cover } from '$lib/anilist/media'
@@ -202,7 +202,7 @@ async function resolveKitsu(media: Media): Promise<number | undefined> {
 }
 
 async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: { season?: number; abs?: number }; kitsu?: number }> {
-  const bases = get(addonUrls)
+  const bases = get(enabledAddonUrls)
   if (!bases.length) throw new Error('No sources configured — add an addon URL in Settings.')
   const kitsu = await resolveKitsu(media)
   // No Kitsu id ⇒ addons (which index by it) can't be queried. Auto-advance is cached-addon-only,
@@ -227,7 +227,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
 
   // Only hard-fail when there's nothing playable AND no extensions to fall back on;
   // otherwise let the picker fill from extensions asynchronously.
-  if (!streams.length && !get(extensionUrls).length) {
+  if (!streams.length && !get(enabledExtensionUrls).length) {
     throw new Error(total > 0
       ? `Found ${total} torrents but none are usable (all dead or notice entries). Try another source.`
       : 'No streams found for this title/episode yet.')
@@ -346,8 +346,8 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       if (pre) { streamPicker.set(null); return await playStream(media, episode, pre, onState) }
     }
 
-    const bases = get(addonUrls)
-    const hasExt = get(extensionUrls).length > 0
+    const bases = get(enabledAddonUrls)
+    const hasExt = get(enabledExtensionUrls).length > 0
     if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL in Settings.')
     const kitsu = await resolveKitsu(media)
     // Addons index by Kitsu id; extensions search by title/MAL/AniDB. A title with no Kitsu id

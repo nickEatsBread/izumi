@@ -1,7 +1,7 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
-import { extensionUrls } from '$lib/settings/ui'
+import { enabledExtensionUrls } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
@@ -125,7 +125,7 @@ export async function fetchExtensionMeta(spec: string): Promise<ExtensionConfig[
 
 async function loadConfigs(): Promise<ExtensionConfig[]> {
   const all: ExtensionConfig[] = []
-  for (const spec of get(extensionUrls)) {
+  for (const spec of get(enabledExtensionUrls)) {
     try { all.push(...await expandManifest(spec)) } catch { /* skip bad manifest */ }
   }
   return all
@@ -195,7 +195,7 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
 // published only AFTER the build completes.
 let buildPromise: Promise<RunningExt[]> | null = null
 async function ensureRunning(): Promise<RunningExt[]> {
-  const key = JSON.stringify(get(extensionUrls))
+  const key = JSON.stringify(get(enabledExtensionUrls))
   if (running && builtFrom === key) return running
   if (buildPromise) return buildPromise
   buildPromise = (async () => {
@@ -229,7 +229,7 @@ function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<Tor
  *  returns [] when none are configured or all fail. Never throws. */
 export async function queryExtensions(query: TorrentQuery): Promise<TorrentResult[]> {
   try {
-    if (!get(extensionUrls).length) return []
+    if (!get(enabledExtensionUrls).length) return []
     const exts = await ensureRunning()
     const live = (await Promise.all(exts.map(async (e) => ((await e.ready) ? e : null)))).filter(Boolean) as RunningExt[]
     const methods = query.episode != null ? ['single', 'batch'] : ['movie']
@@ -264,7 +264,7 @@ export async function runningStreamExtensions(): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
-  if (!get(extensionUrls).length) return []
+  if (!get(enabledExtensionUrls).length) return []
   const exts = await ensureRunning()
   const live = (await Promise.all(
     exts.map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
@@ -278,7 +278,7 @@ export async function runningTorrentProviderExtensions(): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; icon?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
-  if (!get(extensionUrls).length) return []
+  if (!get(enabledExtensionUrls).length) return []
   const exts = await ensureRunning()
   const live = (await Promise.all(
     exts.map(async (e) => ((await e.ready) && e.cfg.type === 'anime-torrent-provider' ? e : null)),
