@@ -169,8 +169,13 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
   }
   ext.ready = new Promise<boolean>((resolve) => {
     const id = ++ext.seq
+    // A wedged worker (e.g. a shim module-eval error before onmessage is wired) must NOT hang the
+    // pipeline — queryExtensions/runningStreamExtensions Promise.all on every ext.ready. Time out to
+    // "not ready" after 20s, and treat a worker error the same way.
+    const t = setTimeout(() => { ext.waits.delete(id); resolve(false) }, 20000)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ext.waits.set(id, (m: any) => resolve(!m.error))
+    ext.waits.set(id, (m: any) => { clearTimeout(t); resolve(!m.error) })
+    worker.onerror = () => { clearTimeout(t); ext.waits.delete(id); resolve(false) }
     worker.postMessage({ type: 'load', id, code, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : undefined })
   })
   return ext
