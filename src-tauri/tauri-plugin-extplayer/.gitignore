@@ -1,2 +1,4 @@
 /target
 /Cargo.lock
+# Tauri-generated Android API proxy (regenerated on `android build`)
+/android/.tauri

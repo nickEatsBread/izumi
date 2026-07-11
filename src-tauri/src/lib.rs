@@ -140,6 +140,7 @@ fn close_player(player: tauri::State<'_, player::PlayerHandle>) -> Result<(), St
 /// Game mode (gamescope / Steam Deck) detection — the frontend renders a fullscreen layout
 /// (no sidebar, full-width overlay). Detected by gamescope's env marker, which is set whether
 /// we connected natively (Wayland, the layer-shell overlay path) or fell back to XWayland.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_is_game_mode(app: AppHandle) -> bool {
     let _ = &app;
@@ -156,6 +157,7 @@ fn player_is_game_mode(app: AppHandle) -> bool {
 /// Game mode: start/stop compositing the HTML controls onto the video via an mpv overlay.
 /// gamescope can't blend a transparent app surface, so the frontend calls this whenever the
 /// controls show/hide and mpv bakes a snapshot of them over the video (see linux_overlay).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_gm_overlay(app: AppHandle, visible: bool, fast: Option<bool>) {
     #[cfg(target_os = "linux")]
@@ -176,6 +178,7 @@ fn player_gm_overlay(app: AppHandle, visible: bool, fast: Option<bool>) {
 
 /// Game mode dynamic overlay: loading and active scrub are rendered inside mpv as ASS OSD.
 /// This keeps the moving Deck UI off the expensive WebKit snapshot/readback path.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_gm_dynamic_overlay(app: AppHandle, state: GmDynamicOverlay) {
     #[cfg(target_os = "linux")]
@@ -187,6 +190,7 @@ fn player_gm_dynamic_overlay(app: AppHandle, state: GmDynamicOverlay) {
 /// Start/stop the backend gamepad reader (Steam Deck L2/R2 seek). The webview's own Gamepad
 /// API doesn't see the Deck controller under gamescope, so we read it via evdev in Rust and
 /// emit `gamepad-trigger` events the frontend feeds into the seek logic (see gamepad_linux).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn gamepad_start(app: AppHandle) {
     #[cfg(target_os = "linux")]
@@ -195,6 +199,7 @@ fn gamepad_start(app: AppHandle) {
     let _ = app;
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn gamepad_stop() {
     #[cfg(target_os = "linux")]
@@ -207,6 +212,7 @@ struct GamepadTriggerState {
     r2: bool,
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn gamepad_trigger_state() -> GamepadTriggerState {
     #[cfg(target_os = "linux")]
@@ -227,6 +233,7 @@ fn gamepad_trigger_state() -> GamepadTriggerState {
 /// URL as its sole argument — passes exactly the URL and no
 /// flags. Used when "external player" is enabled in settings; playback then happens
 /// in that app's own window (we get no progress events back).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn spawn_external_player(path: String, url: String) -> Result<(), String> {
     if url.is_empty() {
@@ -286,6 +293,7 @@ fn dir_size(p: &std::path::Path) -> u64 {
 /// Clear the on-disk scrub-thumbnail cache (`<app-cache>/thumbs`) — the sprite JPEGs generated
 /// while skimming the seek bar. They regenerate on demand, so this only frees space. Returns
 /// the number of bytes freed.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("thumbs");
@@ -300,6 +308,7 @@ fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
 /// root — CSS zoom forces WebKit to re-rasterize the whole page on every scroll (the slow
 /// vertical scrolling on the Deck), whereas native page zoom scrolls on the compositor,
 /// exactly like a zoomed page in a desktop browser. No-op on non-Linux (no gamescope there).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
     #[cfg(target_os = "linux")]
@@ -317,6 +326,7 @@ fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
 /// Show the Steam Deck floating on-screen keyboard over a focused field (window-pixel rect).
 /// Returns true if the Steam OSK was shown; false → the frontend uses its built-in HTML keyboard.
 /// `mode`: 0 single-line, 1 multi-line, 2 email, 3 numeric.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn steam_show_osk(x: i32, y: i32, w: i32, h: i32, mode: i32) -> bool {
     #[cfg(target_os = "linux")]
@@ -345,6 +355,7 @@ fn steam_show_osk(x: i32, y: i32, w: i32, h: i32, mode: i32) -> bool {
 /// moving scrub tooltip) is drawn as a native mpv OSD in Game mode, not HTML. `enabled=true`
 /// restores the on-demand default for the browse UI, which needs accel for smooth page-zoom
 /// scrolling; Desktop never calls this (its controls are live-composited). No-op on non-Linux.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn set_webview_accel(app: AppHandle, enabled: bool) {
     #[cfg(target_os = "linux")]
@@ -564,6 +575,7 @@ async fn ext_fetch(
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_prefetch(url: String) -> Result<(), String> {
     if url.trim().is_empty() {
@@ -784,6 +796,7 @@ unsafe extern "system" fn move_mpv_child(
 /// Set the video's left (sidebar) + top (titlebar) insets (PHYSICAL px — the frontend
 /// already applied devicePixelRatio, so no DPI math here) and refit mpv. Keeps the
 /// video inside the player area while windowed (both 0 in fullscreen).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_set_inset(app: AppHandle, left: i32, top: Option<i32>) -> Result<(), String> {
     #[cfg(windows)]
@@ -904,6 +917,7 @@ fn player_screenshot(
 ///
 /// EXCEPT: we un-maximize before entering (and re-maximize on exit) to dodge the
 /// maximized→fullscreen offset bug — see [`FsWasMax`].
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_toggle_fullscreen(app: AppHandle, wasmax: tauri::State<'_, FsWasMax>) -> Result<bool, String> {
     let w = app.get_webview_window("main").ok_or("no main window")?;
@@ -930,6 +944,7 @@ fn player_toggle_fullscreen(app: AppHandle, wasmax: tauri::State<'_, FsWasMax>) 
 /// Force the main window back to windowed (used when closing the player, so browse
 /// never gets stuck fullscreen). No-op if already windowed. Re-maximizes if the
 /// window was maximized before it went fullscreen.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_exit_fullscreen(app: AppHandle, wasmax: tauri::State<'_, FsWasMax>) -> Result<(), String> {
     let w = app.get_webview_window("main").ok_or("no main window")?;
@@ -997,6 +1012,7 @@ fn player_play_embedded(
 /// that window's URL until it reaches `redirect_prefix`. Returns the full
 /// redirect URL (query + fragment), so callers can read `?code=` or
 /// `#access_token=` themselves. Closes the window when done.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn oauth_capture(
     app: tauri::AppHandle,
@@ -1039,6 +1055,7 @@ async fn oauth_capture(
 // GitHub Releases. STABLE = `releases/latest` (GitHub excludes pre-releases). BETA = a
 // rolling `beta` pre-release the CI overwrites each beta build, keeping the URL static.
 // EDIT `REPO` to your "owner/name" once the GitHub repo exists.
+#[cfg(not(target_os = "android"))]
 fn updater_endpoints(channel: &str) -> Vec<url::Url> {
     const REPO: &str = "nickEatsBread/izumi";
     // Failover mirror: if GitHub is unreachable the updater falls through to this host,
@@ -1056,6 +1073,7 @@ fn updater_endpoints(channel: &str) -> Vec<url::Url> {
 // Build a channel-scoped updater: GitHub primary + distnet failover, plus the security
 // headers the failover checks — `repository: izumi` and `key: <channel>` (matching the
 // requested URL). Headers are sent to every endpoint; GitHub ignores unknown ones.
+#[cfg(not(target_os = "android"))]
 fn build_updater(app: &tauri::AppHandle, channel: &str) -> Result<tauri_plugin_updater::Updater, String> {
     use tauri_plugin_updater::UpdaterExt;
     app.updater_builder()
@@ -1069,6 +1087,7 @@ fn build_updater(app: &tauri::AppHandle, channel: &str) -> Result<tauri_plugin_u
         .map_err(|e| e.to_string())
 }
 
+#[cfg(not(target_os = "android"))]
 #[derive(serde::Serialize)]
 pub struct UpdateInfo {
     version: String,
