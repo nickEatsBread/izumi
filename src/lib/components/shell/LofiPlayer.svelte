@@ -44,16 +44,17 @@
   onMount(() => {
     if (audio) audio.volume = 0.5
     window.addEventListener('keydown', onKey)
-    // Pause on teardown: when a video starts, the parent {#if} unmounts this whole
-    // component, and removing the <audio> from the DOM does NOT stop playback — so
-    // explicitly pause here to honour "music stops when a video plays".
+    // Pause on teardown: this widget is mounted only while debrid is caching, so when
+    // caching ends (a video starts, or the user cancels) the parent {#if} unmounts the
+    // whole component. Removing the <audio> from the DOM does NOT stop playback — so
+    // explicitly pause here to guarantee the music stops.
     return () => { window.removeEventListener('keydown', onKey); audio?.pause() }
   })
 </script>
 
 <audio bind:this={audio} loop preload="none"></audio>
 
-<div class="fixed left-16 top-0 z-50 flex h-8 items-center">
+<div class="fixed left-16 top-0 z-[70] flex h-8 items-center">
   {#if on}
     <div class="flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs">
       <button data-focusable onclick={toggle} aria-label="Turn lo-fi off" class="grid place-items-center text-theme">
