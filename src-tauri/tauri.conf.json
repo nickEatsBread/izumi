@@ -42,7 +42,8 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRDNzBBRUE0MjVFMDk3OUMKUldTY2wrQWxwSzV3VEgxdHEvUlhyVzJLMXMzZ1F0LzlHc05OQUIrRnNnMHdXbnB1WlNBNlI3RUgK",
       "endpoints": [
-        "https://github.com/nickEatsBread/izumi/releases/latest/download/latest.json"
+        "https://github.com/nickEatsBread/izumi/releases/latest/download/latest.json",
+        "https://anmw-prod-distnet.quack.si/stable/latest.json"
       ],
       "windows": {
         "installMode": "passive"

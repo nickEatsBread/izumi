@@ -1,15 +1,21 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
+  import { openUrl } from '@tauri-apps/plugin-opener'
   import { get } from 'svelte/store'
   import { updateChannel } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
   import { checkAndroidUpdate, downloadAndInstall, type UpdateInfo as AndroidUpdate } from '$lib/updater/android'
 
+  const RELEASES_URL = 'https://github.com/nickEatsBread/izumi/releases/latest'
+
   let appVersion = $state('')
   let tauriVersion = $state('')
   let mpvVersion = $state('')
   let os = $state('')
+  // Steam Deck / Flatpak: the in-app binary updater can't apply an update in the read-only
+  // sandbox (EXDEV), so updates route to the release page there instead.
+  let flatpak = $state(false)
 
   onMount(async () => {
     try {
@@ -17,6 +23,7 @@
       appVersion = await getVersion()
       tauriVersion = await getTauriVersion()
     } catch { /* web preview */ }
+    try { flatpak = await invoke<boolean>('is_flatpak') } catch { /* not desktop */ }
     try { mpvVersion = await invoke<string>('mpv_version') } catch { /* web preview */ }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,7 +70,12 @@
   async function installUpdate() {
     installing = true; updErr = ''
     try {
-      if (get(isAndroid)) {
+      if (flatpak) {
+        // Steam Deck: a Flatpak can't binary-swap itself (read-only sandbox → EXDEV). Send the
+        // user to the release page to download + reinstall the new .flatpak.
+        await openUrl(RELEASES_URL)
+        installing = false
+      } else if (get(isAndroid)) {
         // Downloads the APK + opens the system installer (the OS prompts to confirm).
         if (aUpdate) await downloadAndInstall(aUpdate)
         installing = false
@@ -102,7 +114,7 @@
     <h3 class="mb-2 text-sm font-black">Updates</h3>
     <!-- Release channel is a desktop-updater concept; the Android flow always tracks the
          latest GitHub release. -->
-    {#if !$isAndroid}
+    {#if !$isAndroid && !flatpak}
     <label class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-3">
       <div>
         <div class="text-sm font-bold">Release channel</div>
@@ -121,9 +133,12 @@
       <div class="rounded-md border border-primary/40 bg-primary/10 p-3">
         <div class="text-sm font-bold">Update available — v{ver}</div>
         {#if notes}<p class="mt-1 line-clamp-4 whitespace-pre-line text-xs text-muted-foreground">{notes}</p>{/if}
+        {#if flatpak}
+          <p class="mt-1 text-xs text-muted-foreground">On the Steam Deck, download the new <span class="font-bold">.flatpak</span> from the release page and reinstall it (the app can't replace itself inside the Flatpak sandbox).</p>
+        {/if}
         <button data-focusable onclick={installUpdate} disabled={installing}
                 class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition disabled:opacity-60">
-          {installing ? 'Downloading…' : $isAndroid ? 'Download & install' : 'Restart & install'}
+          {installing ? (flatpak ? 'Opening…' : 'Downloading…') : flatpak ? 'Open release page' : $isAndroid ? 'Download & install' : 'Restart & install'}
         </button>
       </div>
     {:else}

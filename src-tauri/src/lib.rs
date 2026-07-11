@@ -1076,8 +1076,11 @@ async fn oauth_capture(
 #[cfg(not(target_os = "android"))]
 fn updater_endpoints(channel: &str) -> Vec<url::Url> {
     const REPO: &str = "nickEatsBread/izumi";
-    // Failover mirror: if GitHub is unreachable the updater falls through to this host,
-    // which validates the `repository`/`key` headers set in `build_updater`.
+    // Failover mirror: tauri's updater tries endpoints in order, so if GitHub is unreachable
+    // it falls through to this host (a self-hosted mirror — gitea/another repo — that serves
+    // the same signed latest.json per channel and validates the repository/key headers set in
+    // `build_updater`). Only updates signed with the release key can install, so a mirror can't
+    // inject an unsigned build.
     const FAILOVER: &str = "https://anmw-prod-distnet.quack.si";
     let github = if channel == "beta" {
         format!("https://github.com/{REPO}/releases/download/beta/latest.json")
@@ -1086,6 +1089,22 @@ fn updater_endpoints(channel: &str) -> Vec<url::Url> {
     };
     let failover = format!("{FAILOVER}/{channel}/latest.json");
     [github, failover].iter().filter_map(|s| url::Url::parse(s).ok()).collect()
+}
+
+/// True when running inside a Flatpak sandbox (the Steam Deck build). Flatpaks are read-only
+/// (`/app`) and updated via Flathub / reinstalling the bundle, so the in-app binary updater
+/// can't apply an update there (it fails with EXDEV renaming across the sandbox mounts).
+#[cfg(not(target_os = "android"))]
+fn running_in_flatpak() -> bool {
+    cfg!(target_os = "linux") && std::path::Path::new("/.flatpak-info").exists()
+}
+
+/// Exposed to the frontend so it can route updates to the release page inside a Flatpak
+/// instead of attempting an in-app install.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn is_flatpak() -> bool {
+    running_in_flatpak()
 }
 
 // Build a channel-scoped updater: GitHub primary + distnet failover, plus the security
@@ -1136,6 +1155,12 @@ async fn updater_check(app: tauri::AppHandle, channel: String) -> Result<Option<
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), String> {
+    // Flatpak (Steam Deck): the sandbox is read-only and the download temp is on a different
+    // mount, so tauri's rename-into-place install fails with EXDEV. Never attempt it — the
+    // frontend routes the user to the release page to reinstall the .flatpak instead.
+    if running_in_flatpak() {
+        return Err("Flatpak builds update through the release page, not in-app.".into());
+    }
     let channel = if channel == "beta" { "beta" } else { "stable" };
     let updater = build_updater(&app, channel)?;
     let update = updater
@@ -1325,6 +1350,7 @@ pub fn run() {
             write_text_file,
             updater_check,
             updater_install,
+            is_flatpak,
             player_tracks,
             player_chapters,
             player_toggle_fullscreen,
