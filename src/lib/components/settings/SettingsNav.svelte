@@ -8,6 +8,7 @@
   import Globe from 'lucide-svelte/icons/globe'
   import Download from 'lucide-svelte/icons/download'
   import Info from 'lucide-svelte/icons/info'
+  import ScrollText from 'lucide-svelte/icons/scroll-text'
 
   const items = [
     { title: 'Player', href: '/app/settings', icon: Play },
@@ -17,6 +18,7 @@
     { title: 'Downloads', href: '/app/settings/downloads', icon: Download },
     { title: 'Accounts', href: '/app/settings/accounts', icon: User },
     { title: 'Network', href: '/app/settings/network', icon: Globe },
+    { title: 'Changelog', href: '/app/settings/changelog', icon: ScrollText },
     { title: 'About', href: '/app/settings/about', icon: Info },
   ]
   const active = (href: string) =>
