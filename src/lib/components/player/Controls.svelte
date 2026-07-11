@@ -238,7 +238,7 @@
              the button's inner content — you could only hit the padding. Opaque bg + inner
              content made non-interactive so every click resolves to the button itself. -->
         <button data-focusable onclick={onclose} aria-label="Back"
-                class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80 [&>*]:pointer-events-none">
+                class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-neutral-900 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-neutral-800 [&>*]:pointer-events-none">
           <ArrowLeft size={icSize} /><span class="pointer-events-none">Back</span>
         </button>
       {/if}
