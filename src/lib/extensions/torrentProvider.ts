@@ -76,7 +76,7 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia)
           let hash = (t.infoHash ?? '').toLowerCase()
           if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
           const r = atorrentToResult(t, hash)
-          if (r) out.push(r)
+          if (r) out.push({ ...r, provider: p.name })
         }
         return out
       }

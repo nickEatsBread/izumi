@@ -12,6 +12,7 @@ export interface TorrentResult {
   size?: number // bytes
   accuracy?: 'high' | 'medium' | 'low'
   type?: 'batch' | 'best' | 'alt'
+  provider?: string // display name of the source extension that returned it (for the picker label)
 }
 
 /** The search context handed to an extension. The TorrentQuery shape

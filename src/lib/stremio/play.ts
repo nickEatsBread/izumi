@@ -148,6 +148,8 @@ function extToStream(r: TorrentResult, extName: string): Stream {
     // peers for an uncached torrent instead of resolving a bare, trackerless hash.
     __magnet: r.link?.startsWith('magnet:') ? r.link : undefined,
     name: `[${prov}⬇] ${extName}`,
+    // The picker heading reads from __addonName, so the row shows which extension found it.
+    __addonName: extName,
     title: `${r.title}\n👤 ${r.seeders ?? 0}${gb ? ` 💾 ${gb}` : ''}`,
     behaviorHints: { filename: r.title, videoSize: r.size },
   }
@@ -263,7 +265,7 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
       queryExtensions(query),
       queryTorrentProviders(query, toProviderMedia(media)),
     ])
-    return [...ext, ...atp].map((r) => extToStream(r, 'Extension'))
+    return [...ext, ...atp].map((r) => extToStream(r, r.provider ?? 'Extension'))
   } catch { return [] }
 }
 
