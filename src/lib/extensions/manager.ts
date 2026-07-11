@@ -85,7 +85,7 @@ function normalizeManifest(raw: any, manifestUrl: string): ExtensionConfig[] {
     // Seanime manifests carry the module URL in `payloadURI` (a full https URL), not `code`/`main`.
     const codeSpec = e.code ?? e.main ?? e.payloadURI
     if (!codeSpec) continue
-    if (e.type && e.type !== 'torrent' && e.type !== 'onlinestream-provider') continue
+    if (e.type && e.type !== 'torrent' && e.type !== 'onlinestream-provider' && e.type !== 'anime-torrent-provider') continue
     out.push({
       id: String(e.id ?? e.name ?? codeSpec),
       name: String(e.name ?? e.id ?? 'Extension'),
@@ -185,7 +185,7 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ext.waits.set(id, (m: any) => { clearTimeout(t); resolve(!m.error) })
     worker.onerror = () => { clearTimeout(t); ext.waits.delete(id); resolve(false) }
-    worker.postMessage({ type: 'load', id, code, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : undefined })
+    worker.postMessage({ type: 'load', id, code, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : cfg.type === 'anime-torrent-provider' ? 'atp' : undefined })
   })
   return ext
 }
@@ -268,6 +268,20 @@ export async function runningStreamExtensions(): Promise<
   const exts = await ensureRunning()
   const live = (await Promise.all(
     exts.map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
+  )).filter(Boolean) as RunningExt[]
+  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
+}
+
+/** The live anime-torrent-provider extensions, each with a bound multi-arg `call`.
+ *  torrentProvider.queryTorrentProviders drives search/smartSearch through it. */
+export async function runningTorrentProviderExtensions(): Promise<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  { id: string; name: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
+> {
+  if (!get(extensionUrls).length) return []
+  const exts = await ensureRunning()
+  const live = (await Promise.all(
+    exts.map(async (e) => ((await e.ready) && e.cfg.type === 'anime-torrent-provider' ? e : null)),
   )).filter(Boolean) as RunningExt[]
   return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
 }
