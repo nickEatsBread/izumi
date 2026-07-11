@@ -239,7 +239,7 @@
              content made non-interactive so every click resolves to the button itself. -->
         <button data-focusable onclick={onclose} aria-label="Back"
                 class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80 [&>*]:pointer-events-none">
-          <ArrowLeft size={icSize} /> Back
+          <ArrowLeft size={icSize} /><span class="pointer-events-none">Back</span>
         </button>
       {/if}
       {#if titleTop}<div class="min-w-0 flex-1">{@render titleBlock(true)}</div>{/if}
