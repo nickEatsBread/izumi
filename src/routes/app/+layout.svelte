@@ -8,6 +8,7 @@
   import DebridCaching from '$lib/components/player/DebridCaching.svelte'
   import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
+  import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
   import { playing, fullscreen, gameMode, initGameMode } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl } from '$lib/settings/ui'
   import { beforeNavigate } from '$app/navigation'
@@ -126,6 +127,8 @@
   {#if !$gameMode}<Titlebar />{/if}
   <OnlineBanner />
 {/if}
+<!-- Optional lo-fi speaker (desktop browse only; off by default, stops on playback). -->
+{#if !$playing && !$gameMode}<LofiPlayer />{/if}
 <!-- No `overflow-x-clip` here: it would clip the Hero banner's full-bleed
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
