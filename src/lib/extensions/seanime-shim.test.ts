@@ -73,3 +73,38 @@ describe('CryptoJS', () => {
     expect(CryptoJS.MD5('hello').toString()).toBe('5d41402abc4b2a76b9719d911017c592')
   })
 })
+
+import { transpileSeanime } from './seanime-shim'
+
+describe('transpileSeanime', () => {
+  it('strips TS types + interfaces to runnable JS', () => {
+    const ts = `
+interface Foo { a: string }
+class Provider {
+  base: string = 'x'
+  async search(query: string): Promise<Foo[]> { return [{ a: query }] }
+  count(xs: any[]): number { return xs.length }
+}`
+    const js = transpileSeanime(ts)
+    expect(js).not.toContain('interface')
+    expect(js).not.toContain(': string')
+    expect(js).not.toContain('Promise<')
+    // evals to a working class
+    // eslint-disable-next-line no-eval
+    const P = (0, eval)(js + '\n; Provider')
+    const p = new P()
+    expect(p.base).toBe('x')
+    expect(p.count([1, 2, 3])).toBe(3)
+  })
+  it('leaves plain JS runnable', () => {
+    const js = transpileSeanime('class Provider { hi() { return 42 } }')
+    // eslint-disable-next-line no-eval
+    const P = (0, eval)(js + '\n; Provider')
+    expect(new P().hi()).toBe(42)
+  })
+  it('returns the original string on malformed input (never throws)', () => {
+    const bad = 'class Provider { {{{ '
+    expect(() => transpileSeanime(bad)).not.toThrow()
+    expect(transpileSeanime(bad)).toBe(bad)
+  })
+})

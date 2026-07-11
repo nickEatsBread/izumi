@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as cheerio from 'cheerio'
 import CryptoJSLib from 'crypto-js'
+import { transform } from 'sucrase'
 
 // goquery-shaped selection wrapper over cheerio. Matches Seanime's DocSelection surface — notably,
 // each()/map()/filter() callbacks receive a WRAPPED DocSelection (single element), not a raw node.
@@ -82,3 +83,12 @@ export const Buffer = BufferShim
 
 // crypto-js verbatim (AES/enc/mode/pad/MD5/…) — providers use it as-is to decrypt sources.
 export const CryptoJS = CryptoJSLib
+
+// Strip TypeScript types from a provider payload so it can run in the Worker (some Seanime payloads
+// ship as raw .ts / .js-with-annotations). Type-strip only — payloads are self-contained (no imports).
+// On any failure returns the ORIGINAL code, so plain JS always survives and a genuinely-broken payload
+// still fails at the blob import (where it's caught), exactly as before.
+export function transpileSeanime(code: string): string {
+  try { return transform(code, { transforms: ['typescript'], production: true }).code }
+  catch { return code }
+}
