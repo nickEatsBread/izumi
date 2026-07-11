@@ -37,9 +37,11 @@ export const preferredAudioLang = persisted<AudioLang>('preferred-audio-lang', '
 export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'eng')
 
 // --- Source selection ---
-/** Skip the source picker and auto-play the best source at (or near) the preferred
- *  quality. Off = always show the picker. */
-export const autoSelectSource = persisted<boolean>('auto-select-source', false)
+/** Auto-play the best cached source: when the source list settles, count down ~5s (the Auto
+ *  button fills left→right) then play the best match at (or near) the preferred quality. Cancel
+ *  by picking another source or interacting. Default ON — turn off to always choose manually.
+ *  (Fresh `autoplay-best` key so the new default reliably reaches existing installs.) */
+export const autoSelectSource = persisted<boolean>('autoplay-best', true)
 /** Animate the auto-select countdown (the filling Auto-button bar + pulse). Off = pick instantly
  *  with no animation. Also auto-disabled when the OS requests reduced motion. */
 export const autoSelectAnimate = persisted<boolean>('auto-select-animate', true)
