@@ -1,4 +1,5 @@
 import { persisted } from 'svelte-persisted-store'
+import { derived } from 'svelte/store'
 import type { StreamSort } from '$lib/stremio/addon'
 
 /** How the episode list renders. Names are intentionally generic. */
@@ -111,6 +112,8 @@ export const debridProvider = persisted<string>('debrid-provider', 'realdebrid')
 export const debridKey = persisted<string>('debrid-key', '')
 /** Installed source-extension manifest URLs (JSON manifests or gh:/npm: shorthand). */
 export const extensionUrls = persisted<string[]>('extension-urls', [])
+export const disabledExtensions = persisted<string[]>('disabled-extensions', [])
+export const enabledExtensionUrls = derived([extensionUrls, disabledExtensions], ([$urls, $off]) => $urls.filter((u) => !$off.includes(u)))
 
 // --- Offline downloads ---
 /** Where downloaded episodes are written. Empty = app-data/downloads (resolved in Rust). */
