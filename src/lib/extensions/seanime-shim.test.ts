@@ -108,3 +108,28 @@ class Provider {
     expect(transpileSeanime(bad)).toBe(bad)
   })
 })
+
+import { habari, getUserPreference } from './seanime-shim'
+
+describe('habari.parse', () => {
+  it('pulls episode + clean title from a grouped release', () => {
+    expect(habari.parse('[Grp] Show Name - 07 [1080p]')).toEqual({ title: 'Show Name', episode_number: 7 })
+  })
+  it('reads SxxExx', () => {
+    const r = habari.parse('Show Name S02E03 [720p]')
+    expect(r.episode_number).toBe(3)
+    expect(r.title).toBe('Show Name')
+  })
+  it('does not read a resolution or year as an episode', () => {
+    expect(habari.parse('Another Show 2024 1080p').episode_number).toBeUndefined()
+  })
+  it('handles a bare title', () => {
+    expect(habari.parse('Just A Title')).toEqual({ title: 'Just A Title', episode_number: undefined })
+  })
+})
+
+describe('getUserPreference', () => {
+  it('returns undefined (no config store yet)', () => {
+    expect(getUserPreference('jsonUrl')).toBeUndefined()
+  })
+})
