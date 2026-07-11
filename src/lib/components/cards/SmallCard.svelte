@@ -16,6 +16,7 @@
   import { cubicOut } from 'svelte/easing'
   import { get } from 'svelte/store'
   import { gameMode } from '$lib/player/session'
+  import { isMobile } from '$lib/platform'
   import PreviewCard from './PreviewCard.svelte'
   let { media }: { media: Media } = $props()
 
@@ -39,9 +40,10 @@
   // without dismissing it. `keepOpen` (preview enter) cancels that pending close.
   // `suppressed` blocks opening for a beat after a carousel arrow is used, so
   // clicking an arrow (which scrolls a card under the cursor) can't pop a preview.
-  // Game mode (Deck): no hover-trailer previews — touch/controller has no hover, and the
-  // autoplaying trailer is a PC-only affordance.
-  function open() { if (get(gameMode) || Date.now() < suppressedUntil) return; clearTimeout(closeT); place(); hovered = true }
+  // Game mode (Deck) and mobile: no hover-trailer previews — touch has no real hover (a tap
+  // fires pointerenter and would strand the popup), and the autoplaying trailer is a PC-only
+  // affordance.
+  function open() { if (get(gameMode) || get(isMobile) || Date.now() < suppressedUntil) return; clearTimeout(closeT); place(); hovered = true }
   function scheduleClose() { clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 60) }
   function keepOpen() { clearTimeout(closeT) }
 

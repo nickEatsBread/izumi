@@ -7,6 +7,7 @@
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
   import { invoke } from '@tauri-apps/api/core'
+  import { isAndroid } from '$lib/platform'
 
   // Player cache-size presets (MiB). "Custom" reveals a free-entry field; "Uncapped" removes the
   // ceiling. Every preset is a baseline that auto-scales up with the file's bitrate at play time.
@@ -68,6 +69,13 @@
     </label>
   </div>
 
+  <!-- The in-app player is desktop-only. On Android playback hands off to an external video
+       app, so none of these mpv-side controls apply — hide them and say why. -->
+  {#if $isAndroid}
+    <p class="max-w-2xl rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
+      Playback opens in your device's video player (whichever you pick from the "Open with…" chooser). The in-app player options below don't apply on this platform.
+    </p>
+  {:else}
   <div class="max-w-2xl space-y-3">
     <Toggle label="Auto-play next episode" desc="Play the next episode automatically when one finishes." value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />
     <Toggle label="Binge next episode (preload)" desc="Keep the same release across episodes and pre-resolve + warm-buffer the next one near the end, so Next / auto-play starts instantly." value={$bingePreload} onToggle={() => ($bingePreload = !$bingePreload)} />
@@ -126,6 +134,7 @@
     {/if}
 
   </div>
+  {/if}
 
   <h2 class="mb-1 mt-8 text-xl font-black">Interface</h2>
   <p class="mb-4 text-sm text-muted-foreground">How titles and lists are shown.</p>
@@ -140,11 +149,14 @@
       <span class="text-xs text-muted-foreground">Show anime titles in Romaji (e.g. Shingeki no Kyojin) or English (Attack on Titan). Falls back to the other when a title has only one.</span>
     </label>
 
+    {#if !$isAndroid}
     <div class="mt-3">
       <Toggle label="Title at top of player (Game mode)" desc="On the Deck, show the now-playing title at the top of the player (by the Back button) instead of just above the seek bar." value={$playerTitleTop} onToggle={() => ($playerTitleTop = !$playerTitleTop)} />
     </div>
+    {/if}
   </div>
 
+  {#if !$isAndroid}
   <h2 class="mb-1 mt-8 text-xl font-black">Storage</h2>
   <p class="mb-4 text-sm text-muted-foreground">Local playback caches.</p>
 
@@ -162,4 +174,5 @@
       </button>
     </label>
   </div>
+  {/if}
 </div>

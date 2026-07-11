@@ -3,11 +3,15 @@
   import { dragScroll } from '$lib/nav/actions'
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { gameMode } from '$lib/player/session'
+  import { isMobile } from '$lib/platform'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   // Game mode (Deck): controller/touch scrolls the row directly, so the mouse-only
   // page arrows are hidden.
   const gm = $derived($gameMode)
+  // Mobile: touch drag-scrolls the row (no arrows), and there's no hover to reveal the
+  // "View more" link, so keep it always visible there.
+  const mob = $derived($isMobile)
   // `viewMoreHref` (optional): renders a "View more" link by the title.
   let { title, viewMoreHref, children }: { title: string; viewMoreHref?: string; children: Snippet } = $props()
 
@@ -53,18 +57,19 @@
 </script>
 
 <section class="group/carousel relative mb-8">
-  <div class="mb-2 flex items-baseline justify-between px-8">
+  <div class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
     <h2 class="text-lg font-black">{title}</h2>
     {#if viewMoreHref}
       <a href={viewMoreHref} data-focusable
-         class="flex items-center gap-0.5 text-xs font-bold text-muted-foreground opacity-0 transition hover:text-foreground group-hover/carousel:opacity-100">
+         class="flex items-center gap-0.5 text-xs font-bold text-muted-foreground transition hover:text-foreground group-hover/carousel:opacity-100"
+         class:opacity-0={!mob}>
         View more <ChevronRight size={14} />
       </a>
     {/if}
   </div>
   <div class="relative">
     <div bind:this={scroller} use:dragScroll onwheel={onWheel} onscroll={update}
-         class="flex gap-3 overflow-x-scroll px-8 pb-2" class:pt-3={gm}>
+         class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}>
       {@render children()}
     </div>
 
