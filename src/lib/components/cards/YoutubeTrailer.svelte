@@ -11,7 +11,7 @@
   import { trailerMuted } from '$lib/stores/trailer'
   let { id }: { id: string } = $props()
 
-  let frame: HTMLIFrameElement
+  let frame = $state<HTMLIFrameElement>()
   let playing = $state(false)
   let dead = $state(false)
   let poll: ReturnType<typeof setInterval> | undefined
@@ -24,9 +24,9 @@
 
   // No `loop=1&playlist=` — that param injects the prev/next skip buttons. We
   // loop manually via the JS API on the ENDED event instead (see onMessage).
-  const src = `https://www.youtube-nocookie.com/embed/${id}` +
+  const src = $derived(`https://www.youtube-nocookie.com/embed/${id}` +
     `?enablejsapi=1&autoplay=1&controls=0&mute=1&disablekb=1` +
-    `&cc_lang_pref=ja&iv_load_policy=3&modestbranding=1&playsinline=1`
+    `&cc_lang_pref=ja&iv_load_policy=3&modestbranding=1&playsinline=1`)
 
   function send(func: string, args: unknown[] = []) {
     frame?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*')

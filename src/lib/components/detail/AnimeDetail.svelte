@@ -28,7 +28,7 @@
   let { id }: { id: number } = $props()
 
   const client = getContextClient()
-  const store = queryStore<{ Media: Media }>({ client, query: MEDIA_BY_ID, variables: { id } })
+  const store = $derived(queryStore<{ Media: Media }>({ client, query: MEDIA_BY_ID, variables: { id } }))
 
   // MAL read-back: pull the viewer's watched-episode count from MAL and merge it
   // into the AniList media, so progress shows even when the user tracks on MAL
@@ -230,11 +230,10 @@
     <div
       role="dialog" aria-modal="true" aria-label="Trailer" tabindex="-1"
       class="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4"
-      onclick={() => (showTrailer = false)}
+      onclick={(e) => { if (e.target === e.currentTarget) showTrailer = false }}
       onkeydown={(e) => e.key === 'Escape' && (showTrailer = false)}
     >
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <div class="aspect-video w-full max-w-4xl" onclick={(e) => e.stopPropagation()}>
+      <div class="aspect-video w-full max-w-4xl">
         <iframe class="h-full w-full rounded-lg" title="Trailer"
                 src={`https://www.youtube-nocookie.com/embed/${m.trailer.id}?autoplay=1`}
                 allow="autoplay; encrypted-media" allowfullscreen></iframe>

@@ -18,6 +18,10 @@ struct FsWasMax(std::sync::Mutex<bool>);
 
 #[derive(Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+// The fields are consumed by the Game-mode OSD (player::gm_osd), which only compiles on Linux
+// (the Steam Deck). On other targets the struct is still deserialized from the frontend but its
+// fields go unread — expected, so silence dead_code off-Linux only.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) struct GmDynamicOverlay {
     pub(crate) visible: bool,
     pub(crate) loading: bool,

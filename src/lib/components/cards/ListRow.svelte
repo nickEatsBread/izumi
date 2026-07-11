@@ -7,7 +7,7 @@
   import SmallCard from './SmallCard.svelte'
   let { title, userName, status }: { title: string; userName: string; status: string } = $props()
   const client = getContextClient()
-  const store = queryStore({ client, query: LIST_QUERY, variables: { userName, status } })
+  const store = $derived(queryStore({ client, query: LIST_QUERY, variables: { userName, status } }))
   const entries = $derived(flattenEntries($store.data))
 </script>
 {#if $store.fetching}

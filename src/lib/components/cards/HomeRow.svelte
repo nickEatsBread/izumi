@@ -11,11 +11,11 @@
   let { title, vars }: { title: string; vars: Record<string, unknown> } = $props()
 
   const client = getContextClient()
-  const store = queryStore<{ Page: { media: Media[] } }>({
+  const store = $derived(queryStore<{ Page: { media: Media[] } }>({
     client,
     query: pageQuery(),
     variables: { perPage: 20, ...vars },
-  })
+  }))
 
   // "View more" → the search page seeded with this row's filters (sort/genre/season).
   function viewMoreHref(v: Record<string, unknown>): string {
