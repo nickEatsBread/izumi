@@ -1,6 +1,8 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod doh;
 mod download;
+// The native libmpv player is desktop-only; Android delegates playback to an external app.
+#[cfg(not(target_os = "android"))]
 mod player;
 // Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
 #[cfg(target_os = "linux")]
@@ -63,6 +65,7 @@ fn greet(name: &str) -> String {
 /// and spawns the event loop; later calls just `loadfile` the next stream (used by
 /// next-episode auto-advance). The overlay learns the title/ids from the frontend
 /// `nowPlaying` store (same webview), so nothing is emitted here.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn player_embed(
     app: AppHandle,
@@ -122,6 +125,7 @@ async fn player_embed(
 /// Stop playback: drop the mpv core, which destroys mpv's child surface inside the
 /// main window so the (opaque again) browse UI shows through. The overlay itself is
 /// torn down by the frontend (`playing = false`).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn close_player(player: tauri::State<'_, player::PlayerHandle>) -> Result<(), String> {
     // Stop the mpv core. On Linux this also tears down the embed subsurface +
@@ -241,6 +245,7 @@ fn spawn_external_player(path: String, url: String) -> Result<(), String> {
 /// Read a string mpv property for the controls (e.g. `pause`). Note: complex
 /// node properties like `track-list` cannot be read this way (mpv won't stringify
 /// them) — use [`player_tracks`] instead.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_get_property(
     name: String,
@@ -253,6 +258,7 @@ fn player_get_property(
 /// (or media-episode) cache key; `duration` comes from mpv so we don't re-probe. Tiles
 /// are then rendered on demand by the headless libmpv decoder. Cached under
 /// `<app-cache>/thumbs`.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_sprite_start(
     app: AppHandle,
@@ -362,6 +368,7 @@ fn set_webview_accel(app: AppHandle, enabled: bool) {
 /// `{status: ready|pending|failed|none, dataUrl?, index}` — `ready` carries that ONE
 /// small tile JPEG (few KB), `pending` means its frame isn't generated yet (seekbar
 /// shows a loading shimmer, never blank).
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_thumb_tile(
     key: String,
@@ -373,6 +380,7 @@ fn player_thumb_tile(
 
 /// Geometry + coverage for stream `key`'s thumbnails: `{status, interval, frames}` so
 /// the seekbar can map a hover time to a tile index and stop polling once `done`.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_thumb_info(
     key: String,
@@ -442,6 +450,7 @@ fn set_doh(enabled: bool, url: String) {
 
 /// Set the player's demuxer cache ceiling (bytes) from the user's setting; applied on the next
 /// file load. Clamped to a sane floor so a mis-set value can't starve the demuxer.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn set_player_cache(bytes: u64) {
     player::PLAYER_CACHE_BYTES.store(bytes.max(8 * 1024 * 1024), std::sync::atomic::Ordering::Relaxed);
@@ -580,6 +589,7 @@ fn player_prefetch(url: String) -> Result<(), String> {
 /// the audio + subtitle pickers. Built field-by-field from `track-list/N/*`
 /// because mpv's `track-list` is a node property that `get_property::<String>`
 /// cannot stringify.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_tracks(player: tauri::State<'_, player::PlayerHandle>) -> Result<String, String> {
     player.tracks()
@@ -587,6 +597,7 @@ fn player_tracks(player: tauri::State<'_, player::PlayerHandle>) -> Result<Strin
 
 /// Return embedded chapters as JSON (`[{time,title}]`). Used by the seekbar to
 /// draw chapter dividers; empty for files without chapters.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_chapters(player: tauri::State<'_, player::PlayerHandle>) -> Result<String, String> {
     player.chapters()
@@ -790,6 +801,7 @@ fn player_set_inset(app: AppHandle, left: i32, top: Option<i32>) -> Result<(), S
 }
 
 /// The mpv/libmpv version string for the About page.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn mpv_version() -> String {
     player::libmpv_version()
@@ -798,6 +810,7 @@ fn mpv_version() -> String {
 /// Diagnostic: mpv's render-surface + video geometry + the actual mpv child HWND size +
 /// the main client rect, so we can tell whether the "zoomed" render is (a) the mpv child
 /// not actually inset to the player area, or (b) a panscan/zoom setting. Temporary.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_diag(app: AppHandle, player: tauri::State<'_, player::PlayerHandle>) -> Result<String, String> {
     let props = [
@@ -861,6 +874,7 @@ unsafe extern "system" fn diag_mpv_child(
 
 /// Save a screenshot of the current frame into the app's Pictures/izumi folder.
 /// Returns the directory so the UI can confirm where it landed.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_screenshot(
     app: AppHandle,
@@ -932,6 +946,7 @@ fn player_exit_fullscreen(app: AppHandle, wasmax: tauri::State<'_, FsWasMax>) ->
 
 /// Run an mpv command on behalf of the on-screen controls (e.g. `cycle pause`,
 /// `seek 10`, `set volume 80`). `args` are the mpv command arguments.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_command(
     name: String,
@@ -942,6 +957,7 @@ fn player_command(
     player.command(&name, &arg_refs)
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_play(
     url: String,
@@ -959,6 +975,7 @@ fn player_play(
 /// tuple struct wrapping a `*mut c_void`. We read its public `.0` pointer and
 /// widen it to `i64` (`isize` first, so the cast is portable), which is exactly
 /// the `wid` value mpv expects.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_play_embedded(
     url: String,
@@ -1061,6 +1078,7 @@ pub struct UpdateInfo {
 }
 
 /// Check the given channel ("stable"/"beta") for a newer signed build. `None` = up to date.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn updater_check(app: tauri::AppHandle, channel: String) -> Result<Option<UpdateInfo>, String> {
     let channel = if channel == "beta" { "beta" } else { "stable" };
@@ -1078,6 +1096,7 @@ async fn updater_check(app: tauri::AppHandle, channel: String) -> Result<Option<
 }
 
 /// Download + install the newest build on the given channel, then relaunch.
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), String> {
     let channel = if channel == "beta" { "beta" } else { "stable" };
@@ -1164,14 +1183,12 @@ pub fn run() {
     // `gdk_seat_get_keyboard` assertion — and no visible window; the session even tore down).
     // So the app stays an XWayland X11 client (visible), and the controls-over-video overlay
     // is solved a different way (self-composite), not by routing through gamescope's compositor.
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_extplayer::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(player::PlayerHandle::new())
         .manage(download::Downloads::default())
         .manage(FsWasMax::default())
         .setup(|app| {
@@ -1232,7 +1249,15 @@ pub fn run() {
             #[cfg(not(any(windows, target_os = "linux")))]
             let _ = app;
             Ok(())
-        })
+        });
+
+    // Desktop keeps the full native-player + updater command set. Android registers only the
+    // shared HTTP-bridge / DoH / downloads commands — the libmpv player, gamepad, scrub, updater,
+    // and multi-window OAuth commands don't exist there (playback is delegated to an external app).
+    #[cfg(not(target_os = "android"))]
+    let builder = builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(player::PlayerHandle::new())
         .invoke_handler(tauri::generate_handler![
             greet,
             player_play,
@@ -1278,7 +1303,24 @@ pub fn run() {
             download::download_delete,
             download::download_dir_default,
             download::reveal_in_folder
-        ])
+        ]);
+
+    #[cfg(target_os = "android")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        greet,
+        http_get,
+        http_post,
+        ext_fetch,
+        set_doh,
+        write_text_file,
+        download::download_start,
+        download::download_cancel,
+        download::download_delete,
+        download::download_dir_default,
+        download::reveal_in_folder
+    ]);
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

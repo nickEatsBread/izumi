@@ -33,24 +33,24 @@ tauri-plugin-os = "2"
 tauri-plugin-extplayer = { path = "tauri-plugin-extplayer" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-libmpv2 = "6.0.0"
-# Raw FFI for the software render API (headless scrub thumbnails) — the safe libmpv2
-# RenderContext wrapper is OpenGL-only. Pinned to the version libmpv2 6.0.0 uses.
-libmpv2-sys = "4.0.1"
 tauri-plugin-http = "2.5.9"
 tokio = { version = "1", features = ["time", "fs", "io-util", "net"] }
 # Offline downloads: stream a resolved debrid URL to disk (pure reqwest GET — no
 # webview http-scope, no plugin-fs). reqwest is already in the tree via plugin-http.
 reqwest = { version = "0.12", features = ["stream"] }
 futures-util = "0.3"
-# Downscale headless-mpv screenshots (full-res PNG → small JPEG tile) for the warm
-# scrub-thumbnail decoder. Minimal features: PNG decode + JPEG encode only.
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 # Native file dialog — pick the external-player executable.
 tauri-plugin-dialog = "2"
-# Signed auto-updater (GitHub Releases: stable = latest, beta = pre-release).
-tauri-plugin-updater = "2"
 url = "2"
+
+# Native-player + desktop-only deps, EXCLUDED from the Android build (which delegates playback to
+# an external app): libmpv (no Android target here), the scrub-thumbnail image codec (its only
+# consumer is the gated player), and the updater plugin (no Android/app-store updater support).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+libmpv2 = "6.0.0"
+libmpv2-sys = "4.0.1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+tauri-plugin-updater = "2"
 
 # Raw Win32 for true borderless fullscreen + mpv-child input passthrough, and the
 # WebView2 COM call to make the webview background transparent (Stremio's model:
