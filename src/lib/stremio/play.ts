@@ -12,6 +12,7 @@ import { downloadOf } from '$lib/downloads/state'
 import { resolveHash, providerName } from './debrid'
 import { resolveOnlineStreams } from './onlinestream'
 import { queryExtensions } from '$lib/extensions/manager'
+import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
 import { updateProgress } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
@@ -243,7 +244,7 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
       [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
         .filter((t): t is string => !!t && t.length > 3),
     )]
-    const ext = await queryExtensions({
+    const query = {
       anilistId: media.id, malId: media.idMal ?? undefined, kitsuId: kitsu,
       anidbAid: ids.anidbAid, tvdbId: ids.tvdbId, tvdbEId: ids.tvdbEId,
       tmdbId: ids.tmdbId, imdbId: ids.imdbId, season: ids.season,
@@ -251,8 +252,15 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
       titles,
       episode, episodeCount: media.episodes ?? undefined,
       resolution: get(preferredQuality) === 'any' ? undefined : get(preferredQuality),
-    })
-    return ext.map((r) => extToStream(r, 'Extension'))
+    }
+    // Both extension flavours resolve to TorrentResult and share the RD resolve path: the legacy
+    // torrent extensions (single/batch/movie) plus the anime-torrent-provider extensions
+    // (search/smartSearch). Query both concurrently and merge.
+    const [ext, atp] = await Promise.all([
+      queryExtensions(query),
+      queryTorrentProviders(query, toProviderMedia(media)),
+    ])
+    return [...ext, ...atp].map((r) => extToStream(r, 'Extension'))
   } catch { return [] }
 }
 
