@@ -15,6 +15,9 @@ export interface HistoryEntry {
   episode: number
   progress: number
   updatedAt: number
+  // Release identity of the last source played for this show (parsed group + Stremio bingeGroup),
+  // so Continue Watching can resume the SAME release without re-opening the picker.
+  release?: { group?: string; bingeGroup?: string }
 }
 
 /** Persisted local watch history: `mediaId -> HistoryEntry`. */
@@ -39,10 +42,13 @@ function mediaSnapshot(m: Media): Media {
   } as Media
 }
 
-/** Record that an episode was OPENED (updates last-opened episode + timestamp). Does NOT bump the
- *  watched count — opening isn't finishing; `recordProgress` does that. No-op when history is off. */
-export function recordPlay(media: Media, episode: number | undefined) {
+/** Record that an episode was OPENED (updates last-opened episode + timestamp + the release just
+ *  played). Does NOT bump the watched count — opening isn't finishing; `recordProgress` does that.
+ *  A release with neither group nor bingeGroup (e.g. an offline/direct play) keeps the prior one.
+ *  No-op when history is off. */
+export function recordPlay(media: Media, episode: number | undefined, release?: { group?: string; bingeGroup?: string }) {
   if (episode == null || !get(saveLocalHistory)) return
+  const rel = release && (release.group || release.bingeGroup) ? release : undefined
   localHistory.update((h) => {
     const prev = h[media.id]
     return { ...h, [media.id]: {
@@ -50,6 +56,7 @@ export function recordPlay(media: Media, episode: number | undefined) {
       episode,
       progress: prev?.progress ?? 0,
       updatedAt: Date.now(),
+      release: rel ?? prev?.release,
     } }
   })
 }
@@ -65,6 +72,7 @@ export function recordProgress(media: Media, episode: number) {
       episode: Math.max(prev?.episode ?? 0, episode),
       progress: Math.max(prev?.progress ?? 0, episode),
       updatedAt: Date.now(),
+      release: prev?.release, // keep the remembered release across a progress bump
     } }
   })
 }

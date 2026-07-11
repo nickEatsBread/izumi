@@ -61,6 +61,14 @@ ${items}
 }
 
 const num = (v: unknown, fallback = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback)
+const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
+// Carry a well-shaped release hint through import (string group/bingeGroup only), else drop it.
+function validRelease(r: unknown): HistoryEntry['release'] {
+  if (!r || typeof r !== 'object') return undefined
+  const group = str((r as Record<string, unknown>).group)
+  const bingeGroup = str((r as Record<string, unknown>).bingeGroup)
+  return group || bingeGroup ? { group, bingeGroup } : undefined
+}
 
 /** Merge an izumi JSON export back into local history + resume positions. Malformed entries are
  *  skipped (never poison the store). Existing entries are kept if they're further along (higher
@@ -84,6 +92,7 @@ export function importJson(text: string): { imported: number } {
         episode: Math.max(0, Math.trunc(num((raw as HistoryEntry).episode))),
         progress: Math.max(0, Math.trunc(num((raw as HistoryEntry).progress))),
         updatedAt: num((raw as HistoryEntry).updatedAt),
+        release: validRelease((raw as HistoryEntry).release),
       }
       const cur = next[id]
       // Keep whichever is further along; break ties by the newer timestamp.

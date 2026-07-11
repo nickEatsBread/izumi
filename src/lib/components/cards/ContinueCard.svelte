@@ -9,7 +9,7 @@
   import { title as mediaTitle, cover, resumeEp } from '$lib/anilist/media'
   import { getEpisodeMeta } from '$lib/anizip'
   import { episodePercent } from '$lib/player/progress'
-  import { playEpisode, type PlayState } from '$lib/stremio/play'
+  import { resumeEpisode, type PlayState } from '$lib/stremio/play'
   import type { Media } from '$lib/anilist/types'
   import type { EpMeta } from '$lib/anizip/types'
   import Play from 'lucide-svelte/icons/play'
@@ -34,7 +34,9 @@
   $effect(() => { void thumb; imgReady = false })
 
   let resolving = $state(false)
-  function play() { playEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' }) }
+  // Resume the SAME release we last watched this show with — plays straight through when it's
+  // cached, only falling back to the source picker when it can't be matched.
+  function play() { resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' }) }
 </script>
 
 <div

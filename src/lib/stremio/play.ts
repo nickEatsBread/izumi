@@ -16,7 +16,7 @@ import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentP
 import type { TorrentResult } from '$lib/extensions/types'
 import { updateProgress } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
-import { recordPlay, recordProgress } from '$lib/player/history'
+import { recordPlay, recordProgress, localHistory } from '$lib/player/history'
 import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -504,6 +504,19 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   }
 }
 
+/** Resume from Continue Watching / the detail Continue button: play the SAME release the user last
+ *  watched this show with (persisted in local history) instead of making them pick again. Threads
+ *  that release into playEpisode as a continuity hint, so as sources load a matching one
+ *  auto-continues — a cached one plays in about a second (the picker never asks), an uncached one
+ *  after the list settles — and only a genuine no-match leaves the picker open for a manual choice.
+ *  With no remembered release (a show never played here) it's just a normal play + auto-select. */
+export async function resumeEpisode(media: Media, episode: number, onState: (s: PlayState) => void) {
+  const rel = get(localHistory)[media.id]?.release
+  const cont: ContinueHint | undefined =
+    rel && (rel.group || rel.bingeGroup) ? { group: rel.group, bingeGroup: rel.bingeGroup } : undefined
+  return await playEpisode(media, episode, onState, cont)
+}
+
 // Advance to an episode (auto next-episode + the in-player Prev/Next buttons). Continues
 // the SAME release seamlessly when a cached one exists; otherwise opens the picker for the
 // episode (auto-continuing an extension/uncached same-release, else leaving it for a pick).
@@ -601,8 +614,9 @@ export async function playStream(media: Media, episode: number | undefined, stre
       episode: episode ?? null, total, airedTotal,
     })
     // Local watch history: record the open now (covers embedded + external playback), so Continue
-    // Watching lists this show even with no AniList/MyAnimeList linked. Progress bumps on watch.
-    recordPlay(media, episode)
+    // Watching lists this show even with no AniList/MyAnimeList linked. Also remember this source's
+    // release identity so Continue Watching can resume the SAME release later. Progress bumps on watch.
+    recordPlay(media, episode, { group: describe(stream).group, bingeGroup: stream.behaviorHints?.bingeGroup })
 
     // External player: hand the stream URL to the user's chosen executable and skip
     // the embedded path. No player-progress comes back, so we can't track/resume
