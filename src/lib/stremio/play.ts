@@ -79,11 +79,12 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
   )
   stop.push(
     await listen('player-ended', async () => {
-      // Finished: forget the resume point, then auto-advance if enabled and there's
-      // a next episode (bounded by the known total). Auto-advance plays the best
-      // cached source directly — no picker between back-to-back episodes.
+      // Finished: forget the resume point, then auto-advance if there's a next episode (bounded by
+      // the known total). Fires when EITHER "Auto-play next" OR "Binge (preload)" is on — preload
+      // warms the next episode near the end precisely so it continues automatically, so having it on
+      // implies auto-advance. Advance continues the same release seamlessly, else opens the picker.
       clearPosition(media.id, episode)
-      if (!get(autoplayNext)) return
+      if (!get(autoplayNext) && !get(bingePreload)) return
       const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? 0)
       let next = episode + 1
       // Optionally skip past filler episodes (AnimeFillerList).

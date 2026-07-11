@@ -231,16 +231,16 @@
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->
   {#if !gm || titleTop}
-    <div class="pointer-events-auto absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 py-3'}">
+    <!-- Windowed playback keeps the custom titlebar (a fixed top-0 z-50 `data-tauri-drag-region`
+         strip, 32px tall) ABOVE this z-20 overlay — its transparent drag region covered the top of
+         the Back button, so a click on the (vertically-centred) label hit the window-drag region,
+         not the button. Push the bar below the titlebar when windowed so the whole button clears it.
+         Fullscreen / Game mode hide the titlebar, so no offset there. -->
+    <div class="pointer-events-auto absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : $fullscreen ? 'px-4 py-3' : 'px-4 pb-3 pt-11'}">
       {#if !gm}
-        <!-- Hit-testing over the transparent video hole: NEVER promote this button to its own
-             compositing layer (no backdrop-blur / will-change / transform) — that's what made
-             only the padding clickable. The icon + label are made non-interactive individually
-             (pointer-events-none), so a click anywhere on the button — arrow, text, or padding —
-             hit-tests to the <button> itself and fires onclose. -->
         <button data-focusable onclick={onclose} aria-label="Back"
-                class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80 [&>*]:pointer-events-none">
-          <ArrowLeft size={icSize} class="pointer-events-none" /><span class="pointer-events-none">Back</span>
+                class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
+          <ArrowLeft size={icSize} /><span>Back</span>
         </button>
       {/if}
       {#if titleTop}<div class="min-w-0 flex-1">{@render titleBlock(true)}</div>{/if}
