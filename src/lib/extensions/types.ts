@@ -26,8 +26,8 @@ export interface TorrentQuery {
   kitsuId?: number
   malId?: number
   absoluteEpisodeNumber?: number
-  // AniZip enrichment — production-specific ids (field names match the reference extension
-  // runtime so those extensions run unchanged). AnimeTosho indexes by AniDB; others by TVDB.
+  // AniZip enrichment — production-specific ids (field names match the extension runtime so
+  // extensions run unchanged). Some extensions index by AniDB, others by TVDB.
   anidbAid?: number
   tvdbId?: number // show id
   tvdbEId?: number // episode id

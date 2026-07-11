@@ -234,7 +234,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
 async function extToStreams(media: Media, episode: number | undefined, kitsu?: number): Promise<Stream[]> {
   try {
     // Resolve the production-specific AniZip ids (AniDB/TVDB + absolute episode) so ID-based
-    // extensions (e.g. AnimeTosho by AniDB) hit the RIGHT title + a freshly-aired episode. Cached
+    // extensions (those keyed by AniDB) hit the RIGHT title + a freshly-aired episode. Cached
     // with the season map, so no extra round-trip. Titles include synonyms for string-search
     // providers. This is what lets extensions resolve new/ambiguous anime the kitsu:id:ep addon
     // path misses.

@@ -59,7 +59,7 @@ export async function getKitsuId(anilistId: number): Promise<number | undefined>
   return res?.mappings?.kitsu_id
 }
 
-/** Production-specific ids for source extensions (AnimeTosho indexes by AniDB, some by TVDB).
+/** Production-specific ids for source extensions (some index by AniDB, others by TVDB).
  *  Resolved from the SAME AniZip response the season map uses, so no extra round-trip. Passing
  *  the AniDB anime id (+ absolute/season episode) lets an id-based extension resolve the RIGHT
  *  title and a freshly-aired episode with no dependency on the kitsu→imdb mapping having
