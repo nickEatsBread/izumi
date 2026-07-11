@@ -4,6 +4,10 @@ use serde::{Serialize, Serializer};
 pub enum Error {
     #[error(transparent)]
     Tauri(#[from] tauri::Error),
+    // The Kotlin bridge (run_mobile_plugin / register_android_plugin) surfaces this on Android.
+    #[cfg(mobile)]
+    #[error(transparent)]
+    PluginInvoke(#[from] tauri::plugin::mobile::PluginInvokeError),
     #[error("{0}")]
     Msg(String),
 }

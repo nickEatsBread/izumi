@@ -33,11 +33,13 @@ tauri-plugin-os = "2"
 tauri-plugin-extplayer = { path = "tauri-plugin-extplayer" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-http = "2.5.9"
+# rustls (not native-tls) so the whole HTTP stack cross-compiles for Android — native-tls needs
+# OpenSSL, which has no Android target here.
+tauri-plugin-http = { version = "2.5.9", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", features = ["time", "fs", "io-util", "net"] }
 # Offline downloads: stream a resolved debrid URL to disk (pure reqwest GET — no
-# webview http-scope, no plugin-fs). reqwest is already in the tree via plugin-http.
-reqwest = { version = "0.12", features = ["stream"] }
+# webview http-scope, no plugin-fs). rustls-tls for the same Android cross-compile reason.
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2", "charset"] }
 futures-util = "0.3"
 # Native file dialog — pick the external-player executable.
 tauri-plugin-dialog = "2"
