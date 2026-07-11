@@ -25,6 +25,8 @@ import {
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { title, cover } from '$lib/anilist/media'
+import { isAndroid } from '$lib/platform'
+import { playViaIntent } from '$lib/player/android-playback'
 import type { Media } from '$lib/anilist/types'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
@@ -619,6 +621,18 @@ export async function playStream(media: Media, episode: number | undefined, stre
     // Watching lists this show even with no AniList/MyAnimeList linked. Also remember this source's
     // release identity so Continue Watching can resume the SAME release later. Progress bumps on watch.
     recordPlay(media, episode, { group: describe(stream).group, bingeGroup: stream.behaviorHints?.bingeGroup })
+
+    // Android: hand the resolved URL to an external video player (no embedded mpv on mobile). This
+    // returns before the desktop embed below, so nothing libmpv-related runs and `playing` stays
+    // false (browse UI stays up, no overlay). The episode is marked watched when the user returns.
+    if (get(isAndroid)) {
+      const ok = await playViaIntent(media, episode ?? null, stream.url)
+      return onState(
+        ok
+          ? { status: 'playing' }
+          : { status: 'error', message: 'No video player installed — install mpv-android or VLC.' },
+      )
+    }
 
     // External player: hand the stream URL to the user's chosen executable and skip
     // the embedded path. No player-progress comes back, so we can't track/resume

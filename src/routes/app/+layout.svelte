@@ -21,6 +21,8 @@
   import { enabledAddonUrls } from '$lib/stremio/sources'
   import { refreshAniListAvatar } from '$lib/trackers/anilist-auth'
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
+  import { isAndroid, initPlatform } from '$lib/platform'
+  import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { get } from 'svelte/store'
   let { children } = $props()
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
@@ -36,6 +38,8 @@
     return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
   })
   $effect(() => {
+    initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
+    if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
     initInput()
     initDpadNav()
     initTouchScroll() // Game-mode drag-to-scroll (Deck touch = mouse events, no native scroll)
@@ -143,3 +147,10 @@
 <DebridCaching />
 <ExitPrompt />
 <OnScreenKeyboard />
+<!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->
+{#if $watchToast}
+  <div class="fixed inset-x-0 bottom-4 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
+    <span class="truncate">{$watchToast.text}</span>
+    <button data-focusable onclick={() => $watchToast?.undo()} class="shrink-0 font-bold text-theme">Undo</button>
+  </div>
+{/if}
