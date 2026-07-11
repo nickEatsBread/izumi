@@ -233,8 +233,12 @@
   {#if !gm || titleTop}
     <div class="pointer-events-auto absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 py-3'}">
       {#if !gm}
+        <!-- No backdrop-blur: over the video it's composited as a separate webview layer
+             (see the playback-options popover below) which also broke click hit-testing on
+             the button's inner content — you could only hit the padding. Opaque bg + inner
+             content made non-interactive so every click resolves to the button itself. -->
         <button data-focusable onclick={onclose} aria-label="Back"
-                class="flex shrink-0 items-center gap-1.5 rounded-full bg-black/40 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white backdrop-blur transition hover:bg-black/70">
+                class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80 [&>*]:pointer-events-none">
           <ArrowLeft size={icSize} /> Back
         </button>
       {/if}
