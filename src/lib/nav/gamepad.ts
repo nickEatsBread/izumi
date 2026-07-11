@@ -94,7 +94,14 @@ export function startGamepadNav(): () => void {
         if (location.pathname.replace(/\/$/, '') === '/app/home') exitPrompt.set(true)
         else history.back()
         break
-      // l1/r1/l2/r2/start/select: player-only or reserved.
+      // L1/R1 on the home screen step through the featured hero banners (prev/next). The Hero
+      // listens for `hero-nav`. Elsewhere in browse they stay reserved; the player owns them.
+      case 'l1':
+      case 'r1':
+        if (location.pathname.replace(/\/$/, '') === '/app/home')
+          window.dispatchEvent(new CustomEvent('hero-nav', { detail: name === 'l1' ? -1 : 1 }))
+        break
+      // l2/r2/start/select: player-only or reserved.
     }
   }
 

@@ -16,7 +16,20 @@ export function initDpadNav() {
     const root: ParentNode = trap ?? document
     const els = [...root.querySelectorAll<HTMLElement>('[data-focusable]')].filter(el => el.checkVisibility?.() ?? true)
     const active = document.activeElement as HTMLElement
-    const cur = active?.getBoundingClientRect?.() ?? els[0]?.getBoundingClientRect()
+    // No real focus yet (just opened / focus sits on <body>): the FIRST press must land on the
+    // first content focusable — NOT spatial-search from <body>'s full-page rect, which measures
+    // "down" from the whole viewport and flings focus deep into the grid (the "jumps to romance,
+    // 3rd card" bug). Prefer the first non-sidebar focusable (the hero button) so the row is next.
+    if (!active?.closest?.('[data-focusable]')) {
+      const first = els.find(el => !el.closest('[data-nav-sidebar]')) ?? els[0]
+      if (first) {
+        first.focus({ preventScroll: true })
+        first.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        e.preventDefault()
+      }
+      return
+    }
+    const cur = active.getBoundingClientRect()
     if (!cur) return
     // The sidebar is a separate nav region (a fixed left rail). Movement stays INSIDE the
     // current region first; only when there's nothing that way in-region do we cross to the

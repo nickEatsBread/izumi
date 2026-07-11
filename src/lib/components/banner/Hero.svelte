@@ -45,7 +45,15 @@
     raf = requestAnimationFrame(tick)
     const onScroll = () => (scrolled = (window.scrollY ?? 0) > 100)
     window.addEventListener('scroll', onScroll)
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('scroll', onScroll) }
+    // Steam Deck: L1/R1 step through the featured banners (dispatched by the gamepad translator
+    // while on the home screen). detail = -1 (prev) / +1 (next); wraps.
+    const onHeroNav = (e: Event) => go((i + (e as CustomEvent<number>).detail + n) % n)
+    window.addEventListener('hero-nav', onHeroNav)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('hero-nav', onHeroNav)
+    }
   })
 
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
