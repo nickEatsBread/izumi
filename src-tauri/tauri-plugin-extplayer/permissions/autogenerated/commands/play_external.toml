@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-play-external"
+description = "Enables the play_external command without any pre-configured scope."
+commands.allow = ["play_external"]
+
+[[permission]]
+identifier = "deny-play-external"
+description = "Denies the play_external command without any pre-configured scope."
+commands.deny = ["play_external"]

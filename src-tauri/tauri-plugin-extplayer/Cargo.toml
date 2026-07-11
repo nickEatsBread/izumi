@@ -1,0 +1,14 @@
+[package]
+name = "tauri-plugin-extplayer"
+version = "0.1.0"
+edition = "2021"
+description = "Launch an external Android video player via ACTION_VIEW (izumi Phase 1)."
+links = "tauri-plugin-extplayer"
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
