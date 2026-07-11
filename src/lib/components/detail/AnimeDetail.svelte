@@ -6,7 +6,7 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { title, cover, format, status, season, ratingBg } from '$lib/anilist/media'
+  import { title, cover, format, status, season, ratingBg, resumeEp } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import { focusOnMount } from '$lib/nav'
@@ -68,13 +68,6 @@
   function epsTotal(m: Media) {
     return m.episodes ?? (m.nextAiringEpisode?.episode ? m.nextAiringEpisode.episode - 1 : 0)
   }
-  // Resume episode: next unwatched, capped to what's aired (fallback 1).
-  function resumeEp(m: Media) {
-    const aired = m.nextAiringEpisode?.episode ? m.nextAiringEpisode.episode - 1 : (m.episodes ?? Infinity)
-    const nextUp = (m.mediaListEntry?.progress ?? 0) + 1
-    return Math.max(1, Math.min(nextUp, aired || 1))
-  }
-
   async function onFavourite(m: Media) {
     if (!$anilistToken || favBusy) return
     favBusy = true

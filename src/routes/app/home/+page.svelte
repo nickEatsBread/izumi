@@ -5,6 +5,7 @@
   import HomeRow from '$lib/components/cards/HomeRow.svelte'
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import MalListRow from '$lib/components/cards/MalListRow.svelte'
+  import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken } from '$lib/trackers/config'
@@ -79,16 +80,21 @@
     {/if}
 
     {#key retryKey}
+      <!-- Unified resume row: AniList CURRENT + MAL watching merged into one carousel of
+           landscape resume cards (auto-hides when empty). -->
+      {#if listUser || $malToken}
+        {#key listUser}
+          <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken} />
+        {/key}
+      {/if}
       {#if listUser}
         {#key listUser}
-          <ListRow title="Continue Watching" userName={listUser} status="CURRENT" />
           <ListRow title="Your List" userName={listUser} status="PLANNING" />
         {/key}
       {/if}
-      <!-- MAL-sourced rows for MAL-primary users (auto-hide when empty, so they don't
-           duplicate the AniList rows for single-tracker users). -->
+      <!-- MAL-sourced "plan to watch" for MAL-primary users (auto-hides when empty, so
+           it doesn't duplicate the AniList row for single-tracker users). -->
       {#if $malToken}
-        <MalListRow title="Continue Watching" status="watching" />
         <MalListRow title="Your List" status="plan_to_watch" />
       {/if}
 

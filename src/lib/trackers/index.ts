@@ -101,4 +101,21 @@ export async function getMalAnimeIds(status: string, limit = 20): Promise<number
   catch { return [] }
 }
 
+// Like getMalAnimeIds, but keeps the canonical watched-episode count that the list
+// endpoint already returns (fields=list_status) — one request, no per-title lookups.
+// Used by the resume row so MAL-tracked shows resume at the right episode. Most-recent
+// first. Returns [] if MAL isn't connected.
+export async function getMalListProgress(status: string, limit = 20): Promise<{ idMal: number; progress: number }[]> {
+  if (!get(malToken)) return []
+  try {
+    const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`)
+    if (!r?.ok) return []
+    const j = await r.json() as { data?: { node?: { id?: number }; list_status?: { num_episodes_watched?: number } }[] }
+    return (j.data ?? [])
+      .map((d) => ({ idMal: d.node?.id, progress: d.list_status?.num_episodes_watched ?? 0 }))
+      .filter((e): e is { idMal: number; progress: number } => typeof e.idMal === 'number')
+  }
+  catch { return [] }
+}
+
 export const anyTrackerConnected = () => !!(get(anilistToken) || get(malToken))

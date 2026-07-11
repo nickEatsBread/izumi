@@ -28,3 +28,15 @@ export const status = (m: Media) => (m.status ? STATUS[m.status] ?? m.status : '
 export const season = (m: Media) => (m.season && m.seasonYear ? `${m.season[0]}${m.season.slice(1).toLowerCase()} ${m.seasonYear}` : '')
 
 export const ratingBg = (score?: number) => score == null ? 'bg-muted' : score >= 75 ? 'bg-green-700' : score >= 65 ? 'bg-orange-400' : 'bg-red-400'
+
+// Episodes aired so far: nextAiring-1 for an ongoing show, else the planned total,
+// else Infinity when neither is known (so a resume episode is never clamped away).
+export const airedCount = (m: Media) => (m.nextAiringEpisode?.episode ? m.nextAiringEpisode.episode - 1 : (m.episodes ?? Infinity))
+
+// Resume episode = the one after `watched` (defaults to the tracked progress), capped
+// to what's aired, floored at 1. Pass an explicit count when the progress lives outside
+// mediaListEntry (e.g. a MyAnimeList-sourced row).
+export const resumeEp = (m: Media, watched = m.mediaListEntry?.progress ?? 0) => {
+  const aired = airedCount(m)
+  return Math.max(1, Math.min(watched + 1, aired || 1))
+}
