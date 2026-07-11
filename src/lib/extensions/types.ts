@@ -29,6 +29,7 @@ export interface TorrentQuery {
   // AniZip enrichment — production-specific ids (field names match the extension runtime so
   // extensions run unchanged). Some extensions index by AniDB, others by TVDB.
   anidbAid?: number
+  anidbEid?: number // AniDB episode id (episode-level; some indexers search by it)
   tvdbId?: number // show id
   tvdbEId?: number // episode id
   tmdbId?: string

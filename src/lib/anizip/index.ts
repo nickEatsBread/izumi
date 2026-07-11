@@ -66,6 +66,7 @@ export async function getKitsuId(anilistId: number): Promise<number | undefined>
  *  propagated (the reason the addon path misses new/ambiguous titles). Best-effort: `{}`. */
 export interface ExtIds {
   anidbAid?: number
+  anidbEid?: number // AniDB episode id
   tvdbId?: number // show id
   tvdbEId?: number // episode id
   tmdbId?: string
@@ -79,6 +80,7 @@ export async function getExtensionIds(anilistId: number, episode?: number): Prom
   const ep = episode != null ? res?.episodes?.[String(episode)] : undefined
   return {
     anidbAid: m?.anidb_id,
+    anidbEid: ep?.anidbEid,
     tvdbId: m?.thetvdb_id,
     tvdbEId: ep?.tvdbId,
     tmdbId: m?.themoviedb_id ?? undefined,

@@ -62,7 +62,7 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia)
       try {
         const s = (await p.call('getSettings').catch(() => null)) as AtpSettings | null
         const raw = (s?.canSmartSearch
-          ? await p.call('smartSearch', { media, query: q, batch: false, episodeNumber: query.episode ?? -1, resolution: query.resolution, anidbAID: query.anidbAid, bestReleases: false })
+          ? await p.call('smartSearch', { media, query: q, batch: false, episodeNumber: query.episode ?? -1, resolution: query.resolution, anidbAID: query.anidbAid, anidbEID: query.anidbEid, bestReleases: false })
           : await p.call('search', { media, query: q })) as unknown
         const list: AnimeTorrent[] = Array.isArray(raw) ? raw : []
         const out: TorrentResult[] = []

@@ -246,7 +246,7 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
     )]
     const query = {
       anilistId: media.id, malId: media.idMal ?? undefined, kitsuId: kitsu,
-      anidbAid: ids.anidbAid, tvdbId: ids.tvdbId, tvdbEId: ids.tvdbEId,
+      anidbAid: ids.anidbAid, anidbEid: ids.anidbEid, tvdbId: ids.tvdbId, tvdbEId: ids.tvdbEId,
       tmdbId: ids.tmdbId, imdbId: ids.imdbId, season: ids.season,
       absoluteEpisodeNumber: ids.absoluteEpisodeNumber,
       titles,
