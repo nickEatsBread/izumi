@@ -11,6 +11,10 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.Plugin
 import java.io.File
 
+// Uniquely-named FileProvider subclass so the merged app manifest never clashes with a
+// FileProvider another plugin registers (two <provider> nodes sharing android:name collide).
+class ExtPlayerFileProvider : FileProvider()
+
 @InvokeArg
 class PlayArgs {
     var url: String = ""
@@ -29,7 +33,7 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             // FileProvider (file:// is blocked cross-app since Android 7).
             FileProvider.getUriForFile(
                 activity,
-                activity.packageName + ".fileprovider",
+                activity.packageName + ".extplayer.fileprovider",
                 File(args.url)
             )
         } else {
@@ -52,6 +56,8 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
 
         val chooser = Intent.createChooser(view, args.title ?: "Play with").apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            // Propagate the URI read grant to whichever app the chooser launches.
+            if (args.isLocal) addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         activity.startActivity(chooser)
         invoke.resolve()

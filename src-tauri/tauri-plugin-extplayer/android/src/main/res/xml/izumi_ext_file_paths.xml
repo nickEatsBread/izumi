@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Downloads land under app_data_dir/downloads, but the absolute location of
+         app_data_dir differs across platform versions, so expose the whole device
+         root. Only files we explicitly hand to the chooser are ever shared, each with
+         a per-URI read grant (FLAG_GRANT_READ_URI_PERMISSION) that the OS revokes when
+         the target task finishes. The specific roots below are matched first when a
+         file falls under them (nicer content:// paths). -->
+    <root-path name="root" path="." />
+    <files-path name="files" path="." />
+    <external-files-path name="external_files" path="." />
+    <cache-path name="cache" path="." />
+    <external-cache-path name="external_cache" path="." />
+</paths>

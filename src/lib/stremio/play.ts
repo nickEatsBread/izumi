@@ -626,7 +626,11 @@ export async function playStream(media: Media, episode: number | undefined, stre
     // returns before the desktop embed below, so nothing libmpv-related runs and `playing` stays
     // false (browse UI stays up, no overlay). The episode is marked watched when the user returns.
     if (get(isAndroid)) {
-      const ok = await playViaIntent(media, episode ?? null, stream.url)
+      // A completed download resolves to an absolute on-disk path (not an http URL); flag it so the
+      // native side exposes it through a FileProvider content:// URI (a raw file path can't be
+      // ACTION_VIEW'd across apps since Android 7).
+      const isLocalFile = !/^https?:\/\//i.test(stream.url)
+      const ok = await playViaIntent(media, episode ?? null, stream.url, isLocalFile)
       return onState(
         ok
           ? { status: 'playing' }

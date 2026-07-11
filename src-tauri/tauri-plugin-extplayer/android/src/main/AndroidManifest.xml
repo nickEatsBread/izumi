@@ -1,2 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Share a downloaded file to the external video player through a content:// URI
+             (a raw file path can't be ACTION_VIEW'd across apps since Android 7). A UNIQUE
+             subclass + authority so the library-manifest merge never collides with a
+             FileProvider another (Tauri) plugin might declare. -->
+        <provider
+            android:name="app.izumi.extplayer.ExtPlayerFileProvider"
+            android:authorities="${applicationId}.extplayer.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/izumi_ext_file_paths" />
+        </provider>
+    </application>
+</manifest>
