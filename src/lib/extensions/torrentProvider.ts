@@ -54,26 +54,30 @@ export function atorrentToResult(t: AnimeTorrent, hash: string): TorrentResult |
  *  TorrentResult. smartSearch when the provider supports it, else search. Best-effort: [] on any
  *  failure; dedupe by hash. */
 export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia): Promise<TorrentResult[]> {
-  const provs = await runningTorrentProviderExtensions()
-  if (!provs.length) return []
-  const q = query.titles[0] ?? ''
-  const per = await Promise.all(provs.map(async (p): Promise<TorrentResult[]> => {
-    try {
-      const s = (await p.call('getSettings').catch(() => null)) as AtpSettings | null
-      const raw = (s?.canSmartSearch
-        ? await p.call('smartSearch', { media, query: q, batch: false, episodeNumber: query.episode ?? -1, resolution: query.resolution, anidbAID: query.anidbAid, bestReleases: false })
-        : await p.call('search', { media, query: q })) as AnimeTorrent[] | null
-      const out: TorrentResult[] = []
-      for (const t of raw ?? []) {
-        let hash = (t.infoHash ?? '').toLowerCase()
-        if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
-        const r = atorrentToResult(t, hash)
-        if (r) out.push(r)
+  try {
+    const provs = await runningTorrentProviderExtensions()
+    if (!provs.length) return []
+    const q = query.titles[0] ?? ''
+    const per = await Promise.all(provs.map(async (p): Promise<TorrentResult[]> => {
+      try {
+        const s = (await p.call('getSettings').catch(() => null)) as AtpSettings | null
+        const raw = (s?.canSmartSearch
+          ? await p.call('smartSearch', { media, query: q, batch: false, episodeNumber: query.episode ?? -1, resolution: query.resolution, anidbAID: query.anidbAid, bestReleases: false })
+          : await p.call('search', { media, query: q })) as unknown
+        const list: AnimeTorrent[] = Array.isArray(raw) ? raw : []
+        const out: TorrentResult[] = []
+        for (const t of list) {
+          let hash = (t.infoHash ?? '').toLowerCase()
+          if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
+          const r = atorrentToResult(t, hash)
+          if (r) out.push(r)
+        }
+        return out
       }
-      return out
-    }
-    catch { return [] }
-  }))
-  const seen = new Set<string>()
-  return per.flat().filter((r) => { if (seen.has(r.hash)) return false; seen.add(r.hash); return true })
+      catch { return [] }
+    }))
+    const seen = new Set<string>()
+    return per.flat().filter((r) => { if (seen.has(r.hash)) return false; seen.add(r.hash); return true })
+  }
+  catch { return [] }
 }
