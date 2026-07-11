@@ -167,8 +167,8 @@
           {/if}
           <div class="min-w-0 flex-1">
             <h2 class="line-clamp-2 text-xl font-black leading-tight drop-shadow">{title(pick.media)}</h2>
-            <p class="mt-1 text-xs text-muted-foreground">
-              {#if resolving}Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
+            <p class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              {#if resolving}<span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
           <button data-focusable onclick={close} disabled={busy} class="grid size-8 shrink-0 place-items-center rounded-lg bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white disabled:opacity-40" aria-label="Close">✕</button>
