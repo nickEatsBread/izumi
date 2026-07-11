@@ -2,11 +2,16 @@
   import {
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
-    scrubThumbnails, titleLanguage, playerTitleTop,
+    scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb,
   } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
   import { invoke } from '@tauri-apps/api/core'
+
+  // Player cache-size presets (MiB). "Custom" reveals a free-entry field.
+  const cachePresets = [{ label: 'Low', mb: 32 }, { label: 'Balanced', mb: 128 }, { label: 'High', mb: 256 }]
+  let cacheCustomMode = $state(false)
+  const cacheIsCustom = $derived(!cachePresets.some((p) => p.mb === $playerCacheMb))
 
   // Clear the on-disk scrub-thumbnail cache (frees space; regenerates on demand).
   let clearing = $state(false)
@@ -67,6 +72,31 @@
     <Toggle label="Auto-skip openings & endings" desc="Skip OP/ED/recap segments automatically (AniSkip). Off shows a manual Skip button." value={$autoSkip} onToggle={() => ($autoSkip = !$autoSkip)} />
     <Toggle label="Skip filler episodes" desc="Auto next-episode jumps past filler (AnimeFillerList). Filler is always marked in the episode list." value={$skipFiller} onToggle={() => ($skipFiller = !$skipFiller)} />
     <Toggle label="Scrub preview thumbnails" desc="Show a frame preview while skimming the seek bar. Off shows just the time and chapter (and skips the frame grab — lighter on the Deck)." value={$scrubThumbnails} onToggle={() => ($scrubThumbnails = !$scrubThumbnails)} />
+
+    <!-- Player cache size: the main tunable RAM cost. Presets + Custom. -->
+    <div class="rounded-md border border-border p-3">
+      <div class="flex items-center justify-between gap-4">
+        <div class="min-w-0 pr-2">
+          <div class="font-bold">Player cache size</div>
+          <p class="mt-1 text-xs text-muted-foreground">How much video the player buffers in RAM. Lower frees memory but re-fetches more when you seek; higher makes scrubbing smoother. Applies to the next video.</p>
+        </div>
+        <div class="flex shrink-0 gap-1 rounded-lg bg-secondary p-1">
+          {#each cachePresets as p (p.mb)}
+            <button data-focusable onclick={() => { $playerCacheMb = p.mb; cacheCustomMode = false }}
+              class="rounded-md px-2.5 py-1 text-xs font-bold transition {!cacheCustomMode && !cacheIsCustom && $playerCacheMb === p.mb ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}">{p.label}</button>
+          {/each}
+          <button data-focusable onclick={() => (cacheCustomMode = true)}
+            class="rounded-md px-2.5 py-1 text-xs font-bold transition {cacheCustomMode || cacheIsCustom ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}">Custom</button>
+        </div>
+      </div>
+      {#if cacheCustomMode || cacheIsCustom}
+        <div class="mt-3 flex items-center gap-2">
+          <input type="number" min="16" max="4096" step="16" bind:value={$playerCacheMb} data-focusable
+            class="w-28 rounded-md bg-input px-3 py-2 text-sm" />
+          <span class="text-xs text-muted-foreground">MiB</span>
+        </div>
+      {/if}
+    </div>
 
     <label class="flex items-center justify-between rounded-md border border-border p-3">
       <div>

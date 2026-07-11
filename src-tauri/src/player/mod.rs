@@ -614,6 +614,11 @@ impl PlayerHandle {
 /// `headers` (e.g. `Referer` for HLS CDNs — Seanime online-stream sources) are
 /// applied as mpv's `http-header-fields` before `loadfile`; `subtitles` (external
 /// VTT/ASS URLs the source provided) are `sub-add`ed after.
+/// Demuxer read-ahead cache ceiling in bytes — the main tunable RAM cost of playback. The frontend
+/// writes it from the user's setting via `set_player_cache`; load_file applies it per file, so a
+/// change takes effect on the next video. Default 128 MiB.
+pub(crate) static PLAYER_CACHE_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(134_217_728);
+
 fn load_file(
     mpv: &Mpv,
     url: &str,
@@ -621,6 +626,9 @@ fn load_file(
     headers: &Option<HashMap<String, String>>,
     subtitles: &[Subtitle],
 ) -> Result<(), String> {
+    // Apply the user's cache-size setting to this file's demuxer (overrides the init default).
+    let cache = PLAYER_CACHE_BYTES.load(std::sync::atomic::Ordering::Relaxed);
+    let _ = mpv.set_property("demuxer-max-bytes", cache.to_string().as_str());
     // Always set `start` explicitly so a resumed file doesn't leak its start
     // position onto the next (fresh) file loaded into the same core.
     let start = match start_seconds {

@@ -423,6 +423,13 @@ fn set_doh(enabled: bool, url: String) {
     *http_lock().write().unwrap() = build_http_client(doh);
 }
 
+/// Set the player's demuxer cache ceiling (bytes) from the user's setting; applied on the next
+/// file load. Clamped to a sane floor so a mis-set value can't starve the demuxer.
+#[tauri::command]
+fn set_player_cache(bytes: u64) {
+    player::PLAYER_CACHE_BYTES.store(bytes.max(8 * 1024 * 1024), std::sync::atomic::Ordering::Relaxed);
+}
+
 #[derive(serde::Serialize)]
 pub struct HttpReply {
     status: u16,
@@ -1226,6 +1233,7 @@ pub fn run() {
             http_post,
             ext_fetch,
             set_doh,
+            set_player_cache,
             updater_check,
             updater_install,
             player_tracks,

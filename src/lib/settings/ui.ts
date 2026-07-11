@@ -62,6 +62,10 @@ export const seekDuration = persisted<number>('player-seek-seconds', 10)
 /** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
  *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
+/** Player demuxer read-ahead cache ceiling in MiB — the main tunable playback RAM cost. Presets:
+ *  Low 32 / Balanced 128 / High 256; any value is allowed (Custom). Pushed to the backend via
+ *  set_player_cache, applied on the next video. */
+export const playerCacheMb = persisted<number>('player-cache-mb', 128)
 /** How video fits the player area. 'best' = keep aspect (letterbox, default); 'fill' =
  *  crop to fill the frame (mpv panscan). */
 export type VideoFit = 'best' | 'fill'

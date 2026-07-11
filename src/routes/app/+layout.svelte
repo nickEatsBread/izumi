@@ -10,7 +10,7 @@
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
   import { playing, fullscreen, gameMode, initGameMode, debridCaching } from '$lib/player/session'
-  import { uiScale, enableDoH, doHUrl } from '$lib/settings/ui'
+  import { uiScale, enableDoH, doHUrl, playerCacheMb } from '$lib/settings/ui'
   import { beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, initTouchScroll, suppressNativeTooltips } from '$lib/nav'
@@ -23,6 +23,9 @@
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
   import { get } from 'svelte/store'
   let { children } = $props()
+  // Push the player cache-size setting to the backend on load + whenever it changes; the demuxer
+  // picks it up on the next file. Bytes = MiB × 1024².
+  $effect(() => { const mb = Number($playerCacheMb) || 128; invoke('set_player_cache', { bytes: Math.round(mb) * 1024 * 1024 }).catch(() => {}) })
   // Game mode (Deck): start the backend controller reader + the app-wide gamepad→nav
   // translator once gamescope/Deck mode is resolved. Reacts to the async gameMode store.
   $effect(() => {
