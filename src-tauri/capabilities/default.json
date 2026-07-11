@@ -11,6 +11,8 @@
     "core:window:allow-start-dragging",
     "opener:default",
     "dialog:allow-open",
+    "os:default",
+    "extplayer:default",
     {
       "identifier": "http:default",
       "allow": [{ "url": "https://**" }]
