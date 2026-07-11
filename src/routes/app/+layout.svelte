@@ -18,7 +18,7 @@
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
   import { fetchManifest } from '$lib/stremio/manifest'
-  import { addonUrls } from '$lib/stremio/sources'
+  import { enabledAddonUrls } from '$lib/stremio/sources'
   import { refreshAniListAvatar } from '$lib/trackers/anilist-auth'
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
   import { get } from 'svelte/store'
@@ -45,7 +45,7 @@
     // Warm each addon's connection on the shared pooled HTTP client (and cache its
     // manifest) so the FIRST play skips the ~200ms TLS handshake and the picker has
     // logos ready. Only effective now that http_get pools connections.
-    for (const base of get(addonUrls)) fetchManifest(base).catch(() => {})
+    for (const base of get(enabledAddonUrls)) fetchManifest(base).catch(() => {})
     // Refresh the signed-in profile (name + avatar) for an already-connected session,
     // so the sidebar shows the real picture without needing a re-login. No-op if not
     // connected. Fire-and-forget.

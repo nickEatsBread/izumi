@@ -12,9 +12,19 @@ export function parseCommits(raw: RawCommit[]): ChangelogEntry[] {
     .map((c) => ({ sha: c.sha, date: c.commit.author.date, message: c.commit.message.split('\n')[0].trim() }))
 }
 
-/** Fetch the recent commit history as changelog entries. Goes through the native pooled client
- *  (phttp) so it isn't blocked by webview CORS. Throws on a non-200 so the page shows its error state. */
-export async function fetchChangelog(): Promise<ChangelogEntry[]> {
+let cache: Promise<ChangelogEntry[]> | null = null
+
+/** Fetch the recent commit history as changelog entries. Memoized for the session so revisiting the
+ *  page doesn't re-hit the unauthenticated GitHub rate limit; a failed fetch is not cached, so a
+ *  retry can still succeed. */
+export function fetchChangelog(): Promise<ChangelogEntry[]> {
+  if (!cache) cache = loadChangelog().catch((e) => { cache = null; throw e })
+  return cache
+}
+
+// Goes through the native pooled client (phttp) so it isn't blocked by webview CORS. Throws on a
+// non-ok response so the page shows its error state.
+async function loadChangelog(): Promise<ChangelogEntry[]> {
   const r = await phttp(COMMITS_URL, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'izumi' } })
   if (!r.ok) throw new Error(`changelog: ${r.status}`)
   return parseCommits((await r.json()) as RawCommit[])
