@@ -129,6 +129,10 @@ modules:
       - npm run tauri build -- --no-bundle
       - install -Dm755 src-tauri/target/release/izumi /app/bin/izumi
       - install -Dm644 flatpak/com.nicho.izumi.desktop /app/share/applications/com.nicho.izumi.desktop
+      # Sync the metainfo <release> version to the app version at build time. The file's
+      # static version drifts otherwise (it lagged at 0.1.0 while the app moved on), which
+      # makes GNOME Software / Discover show + install the flatpak as the OLD version.
+      - APPVER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -1); sed -i "s|<release[^>]*>|<release version=\"$APPVER\" date=\"$(date +%F)\"/>|" flatpak/com.nicho.izumi.metainfo.xml
       - install -Dm644 flatpak/com.nicho.izumi.metainfo.xml /app/share/metainfo/com.nicho.izumi.metainfo.xml
       - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/com.nicho.izumi.png
       - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.nicho.izumi.png
