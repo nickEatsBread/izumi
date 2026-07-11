@@ -21,6 +21,7 @@ import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
+  playerCacheMb, playerCacheBytes,
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { title, cover } from '$lib/anilist/media'
@@ -643,6 +644,13 @@ export async function playStream(media: Media, episode: number | undefined, stre
     // Embed mpv FIRST — it renders behind the still-opaque webview — THEN reveal the
     // overlay + punch the transparent hole. Otherwise the window is briefly
     // transparent with nothing behind it and the desktop flashes through.
+    // Size the demuxer cache for THIS file before loading it: the preset scales up with the file's
+    // bitrate (videoSize ÷ runtime), so a 4K Blu-ray buffers as many seconds as the preset holds for
+    // 1080p instead of rebuffering on a fixed byte cap. Applied on the next load (this one).
+    const durationSec = media.duration ? media.duration * 60 : undefined
+    await invoke('set_player_cache', {
+      bytes: playerCacheBytes(get(playerCacheMb), stream.behaviorHints?.videoSize, durationSec),
+    }).catch(() => {})
     // alang/slang drive mpv's preferred-language track auto-selection.
     await invoke('player_embed', {
       url: stream.url,

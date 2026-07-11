@@ -2,16 +2,18 @@
   import {
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
-    scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb,
+    scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED,
   } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
   import { invoke } from '@tauri-apps/api/core'
 
-  // Player cache-size presets (MiB). "Custom" reveals a free-entry field.
+  // Player cache-size presets (MiB). "Custom" reveals a free-entry field; "Uncapped" removes the
+  // ceiling. Every preset is a baseline that auto-scales up with the file's bitrate at play time.
   const cachePresets = [{ label: 'Low', mb: 32 }, { label: 'Balanced', mb: 128 }, { label: 'High', mb: 256 }]
   let cacheCustomMode = $state(false)
-  const cacheIsCustom = $derived(!cachePresets.some((p) => p.mb === $playerCacheMb))
+  const cacheIsUncapped = $derived($playerCacheMb === CACHE_UNCAPPED)
+  const cacheIsCustom = $derived(!cacheIsUncapped && !cachePresets.some((p) => p.mb === $playerCacheMb))
 
   // Clear the on-disk scrub-thumbnail cache (frees space; regenerates on demand).
   let clearing = $state(false)
@@ -78,18 +80,20 @@
       <div class="flex items-center justify-between gap-4">
         <div class="min-w-0 pr-2">
           <div class="font-bold">Player cache size</div>
-          <p class="mt-1 text-xs text-muted-foreground">How much video the player buffers in RAM. Lower frees memory but re-fetches more when you seek; higher makes scrubbing smoother. Applies to the next video.</p>
+          <p class="mt-1 text-xs text-muted-foreground">How much video the player buffers in RAM. This is a baseline that automatically scales up for high-bitrate files (e.g. a 4K Blu-ray) so they don't rebuffer, while normal files stay near the preset. Lower frees memory; higher buffers more. <span class="text-foreground">Uncapped</span> buffers the whole file (up to 4 GiB) — most resistant to buffering, highest RAM. Applies to the next video.</p>
         </div>
-        <div class="flex shrink-0 gap-1 rounded-lg bg-secondary p-1">
+        <div class="flex shrink-0 flex-wrap justify-end gap-1 rounded-lg bg-secondary p-1">
           {#each cachePresets as p (p.mb)}
             <button data-focusable onclick={() => { $playerCacheMb = p.mb; cacheCustomMode = false }}
               class="rounded-md px-2.5 py-1 text-xs font-bold transition {!cacheCustomMode && !cacheIsCustom && $playerCacheMb === p.mb ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}">{p.label}</button>
           {/each}
-          <button data-focusable onclick={() => (cacheCustomMode = true)}
+          <button data-focusable onclick={() => { cacheCustomMode = true; if (cacheIsUncapped) $playerCacheMb = 256 }}
             class="rounded-md px-2.5 py-1 text-xs font-bold transition {cacheCustomMode || cacheIsCustom ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}">Custom</button>
+          <button data-focusable onclick={() => { $playerCacheMb = CACHE_UNCAPPED; cacheCustomMode = false }}
+            class="rounded-md px-2.5 py-1 text-xs font-bold transition {cacheIsUncapped ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'}">Uncapped</button>
         </div>
       </div>
-      {#if cacheCustomMode || cacheIsCustom}
+      {#if (cacheCustomMode || cacheIsCustom) && !cacheIsUncapped}
         <div class="mt-3 flex items-center gap-2">
           <input type="number" min="16" max="4096" step="16" bind:value={$playerCacheMb} data-focusable
             class="w-28 rounded-md bg-input px-3 py-2 text-sm" />

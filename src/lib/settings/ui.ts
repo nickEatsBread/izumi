@@ -67,10 +67,36 @@ export const seekDuration = persisted<number>('player-seek-seconds', 10)
 /** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
  *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
-/** Player demuxer read-ahead cache ceiling in MiB — the main tunable playback RAM cost. Presets:
- *  Low 32 / Balanced 128 / High 256; any value is allowed (Custom). Pushed to the backend via
- *  set_player_cache, applied on the next video. */
+/** Player demuxer read-ahead cache in MiB — the main tunable playback RAM cost. Presets:
+ *  Low 32 / Balanced 128 / High 256; any value is allowed (Custom); CACHE_UNCAPPED = no ceiling.
+ *  The stored value is a BASELINE that auto-scales up with the file's bitrate (see playerCacheBytes)
+ *  so a 4K Blu-ray buffers as many seconds as the preset holds at 1080p. Pushed via set_player_cache. */
 export const playerCacheMb = persisted<number>('player-cache-mb', 128)
+
+/** Sentinel `playerCacheMb` value for the "Uncapped" preset — buffer the whole file (up to a large
+ *  RAM safety ceiling), no preset limit. */
+export const CACHE_UNCAPPED = -1
+const CACHE_MB = 1024 * 1024
+// A typical 1080p bitrate (~12 Mbps). The preset's byte budget represents "however many seconds
+// that holds at THIS bitrate"; higher-bitrate files scale the bytes up to keep the same duration.
+const CACHE_REF_BITRATE = 1_500_000 // bytes/sec
+const CACHE_SCALE_CAP = 1024 * CACHE_MB // RAM ceiling for the auto-scaled presets
+const CACHE_UNCAPPED_CAP = 4096 * CACHE_MB // hard safety ceiling for Uncapped
+
+/** Demuxer cache bytes for a specific file. Presets act as a FLOOR that scales UP with the file's
+ *  bitrate — so a 4K Blu-ray (huge bytes/sec) buffers as many SECONDS as the preset holds for 1080p,
+ *  instead of a fixed byte cap that empties in a few seconds and rebuffers — capped for RAM safety.
+ *  Uncapped buffers the whole file up to a large ceiling. `videoSize` (bytes) + `durationSec` give
+ *  the bitrate; with either unknown the preset is used unscaled. */
+export function playerCacheBytes(cacheMb: number, videoSize?: number, durationSec?: number): number {
+  if (cacheMb === CACHE_UNCAPPED) return Math.min(videoSize || CACHE_UNCAPPED_CAP, CACHE_UNCAPPED_CAP)
+  const base = Math.max(8, cacheMb) * CACHE_MB
+  if (videoSize && durationSec && durationSec > 0) {
+    const bitrate = videoSize / durationSec // bytes/sec
+    return Math.round(Math.min(CACHE_SCALE_CAP, base * Math.max(1, bitrate / CACHE_REF_BITRATE)))
+  }
+  return base
+}
 /** How video fits the player area. 'best' = keep aspect (letterbox, default); 'fill' =
  *  crop to fill the frame (mpv panscan). */
 export type VideoFit = 'best' | 'fill'
