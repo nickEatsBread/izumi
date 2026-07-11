@@ -1,4 +1,5 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { extensionUrls } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
@@ -153,12 +154,20 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
   worker.onmessage = async (e: MessageEvent<any>) => {
     const m = e.data
     if (m.type === 'fetch') {
-      // Run the extension's HTTP on the main thread (CORS-free), post the result back.
+      // Run the extension's HTTP on the main thread via the pooled Rust client (CORS-free).
+      // NOT the webview/plugin-http fetch: that normalizes through a `Request`, which strips
+      // forbidden headers (Referer, Origin, Cookie, …). Many streaming embeds gate the actual
+      // stream URL on Referer, so plugin-http silently resolved nothing. reqwest forwards every
+      // header the extension set. See ext_fetch in lib.rs.
       try {
-        const r = await httpFetch(m.url, m.init)
-        const headers: Record<string, string> = {}
-        r.headers.forEach((v: string, k: string) => (headers[k] = v))
-        worker.postMessage({ type: 'fetch-result', reqId: m.reqId, res: { ok: r.ok, status: r.status, headers, body: await r.text() } })
+        const init = m.init ?? {}
+        const r = await invoke<{ status: number; headers: Record<string, string>; body: string }>('ext_fetch', {
+          url: m.url,
+          method: init.method,
+          headers: init.headers,
+          body: typeof init.body === 'string' ? init.body : undefined,
+        })
+        worker.postMessage({ type: 'fetch-result', reqId: m.reqId, res: { ok: r.status >= 200 && r.status < 300, status: r.status, headers: r.headers, body: r.body } })
       } catch (err) {
         worker.postMessage({ type: 'fetch-result', reqId: m.reqId, error: String(err) })
       }

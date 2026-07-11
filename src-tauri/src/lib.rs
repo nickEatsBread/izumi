@@ -480,6 +480,43 @@ async fn http_post(
     Ok(HttpFullReply { status, headers: hdrs, body })
 }
 
+/// Method-agnostic pooled fetch for source-extension HTTP. The webview `fetch`
+/// (and `@tauri-apps/plugin-http`, which normalizes through a `Request`) silently
+/// DROPS forbidden header names — `Referer`, `Origin`, `Cookie`, … — before the
+/// request leaves the webview. Many streaming embeds gate the actual stream URL on
+/// `Referer`, so those extensions resolved nothing. reqwest imposes no such filter,
+/// so routing extension requests here delivers every header the extension set.
+/// Follows redirects. NEVER logs the url or headers (may embed provider secrets).
+#[tauri::command]
+async fn ext_fetch(
+    url: String,
+    method: Option<String>,
+    headers: Option<std::collections::HashMap<String, String>>,
+    body: Option<String>,
+) -> Result<HttpFullReply, String> {
+    let verb = method.unwrap_or_else(|| "GET".into()).to_ascii_uppercase();
+    let verb = reqwest::Method::from_bytes(verb.as_bytes()).map_err(|_| "bad method".to_string())?;
+    let mut req = http_client().request(verb, &url);
+    if let Some(h) = headers {
+        for (k, v) in h {
+            req = req.header(k, v);
+        }
+    }
+    if let Some(b) = body {
+        req = req.body(b);
+    }
+    let resp = req.send().await.map_err(|_| "request failed".to_string())?;
+    let status = resp.status().as_u16();
+    let mut hdrs = std::collections::HashMap::new();
+    for (k, v) in resp.headers() {
+        if let Ok(vs) = v.to_str() {
+            hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
+        }
+    }
+    let body = resp.text().await.map_err(|_| "read failed".to_string())?;
+    Ok(HttpFullReply { status, headers: hdrs, body })
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -1183,6 +1220,7 @@ pub fn run() {
             player_prefetch,
             http_get,
             http_post,
+            ext_fetch,
             set_doh,
             updater_check,
             updater_install,
