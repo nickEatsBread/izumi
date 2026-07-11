@@ -474,6 +474,24 @@ fn write_text_file(path: String, contents: String) -> Result<(), String> {
     std::fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
+/// Android self-update: download a release APK to the app cache dir and return its path
+/// (the frontend then hands it to the package installer via the extplayer plugin). Uses the
+/// download client (no total timeout). Overwrites any previous update file.
+#[cfg(target_os = "android")]
+#[tauri::command]
+async fn updater_download_apk(app: AppHandle, url: String) -> Result<String, String> {
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = dir.join("izumi-update.apk");
+    let resp = download_http_client().get(&url).send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("Update download failed (HTTP {})", resp.status().as_u16()));
+    }
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
+    std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
 #[derive(serde::Serialize)]
 pub struct HttpReply {
     status: u16,
@@ -1332,6 +1350,7 @@ pub fn run() {
         ext_fetch,
         set_doh,
         write_text_file,
+        updater_download_apk,
         download::download_start,
         download::download_cancel,
         download::download_delete,

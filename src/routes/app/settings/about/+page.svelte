@@ -3,6 +3,8 @@
   import { invoke } from '@tauri-apps/api/core'
   import { get } from 'svelte/store'
   import { updateChannel } from '$lib/settings/ui'
+  import { isAndroid } from '$lib/platform'
+  import { checkAndroidUpdate, downloadAndInstall, type UpdateInfo as AndroidUpdate } from '$lib/updater/android'
 
   let appVersion = $state('')
   let tauriVersion = $state('')
@@ -28,24 +30,31 @@
 
   const rows = $derived([
     ['izumi', appVersion ? `v${appVersion}` : '—'],
-    ['Tauri', tauriVersion || '—'],
-    ['libmpv', mpvVersion || '—'],
+    // On Android there's no libmpv row (external playback); show the runtime instead.
+    ...(($isAndroid ? [['Runtime', tauriVersion || '—']] : [['Runtime', tauriVersion || '—'], ['libmpv', mpvVersion || '—']]) as [string, string][]),
     ['System', os || '—'],
   ] as [string, string][])
 
   type UpdateInfo = { version: string; current: string; notes: string | null; date: string | null }
   let checking = $state(false)
   let installing = $state(false)
-  let update = $state<UpdateInfo | null>(null)
+  let update = $state<UpdateInfo | null>(null)   // desktop updater result
+  let aUpdate = $state<AndroidUpdate | null>(null) // Android updater result
   let upToDate = $state(false)
   let updErr = $state('')
 
   async function checkUpdates() {
-    checking = true; updErr = ''; upToDate = false; update = null
+    checking = true; updErr = ''; upToDate = false; update = null; aUpdate = null
     try {
-      const r = await invoke<UpdateInfo | null>('updater_check', { channel: get(updateChannel) })
-      if (r) update = r
-      else upToDate = true
+      if (get(isAndroid)) {
+        const r = await checkAndroidUpdate()
+        if (r) aUpdate = r
+        else upToDate = true
+      } else {
+        const r = await invoke<UpdateInfo | null>('updater_check', { channel: get(updateChannel) })
+        if (r) update = r
+        else upToDate = true
+      }
     }
     catch (e) { updErr = String(e) }
     finally { checking = false }
@@ -53,9 +62,17 @@
 
   async function installUpdate() {
     installing = true; updErr = ''
-    try { await invoke('updater_install', { channel: get(updateChannel) }) }
+    try {
+      if (get(isAndroid)) {
+        // Downloads the APK + opens the system installer (the OS prompts to confirm).
+        if (aUpdate) await downloadAndInstall(aUpdate)
+        installing = false
+      } else {
+        await invoke('updater_install', { channel: get(updateChannel) })
+        // Desktop: on success the app downloads, installs, and relaunches — nothing after runs.
+      }
+    }
     catch (e) { updErr = String(e); installing = false }
-    // On success the app downloads, installs, and relaunches — nothing after runs.
   }
 </script>
 
@@ -83,6 +100,9 @@
   <!-- Updates -->
   <div class="mt-6 max-w-md">
     <h3 class="mb-2 text-sm font-black">Updates</h3>
+    <!-- Release channel is a desktop-updater concept; the Android flow always tracks the
+         latest GitHub release. -->
+    {#if !$isAndroid}
     <label class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-3">
       <div>
         <div class="text-sm font-bold">Release channel</div>
@@ -93,14 +113,17 @@
         <option value="beta">Beta</option>
       </select>
     </label>
+    {/if}
 
-    {#if update}
+    {#if update || aUpdate}
+      {@const ver = update?.version ?? aUpdate?.version}
+      {@const notes = update?.notes ?? aUpdate?.notes}
       <div class="rounded-md border border-primary/40 bg-primary/10 p-3">
-        <div class="text-sm font-bold">Update available — v{update.version}</div>
-        {#if update.notes}<p class="mt-1 line-clamp-4 whitespace-pre-line text-xs text-muted-foreground">{update.notes}</p>{/if}
+        <div class="text-sm font-bold">Update available — v{ver}</div>
+        {#if notes}<p class="mt-1 line-clamp-4 whitespace-pre-line text-xs text-muted-foreground">{notes}</p>{/if}
         <button data-focusable onclick={installUpdate} disabled={installing}
                 class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition disabled:opacity-60">
-          {installing ? 'Downloading…' : 'Restart & install'}
+          {installing ? 'Downloading…' : $isAndroid ? 'Download & install' : 'Restart & install'}
         </button>
       </div>
     {:else}

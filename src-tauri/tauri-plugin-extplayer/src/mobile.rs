@@ -4,7 +4,7 @@ use tauri::{
     AppHandle, Runtime,
 };
 
-use crate::models::PlayRequest;
+use crate::models::{InstallRequest, PlayRequest};
 
 #[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "app.izumi.extplayer";
@@ -25,6 +25,12 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn play(&self, payload: PlayRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("play", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn install_apk(&self, payload: InstallRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("installApk", payload)
             .map_err(Into::into)
     }
 }

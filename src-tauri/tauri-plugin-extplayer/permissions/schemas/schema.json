@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the install_apk command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-install-apk",
+          "markdownDescription": "Enables the install_apk command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the install_apk command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-install-apk",
+          "markdownDescription": "Denies the install_apk command without any pre-configured scope."
+        },
+        {
           "description": "Enables the play_external command without any pre-configured scope.",
           "type": "string",
           "const": "allow-play-external",
@@ -307,10 +319,10 @@
           "markdownDescription": "Denies the play_external command without any pre-configured scope."
         },
         {
-          "description": "Allow launching an external Android video player.\n#### This default permission set includes:\n\n- `allow-play-external`",
+          "description": "Allow launching an external Android video player and the package installer for self-update.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow launching an external Android video player.\n#### This default permission set includes:\n\n- `allow-play-external`"
+          "markdownDescription": "Allow launching an external Android video player and the package installer for self-update.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`"
         }
       ]
     }

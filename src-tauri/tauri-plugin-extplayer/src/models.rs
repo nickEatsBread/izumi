@@ -12,3 +12,11 @@ pub struct PlayRequest {
     #[serde(default)]
     pub is_local: bool,
 }
+
+/// A request to hand a downloaded APK to the system package installer (self-update).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallRequest {
+    /// Absolute path to the downloaded .apk on local storage.
+    pub path: String,
+}

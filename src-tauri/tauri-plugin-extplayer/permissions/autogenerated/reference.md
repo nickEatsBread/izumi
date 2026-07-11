@@ -1,10 +1,11 @@
 ## Default Permission
 
-Allow launching an external Android video player.
+Allow launching an external Android video player and the package installer for self-update.
 
 #### This default permission set includes the following:
 
 - `allow-play-external`
+- `allow-install-apk`
 
 ## Permission Table
 
@@ -14,6 +15,32 @@ Allow launching an external Android video player.
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`extplayer:allow-install-apk`
+
+</td>
+<td>
+
+Enables the install_apk command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-install-apk`
+
+</td>
+<td>
+
+Denies the install_apk command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

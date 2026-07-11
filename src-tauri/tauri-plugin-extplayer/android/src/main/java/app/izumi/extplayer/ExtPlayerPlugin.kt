@@ -22,6 +22,11 @@ class PlayArgs {
     var isLocal: Boolean = false
 }
 
+@InvokeArg
+class InstallArgs {
+    var path: String = ""
+}
+
 @TauriPlugin
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
@@ -60,6 +65,35 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             if (args.isLocal) addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         activity.startActivity(chooser)
+        invoke.resolve()
+    }
+
+    // Self-update: hand a downloaded APK to the system package installer. The OS shows its
+    // own confirmation dialog (and asks the user to allow installs from this source the first
+    // time). The APK is shared through the same FileProvider as downloaded media.
+    @Command
+    fun installApk(invoke: Invoke) {
+        val args = invoke.parseArgs(InstallArgs::class.java)
+        val file = File(args.path)
+        if (!file.exists()) {
+            invoke.reject("Update file not found")
+            return
+        }
+        val uri: Uri = FileProvider.getUriForFile(
+            activity,
+            activity.packageName + ".extplayer.fileprovider",
+            file
+        )
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        if (intent.resolveActivity(activity.packageManager) == null) {
+            invoke.reject("No package installer available")
+            return
+        }
+        activity.startActivity(intent)
         invoke.resolve()
     }
 }

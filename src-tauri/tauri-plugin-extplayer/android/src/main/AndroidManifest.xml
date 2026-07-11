@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Self-update: hand a downloaded APK to the system package installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application>
         <!-- Share a downloaded file to the external video player through a content:// URI
              (a raw file path can't be ACTION_VIEW'd across apps since Android 7). A UNIQUE

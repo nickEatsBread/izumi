@@ -13,7 +13,7 @@ mod desktop;
 mod mobile;
 
 pub use error::{Error, Result};
-pub use models::PlayRequest;
+pub use models::{InstallRequest, PlayRequest};
 
 #[cfg(desktop)]
 use desktop::ExtPlayer;
@@ -31,11 +31,15 @@ impl<R: Runtime, T: Manager<R>> ExtPlayerExt<R> for T {
     }
 }
 
-/// Register the plugin. On Android this bridges `play_external` to the Kotlin
-/// `ExtPlayerPlugin.play` (an ACTION_VIEW chooser); on desktop it's a no-op.
+/// Register the plugin. On Android this bridges `play_external`/`install_apk` to the
+/// Kotlin `ExtPlayerPlugin` (an ACTION_VIEW chooser + the package installer); on desktop
+/// both are no-ops.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("extplayer")
-        .invoke_handler(tauri::generate_handler![commands::play_external])
+        .invoke_handler(tauri::generate_handler![
+            commands::play_external,
+            commands::install_apk
+        ])
         .setup(|app, api| {
             #[cfg(mobile)]
             let extplayer = mobile::init(app, api)?;

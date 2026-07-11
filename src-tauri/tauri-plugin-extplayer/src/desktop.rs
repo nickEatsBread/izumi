@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
-use crate::models::PlayRequest;
+use crate::models::{InstallRequest, PlayRequest};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
     app: &AppHandle<R>,
@@ -16,6 +16,10 @@ pub struct ExtPlayer<R: Runtime>(#[allow(dead_code)] AppHandle<R>);
 
 impl<R: Runtime> ExtPlayer<R> {
     pub fn play(&self, _payload: PlayRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn install_apk(&self, _payload: InstallRequest) -> crate::Result<()> {
         Ok(())
     }
 }

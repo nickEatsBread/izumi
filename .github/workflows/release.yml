@@ -253,6 +253,94 @@ jobs:
           gh release upload "${{ steps.meta.outputs.tag }}" \
             izumi-*.flatpak --repo "${{ github.repository }}" --clobber
 
+  # Android APK (arm64), signed with the release keystore so the in-app self-updater can
+  # install it over a previous build. Runs independently of `build` (a hiccup here never
+  # blocks the desktop release); attaches the signed APK to the same release. The Android
+  # updater finds it via the GitHub Releases API (no updater signature / latest.json needed).
+  android:
+    needs: create-release
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "27.0.12077973"
+      BUILD_TOOLS: "35.0.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve release tag
+        id: meta
+        run: |
+          if [[ "${{ github.ref_name }}" == *-* ]]; then
+            echo "tag=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK + platform + build-tools
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}" "platforms;android-36" "build-tools;${BUILD_TOOLS}"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust + Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: android
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Build Android APK (arm64)
+        run: |
+          npx tauri android init
+          npx tauri android build --apk --target aarch64
+
+      - name: Sign the APK with the release keystore
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          BT="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}"
+          UNSIGNED="$(find src-tauri/gen/android -path '*release*' -name '*-unsigned.apk' | head -1)"
+          if [ -z "$UNSIGNED" ]; then echo "no unsigned APK produced"; exit 1; fi
+          OUT="izumi-${{ steps.meta.outputs.tag }}-android-arm64.apk"
+          "$BT/zipalign" -f -p 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" --ks-pass "pass:$KS_PASS" \
+            --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$KEY_PASS" --out "$OUT" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --verbose "$OUT"
+          rm -f "$RUNNER_TEMP/release.jks" "$RUNNER_TEMP/aligned.apk"
+
+      - name: Attach the APK to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.meta.outputs.tag }}" \
+            izumi-*-android-arm64.apk --repo "${{ github.repository }}" --clobber
+
   publish-release:
     needs: [create-release, build]
     runs-on: ubuntu-latest

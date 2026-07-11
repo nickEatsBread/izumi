@@ -24,6 +24,7 @@
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
   import { isAndroid, isMobile, initPlatform } from '$lib/platform'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
+  import { checkAndroidUpdate, downloadAndInstall, androidUpdate, androidUpdateDismissed } from '$lib/updater/android'
   import { get } from 'svelte/store'
   let { children } = $props()
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
@@ -40,7 +41,11 @@
   })
   $effect(() => {
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
-    if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
+    if (get(isAndroid)) {
+      initReturnTracking() // return-to-app = watched (external-player flow)
+      // Quiet self-update check: surface a banner if a newer release exists (no auto-download).
+      checkAndroidUpdate().then((u) => { if (u) androidUpdate.set(u) })
+    }
     initInput()
     initDpadNav()
     initTouchScroll() // Game-mode drag-to-scroll (Deck touch = mouse events, no native scroll)
@@ -121,6 +126,18 @@
       playing.set(false)
     }
   })
+
+  // Android self-update: download the release APK and hand it to the system installer.
+  let updating = $state(false)
+  let updateErr = $state('')
+  async function runUpdate() {
+    const u = get(androidUpdate)
+    if (!u || updating) return
+    updating = true; updateErr = ''
+    try { await downloadAndInstall(u) }
+    catch (e) { updateErr = e instanceof Error ? e.message : String(e) }
+    finally { updating = false }
+  }
 </script>
 
 <!-- Solid app floor; hidden while playing so mpv (behind the webview) shows. -->
@@ -154,5 +171,17 @@
   <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
     <span class="truncate">{$watchToast.text}</span>
     <button data-focusable onclick={() => $watchToast?.undo()} class="shrink-0 font-bold text-theme">Undo</button>
+  </div>
+{/if}
+<!-- Android self-update prompt (surfaced by the on-launch check). Sits above the bottom nav. -->
+{#if $androidUpdate && !$androidUpdateDismissed}
+  <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
+    <span class="truncate">
+      {updating ? 'Downloading update…' : updateErr ? `Update failed: ${updateErr}` : `Update ${$androidUpdate.version} available`}
+    </span>
+    {#if !updating}
+      <button data-focusable onclick={runUpdate} class="shrink-0 font-bold text-theme">{updateErr ? 'Retry' : 'Update'}</button>
+      <button data-focusable onclick={() => androidUpdateDismissed.set(true)} class="shrink-0 text-muted-foreground">Later</button>
+    {/if}
   </div>
 {/if}
