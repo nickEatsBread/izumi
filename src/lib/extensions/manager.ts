@@ -276,12 +276,12 @@ export async function runningStreamExtensions(): Promise<
  *  torrentProvider.queryTorrentProviders drives search/smartSearch through it. */
 export async function runningTorrentProviderExtensions(): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  { id: string; name: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
+  { id: string; name: string; icon?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
   if (!get(extensionUrls).length) return []
   const exts = await ensureRunning()
   const live = (await Promise.all(
     exts.map(async (e) => ((await e.ready) && e.cfg.type === 'anime-torrent-provider' ? e : null)),
   )).filter(Boolean) as RunningExt[]
-  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
+  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, icon: e.cfg.icon, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
 }
