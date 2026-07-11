@@ -15,6 +15,9 @@ export interface Stream {
   title?: string
   description?: string // Comet/MediaFusion carry metadata here (Torrentio uses `title`)
   infoHash?: string
+  // Full magnet URI (with trackers) when the source provided one — preferred over a bare-hash
+  // magnet for resolving UNCACHED torrents on debrid (the trackers help it find peers).
+  __magnet?: string
   behaviorHints?: {
     filename?: string // clean release name — present on BOTH addons
     videoSize?: number // bytes

@@ -144,6 +144,9 @@ function extToStream(r: TorrentResult, extName: string): Stream {
   const prov = (extName.replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase() || 'EXT')
   return {
     infoHash: r.hash,
+    // Keep the full magnet (trackers included) when the result carried one, so debrid can find
+    // peers for an uncached torrent instead of resolving a bare, trackerless hash.
+    __magnet: r.link?.startsWith('magnet:') ? r.link : undefined,
     name: `[${prov}⬇] ${extName}`,
     title: `${r.title}\n👤 ${r.seeders ?? 0}${gb ? ` 💾 ${gb}` : ''}`,
     behaviorHints: { filename: r.title, videoSize: r.size },
@@ -303,7 +306,7 @@ async function prefetchNext(media: Media, episode: number) {
     if (!best) return // nothing cached — leave it to the picker rather than force a download
     let s = best
     if (!s.url && s.infoHash) {
-      s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.infoHash) }
+      s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash) }
     }
     if (s.url) prefetched = { mediaId: media.id, episode: next, stream: s }
   }
@@ -473,7 +476,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
       cancel: () => { debridCaching.set(null); controller.abort() },
     })
     try {
-      const url = await resolveHash(provider, key, stream.infoHash, {
+      const url = await resolveHash(provider, key, stream.__magnet ?? stream.infoHash, {
         signal: controller.signal,
         timeoutMs: 30 * 60 * 1000,
         onStatus: (i) => debridCaching.update((c) => (c ? { ...c, info: i } : c)),
@@ -608,7 +611,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number): Prom
   if (!url && best.infoHash) {
     const p = get(debridProvider), key = get(debridKey)
     if (!key) throw new Error(`Add a ${providerName(p)} key in Settings → Extensions.`)
-    url = await resolveHash(p, key, best.infoHash)
+    url = await resolveHash(p, key, best.__magnet ?? best.infoHash)
     prov = providerName(p)
   }
   if (!url) throw new Error('That source has no downloadable link.')
