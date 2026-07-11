@@ -135,6 +135,9 @@
     : /Audio|Multi/.test(b) ? 'bg-amber-500/15 text-amber-300'
     : b === 'Batch' ? 'bg-indigo-500/15 text-indigo-300'
     : /^(?:BluRay|WEB|WEB-DL|WEBRip|HDTV|DVD)$/.test(b) ? 'bg-rose-500/15 text-rose-300'
+    : /^(?:HLS|MP4)$/.test(b) ? 'bg-teal-500/15 text-teal-300'
+    : b === 'DUB' ? 'bg-orange-500/15 text-orange-300'
+    : b === 'SUB' ? 'bg-slate-500/20 text-slate-300'
     : 'bg-secondary text-muted-foreground'
   const seedClass = (n?: number) =>
     n == null ? 'text-muted-foreground' : n >= 20 ? 'text-green-400' : n < 5 ? 'text-red-400' : 'text-yellow-400'

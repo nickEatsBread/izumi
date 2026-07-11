@@ -1,4 +1,8 @@
 /// <reference lib="webworker" />
+// Seanime provider globals (statically imported: Vite builds this worker as `iife`, which can't
+// code-split, so a dynamic import here breaks the build — the cost is cheerio riding in the one
+// shared worker chunk even for torrent extensions, which is fine).
+import { LoadDoc as ShimLoadDoc, Buffer as ShimBuffer, CryptoJS as ShimCryptoJS, transpileSeanime, habari as ShimHabari, getUserPreference as ShimGetUserPreference } from './seanime-shim'
 // One source-extension per module Worker. Untrusted extension code is loaded via a
 // Blob-URL dynamic import. Isolation: a Worker has NO
 // access to @tauri-apps/api / invoke, so the extension can't touch the OS or the
@@ -45,9 +49,18 @@ self.onmessage = async (e: MessageEvent<any>) => {
       let code: string = msg.code
       // Seanime providers are a bare `class Provider {}` (no export) using a global `fetch`
       // (already overridden above) + occasionally `$sleep`. Instantiate it + provide $sleep.
-      if (msg.kind === 'seanime') {
+      if (msg.kind === 'seanime' || msg.kind === 'atp') {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(globalThis as any).$sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+        const g = globalThis as any
+        g.$sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+        g.LoadDoc = ShimLoadDoc
+        g.Buffer = ShimBuffer
+        g.CryptoJS = ShimCryptoJS
+        if (msg.kind === 'atp') {
+          g.$habari = ShimHabari
+          g.$getUserPreference = ShimGetUserPreference
+        }
+        code = transpileSeanime(code) // strip TS types so raw-TS payloads load
         code = `${code}\n;export default (typeof Provider !== 'undefined' ? new Provider() : {});`
       }
       const blob = new Blob([code], { type: 'application/javascript' })

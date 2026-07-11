@@ -8,6 +8,7 @@ export interface AniZipEpisode {
   runtime?: number
   length?: number
   tvdbId?: number // TVDB EPISODE id (per-episode, distinct from the show id)
+  anidbEid?: number // AniDB EPISODE id (per-episode)
   seasonNumber?: number // TVDB season this episode belongs to
   episodeNumber?: number // per-season episode number
   absoluteEpisodeNumber?: number // TVDB absolute number across the whole series

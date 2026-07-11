@@ -33,14 +33,27 @@ describe('videoSourceToStream', () => {
   it('maps a VideoSource to a direct streaming Stream', () => {
     const s = videoSourceToStream(
       { url: 'https://cdn/x.m3u8', type: 'm3u8', quality: '1080p', subtitles: [{ url: 'https://s/en.vtt', lang: 'en' }] },
-      'VidCloud', { Referer: 'https://site' }, 'HiAnime', 'The Journey',
+      'server-1', { Referer: 'https://site' }, 'ProviderX', 'The Journey', 'sub',
     )
     expect(s.url).toBe('https://cdn/x.m3u8')
     expect(s.__stream).toBe(true)
     expect(s.__headers).toEqual({ Referer: 'https://site' })
-    expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'en' }])
-    expect(s.name).toContain('HiAnime')
+    expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'en', isDefault: false }])
+    expect(s.__audio).toBe('sub')
+    expect(s.__addonName).toBe('ProviderX')
+    expect(s.name).toContain('ProviderX')
     expect(s.name).toContain('1080p')
     expect(s.behaviorHints?.filename).toContain('The Journey')
+  })
+
+  it('normalizes the SDK subtitle shape (language + isDefault) and dub audio', () => {
+    const s = videoSourceToStream(
+      { url: 'https://cdn/y.m3u8', type: 'm3u8', quality: 'auto', subtitles: [{ url: 'https://s/e.vtt', language: 'en', isDefault: true }] },
+      'srv', {}, 'ProviderY', undefined, 'dub',
+    )
+    expect(s.__subtitles).toEqual([{ url: 'https://s/e.vtt', lang: 'en', isDefault: true }])
+    expect(s.__audio).toBe('dub')
+    // no episode title → a sensible direct-stream filename
+    expect(s.behaviorHints?.filename).toContain('Direct')
   })
 })

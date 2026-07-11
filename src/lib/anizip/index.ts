@@ -32,17 +32,20 @@ const key = (id: number) => `anizip-${id}`
  *  cache first; on a miss, fetches + caches. Best-effort: returns `undefined` on
  *  any error. Shared by both `getEpisodeMeta` and `getKitsuId` so they hit the
  *  same cache. */
-export async function fetchAniZip(anilistId: number): Promise<AniZipResponse | undefined> {
+export async function fetchAniZip(anilistId: number, wantEpisode?: number): Promise<AniZipResponse | undefined> {
   const cached = await get<AniZipResponse>(key(anilistId))
-  if (cached) return cached
+  // Serve from cache, EXCEPT when a specific episode is requested that the cached response predates.
+  // Airing shows gain episodes over time and this cache has no TTL, so a stale entry would be missing
+  // a freshly-aired episode's ids — refetch to pick them up.
+  if (cached && (wantEpisode == null || cached.episodes?.[String(wantEpisode)])) return cached
   try {
     const r = await phttp(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
-    if (!r.ok) return undefined
+    if (!r.ok) return cached
     const j = (await r.json()) as AniZipResponse
     await set(key(anilistId), j)
     return j
   } catch {
-    return undefined
+    return cached
   }
 }
 
@@ -59,13 +62,14 @@ export async function getKitsuId(anilistId: number): Promise<number | undefined>
   return res?.mappings?.kitsu_id
 }
 
-/** Production-specific ids for source extensions (AnimeTosho indexes by AniDB, some by TVDB).
+/** Production-specific ids for source extensions (some index by AniDB, others by TVDB).
  *  Resolved from the SAME AniZip response the season map uses, so no extra round-trip. Passing
  *  the AniDB anime id (+ absolute/season episode) lets an id-based extension resolve the RIGHT
  *  title and a freshly-aired episode with no dependency on the kitsu→imdb mapping having
  *  propagated (the reason the addon path misses new/ambiguous titles). Best-effort: `{}`. */
 export interface ExtIds {
   anidbAid?: number
+  anidbEid?: number // AniDB episode id
   tvdbId?: number // show id
   tvdbEId?: number // episode id
   tmdbId?: string
@@ -74,11 +78,12 @@ export interface ExtIds {
   absoluteEpisodeNumber?: number
 }
 export async function getExtensionIds(anilistId: number, episode?: number): Promise<ExtIds> {
-  const res = await fetchAniZip(anilistId)
+  const res = await fetchAniZip(anilistId, episode)
   const m = res?.mappings
   const ep = episode != null ? res?.episodes?.[String(episode)] : undefined
   return {
     anidbAid: m?.anidb_id,
+    anidbEid: ep?.anidbEid,
     tvdbId: m?.thetvdb_id,
     tvdbEId: ep?.tvdbId,
     tmdbId: m?.themoviedb_id ?? undefined,

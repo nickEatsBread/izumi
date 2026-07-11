@@ -1,4 +1,5 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { extensionUrls } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
@@ -84,7 +85,7 @@ function normalizeManifest(raw: any, manifestUrl: string): ExtensionConfig[] {
     // Seanime manifests carry the module URL in `payloadURI` (a full https URL), not `code`/`main`.
     const codeSpec = e.code ?? e.main ?? e.payloadURI
     if (!codeSpec) continue
-    if (e.type && e.type !== 'torrent' && e.type !== 'onlinestream-provider') continue
+    if (e.type && e.type !== 'torrent' && e.type !== 'onlinestream-provider' && e.type !== 'anime-torrent-provider') continue
     out.push({
       id: String(e.id ?? e.name ?? codeSpec),
       name: String(e.name ?? e.id ?? 'Extension'),
@@ -153,12 +154,20 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
   worker.onmessage = async (e: MessageEvent<any>) => {
     const m = e.data
     if (m.type === 'fetch') {
-      // Run the extension's HTTP on the main thread (CORS-free), post the result back.
+      // Run the extension's HTTP on the main thread via the pooled Rust client (CORS-free).
+      // NOT the webview/plugin-http fetch: that normalizes through a `Request`, which strips
+      // forbidden headers (Referer, Origin, Cookie, …). Many streaming embeds gate the actual
+      // stream URL on Referer, so plugin-http silently resolved nothing. reqwest forwards every
+      // header the extension set. See ext_fetch in lib.rs.
       try {
-        const r = await httpFetch(m.url, m.init)
-        const headers: Record<string, string> = {}
-        r.headers.forEach((v: string, k: string) => (headers[k] = v))
-        worker.postMessage({ type: 'fetch-result', reqId: m.reqId, res: { ok: r.ok, status: r.status, headers, body: await r.text() } })
+        const init = m.init ?? {}
+        const r = await invoke<{ status: number; headers: Record<string, string>; body: string }>('ext_fetch', {
+          url: m.url,
+          method: init.method,
+          headers: init.headers,
+          body: typeof init.body === 'string' ? init.body : undefined,
+        })
+        worker.postMessage({ type: 'fetch-result', reqId: m.reqId, res: { ok: r.status >= 200 && r.status < 300, status: r.status, headers: r.headers, body: r.body } })
       } catch (err) {
         worker.postMessage({ type: 'fetch-result', reqId: m.reqId, error: String(err) })
       }
@@ -169,9 +178,14 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
   }
   ext.ready = new Promise<boolean>((resolve) => {
     const id = ++ext.seq
+    // A wedged worker (e.g. a shim module-eval error before onmessage is wired) must NOT hang the
+    // pipeline — queryExtensions/runningStreamExtensions Promise.all on every ext.ready. Time out to
+    // "not ready" after 20s, and treat a worker error the same way.
+    const t = setTimeout(() => { ext.waits.delete(id); resolve(false) }, 20000)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ext.waits.set(id, (m: any) => resolve(!m.error))
-    worker.postMessage({ type: 'load', id, code, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : undefined })
+    ext.waits.set(id, (m: any) => { clearTimeout(t); resolve(!m.error) })
+    worker.onerror = () => { clearTimeout(t); ext.waits.delete(id); resolve(false) }
+    worker.postMessage({ type: 'load', id, code, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : cfg.type === 'anime-torrent-provider' ? 'atp' : undefined })
   })
   return ext
 }
@@ -256,4 +270,18 @@ export async function runningStreamExtensions(): Promise<
     exts.map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
   )).filter(Boolean) as RunningExt[]
   return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
+}
+
+/** The live anime-torrent-provider extensions, each with a bound multi-arg `call`.
+ *  torrentProvider.queryTorrentProviders drives search/smartSearch through it. */
+export async function runningTorrentProviderExtensions(): Promise<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  { id: string; name: string; icon?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
+> {
+  if (!get(extensionUrls).length) return []
+  const exts = await ensureRunning()
+  const live = (await Promise.all(
+    exts.map(async (e) => ((await e.ready) && e.cfg.type === 'anime-torrent-provider' ? e : null)),
+  )).filter(Boolean) as RunningExt[]
+  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, icon: e.cfg.icon, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
 }

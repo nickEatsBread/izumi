@@ -15,6 +15,9 @@ export interface Stream {
   title?: string
   description?: string // Comet/MediaFusion carry metadata here (Torrentio uses `title`)
   infoHash?: string
+  // Full magnet URI (with trackers) when the source provided one — preferred over a bare-hash
+  // magnet for resolving UNCACHED torrents on debrid (the trackers help it find peers).
+  __magnet?: string
   behaviorHints?: {
     filename?: string // clean release name — present on BOTH addons
     videoSize?: number // bytes
@@ -29,7 +32,9 @@ export interface Stream {
   // with no debrid. __headers → mpv http-header-fields; __subtitles → external sub tracks.
   __stream?: boolean
   __headers?: Record<string, string>
-  __subtitles?: { url: string; lang?: string }[]
+  __subtitles?: { url: string; lang?: string; isDefault?: boolean }[]
+  // Resolved audio track for a direct stream: 'dub' or 'sub' (from the provider search pass).
+  __audio?: 'sub' | 'dub'
 }
 
 export type CacheState = 'instant' | 'uncached' | 'down'
@@ -148,6 +153,8 @@ export function describe(s: Stream): StreamInfo {
     : /\bhdtv\b/i.test(low) ? 'HDTV'
     : /\bdvd(?:rip)?\b/i.test(low) ? 'DVD' : undefined
   const dualAudio = /\bdual[-\s]?audio\b/i.test(low)
+  // Dub-only: an English/multi dub track with no separate sub audio (Dual Audio is badged on its own).
+  const dubOnly = !dualAudio && /\b(?:eng(?:lish)?[\s._-]*dub(?:bed)?|dubbed|multi[\s._-]*audio)\b/i.test(low)
   const audio = dualAudio ? undefined
     : hay.match(/\b(e-?ac-?3|ddp?\+?|atmos|truehd|dts(?:-hd)?|flac|aac|opus|ac-?3)\b/i)?.[1]?.toUpperCase()
   const batch = /\b(?:batch|complete|season\s?pack)\b/i.test(low)
@@ -171,6 +178,14 @@ export function describe(s: Stream): StreamInfo {
   push(dualAudio ? 'Dual Audio' : audio)
   push(source)
   push(batch ? 'Batch' : undefined)
+  // Audio type. Direct-stream rows carry the resolved track explicitly (SUB or DUB); torrent rows
+  // only flag DUB (sub is the unmarked default) so the list stays quiet. Dual Audio is separate.
+  if (s.__audio) push(s.__audio === 'dub' ? 'DUB' : 'SUB')
+  else if (dubOnly) push('DUB')
+  // Direct streaming sources carry no release metadata (codec/size/group) — an adaptive HLS ladder
+  // often reports quality "auto", leaving the row barren. Always give it a delivery-type badge so
+  // it reads as a real, deliberate source.
+  if (s.__stream) push(/\.m3u8(?:[?#]|$)/i.test(s.url ?? '') ? 'HLS' : 'MP4')
 
   return {
     stream: s, quality, label, filename, group, codec, bitDepth, hdr,

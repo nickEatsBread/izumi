@@ -76,6 +76,9 @@ pub fn libmpv_version() -> String {
 pub struct Subtitle {
     pub url: String,
     pub lang: Option<String>,
+    // Provider-marked default track (Seanime VideoSubtitle.isDefault) → `sub-add … select`.
+    #[serde(rename = "isDefault", default)]
+    pub is_default: bool,
 }
 
 /// Scrub-preview thumbnail state for one stream. Tiles are produced ON DEMAND — when
@@ -634,10 +637,12 @@ fn load_file(
         .unwrap_or_default();
     let _ = mpv.set_property("http-header-fields", hdr.as_str());
     mpv.command("loadfile", &[url]).map_err(|e| e.to_string())?;
-    // External subtitle tracks (VTT/ASS URLs the source provided).
+    // External subtitle tracks (VTT/ASS URLs the source provided). `select` the provider's
+    // default track so a sub shows without the user hunting for it; the rest are `auto`.
     for sub in subtitles {
         let lang = sub.lang.as_deref().unwrap_or("und");
-        let _ = mpv.command("sub-add", &[sub.url.as_str(), "auto", lang, lang]);
+        let flag = if sub.is_default { "select" } else { "auto" };
+        let _ = mpv.command("sub-add", &[sub.url.as_str(), flag, lang, lang]);
     }
     Ok(())
 }
