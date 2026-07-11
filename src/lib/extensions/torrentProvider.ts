@@ -57,13 +57,19 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia)
   try {
     const provs = await runningTorrentProviderExtensions()
     if (!provs.length) return []
-    const q = query.titles[0] ?? ''
+    // Release names are romaji-based; a localized display title may never appear in a torrent name,
+    // so query by romaji. And when a precise episode/anime id is available the provider locates the
+    // exact release by id — an extra title/resolution text filter then only over-restricts (an
+    // id-pinned episode rarely carries the full title or a specific resolution in every release
+    // name), so send an empty query and no resolution, and let the picker rank quality.
+    const romaji = media.romajiTitle || query.titles[0] || ''
+    const hasId = (query.anidbEid ?? 0) > 0 || (query.anidbAid ?? 0) > 0
     const per = await Promise.all(provs.map(async (p): Promise<TorrentResult[]> => {
       try {
         const s = (await p.call('getSettings').catch(() => null)) as AtpSettings | null
         const raw = (s?.canSmartSearch
-          ? await p.call('smartSearch', { media, query: q, batch: false, episodeNumber: query.episode ?? -1, resolution: query.resolution, anidbAID: query.anidbAid, anidbEID: query.anidbEid, bestReleases: false })
-          : await p.call('search', { media, query: q })) as unknown
+          ? await p.call('smartSearch', { media, query: hasId ? '' : romaji, batch: false, episodeNumber: query.episode ?? -1, anidbAID: query.anidbAid, anidbEID: query.anidbEid, bestReleases: false })
+          : await p.call('search', { media, query: romaji })) as unknown
         const list: AnimeTorrent[] = Array.isArray(raw) ? raw : []
         const out: TorrentResult[] = []
         for (const t of list) {
