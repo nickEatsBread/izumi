@@ -32,17 +32,20 @@ const key = (id: number) => `anizip-${id}`
  *  cache first; on a miss, fetches + caches. Best-effort: returns `undefined` on
  *  any error. Shared by both `getEpisodeMeta` and `getKitsuId` so they hit the
  *  same cache. */
-export async function fetchAniZip(anilistId: number): Promise<AniZipResponse | undefined> {
+export async function fetchAniZip(anilistId: number, wantEpisode?: number): Promise<AniZipResponse | undefined> {
   const cached = await get<AniZipResponse>(key(anilistId))
-  if (cached) return cached
+  // Serve from cache, EXCEPT when a specific episode is requested that the cached response predates.
+  // Airing shows gain episodes over time and this cache has no TTL, so a stale entry would be missing
+  // a freshly-aired episode's ids — refetch to pick them up.
+  if (cached && (wantEpisode == null || cached.episodes?.[String(wantEpisode)])) return cached
   try {
     const r = await phttp(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
-    if (!r.ok) return undefined
+    if (!r.ok) return cached
     const j = (await r.json()) as AniZipResponse
     await set(key(anilistId), j)
     return j
   } catch {
-    return undefined
+    return cached
   }
 }
 
@@ -75,7 +78,7 @@ export interface ExtIds {
   absoluteEpisodeNumber?: number
 }
 export async function getExtensionIds(anilistId: number, episode?: number): Promise<ExtIds> {
-  const res = await fetchAniZip(anilistId)
+  const res = await fetchAniZip(anilistId, episode)
   const m = res?.mappings
   const ep = episode != null ? res?.episodes?.[String(episode)] : undefined
   return {
