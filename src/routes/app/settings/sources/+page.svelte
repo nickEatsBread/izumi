@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { addonUrls, normalizeBase } from '$lib/stremio/sources'
+  import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
   import { autoSelectSource, preferredQuality } from '$lib/settings/ui'
   import { fetchManifest } from '$lib/stremio/manifest'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -7,7 +7,8 @@
 
   let input = $state('')
   function add() { const b = normalizeBase(input); if (b) { $addonUrls = [...$addonUrls, b]; input = '' } }
-  function remove(i: number) { $addonUrls = $addonUrls.filter((_, j) => j !== i) }
+  function toggle(url: string) { $disabledSources = $disabledSources.includes(url) ? $disabledSources.filter((u) => u !== url) : [...$disabledSources, url] }
+  function remove(i: number) { const url = $addonUrls[i]; $addonUrls = $addonUrls.filter((_, j) => j !== i); $disabledSources = $disabledSources.filter((u) => u !== url) }
   const host = (u: string) => { try { return new URL(/^https?:/.test(u) ? u : `https://${u}`).hostname } catch { return u } }
 </script>
 
@@ -39,7 +40,8 @@
     </div>
     <ul class="mt-3 space-y-2">
       {#each $addonUrls as url, i (url)}
-        <li class="flex items-center gap-3 rounded-lg border border-border p-3">
+        {@const off = $disabledSources.includes(url)}
+        <li class="flex items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
           {#await fetchManifest(url)}
             <div class="skeloader size-10 shrink-0 rounded-md"></div>
             <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
@@ -57,6 +59,10 @@
               <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{m?.description ?? url}</p>
             </div>
           {/await}
+          <button data-focusable onclick={() => toggle(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
+            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+            <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+          </button>
           <button onclick={() => remove(i)} data-focusable class="shrink-0 text-sm text-destructive">Remove</button>
         </li>
       {/each}

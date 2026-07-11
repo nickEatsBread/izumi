@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { debridKey, debridProvider, extensionUrls } from '$lib/settings/ui'
+  import { debridKey, debridProvider, extensionUrls, disabledExtensions } from '$lib/settings/ui'
   import { fetchExtensionMeta } from '$lib/extensions/manager'
   import { providerList, providerMeta } from '$lib/stremio/debrid'
   import Puzzle from 'lucide-svelte/icons/puzzle'
@@ -9,7 +9,8 @@
 
   let extInput = $state('')
   function addExt() { const u = extInput.trim(); if (u) { $extensionUrls = [...$extensionUrls, u]; extInput = '' } }
-  function removeExt(i: number) { $extensionUrls = $extensionUrls.filter((_, j) => j !== i) }
+  function toggleExt(url: string) { $disabledExtensions = $disabledExtensions.includes(url) ? $disabledExtensions.filter((u) => u !== url) : [...$disabledExtensions, url] }
+  function removeExt(i: number) { const url = $extensionUrls[i]; $extensionUrls = $extensionUrls.filter((_, j) => j !== i); $disabledExtensions = $disabledExtensions.filter((u) => u !== url) }
   const host = (u: string) => { try { return new URL(/^https?:/.test(u) ? u : `https://${u}`).hostname } catch { return u } }
   const iconSrc = (l: string) => l.startsWith('http') || l.startsWith('data:image') ? l : `data:image/png;base64,${l}`
   // A GitHub spec (gh:owner/repo or bare owner/repo/sub) — shown with a GitHub icon +
@@ -50,7 +51,8 @@
       {#each $extensionUrls as url, i (url)}
         {@const ext = fetchExtensionMeta(url)}
         {@const gh = isGh(url)}
-        <li class="flex items-center gap-3 rounded-lg border border-border p-3">
+        {@const off = $disabledExtensions.includes(url)}
+        <li class="flex items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
           {#await ext}
             <div class="skeloader size-10 shrink-0 rounded-md"></div>
             <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
@@ -78,6 +80,10 @@
               {/if}
             </div>
           {/await}
+          <button data-focusable onclick={() => toggleExt(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
+            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+            <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+          </button>
           <button onclick={() => removeExt(i)} data-focusable title="Remove" class="grid size-8 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent"><Trash2 size={16} /></button>
         </li>
       {/each}
