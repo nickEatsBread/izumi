@@ -96,10 +96,16 @@ export async function resolveOnlineStreams(media: Media, episode: number | undef
       // Aggregate EVERY server that returns sources (not first-server-wins) so the picker shows
       // all alternatives + a working fallback when one server's stream is dead. Dedupe by url.
       const out: Stream[] = []
+      // Give the row a real label — anime title + episode (+ the provider's episode title when it's
+      // more than a bare "Episode N") — instead of the provider's generic "Episode 01", so the
+      // onlinestream row reads like the torrent rows do.
+      const epName = ep.title?.trim()
+      const hasRealTitle = !!epName && epName !== `Episode ${episode}` && epName !== String(episode)
+      const epLabel = `${title(media)} — Episode ${episode}${hasRealTitle ? ` · ${epName}` : ''}`
       for (const server of servers) {
         const es = (await ext.call('findEpisodeServer', ep, server).catch(() => null)) as SnEpisodeServer | null
         if (es?.videoSources?.length) {
-          for (const vs of es.videoSources) out.push(videoSourceToStream(vs, es.server ?? server, es.headers ?? {}, ext.name, ep.title, audio))
+          for (const vs of es.videoSources) out.push(videoSourceToStream(vs, es.server ?? server, es.headers ?? {}, ext.name, epLabel, audio))
         }
       }
       const seen = new Set<string>()

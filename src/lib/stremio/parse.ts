@@ -159,7 +159,18 @@ export function describe(s: Stream): StreamInfo {
     : hay.match(/\b(e-?ac-?3|ddp?\+?|atmos|truehd|dts(?:-hd)?|flac|aac|opus|ac-?3)\b/i)?.[1]?.toUpperCase()
   const batch = /\b(?:batch|complete|season\s?pack)\b/i.test(low)
     && !/\bS\d{1,2}E\d{1,3}\b/i.test(low) // a single SxxExx is not a batch
-  const group = s.behaviorHints?.filename?.match(/-([A-Za-z0-9]+)$/)?.[1]
+  // Release group / fansub author. Leading "[Group]" is the anime norm ("[SakuraCircle] Show - 01");
+  // fall back to a scene trailing "-GROUP" (must START with a letter, so a "01-02" batch suffix is
+  // NOT read as the group "02", and no space before the dash so "Title - Final" isn't a group);
+  // then Comet's 🏷️ tag. NOISE rejects quality/codec/source/audio tags ("[1080p]", "[Dual Audio]",
+  // "-DL" from WEB-DL) so they never masquerade as the group. This feeds the picker heading AND the
+  // cross-episode same-release continuity in play.ts, so a false group would mis-continue.
+  const fn = s.behaviorHints?.filename
+  const NOISE = /^(?:\d{3,4}p?|x?\.?26[45]|h\.?26[45]|hevc|avc|av1|hi10p?|\d{1,2}\s?-?bit|[0-9a-f]{8}|web|web-?dl|dl|blu-?ray|ray|bd(?:rip|mux)?|hdtv|dvd(?:rip)?|remux|rip|dual\s?audio|multi(?:-?sub|-?audio)?|batch|complete|uncensored|uhd|hd|4k|sd|hdr(?:10\+?)?|dv|flac|aac|opus|ac-?3|e?-?ac-?3|ddp?\+?|atmos|truehd|dts(?:-hd)?)$/i
+  const lead = fn?.match(/^\s*\[([^\]]+)\]/)?.[1]?.trim()
+  const tail = fn?.match(/-([A-Za-z][A-Za-z0-9]*)$/)?.[1]
+  const group = (lead && !NOISE.test(lead) ? lead : undefined)
+    || (tail && !NOISE.test(tail) ? tail : undefined)
     || s.description?.match(/🏷️\s*([^\n|]+)/)?.[1]?.trim()
 
   // 'down' only when an UNCACHED torrent has an explicit 0 seeders (nothing to
@@ -205,6 +216,12 @@ export function parseSeasonEp(s: Stream): { season?: number; episode?: number; a
     || s.name || ''
   const se = f.match(/\bS(\d{1,2})\s?E(\d{1,4})\b/i) || f.match(/\bS(\d{1,2})\s*P(\d{1,3})\b/i)
   if (se) return { season: Number(se[1]), episode: Number(se[2]) }
+  // Ordinal season: "2nd Season", "3rd Season" → the ORDINAL is the season. Must come before the
+  // "Season NN" branch below, which would otherwise misread "2nd Season 01" as season 1 (the "01"
+  // is the episode of the 2nd season, not the season). Lets the verifier reject a sequel-season
+  // pack when the requested title is a DIFFERENT part of the franchise.
+  const ord = f.match(/\b(\d{1,2})\s*(?:st|nd|rd|th)\s+Season\b/i)
+  if (ord) return { season: Number(ord[1]) }
   // Season-only (a season pack / batch like "Title S01 1080p BluRay", "Season 2")
   // — no episode, but the season alone is enough to reject a wrong-season pack.
   const sOnly = f.match(/\bS(?:eason\s*)?(\d{1,2})\b/i)

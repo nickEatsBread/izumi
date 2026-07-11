@@ -80,13 +80,12 @@
     {/if}
 
     {#key retryKey}
-      <!-- Unified resume row: AniList CURRENT + MAL watching merged into one carousel of
-           landscape resume cards (auto-hides when empty). -->
-      {#if listUser || $malToken}
-        {#key listUser}
-          <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken} />
-        {/key}
-      {/if}
+      <!-- Unified resume row: AniList CURRENT + MAL watching + on-device local history merged into
+           one carousel of landscape resume cards. Always rendered (auto-hides when empty) so it
+           works from local history alone, with no tracker linked. -->
+      {#key listUser}
+        <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken} />
+      {/key}
       {#if listUser}
         {#key listUser}
           <ListRow title="Your List" userName={listUser} status="PLANNING" />

@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
 import { enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
-import { getStreams, fetchAddonStreams, streamId, pickBest, parseSeasonEp, isWrongSeason, isUncached, describe, type Stream } from './addon'
+import { getStreams, fetchAddonStreams, streamId, pickBest, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie } from './relevance'
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
@@ -16,6 +16,7 @@ import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentP
 import type { TorrentResult } from '$lib/extensions/types'
 import { updateProgress } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
+import { recordPlay, recordProgress } from '$lib/player/history'
 import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -31,6 +32,14 @@ export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; me
 // before attaching new ones so repeated plays don't stack listeners (this is a
 // plain module, not a component — no runes/lifecycle to lean on).
 let stop: Array<() => void> = []
+
+// The in-flight source resolve (playEpisode). A new play or an explicit picker close aborts it
+// so a superseded resolve settles to idle AT ONCE — instead of blocking the next episode click
+// (the caller's `resolving` flag stayed stuck) while its now-orphaned fetches finish. The fetches
+// themselves are best-effort and left to complete in the background.
+let resolveAbort: AbortController | null = null
+/** Abort the in-flight source resolve — called when the picker is closed (X / click-off / Esc). */
+export function cancelResolve() { resolveAbort?.abort(); resolveAbort = null }
 
 // Wire the mpv event stream (emitted from Rust) to progress tracking, resume,
 // and auto next-episode. Called once per play, after playback has started.
@@ -53,6 +62,7 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
       // exactly once (guarded by `marked`).
       if (!marked && watched(pos, dur)) {
         marked = true
+        recordProgress(media, episode) // local history — always, independent of any linked tracker
         updateProgress(media, episode, 'CURRENT').then((t) => t.length && console.log('tracked on', t.join(', ')))
       }
       // Binge preload: pre-resolve the next episode in the last stretch so Next /
@@ -271,22 +281,37 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
   } catch { return [] }
 }
 
-// Prefer continuing from the SAME release as the last-played stream — matching its
-// Stremio bingeGroup or pack infoHash — when that stream is CACHED. This is the
-// "folder" continuity: the next episode stays on the same release/quality instead of
-// re-picking. Falls back to the normal best-cached pick. Gated on the setting.
-function pickBinge(media: Media, streams: Stream[], want?: { season?: number; abs?: number }): Stream | undefined {
-  if (get(bingePreload)) {
-    const b = get(bingeSource)
-    if (b && b.mediaId === media.id && (b.bingeGroup || b.infoHash)) {
-      const same = streams.find((s) =>
-        ((b.bingeGroup && s.behaviorHints?.bingeGroup === b.bingeGroup) || (b.infoHash && s.infoHash === b.infoHash))
-        && !!s.url && !isUncached(s)
-        && !(want && isWrongSeason(s, want)))
-      if (same) return same
-    }
-  }
-  return pickBest(streams, get(preferredQuality), want)
+// Release-continuity across episodes. A stream continues the last-played release when it
+// shares the Stremio bingeGroup, the exact pack infoHash, OR the parsed release group
+// (fansub author) — the group match is what continues extension/fansub content, which
+// carries no bingeGroup. `describe(s).group` is the same parse the picker heading uses.
+export interface ContinueHint { bingeGroup?: string; infoHash?: string; group?: string }
+function matchesRelease(s: Stream, c: ContinueHint): boolean {
+  return !!(
+    (c.bingeGroup && s.behaviorHints?.bingeGroup === c.bingeGroup)
+    || (c.infoHash && s.infoHash === c.infoHash)
+    || (c.group && describe(s).group?.toLowerCase() === c.group.toLowerCase())
+  )
+}
+// The continuity hint for the NEXT episode of `media`: the release identity of what's
+// playing now. undefined when continuity is off, nothing is playing, or it's a different
+// title — the caller then just opens the picker normally.
+function continueHint(media: Media): ContinueHint | undefined {
+  if (!get(bingePreload)) return undefined
+  const b = get(bingeSource)
+  if (!b || b.mediaId !== media.id || !(b.bingeGroup || b.infoHash || b.group)) return undefined
+  return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group }
+}
+// A stream mpv can start without a multi-minute debrid cache: a direct online stream, an
+// already-resolved url, or a debrid-cached torrent (⚡ — resolves in ~1s).
+const playableNow = (s: Stream) => !!(s.__stream || s.url || isCached(s))
+// The SAME-release source for this episode, ready-to-play only (never a debrid download or
+// a wrong-season file). undefined when continuity is off or nothing matches — the caller
+// then opens the picker instead of auto-playing an unrelated best-quality file.
+function pickSameRelease(media: Media, streams: Stream[], want?: { season?: number; abs?: number }): Stream | undefined {
+  const c = continueHint(media)
+  if (!c) return undefined
+  return streams.find((s) => matchesRelease(s, c) && playableNow(s) && !isUncached(s) && !(want && isWrongSeason(s, want)))
 }
 
 // Next episode resolved ahead of time (near the end of the current one) so Next /
@@ -306,8 +331,8 @@ async function prefetchNext(media: Media, episode: number) {
   prefetching = true
   try {
     const { streams, want } = await resolveStreams(media, next)
-    const best = pickBinge(media, streams, want)
-    if (!best) return // nothing cached — leave it to the picker rather than force a download
+    const best = pickSameRelease(media, streams, want)
+    if (!best) return // no cached same-release — leave it to the picker rather than force a download
     let s = best
     if (!s.url && s.infoHash) {
       s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash) }
@@ -325,9 +350,18 @@ function takePrefetched(mediaId: number, episode: number): Stream | null {
   return null
 }
 
-// User-initiated play: resolve, then show the source picker. The
-// user picks a source and `playStream` starts it.
-export async function playEpisode(media: Media, episode: number | undefined, onState: (s: PlayState) => void) {
+// User-initiated play: resolve, then show the source picker. The user picks a source and
+// `playStream` starts it. `cont` (set by auto-advance) carries the previous episode's
+// release identity: as sources fold in, a same-release one auto-continues without the user
+// touching the picker — a ready one instantly, an uncached one after the list settles.
+export async function playEpisode(media: Media, episode: number | undefined, onState: (s: PlayState) => void, cont?: ContinueHint) {
+  // Supersede any resolve still running from a previous click (its fetches keep going in the
+  // background, but this one owns the picker now). `signal` also lets an explicit close abort us.
+  // Done FIRST so even an offline/instant play cancels a stale resolve that's still holding a picker.
+  resolveAbort?.abort()
+  const abort = new AbortController()
+  resolveAbort = abort
+  const { signal } = abort
   // Offline first: a completed local download plays instantly — no resolve, no
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = episode != null ? downloadOf(media.id, episode) : undefined
@@ -366,18 +400,32 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     let acc: Stream[] = []
     let want: { season?: number; abs?: number } | undefined
     let totalRaw = 0
+    let continued = false // set once a same-release source has been auto-continued (cont path)
+    let seasonSettled = false // AniZip season target resolved (or known-absent) — gates auto-continue
     const stillCurrent = () => { const c = get(streamPicker); return !!c && c.media.id === media.id && c.episode === episode }
     const refresh = (resolving: boolean) => {
       if (!stillCurrent()) return
       let s = refineStreams(media, acc)
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
       streamPicker.set({ media, episode, streams: s, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving })
+      // Binge continuity: the instant a same-release, ready-to-play source appears, continue on it
+      // automatically (close the picker, no interaction). An uncached same-release is handled once
+      // the list settles (below), so a late-arriving cached one still wins here. Gated on
+      // seasonSettled so a same-group WRONG-season file can't sneak in before AniZip answers, and on
+      // no debrid cache being in flight so we never stomp a source the user just picked themselves
+      // (an uncached manual pick keeps the picker open while it caches).
+      if (cont && !continued && seasonSettled && !get(debridCaching)) {
+        const hit = s.find((x) => matchesRelease(x, cont) && playableNow(x) && !isUncached(x) && !(want && isWrongSeason(x, want)))
+        if (hit) { continued = true; streamPicker.set(null); void playStream(media, episode, hit, onState) }
+      }
     }
 
+    // Resolve the season target, then unblock + re-run auto-continue. `.finally` so a title with
+    // no AniZip season data still flips seasonSettled (nothing to wrong-season against).
     const seasonReady = seasonP.then((m) => {
       const w = episode != null ? m[episode] : undefined
-      if (w && (w.season != null || w.abs != null)) { want = w; refresh(true) }
-    }).catch(() => {})
+      if (w && (w.season != null || w.abs != null)) want = w
+    }).catch(() => {}).finally(() => { seasonSettled = true; refresh(true) })
 
     // Each SOURCE (every addon + the extensions as one wave) folds into the picker as
     // it lands — a genuine multi-source trickle + live re-sort, not a
@@ -386,6 +434,10 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // Addons only when we have the Kitsu id they need; the extension wave always runs if configured.
     let pending = (kitsu != null ? bases.length : 0) + (hasExt ? 2 : 0)
     await new Promise<void>((resolve) => {
+      // Stop waiting the moment we're superseded/closed — the in-flight fetches keep going and
+      // fold in harmlessly (refresh() no-ops once the picker is no longer ours), but we settle now.
+      if (signal.aborted) return resolve()
+      signal.addEventListener('abort', () => resolve(), { once: true })
       if (!pending) return resolve()
       const done = () => { if (--pending === 0) resolve() }
       if (kitsu != null) {
@@ -411,7 +463,31 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       }
     })
     await seasonReady
+    // Superseded by a newer play, or the picker was closed → settle to idle NOW so the caller's
+    // `resolving` guard clears and the next episode click works (don't wait on orphaned fetches).
+    if (signal.aborted) return onState({ status: 'idle' })
+    // A ready-to-play same-release source already auto-continued mid-resolve (picker closed).
+    if (continued) return
     refresh(false)
+
+    // Binge continuity fallback: no ready-to-play same-release appeared, but a same-release
+    // source EXISTS (uncached) — continue on it (debrid caches it, with the cancelable
+    // overlay) rather than making the user re-pick the same release every episode. Only the
+    // "no same release at all" case falls through to leave the picker open for a manual pick.
+    // Gated on stillCurrent() so a slow extension wave can't hijack a source the user already
+    // picked (which closed this picker) or a different episode they navigated to meanwhile, and on
+    // no debrid cache in flight (an uncached manual pick keeps the picker open while it caches, so
+    // stillCurrent() alone wouldn't catch it).
+    if (cont && stillCurrent() && !get(debridCaching)) {
+      let s = refineStreams(media, acc)
+      if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
+      const hit = s.find((x) => matchesRelease(x, cont))
+      if (hit) { streamPicker.set(null); return await playStream(media, episode, hit, onState) }
+    }
+
+    // The user already acted on this picker (picked a source / navigated away) → it's no longer
+    // current; settle this resolve neutrally instead of firing a spurious "no streams" error.
+    if (!stillCurrent()) return onState({ status: 'idle' })
 
     // Nothing playable → honest error.
     if (!get(streamPicker)?.streams.length) {
@@ -428,8 +504,9 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   }
 }
 
-// Resolve + play the single best (highest-quality) source, skipping the picker —
-// used for auto next-episode.
+// Advance to an episode (auto next-episode + the in-player Prev/Next buttons). Continues
+// the SAME release seamlessly when a cached one exists; otherwise opens the picker for the
+// episode (auto-continuing an extension/uncached same-release, else leaving it for a pick).
 async function resolveAndPlayBest(media: Media, episode: number | undefined, onState: (s: PlayState) => void) {
   // Instant path: use the stream prefetched near the end of the previous episode.
   if (episode != null) {
@@ -437,16 +514,19 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
     if (pre) return await playStream(media, episode, pre, onState)
   }
   onState({ status: 'resolving' })
+  // Seamless continuity: if the addons already have a CACHED source from the same release
+  // we were watching, play it straight away — no picker between back-to-back episodes.
   try {
     const { streams, want } = await resolveStreams(media, episode)
-    // Cached-only for auto-advance: never silently launch a debrid download or a
-    // wrong-season file between back-to-back episodes. pickBinge keeps the same
-    // release across episodes when it's cached.
-    const best = pickBinge(media, streams, want)
-    if (!best) return onState({ status: 'error', message: "Next episode has no cached source — open it to pick one." })
-    await playStream(media, episode, best, onState)
+    const same = pickSameRelease(media, streams, want)
+    if (same) return await playStream(media, episode, same, onState)
   }
-  catch (e) { onState({ status: 'error', message: e instanceof Error ? e.message : String(e) }) }
+  catch { /* no addons / nothing yet — the full picker below still queries extensions */ }
+  // No cached same-release: open the full source picker (addons + extensions) for this
+  // episode, carrying the continuity hint so a same-release source auto-continues when it
+  // lands (extension/fansub content), and otherwise the user picks. This replaces the old
+  // dead-end "no cached source" toast — the next episode always goes somewhere.
+  return await playEpisode(media, episode, onState, continueHint(media))
 }
 
 // Play a specific chosen stream: embed mpv into the main window + wire progress /
@@ -464,31 +544,44 @@ export async function playStream(media: Media, episode: number | undefined, stre
     const pname = providerName(provider)
     if (!key) return onState({ status: 'error', message: `This source needs a ${pname} key — add it in Settings → Extensions.` })
     onState({ status: 'resolving' })
-    // Show the full-screen caching progress instead of a silent picker spin: an uncached
-    // torrent takes minutes to cache at the service. The AbortController lets Cancel stop the
-    // poll (the torrent keeps caching at the service, so a later retry is instant).
+    // A CACHED (⚡/[RD+]) source resolves in ~1s (debrid already has it), so it plays off the
+    // picker's lightweight spinner with no full-screen "downloading to debrid" screen. That
+    // screen is only for a genuine multi-minute cache: shown upfront for a known-uncached pick,
+    // and escalated to if a supposedly-cached hash turns out stale and actually starts
+    // downloading. The AbortController lets Cancel stop the poll (the torrent keeps caching at
+    // the service, so a later retry is instant).
     const controller = new AbortController()
-    debridCaching.set({
-      provider: pname,
-      title: title(media),
-      episode,
-      cover: cover(media),
-      info: { stage: 'queued' },
-      // Optimistic cancel: close the screen IMMEDIATELY on the first click, then abort the poll in
-      // the background. The eventual AbortError just settles playStream to 'idle' (re-enabling the
-      // picker); a late onStatus can't resurrect the screen because the store is already null.
-      cancel: () => { debridCaching.set(null); controller.abort() },
-    })
+    let overlayShown = false
+    const showCaching = () => {
+      if (overlayShown) return
+      overlayShown = true
+      debridCaching.set({
+        provider: pname, title: title(media), episode, cover: cover(media), info: { stage: 'queued' },
+        // Optimistic cancel: close the screen IMMEDIATELY on the first click, then abort the poll in
+        // the background. The eventual AbortError just settles playStream to 'idle' (re-enabling the
+        // picker); a late onStatus can't resurrect the screen because the store is already null.
+        cancel: () => { debridCaching.set(null); controller.abort() },
+      })
+    }
+    // Known-uncached → show the caching screen upfront. Otherwise DELAY it: a genuinely-cached hash
+    // resolves in ~1s (no screen, no flash), but a stale/mislabeled "cached" hash that RD has to
+    // re-fetch dwells in 'queued'/'downloading' — after a short grace the screen appears so the user
+    // isn't stuck on a frozen picker with no way to cancel. (poll only ever reports queued/downloading.)
+    let overlayTimer: ReturnType<typeof setTimeout> | undefined
+    if (isUncached(stream)) showCaching()
+    else overlayTimer = setTimeout(showCaching, 1500)
     try {
       const url = await resolveHash(provider, key, stream.__magnet ?? stream.infoHash, {
         signal: controller.signal,
         timeoutMs: 30 * 60 * 1000,
-        onStatus: (i) => debridCaching.update((c) => (c ? { ...c, info: i } : c)),
+        onStatus: (i) => { if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c)) },
       })
+      clearTimeout(overlayTimer)
       stream = { ...stream, url }
       debridCaching.set(null)
     }
     catch (e) {
+      clearTimeout(overlayTimer)
       debridCaching.set(null)
       // User-initiated cancel: quietly return to the picker, no error toast.
       if (e instanceof Error && e.name === 'AbortError') return onState({ status: 'idle' })
@@ -507,6 +600,9 @@ export async function playStream(media: Media, episode: number | undefined, stre
       title: label, animeTitle: title(media), id: media.id, malId: media.idMal ?? null,
       episode: episode ?? null, total, airedTotal,
     })
+    // Local watch history: record the open now (covers embedded + external playback), so Continue
+    // Watching lists this show even with no AniList/MyAnimeList linked. Progress bumps on watch.
+    recordPlay(media, episode)
 
     // External player: hand the stream URL to the user's chosen executable and skip
     // the embedded path. No player-progress comes back, so we can't track/resume
@@ -525,8 +621,9 @@ export async function playStream(media: Media, episode: number | undefined, stre
     spriteKey.set(stream.infoHash ?? `${media.id}-${episode ?? 0}`)
 
     // Remember this stream's release identity so the next episode can continue from
-    // the SAME release/pack (bingeGroup / infoHash) without re-picking.
-    bingeSource.set({ mediaId: media.id, bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash })
+    // the SAME release without re-picking — by pack infoHash / Stremio bingeGroup, or the
+    // parsed release group (fansub author) for extension content that has neither.
+    bingeSource.set({ mediaId: media.id, bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group })
 
     // Embed mpv FIRST — it renders behind the still-opaque webview — THEN reveal the
     // overlay + punch the transparent hole. Otherwise the window is briefly

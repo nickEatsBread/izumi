@@ -79,6 +79,11 @@ export const enableExternalPlayer = persisted<boolean>('external-player-enabled'
 /** Absolute path to the external player executable (e.g. C:\\Program Files\\mpv\\mpv.exe). */
 export const externalPlayerPath = persisted<string>('external-player-path', '')
 
+// --- Local history ---
+/** Save watch history + progress on-device (so Continue Watching and resume work without an
+ *  AniList/MyAnimeList account). On by default; can be cleared/exported in Settings → History. */
+export const saveLocalHistory = persisted<boolean>('save-local-history', true)
+
 // --- Interface ---
 /** Blur thumbnails/titles/ratings of UNWATCHED episodes on shows you're watching. */
 export const hideSpoilers = persisted<boolean>('hide-spoilers', false)

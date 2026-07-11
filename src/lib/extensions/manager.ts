@@ -233,7 +233,13 @@ export async function queryExtensions(query: TorrentQuery): Promise<TorrentResul
     const exts = await ensureRunning()
     const live = (await Promise.all(exts.map(async (e) => ((await e.ready) ? e : null)))).filter(Boolean) as RunningExt[]
     const methods = query.episode != null ? ['single', 'batch'] : ['movie']
-    const batches = await Promise.all(live.flatMap((e) => methods.map((m) => call(e, m, query))))
+    // Stamp each result with the extension that produced it (name + icon), mirroring the
+    // torrent-provider path, so the picker labels the row with the real source instead of the
+    // generic "Extension" fallback. Per-extension map (not a flat fan-out) keeps that association.
+    const batches = await Promise.all(live.map(async (e) => {
+      const rs = (await Promise.all(methods.map((m) => call(e, m, query)))).flat()
+      return rs.map((r) => ({ ...r, provider: r.provider ?? e.cfg.name, logo: r.logo ?? e.cfg.icon }))
+    }))
     const seen = new Set<string>()
     const out: TorrentResult[] = []
     for (const r of batches.flat()) {

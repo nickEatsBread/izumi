@@ -73,9 +73,10 @@ export const playerNotice = writable<string>('')
 export const spriteKey = writable<string | null>(null)
 
 // Release identity of the stream now playing, so the NEXT episode can continue from
-// the SAME release/torrent (Stremio bingeGroup) without re-picking — the
-// "folder" behaviour. null when not playing / source unknown.
-export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; infoHash?: string } | null>(null)
+// the SAME release without re-picking — the "folder" behaviour. `group` is the parsed
+// fansub/release author (e.g. "SakuraCircle"), which continues extension/fansub content
+// that carries no Stremio bingeGroup. null when not playing / source unknown.
+export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; infoHash?: string; group?: string } | null>(null)
 
 // Fullscreen state of the MAIN window while playing. Drives hiding the
 // sidebar/titlebar chrome for edge-to-edge video. Kept in sync with the actual

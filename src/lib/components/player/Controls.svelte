@@ -233,13 +233,14 @@
   {#if !gm || titleTop}
     <div class="pointer-events-auto absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : 'px-4 py-3'}">
       {#if !gm}
-        <!-- No backdrop-blur: over the video it's composited as a separate webview layer
-             (see the playback-options popover below) which also broke click hit-testing on
-             the button's inner content — you could only hit the padding. Opaque bg + inner
-             content made non-interactive so every click resolves to the button itself. -->
+        <!-- Hit-testing over the transparent video hole: NEVER promote this button to its own
+             compositing layer (no backdrop-blur / will-change / transform) — that's what made
+             only the padding clickable. The icon + label are made non-interactive individually
+             (pointer-events-none), so a click anywhere on the button — arrow, text, or padding —
+             hit-tests to the <button> itself and fires onclose. -->
         <button data-focusable onclick={onclose} aria-label="Back"
-                class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-neutral-900 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-neutral-800 [&>*]:pointer-events-none">
-          <ArrowLeft size={icSize} /><span class="pointer-events-none">Back</span>
+                class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80 [&>*]:pointer-events-none">
+          <ArrowLeft size={icSize} class="pointer-events-none" /><span class="pointer-events-none">Back</span>
         </button>
       {/if}
       {#if titleTop}<div class="min-w-0 flex-1">{@render titleBlock(true)}</div>{/if}

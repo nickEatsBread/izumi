@@ -10,7 +10,7 @@
   import { fade } from 'svelte/transition'
   import { streamPicker, gameMode } from '$lib/player/session'
   import { rankInfos, pickBest, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
-  import { playStream, type PlayState } from '$lib/stremio/play'
+  import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectAnimate } from '$lib/settings/ui'
   import { title, banner, cover } from '$lib/anilist/media'
   import Search from 'lucide-svelte/icons/search'
@@ -109,6 +109,9 @@
   async function choose(info: StreamInfo) {
     cancelAuto()
     if (busy || !pick || info.cached === 'down') return
+    // Picking a source supersedes the in-flight resolve: stop it folding in more sources (and, for
+    // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
+    cancelResolve()
     busy = true; error = ''
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
       if (s.status === 'playing') streamPicker.set(null)
@@ -132,7 +135,9 @@
     copiedKey = k
     setTimeout(() => { if (copiedKey === k) copiedKey = null }, 1200)
   }
-  function close() { if (!busy) streamPicker.set(null) }
+  // Close = abort the in-flight source resolve too, so its stuck 'resolving' state doesn't block
+  // the next episode click while the orphaned fetches finish in the background.
+  function close() { if (!busy) { cancelResolve(); streamPicker.set(null) } }
 
   const badgeClass = (b: string) =>
     /^(?:4K|1440p|1080p|720p|480p|360p|240p|SD)$/.test(b) ? 'bg-lime-500/15 text-lime-300'

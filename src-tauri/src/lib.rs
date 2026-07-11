@@ -430,6 +430,13 @@ fn set_player_cache(bytes: u64) {
     player::PLAYER_CACHE_BYTES.store(bytes.max(8 * 1024 * 1024), std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Write a UTF-8 text file to an absolute path chosen via the save dialog. Used by the local-history
+/// export (there's no plugin-fs; this is the minimal write primitive the frontend needs).
+#[tauri::command]
+fn write_text_file(path: String, contents: String) -> Result<(), String> {
+    std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
 #[derive(serde::Serialize)]
 pub struct HttpReply {
     status: u16,
@@ -1234,6 +1241,7 @@ pub fn run() {
             ext_fetch,
             set_doh,
             set_player_cache,
+            write_text_file,
             updater_check,
             updater_install,
             player_tracks,

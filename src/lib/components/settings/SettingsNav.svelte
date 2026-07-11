@@ -9,6 +9,7 @@
   import Download from 'lucide-svelte/icons/download'
   import Info from 'lucide-svelte/icons/info'
   import ScrollText from 'lucide-svelte/icons/scroll-text'
+  import History from 'lucide-svelte/icons/history'
 
   const items = [
     { title: 'Player', href: '/app/settings', icon: Play },
@@ -16,6 +17,7 @@
     { title: 'Sources', href: '/app/settings/sources', icon: Rss },
     { title: 'Extensions', href: '/app/settings/extensions', icon: Puzzle },
     { title: 'Downloads', href: '/app/settings/downloads', icon: Download },
+    { title: 'History', href: '/app/settings/history', icon: History },
     { title: 'Accounts', href: '/app/settings/accounts', icon: User },
     { title: 'Network', href: '/app/settings/network', icon: Globe },
     { title: 'Changelog', href: '/app/settings/changelog', icon: ScrollText },
