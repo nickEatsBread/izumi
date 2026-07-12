@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
 import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
+import { inputType } from './input'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
@@ -34,6 +35,17 @@ export function startGamepadNav(): () => void {
 
   const inPlayer = () => get(playing)
 
+  // Track when the player last CLOSED. A single B press can race the player's own close (which
+  // flips `playing` false) into the browse B handler below — which on the home screen would open
+  // the exit prompt. Ignore B for a beat after a close so "back out of the episode" can't quit
+  // the app (the continue-watching → play → B bug).
+  let playerClosedAt = -1e9
+  let wasPlaying = get(playing)
+  const unsubPlaying = playing.subscribe((p) => {
+    if (wasPlaying && !p) playerClosedAt = performance.now()
+    wasPlaying = p
+  })
+
   // A direction fires once on press, then repeats while held. In the player, left/right seek
   // (up/down are unused); everywhere else it drives focus nav via izumi's window keydown handler.
   function fireDir(dir: Dir) {
@@ -48,6 +60,9 @@ export function startGamepadNav(): () => void {
   }
 
   function onPress(name: string) {
+    // Any controller press = 'dpad' modality (so e.g. focusing the sidebar via ☰ expands it, and
+    // a touch tap stays 'touch' and doesn't).
+    inputType.set('dpad')
     // Track menu open (Game mode ☰): it captures ALL buttons — d-pad, A, B, ☰ — so nothing
     // here should drive focus nav / seek / back while it's up.
     if (get(trackMenuOpen)) return
@@ -111,6 +126,8 @@ export function startGamepadNav(): () => void {
       // Back: go up the history, UNLESS we're on the home screen (nothing further back) —
       // there, open the exit-confirm prompt instead of silently going nowhere.
       case 'b':
+        // Swallow B briefly after the player closed (the close-vs-exit race, above).
+        if (performance.now() - playerClosedAt < 500) break
         if (location.pathname.replace(/\/$/, '') === '/app/home') exitPrompt.set(true)
         else history.back()
         break
@@ -145,5 +162,5 @@ export function startGamepadNav(): () => void {
   }
   raf = requestAnimationFrame(loop)
 
-  return () => { cancelAnimationFrame(raf); unlisten?.() }
+  return () => { cancelAnimationFrame(raf); unlisten?.(); unsubPlaying() }
 }

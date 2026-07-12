@@ -7,6 +7,11 @@ export * from './spatial'
 
 interface ElCand { id: string; rect: DOMRect; el: HTMLElement }
 
+// A text field auto-opens the on-screen keyboard on focus (Deck) and captures the arrows, so it
+// must never be the AUTO-landing target — the user reaches it deliberately, not by entering a page.
+const isTextInput = (el: HTMLElement) =>
+  el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable
+
 export function initDpadNav() {
   window.addEventListener('keydown', (e) => {
     // During playback the player owns the arrow/Enter keys (seek/skip/pause). Spatial focus nav
@@ -27,7 +32,10 @@ export function initDpadNav() {
     // "down" from the whole viewport and flings focus deep into the grid (the "jumps to romance,
     // 3rd card" bug). Prefer the first non-sidebar focusable (the hero button) so the row is next.
     if (!active?.closest?.('[data-focusable]')) {
-      const first = els.find(el => !el.closest('[data-nav-sidebar]')) ?? els[0]
+      const content = els.filter(el => !el.closest('[data-nav-sidebar]'))
+      // Prefer the first content focusable that ISN'T a text box (so entering Downloads/Search
+      // doesn't auto-focus the filter/search field and trap the arrows in the on-screen keyboard).
+      const first = content.find(el => !isTextInput(el)) ?? content[0] ?? els[0]
       if (first) {
         first.focus({ preventScroll: true })
         first.scrollIntoView({ behavior: 'smooth', block: 'center' })

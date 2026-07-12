@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
   import Logo from '../Logo.svelte'
   import Home from 'lucide-svelte/icons/house'
   import Calendar from 'lucide-svelte/icons/calendar'
@@ -9,7 +8,8 @@
   import Settings from 'lucide-svelte/icons/settings'
   import LogIn from 'lucide-svelte/icons/log-in'
   import { page } from '$app/state'
-  import { playing, gameMode } from '$lib/player/session'
+  import { playing } from '$lib/player/session'
+  import { inputType } from '$lib/nav'
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
@@ -30,8 +30,11 @@
   // rail as-is. `open` drives width + labels; there's no content scrim (the rail goes opaque
   // + casts a shadow, which is enough to read the labels).
   let focused = $state(false)
-  let kbd = $state(false)
-  const open = $derived(focused && !$playing && ($gameMode || kbd))
+  // Expand only when focus arrived via the d-pad / arrow keys (inputType 'dpad') — never a touch
+  // tap or a mouse (which would flash the rail open then closed as it navigates; a tap should
+  // just switch pages). `inputType` is the app-wide modality store (set to 'dpad' on arrow keys
+  // and by the gamepad translator, 'touch'/'mouse' on pointerdown). Off during playback.
+  const open = $derived(focused && !$playing && $inputType === 'dpad')
   // While playing (windowed — the rail is hidden entirely in fullscreen/Game mode), the player
   // owns input: the menu icons must not be focusable/selectable by the d-pad or keyboard. Left
   // mouse-clickable so a windowed desktop user can still click away. `df`/`tab` fall to normal
@@ -42,18 +45,6 @@
   const onFocusOut = (e: FocusEvent & { currentTarget: HTMLElement }) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focused = false
   }
-  onMount(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key.startsWith('Arrow') || e.key === 'Tab') kbd = true }
-    const onPtr = () => (kbd = false)
-    window.addEventListener('keydown', onKey, true)
-    window.addEventListener('pointerdown', onPtr, true)
-    window.addEventListener('pointermove', onPtr, true)
-    return () => {
-      window.removeEventListener('keydown', onKey, true)
-      window.removeEventListener('pointerdown', onPtr, true)
-      window.removeEventListener('pointermove', onPtr, true)
-    }
-  })
   const active = (href: string) => page.url.pathname.startsWith(href)
 </script>
 
@@ -70,7 +61,8 @@
 <nav data-nav-sidebar onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 overflow-hidden py-3 pt-9 transition-[width] duration-200 ease-out
        {open ? 'w-[200px]' : 'w-14'} {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing ? '' : 'drop-shadow-md'}">
-  <a href="/app/home" class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3" data-focusable={df} tabindex={tab}>
+  <!-- Logo: NOT a d-pad/keyboard nav stop (it's just the brand); still mouse-clickable → Home. -->
+  <a href="/app/home" aria-label="Home" tabindex={-1} class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3">
     <span class="grid w-8 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110"><Logo /></span>
     <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
   </a>
