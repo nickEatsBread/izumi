@@ -43,6 +43,10 @@ export const oskOpen = writable(false)
 // of doing nothing — there's nowhere further back to go, so we ask before quitting the app.
 export const exitPrompt = writable(false)
 
+// Advanced-search filters modal open. Like streamPicker, the controller translator routes B
+// to close it (instead of navigating the page back, which would leave the search page).
+export const advancedFiltersOpen = writable(false)
+
 // Game-mode track menu (Deck ☰ button): the controller-navigable audio/subtitle picker.
 // While true it CAPTURES the pad — the app-wide nav translator and the player's own A/B/L1/R1
 // handlers early-return so d-pad/A/B drive the menu instead of seeking/pausing/focus-nav.

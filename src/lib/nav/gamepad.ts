@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching } from '$lib/player/session'
+import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
@@ -82,6 +82,13 @@ export function startGamepadNav(): () => void {
     if (get(streamPicker)) {
       if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
       else if (name === 'b') streamPicker.set(null)
+      return
+    }
+    // The advanced-filters modal captures A/B: A activates the focused control; B closes it
+    // (via a window event the modal listens for) rather than navigating the search page back.
+    if (get(advancedFiltersOpen)) {
+      if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
+      else if (name === 'b') window.dispatchEvent(new Event('advanced-close'))
       return
     }
     // A/B only act in browse; the player owns them (and L1/R1, L2/R2) itself.
