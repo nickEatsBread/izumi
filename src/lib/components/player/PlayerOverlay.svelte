@@ -447,34 +447,41 @@
     window.addEventListener('pointerup', endStuckScrub)
     window.addEventListener('pointercancel', endStuckScrub)
     window.addEventListener('blur', endStuckScrub)
+
+    // The player OWNS these keys while it's open. Handle them in CAPTURE phase with
+    // stopImmediatePropagation so they can never also reach the app-wide spatial nav (whose
+    // window listener registered first, at app start) — otherwise a seek arrow would ALSO walk
+    // focus onto the chrome (the back button, the sidebar logo) while the video plays.
+    const PLAYER_KEYS = new Set([' ', 'k', 'Escape', 'ArrowLeft', 'ArrowRight', 'n', 'N', 'p', 'P', 'f'])
+    const onKeyCapture = (e: KeyboardEvent) => {
+      if (!PLAYER_KEYS.has(e.key)) return
+      e.preventDefault(); e.stopImmediatePropagation()
+      poke()
+      if (e.key === 'Escape') { if (get(fullscreen)) exitFullscreen() }
+      else if (e.key === ' ' || e.key === 'k') cmd('cycle', ['pause'])
+      else if (e.key === 'ArrowLeft') cmd('seek', [String(-get(seekDuration)), 'relative+exact'])
+      else if (e.key === 'ArrowRight') cmd('seek', [String(get(seekDuration)), 'relative+exact'])
+      else if (e.key === 'n' || e.key === 'N') playNext()
+      else if (e.key === 'p' || e.key === 'P') playPrev()
+      else if (e.key === 'f') toggleFullscreen()
+    }
+    window.addEventListener('keydown', onKeyCapture, true)
     poke()
     return () => {
       uns.forEach((u) => u.then((f) => f()))
       window.removeEventListener('pointerup', endStuckScrub)
       window.removeEventListener('pointercancel', endStuckScrub)
       window.removeEventListener('blur', endStuckScrub)
+      window.removeEventListener('keydown', onKeyCapture, true)
       clearTimeout(hideT)
     }
   })
 </script>
 
-<svelte:window
-  onmousemove={poke}
-  onkeydown={(e) => {
-    poke()
-    // Esc exits fullscreen (does NOT close the player — closing is the ← button).
-    if (e.key === 'Escape') { if (get(fullscreen)) exitFullscreen() }
-    else if (e.key === ' ' || e.key === 'k') cmd('cycle', ['pause'])
-    // Arrow seeks are RELATIVE + EXACT: mpv computes the target from its OWN live
-    // position (not a possibly-stale JS `pos`) and decodes to the exact frame — so a
-    // repeated tap actually advances instead of looping the same keyframe/segment.
-    else if (e.key === 'ArrowLeft') cmd('seek', [String(-get(seekDuration)), 'relative+exact'])
-    else if (e.key === 'ArrowRight') cmd('seek', [String(get(seekDuration)), 'relative+exact'])
-    else if (e.key === 'n' || e.key === 'N') playNext()
-    else if (e.key === 'p' || e.key === 'P') playPrev()
-    else if (e.key === 'f') toggleFullscreen()
-  }}
-/>
+<!-- Arrow seeks are RELATIVE + EXACT (mpv computes from its OWN live position, so a repeated tap
+     advances instead of looping a keyframe). Keys are handled by the CAPTURE-phase listener in
+     onMount (above) — NOT here — so they never leak to the spatial nav and move focus. -->
+<svelte:window onmousemove={poke} />
 
 <!-- Transparent full-window overlay: mpv shows through, controls composite on top.
      z-20 keeps it below the sidebar nav (z-30) and titlebar (z-50), so those stay
