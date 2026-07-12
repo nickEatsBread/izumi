@@ -348,6 +348,10 @@
   $effect(() => { invoke('set_idle_inhibit', { on: !paused && !eof }).catch(() => {}) })
 
   onDestroy(() => {
+    // Hand the LAST position/duration to the progress tracker (play.ts) so closing right after a
+    // skim-to-the-end still saves the resume point + marks watched — fires on every close path
+    // (← button, B, navigate-away). play.ts's window listener is still live at this point.
+    window.dispatchEvent(new CustomEvent('player-finalize', { detail: { pos, dur } }))
     gmDynDisposed = true
     if (gmDynRaf) cancelAnimationFrame(gmDynRaf)
     if (gmDynLastVisible) invoke('player_gm_dynamic_overlay', { state: hiddenGmDynamicState() }).catch(() => {})

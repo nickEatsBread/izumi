@@ -45,7 +45,9 @@
   const onFocusOut = (e: FocusEvent & { currentTarget: HTMLElement }) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focused = false
   }
-  const active = (href: string) => page.url.pathname.startsWith(href)
+  // No active-item highlight while a video plays — the rail is inert then (you're in the player,
+  // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
+  const active = (href: string) => !$playing && page.url.pathname.startsWith(href)
 </script>
 
 <!-- Browse: soft scrim so the banner shows through and fades into the page. Hidden while playing. -->

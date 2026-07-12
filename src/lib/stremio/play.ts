@@ -80,6 +80,22 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
       }
     }),
   )
+  // Finalize on close: the position write is throttled to 5s and the watch-mark only fires on a
+  // live progress event ≥ threshold — so skimming to the end and immediately backing out could
+  // save neither. The player dispatches `player-finalize` with its last pos/dur on close; persist
+  // the resume point + mark watched here (idempotent — recordProgress maxes, `marked` guards).
+  const onFinalize = (ev: Event) => {
+    const { pos, dur } = (ev as CustomEvent<{ pos: number; dur: number }>).detail ?? {}
+    if (!dur || dur <= 0) return
+    savePosition(media.id, episode, pos, dur)
+    if (!marked && watched(pos, dur)) {
+      marked = true
+      recordProgress(media, episode)
+      updateProgress(media, episode, 'CURRENT').catch(() => {})
+    }
+  }
+  window.addEventListener('player-finalize', onFinalize)
+  stop.push(() => window.removeEventListener('player-finalize', onFinalize))
   stop.push(
     await listen('player-ended', async () => {
       // Finished: forget the resume point, then auto-advance if there's a next episode (bounded by
