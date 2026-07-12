@@ -12,7 +12,8 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "gen:android-icons": "node scripts/gen-android-icons.mjs"
   },
   "dependencies": {
     "@fontsource-variable/nunito": "^5.2.7",
