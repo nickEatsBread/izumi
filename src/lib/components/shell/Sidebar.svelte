@@ -45,6 +45,13 @@
   const onFocusOut = (e: FocusEvent & { currentTarget: HTMLElement }) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focused = false
   }
+  // Collapse on navigation. Selecting a nav item keeps DOM focus on it (client-side route change
+  // doesn't blur), so without this the freshly-loaded page briefly shows the EXPANDED rail + its
+  // shadow over the hero, then it collapses when focus later moves — a visible shadow "twitch".
+  $effect(() => {
+    void page.url.pathname
+    focused = false
+  })
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
   const active = (href: string) => !$playing && page.url.pathname.startsWith(href)

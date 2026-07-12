@@ -736,6 +736,13 @@ pub(crate) fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2:
                     }
                     ("eof-reached", PropertyData::Flag(v)) => {
                         let _ = app.emit("player-eof", v);
+                        // `keep-open=yes` holds the file open + PAUSED at the true end, so mpv never
+                        // fires an EndFile(Eof) event — the auto-advance trigger. Drive it off the
+                        // eof-reached false→true transition instead (observe_property only fires on a
+                        // real change, so `v == true` IS that transition — one signal per episode end).
+                        if v {
+                            let _ = app.emit("player-ended", ());
+                        }
                     }
                     _ => {}
                 },
