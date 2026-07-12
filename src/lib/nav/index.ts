@@ -1,3 +1,5 @@
+import { get } from 'svelte/store'
+import { playing } from '$lib/player/session'
 import { pickInDirection, type Dir } from './spatial'
 export * from './input'
 export * from './actions'
@@ -7,6 +9,10 @@ interface ElCand { id: string; rect: DOMRect; el: HTMLElement }
 
 export function initDpadNav() {
   window.addEventListener('keydown', (e) => {
+    // During playback the player owns the arrow/Enter keys (seek/skip/pause). Spatial focus nav
+    // must stay OUT of the way — otherwise a desktop arrow both seeks AND moves focus onto the
+    // player controls / across to the sidebar (which then expands over the video).
+    if (get(playing)) return
     const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
     const dir = map[e.key]
     if (!dir) { if (e.key === 'Enter') (document.activeElement as HTMLElement)?.click(); return }

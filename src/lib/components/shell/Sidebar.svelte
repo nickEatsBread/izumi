@@ -31,7 +31,7 @@
   // + casts a shadow, which is enough to read the labels).
   let focused = $state(false)
   let kbd = $state(false)
-  const open = $derived(focused && ($gameMode || kbd))
+  const open = $derived(focused && !$playing && ($gameMode || kbd))
   const onFocusIn = () => (focused = true)
   const onFocusOut = (e: FocusEvent & { currentTarget: HTMLElement }) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focused = false

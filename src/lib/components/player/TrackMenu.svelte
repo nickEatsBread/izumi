@@ -62,6 +62,16 @@
   let subIdx = $state(0)
   const subItems = $derived(itemsFor(roots[openIdx]?.key))
 
+  // Keep the highlighted track visible: with many tracks (e.g. 20 audio) the column overflows,
+  // and d-pad nav only moves `subIdx` — the list doesn't follow. Scroll the active button into
+  // view when it changes. `block:'nearest'` = instant (no smooth animation, which would crawl
+  // under the Game-mode snapshot render path).
+  let trackColEl = $state<HTMLElement>()
+  $effect(() => {
+    const i = subIdx
+    if (level === 1 && trackColEl) trackColEl.querySelectorAll('button')[i]?.scrollIntoView({ block: 'nearest' })
+  })
+
   async function openMenu() {
     try { tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[] }
     catch { tracks = [] }
@@ -170,7 +180,7 @@
 
       <!-- Track column (appears when descended). -->
       {#if level === 1}
-        <div class="max-h-[85vh] w-[26rem] overflow-y-auto rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
+        <div bind:this={trackColEl} class="max-h-[85vh] w-[26rem] overflow-y-auto rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
           <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
           {#each subItems as it, i (it.kind + it.id)}
             <button

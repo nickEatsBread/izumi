@@ -95,6 +95,19 @@ export function startGamepadNav(): () => void {
     if (inPlayer()) return
     switch (name) {
       case 'a': (document.activeElement as HTMLElement | null)?.click(); break
+      // ☰ (start) in browse opens the side menu: focus the current page's item (else the first),
+      // which expands the labelled rail via its focus-driven expand. In the player, ☰ is the
+      // track menu (handled by TrackMenu before this) — inPlayer() above already returned.
+      case 'start': {
+        const items = [...document.querySelectorAll<HTMLElement>('[data-nav-sidebar] [data-focusable]')]
+        const path = location.pathname.replace(/\/$/, '')
+        const cur = items.find((el) => {
+          const href = el.getAttribute('href')?.replace(/\/$/, '')
+          return href && href !== '/app/home' && path.startsWith(href)
+        })
+        ;(cur ?? items[1] ?? items[0])?.focus()
+        break
+      }
       // Back: go up the history, UNLESS we're on the home screen (nothing further back) —
       // there, open the exit-confirm prompt instead of silently going nowhere.
       case 'b':
