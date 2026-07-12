@@ -1,0 +1,11 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Allow controlling the embedded libmpv player."
+permissions = [
+    "allow-mpv-load",
+    "allow-mpv-command",
+    "allow-mpv-get",
+    "allow-mpv-set",
+    "allow-mpv-stop",
+]

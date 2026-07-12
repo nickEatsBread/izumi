@@ -1,0 +1,15 @@
+[package]
+name = "tauri-plugin-mpv"
+version = "0.1.0"
+edition = "2021"
+description = "Embedded libmpv player for Android (izumi full flavor)."
+links = "tauri-plugin-mpv"
+
+[dependencies]
+tauri = { version = "2" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
