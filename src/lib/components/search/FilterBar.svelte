@@ -4,8 +4,19 @@
   import { getContextClient } from '@urql/svelte'
   import { showAdult } from '$lib/settings/ui'
   import MultiSelect from './MultiSelect.svelte'
+  import AdvancedFilters from './AdvancedFilters.svelte'
+  import SlidersHorizontal from 'lucide-svelte/icons/sliders-horizontal'
 
   let { filters = $bindable() }: { filters: SearchFilters } = $props()
+
+  let showAdvanced = $state(false)
+  // Count of set advanced filters, for the button badge — so hidden filters aren't silent.
+  const advCount = $derived(
+    (filters.tagsIn?.length ? 1 : 0) + (filters.tagsNotIn?.length ? 1 : 0) +
+    (filters.minTagRank ? 1 : 0) + (filters.sources?.length ? 1 : 0) +
+    (filters.country ? 1 : 0) + (filters.minScore ? 1 : 0) +
+    (filters.epMin != null ? 1 : 0) + (filters.epMax != null ? 1 : 0),
+  )
 
   const SEASONS = ['WINTER', 'SPRING', 'SUMMER', 'FALL']
   const FORMATS = ['TV', 'TV_SHORT', 'MOVIE', 'OVA', 'ONA', 'SPECIAL', 'MUSIC']
@@ -80,5 +91,17 @@
     {#each SORTS as s (s)}<option value={s}>{label(s)}</option>{/each}
   </select>
 
+  <button data-focusable onclick={() => (showAdvanced = true)}
+          class="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-bold transition-colors {advCount ? 'bg-theme/20 text-theme hover:bg-theme/30' : 'bg-secondary hover:bg-accent'}">
+    <SlidersHorizontal size={15} /> Advanced{advCount ? ` · ${advCount}` : ''}
+  </button>
   <button data-focusable onclick={clear} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Clear</button>
 </div>
+
+{#if showAdvanced}
+  <AdvancedFilters
+    {filters}
+    onApply={(next) => { filters = next; showAdvanced = false }}
+    onClose={() => (showAdvanced = false)}
+  />
+{/if}
