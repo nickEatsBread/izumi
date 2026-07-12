@@ -342,10 +342,16 @@
     return () => { el.style.overflow = prev }
   })
 
+  // Keep the screen awake ONLY while actively watching — inhibit the OS idle/screen-blank when
+  // playing, release it when paused or at EOF (so the Deck's battery-saver can dim then). The
+  // player closing (onDestroy below) releases it too, so browsing/paused screens dim normally.
+  $effect(() => { invoke('set_idle_inhibit', { on: !paused && !eof }).catch(() => {}) })
+
   onDestroy(() => {
     gmDynDisposed = true
     if (gmDynRaf) cancelAnimationFrame(gmDynRaf)
     if (gmDynLastVisible) invoke('player_gm_dynamic_overlay', { state: hiddenGmDynamicState() }).catch(() => {})
+    invoke('set_idle_inhibit', { on: false }).catch(() => {})
   })
 
   // Game mode controller: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1

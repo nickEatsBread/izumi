@@ -467,6 +467,40 @@ fn set_player_cache(bytes: u64) {
     player::PLAYER_CACHE_BYTES.store(bytes.max(8 * 1024 * 1024), std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Inhibit the OS idle / screen-blank while a video is actively playing — so the Steam Deck's
+/// screen doesn't dim mid-episode. Called with `on=false` when paused, at EOF, or when the
+/// player closes, so battery-saver still kicks in on those (and on other screens). Linux only
+/// (a held `systemd-inhibit` child); a no-op elsewhere. The embedded libmpv render path has no
+/// window, so mpv's own `stop-screensaver` can't do this for us.
+#[cfg(target_os = "linux")]
+fn idle_inhibit_slot() -> &'static std::sync::Mutex<Option<std::process::Child>> {
+    static SLOT: std::sync::OnceLock<std::sync::Mutex<Option<std::process::Child>>> = std::sync::OnceLock::new();
+    SLOT.get_or_init(|| std::sync::Mutex::new(None))
+}
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn set_idle_inhibit(on: bool) {
+    #[cfg(target_os = "linux")]
+    {
+        let mut slot = idle_inhibit_slot().lock().unwrap();
+        if on {
+            if slot.is_none() {
+                if let Ok(child) = std::process::Command::new("systemd-inhibit")
+                    .args(["--what=idle:sleep", "--who=izumi", "--why=Playing video", "--mode=block", "sleep", "infinity"])
+                    .spawn()
+                {
+                    *slot = Some(child);
+                }
+            }
+        } else if let Some(mut child) = slot.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = on;
+}
+
 /// Write a UTF-8 text file to an absolute path chosen via the save dialog. Used by the local-history
 /// export (there's no plugin-fs; this is the minimal write primitive the frontend needs).
 #[tauri::command]
@@ -1347,6 +1381,7 @@ pub fn run() {
             ext_fetch,
             set_doh,
             set_player_cache,
+            set_idle_inhibit,
             write_text_file,
             updater_check,
             updater_install,

@@ -32,6 +32,12 @@
   let focused = $state(false)
   let kbd = $state(false)
   const open = $derived(focused && !$playing && ($gameMode || kbd))
+  // While playing (windowed — the rail is hidden entirely in fullscreen/Game mode), the player
+  // owns input: the menu icons must not be focusable/selectable by the d-pad or keyboard. Left
+  // mouse-clickable so a windowed desktop user can still click away. `df`/`tab` fall to normal
+  // (focusable) in browse.
+  const df = $derived($playing ? undefined : '')
+  const tab = $derived($playing ? -1 : undefined)
   const onFocusIn = () => (focused = true)
   const onFocusOut = (e: FocusEvent & { currentTarget: HTMLElement }) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focused = false
@@ -64,14 +70,14 @@
 <nav data-nav-sidebar onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 overflow-hidden py-3 pt-9 transition-[width] duration-200 ease-out
        {open ? 'w-[200px]' : 'w-14'} {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing ? '' : 'drop-shadow-md'}">
-  <a href="/app/home" class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3" data-focusable>
+  <a href="/app/home" class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3" data-focusable={df} tabindex={tab}>
     <span class="grid w-8 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110"><Logo /></span>
     <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
   </a>
 
   {#each items as it (it.href)}
     {@const on = active(it.href)}
-    <a href={it.href} title={it.label} data-focusable
+    <a href={it.href} title={it.label} data-focusable={df} tabindex={tab}
        class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
          {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
       {#if on}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-theme"></span>{/if}
@@ -83,7 +89,7 @@
   <!-- Spacer pushes Settings + profile to the bottom. -->
   <div class="flex-1"></div>
 
-  <a href="/app/settings" title="Settings" data-focusable
+  <a href="/app/settings" title="Settings" data-focusable={df} tabindex={tab}
      class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
        {active('/app/settings') ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
     {#if active('/app/settings')}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-theme"></span>{/if}
@@ -91,7 +97,7 @@
     <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">Settings</span>
   </a>
 
-  <a href="/app/settings/accounts" title={name ? name : 'Sign in'} data-focusable
+  <a href="/app/settings/accounts" title={name ? name : 'Sign in'} data-focusable={df} tabindex={tab}
      class="group mt-1 flex h-12 shrink-0 items-center gap-3 rounded-md pl-3 text-muted-foreground transition-colors hover:text-foreground">
     <span class="grid w-8 shrink-0 place-items-center">
       {#if name}
