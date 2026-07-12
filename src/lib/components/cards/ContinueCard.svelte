@@ -39,6 +39,10 @@
   function play() { resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' }) }
 </script>
 
+<!-- ONE focusable (the card) = play. The cover is marked `.focus-cover` so controller/keyboard
+     focus rings + pops the THUMBNAIL only (title stays put), matching SmallCard — the wrapper is
+     NOT overflow-hidden so the ring isn't clipped. The title is a plain (non-focusable) link so
+     the rail doesn't stop on it a second time; mouse users can still click it through to detail. -->
 <div
   data-focusable
   role="button"
@@ -46,9 +50,9 @@
   onclick={play}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
-  class="group flex w-[264px] shrink-0 cursor-pointer flex-col overflow-hidden rounded-lg bg-secondary text-left transition-transform hover:scale-[1.02] hover:bg-accent"
+  class="group flex w-[264px] shrink-0 cursor-pointer flex-col text-left"
 >
-  <div class="relative aspect-video w-full overflow-hidden bg-muted">
+  <div class="focus-cover relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
     {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
     {#if thumb}
       <img src={thumb} alt="" loading="lazy" decoding="async" onload={() => (imgReady = true)}
@@ -70,8 +74,8 @@
     {/if}
   </div>
 
-  <div class="p-2">
-    <a href={`/app/anime/${media.id}`} data-focusable onclick={(e) => e.stopPropagation()}
+  <div class="mt-1.5">
+    <a href={`/app/anime/${media.id}`} onclick={(e) => e.stopPropagation()}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
     <span class="block truncate text-[0.7rem] text-muted-foreground">{epTitle || `Episode ${ep}`}</span>
   </div>

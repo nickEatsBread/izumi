@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import Logo from '../Logo.svelte'
   import Home from 'lucide-svelte/icons/house'
   import Calendar from 'lucide-svelte/icons/calendar'
@@ -23,15 +24,30 @@
   const avatarUrl = $derived($anilistUserAvatar || $malUserAvatar)
   const initial = $derived((name || '').trim().charAt(0).toUpperCase())
 
-  // Game-mode only: expand the rail to a labelled menu while it holds focus (d-pad LEFT into
-  // it). Focus is the trigger — mouse hover and non-Game-mode are unaffected. `open` is the
-  // resolved expanded state (focus-within AND Game mode); labels + width + scrim key off it.
+  // Expand the rail to a labelled menu while it holds focus, BUT only for keyboard/gamepad
+  // navigation — never a mouse. On the Deck (gameMode) any focus expands it; on desktop only
+  // when the last input was the keyboard (arrow/tab), so a mouse click/hover leaves the icon
+  // rail as-is. `open` drives width + labels; there's no content scrim (the rail goes opaque
+  // + casts a shadow, which is enough to read the labels).
   let focused = $state(false)
-  const open = $derived($gameMode && focused)
+  let kbd = $state(false)
+  const open = $derived(focused && ($gameMode || kbd))
   const onFocusIn = () => (focused = true)
   const onFocusOut = (e: FocusEvent & { currentTarget: HTMLElement }) => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) focused = false
   }
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key.startsWith('Arrow') || e.key === 'Tab') kbd = true }
+    const onPtr = () => (kbd = false)
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('pointerdown', onPtr, true)
+    window.addEventListener('pointermove', onPtr, true)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('pointerdown', onPtr, true)
+      window.removeEventListener('pointermove', onPtr, true)
+    }
+  })
   const active = (href: string) => page.url.pathname.startsWith(href)
 </script>
 
@@ -39,14 +55,12 @@
 {#if !$playing}
   <div class="pointer-events-none fixed inset-y-0 left-0 z-20 w-32 bg-gradient-to-r from-background/90 via-background/30 to-transparent"></div>
 {/if}
-<!-- Game mode: dim the content while the rail is expanded, so labels read over a busy hero. -->
-{#if $gameMode && !$playing}
-  <div class="pointer-events-none fixed inset-0 z-20 bg-black/40 transition-opacity duration-200 {open ? 'opacity-100' : 'opacity-0'}"></div>
-{/if}
 
 <!-- Rows are always icon + label; the rail's width (+ overflow-hidden) reveals the labels when
      expanded, so no per-state markup swap. `main` keeps its 56px margin — the expanded rail
-     overlays the content (fixed) rather than reflowing it. -->
+     overlays the content (fixed) rather than reflowing it. Selection: the CURRENT page gets a
+     left accent bar + brighter text (no heavy filled box); keyboard/gamepad FOCUS fills the row
+     (see app.css) — no squared ring. -->
 <nav data-nav-sidebar onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 overflow-hidden py-3 pt-9 transition-[width] duration-200 ease-out
        {open ? 'w-[200px]' : 'w-14'} {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing ? '' : 'drop-shadow-md'}">
@@ -56,9 +70,11 @@
   </a>
 
   {#each items as it (it.href)}
+    {@const on = active(it.href)}
     <a href={it.href} title={it.label} data-focusable
-       class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground {active(it.href) ? 'bg-accent text-foreground' : ''}">
-      {#if active(it.href)}<span class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-theme"></span>{/if}
+       class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
+         {on ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
+      {#if on}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-theme"></span>{/if}
       <span class="grid w-8 shrink-0 place-items-center"><it.icon size={20} class={it.anim} /></span>
       <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{it.label}</span>
     </a>
@@ -68,14 +84,15 @@
   <div class="flex-1"></div>
 
   <a href="/app/settings" title="Settings" data-focusable
-     class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground {active('/app/settings') ? 'bg-accent text-foreground' : ''}">
-    {#if active('/app/settings')}<span class="absolute inset-y-2 left-0 w-0.5 rounded-full bg-theme"></span>{/if}
+     class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
+       {active('/app/settings') ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
+    {#if active('/app/settings')}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-theme"></span>{/if}
     <span class="grid w-8 shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
     <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">Settings</span>
   </a>
 
   <a href="/app/settings/accounts" title={name ? name : 'Sign in'} data-focusable
-     class="group mt-1 flex h-12 shrink-0 items-center gap-3 pl-3 text-muted-foreground transition-colors hover:text-foreground">
+     class="group mt-1 flex h-12 shrink-0 items-center gap-3 rounded-md pl-3 text-muted-foreground transition-colors hover:text-foreground">
     <span class="grid w-8 shrink-0 place-items-center">
       {#if name}
         {#if avatarUrl}

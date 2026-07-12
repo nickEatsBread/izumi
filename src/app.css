@@ -94,3 +94,8 @@ body { overflow-x: clip; }
   position: relative;
   z-index: 10;
 }
+/* Browse sidebar selection: fill the focused row (menu-style highlight) instead of the global
+   ring — the squared ring corners read badly across a full-width nav row (rings are for cards).
+   Higher specificity than the *:focus-visible and .gamemode :focus rules above, so it wins. */
+[data-nav-sidebar] [data-focusable]:focus-visible { outline: none; box-shadow: none; background: hsl(var(--foreground) / 0.12); }
+.gamemode [data-nav-sidebar] [data-focusable]:focus { box-shadow: none; background: hsl(var(--foreground) / 0.16); }

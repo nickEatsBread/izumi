@@ -2,7 +2,6 @@
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { listen } from '@tauri-apps/api/event'
-  import { fade } from 'svelte/transition'
   import { trackMenuOpen } from '$lib/player/session'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import Check from 'lucide-svelte/icons/check'
@@ -138,10 +137,12 @@
 </script>
 
 {#if open}
-  <!-- Full-screen capture layer. Backdrop tap closes; z above the controls. -->
+  <!-- Full-screen capture layer. Backdrop tap closes; z above the controls. NO fade/opacity
+       transition: the Game-mode player renders the webview via a software SNAPSHOT (accel off,
+       to avoid gamescope pixelation), so any per-frame opacity animation re-snapshots the whole
+       view each frame → the menu crawled in. Instant show/hide instead. -->
   <div
     class="fixed inset-0 z-40 flex items-center justify-center bg-black/50"
-    transition:fade={{ duration: 120 }}
     onclick={closeMenu}
     role="presentation"
   >
@@ -155,7 +156,7 @@
       <div class="w-[26rem] rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
         {#each roots as r, i (r.key)}
           <button
-            class="my-1 flex w-full select-none items-center rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none transition hover:bg-white hover:text-black"
+            class="my-1 flex w-full select-none items-center rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none hover:bg-white hover:text-black"
             class:bg-white={rootIdx === i}
             class:text-black={rootIdx === i}
             onpointerenter={() => { if (level === 0) rootIdx = i }}
@@ -169,14 +170,11 @@
 
       <!-- Track column (appears when descended). -->
       {#if level === 1}
-        <div
-          class="max-h-[85vh] w-[26rem] overflow-y-auto rounded-2xl border border-white/10 bg-black p-2 shadow-2xl"
-          transition:fade={{ duration: 100 }}
-        >
+        <div class="max-h-[85vh] w-[26rem] overflow-y-auto rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
           <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
           {#each subItems as it, i (it.kind + it.id)}
             <button
-              class="my-1 flex w-full select-none items-center gap-3 rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none transition hover:bg-white hover:text-black"
+              class="my-1 flex w-full select-none items-center gap-3 rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none hover:bg-white hover:text-black"
               class:bg-white={subIdx === i}
               class:text-black={subIdx === i}
               onpointerenter={() => (subIdx = i)}
