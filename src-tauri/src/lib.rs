@@ -18,6 +18,11 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 #[derive(Default)]
 struct FsWasMax(std::sync::Mutex<bool>);
 
+// Unique labels for webview popups created from discussion embeds. Tauri requires each live
+// webview window to have a distinct label, and Disqus can open more than one OAuth hop.
+static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(1);
+
 #[derive(Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 // The fields are consumed by the Game-mode OSD (player::gm_osd), which only compiles on Linux
@@ -1574,6 +1579,8 @@ pub fn run() {
                 use tauri::webview::NewWindowResponse;
                 use tauri_plugin_opener::OpenerExt;
                 let external_opener = app.handle().clone();
+                let popup_app = app.handle().clone();
+                let gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("izumi")
                     .inner_size(1280.0, 800.0)
@@ -1592,7 +1599,7 @@ pub fn run() {
                         #[cfg(windows)]
                         { eprintln!("[dark] on_page_load fired → set_webview_dark"); set_webview_dark(&_win); }
                     })
-                    .on_new_window(move |url, _features| {
+                    .on_new_window(move |url, features| {
                         // Only Disqus authentication needs an in-webview popup so its opener and
                         // partitioned session survive. Ordinary embed links (Community Rules, help,
                         // profiles, etc.) belong in the system browser; WebKitGTK otherwise creates
@@ -1601,7 +1608,42 @@ pub fn run() {
                         let path = url.path().to_ascii_lowercase();
                         let is_disqus = host == "disqus.com" || host.ends_with(".disqus.com");
                         let is_auth = path.contains("login") || path.contains("oauth");
-                        if is_disqus && is_auth {
+                        if gamescope && is_disqus && is_auth {
+                            // `Allow` delegates popup geometry to the remote page. Under Gamescope
+                            // that produced a tiny centered surface which clipped Disqus's fields.
+                            // Create the related WebKit view ourselves: `window_features` preserves
+                            // the opener, cookie partition and WebKit context, while our geometry
+                            // makes the surface usable on the 1280x800 Deck display.
+                            let id = DISCUSSION_POPUP_ID.fetch_add(
+                                1,
+                                std::sync::atomic::Ordering::Relaxed,
+                            );
+                            let label = format!("discussion-popup-{id}");
+                            let popup = WebviewWindowBuilder::new(
+                                &popup_app,
+                                &label,
+                                WebviewUrl::External("about:blank".parse().unwrap()),
+                            )
+                            .window_features(features)
+                            .title("Disqus sign in")
+                            .inner_size(1200.0, 760.0)
+                            .min_inner_size(900.0, 650.0)
+                            .center()
+                            .maximized(true)
+                            .decorations(false)
+                            .focused(true)
+                            .initialization_script(
+                                "document.addEventListener('keydown',function(e){if(e.key==='Escape')window.close()});",
+                            );
+                            match popup.build() {
+                                Ok(window) => NewWindowResponse::Create { window },
+                                Err(error) => {
+                                    eprintln!("[discussion-popup] create failed: {error}");
+                                    NewWindowResponse::Deny
+                                }
+                            }
+                        } else if is_disqus && is_auth {
+                            // Desktop WebView2/WebKit popup sizing is usable already.
                             NewWindowResponse::Allow
                         } else {
                             let _ = external_opener.opener().open_url(url.to_string(), None::<String>);
@@ -1664,9 +1706,25 @@ pub fn run() {
                 });
                 let _ = win.with_webview(|pw| {
                     use glib::object::ObjectType;
-                    use webkit2gtk::{SettingsExt, WebViewExt};
+                    use webkit2gtk::{
+                        CookieAcceptPolicy, CookieManagerExt, SettingsExt,
+                        WebContextExt, WebViewExt, WebsiteDataManagerExt,
+                    };
                     let wv = pw.inner();
                     wv.set_background_color(&gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
+                    if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
+                        // Disqus's authenticated session lives in a third-party discussion frame.
+                        // WebKitGTK's tracking policy can otherwise withhold its cookies after the
+                        // related login popup closes, making the embed appear signed out again.
+                        if let Some(context) = wv.context() {
+                            if let Some(cookies) = context.cookie_manager() {
+                                cookies.set_accept_policy(CookieAcceptPolicy::Always);
+                            }
+                        }
+                        if let Some(data) = wv.website_data_manager() {
+                            data.set_itp_enabled(false);
+                        }
+                    }
                     // THE root fix for the ghost trails: turn off WebKitGTK 2.50 damage
                     // propagation (see disable_webkit_damage).
                     if let Some(settings) = wv.settings() {
