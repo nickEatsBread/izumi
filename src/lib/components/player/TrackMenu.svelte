@@ -78,7 +78,12 @@
     level = 0; rootIdx = 0; subIdx = 0
     open = true; trackMenuOpen.set(true)
   }
-  function closeMenu() { open = false; trackMenuOpen.set(false) }
+  function closeMenu() {
+    open = false
+    // Keep the capture flag set until every listener for this controller event has run. Otherwise
+    // PlayerOverlay can observe `false` later in the same B event and close the entire player.
+    setTimeout(() => { if (!open) trackMenuOpen.set(false) }, 0)
+  }
   function descend() {
     if (level !== 0 || !roots.length) return
     openIdx = rootIdx // lock the category we're entering
@@ -120,7 +125,7 @@
         case 'right': descend(); break
         case 'left': ascend(); break
         case 'a': activate(); break
-        case 'b': ascend(); break
+        case 'b': closeMenu(); break
       }
     }).then((u) => (un = u))
     // Keyboard parity (Desktop testing / a physical keyboard on the Deck).
