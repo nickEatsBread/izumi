@@ -63,6 +63,9 @@
   const embedThread = $derived(filter !== 'All' ? shown.find((t) => t.embedUrl || t.scriptEmbed) : undefined)
   const embedUrl = $derived(embedThread?.embedUrl)
   const ep = $derived($nowPlayingMedia?.episode)
+  const TAC_ORIGIN = 'https://theanimecommunity.com'
+  const TAC_WIDGET = `${TAC_ORIGIN}/embed-widget`
+  const directTacEmbed = $derived(Boolean($gameMode && embedThread?.scriptEmbed))
 
   // A bare `https://disqus.com/embed/comments/?…` URL is the INNER iframe that Disqus' embed.js
   // creates — iframing it directly (no embed.js parent + our untrusted origin) renders blank. Instead
@@ -101,7 +104,7 @@
     return `/script-embed.html?${p.toString()}`
   }
   const embedSrc = $derived(
-    embedThread?.scriptEmbed ? scriptEmbedSrc(embedThread.scriptEmbed)
+    embedThread?.scriptEmbed ? (directTacEmbed ? TAC_WIDGET : scriptEmbedSrc(embedThread.scriptEmbed))
       : !embedUrl ? undefined
         : isDisqusInner(embedUrl) ? disqusEmbedSrc(embedUrl)
           : withDark(embedUrl),
@@ -122,11 +125,24 @@
   let archiveScroller = $state<HTMLElement>()
   let listScroller = $state<HTMLElement>()
   let archiveHeight = $state<number | null>(null)
+  const postTacConfig = () => {
+    if (!directTacEmbed || !embedThread?.scriptEmbed) return
+    embedIframe?.contentWindow?.postMessage({
+      type: 'anime-community:init', config: embedThread.scriptEmbed.config,
+    }, TAC_ORIGIN)
+  }
   // A new archive starts at the viewport height until it reports its actual content height.
   $effect(() => { void embedSrc; archiveHeight = null })
   $effect(() => {
     function onMsg(e: MessageEvent) {
       const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number } | null
+      // On Deck, host TAC's official widget as the panel iframe itself instead of wrapping its
+      // embed.js-created iframe. Complete the provider's documented ready/init handshake directly.
+      if (directTacEmbed && e.origin === TAC_ORIGIN && e.source === embedIframe?.contentWindow
+          && m?.type === 'anime-community:ready') {
+        postTacConfig()
+        return
+      }
       // The cross-origin discussanime archive deliberately hides its own overflow and sends its
       // content height to its host. Size that iframe to the content; the padded wrapper below scrolls.
       if (archiveEmbed && e.origin === 'https://discussanime.moe' && e.source === embedIframe?.contentWindow
@@ -193,7 +209,8 @@
   const postMode = () => embedIframe?.contentWindow?.postMessage({
     type: 'izumi-mode', expanded: $discussionExpanded, gameMode: $gameMode,
   }, location.origin)
-  $effect(() => { void $discussionExpanded; void $gameMode; void embedIframe; postMode() })
+  const postIframeState = () => { postMode(); postTacConfig() }
+  $effect(() => { void $discussionExpanded; void $gameMode; void embedIframe; void embedThread; postIframeState() })
 
   const ago = (ms?: number) => {
     if (!ms) return ''
@@ -257,7 +274,7 @@
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
       </div>
     {:else}
-      <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postMode} class="block min-h-0 w-full flex-1 border-0"
+      <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postIframeState} class="block min-h-0 w-full flex-1 border-0"
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
     {/if}
   {:else}
