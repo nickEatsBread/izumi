@@ -52,7 +52,12 @@ export function startGamepadNav(): () => void {
     if (get(trackMenuOpen)) return // the track menu owns the pad while open
     if (get(debridCaching)) return // the caching screen owns the pad
     if (inPlayer()) {
-      if (get(commentsOpen)) return // the discussion modal owns input; never seek behind it
+      if (get(commentsOpen)) {
+        // Route held/repeating d-pad + stick directions into the discussion panel. This keeps
+        // player seeking disabled while allowing controller scrolling and source selection.
+        window.dispatchEvent(new CustomEvent('comments-nav', { detail: dir }))
+        return
+      }
       if (dir === 'left') playerCmd('seek', [String(-get(seekDuration)), 'relative+exact'])
       else if (dir === 'right') playerCmd('seek', [String(get(seekDuration)), 'relative+exact'])
     } else {

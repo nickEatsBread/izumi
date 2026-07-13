@@ -12,7 +12,7 @@
   import Minimize2 from 'lucide-svelte/icons/minimize-2'
   import ExternalLink from 'lucide-svelte/icons/external-link'
   import ArrowBigUp from 'lucide-svelte/icons/arrow-big-up'
-  import { nowPlayingMedia, commentsOpen } from '$lib/player/session'
+  import { nowPlayingMedia, commentsOpen, gameMode } from '$lib/player/session'
   import { fetchDiscussion, defaultDiscussionPlatform, discussionExpanded, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
 
   let threads = $state<DiscussionThread[]>([])
@@ -56,6 +56,7 @@
   const platLabel = (p: string) => p === 'anilist' ? 'AniList' : p === 'mal' ? 'MAL' : p === 'youtube' ? 'YouTube' : p === 'animecommunity' ? 'Anime Community' : p === 'forum' ? 'Disqus' : p.charAt(0).toUpperCase() + p.slice(1)
 
   const sources = $derived([...new Set(threads.map((t) => t.source))])
+  const sourceTabs = $derived(['All', ...sources])
   const shown = $derived(filter === 'All' ? threads : threads.filter((t) => t.source === filter))
   // When a single source is selected and its thread is embeddable (Disqus/forum), render the embed
   // inline instead of the comment list / link-out.
@@ -118,6 +119,8 @@
   // and hand the authoritative counts back. `needsLogin` → run `da_login` (a discussanime OAuth window)
   // once, then retry. Non-Windows / no-session just returns needsLogin and nothing changes.
   let embedIframe = $state<HTMLIFrameElement>()
+  let archiveScroller = $state<HTMLElement>()
+  let listScroller = $state<HTMLElement>()
   let archiveHeight = $state<number | null>(null)
   // A new archive starts at the viewport height until it reports its actual content height.
   $effect(() => { void embedSrc; archiveHeight = null })
@@ -139,6 +142,27 @@
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
+  })
+  // Deck controller navigation: left/right switches the source pills immediately; up/down scrolls
+  // whichever surface is visible. Same-origin loader frames scroll internally, while the cross-origin
+  // discussanime archive scrolls in its sized parent wrapper.
+  $effect(() => {
+    if (!$commentsOpen) return
+    function onNav(event: Event) {
+      const dir = (event as CustomEvent<'up' | 'down' | 'left' | 'right'>).detail
+      if (dir === 'left' || dir === 'right') {
+        if (sourceTabs.length < 2) return
+        const current = Math.max(0, sourceTabs.indexOf(filter))
+        filter = sourceTabs[(current + (dir === 'right' ? 1 : -1) + sourceTabs.length) % sourceTabs.length]
+        return
+      }
+      const amount = dir === 'down' ? 180 : -180
+      const localScroller = archiveScroller ?? listScroller
+      if (localScroller) { localScroller.scrollBy(0, amount); return }
+      try { embedIframe?.contentWindow?.scrollBy(0, amount) } catch { /* Cross-origin uses archiveScroller. */ }
+    }
+    window.addEventListener('comments-nav', onNav)
+    return () => window.removeEventListener('comments-nav', onNav)
   })
   async function handleReactionState(base: string, identifier: string) {
     try {
@@ -166,8 +190,10 @@
 
   // Tell the Disqus loader page which layout to use so its reactions strip switches between the compact
   // chips (side) and the big Hayami-style tiles (expanded). Posted on mode change + on iframe load.
-  const postMode = () => embedIframe?.contentWindow?.postMessage({ type: 'izumi-mode', expanded: $discussionExpanded }, location.origin)
-  $effect(() => { void $discussionExpanded; void embedIframe; postMode() })
+  const postMode = () => embedIframe?.contentWindow?.postMessage({
+    type: 'izumi-mode', expanded: $discussionExpanded, gameMode: $gameMode,
+  }, location.origin)
+  $effect(() => { void $discussionExpanded; void $gameMode; void embedIframe; postMode() })
 
   const ago = (ms?: number) => {
     if (!ms) return ''
@@ -211,7 +237,7 @@
 
   {#if !loading && sources.length > 1}
     <div class="flex flex-wrap gap-1.5 border-b border-white/10 px-3 py-2">
-      {#each ['All', ...sources] as s (s)}
+      {#each sourceTabs as s (s)}
         <button data-focusable onclick={() => (filter = s)}
                 class="rounded-full px-2.5 py-0.5 text-xs font-bold transition-colors
                   {filter === s ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}">{s}</button>
@@ -224,7 +250,7 @@
          above the comments), or a forum's own embed page. onload posts the current mode so the loader
          styles its reactions compact (side) vs Hayami-tiles (expanded). -->
     {#if archiveEmbed}
-      <div class="discussion-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5">
+      <div bind:this={archiveScroller} class="discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5">
         <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} scrolling="no"
                 style:height={archiveHeight ? `${archiveHeight}px` : '100%'}
                 class="block min-h-full w-full border-0"
@@ -235,7 +261,7 @@
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
     {/if}
   {:else}
-    <div class="flex-1 overflow-y-auto px-3 py-3">
+    <div bind:this={listScroller} class="flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3">
       {#if loading}
         {#each Array.from({ length: 5 }) as _}<div class="mb-2 h-20 animate-pulse rounded-lg bg-muted"></div>{/each}
       {:else if !shown.length}

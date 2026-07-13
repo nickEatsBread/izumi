@@ -514,7 +514,9 @@
      video (and always in game mode). cursor-pointer/none are mutually exclusive so neither
      conflicting utility wins by stylesheet order. -->
 <div
-  class="fixed inset-y-0 right-0 z-20 touch-none overscroll-none select-none"
+  class="fixed inset-y-0 right-0 z-20 overscroll-none select-none"
+  class:touch-none={!$commentsOpen}
+  class:touch-auto={$commentsOpen}
   class:cursor-pointer={!gmMode && controlsVisible}
   class:cursor-none={gmMode || !controlsVisible}
   class:left-14={!$fullscreen && !gmMode}
