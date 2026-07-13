@@ -43,9 +43,7 @@ function mapThread(t: SdkThread): DiscussionThread {
   return {
     id: `${t.platform}-${t.id}`, source: label(t.platform), title: t.title, url: t.url, author: t.author,
     createdAt: t.createdAt, replyCount: t.replyCount, comments: t.comments?.map(mapComment),
-    // Present for Disqus/forum threads once the SDK carries it on the getDiscussion Thread (currently
-    // only on ThreadRef) — see the note to the SDK. Rendered as an inline iframe by the panel.
-    embedUrl: (t as { embedUrl?: string }).embedUrl,
+    embedUrl: t.embedUrl, // Disqus/forum embed → the panel renders it inline as an iframe.
   }
 }
 
