@@ -5,6 +5,9 @@
   import Titlebar from '$lib/components/shell/Titlebar.svelte'
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
   import PlayerOverlay from '$lib/components/player/PlayerOverlay.svelte'
+  import AndroidPlayer from '$lib/components/player/AndroidPlayer.svelte'
+  import CommentsPanel from '$lib/components/player/CommentsPanel.svelte'
+  import { androidMpvActive } from '$lib/player/android-mpv'
   import StreamPicker from '$lib/components/player/StreamPicker.svelte'
   import DebridCaching from '$lib/components/player/DebridCaching.svelte'
   import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
@@ -24,6 +27,7 @@
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
   import { isAndroid, isMobile, initPlatform } from '$lib/platform'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
+  import { initTrackerQueue } from '$lib/trackers/queue'
   import { checkAndroidUpdate, downloadAndInstall, androidUpdate, androidUpdateDismissed } from '$lib/updater/android'
   import { get } from 'svelte/store'
   let { children } = $props()
@@ -51,6 +55,7 @@
     initTouchScroll() // Game-mode drag-to-scroll (Deck touch = mouse events, no native scroll)
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
+    initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
     // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
     // (persisted to idb after), so a fresh install's FIRST play doesn't eat it on the
     // click-to-play path. Fire-and-forget; getIndex is cached/idempotent.
@@ -99,13 +104,15 @@
   // playing, punch a transparent hole — drop the opaque app background (app.css
   // paints html/body solid) so mpv shows through the overlay's transparent areas.
   $effect(() => {
-    const bg = $playing ? 'transparent' : ''
+    // Also punch the hole for the embedded Android player (its SurfaceView renders behind the webview).
+    const holePunched = $playing || $androidMpvActive
+    const bg = holePunched ? 'transparent' : ''
     document.documentElement.style.background = bg
     document.body.style.background = bg
     // Lock page scroll while the player is open. On the Deck a drag in the video area was
     // being taken as a native pan/rubber-band that shoved the (fixed) overlay + video out of
     // place; with the document non-scrollable there's nothing to pan.
-    const lock = $playing ? 'hidden' : ''
+    const lock = holePunched ? 'hidden' : ''
     document.documentElement.style.overflow = lock
     document.body.style.overflow = lock
   })
@@ -141,11 +148,11 @@
 </script>
 
 <!-- Solid app floor; hidden while playing so mpv (behind the webview) shows. -->
-{#if !$playing}<Background />{/if}
+{#if !$playing && !$androidMpvActive}<Background />{/if}
 <!-- Chrome hides in fullscreen playback (edge-to-edge video); stays visible and
      clickable over windowed playback. Game mode (Deck/gamescope) is always fullscreen
      touch — no sidebar/titlebar while playing, just the content. -->
-{#if !($playing && ($fullscreen || $gameMode))}
+{#if !($playing && ($fullscreen || $gameMode)) && !$androidMpvActive}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
   {#if $isMobile}<BottomNav />{:else}<Sidebar />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
@@ -160,8 +167,12 @@
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
-<main class="relative min-h-screen" class:ml-14={!$isMobile} class:mb-16={$isMobile} class:hidden={$playing}>{@render children()}</main>
+<main class="relative min-h-screen {$isMobile ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : 'ml-14'}" class:hidden={$playing || $androidMpvActive}>{@render children()}</main>
 {#if $playing}<PlayerOverlay />{/if}
+<!-- Touch overlay for the embedded Android libmpv player + its discussion panel (self-gates on
+     commentsOpen; the desktop mounts its own inside PlayerOverlay). -->
+{#if $androidMpvActive}<AndroidPlayer />{/if}
+{#if $androidMpvActive}<CommentsPanel />{/if}
 <StreamPicker />
 <DebridCaching />
 <ExitPrompt />

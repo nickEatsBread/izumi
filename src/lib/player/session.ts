@@ -56,6 +56,10 @@ export const trackMenuOpen = writable(false)
 // Game-mode snapshot overlay to its FAST (60fps) cadence so navigating those menus isn't laggy.
 export const playerMenuOpen = writable(false)
 
+// In-player discussion/comments panel (comment button → side panel). Keyed on nowPlaying.{id,malId,
+// episode}. Desktop-first; Game-mode (mpv-snapshot) rendering of a scrollable panel is a later phase.
+export const commentsOpen = writable(false)
+
 // Active debrid caching session: set while an UNCACHED torrent downloads at the debrid
 // service, drives the full-screen DebridCaching progress screen. `cancel` aborts the poll
 // (the torrent keeps caching at the service, so returning later is instant). null = idle.

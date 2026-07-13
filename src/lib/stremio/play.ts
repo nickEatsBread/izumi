@@ -4,19 +4,20 @@ import { get } from 'svelte/store'
 import { enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, fetchAddonStreams, streamId, pickBest, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
-import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie } from './relevance'
+import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wrongFranchiseSeason } from './relevance'
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf } from '$lib/downloads/state'
 import { resolveHash, providerName } from './debrid'
 import { resolveOnlineStreams } from './onlinestream'
+import { fetchAddonSubtitles, type ExternalSubtitle } from './subtitles'
 import { queryExtensions } from '$lib/extensions/manager'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
-import { updateProgress } from '$lib/trackers'
+import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
-import { recordPlay, recordProgress, localHistory } from '$lib/player/history'
+import { recordPlay, localHistory } from '$lib/player/history'
 import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -27,6 +28,7 @@ import { fillerEpisodes } from '$lib/anime/filler'
 import { title, cover } from '$lib/anilist/media'
 import { isAndroid } from '$lib/platform'
 import { playViaIntent } from '$lib/player/android-playback'
+import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
@@ -62,11 +64,11 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
         lastSave = Date.now()
       }
       // Once we cross the watch threshold, mark this episode on the tracker(s)
-      // exactly once (guarded by `marked`).
+      // exactly once (guarded by `marked`). markWatched handles local history + the
+      // only-increase / complete-on-finish guards.
       if (!marked && watched(pos, dur)) {
         marked = true
-        recordProgress(media, episode) // local history — always, independent of any linked tracker
-        updateProgress(media, episode, 'CURRENT').then((t) => t.length && console.log('tracked on', t.join(', ')))
+        markWatched(media, episode)
       }
       // Binge preload: pre-resolve the next episode in the last stretch so Next /
       // auto-advance starts instantly, then warm the debrid/CDN edge in the final
@@ -90,8 +92,7 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
     savePosition(media.id, episode, pos, dur)
     if (!marked && watched(pos, dur)) {
       marked = true
-      recordProgress(media, episode)
-      updateProgress(media, episode, 'CURRENT').catch(() => {})
+      markWatched(media, episode)
     }
   }
   window.addEventListener('player-finalize', onFinalize)
@@ -114,6 +115,58 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
       if (next <= airedTotal) resolveAndPlayBest(media, next, onState)
     }),
   )
+}
+
+// Android embedded-player tracking: mirrors attach() but driven by the mpv plugin's observed-
+// property stream (mpvState) instead of the desktop player-* events. No scrub-prefetch (that's a
+// desktop-only command). Re-attaches per episode; the previous episode's subscription is torn down.
+let stopAndroid: (() => void) | null = null
+function attachAndroid(media: Media, episode: number, onState: (s: PlayState) => void) {
+  stopAndroid?.()
+  let marked = false
+  let lastSave = 0
+  let ended = false
+  const onEnded = async () => {
+    clearPosition(media.id, episode)
+    if (!get(autoplayNext) && !get(bingePreload)) return
+    const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? 0)
+    let next = episode + 1
+    if (get(skipFiller)) {
+      const filler = await fillerEpisodes(media.id)
+      while (next <= airedTotal && filler.includes(next)) next++
+    }
+    if (next <= airedTotal) resolveAndPlayBest(media, next, onState)
+  }
+  // mpvState updates on every observed time-pos/duration/pause/eof — same cadence as the desktop
+  // player-progress event, so the throttle + watch-threshold logic transfers directly.
+  const unsub = mpvState.subscribe((s) => {
+    const { pos, dur, eof } = s
+    if (dur > 0 && Date.now() - lastSave > 5000) {
+      savePosition(media.id, episode, pos, dur)
+      lastSave = Date.now()
+    }
+    if (!marked && watched(pos, dur)) {
+      marked = true
+      markWatched(media, episode)
+    }
+    // Preload the next episode's stream near the end so auto-advance / Next starts instantly.
+    if (get(bingePreload) && dur > 0 && pos / dur > 0.85) prefetchNext(media, episode)
+    if (eof && !ended) { ended = true; onEnded() }
+  })
+  stopAndroid = unsub
+}
+
+/** Persist the resume point + mark-watched on manual close, then stop tracking. The throttled save
+ *  can miss the last few seconds, so the AndroidPlayer calls this with its final pos/dur on close.
+ *  Idempotent (savePosition maxes; markWatched has only-increase / complete-on-finish guards). */
+export function finalizeAndroidWatch(pos: number, dur: number) {
+  const np = get(nowPlaying)
+  if (np.id != null && np.episode != null && dur > 0) {
+    savePosition(np.id, np.episode, pos, dur)
+    if (currentMedia && watched(pos, dur)) markWatched(currentMedia, np.episode)
+  }
+  stopAndroid?.()
+  stopAndroid = null
 }
 
 // Enforce the season the user is on (hard-drop). Addons return
@@ -212,7 +265,10 @@ function refineStreams(media: Media, raw: Stream[]): Stream[] {
       .filter((s) => s.__stream || relevant(s, wantedTitles))
       .filter((s) => s.__stream || !likelyOtherProduction(s, animeYear, absoluteNumbered))
       .filter((s) => s.__stream || !isEpisodeExtra(s))
-      .filter((s) => s.__stream || !isSeries || !isStandaloneMovie(s)),
+      .filter((s) => s.__stream || !isSeries || !isStandaloneMovie(s))
+      // Same-franchise wrong season: base-entry request pulling in "… The Final Season" / "Season 2"
+      // files a number-less season gate can't catch (Attack on Titan S1 → Final Season episodes).
+      .filter((s) => s.__stream || !wrongFranchiseSeason(s, wantedTitles)),
   )
 }
 
@@ -567,6 +623,12 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
+  // Fetch external subtitles from any subtitle-capable addon (OpenSubtitles etc) CONCURRENTLY with the
+  // slow source resolve below, so they're ready by embed time without adding latency. Skipped for the
+  // external/Android players (they own subtitle handling). Best-effort — [] on any failure.
+  const subsP: Promise<ExternalSubtitle[]> = get(isAndroid) || get(enableExternalPlayer)
+    ? Promise.resolve([])
+    : fetchAddonSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename).catch(() => [])
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
   // visible in it); auto-next calls this with no picker open.
   // Extension / P2P results carry only an infoHash — resolve it to a cached HTTP url
@@ -642,6 +704,22 @@ export async function playStream(media: Media, episode: number | undefined, stre
     // returns before the desktop embed below, so nothing libmpv-related runs and `playing` stays
     // false (browse UI stays up, no overlay). The episode is marked watched when the user returns.
     if (get(isAndroid)) {
+      // "Full" flavor: embedded libmpv player (renders in-app). The plugin only exists when the
+      // app was built with the `android-mpv` feature; on the "lite" build hasEmbeddedPlayer() is
+      // false and we fall through to the external-player intent below.
+      if (await hasEmbeddedPlayer()) {
+        const addonSubs = await Promise.race([subsP, new Promise<ExternalSubtitle[]>((r) => setTimeout(() => r([]), 4000))])
+        const subs = [
+          ...(stream.__stream ? (stream.__subtitles ?? []).map((s: { url: string }) => s.url) : []),
+          ...addonSubs.map((s) => s.url),
+        ]
+        await startMpvEvents()
+        await mpvLoad({ url: stream.url, title: label, startPos: startSeconds || 0, subtitles: subs })
+        androidMpvActive.set(true)
+        onState({ status: 'playing' })
+        if (episode != null) attachAndroid(media, episode, onState)
+        return
+      }
       // A completed download resolves to an absolute on-disk path (not an http URL); flag it so the
       // native side exposes it through a FileProvider content:// URI (a raw file path can't be
       // ACTION_VIEW'd across apps since Android 7).
@@ -685,6 +763,14 @@ export async function playStream(media: Media, episode: number | undefined, stre
     await invoke('set_player_cache', {
       bytes: playerCacheBytes(get(playerCacheMb), stream.behaviorHints?.videoSize, durationSec),
     }).catch(() => {})
+    // Await the addon subtitles (bounded — a slow subtitle addon must not hold up playback), and merge
+    // them with any the source itself carried (online-stream __subtitles). mpv sub-adds all of them;
+    // slang auto-selects the preferred language.
+    const addonSubs = await Promise.race([subsP, new Promise<ExternalSubtitle[]>((r) => setTimeout(() => r([]), 4000))])
+    const subtitles = [
+      ...(stream.__stream ? stream.__subtitles ?? [] : []),
+      ...addonSubs.map((s) => ({ url: s.url, lang: s.lang })),
+    ]
     // alang/slang drive mpv's preferred-language track auto-selection.
     await invoke('player_embed', {
       url: stream.url,
@@ -692,7 +778,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
       alang: get(preferredAudioLang),
       slang: get(preferredSubLang),
       headers: stream.__stream ? stream.__headers : undefined,
-      subtitles: stream.__stream ? stream.__subtitles : undefined,
+      subtitles: subtitles.length ? subtitles : undefined,
     })
     playing.set(true)
     onState({ status: 'playing' })

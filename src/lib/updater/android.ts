@@ -7,6 +7,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
 import { writable } from 'svelte/store'
+import { hasEmbeddedPlayer } from '$lib/player/android-mpv'
 
 const REPO = 'nickEatsBread/izumi'
 const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`
@@ -44,7 +45,12 @@ export async function checkAndroidUpdate(): Promise<UpdateInfo | null> {
     // Tags may be prefixed (v0.1.1, app-v0.1.1) — strip everything up to the first digit.
     const tag = String(rel.tag_name ?? '').replace(/^[^0-9]*/, '')
     if (!tag || cmpVersion(tag, current) <= 0) return null
-    const apk = (rel.assets ?? []).find((a) => String(a.name ?? '').toLowerCase().endsWith('.apk'))
+    // Fetch the APK matching THIS build's flavor: full (embedded libmpv) vs lite (external player).
+    // The full build ships the mpv plugin, so hasEmbeddedPlayer() distinguishes them. Fall back to
+    // any .apk for older single-artifact releases.
+    const apks = (rel.assets ?? []).filter((a) => String(a.name ?? '').toLowerCase().endsWith('.apk'))
+    const suffix = (await hasEmbeddedPlayer()) ? 'full.apk' : 'lite.apk'
+    const apk = apks.find((a) => String(a.name ?? '').toLowerCase().endsWith(suffix)) ?? apks[0]
     if (!apk?.browser_download_url) return null
     return { version: tag, notes: String(rel.body ?? ''), apkUrl: apk.browser_download_url }
   } catch {
