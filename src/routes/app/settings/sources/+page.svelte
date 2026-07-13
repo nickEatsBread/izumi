@@ -86,7 +86,7 @@
         <option value="mal">MyAnimeList</option>
         <option value="youtube">YouTube</option>
         <option value="disqus">Disqus</option>
-        <option value="forum">Forum</option>
+        <option value="animecommunity">Anime Community</option>
       </select>
     </label>
     <label class="mt-3 flex flex-col gap-1">

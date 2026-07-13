@@ -1,12 +1,15 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
-import { createDiscussionClient, type HttpAdapter, type Thread as SdkThread, type Comment as SdkComment } from '@nicholasyoannou/hayami-sdk'
+import {
+  createDiscussionClient, type DiscussionClient, type HttpAdapter,
+  type Thread as SdkThread, type Comment as SdkComment,
+} from '@nicholasyoannou/hayami-sdk'
 import { anilistToken } from '$lib/anilist/auth'
 import { commentsBackendUrl } from './config'
 import type { Media } from '$lib/anilist/types'
 import type { DiscussionThread, DiscussionComment } from './types'
 
-export type { DiscussionThread, DiscussionComment } from './types'
+export type { DiscussionThread, DiscussionComment, ScriptEmbed } from './types'
 export { commentsBackendUrl, commentsEnabled, defaultDiscussionPlatform } from './config'
 
 // The discussion aggregation (map id+episode → per-platform threads + comments across Reddit / AniList
@@ -29,7 +32,11 @@ const http: HttpAdapter = async (url, init) => {
 
 // SDK platform slug → the badge label izumi's panel shows.
 const label = (p: string) =>
-  p === 'anilist' ? 'AniList' : p === 'mal' ? 'MAL' : p === 'youtube' ? 'YouTube' : p.charAt(0).toUpperCase() + p.slice(1)
+  p === 'anilist' ? 'AniList' : p === 'mal' ? 'MAL' : p === 'youtube' ? 'YouTube'
+    : p === 'animecommunity' ? 'Anime Community'
+    // 'forum' = the discussanime archive embed; it's Disqus-backed (Chuunime runs on Disqus), so the
+    // user sees it as "Disqus" — same label as the live 'disqus' platform. A thread is one or the other.
+    : p === 'forum' ? 'Disqus' : p.charAt(0).toUpperCase() + p.slice(1)
 
 // Map the SDK's normalized shapes onto the panel's (keeps the UI decoupled from the SDK). Comment
 // bodies use `bodyText` — the SDK's pre-stripped plain text — since izumi has no HTML sanitizer.
@@ -44,17 +51,25 @@ function mapThread(t: SdkThread): DiscussionThread {
     id: `${t.platform}-${t.id}`, source: label(t.platform), title: t.title, url: t.url, author: t.author,
     createdAt: t.createdAt, replyCount: t.replyCount, comments: t.comments?.map(mapComment),
     embedUrl: t.embedUrl, // Disqus/forum embed → the panel renders it inline as an iframe.
+    scriptEmbed: t.scriptEmbed, // TAC → the panel hosts the script in a loader page.
   }
+}
+
+// One client per call (cheap; picks up the current mapper URL + AniList token each time). The Disqus
+// loader page fetches its reaction counts directly (CORS-open), so the app doesn't wire the SDK's
+// getReactions/react here — see static/disqus-embed.html.
+function makeClient(): DiscussionClient {
+  return createDiscussionClient({
+    http,
+    mapperBaseUrl: get(commentsBackendUrl) || undefined, // forum source; empty ⇒ SDK's default / disabled
+    getToken: (p) => (p === 'anilist' ? get(anilistToken) || undefined : undefined),
+  })
 }
 
 /** Fetch episode-discussion threads (with inline comments where available) for a title. Best-effort. */
 export async function fetchDiscussion(media: Media, episode: number | null | undefined): Promise<DiscussionThread[]> {
   const titles = [...new Set([media.title.romaji, media.title.english, media.title.userPreferred].filter((t): t is string => !!t))]
-  const client = createDiscussionClient({
-    http,
-    mapperBaseUrl: get(commentsBackendUrl) || undefined, // forum source; empty ⇒ SDK's default / disabled
-    getToken: (p) => (p === 'anilist' ? get(anilistToken) || undefined : undefined),
-  })
+  const client = makeClient()
   try {
     const threads = await client.getDiscussion(
       { anilistId: media.id, malId: media.idMal ?? undefined, titles, episode: episode ?? null, isMovie: media.format === 'MOVIE' },

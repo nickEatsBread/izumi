@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    Generic script-embed host page, iframed by the in-player discussion panel. A "script embed"
+    (currently The Anime Community / TAC) works by setting a global config object, adding a container
+    div, then loading the provider's embed.js — which reads the global and mounts into the container.
+    Served from static/ so the provider script runs in a real document at the app origin.
+
+    Config comes from the query the panel builds from the SDK's scriptEmbed descriptor:
+      src=<embed.js url>  sid=<script id>  cid=<container id>  cv=<config global name>  cfg=<JSON config>
+  -->
+  <style>
+    html, body { margin: 0; padding: 0; background: #0a0a0b; color-scheme: dark; }
+    #err { padding: 16px; font: 13px system-ui, sans-serif; color: #9aa0a6; }
+  </style>
+</head>
+<body>
+  <div id="err" hidden>Discussion unavailable.</div>
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var src = (q.get('src') || '').trim();
+      var sid = (q.get('sid') || '').trim();
+      var cid = (q.get('cid') || '').trim();
+      var cv  = (q.get('cv')  || '').trim();
+      var cfg; try { cfg = JSON.parse(q.get('cfg') || 'null'); } catch (_) { cfg = null; }
+
+      // Defence: only load an https script from the known TAC host (never an arbitrary URL), and require
+      // the container/config-var/script ids to be plain identifiers before using them as DOM ids /
+      // window keys. The query is built by the app from SDK data, but validate it regardless.
+      var okSrc = false;
+      try { var u = new URL(src); okSrc = u.protocol === 'https:' && /(^|\.)theanimecommunity\.com$/.test(u.hostname); } catch (_) {}
+      var idRe = /^[A-Za-z][\w-]*$/;
+      var bad = !okSrc || !cfg || typeof cfg !== 'object' || !idRe.test(cid) || !idRe.test(cv) || (sid && !idRe.test(sid));
+      if (bad) { document.getElementById('err').hidden = false; return; }
+
+      window[cv] = cfg;
+      var div = document.createElement('div'); div.id = cid; document.body.appendChild(div);
+      var s = document.createElement('script'); if (sid) s.id = sid; s.src = src; s.async = true;
+      document.body.appendChild(s);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!--
+    Same-origin Disqus embed host page, iframed by the in-player discussion panel.
+
+    Why a real page (not the panel's srcdoc): Disqus' embed.js reads window.location and needs a real
+    http(s) document + storage; a srcdoc frame is `about:srcdoc` and breaks it. Served from static/ so
+    it loads at the app origin (localhost in dev, tauri.localhost in prod).
+
+    Why no-referrer: izumi's origin isn't a Disqus "trusted domain" for the forum, so if embed.js sent
+    our origin as the referrer, the trusted-domain check would refuse and the frame renders blank. The
+    <meta referrer> + script.referrerPolicy suppress it so the embed loads read-only. Mirrors the
+    reference extension's loader (script.referrerPolicy='no-referrer').
+
+    Config comes from the query string the panel builds from the SDK's embedUrl:
+      f=<forum shortname>  t_i=<identifier>  t_u=<canonical page url>  t_t=<title>
+  -->
+  <meta name="referrer" content="no-referrer" />
+  <!-- Roboto for the embed's own chrome (reactions strip + wrapper). The Disqus comment text itself
+       lives in a cross-origin disqus.com iframe we can't restyle (the reference extension forces
+       Roboto there via a content-script injected INTO that iframe — only an extension can). Webfont is
+       fine: the whole embed is online-only, so it loads exactly when the comments do. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    html, body { margin: 0; padding: 0; background: #0a0a0b; color-scheme: dark; font-family: 'Roboto', sans-serif; }
+    #disqus_thread { padding: 10px; }
+    #err { padding: 16px; font: 13px system-ui, sans-serif; color: #9aa0a6; }
+    /* Reactions strip — public per-thread counts from the forum host, shown above the comments (where
+       the reference extension injects its own strip). Interactive: this page can't post (CORS blocks
+       POST + no forum session here), so a click asks the parent app to post via the native ext_fetch
+       command (which carries the da_session cookie); the parent posts the authoritative counts back. */
+    #reactions { display: none; border-bottom: 1px solid rgba(255,255,255,0.08); padding: 10px 12px; }
+    .rx-head { font-size: 12px; font-weight: 700; color: #cbd5e1; margin: 0 0 8px; }
+    .rx-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .rx-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.06);
+               border: 0; border-radius: 999px; padding: 4px 10px; color: #e5e7eb;
+               font-size: 13px; font-weight: 700; cursor: pointer; }
+    .rx-chip:hover { background: rgba(255,255,255,0.12); }
+    .rx-chip.sel { background: rgba(80,140,255,0.28); color: #cfe0ff; }
+    .rx-chip[disabled] { opacity: 0.6; cursor: default; }
+    .rx-chip img { width: 20px; height: 20px; object-fit: contain; display: block; }
+    .rx-n { font-variant-numeric: tabular-nums; }
+    /* Ad-block backstop: Disqus injects its monetization + poll frames from *.services.disqus.com
+       (tempest = ads, polls = surveys) into this host doc. Comments come from disqus.com /
+       disquscdn.com — never services.disqus.com — so hiding that subdomain family is safe. The
+       observer below also removes them outright (this only covers any that slip in pre-script). */
+    iframe[src*="services.disqus.com"] { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="reactions"></div>
+  <div id="disqus_thread"></div>
+  <div id="err" hidden>Discussion unavailable.</div>
+  <script>
+    (function () {
+      var q = new URLSearchParams(location.search);
+      var forum = (q.get('f') || '').trim();
+      var url = (q.get('t_u') || '').trim();
+      var identifier = (q.get('t_i') || '').trim();
+      var title = (q.get('t_t') || '').trim();
+
+      // Validate the shortname (goes into a subdomain) — alnum + hyphen only.
+      if (!/^[a-zA-Z0-9-]+$/.test(forum)) {
+        document.getElementById('disqus_thread').hidden = true;
+        document.getElementById('err').hidden = false;
+        return;
+      }
+
+      window.disqus_config = function () {
+        // Canonical (trusted-domain) URL so the right thread resolves despite the untrusted embed origin.
+        this.page.url = url;
+        this.page.identifier = identifier;
+        this.page.title = title;
+      };
+
+      var s = document.createElement('script');
+      s.src = 'https://' + forum + '.disqus.com/embed.js';
+      s.async = true;
+      s.referrerPolicy = 'no-referrer';
+      s.setAttribute('data-timestamp', +new Date());
+      (document.head || document.body).appendChild(s);
+
+      // Ad-block: Disqus appends ad (tempest) + poll frames from *.services.disqus.com into this
+      // host doc. Remove them on insertion (removing the node also aborts the in-flight request —
+      // stronger than display:none). Mirrors the reference extension's DNR block of the same hosts.
+      var AD_FRAME = /\.services\.disqus\.com\//i
+      var killAds = function (n) {
+        if (n.tagName === 'IFRAME') { if (n.src && AD_FRAME.test(n.src)) n.remove(); return }
+        if (n.querySelectorAll) n.querySelectorAll('iframe').forEach(function (f) { if (f.src && AD_FRAME.test(f.src)) f.remove() })
+      }
+      new MutationObserver(function (muts) {
+        muts.forEach(function (m) { m.addedNodes.forEach(killAds) })
+      }).observe(document.documentElement, { childList: true, subtree: true });
+
+      // Reactions strip: forum public counts (GET is CORS-open) rendered above the comments. A click
+      // can't post from here (CORS blocks POST + no forum session in this frame), so it asks the parent
+      // app to post via its native command (which carries the da_session cookie) and posts the
+      // authoritative counts back. Parent messaging is same-origin only (this page is app-served).
+      (function renderReactions() {
+        if (!url || !identifier) return
+        var apiBase; try { apiBase = new URL(url).origin } catch (_) { return }
+        var host = document.getElementById('reactions')
+        var KEYS = ['upvote', 'funny', 'love', 'surprised', 'angry', 'sad']
+        var EMOJI = { upvote: '👍', funny: '😂', love: '❤️', surprised: '😮', angry: '😠', sad: '😢' }
+        var chips = {}, nums = {}, selected = null, busy = false
+
+        function setCounts(c) { KEYS.forEach(function (k) { if (nums[k]) nums[k].textContent = String((c && c[k]) || 0) }) }
+        function setSelected(key) { selected = key; KEYS.forEach(function (k) { if (chips[k]) chips[k].classList.toggle('sel', k === key) }) }
+        function setBusy(b) { busy = b; KEYS.forEach(function (k) { if (chips[k]) { if (b) { chips[k].setAttribute('disabled', '') } else { chips[k].removeAttribute('disabled') } } }) }
+        function onClick(k) {
+          if (busy) return
+          setBusy(true)
+          var next = (selected === k) ? null : k // clicking the active reaction clears it
+          try { window.parent.postMessage({ type: 'izumi-react', base: apiBase, identifier: identifier, key: next }, location.origin) }
+          catch (_) { setBusy(false) }
+        }
+        window.addEventListener('message', function (e) {
+          if (e.origin !== location.origin) return
+          var m = e.data
+          if (!m || m.type !== 'izumi-react-result') return
+          setBusy(false)
+          if (m.ok) { if (m.counts) setCounts(m.counts); setSelected(m.reaction || null) }
+        })
+
+        fetch(apiBase + '/api/threads/by-identifier/' + encodeURIComponent(identifier) + '/reaction', { referrerPolicy: 'no-referrer' })
+          .then(function (r) { return r.ok ? r.json() : null })
+          .then(function (d) {
+            if (!d || !d.counts) return
+            var head = document.createElement('div'); head.className = 'rx-head'; head.textContent = d.heading || 'What do you think?'
+            var row = document.createElement('div'); row.className = 'rx-row'
+            KEYS.forEach(function (k) {
+              var b = document.createElement('div'); b.className = 'rx-chip'; b.title = k
+              var sprite = d.sprites && d.sprites[k]
+              if (sprite) { var img = document.createElement('img'); img.src = sprite; img.alt = k; b.appendChild(img) }
+              else { var em = document.createElement('span'); em.textContent = EMOJI[k]; b.appendChild(em) }
+              var n = document.createElement('span'); n.className = 'rx-n'; n.textContent = String(d.counts[k] || 0); b.appendChild(n)
+              b.addEventListener('click', (function (key) { return function () { onClick(key) } })(k))
+              chips[k] = b; nums[k] = n
+              row.appendChild(b)
+            })
+            host.appendChild(head); host.appendChild(row); host.style.display = 'block'
+            if (d.selectedKey) setSelected(d.selectedKey)
+          })
+          .catch(function () {})
+      })();
+    })();
+  </script>
+</body>
+</html>

@@ -52,7 +52,11 @@
   // fullscreen chrome (no sidebar) + full-width overlay; there is no dock/swap. On the
   // touchscreen a tap reveals the (auto-hiding) controls; on Desktop a click toggles pause.
   const gmMode = $derived($gameMode)
-  function onOverlayTap() {
+  function onOverlayTap(e: MouseEvent) {
+    // Clicks inside the discussion panel (links, filter pills) bubble up here — don't let them
+    // toggle play/pause. The panel tags itself `data-comments-panel` instead of stopPropagation
+    // (which would break Svelte's delegated button clicks). See CommentsPanel.svelte.
+    if ((e.target as HTMLElement)?.closest?.('[data-comments-panel]')) return
     if (gmMode) poke()
     else cmd('cycle', ['pause'])
   }

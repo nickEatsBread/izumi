@@ -4,13 +4,14 @@
   // r/anime episode thread found by search (inline comment bodies) + an optional configured mapper.
   // Read-only for now — posting (AniList free, Reddit OAuth) is a later phase.
   import { fly } from 'svelte/transition'
+  import { invoke } from '@tauri-apps/api/core'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import MessageSquare from 'lucide-svelte/icons/message-square'
   import X from 'lucide-svelte/icons/x'
   import ExternalLink from 'lucide-svelte/icons/external-link'
   import ArrowBigUp from 'lucide-svelte/icons/arrow-big-up'
   import { nowPlayingMedia, commentsOpen } from '$lib/player/session'
-  import { fetchDiscussion, defaultDiscussionPlatform, type DiscussionThread, type DiscussionComment } from '$lib/comments'
+  import { fetchDiscussion, defaultDiscussionPlatform, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
 
   let threads = $state<DiscussionThread[]>([])
   let loading = $state(false)
@@ -43,15 +44,89 @@
   })
 
   // SDK platform slug → the badge/filter label (mirrors comments/index.ts).
-  const platLabel = (p: string) => p === 'anilist' ? 'AniList' : p === 'mal' ? 'MAL' : p === 'youtube' ? 'YouTube' : p.charAt(0).toUpperCase() + p.slice(1)
+  const platLabel = (p: string) => p === 'anilist' ? 'AniList' : p === 'mal' ? 'MAL' : p === 'youtube' ? 'YouTube' : p === 'animecommunity' ? 'Anime Community' : p === 'forum' ? 'Disqus' : p.charAt(0).toUpperCase() + p.slice(1)
 
   const sources = $derived([...new Set(threads.map((t) => t.source))])
   const shown = $derived(filter === 'All' ? threads : threads.filter((t) => t.source === filter))
   // When a single source is selected and its thread is embeddable (Disqus/forum), render the embed
   // inline instead of the comment list / link-out.
-  const embedThread = $derived(filter !== 'All' ? shown.find((t) => t.embedUrl) : undefined)
+  const embedThread = $derived(filter !== 'All' ? shown.find((t) => t.embedUrl || t.scriptEmbed) : undefined)
   const embedUrl = $derived(embedThread?.embedUrl)
   const ep = $derived($nowPlayingMedia?.episode)
+
+  // A bare `https://disqus.com/embed/comments/?…` URL is the INNER iframe that Disqus' embed.js
+  // creates — iframing it directly (no embed.js parent + our untrusted origin) renders blank. Instead
+  // we point the iframe at our own same-origin loader page (static/disqus-embed.html), which runs
+  // embed.js in a REAL document with no-referrer so Disqus mounts the comments. A real `forum`
+  // embed_url is already a normal page → embed its URL directly. See static/disqus-embed.html.
+  const isDisqusInner = (u?: string) => {
+    if (!u) return false
+    try { const x = new URL(u); return x.hostname === 'disqus.com' && x.pathname.startsWith('/embed/comments') }
+    catch { return false }
+  }
+  function disqusEmbedSrc(embed: string): string {
+    const q = new URL(embed).searchParams
+    const out = new URLSearchParams()
+    for (const k of ['f', 't_i', 't_u', 't_t']) { const v = q.get(k); if (v != null) out.set(k, v) }
+    return `/disqus-embed.html?${out.toString()}`
+  }
+  function withDark(url: string): string {
+    // First-paint hint: the archive server-seeds .dq-archive[data-theme] from ?theme, so this darkens
+    // the SSR HTML before JS runs. The live/authoritative signal is the postMessage below.
+    try { const u = new URL(url); u.searchParams.set('theme', 'dark'); return u.toString() }
+    catch { return url }
+  }
+  // A script embed (TAC) has no iframe URL — the SDK hands a scriptEmbed descriptor. Point the iframe
+  // at our generic loader page (static/script-embed.html), which sets the config global + mounts the
+  // provider's embed.js into its container. See static/script-embed.html.
+  function scriptEmbedSrc(se: ScriptEmbed): string {
+    const p = new URLSearchParams({
+      src: se.scriptSrc, sid: se.scriptId, cid: se.containerId, cv: se.configVar, cfg: JSON.stringify(se.config),
+    })
+    return `/script-embed.html?${p.toString()}`
+  }
+  const embedSrc = $derived(
+    embedThread?.scriptEmbed ? scriptEmbedSrc(embedThread.scriptEmbed)
+      : !embedUrl ? undefined
+        : isDisqusInner(embedUrl) ? disqusEmbedSrc(embedUrl)
+          : withDark(embedUrl),
+  )
+  // Note on the archive embed's dark mode: `.dq-archive` is dark-by-default and forced LIGHT only by
+  // `@media (prefers-color-scheme: light)`. So the cross-origin lever is the WEBVIEW's color scheme —
+  // forced dark in Rust (set_webview_dark → WebView2 SetPreferredColorScheme). The archive's own
+  // postMessage theme channel is same-origin-only (rejects our origin), and ?theme (above) only helps
+  // the SSR first paint, so neither is sufficient alone.
+
+  // Reaction bridge: the Disqus loader page (same-origin) can't post reactions itself (CORS blocks
+  // POST + it has no forum session), so it postMessages a request here. We post it through the native
+  // `da_react` command — which reads the httpOnly `da_session` cookie from WebView2 + bypasses CORS —
+  // and hand the authoritative counts back. `needsLogin` → run `da_login` (a discussanime OAuth window)
+  // once, then retry. Non-Windows / no-session just returns needsLogin and nothing changes.
+  let embedIframe = $state<HTMLIFrameElement>()
+  $effect(() => {
+    function onMsg(e: MessageEvent) {
+      if (e.origin !== location.origin) return
+      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null } | null
+      if (!m || m.type !== 'izumi-react' || !m.base || !m.identifier) return
+      void handleReact(m.base, m.identifier, m.key ?? null)
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  })
+  async function handleReact(base: string, identifier: string, key: string | null) {
+    const back = (ok: boolean, counts?: unknown) =>
+      embedIframe?.contentWindow?.postMessage({ type: 'izumi-react-result', ok, counts, reaction: ok ? key : null }, location.origin)
+    try {
+      let res = await invoke<{ ok: boolean; needsLogin: boolean; counts: unknown }>('da_react', { base, identifier, key })
+      if (res.needsLogin) {
+        const signedIn = await invoke<boolean>('da_login', { base }).catch(() => false)
+        if (!signedIn) { back(false); return }
+        res = await invoke('da_react', { base, identifier, key })
+      }
+      back(res.ok, res.counts)
+    }
+    catch { back(false) }
+  }
 
   const ago = (ms?: number) => {
     if (!ms) return ''
@@ -62,13 +137,6 @@
     return `${Math.floor(s / 2592000)}mo`
   }
 
-  // Swallow pointer events so clicks/taps inside the panel never reach the player underneath (which
-  // would toggle play/pause or seek). An action keeps it off the markup — no a11y handlers on a div.
-  function stopBubble(node: HTMLElement) {
-    const stop = (e: Event) => e.stopPropagation()
-    for (const ev of ['pointerdown', 'click', 'dblclick']) node.addEventListener(ev, stop)
-    return { destroy() { for (const ev of ['pointerdown', 'click', 'dblclick']) node.removeEventListener(ev, stop) } }
-  }
 </script>
 
 {#snippet commentTree(c: DiscussionComment, depth: number)}
@@ -86,7 +154,14 @@
 {/snippet}
 
 {#if $commentsOpen}
-  <div use:stopBubble class="absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm"
+  <!-- data-comments-panel: the player's overlay-tap handler ignores clicks originating in here, so
+       taps on links/pills don't toggle play/pause. We DON'T stopPropagation on the panel — Svelte 5
+       delegates click to the app root, so a native stopPropagation here would kill every button's
+       onclick (pills, close). Let clicks bubble; the player just opts out via this attribute. -->
+  <!-- Full-height sheet from the very top (incl. fullscreen). It can't out-z-index the window titlebar
+       (that's a root-level z-50 bar; this panel is trapped in the player overlay's z-20 context), so
+       instead the titlebar hides itself while the discussion is open — see Titlebar.svelte. -->
+  <div data-comments-panel class="absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm"
        transition:fly={{ x: 320, duration: 200 }}>
     <header class="flex items-center gap-2 border-b border-white/10 px-4 py-3">
       <MessageSquare size={18} class="text-theme" />
@@ -105,9 +180,10 @@
       </div>
     {/if}
 
-    {#if !loading && embedUrl}
-      <!-- Embeddable source (Disqus/forum): render its embed inline instead of a link-out. -->
-      <iframe title="Discussion" src={embedUrl} class="block w-full flex-1 border-0"
+    {#if !loading && embedSrc}
+      <!-- Embeddable source: our same-origin Disqus loader page (which renders its own reactions strip
+           above the comments), or a forum's own embed page. -->
+      <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} class="block w-full flex-1 border-0"
               sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
     {:else}
     <div class="flex-1 overflow-y-auto px-3 py-3">

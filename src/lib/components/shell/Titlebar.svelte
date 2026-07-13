@@ -5,6 +5,7 @@
   import Square from 'lucide-svelte/icons/square'
   import Copy from 'lucide-svelte/icons/copy'
   import X from 'lucide-svelte/icons/x'
+  import { commentsOpen } from '$lib/player/session'
 
   const win = getCurrentWindow()
   // Track the real window state so the button shows maximize vs restore correctly —
@@ -27,10 +28,16 @@
   Thin custom titlebar for the frameless window. The bar itself is a drag region
   (data-tauri-drag-region); the control buttons are NOT, so they stay clickable.
   Transparent so the hero banner shows through to the very top edge.
+
+  Hidden while the in-player discussion panel is open: that panel is full-height on the right but is
+  trapped inside the player overlay's z-20 stacking context, so it can't paint over this z-50 bar. Since
+  the window controls aren't wanted while the discussion is open anyway, we hide the whole bar — the
+  panel then owns the top edge cleanly. `invisible` also drops it from hit-testing, so panel clicks land.
 -->
 <div
   data-tauri-drag-region
   class="fixed inset-x-0 top-0 z-50 flex h-8 items-center justify-end"
+  class:invisible={$commentsOpen}
 >
   <button
     onclick={minimize}
