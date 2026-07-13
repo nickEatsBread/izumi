@@ -7,6 +7,7 @@
   import Volume2 from 'lucide-svelte/icons/volume-2'
   import VolumeX from 'lucide-svelte/icons/volume-x'
   import Captions from 'lucide-svelte/icons/captions'
+  import MessageSquare from 'lucide-svelte/icons/message-square'
   import Maximize from 'lucide-svelte/icons/maximize'
   import Minimize from 'lucide-svelte/icons/minimize'
   import Settings from 'lucide-svelte/icons/settings-2'
@@ -18,7 +19,8 @@
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import Check from 'lucide-svelte/icons/check'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, nowPlaying, playerNotice, playerMenuOpen, nowPlayingMedia } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, nowPlaying, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen } from '$lib/player/session'
+  import { commentsEnabled } from '$lib/comments'
   import { videoFit, playerTitleTop } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode } from '$lib/stremio/play'
 
@@ -345,6 +347,14 @@
             </div>
           {/if}
         </div>
+
+        <!-- Discussion / comments panel toggle (keyed on the playing episode). -->
+        {#if $commentsEnabled}
+          <button data-focusable class={iconBtn} onclick={() => { commentsOpen.set(!$commentsOpen); showOptions = false; showTracks = false }}
+                  aria-label="Discussion" aria-pressed={$commentsOpen}>
+            <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
+          </button>
+        {/if}
 
         <!-- Subtitle / audio track menu -->
         <div class="relative">

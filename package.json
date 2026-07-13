@@ -18,6 +18,7 @@
   "dependencies": {
     "@fontsource-variable/nunito": "^5.2.7",
     "@fontsource/geist-mono": "^5.2.8",
+    "@nicholasyoannou/hayami-sdk": "github:nicholasyoannou/hayami-sdk",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-http": "^2.5.9",

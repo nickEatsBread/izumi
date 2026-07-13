@@ -13,8 +13,9 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
-  import { setStatus, toggleFavourite, getMalProgress } from '$lib/trackers'
+  import { setStatus, toggleFavourite, getMalProgress, setScore } from '$lib/trackers'
   import Heart from 'lucide-svelte/icons/heart'
+  import Star from 'lucide-svelte/icons/star'
   import BookmarkPlus from 'lucide-svelte/icons/bookmark-plus'
   import Share2 from 'lucide-svelte/icons/share-2'
   import Clapperboard from 'lucide-svelte/icons/clapperboard'
@@ -34,7 +35,7 @@
   // into the AniList media, so progress shows even when the user tracks on MAL
   // (AniList's mediaListEntry is null/0 then). Take whichever tracker is further
   // along. `media` is what the whole page renders — badge, resume, episode marks.
-  let malEntry = $state<{ progress: number; status: string } | null>(null)
+  let malEntry = $state<{ progress: number; status: string; score: number } | null>(null)
   $effect(() => {
     const base = $store.data?.Media
     malEntry = null
@@ -58,6 +59,22 @@
   let bookmarkBusy = $state(false)
   let copied = $state(false)
   let showTrailer = $state(false)
+  // User rating (canonical 0-100). Optimistic override wins while set; else the AniList list-entry
+  // score, else the MAL score (0-10 → 0-100). Displayed as 5 stars (each = 20 / MAL 2 points).
+  let scoreOpt = $state<number | undefined>(undefined)
+  let scoreBusy = $state(false)
+  const userScore = $derived.by(() => {
+    if (scoreOpt !== undefined) return scoreOpt
+    const ani = $store.data?.Media?.mediaListEntry?.score ?? 0
+    return ani > 0 ? ani : (malEntry?.score ?? 0) * 10
+  })
+  const filledStars = $derived(Math.round(userScore / 20))
+  async function onScore(m: Media, value0to100: number) {
+    if (!($anilistToken || $malToken) || scoreBusy) return
+    scoreBusy = true
+    scoreOpt = value0to100 // optimistic; the queue delivers it even if the live push fails
+    try { await setScore(m, value0to100) } finally { scoreBusy = false }
+  }
 
   const fmtDate = (d?: { year?: number; month?: number; day?: number } | null) =>
     d?.year ? [d.year, d.month, d.day].filter(Boolean).join('-') : ''
@@ -155,6 +172,20 @@
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40">
             {#if bookmarked}<Check size={18} class="text-theme" />{:else}<BookmarkPlus size={18} />{/if}
           </button>
+
+          {#if trackerConnected}
+            <!-- User rating: 5 stars, each = 20 (AniList 0-100) / 2 (MAL 0-10). Click the current
+                 top star to clear. Half-star granularity isn't exposed (Deck/gamepad-friendly). -->
+            <div class="ml-1 flex items-center" role="group" aria-label="Your rating">
+              {#each [1, 2, 3, 4, 5] as n (n)}
+                <button data-focusable onclick={() => onScore(m, userScore === n * 20 ? 0 : n * 20)} disabled={scoreBusy}
+                        title={`Rate ${n * 2}/10`} aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`}
+                        class="grid h-10 w-6 place-items-center rounded-md transition-colors hover:bg-accent disabled:opacity-40">
+                  <Star size={18} class={n <= filledStars ? 'fill-theme text-theme' : 'text-muted-foreground'} />
+                </button>
+              {/each}
+            </div>
+          {/if}
 
           <button data-focusable onclick={() => onShare(m)} title="Copy AniList link"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">

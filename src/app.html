@@ -1,5 +1,8 @@
 <!doctype html>
-<html lang="en">
+<!-- Inline dark bg so the very first paint (before the JS bundle + app.css load) matches the app's
+     background instead of flashing white on launch. app.css/+layout override this at runtime (incl.
+     the transparent player hole). Value = --background (240 10% 3.9%). -->
+<html lang="en" style="background:#0a0a0b">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />

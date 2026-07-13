@@ -2,6 +2,7 @@
   import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
   import { autoSelectSource, autoSelectAnimate, preferredQuality } from '$lib/settings/ui'
   import { fetchManifest } from '$lib/stremio/manifest'
+  import { commentsBackendUrl, commentsEnabled, defaultDiscussionPlatform } from '$lib/comments'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import Globe from 'lucide-svelte/icons/globe'
 
@@ -69,5 +70,28 @@
       {/each}
       {#if !$addonUrls.length}<li class="text-sm text-muted-foreground">No sources yet.</li>{/if}
     </ul>
+  </div>
+
+  <div class="mt-8 max-w-2xl">
+    <h3 class="mb-1 text-sm font-black">Discussion</h3>
+    <p class="mb-3 text-xs text-muted-foreground">A comment button in the player shows episode discussions (r/anime threads + AniList). Optionally point at a discussion mapper endpoint for more curated per-episode sources.</p>
+    <Toggle label="In-player discussion panel" desc="Show the comment button + discussion panel during playback." value={$commentsEnabled} onToggle={() => ($commentsEnabled = !$commentsEnabled)} />
+    <label class="mt-3 flex flex-col gap-1">
+      <span class="text-sm font-bold">Default source</span>
+      <span class="text-xs text-muted-foreground">Which source the discussion panel opens on. An embeddable source (Disqus/forum) renders its embed inline.</span>
+      <select data-focusable bind:value={$defaultDiscussionPlatform} class="mt-1 rounded-md bg-input px-3 py-2 text-sm">
+        <option value="auto">Auto — all sources</option>
+        <option value="reddit">Reddit</option>
+        <option value="anilist">AniList</option>
+        <option value="mal">MyAnimeList</option>
+        <option value="youtube">YouTube</option>
+        <option value="disqus">Disqus</option>
+        <option value="forum">Forum</option>
+      </select>
+    </label>
+    <label class="mt-3 flex flex-col gap-1">
+      <span class="text-sm font-bold">Discussion mapper URL <span class="font-normal text-muted-foreground">— optional</span></span>
+      <input bind:value={$commentsBackendUrl} data-focusable placeholder="https://…" class="rounded-md bg-input px-3 py-2 text-sm" />
+    </label>
   </div>
 </div>

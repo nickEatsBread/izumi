@@ -1,3 +1,7 @@
+// A partial calendar date (AniList FuzzyDate). Any part may be absent. Reused by
+// Media.startDate + the viewer's list-entry start/finish dates.
+export type FuzzyDate = { year?: number; month?: number; day?: number }
+
 export interface Media {
   id: number
   idMal?: number
@@ -12,13 +16,15 @@ export interface Media {
   averageScore?: number
   genres?: string[]
   synonyms?: string[]
-  startDate?: { year?: number; month?: number; day?: number } | null
+  startDate?: FuzzyDate | null
   studios?: { nodes?: { name: string }[] } | null
   coverImage?: { extraLarge?: string; medium?: string; color?: string }
   bannerImage?: string
   trailer?: { id?: string; site?: string } | null
   nextAiringEpisode?: { episode: number; timeUntilAiring: number } | null
   isFavourite?: boolean
-  mediaListEntry?: { progress?: number; status?: string } | null
+  // The viewer's list entry. score is 0-100 (read via score(format: POINT_100), tracker-format
+  // independent); repeat = rewatch count; startedAt/completedAt are the viewer's own dates.
+  mediaListEntry?: { progress?: number; status?: string; score?: number; repeat?: number; startedAt?: FuzzyDate | null; completedAt?: FuzzyDate | null } | null
   relations?: { edges: { relationType: string; node: Media }[] }
 }

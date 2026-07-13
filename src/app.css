@@ -44,7 +44,11 @@ body { overflow-x: clip; }
 /* Opacity-only (no `filter: blur`): WebKitGTK blurs the WHOLE page during CSS filter
    animations (Tauri #9088), and the hero re-fires this on every hero change ({#key}), which
    left the Deck UI soft. A plain fade avoids the bug on both Deck modes. */
-@keyframes heroIn { from { opacity: 0; } to { opacity: 1; } }
+/* End at 0.7 — the SAME opacity the <img> rests at (Tailwind `opacity-70`). The animation has no
+   `forwards` fill, so ending at 1 (as it used to) snapped the image 1.0 → 0.7 the instant the 0.6s
+   fade finished: a visible dim / "shadow twitch" at the top of the hero on every slide. Matching the
+   two ends makes the settle seamless. */
+@keyframes heroIn { from { opacity: 0; } to { opacity: 0.7; } }
 /* Skeleton shimmer (swipe) for loading placeholders. */
 @keyframes skeleton-swipe { 100% { transform: translateX(100%); } }
 .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); }

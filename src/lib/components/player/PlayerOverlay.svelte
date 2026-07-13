@@ -5,9 +5,10 @@
   import { invoke } from '@tauri-apps/api/core'
   import Controls from './Controls.svelte'
   import TrackMenu from './TrackMenu.svelte'
+  import CommentsPanel from './CommentsPanel.svelte'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen } from '$lib/player/session'
+  import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
   import { autoSkip, seekDuration, videoFit, uiScale } from '$lib/settings/ui'
   import { get } from 'svelte/store'
@@ -181,11 +182,11 @@
   const gmDynamicActive = $derived(gmMode && $playing && (loading || $scrubActive))
   // …and while the track menu is open, so its (webview-rendered) columns get snapshotted onto
   // the video — otherwise the menu would be invisible behind the opaque mpv surface.
-  const overlayActive = $derived(gmMode && $playing && !gmDynamicActive && (controlsVisible || showSkip || !!$playerNotice || $trackMenuOpen || $playerMenuOpen))
+  const overlayActive = $derived(gmMode && $playing && !gmDynamicActive && (controlsVisible || showSkip || !!$playerNotice || $trackMenuOpen || $playerMenuOpen || $commentsOpen))
   $effect(() => {
     // Faster snapshot cadence while ANY menu/popover is open so the highlight tracks d-pad moves
     // (the track menu OR the Controls playback-options / track popovers).
-    invoke('player_gm_overlay', { visible: overlayActive, fast: $trackMenuOpen || $playerMenuOpen }).catch(() => {})
+    invoke('player_gm_overlay', { visible: overlayActive, fast: $trackMenuOpen || $playerMenuOpen || $commentsOpen }).catch(() => {})
   })
 
   let gmDynRaf = 0
@@ -553,4 +554,7 @@
   {#if gmMode}
     <TrackMenu {cmd} />
   {/if}
+
+  <!-- Discussion panel: self-gates on `commentsOpen`. Keyed on the playing episode. -->
+  <CommentsPanel />
 </div>

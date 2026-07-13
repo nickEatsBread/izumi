@@ -1,6 +1,6 @@
-import { writable, get } from 'svelte/store'
-import { updateProgress } from '$lib/trackers'
-import { recordProgress, localHistory } from '$lib/player/history'
+import { writable } from 'svelte/store'
+import { markWatched } from '$lib/trackers'
+import { localHistory } from '$lib/player/history'
 import { title } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 
@@ -26,9 +26,9 @@ export function initReturnTracking() {
     const p = pending
     if (!p) return
     pending = null
-    const prev = get(localHistory)[p.media.id]?.progress ?? 0
-    recordProgress(p.media, p.episode)
-    updateProgress(p.media, p.episode, 'CURRENT').catch(() => {})
+    // markWatched bumps local history + pushes to the trackers (with the only-increase /
+    // complete-on-finish guards) and returns the pre-bump count for the undo revert.
+    const prev = markWatched(p.media, p.episode)
     const undo = () => {
       // Revert the local-history bump (the tracker push is best-effort / left as-is).
       localHistory.update((h) => {
