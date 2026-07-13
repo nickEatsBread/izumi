@@ -23,6 +23,12 @@ struct FsWasMax(std::sync::Mutex<bool>);
 static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
 
+/// One-shot TAC configuration prepared immediately before the Deck opens the first-party
+/// verification window. Keeping it in native state survives Cloudflare's top-level navigations;
+/// URL fragments do not reliably survive that flow under WebKitGTK.
+#[derive(Default)]
+struct TacVerificationConfig(std::sync::Mutex<Option<serde_json::Value>>);
+
 #[derive(Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 // The fields are consumed by the Game-mode OSD (player::gm_osd), which only compiles on Linux
@@ -387,6 +393,24 @@ fn discussion_popup_complete(
     app: AppHandle,
 ) -> Result<(), String> {
     finish_discussion_popup(&window, &app)
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn set_tac_verification_config(
+    config: serde_json::Value,
+    pending: tauri::State<'_, TacVerificationConfig>,
+) -> Result<(), String> {
+    let present = |key: &str| match config.get(key) {
+        Some(serde_json::Value::Number(value)) => value.as_u64().is_some_and(|id| id > 0),
+        Some(serde_json::Value::String(value)) => !value.trim().is_empty() && value != "0",
+        _ => false,
+    };
+    if !present("MAL_ID") && !present("AniList_ID") {
+        return Err("TAC configuration has no MAL_ID or AniList_ID".into());
+    }
+    *pending.0.lock().map_err(|_| "TAC configuration lock poisoned")? = Some(config);
+    Ok(())
 }
 
 /// Toggle the WebView's hardware-acceleration policy (Linux, Game mode only). In Game mode the
@@ -1607,6 +1631,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(download::Downloads::default())
+        .manage(TacVerificationConfig::default())
         .manage(FsWasMax::default())
         .setup(|app| {
             // Create the desktop main window HERE (not in tauri.conf.json) so we can attach an
@@ -1799,24 +1824,31 @@ pub fn run() {
                             }
                             if is_tac_verify {
                                 // The top-level view can complete Cloudflare's first-party challenge.
-                                // The opener carries TAC's SDK config in the fragment (client-side
-                                // only). Once the real widget boots, complete its documented init
-                                // handshake before notifying the opener and closing. This keeps the
-                                // popup on TAC's untouched official UI while avoiding its
-                                // "missing MAL_ID or AniList_ID" error.
-                                popup = popup.initialization_script(
-                                    r#"window.addEventListener('message',function(e){
+                                // Read the config prepared by the opener from native one-shot state;
+                                // unlike a URL fragment this remains available after every challenge
+                                // redirect. Then perform TAC's official ready/init handshake unchanged.
+                                let config = popup_app
+                                    .state::<TacVerificationConfig>()
+                                    .0
+                                    .lock()
+                                    .ok()
+                                    .and_then(|mut pending| pending.take());
+                                let config_json = serde_json::to_string(&config)
+                                    .unwrap_or_else(|_| "null".into());
+                                popup = popup.initialization_script(&format!(
+                                    r#"(function(){{
+                                    var config={config_json};
+                                    window.addEventListener('message',function(e){{
                                         if(e.origin!=='https://theanimecommunity.com'||!e.data||e.data.type!=='anime-community:ready')return;
-                                        try{
-                                            var raw=new URLSearchParams(window.location.hash.slice(1)).get('izumi-config');
-                                            var config=raw?JSON.parse(raw):null;
+                                        try{{
                                             if(!config||(!config.MAL_ID&&!config.AniList_ID))return;
-                                            window.postMessage({type:'anime-community:init',config:config},'https://theanimecommunity.com');
-                                            if(window.opener)window.opener.postMessage({type:'izumi-tac-verified'},'*');
-                                            setTimeout(function(){window.close()},500);
-                                        }catch(_error){}
-                                    });"#,
-                                );
+                                            window.postMessage({{type:'anime-community:init',config:config}},'https://theanimecommunity.com');
+                                            if(window.opener)window.opener.postMessage({{type:'izumi-tac-verified'}},'*');
+                                            setTimeout(function(){{window.close()}},500);
+                                        }}catch(_error){{}}
+                                    }});
+                                    }})();"#,
+                                ));
                             }
                             match popup.build() {
                                 Ok(window) => {
@@ -1986,6 +2018,7 @@ pub fn run() {
             set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
+            set_tac_verification_config,
             player_prefetch,
             http_get,
             http_post,

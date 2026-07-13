@@ -73,6 +73,16 @@
   const TAC_WIDGET = `${TAC_ORIGIN}/embed-widget`
   const directTacEmbed = $derived(Boolean($gameMode && embedThread?.scriptEmbed))
   const tacWidgetSrc = $derived(`${TAC_WIDGET}?izumi_retry=${tacReload}`)
+  // The provider requires at least one of these exact keys. Keep the SDK descriptor intact, but
+  // source the IDs from the playing media as an authoritative fallback so a stale/partial SDK
+  // thread can never boot TAC without its anime identity.
+  const tacConfig = $derived.by(() => {
+    const config: Record<string, string | number> = { ...(embedThread?.scriptEmbed?.config ?? {}) }
+    const media = $nowPlayingMedia?.media
+    if (!config.AniList_ID && media?.id) config.AniList_ID = media.id
+    if (!config.MAL_ID && media?.idMal) config.MAL_ID = media.idMal
+    return config
+  })
 
   // A bare `https://disqus.com/embed/comments/?…` URL is the INNER iframe that Disqus' embed.js
   // creates — iframing it directly (no embed.js parent + our untrusted origin) renders blank. Instead
@@ -140,18 +150,25 @@
     tacReady = false
     tacReload += 1
   }
-  function startTacVerification() {
+  async function startTacVerification() {
     if (!$gameMode || tacVerifying) return
-    const config = embedThread?.scriptEmbed?.config
-    if (!config) return
+    if (!tacConfig.MAL_ID && !tacConfig.AniList_ID) {
+      tacTimedOut = true
+      return
+    }
     tacVerifying = true
     tacTimedOut = false
-    // Keep the official TAC widget first-party while it completes Cloudflare, but carry the
-    // episode IDs in the URL fragment so our related WebKit popup can perform the provider's
-    // ready/init handshake. Fragments stay client-side and are never sent to TAC/Cloudflare.
-    const verifyUrl = new URL(TAC_WIDGET)
-    verifyUrl.hash = new URLSearchParams({ 'izumi-config': JSON.stringify(config) }).toString()
-    tacPopup = window.open(verifyUrl.toString(), '_blank', 'popup,width=1200,height=760')
+    try {
+      // Cloudflare navigates the first-party popup while verifying the browser. Store the exact
+      // config natively before opening it so those navigations cannot discard the IDs.
+      await invoke('set_tac_verification_config', { config: tacConfig })
+    } catch (error) {
+      console.warn('[izumi comments] could not prepare TAC verification:', error)
+      tacVerifying = false
+      tacTimedOut = true
+      return
+    }
+    tacPopup = window.open(TAC_WIDGET, '_blank', 'popup,width=1200,height=760')
     if (!tacPopup) {
       tacVerifying = false
       tacTimedOut = true
@@ -167,12 +184,12 @@
   }
   function selectSource(source: string) {
     filter = source
-    if (source === 'Anime Community' && $gameMode && !tacReady) startTacVerification()
+    if (source === 'Anime Community' && $gameMode && !tacReady) void startTacVerification()
   }
   const postTacConfig = () => {
     if (!directTacEmbed || !embedThread?.scriptEmbed) return
     embedIframe?.contentWindow?.postMessage({
-      type: 'anime-community:init', config: embedThread.scriptEmbed.config,
+      type: 'anime-community:init', config: tacConfig,
     }, TAC_ORIGIN)
   }
   // A new archive starts at the viewport height until it reports its actual content height.
