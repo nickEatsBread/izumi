@@ -5,6 +5,10 @@ import { phttp } from '$lib/net/http'
 // instead of a raw URL. Uses the Tauri HTTP plugin (bypasses CORS, follows
 // http→https). Per-session cached by normalized base.
 
+// A Stremio addon resource: a bare name ('stream' | 'subtitles' | 'meta' | 'catalog') or an object
+// carrying its own accepted types/id-prefixes.
+export type AddonResource = string | { name: string; types?: string[]; idPrefixes?: string[] }
+
 export interface AddonManifest {
   id: string
   name: string
@@ -12,6 +16,10 @@ export interface AddonManifest {
   description?: string
   logo?: string
   background?: string
+  // What the addon serves + which id namespaces it accepts (used to route subtitle queries).
+  resources?: AddonResource[]
+  idPrefixes?: string[]
+  types?: string[]
 }
 
 const cache = new Map<string, Promise<AddonManifest | null>>()

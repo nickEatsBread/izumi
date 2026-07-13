@@ -18,5 +18,8 @@ export const anilistUserName = persisted('anilist-viewer-name', '')
 export const anilistUserAvatar = persisted('anilist-viewer-avatar', '')
 export const malToken = persisted<string | null>('mal-token', null)
 export const malRefresh = persisted<string | null>('mal-refresh', null)
+// Unix ms when the current MAL access token expires. 0 = unknown (legacy sessions predating this) →
+// proactive refresh is skipped and we fall back to the reactive 401 refresh.
+export const malTokenExpiry = persisted<number>('mal-token-expiry', 0)
 export const malUserName = persisted('mal-viewer-name', '')
 export const malUserAvatar = persisted('mal-viewer-avatar', '')

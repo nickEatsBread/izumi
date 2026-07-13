@@ -103,3 +103,25 @@ export function isStandaloneMovie(stream: Stream): boolean {
   const name = nameOf(stream)
   return !EPISODE_MARKER.test(name) && !BATCH_MARKER.test(name)
 }
+
+// A SEQUEL-season marker used to DROP a file: a named final season, or a season numbered ≥ 2. Note
+// "Final Season" carries NO number, so parseSeasonEp/isWrongSeason (which key off a season NUMBER)
+// can't see it — yet it's a wholly separate AniList entry from the base series. `season 1-3` (a batch
+// spanning S1) is intentionally NOT matched: the number right after "season" is 1. "Part N"/"Cour N"
+// are deliberately EXCLUDED here — a single entry's cours are routinely labeled "Part 2" (Vinland
+// Saga S1), so dropping on them would kill legit same-entry files.
+const SEQUEL_SEASON = /\b(?:the\s+)?final\s+season\b|\bseason\s*0*(?:[2-9]|[1-9]\d)\b|\b(?:[2-9]|[1-9]\d)(?:st|nd|rd|th)\s+season\b/i
+// ANY explicit season/part marker (INCLUDING season 1 / a final season). Used to tell whether the
+// REQUESTED title itself names a season — if so it isn't the base entry and this guard is skipped.
+const ANY_SEASON = /\b(?:the\s+)?final\s+season\b|\bseason\s*0*\d+\b|\b\d+(?:st|nd|rd|th)\s+season\b|\bpart\s*0*\d+\b|\bcour\s*0*\d+\b/i
+
+// Same-franchise WRONG SEASON. Addons index a franchise under shared/adjacent ids, so a request for
+// the BASE entry ("Shingeki no Kyojin") pulls in sequel-season files ("Shingeki no Kyojin The Final
+// Season - 01") that survive relevant() (the base title matches) AND the SxxExx season gate (a
+// number-less "Final Season" isn't parsed as a season). This fires ONLY when the requested title
+// names NO season (⇒ it's the base) and the file explicitly names a sequel season — so a season-1,
+// batch, or plain absolute-numbered release is never touched. Keeps unknowns (never drop on doubt).
+export function wrongFranchiseSeason(stream: Stream, wanted: string[]): boolean {
+  if (wanted.some((t) => ANY_SEASON.test(t))) return false // request itself names a season — not the base
+  return SEQUEL_SEASON.test(nameOf(stream))
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie } from './relevance'
+import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wrongFranchiseSeason } from './relevance'
 import type { Stream } from './parse'
 
 const s = (filename: string): Stream => ({ behaviorHints: { filename } })
@@ -115,5 +115,35 @@ describe('likelyOtherProduction (One Piece anime vs 2023 live action)', () => {
   })
   it('never drops a plain absolute-numbered episode even with an off release year', () => {
     expect(likelyOtherProduction(s('[Erai-raws] Some Anime - 12 (2019) [1080p].mkv'), 2026)).toBe(false)
+  })
+})
+
+describe('wrongFranchiseSeason (base-entry request pulling in a sequel season — the AoT S1 → Final Season bug)', () => {
+  // Requesting the BASE entry: its titles name NO season.
+  const aotS1 = ['Shingeki no Kyojin', 'Attack on Titan', '進撃の巨人']
+
+  it('drops a "Final Season" file for a base-season request', () => {
+    expect(wrongFranchiseSeason(s('[Moozzi2] Shingeki no Kyojin The Final Season - 01 [ 60 ] (BD 3840x2160 x265-10Bit Flac).mkv'), aotS1)).toBe(true)
+    expect(wrongFranchiseSeason(s('[Neo-raws] Shingeki no Kyojin - The Final Season - 01 [2160p][Multiple Subtitle].mkv'), aotS1)).toBe(true)
+  })
+
+  it('drops numbered sequel seasons / parts for a base request', () => {
+    expect(wrongFranchiseSeason(s('[Group] Shingeki no Kyojin Season 2 - 01 [1080p].mkv'), aotS1)).toBe(true)
+    expect(wrongFranchiseSeason(s('Shingeki no Kyojin 3rd Season - 01 (1080p).mkv'), aotS1)).toBe(true)
+    expect(wrongFranchiseSeason(s('Attack on Titan Season 3 Part 2 - 01.mkv'), aotS1)).toBe(true)
+  })
+
+  it('keeps genuine season-1 / absolute / batch releases for a base request', () => {
+    expect(wrongFranchiseSeason(s('[Erai-raws] Shingeki no Kyojin - 01 [1080p].mkv'), aotS1)).toBe(false)
+    expect(wrongFranchiseSeason(s('Shingeki no Kyojin S01 1080p BluRay.mkv'), aotS1)).toBe(false)
+    expect(wrongFranchiseSeason(s('Shingeki no Kyojin Season 1 [BD 1080p].mkv'), aotS1)).toBe(false)
+    expect(wrongFranchiseSeason(s('Attack on Titan Season 1-3 Complete BluRay.mkv'), aotS1)).toBe(false)
+  })
+
+  it('does NOT filter when the requested title itself names a season (so a Final Season request keeps its files)', () => {
+    const aotFinal = ['Shingeki no Kyojin: The Final Season', 'Attack on Titan: Final Season']
+    expect(wrongFranchiseSeason(s('[Neo-raws] Shingeki no Kyojin - The Final Season - 01 [2160p].mkv'), aotFinal)).toBe(false)
+    const aotS3 = ['Shingeki no Kyojin Season 3', 'Attack on Titan Season 3']
+    expect(wrongFranchiseSeason(s('Shingeki no Kyojin Season 3 - 05 [1080p].mkv'), aotS3)).toBe(false)
   })
 })
