@@ -21,6 +21,10 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 8px; }
     ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
+    /* TAC initially creates its remote widget iframe at height:0 and waits for a resize message.
+       Cloudflare's interstitial does not send that message on WebKitGTK, leaving a permanently blank
+       frame. Give it a viewport while it verifies; the widget can still expand beyond this minimum. */
+    #anime-community-comment-section-iframe { min-height: 100vh !important; }
     #err { padding: 16px; font: 13px system-ui, sans-serif; color: #9aa0a6; }
   </style>
 </head>
