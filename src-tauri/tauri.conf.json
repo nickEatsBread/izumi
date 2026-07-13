@@ -10,16 +10,7 @@
     "frontendDist": "../build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "izumi",
-        "width": 1280,
-        "height": 800,
-        "transparent": false,
-        "decorations": false,
-        "backgroundColor": "#0a0a0b"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

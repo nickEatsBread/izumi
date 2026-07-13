@@ -688,6 +688,31 @@ fn set_webview_transparent(win: &tauri::WebviewWindow) {
     });
 }
 
+/// Force the WebView2 to report `prefers-color-scheme: dark` for ALL content, including third-party
+/// iframes. The Tauri/wry window-theme path (`.theme(Dark)`) does not reliably reach WebView2's color
+/// scheme here, so we set it directly on the profile. This is what the in-player discussion embeds
+/// (the discussanime archive + Disqus) key their dark mode off — their dark tokens are gated purely on
+/// `@media (prefers-color-scheme: dark)`, not on a theme param. No-op if the runtime is too old for
+/// ICoreWebView2_13 (the Profile interface).
+#[cfg(windows)]
+fn set_webview_dark(win: &tauri::WebviewWindow) {
+    let _ = win.with_webview(|webview| {
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2_13, COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK,
+        };
+        use windows::core::Interface;
+        unsafe {
+            if let Ok(core) = webview.controller().CoreWebView2() {
+                if let Ok(wv13) = core.cast::<ICoreWebView2_13>() {
+                    if let Ok(profile) = wv13.Profile() {
+                        let _ = profile.SetPreferredColorScheme(COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK);
+                    }
+                }
+            }
+        }
+    });
+}
+
 /// Left inset (physical px) for the mpv child — the sidebar-rail width while
 /// playing windowed, so the video sits to the RIGHT of the black sidebar
 /// instead of rendering behind it. 0 in fullscreen / browse. Set from the
@@ -1102,6 +1127,183 @@ async fn oauth_capture(
     result
 }
 
+/// Read ALL cookies for `uri` from the WebView2 cookie store (all app webviews share one store) and
+/// return them as a `name=value; …` Cookie header. httpOnly + SameSite=lax cookies (discussanime's
+/// Better-Auth session token, its `da_session` bridge, …) are invisible to JS and never sent
+/// cross-site, so the native CookieManager is the only way to reach them for an authenticated POST.
+/// We send the WHOLE jar (not one cookie) so whichever auth cookie the server wants is present. Times
+/// out to "" so a missing async callback can't hang the caller. Windows-only; "" elsewhere.
+#[cfg(windows)]
+async fn read_cookies(window: tauri::WebviewWindow, uri: String) -> String {
+    use webview2_com::GetCookiesCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2CookieList, ICoreWebView2_2};
+    use windows::core::{Interface, HSTRING, PCWSTR, PWSTR};
+    let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    let slot_err = slot.clone();
+    let wv = window.with_webview(move |pw| unsafe {
+        let fail = |s: &std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>| {
+            if let Some(t) = s.lock().unwrap().take() { let _ = t.send(String::new()); }
+        };
+        let core = match pw.controller().CoreWebView2() { Ok(c) => c, Err(_) => return fail(&slot_err) };
+        let cm = match core.cast::<ICoreWebView2_2>().and_then(|w2| w2.CookieManager()) {
+            Ok(c) => c,
+            Err(_) => return fail(&slot_err),
+        };
+        let uri_h = HSTRING::from(uri);
+        let slot_ok = slot_err.clone();
+        let handler = GetCookiesCompletedHandler::create(Box::new(move |_hr, list: Option<ICoreWebView2CookieList>| {
+            let mut pairs: Vec<String> = Vec::new();
+            if let Some(list) = list {
+                let mut count: u32 = 0;
+                if list.Count(&mut count).is_ok() {
+                    for i in 0..count {
+                        if let Ok(cookie) = list.GetValueAtIndex(i) {
+                            let mut np = PWSTR::null();
+                            let nm = if cookie.Name(&mut np).is_ok() && !np.is_null() {
+                                np.to_string().unwrap_or_default()
+                            } else { String::new() };
+                            let mut vp = PWSTR::null();
+                            let vl = if cookie.Value(&mut vp).is_ok() && !vp.is_null() {
+                                vp.to_string().unwrap_or_default()
+                            } else { String::new() };
+                            if !nm.is_empty() { pairs.push(format!("{nm}={vl}")); }
+                        }
+                    }
+                }
+            }
+            if let Some(t) = slot_ok.lock().unwrap().take() { let _ = t.send(pairs.join("; ")); }
+            Ok(())
+        }));
+        if cm.GetCookies(PCWSTR(uri_h.as_ptr()), &handler).is_err() { fail(&slot_err); }
+    });
+    if wv.is_err() { return String::new(); }
+    match tokio::time::timeout(std::time::Duration::from_secs(6), rx).await { Ok(Ok(v)) => v, _ => String::new() }
+}
+
+#[cfg(not(windows))]
+async fn read_cookies(_window: tauri::WebviewWindow, _uri: String) -> String {
+    String::new()
+}
+
+/// True if a cookie header carries a live discussanime session — the Better-Auth `…session_token`
+/// (name is `{prefix}.session_token`, possibly `__Secure-`-prefixed). We deliberately do NOT count the
+/// `da_session` bridge: on a Better-Auth site it can linger after the real session is gone, and posting
+/// it alone 401s — treating it as "signed in" would loop forever instead of prompting a fresh login.
+fn has_auth_cookie(header: &str) -> bool {
+    header.contains("session_token=") && !header.contains("session_token=;")
+}
+
+#[derive(serde::Serialize)]
+struct ReactReply {
+    ok: bool,
+    #[serde(rename = "needsLogin")]
+    needs_login: bool,
+    counts: Option<serde_json::Value>,
+}
+
+// Captured discussanime cookie header (the whole jar). The per-call WebView2 read is async + a little
+// racy, so once we get an authed jar we cache it and reuse it — cleared on a 401 (stale) so the next
+// reaction re-reads / re-triggers login.
+static DA_COOKIES: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Best-effort discussanime cookie header: the cached jar if present, else a live read (cached only
+/// when it carries an auth cookie).
+async fn da_cookies(window: tauri::WebviewWindow, base: &str) -> String {
+    if let Some(v) = DA_COOKIES.lock().unwrap().clone() { return v; }
+    let v = read_cookies(window, format!("{base}/")).await;
+    if has_auth_cookie(&v) { *DA_COOKIES.lock().unwrap() = Some(v.clone()); }
+    v
+}
+
+/// Post a discussanime reaction (or clear it with `key=null`) authenticated by the user's `da_session`
+/// cookie. Returns `needsLogin` when there's no session (sign in via `da_login`). Goes through the
+/// pooled reqwest client with the cookie attached, which sidesteps the browser CORS + SameSite limits
+/// that block a POST from the embed.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn da_react(
+    window: tauri::WebviewWindow,
+    base: String,
+    identifier: String,
+    key: Option<String>,
+) -> Result<ReactReply, String> {
+    let base = base.trim_end_matches('/').to_string();
+    let cookie = da_cookies(window, &base).await;
+    if !has_auth_cookie(&cookie) {
+        eprintln!("[da_react] no auth cookie in the jar → needsLogin");
+        return Ok(ReactReply { ok: false, needs_login: true, counts: None });
+    }
+    let url = format!("{base}/api/threads/by-identifier/{identifier}/reaction");
+    let body = serde_json::json!({ "reaction": key }).to_string();
+    let resp = http_client()
+        .post(&url)
+        .header("cookie", &cookie)
+        .header("content-type", "application/json")
+        .header("origin", &base)
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let st = resp.status().as_u16();
+    eprintln!("[da_react] POST {url} reaction={key:?} → HTTP {st}");
+    if st == 401 {
+        *DA_COOKIES.lock().unwrap() = None; // stale session — force a fresh read/login next time
+        return Ok(ReactReply { ok: false, needs_login: true, counts: None });
+    }
+    if !(200..300).contains(&st) {
+        return Ok(ReactReply { ok: false, needs_login: false, counts: None });
+    }
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+    Ok(ReactReply { ok: true, needs_login: false, counts: json.get("counts").cloned() })
+}
+
+/// Open discussanime's Disqus-OAuth login in a dedicated window; resolve true once the `da_session`
+/// cookie appears (login completed), false on timeout or if the user closes the window.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn da_login(app: tauri::AppHandle, base: String) -> Result<bool, String> {
+    let base = base.trim_end_matches('/').to_string();
+    // Already signed in (cached, or a persisted cookie from a prior run)? Skip the window entirely —
+    // this is what avoids the login window flashing open+closed when a session already exists.
+    if DA_COOKIES.lock().unwrap().is_some() { return Ok(true); }
+    if let Some(w) = app.get_webview_window("main") {
+        let c = read_cookies(w, format!("{base}/")).await;
+        if has_auth_cookie(&c) {
+            eprintln!("[da_login] existing session cookie found — no window needed");
+            *DA_COOKIES.lock().unwrap() = Some(c);
+            return Ok(true);
+        }
+    }
+    eprintln!("[da_login] opening discussanime login window");
+    let url = format!("{base}/auth/disqus/login").parse().map_err(|_| "bad url".to_string())?;
+    if let Some(w) = app.get_webview_window("da-login") { let _ = w.close(); }
+    let win = WebviewWindowBuilder::new(&app, "da-login", WebviewUrl::External(url))
+        .title("Sign in — Discuss Anime")
+        .inner_size(520.0, 760.0)
+        .on_new_window(|_u, _f| tauri::webview::NewWindowResponse::Allow) // Disqus OAuth may use a popup
+        .build()
+        .map_err(|e| e.to_string())?;
+    let mut waited: u64 = 0;
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        waited += 800;
+        if win.url().is_err() { break; } // user closed the window
+        let c = read_cookies(win.clone(), format!("{base}/")).await;
+        if has_auth_cookie(&c) {
+            eprintln!("[da_login] session cookie appeared — signed in");
+            *DA_COOKIES.lock().unwrap() = Some(c);
+            let _ = win.close();
+            return Ok(true);
+        }
+        if waited > 300_000 { break; }
+    }
+    let _ = win.close();
+    eprintln!("[da_login] window closed with no session");
+    Ok(false)
+}
+
 /// Android OAuth login: no second window, so bridge to the extplayer plugin's in-app WebView
 /// capture. Same signature + return (the full redirect URL) as the desktop command, so the
 /// frontend calls `oauth_capture` identically on both platforms.
@@ -1308,6 +1510,40 @@ pub fn run() {
         .manage(download::Downloads::default())
         .manage(FsWasMax::default())
         .setup(|app| {
+            // Create the desktop main window HERE (not in tauri.conf.json) so we can attach an
+            // on_new_window handler. Tauri denies `window.open` by default, which silently blocks the
+            // discussion embeds' popups — notably Disqus's OAuth login. Returning `Allow` lets the
+            // webview open the popup in-app in the SAME environment (shared cookies/session, opener
+            // preserved), so Disqus's login flow + its postMessage-back handshake work. Cookie-sharing
+            // via a separate top-level window can't work here (third-party iframe cookies are
+            // partitioned from a first-party login), so the popup is the only correct path.
+            // Android is single-activity + doesn't support on_new_window, so it keeps its
+            // config-defined window (tauri.android.conf.json).
+            #[cfg(not(target_os = "android"))]
+            {
+                use tauri::webview::NewWindowResponse;
+                WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                    .title("izumi")
+                    .inner_size(1280.0, 800.0)
+                    .decorations(false)
+                    .background_color(tauri::window::Color(10, 10, 11, 255))
+                    // Force the webview to report prefers-color-scheme: dark. The app itself is dark via
+                    // CSS classes (darkMode:'class', no prefers-color-scheme queries), so this doesn't
+                    // change our UI — but the discussion embeds (discussanime archive, Disqus) keep
+                    // their "canvas" on the system color scheme, which was light in the webview and left
+                    // the forum embed light. Dark here makes those embeds' canvas dark too.
+                    .theme(Some(tauri::Theme::Dark))
+                    // Re-assert dark prefers-color-scheme on every page load too. The setup-time
+                    // set_webview_dark call can no-op if CoreWebView2 isn't fully initialized yet;
+                    // on_page_load runs after the document loads, when the profile is guaranteed ready.
+                    .on_page_load(|_win, _| {
+                        #[cfg(windows)]
+                        set_webview_dark(&_win);
+                    })
+                    .on_new_window(|_url, _features| NewWindowResponse::Allow)
+                    .build()?;
+            }
+
             // Keep mpv's embedded child sized to the window on every resize (mpv
             // doesn't auto-track the parent under tao). Covers maximize/restore/drag;
             // fullscreen toggles refit directly.
@@ -1315,6 +1551,9 @@ pub fn run() {
             if let Some(win) = app.get_webview_window("main") {
                 // Opaque window, transparent webview background (Stremio model).
                 set_webview_transparent(&win);
+                // Force prefers-color-scheme: dark on the WebView2 (incl. iframes) — the discussion
+                // embeds key their dark mode off it. .theme(Dark) above doesn't reliably reach it.
+                set_webview_dark(&win);
                 if let Ok(h) = win.hwnd() {
                     let raw = h.0 as isize;
                     // Create the mpv container child window HERE (main/UI thread) — NOT
@@ -1416,6 +1655,8 @@ pub fn run() {
             mpv_version,
             player_command,
             oauth_capture,
+            da_react,
+            da_login,
             download::download_start,
             download::download_cancel,
             download::download_delete,
