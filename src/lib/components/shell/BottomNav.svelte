@@ -2,17 +2,19 @@
   // Mobile bottom tab bar (replaces the fixed left sidebar rail on narrow/Android). Same
   // destinations, flattened to the 5 that fit a phone bar; Settings absorbs the profile link.
   import Home from 'lucide-svelte/icons/house'
+  import Calendar from 'lucide-svelte/icons/calendar'
   import Search from 'lucide-svelte/icons/search'
   import Download from 'lucide-svelte/icons/download'
-  import Cloud from 'lucide-svelte/icons/cloud'
   import Settings from 'lucide-svelte/icons/settings'
   import { page } from '$app/state'
 
+  // Schedule takes Cloud's tab slot (Cloud is reachable from the Downloads header instead — both
+  // are "your library"). Keeps the bar at 5 so it doesn't crowd on a phone.
   const items = [
     { href: '/app/home', icon: Home, label: 'Home' },
+    { href: '/app/schedule', icon: Calendar, label: 'Schedule' },
     { href: '/app/search', icon: Search, label: 'Search' },
     { href: '/app/downloads', icon: Download, label: 'Downloads' },
-    { href: '/app/cloud', icon: Cloud, label: 'Cloud' },
     { href: '/app/settings', icon: Settings, label: 'Settings' },
   ]
   const active = (href: string) => page.url.pathname.startsWith(href)

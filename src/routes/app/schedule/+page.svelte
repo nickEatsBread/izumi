@@ -25,7 +25,7 @@
   })
 </script>
 
-<div class="p-8">
+<div class="p-4 sm:p-8">
   <div class="mb-6 flex items-center gap-3">
     <h1 class="text-lg font-black">Schedule</h1>
     <div class="flex items-center gap-1">
