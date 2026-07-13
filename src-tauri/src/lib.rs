@@ -1572,6 +1572,8 @@ pub fn run() {
             #[cfg(not(target_os = "android"))]
             {
                 use tauri::webview::NewWindowResponse;
+                use tauri_plugin_opener::OpenerExt;
+                let external_opener = app.handle().clone();
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("izumi")
                     .inner_size(1280.0, 800.0)
@@ -1590,7 +1592,22 @@ pub fn run() {
                         #[cfg(windows)]
                         { eprintln!("[dark] on_page_load fired → set_webview_dark"); set_webview_dark(&_win); }
                     })
-                    .on_new_window(|_url, _features| NewWindowResponse::Allow)
+                    .on_new_window(move |url, _features| {
+                        // Only Disqus authentication needs an in-webview popup so its opener and
+                        // partitioned session survive. Ordinary embed links (Community Rules, help,
+                        // profiles, etc.) belong in the system browser; WebKitGTK otherwise creates
+                        // an unusably tiny default child window in the docked player.
+                        let host = url.host_str().unwrap_or_default();
+                        let path = url.path().to_ascii_lowercase();
+                        let is_disqus = host == "disqus.com" || host.ends_with(".disqus.com");
+                        let is_auth = path.contains("login") || path.contains("oauth");
+                        if is_disqus && is_auth {
+                            NewWindowResponse::Allow
+                        } else {
+                            let _ = external_opener.opener().open_url(url.to_string(), None::<String>);
+                            NewWindowResponse::Deny
+                        }
+                    })
                     .build()?;
             }
 
