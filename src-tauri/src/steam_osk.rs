@@ -12,11 +12,12 @@
 //! manifest). `SteamAPI_RunCallbacks` is pumped on a background thread to keep the pipe alive.
 #![cfg(target_os = "linux")]
 
-use std::ffi::{c_char, c_int, c_void, CString};
-use std::sync::OnceLock;
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::sync::{Mutex, OnceLock};
 
 extern "C" {
     fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+    fn dlerror() -> *const c_char;
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 const RTLD_NOW: c_int = 2;
@@ -32,7 +33,8 @@ struct Steam {
 unsafe impl Send for Steam {}
 unsafe impl Sync for Steam {}
 
-static STEAM: OnceLock<Option<Steam>> = OnceLock::new();
+static STEAM: OnceLock<Steam> = OnceLock::new();
+static INIT_LOCK: Mutex<()> = Mutex::new(());
 
 unsafe fn sym(h: *mut c_void, name: &str) -> Option<*mut c_void> {
     let c = CString::new(name).ok()?;
@@ -49,21 +51,31 @@ fn init() -> Option<Steam> {
         // The host Steam ships libsteam_api.so; dlopen it from the usual install locations (the
         // Flatpak needs --filesystem=~/.steam:ro to read these).
         let mut h = std::ptr::null_mut();
+        let mut last_error = String::new();
         for p in [
+            // Current SteamOS puts the host-facing 64-bit SDK shim here.
+            "/home/deck/.local/share/Steam/steamrt64/libsteam_api.so",
             "/home/deck/.steam/steam/linux64/libsteam_api.so",
             "/home/deck/.local/share/Steam/linux64/libsteam_api.so",
             "/home/deck/.steam/sdk64/libsteam_api.so",
             "libsteam_api.so",
         ] {
             if let Ok(c) = CString::new(p) {
+                let _ = dlerror();
                 h = dlopen(c.as_ptr(), RTLD_NOW);
                 if !h.is_null() {
                     break;
                 }
+                let error = dlerror();
+                if !error.is_null() {
+                    last_error = CStr::from_ptr(error).to_string_lossy().into_owned();
+                }
             }
         }
         if h.is_null() {
-            crate::player::linux_embed::elog("steam_osk: libsteam_api.so not found");
+            crate::player::linux_embed::elog(&format!(
+                "steam_osk: libsteam_api.so load failed: {last_error}"
+            ));
             return None;
         }
 
@@ -90,7 +102,9 @@ fn init() -> Option<Steam> {
         }
 
         let utils_fn: unsafe extern "C" fn() -> *mut c_void = std::mem::transmute(
-            sym(h, "SteamAPI_SteamUtils").or_else(|| sym(h, "SteamAPI_SteamUtils_v010"))?,
+            sym(h, "SteamAPI_SteamUtils")
+                .or_else(|| sym(h, "SteamAPI_SteamUtils_v011"))
+                .or_else(|| sym(h, "SteamAPI_SteamUtils_v010"))?,
         );
         let utils = utils_fn();
         if utils.is_null() {
@@ -112,12 +126,24 @@ fn init() -> Option<Steam> {
     }
 }
 
+fn steam() -> Option<&'static Steam> {
+    if let Some(steam) = STEAM.get() {
+        return Some(steam);
+    }
+    // Do not permanently cache a failed first attempt. Steam can still be bringing its client pipe
+    // up when the app receives an early focus event; a later field focus should be allowed to retry.
+    let _guard = INIT_LOCK.lock().ok()?;
+    if STEAM.get().is_none() {
+        STEAM.set(init()?).ok()?;
+    }
+    STEAM.get()
+}
+
 /// Show the Steam floating keyboard over the field at the given WINDOW-pixel rect. Returns false if
 /// the Steam OSK is unavailable — the caller then shows the built-in HTML keyboard. `mode`: 0 =
 /// single-line, 1 = multi-line, 2 = email, 3 = numeric.
 pub fn show(x: i32, y: i32, w: i32, h: i32, mode: i32) -> bool {
-    match STEAM.get_or_init(init) {
-        Some(s) => unsafe { (s.show)(s.utils, mode.clamp(0, 3), x, y, w.max(1), h.max(1)) },
-        None => false,
-    }
+    steam()
+        .map(|s| unsafe { (s.show)(s.utils, mode.clamp(0, 3), x, y, w.max(1), h.max(1)) })
+        .unwrap_or(false)
 }

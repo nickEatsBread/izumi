@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-steam-show-osk"
+description = "Allows a discussion login popup to display Steam's floating keyboard."
+commands.allow = ["steam_show_osk", "discussion_popup_complete"]

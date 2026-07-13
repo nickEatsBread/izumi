@@ -333,16 +333,60 @@ fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
 /// `mode`: 0 single-line, 1 multi-line, 2 email, 3 numeric.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn steam_show_osk(x: i32, y: i32, w: i32, h: i32, mode: i32) -> bool {
+fn steam_show_osk(app: AppHandle, x: i32, y: i32, w: i32, h: i32, mode: i32) -> bool {
     #[cfg(target_os = "linux")]
     {
-        steam_osk::show(x, y, w, h, mode)
+        if steam_osk::show(x, y, w, h, mode) {
+            return true;
+        }
+        // SteamOS's own GTK input module uses this URI to summon the overlay keyboard. It is the
+        // reliable Flatpak fallback when the host Steamworks shim cannot be dlopened in the GNOME
+        // runtime. A successful portal request suppresses izumi's HTML keyboard.
+        use tauri_plugin_opener::OpenerExt;
+        let requested = app
+            .opener()
+            .open_url("steam://open/keyboard", None::<String>)
+            .is_ok();
+        player::linux_embed::elog(&format!(
+            "steam_osk: overlay URI requested={requested}"
+        ));
+        requested
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (x, y, w, h, mode);
+        let _ = (app, x, y, w, h, mode);
         false
     }
+}
+
+#[cfg(not(target_os = "android"))]
+fn finish_discussion_popup(
+    window: &tauri::WebviewWindow,
+    app: &AppHandle,
+) -> Result<(), String> {
+    if !window.label().starts_with("discussion-popup-") {
+        return Err("not a discussion popup".into());
+    }
+    window.close().map_err(|error| error.to_string())?;
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.set_focus();
+        #[cfg(target_os = "linux")]
+        if let Err(error) = player::linux_x11::enable_native_touch(&main) {
+            player::linux_embed::elog(&format!(
+                "discussion-popup: completion touch restore failed: {error}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn discussion_popup_complete(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+) -> Result<(), String> {
+    finish_discussion_popup(&window, &app)
 }
 
 /// Toggle the WebView's hardware-acceleration policy (Linux, Game mode only). In Game mode the
@@ -1639,11 +1683,120 @@ pub fn run() {
                             .min_inner_size(900.0, 650.0)
                             .center()
                             .maximized(true)
+                            // Gamescope handles a genuinely fullscreen child reliably. A merely
+                            // maximized secondary GTK window can be treated like a tiny dialog by
+                            // the compositor and by Steam's floating-keyboard targeting.
+                            .fullscreen(true)
                             .decorations(false)
                             .focused(true)
                             .initialization_script(
                                 "document.addEventListener('keydown',function(e){if(e.key==='Escape')window.close()});",
                             );
+                            if is_disqus && is_auth {
+                                // The popup is a remote Disqus document, so izumi's Svelte focus
+                                // handler is not present. Ask the narrowly-scoped Steam OSK command
+                                // directly whenever one of Disqus's login fields gains focus.
+                                popup = popup.initialization_script(
+                                    r#"(function(){
+                                    function nativeInvoke(){return window.__TAURI__&&window.__TAURI__.core&&window.__TAURI__.core.invoke}
+                                    function complete(){var invoke=nativeInvoke();if(invoke)invoke('discussion_popup_complete').catch(function(){window.close()});else window.close()}
+                                    var submittedKey='izumi-disqus-login-submitted';
+                                    function markAttempted(){try{sessionStorage.setItem(submittedKey,'1')}catch(_error){}}
+                                    function addCloseButton(){
+                                        if(!document.body||document.getElementById('izumi-disqus-close'))return;
+                                        var button=document.createElement('button');
+                                        button.id='izumi-disqus-close';
+                                        button.type='button';
+                                        button.textContent='Close';
+                                        button.setAttribute('aria-label','Close Disqus sign in');
+                                        button.style.cssText='position:fixed;z-index:2147483647;top:14px;right:16px;min-width:88px;height:42px;padding:0 18px;border:1px solid rgba(255,255,255,.2);border-radius:10px;background:#18181b;color:#fff;font:600 15px system-ui;box-shadow:0 4px 18px rgba(0,0,0,.45);cursor:pointer';
+                                        button.addEventListener('click',complete);
+                                        document.body.appendChild(button);
+                                    }
+                                    document.addEventListener('submit',function(e){
+                                        try{if(e.target&&e.target.querySelector&&e.target.querySelector('input[type="password"]'))markAttempted()}catch(_error){}
+                                    },true);
+                                    document.addEventListener('input',function(e){
+                                        var el=e.target;if(el&&el.matches&&el.matches('input[type="password"]')&&el.value)markAttempted();
+                                    },true);
+                                    document.addEventListener('click',function(e){
+                                        var el=e.target&&e.target.closest&&e.target.closest('a,button');
+                                        if(!el)return;
+                                        var label=((el.innerText||'')+' '+(el.getAttribute('aria-label')||'')).trim().toLowerCase();
+                                        if(/^(cancel|back to comments|close)(\s|$)/.test(label)){e.preventDefault();complete();return;}
+                                        if(el.closest('form')&&el.closest('form').querySelector('input[type="password"]'))markAttempted();
+                                    },true);
+                                    function maybeComplete(){
+                                        var submitted=false;
+                                        try{submitted=sessionStorage.getItem(submittedKey)==='1'}catch(_error){}
+                                        var path=location.pathname.toLowerCase().replace(/\/+$/,'');
+                                        var documented=path==='/next/login-success'||path.indexOf('/embed/comments')===0;
+                                        var password=document.querySelector('input[type="password"]');
+                                        var blank=!!document.body&&!password&&!document.body.innerText.trim();
+                                        var leftLogin=submitted&&!password&&path.indexOf('login')<0&&path.indexOf('oauth')<0;
+                                        if(documented||(submitted&&(blank||leftLogin)))setTimeout(complete,500);
+                                    }
+                                    document.addEventListener('DOMContentLoaded',function(){
+                                        addCloseButton();
+                                        maybeComplete();
+                                        if(document.body)new MutationObserver(function(){addCloseButton();maybeComplete()}).observe(document.body,{childList:true,subtree:true});
+                                    });
+                                    document.addEventListener('focusin',function(e){
+                                        var el=e.target;
+                                        if(!el||!(/^(INPUT|TEXTAREA)$/.test(el.tagName)))return;
+                                        var type=(el.type||'text').toLowerCase();
+                                        if(['checkbox','radio','range','button','submit','color'].indexOf(type)>=0)return;
+                                        var r=el.getBoundingClientRect(),d=window.devicePixelRatio||1;
+                                        var mode=el.tagName==='TEXTAREA'?1:type==='email'?2:(type==='number'||el.inputMode==='numeric'||el.inputMode==='tel')?3:0;
+                                        var invoke=nativeInvoke();
+                                        if(invoke)invoke('steam_show_osk',{x:Math.round(r.left*d),y:Math.round(r.top*d),w:Math.round(r.width*d),h:Math.round(r.height*d),mode:mode}).catch(function(){});
+                                    },true);
+                                    })();"#,
+                                );
+
+                                // Disqus documents this as the successful native-webview login
+                                // destination. Their page intentionally has no redirect, which is
+                                // the blank white surface the user otherwise has to switch away from.
+                                let login_app = popup_app.clone();
+                                popup = popup.on_page_load(move |window, payload| {
+                                    if !matches!(
+                                        payload.event(),
+                                        tauri::webview::PageLoadEvent::Finished
+                                    ) {
+                                        return;
+                                    }
+                                    let url = payload.url();
+                                    let is_top_level = window
+                                        .url()
+                                        .map(|top| top.as_str() == url.as_str())
+                                        .unwrap_or(false);
+                                    if is_top_level {
+                                        player::linux_embed::elog(&format!(
+                                            "discussion-popup: disqus load {}://{}{}",
+                                            url.scheme(),
+                                            url.host_str().unwrap_or_default(),
+                                            url.path()
+                                        ));
+                                    }
+                                    let normalized_path = url.path().trim_end_matches('/');
+                                    let success = url
+                                        .host_str()
+                                        .is_some_and(|host| {
+                                            host == "disqus.com" || host.ends_with(".disqus.com")
+                                        })
+                                        && (normalized_path == "/next/login-success"
+                                            || url.path().starts_with("/embed/comments"));
+                                    if is_top_level && success {
+                                        if let Err(error) =
+                                            finish_discussion_popup(&window, &login_app)
+                                        {
+                                            player::linux_embed::elog(&format!(
+                                                "discussion-popup: login completion failed: {error}"
+                                            ));
+                                        }
+                                    }
+                                });
+                            }
                             if is_tac_verify {
                                 // The top-level view can complete Cloudflare's first-party challenge.
                                 // The opener carries TAC's SDK config in the fragment (client-side
@@ -1666,7 +1819,34 @@ pub fn run() {
                                 );
                             }
                             match popup.build() {
-                                Ok(window) => NewWindowResponse::Create { window },
+                                Ok(window) => {
+                                    #[cfg(target_os = "linux")]
+                                    if gamescope {
+                                        let popup_window = window.clone();
+                                        let event_app = popup_app.clone();
+                                        window.on_window_event(move |event| match event {
+                                            tauri::WindowEvent::Focused(true) => {
+                                                if let Err(error) = player::linux_x11::enable_native_touch(&popup_window) {
+                                                    player::linux_embed::elog(&format!(
+                                                        "discussion-popup: focus touch restore failed: {error}"
+                                                    ));
+                                                }
+                                            }
+                                            tauri::WindowEvent::Destroyed => {
+                                                if let Some(main) = event_app.get_webview_window("main") {
+                                                    let _ = main.set_focus();
+                                                    if let Err(error) = player::linux_x11::enable_native_touch(&main) {
+                                                        player::linux_embed::elog(&format!(
+                                                            "discussion-popup: close touch restore failed: {error}"
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                            _ => {}
+                                        });
+                                    }
+                                    NewWindowResponse::Create { window }
+                                }
                                 Err(error) => {
                                     eprintln!("[discussion-popup] create failed: {error}");
                                     NewWindowResponse::Deny
@@ -1805,6 +1985,7 @@ pub fn run() {
             set_webview_zoom,
             set_webview_accel,
             steam_show_osk,
+            discussion_popup_complete,
             player_prefetch,
             http_get,
             http_post,

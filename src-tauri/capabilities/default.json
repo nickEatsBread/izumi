@@ -11,6 +11,7 @@
     "core:window:allow-start-dragging",
     "opener:default",
     "dialog:allow-open",
+    "allow-steam-show-osk",
     "os:default",
     "extplayer:default",
     {
