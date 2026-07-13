@@ -18,6 +18,12 @@
   let threads = $state<DiscussionThread[]>([])
   let loading = $state(false)
   let filter = $state('All')
+  let tacReload = $state(0)
+  let tacReady = $state(false)
+  let tacVerifying = $state(false)
+  let tacTimedOut = $state(false)
+  let tacPopup: Window | null = null
+  let tacPopupPoll: number | undefined
   // Dedup guard — NON-reactive on purpose. If this were `$state`, the effect below (which reads AND
   // writes it) would re-trigger itself, cancel its own in-flight fetch, and leave `loading` stuck true.
   let loadedKey = ''
@@ -66,6 +72,7 @@
   const TAC_ORIGIN = 'https://theanimecommunity.com'
   const TAC_WIDGET = `${TAC_ORIGIN}/embed-widget`
   const directTacEmbed = $derived(Boolean($gameMode && embedThread?.scriptEmbed))
+  const tacWidgetSrc = $derived(`${TAC_WIDGET}?izumi_retry=${tacReload}`)
 
   // A bare `https://disqus.com/embed/comments/?…` URL is the INNER iframe that Disqus' embed.js
   // creates — iframing it directly (no embed.js parent + our untrusted origin) renders blank. Instead
@@ -104,7 +111,7 @@
     return `/script-embed.html?${p.toString()}`
   }
   const embedSrc = $derived(
-    embedThread?.scriptEmbed ? (directTacEmbed ? TAC_WIDGET : scriptEmbedSrc(embedThread.scriptEmbed))
+    embedThread?.scriptEmbed ? (directTacEmbed ? tacWidgetSrc : scriptEmbedSrc(embedThread.scriptEmbed))
       : !embedUrl ? undefined
         : isDisqusInner(embedUrl) ? disqusEmbedSrc(embedUrl)
           : withDark(embedUrl),
@@ -125,6 +132,43 @@
   let archiveScroller = $state<HTMLElement>()
   let listScroller = $state<HTMLElement>()
   let archiveHeight = $state<number | null>(null)
+  function finishTacVerification() {
+    if (tacPopupPoll != null) window.clearInterval(tacPopupPoll)
+    tacPopupPoll = undefined
+    tacVerifying = false
+    tacTimedOut = false
+    tacReady = false
+    tacReload += 1
+  }
+  function startTacVerification() {
+    if (!$gameMode || tacVerifying) return
+    const config = embedThread?.scriptEmbed?.config
+    if (!config) return
+    tacVerifying = true
+    tacTimedOut = false
+    // Keep the official TAC widget first-party while it completes Cloudflare, but carry the
+    // episode IDs in the URL fragment so our related WebKit popup can perform the provider's
+    // ready/init handshake. Fragments stay client-side and are never sent to TAC/Cloudflare.
+    const verifyUrl = new URL(TAC_WIDGET)
+    verifyUrl.hash = new URLSearchParams({ 'izumi-config': JSON.stringify(config) }).toString()
+    tacPopup = window.open(verifyUrl.toString(), '_blank', 'popup,width=1200,height=760')
+    if (!tacPopup) {
+      tacVerifying = false
+      tacTimedOut = true
+      return
+    }
+    // The popup normally notifies us when TAC's real widget boots. Polling covers a user closing
+    // it after manually completing the challenge, or a compositor which drops opener messaging.
+    tacPopupPoll = window.setInterval(() => {
+      if (!tacPopup?.closed) return
+      finishTacVerification()
+      tacPopup = null
+    }, 250)
+  }
+  function selectSource(source: string) {
+    filter = source
+    if (source === 'Anime Community' && $gameMode && !tacReady) startTacVerification()
+  }
   const postTacConfig = () => {
     if (!directTacEmbed || !embedThread?.scriptEmbed) return
     embedIframe?.contentWindow?.postMessage({
@@ -136,10 +180,20 @@
   $effect(() => {
     function onMsg(e: MessageEvent) {
       const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number } | null
+      if (e.origin === TAC_ORIGIN && m?.type === 'izumi-tac-verified') {
+        if (tacPopupPoll != null) window.clearInterval(tacPopupPoll)
+        tacPopupPoll = undefined
+        tacPopup = null
+        finishTacVerification()
+        return
+      }
       // On Deck, host TAC's official widget as the panel iframe itself instead of wrapping its
       // embed.js-created iframe. Complete the provider's documented ready/init handshake directly.
       if (directTacEmbed && e.origin === TAC_ORIGIN && e.source === embedIframe?.contentWindow
           && m?.type === 'anime-community:ready') {
+        tacReady = true
+        tacTimedOut = false
+        tacVerifying = false
         postTacConfig()
         return
       }
@@ -159,6 +213,24 @@
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
   })
+  // A Cloudflare interstitial never emits TAC's `ready` message. Replace the otherwise permanent
+  // black frame with a recovery action that opens the first-party verification view.
+  $effect(() => {
+    void tacReload
+    if (!directTacEmbed) { tacTimedOut = false; return }
+    tacReady = false
+    tacTimedOut = false
+    const timer = window.setTimeout(() => { if (!tacReady) tacTimedOut = true }, 5_000)
+    return () => window.clearTimeout(timer)
+  })
+  $effect(() => {
+    if ($commentsOpen) return
+    if (tacPopup && !tacPopup.closed) tacPopup.close()
+    if (tacPopupPoll != null) window.clearInterval(tacPopupPoll)
+    tacPopup = null
+    tacPopupPoll = undefined
+    tacVerifying = false
+  })
   // Deck controller navigation: left/right switches the source pills immediately; up/down scrolls
   // whichever surface is visible. Same-origin loader frames scroll internally, while the cross-origin
   // discussanime archive scrolls in its sized parent wrapper.
@@ -169,7 +241,7 @@
       if (dir === 'left' || dir === 'right') {
         if (sourceTabs.length < 2) return
         const current = Math.max(0, sourceTabs.indexOf(filter))
-        filter = sourceTabs[(current + (dir === 'right' ? 1 : -1) + sourceTabs.length) % sourceTabs.length]
+        selectSource(sourceTabs[(current + (dir === 'right' ? 1 : -1) + sourceTabs.length) % sourceTabs.length])
         return
       }
       const amount = dir === 'down' ? 180 : -180
@@ -255,7 +327,7 @@
   {#if !loading && sources.length > 1}
     <div class="flex flex-wrap gap-1.5 border-b border-white/10 px-3 py-2">
       {#each sourceTabs as s (s)}
-        <button data-focusable onclick={() => (filter = s)}
+        <button data-focusable onclick={() => selectSource(s)}
                 class="rounded-full px-2.5 py-0.5 text-xs font-bold transition-colors
                   {filter === s ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}">{s}</button>
       {/each}
@@ -274,8 +346,27 @@
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
       </div>
     {:else}
-      <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postIframeState} class="block min-h-0 w-full flex-1 border-0"
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
+      {#if directTacEmbed}
+        <div class="relative min-h-0 flex-1">
+          <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postIframeState} class="block h-full w-full border-0"
+                  sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
+          {#if tacTimedOut && !tacReady}
+            <div class="absolute inset-0 grid place-items-center bg-background px-6 text-center">
+              <div>
+                <p class="text-sm font-bold">Anime Community needs browser verification</p>
+                <p class="mt-1 text-xs text-muted-foreground">Complete the short check, then you'll return to the official comments.</p>
+                <button data-focusable disabled={tacVerifying} onclick={startTacVerification}
+                        class="mt-3 rounded-md bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-50">
+                  {tacVerifying ? 'Verifying…' : 'Verify and load'}
+                </button>
+              </div>
+            </div>
+          {/if}
+        </div>
+      {:else}
+        <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postIframeState} class="block min-h-0 w-full flex-1 border-0"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
+      {/if}
     {/if}
   {:else}
     <div bind:this={listScroller} class="flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3">

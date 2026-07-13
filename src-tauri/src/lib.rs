@@ -1608,7 +1608,11 @@ pub fn run() {
                         let path = url.path().to_ascii_lowercase();
                         let is_disqus = host == "disqus.com" || host.ends_with(".disqus.com");
                         let is_auth = path.contains("login") || path.contains("oauth");
-                        if gamescope && is_disqus && is_auth {
+                        let is_tac_verify = gamescope
+                            && host == "theanimecommunity.com"
+                            && path.starts_with("/embed-widget");
+
+                        if gamescope && ((is_disqus && is_auth) || is_tac_verify) {
                             // `Allow` delegates popup geometry to the remote page. Under Gamescope
                             // that produced a tiny centered surface which clipped Disqus's fields.
                             // Create the related WebKit view ourselves: `window_features` preserves
@@ -1619,13 +1623,18 @@ pub fn run() {
                                 std::sync::atomic::Ordering::Relaxed,
                             );
                             let label = format!("discussion-popup-{id}");
-                            let popup = WebviewWindowBuilder::new(
+                            let title = if is_tac_verify {
+                                "Anime Community verification"
+                            } else {
+                                "Disqus sign in"
+                            };
+                            let mut popup = WebviewWindowBuilder::new(
                                 &popup_app,
                                 &label,
                                 WebviewUrl::External("about:blank".parse().unwrap()),
                             )
                             .window_features(features)
-                            .title("Disqus sign in")
+                            .title(title)
                             .inner_size(1200.0, 760.0)
                             .min_inner_size(900.0, 650.0)
                             .center()
@@ -1635,6 +1644,27 @@ pub fn run() {
                             .initialization_script(
                                 "document.addEventListener('keydown',function(e){if(e.key==='Escape')window.close()});",
                             );
+                            if is_tac_verify {
+                                // The top-level view can complete Cloudflare's first-party challenge.
+                                // The opener carries TAC's SDK config in the fragment (client-side
+                                // only). Once the real widget boots, complete its documented init
+                                // handshake before notifying the opener and closing. This keeps the
+                                // popup on TAC's untouched official UI while avoiding its
+                                // "missing MAL_ID or AniList_ID" error.
+                                popup = popup.initialization_script(
+                                    r#"window.addEventListener('message',function(e){
+                                        if(e.origin!=='https://theanimecommunity.com'||!e.data||e.data.type!=='anime-community:ready')return;
+                                        try{
+                                            var raw=new URLSearchParams(window.location.hash.slice(1)).get('izumi-config');
+                                            var config=raw?JSON.parse(raw):null;
+                                            if(!config||(!config.MAL_ID&&!config.AniList_ID))return;
+                                            window.postMessage({type:'anime-community:init',config:config},'https://theanimecommunity.com');
+                                            if(window.opener)window.opener.postMessage({type:'izumi-tac-verified'},'*');
+                                            setTimeout(function(){window.close()},500);
+                                        }catch(_error){}
+                                    });"#,
+                                );
+                            }
                             match popup.build() {
                                 Ok(window) => NewWindowResponse::Create { window },
                                 Err(error) => {
@@ -1713,9 +1743,10 @@ pub fn run() {
                     let wv = pw.inner();
                     wv.set_background_color(&gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
                     if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
-                        // Disqus's authenticated session lives in a third-party discussion frame.
-                        // WebKitGTK's tracking policy can otherwise withhold its cookies after the
-                        // related login popup closes, making the embed appear signed out again.
+                        // TAC's Cloudflare clearance and Disqus's login live in third-party
+                        // discussion frames. WebKitGTK's tracking policy otherwise withholds those
+                        // cookies after the related first-party popup closes, causing TAC to loop
+                        // back to a blocked challenge and Disqus to appear signed out again.
                         if let Some(context) = wv.context() {
                             if let Some(cookies) = context.cookie_manager() {
                                 cookies.set_accept_policy(CookieAcceptPolicy::Always);
