@@ -18,10 +18,22 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# Size-optimized release build (shrinks the shipped native lib — the debug .so is ~163 MB of
+# symbols/unoptimized code that never ships). strip drops symbols (big win, no runtime cost),
+# lto + one codegen unit shrink and often speed up the output. Applies to desktop + android release.
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+
 [features]
 # Enable the webview inspector in RELEASE builds (used by the build-linux test
 # workflow via `--features devtools`; NOT enabled in the shipped release).
 devtools = ["tauri/devtools"]
+# The "full" Android flavor: compile in the embedded libmpv player plugin (pulls the ~24 MB
+# libmpv arm64 .so via the plugin's AAR). Omit it for the "lite" flavor (external player, small
+# APK — today's default). Only meaningful on the Android target.
+android-mpv = ["dep:tauri-plugin-mpv"]
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -53,6 +65,11 @@ libmpv2 = "6.0.0"
 libmpv2-sys = "4.0.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 tauri-plugin-updater = "2"
+
+# Embedded libmpv player for the Android "full" flavor. Optional + only pulled in when the
+# `android-mpv` feature is on, so the "lite" build compiles zero player code / bundles no .so.
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-mpv = { path = "tauri-plugin-mpv", optional = true }
 
 # Raw Win32 for true borderless fullscreen + mpv-child input passthrough, and the
 # WebView2 COM call to make the webview background transparent (Stremio's model:

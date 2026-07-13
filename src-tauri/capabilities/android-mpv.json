@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/android-schema.json",
+  "identifier": "android-mpv",
+  "description": "Grant the embedded libmpv player commands on the Android 'full' flavor.",
+  "platforms": ["android"],
+  "windows": ["main"],
+  "permissions": ["mpv:default"]
+}

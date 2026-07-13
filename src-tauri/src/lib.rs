@@ -1102,6 +1102,26 @@ async fn oauth_capture(
     result
 }
 
+/// Android OAuth login: no second window, so bridge to the extplayer plugin's in-app WebView
+/// capture. Same signature + return (the full redirect URL) as the desktop command, so the
+/// frontend calls `oauth_capture` identically on both platforms.
+#[cfg(target_os = "android")]
+#[tauri::command]
+async fn oauth_capture(
+    app: tauri::AppHandle,
+    auth_url: String,
+    redirect_prefix: String,
+) -> Result<String, String> {
+    use tauri_plugin_extplayer::{ExtPlayerExt, OAuthRequest};
+    app.extplayer()
+        .oauth_capture(OAuthRequest {
+            auth_url,
+            redirect_prefix,
+        })
+        .map(|r| r.url)
+        .map_err(|e| e.to_string())
+}
+
 // ----- Auto-updater -------------------------------------------------------------
 // Channel-aware endpoints chosen at RUNTIME so one build serves both channels, both on
 // GitHub Releases. STABLE = `releases/latest` (GitHub excludes pre-releases). BETA = a
@@ -1412,12 +1432,18 @@ pub fn run() {
         set_doh,
         write_text_file,
         updater_download_apk,
+        oauth_capture,
         download::download_start,
         download::download_cancel,
         download::download_delete,
         download::download_dir_default,
         download::reveal_in_folder
     ]);
+
+    // "Full" Android flavor only: the embedded libmpv player plugin (registers its own
+    // plugin:mpv|* commands). Absent in the "lite" build, which delegates to an external player.
+    #[cfg(all(target_os = "android", feature = "android-mpv"))]
+    let builder = builder.plugin(tauri_plugin_mpv::init());
 
     builder
         .run(tauri::generate_context!())

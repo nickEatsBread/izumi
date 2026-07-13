@@ -1961,6 +1961,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-extplayer",
  "tauri-plugin-http",
+ "tauri-plugin-mpv",
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-updater",
@@ -4238,6 +4239,17 @@ dependencies = [
  "tokio",
  "url",
  "urlpattern",
+]
+
+[[package]]
+name = "tauri-plugin-mpv"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
