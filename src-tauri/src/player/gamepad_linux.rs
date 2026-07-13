@@ -16,9 +16,10 @@ use std::time::Duration;
 
 use gilrs::{Axis, Button, EventType, Gilrs};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+static TOUCH_RESTORE_PENDING: AtomicBool = AtomicBool::new(false);
 static TRIGGERS: OnceLock<Mutex<TriggerState>> = OnceLock::new();
 
 /// Analog trigger / stick press + release thresholds (gilrs reports 0.0..=1.0 and -1.0..=1.0).
@@ -62,6 +63,37 @@ fn set_trigger_state(input: &Input) {
         } else {
             state.r2 = input.pressed;
         }
+    }
+}
+
+/// Steam can transition its Gamescope input routing when controller navigation takes over without
+/// giving the app another focus event. Re-publish the native-touch root property just after that
+/// transition so XWayland/WebKit continues receiving real touch sequences. This does not synthesize
+/// gestures or pointer events; it only asks Gamescope to keep its native passthrough mode.
+fn schedule_native_touch_restore(app: &AppHandle) {
+    if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none()
+        || TOUCH_RESTORE_PENDING.swap(true, Ordering::SeqCst)
+    {
+        return;
+    }
+
+    let delayed_app = app.clone();
+    if app
+        .run_on_main_thread(move || {
+            glib::timeout_add_local_once(Duration::from_millis(120), move || {
+                if let Some(window) = delayed_app.get_webview_window("main") {
+                    if let Err(error) = crate::player::linux_x11::enable_native_touch(&window) {
+                        crate::player::linux_embed::elog(&format!(
+                            "gamepad: native touch restore failed: {error}"
+                        ));
+                    }
+                }
+                TOUCH_RESTORE_PENDING.store(false, Ordering::SeqCst);
+            });
+        })
+        .is_err()
+    {
+        TOUCH_RESTORE_PENDING.store(false, Ordering::SeqCst);
     }
 }
 
@@ -135,6 +167,9 @@ pub fn start(app: AppHandle) {
             let mut r2_on = false;
             let emit = |app: &AppHandle, i: &Input| {
                 set_trigger_state(i);
+                if i.pressed {
+                    schedule_native_touch_restore(app);
+                }
                 crate::player::linux_embed::elog(&format!("gamepad: {}={}", i.name, i.pressed));
                 let _ = app.emit("gamepad-input", i.clone());
             };
