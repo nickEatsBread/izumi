@@ -10,7 +10,7 @@ import type { Media } from '$lib/anilist/types'
 import type { DiscussionThread, DiscussionComment } from './types'
 
 export type { DiscussionThread, DiscussionComment, ScriptEmbed } from './types'
-export { commentsBackendUrl, commentsEnabled, defaultDiscussionPlatform } from './config'
+export { commentsBackendUrl, commentsEnabled, defaultDiscussionPlatform, discussionExpanded } from './config'
 
 // The discussion aggregation (map id+episode → per-platform threads + comments across Reddit / AniList
 // / MAL / YouTube / the forum) is provided by the headless SDK. izumi supplies only the pieces the SDK

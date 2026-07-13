@@ -20,7 +20,7 @@
   import Check from 'lucide-svelte/icons/check'
   import { get } from 'svelte/store'
   import { fullscreen, toggleFullscreen, nowPlaying, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen } from '$lib/player/session'
-  import { commentsEnabled } from '$lib/comments'
+  import { commentsEnabled, discussionExpanded } from '$lib/comments'
   import { videoFit, playerTitleTop } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode } from '$lib/stremio/play'
 
@@ -56,6 +56,15 @@
     ontoggleplay?: () => void
   } = $props()
   const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
+  function toggleComments() {
+    const opening = !$commentsOpen
+    // The docked desktop sheet is too narrow at handheld distance. Open directly into the large
+    // centered view on Steam Deck; desktop keeps the user's current expanded/docked preference.
+    if (opening && gm) discussionExpanded.set(true)
+    commentsOpen.set(opening)
+    showOptions = false
+    showTracks = false
+  }
 
   // Game mode (Deck) scales the controls up for a touchscreen at arm's length: bigger
   // secondary icon buttons + icons, and the title can move to the top of the player.
@@ -350,7 +359,7 @@
 
         <!-- Discussion / comments panel toggle (keyed on the playing episode). -->
         {#if $commentsEnabled}
-          <button data-focusable class={iconBtn} onclick={() => { commentsOpen.set(!$commentsOpen); showOptions = false; showTracks = false }}
+          <button data-focusable class={iconBtn} onclick={toggleComments}
                   aria-label="Discussion" aria-pressed={$commentsOpen}>
             <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
           </button>

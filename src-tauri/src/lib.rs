@@ -694,23 +694,51 @@ fn set_webview_transparent(win: &tauri::WebviewWindow) {
 /// (the discussanime archive + Disqus) key their dark mode off — their dark tokens are gated purely on
 /// `@media (prefers-color-scheme: dark)`, not on a theme param. No-op if the runtime is too old for
 /// ICoreWebView2_13 (the Profile interface).
+// Injected into every frame at document-creation. The cross-origin archive iframe (which the profile
+// preference + top-session CDP emulation can't reach) is themed by its OWN CSS off `data-theme` on
+// <html>/.dq-archive, so in that frame we set it to "dark": the transparent archive then shows a dark
+// body + dark cards. A MutationObserver keeps it dark if the archive's own hydration resets it. Only
+// runs in the /embed/discussion frame; every other frame returns immediately.
+#[cfg(windows)]
+const DARK_FRAME_SCRIPT: &str = "(function(){try{if(location.pathname.indexOf('/embed/discussion')!==0)return;var set=function(){var r=document.documentElement;if(!r)return;if(r.getAttribute('data-theme')!=='dark')r.setAttribute('data-theme','dark');var a=document.getElementsByClassName('dq-archive');for(var i=0;i<a.length;i++){if(a[i].getAttribute('data-theme')!=='dark')a[i].setAttribute('data-theme','dark');}};set();new MutationObserver(set).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['data-theme']});document.addEventListener('DOMContentLoaded',set);}catch(e){}})();";
+
+#[cfg(windows)]
+static DARK_SCRIPT_ADDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[cfg(windows)]
 fn set_webview_dark(win: &tauri::WebviewWindow) {
-    let _ = win.with_webview(|webview| {
+    use std::sync::atomic::Ordering;
+    let r = win.with_webview(|webview| {
+        use webview2_com::AddScriptToExecuteOnDocumentCreatedCompletedHandler;
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             ICoreWebView2_13, COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK,
         };
-        use windows::core::Interface;
+        use windows::core::{Interface, HSTRING, PCWSTR};
         unsafe {
-            if let Ok(core) = webview.controller().CoreWebView2() {
-                if let Ok(wv13) = core.cast::<ICoreWebView2_13>() {
-                    if let Ok(profile) = wv13.Profile() {
-                        let _ = profile.SetPreferredColorScheme(COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK);
-                    }
+            let core = match webview.controller().CoreWebView2() {
+                Ok(c) => c,
+                Err(e) => { eprintln!("[dark] CoreWebView2() failed: {e:?}"); return; }
+            };
+            // Top-document preference (harmless; the injected script handles the cross-origin iframe).
+            if let Ok(profile) = core.cast::<ICoreWebView2_13>().and_then(|w| w.Profile()) {
+                let _ = profile.SetPreferredColorScheme(COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK);
+            }
+            // Add the per-frame dark-forcing script ONCE (it persists + applies to future documents,
+            // including the archive iframe opened later).
+            if !DARK_SCRIPT_ADDED.swap(true, Ordering::SeqCst) {
+                let js = HSTRING::from(DARK_FRAME_SCRIPT);
+                let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(|hr, _id| {
+                    eprintln!("[dark] AddScriptToExecuteOnDocumentCreated → {hr:?}");
+                    Ok(())
+                }));
+                if let Err(e) = core.AddScriptToExecuteOnDocumentCreated(PCWSTR(js.as_ptr()), &handler) {
+                    DARK_SCRIPT_ADDED.store(false, Ordering::SeqCst);
+                    eprintln!("[dark] AddScriptToExecuteOnDocumentCreated failed: {e:?}");
                 }
             }
         }
     });
+    if let Err(e) = r { eprintln!("[dark] with_webview failed: {e:?}"); }
 }
 
 /// Left inset (physical px) for the mpv child — the sidebar-rail width while
@@ -1216,6 +1244,28 @@ async fn da_cookies(window: tauri::WebviewWindow, base: &str) -> String {
     v
 }
 
+/// Read reaction counts plus the current user's selected key. The browser-side loader can read the
+/// public counts itself, but its cross-site request cannot carry discussanime's session cookie, so it
+/// always sees `selectedKey: null`. Reading through the native cookie jar restores that user state.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn da_reaction_state(
+    window: tauri::WebviewWindow,
+    base: String,
+    identifier: String,
+) -> Result<serde_json::Value, String> {
+    let base = base.trim_end_matches('/').to_string();
+    let cookie = da_cookies(window, &base).await;
+    let url = format!("{base}/api/threads/by-identifier/{identifier}/reaction");
+    let mut req = http_client().get(&url);
+    if !cookie.is_empty() { req = req.header("cookie", cookie); }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| e.to_string())?;
+    if !status.is_success() { return Err(format!("reaction state HTTP {}", status.as_u16())); }
+    serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
 /// Post a discussanime reaction (or clear it with `key=null`) authenticated by the user's `da_session`
 /// cookie. Returns `needsLogin` when there's no session (sign in via `da_login`). Goes through the
 /// pooled reqwest client with the cookie attached, which sidesteps the browser CORS + SameSite limits
@@ -1538,7 +1588,7 @@ pub fn run() {
                     // on_page_load runs after the document loads, when the profile is guaranteed ready.
                     .on_page_load(|_win, _| {
                         #[cfg(windows)]
-                        set_webview_dark(&_win);
+                        { eprintln!("[dark] on_page_load fired → set_webview_dark"); set_webview_dark(&_win); }
                     })
                     .on_new_window(|_url, _features| NewWindowResponse::Allow)
                     .build()?;
@@ -1655,6 +1705,7 @@ pub fn run() {
             mpv_version,
             player_command,
             oauth_capture,
+            da_reaction_state,
             da_react,
             da_login,
             download::download_start,

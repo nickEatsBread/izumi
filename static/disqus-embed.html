@@ -28,6 +28,13 @@
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
   <style>
     html, body { margin: 0; padding: 0; background: #0a0a0b; color-scheme: dark; font-family: 'Roboto', sans-serif; }
+    /* Thin, themed scrollbar (this page is a separate doc, so the app's global scrollbar hiding doesn't
+       reach it). Subtle translucent thumb on a transparent track to match the app's dark chrome. */
+    html { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
     #disqus_thread { padding: 10px; }
     #err { padding: 16px; font: 13px system-ui, sans-serif; color: #9aa0a6; }
     /* Reactions strip — public per-thread counts from the forum host, shown above the comments (where
@@ -35,6 +42,7 @@
        POST + no forum session here), so a click asks the parent app to post via the native ext_fetch
        command (which carries the da_session cookie); the parent posts the authoritative counts back. */
     #reactions { display: none; border-bottom: 1px solid rgba(255,255,255,0.08); padding: 10px 12px; }
+    #reactions, #reactions * { box-sizing: border-box; } /* so tile width includes padding+border, like the reference */
     .rx-head { font-size: 12px; font-weight: 700; color: #cbd5e1; margin: 0 0 8px; }
     .rx-row { display: flex; flex-wrap: wrap; gap: 8px; }
     .rx-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.06);
@@ -44,7 +52,26 @@
     .rx-chip.sel { background: rgba(80,140,255,0.28); color: #cfe0ff; }
     .rx-chip[disabled] { opacity: 0.6; cursor: default; }
     .rx-chip img { width: 20px; height: 20px; object-fit: contain; display: block; }
-    .rx-n { font-variant-numeric: tabular-nums; }
+    .rx-l { font-weight: 700; }
+    .rx-n { font-variant-numeric: tabular-nums; color: #9aa4b2; }
+    .rx-total { display: none; font-size: 14px; color: #9aa4b2; margin: 0 0 14px; }
+    /* Expanded (enlarged) mode: big centered vertical tiles — icon on top, count, label — matching the
+       reference reactions widget. The host app toggles #reactions.expanded via postMessage. */
+    #reactions.expanded { text-align: center; padding: 16px 12px 20px; }
+    #reactions.expanded .rx-head { font-size: 20px; color: #f5f6fa; margin-bottom: 4px; }
+    #reactions.expanded .rx-total { display: block; }
+    /* fit-content + auto margins keeps the tiles packed together and centered, whatever the panel width.
+       gap:0 + fixed-width tiles = they sit right next to each other, like the reference widget. */
+    #reactions.expanded .rx-row { justify-content: center; gap: 0; width: fit-content; max-width: 100%; margin: 0 auto; }
+    #reactions.expanded .rx-chip { flex-direction: column; gap: 2px; width: 96px; min-width: 96px; padding: 8px 6px 7px;
+                                   background: transparent; border: 1px solid transparent; border-radius: 20px; }
+    #reactions.expanded .rx-chip .rx-l { white-space: nowrap; }
+    #reactions.expanded .rx-chip:hover { background: rgba(255,255,255,0.08); }
+    #reactions.expanded .rx-chip.sel { background: transparent; border-color: #2e9fff; border-radius: 8px; }
+    #reactions.expanded .rx-chip img { width: 42px; height: 42px; }
+    #reactions.expanded .rx-n { order: 1; font-size: 20px; font-weight: 700; color: #e6e8ee; }
+    #reactions.expanded .rx-l { order: 2; font-size: 12px; font-weight: 400; color: #cbd5e1; }
+    #reactions.expanded .rx-chip.sel .rx-n, #reactions.expanded .rx-chip.sel .rx-l { color: #2e9fff; }
     /* Ad-block backstop: Disqus injects its monetization + poll frames from *.services.disqus.com
        (tempest = ads, polls = surveys) into this host doc. Comments come from disqus.com /
        disquscdn.com — never services.disqus.com — so hiding that subdomain family is safe. The
@@ -107,9 +134,14 @@
         var host = document.getElementById('reactions')
         var KEYS = ['upvote', 'funny', 'love', 'surprised', 'angry', 'sad']
         var EMOJI = { upvote: '👍', funny: '😂', love: '❤️', surprised: '😮', angry: '😠', sad: '😢' }
-        var chips = {}, nums = {}, selected = null, busy = false
+        var LABELS = { upvote: 'Upvote', funny: 'Funny', love: 'Love', surprised: 'Surprised', angry: 'Angry', sad: 'Sad' }
+        var chips = {}, nums = {}, selected = null, busy = false, totalEl = null
 
-        function setCounts(c) { KEYS.forEach(function (k) { if (nums[k]) nums[k].textContent = String((c && c[k]) || 0) }) }
+        function setCounts(c) {
+          var sum = 0
+          KEYS.forEach(function (k) { var v = (c && c[k]) || 0; sum += v; if (nums[k]) nums[k].textContent = String(v) })
+          if (totalEl) totalEl.textContent = sum + (sum === 1 ? ' Response' : ' Responses')
+        }
         function setSelected(key) { selected = key; KEYS.forEach(function (k) { if (chips[k]) chips[k].classList.toggle('sel', k === key) }) }
         function setBusy(b) { busy = b; KEYS.forEach(function (k) { if (chips[k]) { if (b) { chips[k].setAttribute('disabled', '') } else { chips[k].removeAttribute('disabled') } } }) }
         function onClick(k) {
@@ -122,7 +154,15 @@
         window.addEventListener('message', function (e) {
           if (e.origin !== location.origin) return
           var m = e.data
-          if (!m || m.type !== 'izumi-react-result') return
+          if (!m) return
+          // Layout from the host app: side (compact chips) vs expanded (big Hayami-style tiles).
+          if (m.type === 'izumi-mode') { host.classList.toggle('expanded', !!m.expanded); return }
+          if (m.type === 'izumi-reaction-state-result') {
+            if (m.counts) setCounts(m.counts)
+            setSelected(m.reaction || null)
+            return
+          }
+          if (m.type !== 'izumi-react-result') return
           setBusy(false)
           if (m.ok) { if (m.counts) setCounts(m.counts); setSelected(m.reaction || null) }
         })
@@ -132,19 +172,27 @@
           .then(function (d) {
             if (!d || !d.counts) return
             var head = document.createElement('div'); head.className = 'rx-head'; head.textContent = d.heading || 'What do you think?'
+            totalEl = document.createElement('div'); totalEl.className = 'rx-total' // shown in expanded mode
             var row = document.createElement('div'); row.className = 'rx-row'
             KEYS.forEach(function (k) {
-              var b = document.createElement('div'); b.className = 'rx-chip'; b.title = k
+              var label = (d.labels && d.labels[k]) || LABELS[k] || k
+              var b = document.createElement('div'); b.className = 'rx-chip'; b.title = label
               var sprite = d.sprites && d.sprites[k]
               if (sprite) { var img = document.createElement('img'); img.src = sprite; img.alt = k; b.appendChild(img) }
               else { var em = document.createElement('span'); em.textContent = EMOJI[k]; b.appendChild(em) }
+              var l = document.createElement('span'); l.className = 'rx-l'; l.textContent = label; b.appendChild(l)
               var n = document.createElement('span'); n.className = 'rx-n'; n.textContent = String(d.counts[k] || 0); b.appendChild(n)
               b.addEventListener('click', (function (key) { return function () { onClick(key) } })(k))
               chips[k] = b; nums[k] = n
               row.appendChild(b)
             })
-            host.appendChild(head); host.appendChild(row); host.style.display = 'block'
+            host.appendChild(head); host.appendChild(totalEl); host.appendChild(row); host.style.display = 'block'
+            setCounts(d.counts) // fills the total line
             if (d.selectedKey) setSelected(d.selectedKey)
+            // The public browser GET cannot include the discussanime session cookie, so ask the app's
+            // native bridge for the authenticated selectedKey after the controls exist.
+            try { window.parent.postMessage({ type: 'izumi-reaction-state', base: apiBase, identifier: identifier }, location.origin) }
+            catch (_) {}
           })
           .catch(function () {})
       })();

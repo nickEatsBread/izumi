@@ -3,15 +3,17 @@
   // on nowPlayingMedia.{media,episode}. Aggregates AniList forum threads (per-series, link-out) + the
   // r/anime episode thread found by search (inline comment bodies) + an optional configured mapper.
   // Read-only for now — posting (AniList free, Reddit OAuth) is a later phase.
-  import { fly } from 'svelte/transition'
+  import { fly, scale, fade } from 'svelte/transition'
   import { invoke } from '@tauri-apps/api/core'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import MessageSquare from 'lucide-svelte/icons/message-square'
   import X from 'lucide-svelte/icons/x'
+  import Maximize2 from 'lucide-svelte/icons/maximize-2'
+  import Minimize2 from 'lucide-svelte/icons/minimize-2'
   import ExternalLink from 'lucide-svelte/icons/external-link'
   import ArrowBigUp from 'lucide-svelte/icons/arrow-big-up'
   import { nowPlayingMedia, commentsOpen } from '$lib/player/session'
-  import { fetchDiscussion, defaultDiscussionPlatform, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
+  import { fetchDiscussion, defaultDiscussionPlatform, discussionExpanded, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
 
   let threads = $state<DiscussionThread[]>([])
   let loading = $state(false)
@@ -31,8 +33,10 @@
     loading = true
     filter = 'All'
     let cancelled = false
+    let completed = false
     fetchDiscussion(np.media, np.episode).then((t) => {
       if (cancelled) return
+      completed = true
       threads = t
       loading = false
       // Open on the preferred source if it's present (else the aggregated 'All' list).
@@ -40,7 +44,12 @@
       const lbl = want !== 'auto' ? platLabel(want) : 'All'
       filter = lbl !== 'All' && t.some((x) => x.source === lbl) ? lbl : 'All'
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      // If the panel closes before the initial request resolves, its result is intentionally ignored.
+      // Let the same episode fetch again on reopen instead of treating that cancelled request as cached.
+      if (!completed && loadedKey === key) loadedKey = ''
+    }
   })
 
   // SDK platform slug → the badge/filter label (mirrors comments/index.ts).
@@ -62,6 +71,11 @@
   const isDisqusInner = (u?: string) => {
     if (!u) return false
     try { const x = new URL(u); return x.hostname === 'disqus.com' && x.pathname.startsWith('/embed/comments') }
+    catch { return false }
+  }
+  const isDiscussAnimeEmbed = (u?: string) => {
+    if (!u) return false
+    try { const x = new URL(u); return x.hostname === 'discussanime.moe' && x.pathname.startsWith('/embed/') }
     catch { return false }
   }
   function disqusEmbedSrc(embed: string): string {
@@ -91,6 +105,7 @@
         : isDisqusInner(embedUrl) ? disqusEmbedSrc(embedUrl)
           : withDark(embedUrl),
   )
+  const archiveEmbed = $derived(isDiscussAnimeEmbed(embedUrl))
   // Note on the archive embed's dark mode: `.dq-archive` is dark-by-default and forced LIGHT only by
   // `@media (prefers-color-scheme: light)`. So the cross-origin lever is the WEBVIEW's color scheme —
   // forced dark in Rust (set_webview_dark → WebView2 SetPreferredColorScheme). The archive's own
@@ -103,16 +118,37 @@
   // and hand the authoritative counts back. `needsLogin` → run `da_login` (a discussanime OAuth window)
   // once, then retry. Non-Windows / no-session just returns needsLogin and nothing changes.
   let embedIframe = $state<HTMLIFrameElement>()
+  let archiveHeight = $state<number | null>(null)
+  // A new archive starts at the viewport height until it reports its actual content height.
+  $effect(() => { void embedSrc; archiveHeight = null })
   $effect(() => {
     function onMsg(e: MessageEvent) {
+      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number } | null
+      // The cross-origin discussanime archive deliberately hides its own overflow and sends its
+      // content height to its host. Size that iframe to the content; the padded wrapper below scrolls.
+      if (archiveEmbed && e.origin === 'https://discussanime.moe' && e.source === embedIframe?.contentWindow
+          && m?.type === 'discussanime-archive-embed:resize') {
+        const height = Number(m.height)
+        if (Number.isFinite(height) && height > 0) archiveHeight = Math.min(height, 100_000)
+        return
+      }
       if (e.origin !== location.origin) return
-      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null } | null
-      if (!m || m.type !== 'izumi-react' || !m.base || !m.identifier) return
-      void handleReact(m.base, m.identifier, m.key ?? null)
+      if (!m || !m.base || !m.identifier) return
+      if (m.type === 'izumi-reaction-state') void handleReactionState(m.base, m.identifier)
+      else if (m.type === 'izumi-react') void handleReact(m.base, m.identifier, m.key ?? null)
     }
     window.addEventListener('message', onMsg)
     return () => window.removeEventListener('message', onMsg)
   })
+  async function handleReactionState(base: string, identifier: string) {
+    try {
+      const state = await invoke<{ counts?: unknown; selectedKey?: string | null }>('da_reaction_state', { base, identifier })
+      embedIframe?.contentWindow?.postMessage({
+        type: 'izumi-reaction-state-result', counts: state.counts, reaction: state.selectedKey ?? null,
+      }, location.origin)
+    }
+    catch { /* Public counts still render; only authenticated highlighting is unavailable. */ }
+  }
   async function handleReact(base: string, identifier: string, key: string | null) {
     const back = (ok: boolean, counts?: unknown) =>
       embedIframe?.contentWindow?.postMessage({ type: 'izumi-react-result', ok, counts, reaction: ok ? key : null }, location.origin)
@@ -127,6 +163,11 @@
     }
     catch { back(false) }
   }
+
+  // Tell the Disqus loader page which layout to use so its reactions strip switches between the compact
+  // chips (side) and the big Hayami-style tiles (expanded). Posted on mode change + on iframe load.
+  const postMode = () => embedIframe?.contentWindow?.postMessage({ type: 'izumi-mode', expanded: $discussionExpanded }, location.origin)
+  $effect(() => { void $discussionExpanded; void embedIframe; postMode() })
 
   const ago = (ms?: number) => {
     if (!ms) return ''
@@ -153,39 +194,47 @@
   </div>
 {/snippet}
 
-{#if $commentsOpen}
-  <!-- data-comments-panel: the player's overlay-tap handler ignores clicks originating in here, so
-       taps on links/pills don't toggle play/pause. We DON'T stopPropagation on the panel — Svelte 5
-       delegates click to the app root, so a native stopPropagation here would kill every button's
-       onclick (pills, close). Let clicks bubble; the player just opts out via this attribute. -->
-  <!-- Full-height sheet from the very top (incl. fullscreen). It can't out-z-index the window titlebar
-       (that's a root-level z-50 bar; this panel is trapped in the player overlay's z-20 context), so
-       instead the titlebar hides itself while the discussion is open — see Titlebar.svelte. -->
-  <div data-comments-panel class="absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm"
-       transition:fly={{ x: 320, duration: 200 }}>
-    <header class="flex items-center gap-2 border-b border-white/10 px-4 py-3">
-      <MessageSquare size={18} class="text-theme" />
-      <h2 class="flex items-baseline gap-1.5 text-sm font-black"><span>Discussion</span>{#if ep}<span class="font-semibold text-muted-foreground">· Ep {ep}</span>{/if}</h2>
+{#snippet panelBody()}
+  <header class="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+    <MessageSquare size={18} class="text-theme" />
+    <h2 class="flex items-baseline gap-1.5 text-sm font-black"><span>Discussion</span>{#if ep}<span class="font-semibold text-muted-foreground">· Ep {ep}</span>{/if}</h2>
+    <div class="ml-auto flex items-center gap-1">
+      <button data-focusable onclick={() => discussionExpanded.set(!$discussionExpanded)}
+              aria-label={$discussionExpanded ? 'Dock to side' : 'Expand'}
+              class="grid h-8 w-8 place-items-center rounded-md hover:bg-accent">
+        {#if $discussionExpanded}<Minimize2 size={16} />{:else}<Maximize2 size={16} />{/if}
+      </button>
       <button data-focusable onclick={() => commentsOpen.set(false)} aria-label="Close discussion"
-              class="ml-auto grid h-8 w-8 place-items-center rounded-md hover:bg-accent"><X size={18} /></button>
-    </header>
+              class="grid h-8 w-8 place-items-center rounded-md hover:bg-accent"><X size={18} /></button>
+    </div>
+  </header>
 
-    {#if !loading && sources.length > 1}
-      <div class="flex flex-wrap gap-1.5 border-b border-white/10 px-3 py-2">
-        {#each ['All', ...sources] as s (s)}
-          <button data-focusable onclick={() => (filter = s)}
-                  class="rounded-full px-2.5 py-0.5 text-xs font-bold transition-colors
-                    {filter === s ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}">{s}</button>
-        {/each}
+  {#if !loading && sources.length > 1}
+    <div class="flex flex-wrap gap-1.5 border-b border-white/10 px-3 py-2">
+      {#each ['All', ...sources] as s (s)}
+        <button data-focusable onclick={() => (filter = s)}
+                class="rounded-full px-2.5 py-0.5 text-xs font-bold transition-colors
+                  {filter === s ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground hover:text-foreground'}">{s}</button>
+      {/each}
+    </div>
+  {/if}
+
+  {#if !loading && embedSrc}
+    <!-- Embeddable source: our same-origin Disqus loader page (which renders its own reactions strip
+         above the comments), or a forum's own embed page. onload posts the current mode so the loader
+         styles its reactions compact (side) vs Hayami-tiles (expanded). -->
+    {#if archiveEmbed}
+      <div class="discussion-scrollbar min-h-0 flex-1 overflow-y-auto p-2.5">
+        <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} scrolling="no"
+                style:height={archiveHeight ? `${archiveHeight}px` : '100%'}
+                class="block min-h-full w-full border-0"
+                sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
       </div>
-    {/if}
-
-    {#if !loading && embedSrc}
-      <!-- Embeddable source: our same-origin Disqus loader page (which renders its own reactions strip
-           above the comments), or a forum's own embed page. -->
-      <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} class="block w-full flex-1 border-0"
-              sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
     {:else}
+      <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postMode} class="block min-h-0 w-full flex-1 border-0"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
+    {/if}
+  {:else}
     <div class="flex-1 overflow-y-auto px-3 py-3">
       {#if loading}
         {#each Array.from({ length: 5 }) as _}<div class="mb-2 h-20 animate-pulse rounded-lg bg-muted"></div>{/each}
@@ -225,6 +274,40 @@
         {/each}
       {/if}
     </div>
-    {/if}
-  </div>
+  {/if}
+{/snippet}
+
+<!-- data-comments-panel: the player's overlay-tap handler ignores clicks originating in the panel (and
+     the backdrop) so taps on pills/links/backdrop don't toggle play/pause. The window titlebar hides
+     itself while the discussion is open — see Titlebar.svelte. -->
+{#if $commentsOpen}
+  {#if $discussionExpanded}
+    <!-- Expanded: clicking the backdrop closes the discussion; the panel is a separate, higher-level
+         pointer target, so interaction inside it never reaches this handler. -->
+    <button type="button" data-comments-panel aria-label="Close discussion" transition:fade={{ duration: 150 }}
+            onclick={() => commentsOpen.set(false)}
+            class="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm"></button>
+    <div class="pointer-events-none absolute inset-0 z-40 grid place-items-center p-4">
+      <div data-comments-panel transition:scale={{ start: 0.96, duration: 160 }}
+           class="pointer-events-auto flex h-[85vh] w-[94vw] max-w-[920px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm">
+        {@render panelBody()}
+      </div>
+    </div>
+  {:else}
+    <!-- Side: docked full-height right sheet. -->
+    <div data-comments-panel transition:fly={{ x: 320, duration: 200 }}
+         class="absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm">
+      {@render panelBody()}
+    </div>
+  {/if}
 {/if}
+
+<style>
+  /* The app hides scrollbars globally. The archive has to scroll in this parent because its
+     cross-origin document auto-sizes with overflow hidden, so explicitly restore the Disqus look. */
+  .discussion-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.16) transparent; }
+  .discussion-scrollbar::-webkit-scrollbar { display: block; width: 8px; height: 8px; }
+  .discussion-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .discussion-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 8px; }
+  .discussion-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
+</style>

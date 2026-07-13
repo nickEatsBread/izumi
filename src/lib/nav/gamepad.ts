@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen } from '$lib/player/session'
+import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, commentsOpen } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
 import { inputType } from './input'
 
@@ -52,6 +52,7 @@ export function startGamepadNav(): () => void {
     if (get(trackMenuOpen)) return // the track menu owns the pad while open
     if (get(debridCaching)) return // the caching screen owns the pad
     if (inPlayer()) {
+      if (get(commentsOpen)) return // the discussion modal owns input; never seek behind it
       if (dir === 'left') playerCmd('seek', [String(-get(seekDuration)), 'relative+exact'])
       else if (dir === 'right') playerCmd('seek', [String(get(seekDuration)), 'relative+exact'])
     } else {

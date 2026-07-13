@@ -13,3 +13,7 @@ export const commentsEnabled = persisted<boolean>('comments-enabled', true)
 // platform (reddit | anilist | mal | youtube | disqus | forum) opens filtered to that source and, when
 // it provides an embed (Disqus/forum), renders the embed inline instead of a link-out.
 export const defaultDiscussionPlatform = persisted<string>('comments-default-platform', 'auto')
+
+// Discussion panel layout: false = docked side sheet (default), true = centered floating panel over a
+// dimmed backdrop. Remembered across opens (the header toggle flips it).
+export const discussionExpanded = persisted<boolean>('discussion-expanded', false)

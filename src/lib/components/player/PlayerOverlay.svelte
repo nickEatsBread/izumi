@@ -14,6 +14,7 @@
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { startNativeGamepadSeek } from '$lib/player/gamepad'
+  import { commentsEnabled, discussionExpanded } from '$lib/comments'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -353,6 +354,9 @@
   $effect(() => { invoke('set_idle_inhibit', { on: !paused && !eof }).catch(() => {}) })
 
   onDestroy(() => {
+    // Close the discussion panel on every player-close path (← button, B, navigate-away) so the
+    // desktop titlebar — which hides itself while commentsOpen — reappears once the player is gone.
+    commentsOpen.set(false)
     // Hand the LAST position/duration to the progress tracker (play.ts) so closing right after a
     // skim-to-the-end still saves the resume point + marks watched — fires on every close path
     // (← button, B, navigate-away). play.ts's window listener is still live at this point.
@@ -391,6 +395,12 @@
       if (!e.payload.pressed) return
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
       if (get(trackMenuOpen)) return
+      // While comments are open, do not let controller presses seek, pause, or leave the player
+      // behind the modal. B and Select/View close the discussion.
+      if (get(commentsOpen)) {
+        if (e.payload.name === 'b' || e.payload.name === 'select') commentsOpen.set(false)
+        return
+      }
       switch (e.payload.name) {
         case 'a':
           if (showSkip && currentSeg) seekTo(currentSeg.end + 0.5)
@@ -403,6 +413,12 @@
           break
         // L1/R1 change episode but only on a DOUBLE press (two quick taps of the same bumper) so a
         // stray press can't jump episodes. The first press arms + shows a hint.
+        case 'select':
+          if (get(commentsEnabled)) {
+            discussionExpanded.set(true)
+            commentsOpen.set(true)
+          }
+          break
         case 'l1': padEpisode(-1); break
         case 'r1': padEpisode(1); break
       }

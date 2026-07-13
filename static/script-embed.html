@@ -14,6 +14,13 @@
   -->
   <style>
     html, body { margin: 0; padding: 0; background: #0a0a0b; color-scheme: dark; }
+    /* Match the same-origin Disqus loader. TAC expands its inner iframe to its full content height,
+       so this host document is the element that scrolls inside the discussion panel. */
+    html { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 8px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
     #err { padding: 16px; font: 13px system-ui, sans-serif; color: #9aa0a6; }
   </style>
 </head>
