@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
-use crate::models::{InstallRequest, PlayRequest};
+use crate::models::{InstallRequest, OAuthRequest, OAuthResponse, PlayRequest};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
     app: &AppHandle<R>,
@@ -21,5 +21,10 @@ impl<R: Runtime> ExtPlayer<R> {
 
     pub fn install_apk(&self, _payload: InstallRequest) -> crate::Result<()> {
         Ok(())
+    }
+
+    // Desktop uses the native second-window `oauth_capture` in the app crate, not this.
+    pub fn oauth_capture(&self, _payload: OAuthRequest) -> crate::Result<OAuthResponse> {
+        Ok(OAuthResponse { url: String::new() })
     }
 }

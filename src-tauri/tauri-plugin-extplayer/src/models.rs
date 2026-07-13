@@ -20,3 +20,17 @@ pub struct InstallRequest {
     /// Absolute path to the downloaded .apk on local storage.
     pub path: String,
 }
+
+/// A request to run the in-app OAuth login flow (mobile: a WebView that captures the redirect).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthRequest {
+    pub auth_url: String,
+    pub redirect_prefix: String,
+}
+
+/// The captured redirect URL (query + fragment), from which callers read `?code=`/`#access_token=`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct OAuthResponse {
+    pub url: String,
+}

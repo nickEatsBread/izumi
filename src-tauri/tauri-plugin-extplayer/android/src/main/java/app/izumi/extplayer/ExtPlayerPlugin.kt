@@ -3,11 +3,16 @@ package app.izumi.extplayer
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.core.content.FileProvider
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.File
 
@@ -25,6 +30,12 @@ class PlayArgs {
 @InvokeArg
 class InstallArgs {
     var path: String = ""
+}
+
+@InvokeArg
+class OAuthArgs {
+    var authUrl: String = ""
+    var redirectPrefix: String = ""
 }
 
 @TauriPlugin
@@ -95,5 +106,45 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         }
         activity.startActivity(intent)
         invoke.resolve()
+    }
+
+    // Mobile OAuth: the desktop opens a second window and polls its URL; Android has no second
+    // window, so we overlay a full-screen WebView, load the provider's auth page, and capture the
+    // redirect to `redirectPrefix` (query for MAL's code, fragment for AniList's implicit token).
+    // Reads location.href via JS so the URL fragment is included. Same REDIRECT_URI as desktop,
+    // so no OAuth app reconfiguration is needed.
+    @Command
+    fun oauthCapture(invoke: Invoke) {
+        val args = invoke.parseArgs(OAuthArgs::class.java)
+        activity.runOnUiThread {
+            val content = activity.findViewById<ViewGroup>(android.R.id.content)
+            val web = WebView(activity)
+            web.settings.javaScriptEnabled = true
+            web.settings.domStorageEnabled = true
+            var done = false
+            fun finish(url: String) {
+                if (done) return
+                done = true
+                (web.parent as? ViewGroup)?.removeView(web)
+                web.destroy()
+                invoke.resolve(JSObject().put("url", url))
+            }
+            web.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                    val u = request.url.toString()
+                    if (u.startsWith(args.redirectPrefix) && u.contains("=")) { finish(u); return true }
+                    return false
+                }
+                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    if (url.startsWith(args.redirectPrefix)) {
+                        // location.href carries the fragment (AniList implicit token); evaluateJavascript
+                        // returns it JSON-quoted, so strip the surrounding quotes.
+                        view.evaluateJavascript("location.href") { href -> finish(href.trim('"')) }
+                    }
+                }
+            }
+            content.addView(web, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            web.loadUrl(args.authUrl)
+        }
     }
 }
