@@ -1644,6 +1644,24 @@ pub fn run() {
             // backdrop the webview can't see — the video is a separate subsurface).
             #[cfg(target_os = "linux")]
             if let Some(win) = app.get_webview_window("main") {
+                // Steam overrides the session's native touch default with left-click emulation for
+                // this XWayland app. Change Gamescope back to passthrough after our window exists so
+                // WebKitGTK receives real XI2 touch sequences and owns drag + kinetic scrolling,
+                // including inside cross-origin discussion frames.
+                if let Err(e) = player::linux_x11::enable_native_touch(&win) {
+                    player::linux_embed::elog(&format!("x11: native touch passthrough failed: {e}"));
+                }
+                let touch_win = win.clone();
+                win.on_window_event(move |event| {
+                    // Steam may rewrite its root property during an app-focus transition. Reassert
+                    // passthrough after GTK receives focus; this remains compositor-level native
+                    // input routing and does not synthesize or reinterpret any gestures.
+                    if matches!(event, tauri::WindowEvent::Focused(true)) {
+                        if let Err(e) = player::linux_x11::enable_native_touch(&touch_win) {
+                            player::linux_embed::elog(&format!("x11: focus touch passthrough failed: {e}"));
+                        }
+                    }
+                });
                 let _ = win.with_webview(|pw| {
                     use glib::object::ObjectType;
                     use webkit2gtk::{SettingsExt, WebViewExt};
@@ -1652,11 +1670,8 @@ pub fn run() {
                     // THE root fix for the ghost trails: turn off WebKitGTK 2.50 damage
                     // propagation (see disable_webkit_damage).
                     if let Some(settings) = wv.settings() {
-                        // Smooth (animated) wheel/keyboard scrolling via WebKit's async-scrolling
-                        // thread. NOTE: this only smooths WHEEL/programmatic scroll — the Deck's
-                        // touch-as-mouse drag (handled by initTouchScroll) still bypasses the
-                        // compositor scroller; a fully native touch-scroll needs synthesized GDK
-                        // smooth-scroll / wl_touch (a larger change, see notes).
+                        // Gamescope passthrough lets WebKit's GTK drag/swipe gestures use this
+                        // async path, including velocity-based native kinetic scrolling.
                         settings.set_enable_smooth_scrolling(true);
                         let sptr = settings.as_ptr() as *mut std::ffi::c_void;
                         unsafe { disable_webkit_damage(sptr) };

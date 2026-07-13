@@ -17,6 +17,7 @@
 #![cfg(target_os = "linux")]
 
 use std::ffi::c_void;
+use std::os::raw::{c_char, c_int, c_uchar, c_ulong};
 use std::sync::Mutex;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
@@ -36,7 +37,23 @@ extern "C" {
     fn XRaiseWindow(dpy: *mut c_void, w: u64) -> i32;
     fn XFlush(dpy: *mut c_void) -> i32;
     fn XSync(dpy: *mut c_void, discard: i32) -> i32;
+    fn XDefaultRootWindow(dpy: *mut c_void) -> u64;
+    fn XInternAtom(dpy: *mut c_void, name: *const c_char, only_if_exists: c_int) -> c_ulong;
+    fn XChangeProperty(
+        dpy: *mut c_void,
+        w: u64,
+        property: c_ulong,
+        property_type: c_ulong,
+        format: c_int,
+        mode: c_int,
+        data: *const c_uchar,
+        nelements: c_int,
+    ) -> c_int;
 }
+
+// X11's predefined XA_CARDINAL atom and PropModeReplace value.
+const XA_CARDINAL: c_ulong = 6;
+const PROP_MODE_REPLACE: c_int = 0;
 
 // libXext (shape extension). ShapeInput = 2, ShapeSet = 0.
 #[allow(non_snake_case)]
@@ -92,6 +109,49 @@ fn raw_x11(win: &tauri::WebviewWindow) -> Result<(*mut c_void, u64), String> {
         _ => return Err("not an Xlib display (need Xlib for --wid container)".into()),
     };
     Ok((dpy, parent))
+}
+
+/// Ask Gamescope to deliver the Deck touchscreen as real touch input instead of converting it
+/// into a left mouse button. Gamescope watches `STEAM_TOUCH_CLICK_MODE` on every XWayland root;
+/// value 4 is its native passthrough mode. The app writes its own XWayland root (`DISPLAY=:1` in
+/// the Steam session), which is the only X socket exposed inside the Flatpak.
+///
+/// Gamescope then emits wl_touch, XWayland exposes XI2 touch sequences, and WebKitGTK's built-in
+/// touch-only drag/swipe controllers provide native kinetic scrolling.
+pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> {
+    if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
+        return Ok(());
+    }
+
+    let (dpy, _) = raw_x11(window)?;
+    let name = b"STEAM_TOUCH_CLICK_MODE\0";
+    let value: c_ulong = 4; // TouchClickModes::Passthrough
+
+    unsafe {
+        let root = XDefaultRootWindow(dpy);
+        if root == 0 {
+            return Err("XDefaultRootWindow returned 0".into());
+        }
+        let atom = XInternAtom(dpy, name.as_ptr().cast(), 0);
+        if atom == 0 {
+            return Err("XInternAtom(STEAM_TOUCH_CLICK_MODE) failed".into());
+        }
+        XChangeProperty(
+            dpy,
+            root,
+            atom,
+            XA_CARDINAL,
+            32,
+            PROP_MODE_REPLACE,
+            (&value as *const c_ulong).cast(),
+            1,
+        );
+        // Flush synchronously so Gamescope changes routing before the first touchscreen gesture.
+        XSync(dpy, 0);
+    }
+
+    crate::player::linux_embed::elog("x11: requested Gamescope native touch passthrough (mode 4)");
+    Ok(())
 }
 
 /// Create (once) the mpv container: a raw X11 child of the app's toplevel, fullscreen-sized,

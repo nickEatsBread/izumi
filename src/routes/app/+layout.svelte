@@ -17,7 +17,7 @@
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
   import { beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
-  import { initInput, initDpadNav, initTouchScroll, suppressNativeTooltips } from '$lib/nav'
+  import { initInput, initDpadNav, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
@@ -52,7 +52,6 @@
     }
     initInput()
     initDpadNav()
-    initTouchScroll() // Game-mode drag-to-scroll (Deck touch = mouse events, no native scroll)
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
