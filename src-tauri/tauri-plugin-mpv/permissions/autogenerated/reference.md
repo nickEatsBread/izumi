@@ -9,6 +9,9 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-get`
 - `allow-mpv-set`
 - `allow-mpv-stop`
+- `allow-mpv-pip`
+- `allow-registerListener`
+- `allow-removeListener`
 
 ## Permission Table
 
@@ -100,6 +103,32 @@ Denies the mpv_load command without any pre-configured scope.
 <tr>
 <td>
 
+`mpv:allow-mpv-pip`
+
+</td>
+<td>
+
+Enables the mpv_pip command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-pip`
+
+</td>
+<td>
+
+Denies the mpv_pip command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `mpv:allow-mpv-set`
 
 </td>
@@ -145,6 +174,58 @@ Enables the mpv_stop command without any pre-configured scope.
 <td>
 
 Denies the mpv_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-registerListener`
+
+</td>
+<td>
+
+Enables the registerListener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-registerListener`
+
+</td>
+<td>
+
+Denies the registerListener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-removeListener`
+
+</td>
+<td>
+
+Enables the removeListener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-removeListener`
+
+</td>
+<td>
+
+Denies the removeListener command without any pre-configured scope.
 
 </td>
 </tr>

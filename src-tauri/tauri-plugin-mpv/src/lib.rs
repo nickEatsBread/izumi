@@ -41,7 +41,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::mpv_command,
             commands::mpv_get,
             commands::mpv_set,
-            commands::mpv_stop
+            commands::mpv_stop,
+            commands::mpv_pip
         ])
         .setup(|app, api| {
             #[cfg(mobile)]

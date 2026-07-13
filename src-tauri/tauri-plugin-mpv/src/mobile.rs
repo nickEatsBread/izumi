@@ -44,4 +44,8 @@ impl<R: Runtime> Mpv<R> {
     pub fn stop(&self) -> crate::Result<()> {
         self.0.run_mobile_plugin("stop", ()).map_err(Into::into)
     }
+
+    pub fn pip(&self) -> crate::Result<()> {
+        self.0.run_mobile_plugin("pip", ()).map_err(Into::into)
+    }
 }

@@ -8,4 +8,7 @@ permissions = [
     "allow-mpv-get",
     "allow-mpv-set",
     "allow-mpv-stop",
+    "allow-mpv-pip",
+    "allow-registerListener",
+    "allow-removeListener",
 ]

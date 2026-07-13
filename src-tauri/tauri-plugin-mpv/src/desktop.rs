@@ -35,4 +35,8 @@ impl<R: Runtime> Mpv<R> {
     pub fn stop(&self) -> crate::Result<()> {
         Ok(())
     }
+
+    pub fn pip(&self) -> crate::Result<()> {
+        Ok(())
+    }
 }

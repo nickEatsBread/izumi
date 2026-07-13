@@ -331,6 +331,18 @@
           "markdownDescription": "Denies the mpv_load command without any pre-configured scope."
         },
         {
+          "description": "Enables the mpv_pip command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-pip",
+          "markdownDescription": "Enables the mpv_pip command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_pip command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-pip",
+          "markdownDescription": "Denies the mpv_pip command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_set command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-set",
@@ -355,10 +367,34 @@
           "markdownDescription": "Denies the mpv_stop command without any pre-configured scope."
         },
         {
-          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`",
+          "description": "Enables the registerListener command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-registerListener",
+          "markdownDescription": "Enables the registerListener command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the registerListener command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-registerListener",
+          "markdownDescription": "Denies the registerListener command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the removeListener command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-removeListener",
+          "markdownDescription": "Enables the removeListener command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the removeListener command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-removeListener",
+          "markdownDescription": "Denies the removeListener command without any pre-configured scope."
+        },
+        {
+          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-registerListener`\n- `allow-removeListener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`"
+          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-registerListener`\n- `allow-removeListener`"
         }
       ]
     }

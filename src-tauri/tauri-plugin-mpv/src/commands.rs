@@ -35,3 +35,8 @@ pub(crate) async fn mpv_set<R: Runtime>(app: AppHandle<R>, payload: SetRequest) 
 pub(crate) async fn mpv_stop<R: Runtime>(app: AppHandle<R>) -> Result<()> {
     app.mpv().stop()
 }
+
+#[command]
+pub(crate) async fn mpv_pip<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    app.mpv().pip()
+}
