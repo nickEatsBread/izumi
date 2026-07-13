@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "app": {
-    "//": "Android keeps its main window defined in config. Desktop creates it in Rust (lib.rs setup) to attach an on_new_window handler for the discussion-embed OAuth popups; on_new_window is unsupported on Android/iOS, and Android is single-activity, so it stays config-defined here.",
     "windows": [
       {
         "title": "izumi",
