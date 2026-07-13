@@ -40,6 +40,16 @@ class OAuthArgs {
 
 @TauriPlugin
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
+    // WRY's Android WebView keeps zoom enabled and ignores the viewport `user-scalable=no`, so the
+    // page pinch- / double-tap-zooms on mobile (content zooms while the fixed nav stays put). Kill
+    // it at the WebView-settings level the moment the webview is created.
+    override fun load(webView: WebView) {
+        webView.settings.setSupportZoom(false)
+        webView.settings.builtInZoomControls = false
+        webView.settings.displayZoomControls = false
+        webView.settings.textZoom = 100 // ignore the system font-scale
+    }
+
     @Command
     fun play(invoke: Invoke) {
         val args = invoke.parseArgs(PlayArgs::class.java)

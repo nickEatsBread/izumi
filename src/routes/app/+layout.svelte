@@ -88,7 +88,10 @@
     const z = $uiScale * ($gameMode && !$playing ? 1.25 : 1)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rootStyle = document.documentElement.style as any
-    if ($gameMode) {
+    if ($isMobile) {
+      // Mobile never applies the desktop/Deck UI-scale (a persisted value would zoom the whole page).
+      rootStyle.zoom = '1'
+    } else if ($gameMode) {
       // Native WebKit page zoom (compositor-scrolled) rather than CSS `zoom` on the scroll
       // root — CSS zoom re-rasterizes the whole page on every scroll, which is what made
       // vertical scrolling crawl on the Deck. Native zoom scrolls like a zoomed desktop page.
