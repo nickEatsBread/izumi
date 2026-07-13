@@ -8,7 +8,10 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <!-- viewport-fit=cover so env(safe-area-inset-*) resolves non-zero on Android edge-to-edge
          (status-bar / gesture-area insets); without it the mobile safe-area padding is a no-op. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- maximum-scale=1 + user-scalable=no: lock out the WebView's native pinch / double-tap zoom.
+         Without it, rapid taps while navigating on mobile register as a double-tap and zoom the page
+         (which then stays zoomed). The app has its own UI-scale setting; browser zoom isn't wanted. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <title>izumi</title>
     %sveltekit.head%
   </head>
