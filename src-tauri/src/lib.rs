@@ -1663,6 +1663,10 @@ pub fn run() {
                     .inner_size(1280.0, 800.0)
                     .decorations(false)
                     .background_color(tauri::window::Color(10, 10, 11, 255))
+                    // A native webview begins with an opaque white surface. Keep the window hidden
+                    // until the app document finishes its first load so that surface can never be
+                    // presented between the dark native window and the dark HTML paint.
+                    .visible(false)
                     // Force the webview to report prefers-color-scheme: dark. The app itself is dark via
                     // CSS classes (darkMode:'class', no prefers-color-scheme queries), so this doesn't
                     // change our UI — but the discussion embeds (discussanime archive, Disqus) keep
@@ -1672,9 +1676,12 @@ pub fn run() {
                     // Re-assert dark prefers-color-scheme on every page load too. The setup-time
                     // set_webview_dark call can no-op if CoreWebView2 isn't fully initialized yet;
                     // on_page_load runs after the document loads, when the profile is guaranteed ready.
-                    .on_page_load(|_win, _| {
+                    .on_page_load(|win, payload| {
                         #[cfg(windows)]
-                        { eprintln!("[dark] on_page_load fired → set_webview_dark"); set_webview_dark(&_win); }
+                        set_webview_dark(&win);
+                        if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+                            let _ = win.show();
+                        }
                     })
                     .on_new_window(move |url, features| {
                         // Only Disqus authentication needs an in-webview popup so its opener and
