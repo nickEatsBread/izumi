@@ -6,7 +6,7 @@
   import type { EpMeta } from '$lib/anizip/types'
   import type { DownloadItem } from '$lib/downloads/state'
   import { ratingBg } from '$lib/anilist/media'
-  import { episodePercent } from '$lib/player/progress'
+  import { positionPercent, positions, progressKey } from '$lib/player/progress'
   import { hideSpoilers } from '$lib/settings/ui'
   import Download from 'lucide-svelte/icons/download'
   import Loader from 'lucide-svelte/icons/loader-circle'
@@ -43,7 +43,8 @@
   const rating = $derived(typeof meta?.rating === 'number' ? Math.round(meta.rating * 10) : undefined)
 
   const trackedDone = $derived((media.mediaListEntry?.progress ?? 0) >= ep)
-  const pct = $derived(released ? (trackedDone ? 100 : Math.round(episodePercent(media.id, ep) * 100)) : 0)
+  const savedPosition = $derived($positions[progressKey(media.id, ep)])
+  const pct = $derived(released ? (trackedDone ? 100 : Math.round(positionPercent(savedPosition) * 100)) : 0)
   const spoiler = $derived($hideSpoilers && released && !trackedDone && !isNext)
 
   const dlPct = $derived(dl && dl.bytes ? Math.round((dl.downloaded / dl.bytes) * 100) : 0)

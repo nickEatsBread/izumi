@@ -8,7 +8,7 @@
   import { goto } from '$app/navigation'
   import { title as mediaTitle, cover, resumeEp } from '$lib/anilist/media'
   import { getEpisodeMeta } from '$lib/anizip'
-  import { episodePercent } from '$lib/player/progress'
+  import { positionPercent, positions, progressKey } from '$lib/player/progress'
   import { resumeEpisode, type PlayState } from '$lib/stremio/play'
   import type { Media } from '$lib/anilist/types'
   import type { EpMeta } from '$lib/anizip/types'
@@ -27,8 +27,10 @@
   const thumb = $derived(meta[ep]?.image || media.bannerImage || cover(media))
   const epTitle = $derived(meta[ep]?.title)
 
-  // How far into the resume episode the viewer got last time (0 if unwatched/new episode).
-  const pct = $derived(Math.round(episodePercent(media.id, ep) * 100))
+  // Subscribe to the persisted position map so this bar updates on the existing throttled player
+  // saves. This adds no polling and no extra storage writes.
+  const savedPosition = $derived($positions[progressKey(media.id, ep)])
+  const pct = $derived(Math.round(positionPercent(savedPosition) * 100))
 
   let imgReady = $state(false)
   $effect(() => { void thumb; imgReady = false })
