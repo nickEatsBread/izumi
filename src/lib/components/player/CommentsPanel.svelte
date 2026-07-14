@@ -393,7 +393,7 @@
         <div class="grid h-full place-items-center px-6 text-center">
           <div>
             <p class="text-sm font-bold">No discussions found</p>
-            <p class="mt-1 text-xs text-muted-foreground">No threads for this episode yet. A discussion mapper can be set in Settings for more sources.</p>
+            <p class="mt-1 text-xs text-muted-foreground">No threads for this episode yet.</p>
           </div>
         </div>
       {:else}
