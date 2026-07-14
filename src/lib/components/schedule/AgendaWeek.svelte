@@ -5,6 +5,7 @@
   import { onMount } from 'svelte'
   import { type Airing, airTime, aired, until } from '$lib/anilist/schedule'
   import { title, cover } from '$lib/anilist/media'
+  import { agendaScrollTop, agendaTargetDay, isAgendaScrollKey } from './agenda-scroll'
   import type { Media } from '$lib/anilist/types'
   import type { MineKind } from '$lib/anilist/my-shows'
 
@@ -23,20 +24,33 @@
   // content settles (e.g. the My Shows/All default flip) UNTIL the user scrolls, then leaves them be.
   let sections = $state<Record<number, HTMLElement>>({})
   let userScrolled = $state(false)
-  const targetDay = $derived(todayIdx < 0 ? -1 : (filled.find((f) => f.i >= todayIdx)?.i ?? -1))
+  let aligned = $state(false)
+  const targetDay = $derived(agendaTargetDay(days, todayIdx))
   $effect(() => {
-    if (userScrolled || targetDay < 0) return
-    void headerOffset // re-scroll once the sticky-header height is measured so its offset applies
-    sections[targetDay]?.scrollIntoView({ block: 'start' })
+    const section = sections[targetDay]
+    // Wait for both the target DOM node and the sticky header's measured height. The old
+    // scrollIntoView call could run with a zero-height header, leaving today's first rows hidden
+    // underneath it once Next up finished laying out.
+    if (userScrolled || targetDay < 0 || headerOffset <= 0 || !section) return
+    const frame = requestAnimationFrame(() => {
+      if (userScrolled) return
+      window.scrollTo({
+        top: agendaScrollTop(window.scrollY, section.getBoundingClientRect().top, headerOffset),
+        behavior: 'auto',
+      })
+      aligned = true
+    })
+    return () => cancelAnimationFrame(frame)
   })
   onMount(() => {
     // Mark "user took over" on real input (wheel/touch/arrow) — NOT scroll events, which our own
     // scrollIntoView fires and would otherwise cancel the auto-scroll immediately.
-    const stop = () => (userScrolled = true)
+    const stop = () => { if (aligned) userScrolled = true }
+    const stopOnKey = (event: KeyboardEvent) => { if (isAgendaScrollKey(event.key)) stop() }
     addEventListener('wheel', stop, { passive: true })
     addEventListener('touchmove', stop, { passive: true })
-    addEventListener('keydown', stop)
-    return () => { removeEventListener('wheel', stop); removeEventListener('touchmove', stop); removeEventListener('keydown', stop) }
+    addEventListener('keydown', stopOnKey)
+    return () => { removeEventListener('wheel', stop); removeEventListener('touchmove', stop); removeEventListener('keydown', stopOnKey) }
   })
 </script>
 
@@ -45,7 +59,7 @@
 {:else}
   <div class="flex flex-col gap-8">
     {#each filled as { d, i } (i)}
-      <section bind:this={sections[i]} style="scroll-margin-top: {headerOffset + 8}px">
+      <section bind:this={sections[i]} data-schedule-day={i}>
         <h3 class="mb-3 text-base font-black {i === todayIdx ? 'text-sky-400' : ''}">
           {FULL[i]} · {dayDate(i)}{#if i === todayIdx} · Today{/if}
         </h3>
