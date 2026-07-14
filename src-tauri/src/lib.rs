@@ -422,15 +422,19 @@ fn discussion_popup_complete(
 
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn show_deck_login_popup(app: AppHandle, label: String) -> Result<(), String> {
+fn resolve_deck_login_popup(app: AppHandle, label: String, proceed: bool) -> Result<(), String> {
     if !label.starts_with("discussion-popup-") {
         return Err("invalid login popup label".into());
     }
     let window = app
         .get_webview_window(&label)
         .ok_or_else(|| "login popup is no longer available".to_string())?;
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())
+    if proceed {
+        window.show().map_err(|error| error.to_string())?;
+        window.set_focus().map_err(|error| error.to_string())
+    } else {
+        window.close().map_err(|error| error.to_string())
+    }
 }
 
 #[cfg(not(target_os = "android"))]
@@ -2089,7 +2093,7 @@ pub fn run() {
             set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
-            show_deck_login_popup,
+            resolve_deck_login_popup,
             set_tac_verification_config,
             player_prefetch,
             http_get,

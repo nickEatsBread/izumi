@@ -22,8 +22,8 @@
     let disposed = false
     listen<{ label: string; service: string }>('deck-keyboard-warning', (event) => {
       const { label, service } = event.payload
-      void warnBeforeThirdPartyLogin(service, true).then(() => {
-        if (!disposed) invoke('show_deck_login_popup', { label }).catch(() => {})
+      void warnBeforeThirdPartyLogin(service, true).then((proceed) => {
+        if (!disposed) invoke('resolve_deck_login_popup', { label, proceed }).catch(() => {})
       })
     }).then((stop) => {
       if (disposed) stop()

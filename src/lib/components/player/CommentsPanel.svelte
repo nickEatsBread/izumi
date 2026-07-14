@@ -285,7 +285,7 @@
     try {
       let res = await invoke<{ ok: boolean; needsLogin: boolean; counts: unknown }>('da_react', { base, identifier, key })
       if (res.needsLogin) {
-        await warnBeforeThirdPartyLogin('DiscussAnime')
+        if (!(await warnBeforeThirdPartyLogin('DiscussAnime'))) { back(false); return }
         const signedIn = await invoke<boolean>('da_login', { base }).catch(() => false)
         if (!signedIn) { back(false); return }
         res = await invoke('da_react', { base, identifier, key })

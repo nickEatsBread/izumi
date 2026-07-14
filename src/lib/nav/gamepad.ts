@@ -5,7 +5,7 @@ import { RepeatTimer } from '$lib/player/repeat'
 import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, commentsOpen } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
 import { inputType } from './input'
-import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning } from '$lib/deck/keyboard-warning'
+import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
@@ -71,10 +71,11 @@ export function startGamepadNav(): () => void {
     // Any controller press = 'dpad' modality (so e.g. focusing the sidebar via ☰ expands it, and
     // a touch tap stays 'touch' and doesn't).
     inputType.set('dpad')
-    // Keep every controller action inside the warning. A acknowledges it; all other buttons are
-    // swallowed so they cannot pause playback, close comments, or navigate the page underneath.
+    // Keep every controller action inside the warning. A continues, B cancels, and every other
+    // button is swallowed so it cannot affect the page or player underneath.
     if (get(deckKeyboardWarning)) {
       if (name === 'a') acknowledgeDeckKeyboardWarning()
+      else if (name === 'b') dismissDeckKeyboardWarning()
       return
     }
     // Track menu open (Game mode ☰): it captures ALL buttons — d-pad, A, B, ☰ — so nothing

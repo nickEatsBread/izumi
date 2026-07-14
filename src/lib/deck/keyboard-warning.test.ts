@@ -4,6 +4,7 @@ import { gameMode } from '$lib/player/session'
 import {
   acknowledgeDeckKeyboardWarning,
   deckKeyboardWarning,
+  dismissDeckKeyboardWarning,
   warnBeforeThirdPartyLogin,
 } from './keyboard-warning'
 
@@ -15,20 +16,29 @@ afterEach(() => {
 describe('Deck keyboard warning', () => {
   it('does not interrupt desktop login', async () => {
     gameMode.set(false)
-    await warnBeforeThirdPartyLogin('AniList')
+    expect(await warnBeforeThirdPartyLogin('AniList')).toBe(true)
     expect(get(deckKeyboardWarning)).toBeNull()
   })
 
   it('blocks a Deck login until acknowledged', async () => {
     gameMode.set(true)
-    let continued = false
-    const waiting = warnBeforeThirdPartyLogin('MyAnimeList').then(() => { continued = true })
+    let result: boolean | undefined
+    const waiting = warnBeforeThirdPartyLogin('MyAnimeList').then((proceed) => { result = proceed })
 
     expect(get(deckKeyboardWarning)).toEqual({ service: 'MyAnimeList' })
-    expect(continued).toBe(false)
+    expect(result).toBeUndefined()
     acknowledgeDeckKeyboardWarning()
     await waiting
-    expect(continued).toBe(true)
+    expect(result).toBe(true)
+  })
+
+  it('cancels a Deck login when dismissed', async () => {
+    gameMode.set(true)
+    const waiting = warnBeforeThirdPartyLogin('AniList')
+
+    dismissDeckKeyboardWarning()
+    await expect(waiting).resolves.toBe(false)
+    expect(get(deckKeyboardWarning)).toBeNull()
   })
 
   it('queues iframe login popups without losing one', async () => {
@@ -37,11 +47,11 @@ describe('Deck keyboard warning', () => {
     expect(get(deckKeyboardWarning)?.service).toBe('Disqus')
 
     acknowledgeDeckKeyboardWarning()
-    await first
+    await expect(first).resolves.toBe(true)
     expect(get(deckKeyboardWarning)?.service).toBe('Disqus')
 
     acknowledgeDeckKeyboardWarning()
-    await second
+    await expect(second).resolves.toBe(true)
     expect(get(deckKeyboardWarning)).toBeNull()
   })
 })

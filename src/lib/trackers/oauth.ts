@@ -8,7 +8,7 @@ export const redirectUri = REDIRECT_URI
 // waits until it redirects to REDIRECT_URI, and returns the full captured URL
 // (query + fragment) parsed as a URL.
 export async function captureLogin(authUrl: string, service: string): Promise<URL> {
-  await warnBeforeThirdPartyLogin(service)
+  if (!(await warnBeforeThirdPartyLogin(service))) throw new Error('Sign-in cancelled.')
   const captured = await invoke<string>('oauth_capture', { authUrl, redirectPrefix: REDIRECT_URI })
   return new URL(captured)
 }
