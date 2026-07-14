@@ -24,3 +24,11 @@ export const MEDIA_BY_MAL_QUERY = gql`
     Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { ...MediaFields } }
   }
   ${MEDIA_FIELDS}`
+
+// Refresh locally-saved history snapshots in one request. In particular, nextAiringEpisode must be
+// current so Continue Watching can hide a caught-up show and bring it back when a new episode airs.
+export const MEDIA_BY_IDS_QUERY = gql`
+  query MediaByIds($ids: [Int]) {
+    Page(perPage: 50) { media(id_in: $ids, type: ANIME) { ...MediaFields } }
+  }
+  ${MEDIA_FIELDS}`

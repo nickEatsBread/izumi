@@ -6,9 +6,10 @@
   // history is what makes this row work with NO tracker linked.
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { LIST_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries } from '$lib/anilist/lists'
+  import { LIST_QUERY, MEDIA_BY_IDS_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries } from '$lib/anilist/lists'
   import { getMalListProgress } from '$lib/trackers'
-  import { localHistory, historyEntries } from '$lib/player/history'
+  import { localHistory, sessionProgress, historyEntries } from '$lib/player/history'
+  import { hasAiredEpisodeToWatch } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import Carousel from './Carousel.svelte'
   import ContinueCard from './ContinueCard.svelte'
@@ -16,14 +17,14 @@
   let { title, userName, malActive }: { title: string; userName?: string; malActive: boolean } = $props()
   const client = getContextClient()
 
-  // Local history is synchronous (persisted store), most-recently-watched first. A show whose
-  // every episode is watched (finished series) is dropped — it belongs in history, not in "continue
-  // watching". Ongoing shows (unknown episode count) always stay. The card resumes at the last
-  // OPENED episode: `max(progress, episode-1)` → resumeEp lands on `episode` when you opened ahead
-  // of what you've finished (the stored `progress` stays the true watched count, for the MAL export).
+  // Local history is synchronous (persisted store), most-recently-watched first. Its media snapshot
+  // is refreshed below so the aired count is current: caught-up shows disappear, then return when
+  // the next episode airs. The card still resumes a partially-opened episode via episode - 1.
+  let refreshedLocal = $state(new Map<number, Media>())
   const local = $derived(
     historyEntries($localHistory)
-      .filter((e) => !(e.media.episodes && e.progress >= e.media.episodes))
+      .map((e) => ({ ...e, media: refreshedLocal.get(e.media.id) ?? e.media }))
+      .filter((e) => hasAiredEpisodeToWatch(e.media, e.progress))
       .map((e) => ({ media: e.media, progress: Math.max(e.progress, e.episode - 1) })),
   )
 
@@ -59,8 +60,24 @@
     catch { return [] }
   }
 
+  // Local-only users have no tracker list query to refresh their saved Media snapshot. Resolve the
+  // current AniList records in batches so nextAiringEpisode advances as releases become available.
+  async function refreshLocal(): Promise<void> {
+    const ids = [...new Set(historyEntries($localHistory).map((e) => e.media.id))]
+    if (!ids.length) return
+    try {
+      const current = new Map<number, Media>()
+      for (let i = 0; i < ids.length; i += 50) {
+        const res = await client.query(MEDIA_BY_IDS_QUERY, { ids: ids.slice(i, i + 50) }).toPromise()
+        for (const media of (res.data?.Page?.media ?? []) as Media[]) current.set(media.id, media)
+      }
+      refreshedLocal = current
+    }
+    catch { /* Keep the offline snapshot. */ }
+  }
+
   onMount(async () => {
-    const [a, m] = await Promise.all([loadAni(), loadMal()])
+    const [a, m] = await Promise.all([loadAni(), loadMal(), refreshLocal()])
     ani = a
     mal = m
     loading = false
@@ -70,11 +87,12 @@
     const map = new Map<number, Item>()
     // Tracker sources first (their own recency order), then local-only shows appended.
     for (const e of [...ani, ...mal, ...local]) {
+      const progress = Math.max(e.progress, $sessionProgress[e.media.id] ?? 0)
       const cur = map.get(e.media.id)
-      if (cur) cur.progress = Math.max(cur.progress, e.progress)
-      else map.set(e.media.id, { ...e })
+      if (cur) cur.progress = Math.max(cur.progress, progress)
+      else map.set(e.media.id, { ...e, progress })
     }
-    return [...map.values()]
+    return [...map.values()].filter((e) => hasAiredEpisodeToWatch(e.media, e.progress))
   })
 </script>
 

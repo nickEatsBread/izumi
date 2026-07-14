@@ -1,5 +1,5 @@
 import { persisted } from 'svelte-persisted-store'
-import { get } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import { saveLocalHistory } from '$lib/settings/ui'
 import type { Media } from '$lib/anilist/types'
 
@@ -22,6 +22,10 @@ export interface HistoryEntry {
 
 /** Persisted local watch history: `mediaId -> HistoryEntry`. */
 export const localHistory = persisted<Record<number, HistoryEntry>>('local-history', {})
+
+// Session-only progress keeps tracker-backed Continue Watching rows reactive even when the user has
+// disabled persisted local history. It is deliberately not saved across launches.
+export const sessionProgress = writable<Record<number, number>>({})
 
 // Only the fields the cards / resume / MAL export actually read — NOT description/relations/etc,
 // which the detail-page media object carries and would bloat localStorage (quota + per-play rewrite).
@@ -61,9 +65,13 @@ export function recordPlay(media: Media, episode: number | undefined, release?: 
   })
 }
 
-/** Record that an episode was WATCHED (crossed the completion threshold) — bumps the watched count
- *  to at least that episode. Mirrors what we push to the trackers, but always local. No-op when off. */
+/** Record that an episode was WATCHED (crossed the completion threshold) — bumps the in-session
+ *  count, plus persisted local history when enabled. Mirrors what we push to the trackers. */
 export function recordProgress(media: Media, episode: number) {
+  sessionProgress.update((progress) => ({
+    ...progress,
+    [media.id]: Math.max(progress[media.id] ?? 0, episode),
+  }))
   if (!get(saveLocalHistory)) return
   localHistory.update((h) => {
     const prev = h[media.id]

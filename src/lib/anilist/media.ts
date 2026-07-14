@@ -33,6 +33,9 @@ export const ratingBg = (score?: number) => score == null ? 'bg-muted' : score >
 // else Infinity when neither is known (so a resume episode is never clamped away).
 export const airedCount = (m: Media) => (m.nextAiringEpisode?.episode ? m.nextAiringEpisode.episode - 1 : (m.episodes ?? Infinity))
 
+/** Whether the viewer has an aired, unwatched episode available right now. */
+export const hasAiredEpisodeToWatch = (m: Media, watched = m.mediaListEntry?.progress ?? 0) => watched < airedCount(m)
+
 // Resume episode = the one after `watched` (defaults to the tracked progress), capped
 // to what's aired, floored at 1. Pass an explicit count when the progress lives outside
 // mediaListEntry (e.g. a MyAnimeList-sourced row).
