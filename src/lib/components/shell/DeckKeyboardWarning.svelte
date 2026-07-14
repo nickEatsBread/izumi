@@ -50,8 +50,7 @@
       </p>
 
       <div class="my-6 flex items-center justify-center gap-4" aria-label="Steam button plus X button">
-        <kbd class="inline-flex h-12 min-w-28 items-center justify-center gap-2 rounded-full border-2 border-white/25 bg-[#171a21] px-5 font-sans text-sm font-black tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.45)]">
-          <span class="grid size-5 place-items-center rounded-full border-2 border-white/80 text-[0.55rem]">●</span>
+        <kbd class="inline-flex h-12 min-w-28 items-center justify-center rounded-full border-2 border-white/25 bg-[#171a21] px-5 font-sans text-sm font-black tracking-wide shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_4px_12px_rgba(0,0,0,0.45)]">
           STEAM
         </kbd>
         <span class="text-2xl font-light text-white/45">+</span>
