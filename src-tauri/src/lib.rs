@@ -366,6 +366,14 @@ fn steam_show_osk(app: AppHandle, x: i32, y: i32, w: i32, h: i32, mode: i32) -> 
 }
 
 #[cfg(not(target_os = "android"))]
+fn discussion_log(message: &str) {
+    #[cfg(target_os = "linux")]
+    player::linux_embed::elog(message);
+    #[cfg(not(target_os = "linux"))]
+    eprintln!("[izumi] {message}");
+}
+
+#[cfg(not(target_os = "android"))]
 fn finish_discussion_popup(
     window: &tauri::WebviewWindow,
     app: &AppHandle,
@@ -1796,7 +1804,7 @@ pub fn run() {
                                         .map(|top| top.as_str() == url.as_str())
                                         .unwrap_or(false);
                                     if is_top_level {
-                                        player::linux_embed::elog(&format!(
+                                        discussion_log(&format!(
                                             "discussion-popup: disqus load {}://{}{}",
                                             url.scheme(),
                                             url.host_str().unwrap_or_default(),
@@ -1815,7 +1823,7 @@ pub fn run() {
                                         if let Err(error) =
                                             finish_discussion_popup(&window, &login_app)
                                         {
-                                            player::linux_embed::elog(&format!(
+                                            discussion_log(&format!(
                                                 "discussion-popup: login completion failed: {error}"
                                             ));
                                         }
