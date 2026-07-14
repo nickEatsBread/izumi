@@ -8,7 +8,9 @@
   import type { Media } from '$lib/anilist/types'
   import { getEpisodeMeta } from '$lib/anizip'
   import type { EpMeta } from '$lib/anizip/types'
-  import { episodeLayout } from '$lib/settings/ui'
+  import { episodeLayout, hideSpoilers } from '$lib/settings/ui'
+  import { localHistory, sessionProgress } from '$lib/player/history'
+  import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
   import { enqueueMany, downloads, keyFor } from '$lib/downloads/store'
   import EpisodeCard from './EpisodeCard.svelte'
@@ -23,6 +25,11 @@
   const aired = $derived(next?.episode ? Math.max(0, next.episode - 1) : (media.episodes ?? 0))
   // total to show = planned total if known, else up to the next airing episode.
   const total = $derived(media.episodes ?? (next?.episode ?? aired))
+  const watchedThrough = $derived(Math.max(
+    media.mediaListEntry?.progress ?? 0,
+    $localHistory[media.id]?.progress ?? 0,
+    $sessionProgress[media.id] ?? 0,
+  ))
 
   const PER = 48
   let page = $state(0)
@@ -157,6 +164,7 @@
           showThumb={showThumbs && !!meta[ep]?.image}
           released={ep <= aired}
           isNext={next?.episode === ep}
+          {watchedThrough}
           filler={fillerSet.has(ep)}
           dl={$downloads[keyFor(media.id, ep)]}
           {next}
@@ -174,6 +182,7 @@
         {@const filler = fillerSet.has(ep)}
         {@const dl = $downloads[keyFor(media.id, ep)]}
         {@const sel = selecting && selected.has(ep)}
+        {@const labels = episodeLabels(ep, meta[ep]?.title, $hideSpoilers && watchedThrough < ep)}
         <div
           data-focusable
           role="button"
@@ -195,10 +204,13 @@
           {/if}
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-1.5">
-              <span class="truncate text-sm font-bold">{meta[ep]?.title ?? `Episode ${ep}`}</span>
+              <span class="truncate text-sm font-bold">{labels.primary}</span>
               {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
               {#if dl?.status === 'done'}<span class="shrink-0 rounded bg-green-500/20 px-1 text-[0.55rem] font-bold text-green-400">SAVED</span>{/if}
             </span>
+            {#if labels.concealSecondary}
+              <span class="block truncate text-[0.7rem] text-muted-foreground blur-sm">{labels.secondary}</span>
+            {/if}
             {#if isNext}
               <span class="block text-[0.7rem] font-bold text-theme">airing in {countdown(next?.timeUntilAiring)}</span>
             {:else if !released}

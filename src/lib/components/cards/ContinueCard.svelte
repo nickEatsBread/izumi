@@ -7,8 +7,10 @@
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
   import { title as mediaTitle, cover, resumeEp } from '$lib/anilist/media'
+  import { episodeSummary } from '$lib/anilist/episode-labels'
   import { getEpisodeMeta } from '$lib/anizip'
   import { positionPercent, positions, progressKey } from '$lib/player/progress'
+  import { hideSpoilers } from '$lib/settings/ui'
   import { resumeEpisode, type PlayState } from '$lib/stremio/play'
   import type { Media } from '$lib/anilist/types'
   import type { EpMeta } from '$lib/anizip/types'
@@ -26,6 +28,7 @@
   onMount(async () => { try { meta = await getEpisodeMeta(media.id) } catch { /* fallback image */ } })
   const thumb = $derived(meta[ep]?.image || media.bannerImage || cover(media))
   const epTitle = $derived(meta[ep]?.title)
+  const episodeLabel = $derived(episodeSummary(ep, epTitle, $hideSpoilers))
 
   // Subscribe to the persisted position map so this bar updates on the existing throttled player
   // saves. This adds no polling and no extra storage writes.
@@ -79,6 +82,6 @@
   <div class="mt-1.5">
     <a href={`/app/anime/${media.id}`} onclick={(e) => e.stopPropagation()}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
-    <span class="block truncate text-[0.7rem] text-muted-foreground">{epTitle || `Episode ${ep}`}</span>
+    <span class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
   </div>
 </div>

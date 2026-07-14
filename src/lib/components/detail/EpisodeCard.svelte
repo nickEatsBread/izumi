@@ -6,6 +6,7 @@
   import type { EpMeta } from '$lib/anizip/types'
   import type { DownloadItem } from '$lib/downloads/state'
   import { ratingBg } from '$lib/anilist/media'
+  import { episodeLabels } from '$lib/anilist/episode-labels'
   import { positionPercent, positions, progressKey } from '$lib/player/progress'
   import { hideSpoilers } from '$lib/settings/ui'
   import Download from 'lucide-svelte/icons/download'
@@ -14,7 +15,7 @@
   import Check from 'lucide-svelte/icons/check'
 
   let {
-    media, ep, meta, showThumb, released, isNext, filler = false, dl, next, onplay,
+    media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay,
     selecting = false, selectedEp = false,
   }: {
     media: Media
@@ -23,6 +24,7 @@
     showThumb: boolean
     released: boolean
     isNext: boolean
+    watchedThrough: number
     filler?: boolean
     dl?: DownloadItem
     next?: { episode: number; timeUntilAiring: number } | null
@@ -39,13 +41,13 @@
   // download instead of the whole grid popping at once. Reset when the src changes.
   let imgReady = $state(false)
   $effect(() => { void img; imgReady = false })
-  const epTitle = $derived(meta?.title || `Episode ${ep}`)
   const rating = $derived(typeof meta?.rating === 'number' ? Math.round(meta.rating * 10) : undefined)
 
-  const trackedDone = $derived((media.mediaListEntry?.progress ?? 0) >= ep)
+  const trackedDone = $derived(watchedThrough >= ep)
   const savedPosition = $derived($positions[progressKey(media.id, ep)])
   const pct = $derived(released ? (trackedDone ? 100 : Math.round(positionPercent(savedPosition) * 100)) : 0)
-  const spoiler = $derived($hideSpoilers && released && !trackedDone && !isNext)
+  const spoiler = $derived($hideSpoilers && !trackedDone)
+  const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
 
   const dlPct = $derived(dl && dl.bytes ? Math.round((dl.downloaded / dl.bytes) * 100) : 0)
   const dling = $derived(!!dl && (dl.status === 'downloading' || dl.status === 'paused') && !!dl.bytes)
@@ -90,7 +92,7 @@
   aria-disabled={!released}
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
-  title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${epTitle}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
+  title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
   class="group flex flex-col overflow-hidden rounded-lg text-left
     {released ? 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'}
     {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
@@ -138,8 +140,8 @@
 
     <div class="flex items-center gap-2 p-2">
       <div class="min-w-0 flex-1">
-        <span class:blur-sm={spoiler} class="block truncate text-sm font-bold">{epTitle}</span>
-        <span class="block text-[0.7rem] text-muted-foreground">Episode {ep}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
+        <span class="block truncate text-sm font-bold">{labels.primary}</span>
+        <span class:blur-sm={labels.concealSecondary} class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
       </div>
     </div>
   {:else}
@@ -147,15 +149,18 @@
       <span class="grid h-9 min-w-9 shrink-0 place-items-center rounded bg-background/50 px-1.5 text-xs font-black tabular-nums">{ep}</span>
       <div class="min-w-0 flex-1">
         <span class="flex items-center gap-1.5">
-          <span class:blur-sm={spoiler} class="truncate text-sm font-bold">{epTitle}</span>
+          <span class="truncate text-sm font-bold">{labels.primary}</span>
           {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
         </span>
+        {#if labels.concealSecondary}
+          <span class="block truncate text-[0.7rem] text-muted-foreground blur-sm">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
+        {/if}
         {#if isNext}
           <span class="block text-[0.7rem] font-bold text-theme">airing in {countdown(next?.timeUntilAiring)}</span>
         {:else if !released}
           <span class="block text-[0.7rem] text-muted-foreground">Not aired</span>
-        {:else}
-          <span class="block text-[0.7rem] text-muted-foreground">Episode {ep}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
+        {:else if !labels.concealSecondary}
+          <span class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
         {/if}
       </div>
 
