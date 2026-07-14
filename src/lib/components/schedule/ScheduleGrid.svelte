@@ -129,9 +129,9 @@
   <div class="mb-4 flex items-center gap-3">
     <div class="inline-flex rounded-lg bg-secondary p-0.5">
       <button data-focusable onclick={() => pick('mine')}
-        class="rounded-md px-3 py-1 text-sm font-bold transition-colors
+        class="flex items-center rounded-md px-3 py-1 text-sm font-bold transition-colors
                {view === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
-        My Shows{#if mineCount}<span class="opacity-70"> · {mineCount}</span>{/if}
+        <span>My Shows</span>{#if mineCount}<span class="ml-1.5 opacity-70">· {mineCount}</span>{/if}
       </button>
       <button data-focusable onclick={() => pick('all')}
         class="rounded-md px-3 py-1 text-sm font-bold transition-colors

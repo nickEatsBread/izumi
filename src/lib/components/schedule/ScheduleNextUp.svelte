@@ -33,7 +33,7 @@
         {@const kind = classifyMine(a.media, sets)}
         <a data-focusable href={`/app/anime/${a.media.id}`}
            class="group relative w-40 shrink-0 overflow-hidden rounded-lg bg-secondary transition-colors hover:bg-accent
-                  {kind ? 'ring-1 ring-theme/60' : ''}">
+                  {kind ? 'border border-theme/60' : 'border border-transparent'}">
           <div class="relative h-24 w-full overflow-hidden">
             <img src={cover(a.media)} alt="" loading="lazy" class="h-full w-full object-cover transition-transform group-hover:scale-105" />
             <span class="absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[0.65rem] font-black

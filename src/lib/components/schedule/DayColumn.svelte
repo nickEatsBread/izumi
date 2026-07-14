@@ -19,7 +19,7 @@
         <a
           data-focusable
           href={`/app/anime/${a.media.id}`}
-          class="flex items-center gap-2 rounded-md bg-secondary p-1.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-55' : ''} {mine ? 'ring-1 ring-theme/60' : ''}"
+          class="flex items-center gap-2 rounded-md bg-secondary p-1.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-55' : ''} {mine ? 'border border-theme/60' : 'border border-transparent'}"
         >
           <img src={cover(a.media)} alt="" loading="lazy"
                class="{big ? 'h-20 w-14' : 'h-14 w-10'} shrink-0 rounded object-cover" />
