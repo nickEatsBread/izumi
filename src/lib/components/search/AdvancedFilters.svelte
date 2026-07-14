@@ -60,49 +60,49 @@
 
 <div
   role="dialog" aria-modal="true" aria-label="Advanced filters" tabindex="-1" data-nav-trap
-  class="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4"
+  class="fixed inset-0 z-50 grid place-items-center bg-black/70 p-2 sm:p-4"
   onclick={(e) => { if (e.target === e.currentTarget) onClose() }}
   onkeydown={(e) => { if (e.key === 'Escape') onClose() }}
 >
-  <div class="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
-    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+  <div class="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl sm:max-h-[88vh]">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
       <h2 class="text-lg font-black">Advanced filters</h2>
       <button data-focusable onclick={onClose} aria-label="Close"
-              class="grid size-9 place-items-center rounded-lg bg-secondary text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+              class="grid size-10 place-items-center rounded-lg bg-secondary text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
         <X size={18} />
       </button>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto overscroll-contain p-4 sm:p-5">
       <!-- Tags (include / exclude) -->
-      <section class="flex min-h-0 flex-col">
-        <div class="mb-1.5 flex items-center justify-between">
+      <section class="grid gap-3">
+        <div class="flex items-center justify-between gap-3">
           <h3 class="text-sm font-black">Tags</h3>
-          <span class="text-xs text-muted-foreground">
+          <span class="shrink-0 text-xs text-muted-foreground">
             {(draft.tagsIn?.length ?? 0)} included · {(draft.tagsNotIn?.length ?? 0)} excluded
           </span>
         </div>
-        <div class="h-64">
+        <div class="h-72 min-h-48 max-h-[36vh] overflow-hidden rounded-lg border border-border/70 bg-secondary/20 p-3">
           <TagPicker include={draft.tagsIn ?? []} exclude={draft.tagsNotIn ?? []}
                      onchange={(inc, exc) => set({ tagsIn: inc, tagsNotIn: exc })} />
         </div>
-        <label class="mt-2 flex items-center gap-3 text-xs font-semibold text-muted-foreground">
-          <span class="w-28 shrink-0">Min tag rank {draft.minTagRank ?? 0}%</span>
+        <label class="grid gap-2 rounded-lg bg-secondary/40 px-3 py-2.5 text-xs font-semibold text-muted-foreground sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center">
+          <span>Min tag rank <strong class="text-foreground">{draft.minTagRank ?? 0}%</strong></span>
           <input type="range" min="0" max="100" step="5" data-focusable
                  value={draft.minTagRank ?? 0} oninput={(e) => set({ minTagRank: Number(e.currentTarget.value) || undefined })}
-                 class="flex-1 accent-theme" />
+                 class="w-full accent-theme" />
         </label>
       </section>
 
       <div class="grid gap-4 sm:grid-cols-2">
         <!-- Source material -->
-        <div>
+        <section class="rounded-lg border border-border/70 p-3">
           <h3 class="mb-1.5 text-sm font-black">Source</h3>
           <MultiSelect label="Source" options={MEDIA_SOURCES} selected={draft.sources ?? []}
                        onchange={(v) => set({ sources: v })} />
-        </div>
+        </section>
         <!-- Country of origin (single-select) -->
-        <div>
+        <section class="rounded-lg border border-border/70 p-3">
           <h3 class="mb-1.5 text-sm font-black">Country</h3>
           <select data-focusable value={draft.country ?? ''}
                   onchange={(e) => set({ country: e.currentTarget.value || undefined })}
@@ -110,31 +110,33 @@
             <option value="">Any country</option>
             {#each COUNTRIES as c (c.code)}<option value={c.code}>{c.label}</option>{/each}
           </select>
-        </div>
+        </section>
       </div>
 
       <!-- Min score -->
-      <label class="flex items-center gap-3 text-sm font-semibold">
-        <span class="w-32 shrink-0">Min score {draft.minScore ?? 0}%</span>
+      <label class="grid gap-2 rounded-lg border border-border/70 p-3 text-sm font-semibold sm:grid-cols-[8rem_minmax(0,1fr)] sm:items-center">
+        <span>Min score <strong>{draft.minScore ?? 0}%</strong></span>
         <input type="range" min="0" max="100" step="5" data-focusable
                value={draft.minScore ?? 0} oninput={(e) => set({ minScore: Number(e.currentTarget.value) || undefined })}
-               class="flex-1 accent-theme" />
+               class="w-full accent-theme" />
       </label>
 
       <!-- Episode range -->
-      <div class="flex items-center gap-3 text-sm font-semibold">
-        <span class="w-32 shrink-0">Episodes</span>
+      <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border/70 p-3 text-sm font-semibold sm:grid-cols-[8rem_minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <span class="col-span-3 sm:col-span-1">Episodes</span>
         <input type="number" min="0" placeholder="min" data-focusable
                value={draft.epMin ?? ''} oninput={(e) => set({ epMin: num(e.currentTarget.value) })}
-               class="w-24 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent" />
+               aria-label="Minimum episodes"
+               class="min-w-0 w-full rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent" />
         <span class="text-muted-foreground">–</span>
         <input type="number" min="0" placeholder="max" data-focusable
                value={draft.epMax ?? ''} oninput={(e) => set({ epMax: num(e.currentTarget.value) })}
-               class="w-24 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent" />
+               aria-label="Maximum episodes"
+               class="min-w-0 w-full rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent" />
       </div>
     </div>
 
-    <div class="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3">
+    <div class="flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-3 sm:px-5">
       <button data-focusable onclick={clearAll}
               class="rounded-md px-3 py-2 text-sm font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
         Clear all

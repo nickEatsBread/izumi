@@ -51,8 +51,8 @@
     : 'bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground'
 </script>
 
-<div class="flex min-h-0 flex-col gap-2">
-  <div class="flex items-center gap-2">
+<div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
+  <div class="grid shrink-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
     <label class="flex flex-1 items-center gap-2 rounded-md bg-secondary px-3 py-1.5">
       <Search size={15} class="shrink-0 text-muted-foreground" />
       <input bind:value={search} data-focusable placeholder="Filter tags…"
@@ -66,17 +66,17 @@
 
   <!-- Category quick-jump: scrolls the list to a section (fast nav without the OSK on Deck). -->
   {#if groups.length > 1}
-    <div class="flex flex-wrap gap-1">
+    <div class="flex shrink-0 gap-1 overflow-x-auto pb-1">
       {#each groups as g (g.category)}
         <button data-focusable onclick={() => jump(g.category)}
-                class="rounded-full bg-secondary px-2.5 py-0.5 text-[0.7rem] font-bold text-muted-foreground hover:bg-accent hover:text-foreground">
+                class="whitespace-nowrap rounded-full bg-secondary px-2.5 py-0.5 text-[0.7rem] font-bold text-muted-foreground hover:bg-accent hover:text-foreground">
           {g.category}
         </button>
       {/each}
     </div>
   {/if}
 
-  <div bind:this={listEl} class="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+  <div bind:this={listEl} class="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable]">
     {#if !tags.length}
       <p class="py-6 text-center text-sm text-muted-foreground">Loading tags…</p>
     {:else if !groups.length}
