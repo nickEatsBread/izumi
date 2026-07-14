@@ -44,7 +44,7 @@
   $effect(() => {
     let cancelled = false
     metaLoading = true
-    getEpisodeMeta(media.id).then((m) => { if (!cancelled) { meta = m; metaLoading = false } })
+    getEpisodeMeta(media.id, watchedThrough).then((m) => { if (!cancelled) { meta = m; metaLoading = false } })
     return () => { cancelled = true }
   })
 

@@ -26,23 +26,47 @@ export function parseEpisodes(res: AniZipResponse | undefined): Record<number, E
 }
 
 const key = (id: number) => `anizip-${id}`
+const fetchedAtKey = (id: number) => `anizip-${id}-fetched-at`
+const MISSING_TITLE_RETRY_MS = 60 * 60 * 1000
+
+function hasEpisodeTitlesThrough(res: AniZipResponse, episode: number): boolean {
+  for (let n = 1; n <= episode; n++) {
+    const title = res.episodes?.[String(n)]?.title
+    if (!(title?.en?.trim() || title?.['x-jat']?.trim())) return false
+  }
+  return true
+}
 
 /** Fetch (and idb-cache) the raw AniZip mappings response for an AniList id.
  *  Uses the Tauri HTTP plugin to avoid CORS/mixed-content issues. Reads the idb
  *  cache first; on a miss, fetches + caches. Best-effort: returns `undefined` on
  *  any error. Shared by both `getEpisodeMeta` and `getKitsuId` so they hit the
  *  same cache. */
-export async function fetchAniZip(anilistId: number, wantEpisode?: number): Promise<AniZipResponse | undefined> {
-  const cached = await get<AniZipResponse>(key(anilistId))
-  // Serve from cache, EXCEPT when a specific episode is requested that the cached response predates.
-  // Airing shows gain episodes over time and this cache has no TTL, so a stale entry would be missing
-  // a freshly-aired episode's ids — refetch to pick them up.
-  if (cached && (wantEpisode == null || cached.episodes?.[String(wantEpisode)])) return cached
+export async function fetchAniZip(
+  anilistId: number,
+  wantEpisode?: number,
+  requireTitlesThrough?: number,
+): Promise<AniZipResponse | undefined> {
+  const [cached, fetchedAt] = await Promise.all([
+    get<AniZipResponse>(key(anilistId)),
+    get<number>(fetchedAtKey(anilistId)),
+  ])
+  // Refetch when a requested episode is newer than the cache, or when an old record has
+  // artwork but is still missing titles for episodes the user has watched. Missing titles
+  // get a one-hour retry cooldown so repeatedly opening a detail page stays cache-only.
+  if (cached && (wantEpisode == null || cached.episodes?.[String(wantEpisode)])) {
+    const titlesReady = requireTitlesThrough == null || hasEpisodeTitlesThrough(cached, requireTitlesThrough)
+    const recentlyFetched = fetchedAt != null && Date.now() - fetchedAt < MISSING_TITLE_RETRY_MS
+    if (titlesReady || recentlyFetched) return cached
+  }
   try {
     const r = await phttp(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
     if (!r.ok) return cached
     const j = (await r.json()) as AniZipResponse
-    await set(key(anilistId), j)
+    await Promise.all([
+      set(key(anilistId), j),
+      set(fetchedAtKey(anilistId), Date.now()),
+    ])
     return j
   } catch {
     return cached
@@ -51,8 +75,9 @@ export async function fetchAniZip(anilistId: number, wantEpisode?: number): Prom
 
 /** Per-episode metadata (thumbnail/title/rating) for an AniList id.
  *  Best-effort: returns `{}` on any error. */
-export async function getEpisodeMeta(anilistId: number): Promise<Record<number, EpMeta>> {
-  return parseEpisodes(await fetchAniZip(anilistId))
+export async function getEpisodeMeta(anilistId: number, watchedThrough?: number): Promise<Record<number, EpMeta>> {
+  const requireTitlesThrough = watchedThrough && watchedThrough > 0 ? Math.floor(watchedThrough) : undefined
+  return parseEpisodes(await fetchAniZip(anilistId, undefined, requireTitlesThrough))
 }
 
 /** The Kitsu id AniZip maps this AniList id to, if any. Used as a fallback when
