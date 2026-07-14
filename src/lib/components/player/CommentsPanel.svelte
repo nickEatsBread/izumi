@@ -14,6 +14,7 @@
   import ArrowBigUp from 'lucide-svelte/icons/arrow-big-up'
   import { nowPlayingMedia, commentsOpen, gameMode } from '$lib/player/session'
   import { fetchDiscussion, defaultDiscussionPlatform, discussionExpanded, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
+  import { warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
 
   let threads = $state<DiscussionThread[]>([])
   let loading = $state(false)
@@ -284,6 +285,7 @@
     try {
       let res = await invoke<{ ok: boolean; needsLogin: boolean; counts: unknown }>('da_react', { base, identifier, key })
       if (res.needsLogin) {
+        await warnBeforeThirdPartyLogin('DiscussAnime')
         const signedIn = await invoke<boolean>('da_login', { base }).catch(() => false)
         if (!signedIn) { back(false); return }
         res = await invoke('da_react', { base, identifier, key })

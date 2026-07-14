@@ -12,6 +12,7 @@
   import DebridCaching from '$lib/components/player/DebridCaching.svelte'
   import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
+  import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
   import { playing, fullscreen, gameMode, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
@@ -185,6 +186,7 @@
 <DebridCaching />
 <ExitPrompt />
 <OnScreenKeyboard />
+<DeckKeyboardWarning />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->
 {#if $watchToast}
   <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">

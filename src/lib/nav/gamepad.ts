@@ -5,6 +5,7 @@ import { RepeatTimer } from '$lib/player/repeat'
 import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, commentsOpen } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
 import { inputType } from './input'
+import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning } from '$lib/deck/keyboard-warning'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
@@ -49,6 +50,7 @@ export function startGamepadNav(): () => void {
   // A direction fires once on press, then repeats while held. In the player, left/right seek
   // (up/down are unused); everywhere else it drives focus nav via izumi's window keydown handler.
   function fireDir(dir: Dir) {
+    if (get(deckKeyboardWarning)) return // the keyboard shortcut warning owns the pad
     if (get(trackMenuOpen)) return // the track menu owns the pad while open
     if (get(debridCaching)) return // the caching screen owns the pad
     if (inPlayer()) {
@@ -69,6 +71,12 @@ export function startGamepadNav(): () => void {
     // Any controller press = 'dpad' modality (so e.g. focusing the sidebar via ☰ expands it, and
     // a touch tap stays 'touch' and doesn't).
     inputType.set('dpad')
+    // Keep every controller action inside the warning. A acknowledges it; all other buttons are
+    // swallowed so they cannot pause playback, close comments, or navigate the page underneath.
+    if (get(deckKeyboardWarning)) {
+      if (name === 'a') acknowledgeDeckKeyboardWarning()
+      return
+    }
     // Track menu open (Game mode ☰): it captures ALL buttons — d-pad, A, B, ☰ — so nothing
     // here should drive focus nav / seek / back while it's up.
     if (get(trackMenuOpen)) return

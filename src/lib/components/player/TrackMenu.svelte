@@ -3,6 +3,8 @@
   import { invoke } from '@tauri-apps/api/core'
   import { listen } from '@tauri-apps/api/event'
   import { trackMenuOpen } from '$lib/player/session'
+  import { get } from 'svelte/store'
+  import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import Check from 'lucide-svelte/icons/check'
 
@@ -117,6 +119,7 @@
     let un: (() => void) | null = null
     listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!e.payload.pressed) return
+      if (get(deckKeyboardWarning)) return
       if (e.payload.name === 'start') { open ? closeMenu() : openMenu(); return }
       if (!open) return
       switch (e.payload.name) {
@@ -130,6 +133,7 @@
     }).then((u) => (un = u))
     // Keyboard parity (Desktop testing / a physical keyboard on the Deck).
     const onKey = (e: KeyboardEvent) => {
+      if (get(deckKeyboardWarning)) return
       if (e.key === 'm' && !open) { openMenu(); return }
       if (!open) return
       const k = e.key

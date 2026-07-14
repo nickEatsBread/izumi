@@ -20,7 +20,7 @@ export async function connectMal() {
   if (!malClientId) throw new Error('Missing MAL Client ID (set PUBLIC_MAL_CLIENT_ID in .env).')
   const codeVerifier = verifier() // MAL PKCE is 'plain' -> challenge === verifier
   const malAuthUrl = `https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=${malClientId}&code_challenge=${codeVerifier}&code_challenge_method=plain&redirect_uri=${encodeURIComponent(redirectUri)}`
-  const u = await captureLogin(malAuthUrl)
+  const u = await captureLogin(malAuthUrl, 'MyAnimeList')
   const code = u.searchParams.get('code')
   if (!code) throw new Error('No authorization code returned.')
   const res = await httpFetch('https://myanimelist.net/v1/oauth2/token', {

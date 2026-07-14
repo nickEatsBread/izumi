@@ -15,6 +15,7 @@
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { startNativeGamepadSeek } from '$lib/player/gamepad'
   import { commentsEnabled, discussionExpanded } from '$lib/comments'
+  import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -393,6 +394,7 @@
     let un: (() => void) | null = null
     listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!e.payload.pressed) return
+      if (get(deckKeyboardWarning)) return
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
       if (get(trackMenuOpen)) return
       // While comments are open, do not let controller presses seek, pause, or leave the player
@@ -480,6 +482,7 @@
     const PLAYER_KEYS = new Set([' ', 'k', 'Escape', 'ArrowLeft', 'ArrowRight', 'n', 'N', 'p', 'P', 'f'])
     const onKeyCapture = (e: KeyboardEvent) => {
       if (!PLAYER_KEYS.has(e.key)) return
+      if (get(deckKeyboardWarning)) return
       e.preventDefault(); e.stopImmediatePropagation()
       poke()
       if (e.key === 'Escape') { if (get(fullscreen)) exitFullscreen() }

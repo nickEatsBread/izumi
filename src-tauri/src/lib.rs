@@ -8,7 +8,7 @@ mod player;
 #[cfg(target_os = "linux")]
 mod steam_osk;
 
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 /// Remembers whether the main window was maximized before entering fullscreen, so
 /// exit can re-maximize it. We must un-maximize BEFORE `set_fullscreen`: tao enters
@@ -418,6 +418,19 @@ fn discussion_popup_complete(
     app: AppHandle,
 ) -> Result<(), String> {
     finish_discussion_popup(&window, &app)
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn show_deck_login_popup(app: AppHandle, label: String) -> Result<(), String> {
+    if !label.starts_with("discussion-popup-") {
+        return Err("invalid login popup label".into());
+    }
+    let window = app
+        .get_webview_window(&label)
+        .ok_or_else(|| "login popup is no longer available".to_string())?;
+    window.show().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())
 }
 
 #[cfg(not(target_os = "android"))]
@@ -1750,6 +1763,9 @@ pub fn run() {
                                 "document.addEventListener('keydown',function(e){if(e.key==='Escape')window.close()});",
                             );
                             if is_disqus && is_auth {
+                                // Preserve Disqus's related WebKit view (opener + partitioned cookies),
+                                // but do not present it until the Deck keyboard warning is accepted.
+                                popup = popup.visible(false).focused(false);
                                 // The popup is a remote Disqus document, so izumi's Svelte focus
                                 // handler is not present. Ask the narrowly-scoped Steam OSK command
                                 // directly whenever one of Disqus's login fields gains focus.
@@ -1909,6 +1925,28 @@ pub fn run() {
                                             _ => {}
                                         });
                                     }
+                                    if gamescope && is_disqus && is_auth {
+                                        // The cross-origin iframe cannot notify Svelte before calling
+                                        // window.open. Tell the main view now, while this related popup
+                                        // remains hidden; it reveals the exact popup after acknowledgement.
+                                        let emitted = popup_app
+                                            .get_webview_window("main")
+                                            .is_some_and(|main| {
+                                                main.emit(
+                                                    "deck-keyboard-warning",
+                                                    serde_json::json!({
+                                                        "label": label,
+                                                        "service": "Disqus",
+                                                    }),
+                                                )
+                                                .is_ok()
+                                            });
+                                        if !emitted {
+                                            // Never strand a login window if the main view is unavailable.
+                                            let _ = window.show();
+                                            let _ = window.set_focus();
+                                        }
+                                    }
                                     NewWindowResponse::Create { window }
                                 }
                                 Err(error) => {
@@ -2051,6 +2089,7 @@ pub fn run() {
             set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
+            show_deck_login_popup,
             set_tac_verification_config,
             player_prefetch,
             http_get,
