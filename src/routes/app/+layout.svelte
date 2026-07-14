@@ -15,7 +15,7 @@
   import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
   import { playing, fullscreen, gameMode, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
-  import { beforeNavigate } from '$app/navigation'
+  import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
@@ -134,6 +134,12 @@
       invoke('close_player').catch(() => {})
       playing.set(false)
     }
+  })
+  // Gamescope may switch the XWayland touch mode while a controller action changes screens. The
+  // gamepad-side restore runs shortly after the button press; this second restore runs after Svelte
+  // has completed the navigation, so touch scrolling remains available on the destination screen.
+  afterNavigate(() => {
+    if (get(gameMode)) invoke('restore_native_touch').catch(() => {})
   })
 
   // Android self-update: download the release APK and hand it to the system installer.

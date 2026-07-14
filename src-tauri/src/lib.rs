@@ -334,6 +334,23 @@ fn set_webview_zoom(app: AppHandle, level: f64) -> Result<(), String> {
     Ok(())
 }
 
+/// Reassert Gamescope's native touchscreen routing after a client-side screen transition. Steam
+/// can rewrite the XWayland root property after the controller-triggered navigation event; doing
+/// this from Svelte's `afterNavigate` hook runs after that transition rather than racing it.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn restore_native_touch(window: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        return player::linux_x11::enable_native_touch(&window);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = window;
+        Ok(())
+    }
+}
+
 /// Show the Steam Deck floating on-screen keyboard over a focused field (window-pixel rect).
 /// Returns true if the Steam OSK was shown; false → the frontend uses its built-in HTML keyboard.
 /// `mode`: 0 single-line, 1 multi-line, 2 email, 3 numeric.
@@ -2030,6 +2047,7 @@ pub fn run() {
             player_thumb_info,
             clear_video_cache,
             set_webview_zoom,
+            restore_native_touch,
             set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,
