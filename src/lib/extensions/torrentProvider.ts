@@ -80,10 +80,19 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia)
         }
         return out
       }
-      catch { return [] }
+      catch (err) {
+        // Silently degrade in release, but surface which provider threw during dev — a provider that
+        // finds the anime then throws (e.g. on the torrent-fetch step) otherwise looks like an empty
+        // result with no clue why. `import.meta.env.DEV` is compiled to `false` in release builds.
+        if (import.meta.env.DEV) console.warn(`[torrent-provider: ${p.name}] threw during query`, err)
+        return []
+      }
     }))
     const seen = new Set<string>()
     return per.flat().filter((r) => { if (seen.has(r.hash)) return false; seen.add(r.hash); return true })
   }
-  catch { return [] }
+  catch (err) {
+    if (import.meta.env.DEV) console.warn('[torrent-providers] query failed', err)
+    return []
+  }
 }
