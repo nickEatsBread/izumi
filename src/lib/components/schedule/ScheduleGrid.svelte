@@ -186,11 +186,15 @@
 {:else}
   <!-- Sticky header: the My Shows/All toggle + Next-up stay pinned so switching view or glancing at
        what's next never means scrolling back up past the auto-scrolled agenda. -->
-  <div class="sticky top-0 z-20 bg-background pb-1" bind:clientHeight={headerH}>
+  <div class="sticky top-0 z-20 bg-background pb-1 relative" bind:clientHeight={headerH}>
     {@render toggle()}
     {#if isCurrentWeek}
       <ScheduleNextUp airings={shownDays.flat()} {sets} {now} />
     {/if}
+    <!-- Soft dissolve just below the pinned header: agenda rows fade into the background as they
+         scroll under it, instead of snapping off at the opaque bar's hard bottom edge (the faint
+         "line" wipe that read as uncanny). pointer-events-none so day cards stay clickable. -->
+    <div class="pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-background to-transparent"></div>
   </div>
   {#if view === 'mine' && mineCount === 0}
     {@render mineEmpty()}
