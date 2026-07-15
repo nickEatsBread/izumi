@@ -49,6 +49,16 @@ serde_json = "1"
 # OpenSSL, which has no Android target here.
 tauri-plugin-http = { version = "2.5.9", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", features = ["time", "fs", "io-util", "net"] }
+anyhow = "1"
+blake3 = "1"
+# Account-free device sync. iroh-docs is a meta-protocol over blobs + gossip;
+# keep these versions aligned with the current upstream Tauri example.
+iroh = "1.0"
+iroh-docs = "0.101"
+iroh-blobs = "0.103"
+iroh-gossip = "0.101"
+iroh-mdns-address-lookup = "0.4"
+n0-future = "0.3"
 # Offline downloads: stream a resolved debrid URL to disk (pure reqwest GET — no
 # webview http-scope, no plugin-fs). rustls-tls for the same Android cross-compile reason.
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "http2", "charset"] }
@@ -75,6 +85,7 @@ tauri-plugin-mpv = { path = "tauri-plugin-mpv", optional = true }
 # WebView2 COM call to make the webview background transparent (Stremio's model:
 # opaque window + transparent webview). windows 0.61 + webview2-com 0.38 match
 # Tauri 2.11's own versions so the `with_webview` controller interface unifies.
+# Iroh's wmi edge is separately locked to windows 0.62 in Cargo.lock.
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
   "Win32_Foundation",
@@ -112,4 +123,3 @@ gilrs = "0.11"
 # with accelerated compositing on, WebKit's layer subsurfaces don't clear on a transparent
 # view, leaving ghost rectangles (menus/tooltips) until a resize.
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
-

@@ -108,8 +108,19 @@ export function importJson(text: string): { imported: number } {
       const next = { ...p }
       for (const [k, v] of Object.entries(data.positions!)) {
         // Only accept well-shaped {pos, dur} numbers — a string pos would flow into player_embed.
-        if (v && typeof v === 'object' && typeof (v as Pos).pos === 'number' && typeof (v as Pos).dur === 'number' && !next[k]) {
-          next[k] = { pos: (v as Pos).pos, dur: (v as Pos).dur }
+        if (v && typeof v === 'object' && typeof (v as Pos).pos === 'number' && typeof (v as Pos).dur === 'number') {
+          const incomingAt = num((v as Pos).updatedAt)
+          const currentAt = num(next[k]?.updatedAt)
+          // Timestamped records are last-write-wins per episode. Legacy backups
+          // had no timestamp, so retain their fill-empty-only behavior.
+          if (!next[k] || (incomingAt > 0 && incomingAt > currentAt)) {
+            next[k] = {
+              pos: (v as Pos).pos,
+              dur: (v as Pos).dur,
+              ...(incomingAt > 0 ? { updatedAt: incomingAt } : {}),
+              ...((v as Pos).cleared === true ? { cleared: true as const } : {}),
+            }
+          }
         }
       }
       return next

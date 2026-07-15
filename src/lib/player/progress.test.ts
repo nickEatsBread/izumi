@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { get } from 'svelte/store'
-import { positionPercent, positions, progressKey, savePosition, watched } from './progress'
+import { clearPosition, positionPercent, positions, progressKey, savePosition, watched } from './progress'
 
 describe('progress helpers', () => {
   it('keys by media + episode', () => expect(progressKey(101, 3)).toBe('101:3'))
@@ -22,9 +22,17 @@ describe('progress helpers', () => {
 
     savePosition(101, 3, 450, 1200)
 
-    expect(get(positions)[progressKey(101, 3)]).toEqual({ pos: 450, dur: 1200 })
+    expect(get(positions)[progressKey(101, 3)]).toMatchObject({ pos: 450, dur: 1200 })
+    expect(get(positions)[progressKey(101, 3)].updatedAt).toEqual(expect.any(Number))
     expect(notifications).toBe(2) // initial value + save
     unsubscribe()
+    positions.set({})
+  })
+  it('keeps a timestamped tombstone when a synced resume position is cleared', () => {
+    positions.set({ '101:3': { pos: 450, dur: 1200, updatedAt: 1 } })
+    clearPosition(101, 3)
+    expect(get(positions)['101:3']).toMatchObject({ pos: 0, dur: 1200, cleared: true })
+    expect(get(positions)['101:3'].updatedAt).toEqual(expect.any(Number))
     positions.set({})
   })
 })

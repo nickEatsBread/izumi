@@ -1,0 +1,65 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { get } from "svelte/store";
+import { addonUrls, disabledSources } from "$lib/stremio/sources";
+import {
+  debridKey,
+  debridProvider,
+  disabledExtensions,
+  extensionUrls,
+} from "$lib/settings/ui";
+import {
+  applyManualSnapshot,
+  createManualSnapshot,
+  parseManualSnapshot,
+} from "./manual";
+
+describe("manual device sync snapshots", () => {
+  beforeEach(() => {
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+      clear: () => values.clear(),
+      key: (index: number) => [...values.keys()][index] ?? null,
+      get length() { return values.size; },
+    });
+    localStorage.clear();
+    addonUrls.set([]);
+    disabledSources.set([]);
+    extensionUrls.set([]);
+    disabledExtensions.set([]);
+    debridProvider.set("realdebrid");
+    debridKey.set("");
+  });
+
+  it("round-trips sources, extension configuration, secrets, and portable settings", () => {
+    addonUrls.set(["https://addon.test/config/manifest"]);
+    disabledSources.set(["https://addon.test/off"]);
+    extensionUrls.set(["gh:owner/repo"]);
+    disabledExtensions.set(["gh:owner/off"]);
+    debridProvider.set("alldebrid");
+    debridKey.set("secret");
+    localStorage.setItem("preferred-quality", JSON.stringify("2160"));
+
+    const parsed = parseManualSnapshot(
+      JSON.stringify(createManualSnapshot("device-a", "Deck")),
+    );
+    expect(parsed?.deviceName).toBe("Deck");
+
+    addonUrls.set([]);
+    extensionUrls.set([]);
+    debridKey.set("");
+    applyManualSnapshot(parsed!);
+    expect(get(addonUrls)).toEqual(["https://addon.test/config/manifest"]);
+    expect(get(extensionUrls)).toEqual(["gh:owner/repo"]);
+    expect(get(debridProvider)).toBe("alldebrid");
+    expect(get(debridKey)).toBe("secret");
+    expect(JSON.parse(localStorage.getItem("preferred-quality")!)).toBe("2160");
+  });
+
+  it("rejects unrelated or malformed JSON", () => {
+    expect(parseManualSnapshot("{")).toBeNull();
+    expect(parseManualSnapshot(JSON.stringify({ app: "other" }))).toBeNull();
+  });
+});

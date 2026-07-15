@@ -1,7 +1,9 @@
 package app.izumi.extplayer
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
@@ -40,10 +42,22 @@ class OAuthArgs {
 
 @TauriPlugin
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
+    private var multicastLock: WifiManager.MulticastLock? = null
+
     // WRY's Android WebView keeps zoom enabled and ignores the viewport `user-scalable=no`, so the
     // page pinch- / double-tap-zooms on mobile (content zooms while the fixed nav stays put). Kill
     // it at the WebView-settings level the moment the webview is created.
     override fun load(webView: WebView) {
+        // Android filters multicast by default. Keep it enabled for the plugin/app lifetime so
+        // Iroh's Izumi-only mDNS lookup can discover other devices on the local network.
+        if (multicastLock == null) {
+            val wifiManager = activity.applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as WifiManager
+            multicastLock = wifiManager.createMulticastLock("izumi-lan-discovery").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }
         webView.settings.setSupportZoom(false)
         webView.settings.builtInZoomControls = false
         webView.settings.displayZoomControls = false

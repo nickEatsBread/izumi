@@ -2,7 +2,14 @@ import { persisted } from 'svelte-persisted-store'
 import { get } from 'svelte/store'
 
 /** Saved playback state for a media + episode: last position + known duration (seconds). */
-export interface Pos { pos: number; dur: number }
+export interface Pos {
+  pos: number
+  dur: number
+  /** Per-episode clock used to merge resume positions across devices. */
+  updatedAt?: number
+  /** Synced tombstone so an old resume point cannot reappear after completion. */
+  cleared?: true
+}
 
 /** Persisted map of `${mediaId}:${episode}` -> `{ pos, dur }`. */
 export const positions = persisted<Record<string, Pos>>('player-positions', {})
@@ -23,7 +30,7 @@ export function positionPercent(position?: Pos): number {
 export function savePosition(mediaId: number, episode: number, pos: number, dur = 0) {
   positions.update((p) => {
     const k = progressKey(mediaId, episode)
-    return { ...p, [k]: { pos, dur: dur || p[k]?.dur || 0 } }
+    return { ...p, [k]: { pos, dur: dur || p[k]?.dur || 0, updatedAt: Date.now() } }
   })
 }
 
@@ -40,8 +47,7 @@ export function episodePercent(mediaId: number, episode: number): number {
 /** Forget the saved position for a media + episode (e.g. once finished). */
 export function clearPosition(mediaId: number, episode: number) {
   positions.update((p) => {
-    const n = { ...p }
-    delete n[progressKey(mediaId, episode)]
-    return n
+    const k = progressKey(mediaId, episode)
+    return { ...p, [k]: { pos: 0, dur: p[k]?.dur ?? 0, updatedAt: Date.now(), cleared: true } }
   })
 }

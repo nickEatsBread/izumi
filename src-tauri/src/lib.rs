@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod doh;
 mod download;
+mod sync;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
 mod player;
@@ -1673,9 +1674,15 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(download::Downloads::default())
+        .manage(sync::SyncState::default())
         .manage(TacVerificationConfig::default())
         .manage(FsWasMax::default())
         .setup(|app| {
+            // Iroh opens persistent stores and establishes its relay/discovery state
+            // asynchronously. Keep native window creation responsive while it starts.
+            let sync_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move { sync::initialize(sync_app).await });
+
             // Create the desktop main window HERE (not in tauri.conf.json) so we can attach an
             // on_new_window handler. Tauri denies `window.open` by default, which silently blocks the
             // discussion embeds' popups — notably Disqus's OAuth login. Returning `Allow` lets the
@@ -2123,7 +2130,17 @@ pub fn run() {
             download::download_cancel,
             download::download_delete,
             download::download_dir_default,
-            download::reveal_in_folder
+            download::reveal_in_folder,
+            sync::sync_status,
+            sync::sync_create,
+            sync::sync_join,
+            sync::sync_nearby_list,
+            sync::sync_pairing_open,
+            sync::sync_pair_nearby,
+            sync::sync_pair_respond,
+            sync::sync_leave,
+            sync::sync_write,
+            sync::sync_read
         ]);
 
     #[cfg(target_os = "android")]
@@ -2140,7 +2157,17 @@ pub fn run() {
         download::download_cancel,
         download::download_delete,
         download::download_dir_default,
-        download::reveal_in_folder
+        download::reveal_in_folder,
+        sync::sync_status,
+        sync::sync_create,
+        sync::sync_join,
+        sync::sync_nearby_list,
+        sync::sync_pairing_open,
+        sync::sync_pair_nearby,
+        sync::sync_pair_respond,
+        sync::sync_leave,
+        sync::sync_write,
+        sync::sync_read
     ]);
 
     // "Full" Android flavor only: the embedded libmpv player plugin (registers its own

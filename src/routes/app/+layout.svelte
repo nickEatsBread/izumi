@@ -29,6 +29,7 @@
   import { isAndroid, isMobile, initPlatform } from '$lib/platform'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { initTrackerQueue } from '$lib/trackers/queue'
+  import { initDeviceSync } from '$lib/sync/client'
   import { checkAndroidUpdate, downloadAndInstall, androidUpdate, androidUpdateDismissed } from '$lib/updater/android'
   import { get } from 'svelte/store'
   let { children } = $props()
@@ -56,6 +57,7 @@
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
+    initDeviceSync() // account-free Iroh watch sync (automatically gated off by AniList/MAL)
     // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
     // (persisted to idb after), so a fresh install's FIRST play doesn't eat it on the
     // click-to-play path. Fire-and-forget; getIndex is cached/idempotent.
