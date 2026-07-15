@@ -18,6 +18,7 @@
     togglePause,
     seekAbsolute,
     seekKeyframe,
+    seekRelative,
     setBrightness,
     setVolume,
     getVolume,
@@ -30,7 +31,7 @@
     setSubTrack,
     type MpvTrack,
   } from '$lib/player/android-mpv'
-  import { zoneOf, classifyDrag, accumulateSeek, HOLD_MS, DOUBLE_TAP_MS } from '$lib/player/android-gestures'
+  import { zoneOf, classifyDrag, HOLD_MS, DOUBLE_TAP_MS } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen } from '$lib/player/session'
   import { commentsEnabled } from '$lib/comments'
   import { autoSkip, seekDuration, scrubThumbnails } from '$lib/settings/ui'
@@ -163,29 +164,61 @@
   }
   $effect(() => { if (scrubbing) requestThumb(scrubPos); else thumbUrl = null })
 
-  // --- Double-tap seek (accumulating, honors the seek-duration setting) ---
-  let tapTimer: ReturnType<typeof setTimeout> | undefined
-  let flashTimer: ReturnType<typeof setTimeout> | undefined
+  // --- Tap → controls toggle / YouTube-style sticky double-tap seek ---
+  // A double-tap on a side enters "seek mode"; while it stays open (SEEK_MODE_MS after the last tap)
+  // every FURTHER single tap on that side adds another step (10 → 20 → 30…) — you don't re-double-tap.
+  // Tapping the other side reverses. A lone side tap only toggles controls, and that toggle is delayed
+  // by the double-tap window so rapid taps aren't misread as toggles (the flicker/stuck-state failure).
+  // Actual mpv seeks are coalesced to one relative seek per burst so rapid taps don't thrash the stream.
+  const SEEK_MODE_MS = 650 // seek mode stays open this long after the last tap (DoubleTapPlayerView default)
+  const SEEK_COMMIT_MS = 250 // debounce before the accumulated delta is actually seeked
   let seekFlash = $state<{ side: 'l' | 'r'; amt: number } | null>(null)
-  function zoneTap(side: 'l' | 'c' | 'r') {
-    if (side === 'c') { toggleControls(); return }
-    if (tapTimer) { // second tap of a pair → seek
-      clearTimeout(tapTimer); tapTimer = undefined
-      const step = $seekDuration
-      skip(side === 'l' ? -step : step)
-      const acc = accumulateSeek(seekFlash ? { dir: seekFlash.side, amt: seekFlash.amt } : null, side, step)
-      seekFlash = { side: acc.dir, amt: acc.amt }
-      haptic(20)
-      clearTimeout(flashTimer); flashTimer = setTimeout(() => (seekFlash = null), 650)
-    } else { // first tap → reveal immediately, then wait to see if a second tap lands
-      toggleControls()
-      tapTimer = setTimeout(() => { tapTimer = undefined }, DOUBLE_TAP_MS)
+  let seekActive = false
+  let seekSide: 'l' | 'r' | null = null
+  let pendingDelta = 0
+  let pendingToggle: ReturnType<typeof setTimeout> | undefined
+  let firstTapSide: 'l' | 'r' | null = null
+  let seekModeTimer: ReturnType<typeof setTimeout> | undefined
+  let seekCommitTimer: ReturnType<typeof setTimeout> | undefined
+
+  function commitSeek() {
+    clearTimeout(seekCommitTimer); seekCommitTimer = undefined
+    if (pendingDelta !== 0) { seekRelative(pendingDelta); pendingDelta = 0 }
+  }
+  function endSeekMode() {
+    commitSeek()
+    seekActive = false; seekSide = null; seekFlash = null
+  }
+  function armSeekTimers() {
+    clearTimeout(seekCommitTimer); seekCommitTimer = setTimeout(commitSeek, SEEK_COMMIT_MS)
+    clearTimeout(seekModeTimer); seekModeTimer = setTimeout(endSeekMode, SEEK_MODE_MS)
+  }
+  // One seek "tap" while in (or entering) seek mode: accumulate on the same side, reverse on the other.
+  function bumpSeek(side: 'l' | 'r') {
+    const step = $seekDuration
+    if (seekActive && seekSide !== side) commitSeek() // reversing → flush the old direction first
+    if (!seekActive || seekSide !== side) {
+      seekActive = true; seekSide = side; seekFlash = { side, amt: step }
+    } else {
+      seekFlash = { side, amt: (seekFlash?.amt ?? 0) + step }
     }
+    pendingDelta += side === 'r' ? step : -step
+    haptic(15)
+    armSeekTimers()
   }
   function onTap(e: PointerEvent) {
     if (locked) { showLockToggle(); return }
     const w = window.innerWidth
-    zoneTap(e.clientX < w / 3 ? 'l' : e.clientX > (2 * w) / 3 ? 'r' : 'c')
+    const side: 'l' | 'c' | 'r' = e.clientX < w / 3 ? 'l' : e.clientX > (2 * w) / 3 ? 'r' : 'c'
+    if (side === 'c') { clearTimeout(pendingToggle); pendingToggle = undefined; firstTapSide = null; toggleControls(); return }
+    if (seekActive) { bumpSeek(side); return } // already seeking → each single tap keeps accumulating
+    if (pendingToggle && firstTapSide === side) { // second tap of a pair → enter seek mode
+      clearTimeout(pendingToggle); pendingToggle = undefined; firstTapSide = null
+      bumpSeek(side)
+    } else { // first side tap → delay the controls toggle so a second tap can pair into a seek
+      clearTimeout(pendingToggle); firstTapSide = side
+      pendingToggle = setTimeout(() => { pendingToggle = undefined; firstTapSide = null; toggleControls() }, DOUBLE_TAP_MS)
+    }
   }
 
   // --- Whole-surface gesture layer: tap / double-tap / swipe brightness+volume / hold-2× / scrub ---
@@ -306,7 +339,7 @@
   onMount(() => {
     armHide()
     return () => {
-      clearTimeout(hideTimer); clearTimeout(tapTimer); clearTimeout(flashTimer)
+      clearTimeout(hideTimer); clearTimeout(pendingToggle); clearTimeout(seekModeTimer); clearTimeout(seekCommitTimer)
       clearTimeout(lockToggleTimer); clearTimeout(toastTimer); clearTimeout(hudTimer)
       clearTimeout(holdTimer); clearTimeout(thumbDebounce)
       if (rafId) cancelAnimationFrame(rafId)
