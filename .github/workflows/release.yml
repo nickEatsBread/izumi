@@ -194,6 +194,24 @@ jobs:
           # macOS injects the dynamically-built frameworks list (MAC_ARGS) from the bundling step.
           args: ${{ startsWith(matrix.platform, 'macos') && env.MAC_ARGS || matrix.args }}
 
+  cleanup-release-signatures:
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove standalone updater signature assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            "/repos/${{ github.repository }}/releases/${{ needs.create-release.outputs.release_id }}/assets" \
+            --jq '.[] | select(.name | endswith(".sig")) | [.id, .name] | @tsv' |
+          while IFS=$'\t' read -r id name; do
+            [ -n "$id" ] || continue
+            echo "Deleting $name"
+            gh api -X DELETE "/repos/${{ github.repository }}/releases/assets/$id"
+          done
+
   # The Steam Deck build is a Flatpak (NOT the desktop-Linux deb/rpm/AppImage above): SteamOS is
   # immutable and its system libs clash with a bundled AppImage (white screen), so the Deck uses the
   # GNOME runtime's matched webkit/gtk/mesa/pipewire. Built here the same way as locally, attached to
@@ -367,7 +385,7 @@ jobs:
             "izumi-${{ steps.meta.outputs.tag }}-android-arm64-${{ matrix.flavor }}.apk" --repo "${{ github.repository }}" --clobber
 
   publish-release:
-    needs: [create-release, build]
+    needs: [create-release, build, cleanup-release-signatures]
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release (un-draft)
