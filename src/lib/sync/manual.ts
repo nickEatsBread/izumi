@@ -32,7 +32,6 @@ export const SYNCED_SETTING_KEYS = [
   "save-local-history",
   "hide-spoilers",
   "carousel-wheel-scroll",
-  "ui-scale",
   "show-adult",
   "schedule-layout",
   "doh-enabled",

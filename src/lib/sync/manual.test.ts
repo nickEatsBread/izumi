@@ -58,6 +58,21 @@ describe("manual device sync snapshots", () => {
     expect(JSON.parse(localStorage.getItem("preferred-quality")!)).toBe("2160");
   });
 
+  it("keeps UI scale local to each device", () => {
+    localStorage.setItem("ui-scale", JSON.stringify(1.25));
+    const snapshot = createManualSnapshot("device-a", "Desktop");
+
+    expect(snapshot.settings).not.toHaveProperty("ui-scale");
+
+    // Older peers may still send ui-scale. Applying their snapshot must not
+    // overwrite the receiving device's locally chosen scale.
+    snapshot.settings["ui-scale"] = 0.8;
+    localStorage.setItem("ui-scale", JSON.stringify(1.5));
+    applyManualSnapshot(snapshot);
+
+    expect(JSON.parse(localStorage.getItem("ui-scale")!)).toBe(1.5);
+  });
+
   it("rejects unrelated or malformed JSON", () => {
     expect(parseManualSnapshot("{")).toBeNull();
     expect(parseManualSnapshot(JSON.stringify({ app: "other" }))).toBeNull();
