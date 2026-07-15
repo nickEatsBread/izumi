@@ -52,8 +52,8 @@ export function atorrentToResult(t: AnimeTorrent, hash: string): TorrentResult |
 
 /** Query every anime-torrent-provider extension for an episode's torrents, mapped into izumi's
  *  TorrentResult. smartSearch when the provider supports it, else search. Best-effort: [] on any
- *  failure; dedupe by hash. */
-export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia): Promise<TorrentResult[]> {
+ *  failure; dedupe by hash. `onBatch` fires with each provider's results as it settles. */
+export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia, onBatch?: (rs: TorrentResult[]) => void): Promise<TorrentResult[]> {
   try {
     const provs = await runningTorrentProviderExtensions()
     if (!provs.length) return []
@@ -78,6 +78,7 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia)
           const r = atorrentToResult(t, hash)
           if (r) out.push({ ...r, provider: p.name, logo: p.icon })
         }
+        if (onBatch && out.length) onBatch(out)
         return out
       }
       catch (err) {

@@ -1,6 +1,6 @@
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
+import { phttp } from '$lib/net/http'
 import { enabledExtensionUrls } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 
@@ -105,7 +105,9 @@ function normalizeManifest(raw: any, manifestUrl: string): ExtensionConfig[] {
 // manifests; a normal manifest is normalized directly. Best-effort: [] on failure.
 async function expandManifest(spec: string, depth = 0): Promise<ExtensionConfig[]> {
   const url = resolveManifestUrl(spec)
-  const r = await httpFetch(url)
+  // Pooled client — plugin-http builds a fresh reqwest client per request (~300ms handshake),
+  // which multiplied across a repo's manifests + modules made the first resolve crawl.
+  const r = await phttp(url)
   if (!r.ok) return []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw: any = await r.json()
@@ -135,14 +137,14 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
 // pointing at the hashed build (`export * from "/gh/…"`); a blob import of that text
 // can't resolve the relative target, so follow it once to the real module.
 async function fetchModuleCode(url: string): Promise<string | null> {
-  const r = await httpFetch(url)
+  const r = await phttp(url)
   if (!r.ok) return null
   const code = await r.text()
   const stub = code.match(/export\s+\*\s+from\s*["']([^"']+)["']/)
   if (stub && code.trim().length < 600) {
     const t = stub[1]
     const target = /^https?:\/\//i.test(t) ? t : `https://esm.sh${t.startsWith('/') ? '' : '/'}${t}`
-    try { const r2 = await httpFetch(target); if (r2.ok) return await r2.text() } catch { /* keep stub */ }
+    try { const r2 = await phttp(target); if (r2.ok) return await r2.text() } catch { /* keep stub */ }
   }
   return code
 }
@@ -200,19 +202,26 @@ async function ensureRunning(): Promise<RunningExt[]> {
   if (buildPromise) return buildPromise
   buildPromise = (async () => {
     running?.forEach((e) => e.worker.terminate())
+    // Fetch every module in parallel — sequentially this was N × (esm.sh latency), the bulk of the
+    // first-resolve stall for multi-source repos.
+    const cfgs = await loadConfigs()
+    const codes = await Promise.all(cfgs.map(async (cfg) => {
+      try { return { cfg, code: await fetchModuleCode(cfg.code) } } catch { return { cfg, code: null } }
+    }))
     const next: RunningExt[] = []
-    for (const cfg of await loadConfigs()) {
-      try {
-        const code = await fetchModuleCode(cfg.code)
-        if (code) next.push(spawn(cfg, code))
-      } catch { /* skip */ }
-    }
+    for (const { cfg, code } of codes) if (code) next.push(spawn(cfg, code))
     running = next
     builtFrom = key
     return next
   })()
   try { return await buildPromise }
   finally { buildPromise = null }
+}
+
+/** Pre-boot the extension runtime (manifest + modules + workers) off the click-to-play path.
+ *  Called once at app start; the first picker open then only pays the actual search. */
+export function warmExtensions(): void {
+  if (get(enabledExtensionUrls).length) void ensureRunning().catch(() => {})
 }
 
 function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<TorrentResult[]> {
@@ -226,8 +235,10 @@ function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<Tor
 }
 
 /** Query every enabled extension for an episode; dedupe by hash. Best-effort:
- *  returns [] when none are configured or all fail. Never throws. */
-export async function queryExtensions(query: TorrentQuery): Promise<TorrentResult[]> {
+ *  returns [] when none are configured or all fail. Never throws.
+ *  `onBatch` (optional) fires with each extension's results AS IT SETTLES, so the picker can
+ *  fold sources in live instead of waiting on the slowest (or a wedged one's 20s timeout). */
+export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: TorrentResult[]) => void): Promise<TorrentResult[]> {
   try {
     if (!get(enabledExtensionUrls).length) return []
     const exts = await ensureRunning()
@@ -240,7 +251,9 @@ export async function queryExtensions(query: TorrentQuery): Promise<TorrentResul
     // generic "Extension" fallback. Per-extension map (not a flat fan-out) keeps that association.
     const batches = await Promise.all(live.map(async (e) => {
       const rs = (await Promise.all(methods.map((m) => call(e, m, query)))).flat()
-      return rs.map((r) => ({ ...r, provider: r.provider ?? e.cfg.name, logo: r.logo ?? e.cfg.icon }))
+      const stamped = rs.map((r) => ({ ...r, provider: r.provider ?? e.cfg.name, logo: r.logo ?? e.cfg.icon }))
+      if (onBatch && stamped.length) onBatch(stamped)
+      return stamped
     }))
     const seen = new Set<string>()
     const out: TorrentResult[] = []

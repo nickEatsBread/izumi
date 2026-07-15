@@ -323,9 +323,9 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
 
 // Query source extensions for an episode → raw `Stream[]` (extToStream-mapped, NOT
 // yet refined — the caller's refine pass dedupes/season-verifies them together with
-// the addon streams). Best-effort: [] on failure/none. This is the slower SECOND wave
-// that folds into the picker after the addons (a multi-source trickle).
-async function extToStreams(media: Media, episode: number | undefined, kitsu?: number): Promise<Stream[]> {
+// the addon streams). Best-effort: [] on failure/none. Results stream through `onBatch`
+// PER SOURCE as each settles — one slow/wedged source no longer holds back the rest.
+async function extToStreams(media: Media, episode: number | undefined, kitsu: number | undefined, onBatch: (s: Stream[]) => void): Promise<void> {
   try {
     // Resolve the production-specific AniZip ids (AniDB/TVDB + absolute episode) so ID-based
     // extensions (those keyed by AniDB) hit the RIGHT title + a freshly-aired episode. Cached
@@ -376,13 +376,13 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
     }
     // Both extension flavours resolve to TorrentResult and share the RD resolve path: the legacy
     // torrent extensions (single/batch/movie) plus the anime-torrent-provider extensions
-    // (search/smartSearch). Query both concurrently and merge.
-    const [ext, atp] = await Promise.all([
-      queryExtensions(query),
-      queryTorrentProviders(query, toProviderMedia(media)),
+    // (search/smartSearch). Query both concurrently; each source's batch folds in as it lands.
+    const fold = (rs: TorrentResult[]) => onBatch(rs.map((r) => extToStream(r, r.provider ?? 'Extension')))
+    await Promise.all([
+      queryExtensions(query, fold),
+      queryTorrentProviders(query, toProviderMedia(media), fold),
     ])
-    return [...ext, ...atp].map((r) => extToStream(r, r.provider ?? 'Extension'))
-  } catch { return [] }
+  } catch { /* best-effort: failed sources contributed nothing */ }
 }
 
 // Release-continuity across episodes. A stream continues the last-played release when it
@@ -554,8 +554,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
         }
       }
       if (hasExt) {
-        extToStreams(media, episode, kitsu)
-          .then((s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })
+        extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })
           .catch(() => {})
           .finally(done)
       }
