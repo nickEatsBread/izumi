@@ -360,8 +360,19 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
       // Same fallback the reference runtime uses: absolute when mapped, else the per-season number.
       absoluteEpisode: ids.absoluteEpisodeNumber ?? ids.episodeNumber,
       titles,
-      episode, episodeCount: media.episodes ?? undefined,
+      // Full media + raw AniZip objects are part of the SDK's TorrentQuery — sources may read
+      // production fields we don't distill into ids.
+      media, mappingsA: ids.mappingsA, mappingsE: ids.mappingsE,
+      // Airing shows often have episodes=null on AniList; derive the aired count like the
+      // reference runtime so sources' "is this episodic" gates still work mid-season.
+      episode,
+      episodeCount: media.episodes
+        ?? (media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : undefined),
       resolution: get(preferredQuality) === 'any' ? undefined : get(preferredQuality),
+      // libmpv decodes everything we throw at it, so no codec-capability exclusions (the SDK field
+      // exists for platforms that can't play HEVC/AC3/etc).
+      exclusions: [],
+      isAndroid: get(isAndroid),
     }
     // Both extension flavours resolve to TorrentResult and share the RD resolve path: the legacy
     // torrent extensions (single/batch/movie) plus the anime-torrent-provider extensions

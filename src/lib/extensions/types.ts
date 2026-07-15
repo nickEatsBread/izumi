@@ -34,9 +34,15 @@ export interface TorrentQuery {
   anidbEid?: number // AniDB episode id (episode-level; some indexers search by it)
   tvdbAid?: number // TVDB show id
   tvdbEid?: number // TVDB episode id
-  mvdbAid?: string // TMDB id
+  mvdbAid?: number | string // TMDB id
   imdbAid?: string
   season?: number
+  // SDK contract extras: the full AniList media object + raw AniZip mapping objects, passed
+  // verbatim (sources may read production fields we don't distill), and the platform flag.
+  media?: unknown
+  mappingsA?: Record<string, unknown>
+  mappingsE?: Record<string, unknown>
+  isAndroid?: boolean
 }
 
 /** Normalized extension config (both flat config and manifest

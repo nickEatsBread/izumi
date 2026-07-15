@@ -232,7 +232,9 @@ export async function queryExtensions(query: TorrentQuery): Promise<TorrentResul
     if (!get(enabledExtensionUrls).length) return []
     const exts = await ensureRunning()
     const live = (await Promise.all(exts.map(async (e) => ((await e.ready) ? e : null)))).filter(Boolean) as RunningExt[]
-    const methods = query.episode != null ? ['single', 'batch'] : ['movie']
+    // Movies also get single(): SDK sources treat single() as the universal entry (their movie()
+    // often returns [] with "single already gets movies with matching media id").
+    const methods = query.episode != null ? ['single', 'batch'] : ['single', 'movie']
     // Stamp each result with the extension that produced it (name + icon), mirroring the
     // torrent-provider path, so the picker labels the row with the real source instead of the
     // generic "Extension" fallback. Per-extension map (not a flat fan-out) keeps that association.
