@@ -333,10 +333,22 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
     // providers. This is what lets extensions resolve new/ambiguous anime the kitsu:id:ep addon
     // path misses.
     const ids = await getExtensionIds(media.id, episode)
-    const titles = [...new Set(
-      [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
-        .filter((t): t is string => !!t && t.length > 3),
-    )]
+    // Titles handed to extensions, shaped for how their search runtimes consume them:
+    // - ( ) " | are boolean operators on nyaa-style engines, and the extension runtime joins our
+    //   titles into (a)|(b) groups VERBATIM — one parenthesized synonym ("… (Seikatsu Nouryoku
+    //   Kaimu) …") silently zeroes the whole search, clean groups included. Strip those chars;
+    //   release names tokenize identically without them.
+    // - Long light-novel titles carry a subtitle tail ("Saijo no Osewa: Takane no …") that release
+    //   groups drop; the seeded files use just the short prefix, which AniList synonyms don't
+    //   include. Append the before-separator prefix as an extra variant.
+    // Sanitized originals stay FIRST — providers that resolve media by trying titles in order
+    // (capped at a few attempts) should spend them on the closest-to-canonical forms.
+    const sanitize = (t: string) => t.replace(/[()"|]/g, ' ').replace(/\s+/g, ' ').trim()
+    const base = [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
+      .filter((t): t is string => !!t && t.length > 3)
+    const shortVariants = base.map((t) => t.split(/[:~]/, 1)[0].trim())
+    const titles = [...new Set([...base.map(sanitize), ...shortVariants.map(sanitize)])]
+      .filter((t) => t.length > 3)
     const query = {
       anilistId: media.id, malId: media.idMal ?? undefined, kitsuId: kitsu,
       // Field names are the extension-SDK contract — sources destructure tvdbAid/tvdbEid/mvdbAid/
