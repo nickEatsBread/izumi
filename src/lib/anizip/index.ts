@@ -101,6 +101,7 @@ export interface ExtIds {
   imdbId?: string
   season?: number
   absoluteEpisodeNumber?: number
+  episodeNumber?: number // per-season episode number (fallback when no absolute is mapped)
 }
 export async function getExtensionIds(anilistId: number, episode?: number): Promise<ExtIds> {
   const res = await fetchAniZip(anilistId, episode)
@@ -115,6 +116,7 @@ export async function getExtensionIds(anilistId: number, episode?: number): Prom
     imdbId: m?.imdb_id ?? undefined,
     season: ep?.seasonNumber,
     absoluteEpisodeNumber: ep?.absoluteEpisodeNumber,
+    episodeNumber: ep?.episodeNumber,
   }
 }
 

@@ -339,9 +339,14 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu?: n
     )]
     const query = {
       anilistId: media.id, malId: media.idMal ?? undefined, kitsuId: kitsu,
-      anidbAid: ids.anidbAid, anidbEid: ids.anidbEid, tvdbId: ids.tvdbId, tvdbEId: ids.tvdbEId,
-      tmdbId: ids.tmdbId, imdbId: ids.imdbId, season: ids.season,
-      absoluteEpisodeNumber: ids.absoluteEpisodeNumber,
+      // Field names are the extension-SDK contract — sources destructure tvdbAid/tvdbEid/mvdbAid/
+      // imdbAid/absoluteEpisode VERBATIM. Sending our internal names (tvdbId/tvdbEId/tmdbId/imdbId/
+      // absoluteEpisodeNumber) starved every TVDB-keyed provider into a silent [] (it resolved the
+      // media by title similarity, then bailed at its episode gate with all ids undefined).
+      anidbAid: ids.anidbAid, anidbEid: ids.anidbEid, tvdbAid: ids.tvdbId, tvdbEid: ids.tvdbEId,
+      mvdbAid: ids.tmdbId, imdbAid: ids.imdbId, season: ids.season,
+      // Same fallback the reference runtime uses: absolute when mapped, else the per-season number.
+      absoluteEpisode: ids.absoluteEpisodeNumber ?? ids.episodeNumber,
       titles,
       episode, episodeCount: media.episodes ?? undefined,
       resolution: get(preferredQuality) === 'any' ? undefined : get(preferredQuality),
