@@ -146,5 +146,12 @@ export const setSubTrack = (id: number | 'no') => mpvCommand(['set', 'sid', Stri
 // --- Control helpers ---
 export const togglePause = () => mpvCommand(['cycle', 'pause'])
 export const setPaused = (paused: boolean) => mpvCommand(['set', 'pause', paused ? 'yes' : 'no'])
-export const seekAbsolute = (sec: number) => mpvCommand(['seek', sec.toFixed(3), 'absolute'])
-export const seekRelative = (delta: number) => mpvCommand(['seek', delta.toString(), 'relative'])
+/** Precise seek — `+exact` avoids the keyframe snap that made taps/scrubs feel imprecise. */
+export const seekAbsolute = (sec: number) => mpvCommand(['seek', sec.toFixed(3), 'absolute+exact'])
+/** Fast, inexact seek for live scrub preview (snaps to keyframes, cheap on network streams). */
+export const seekKeyframe = (sec: number) => mpvCommand(['seek', sec.toFixed(3), 'absolute+keyframes'])
+export const seekRelative = (delta: number) => mpvCommand(['seek', delta.toString(), 'relative+exact'])
+export const setSpeed = (v: number) => mpvCommand(['set', 'speed', String(v)])
+/** mpv software volume, 0..100 (clamped). */
+export const setVolume = (v: number) => mpvCommand(['set', 'volume', String(Math.max(0, Math.min(100, Math.round(v))))])
+export const getVolume = async () => Number(await mpvGet('volume')) || 0
