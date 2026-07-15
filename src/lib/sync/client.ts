@@ -54,21 +54,23 @@ async function read(category: "watch" | "manual") {
 }
 
 export async function pushWatchProgress(): Promise<boolean> {
-  if (trackersOwnProgress()) return false;
   const status = await getSyncStatus();
   if (status.state !== "ready" || !status.paired) return false;
-  await write("watch", exportJson());
+  // AniList/MAL own anime-level episode counts. Iroh still owns exact
+  // per-episode resume positions because trackers cannot represent them.
+  await write("watch", exportJson({ includeHistory: !trackersOwnProgress() }));
   return true;
 }
 
 export async function pullWatchProgress(): Promise<number> {
-  if (trackersOwnProgress()) return 0;
   const status = await getSyncStatus();
   if (status.state !== "ready" || !status.paired) return 0;
   let imported = 0;
+  const includeHistory = !trackersOwnProgress();
   for (const record of await read("watch")) {
     try {
-      imported += importJson(record.payload).imported;
+      const merged = importJson(record.payload, { includeHistory });
+      imported += merged.imported + merged.positionsImported;
     } catch {
       /* skip malformed peer record */
     }
@@ -128,31 +130,29 @@ function scheduleWatchPush() {
   }, 1500);
 }
 
-/** Start automatic tracker-gated watch sync once for the app lifetime. */
+/** Start automatic watch sync once for the app lifetime. */
 export function initDeviceSync() {
   if (initialized) return;
   initialized = true;
   let primed = false;
   localHistory.subscribe(() => {
-    if (primed) scheduleWatchPush();
+    if (primed && !trackersOwnProgress()) scheduleWatchPush();
   });
   positions.subscribe(() => {
     if (primed) scheduleWatchPush();
   });
   anilistToken.subscribe(() => {
-    if (primed && !trackersOwnProgress()) scheduleWatchPush();
+    if (primed) scheduleWatchPush();
   });
   malToken.subscribe(() => {
-    if (primed && !trackersOwnProgress()) scheduleWatchPush();
+    if (primed) scheduleWatchPush();
   });
   primed = true;
 
   const refresh = async () => {
     try {
-      if (!trackersOwnProgress()) {
-        await pullWatchProgress();
-        scheduleWatchPush();
-      }
+      await pullWatchProgress();
+      scheduleWatchPush();
     } catch {
       /* backend may still be starting */
     }

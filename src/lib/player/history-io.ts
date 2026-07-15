@@ -20,11 +20,17 @@ interface ExportBundle {
   positions: Record<string, Pos>
 }
 
+interface WatchJsonOptions {
+  /** Trackers own anime-level episode counts, but never exact resume positions. */
+  includeHistory?: boolean
+}
+
 /** Full izumi backup (history + resume positions) as pretty JSON. */
-export function exportJson(): string {
+export function exportJson(options: WatchJsonOptions = {}): string {
   const bundle: ExportBundle = {
     app: 'izumi', kind: 'watch-history', version: 1, exportedAt: Date.now(),
-    history: get(localHistory), positions: get(positions),
+    history: options.includeHistory === false ? {} : get(localHistory),
+    positions: get(positions),
   }
   return JSON.stringify(bundle, null, 2)
 }
@@ -73,15 +79,15 @@ function validRelease(r: unknown): HistoryEntry['release'] {
 /** Merge an izumi JSON export back into local history + resume positions. Malformed entries are
  *  skipped (never poison the store). Existing entries are kept if they're further along (higher
  *  progress / later timestamp). Returns how many merged. */
-export function importJson(text: string): { imported: number } {
+export function importJson(text: string, options: WatchJsonOptions = {}): { imported: number; positionsImported: number } {
   const data = JSON.parse(text) as Partial<ExportBundle>
   if (data.app !== 'izumi' || data.kind !== 'watch-history' || !data.history || typeof data.history !== 'object') {
     throw new Error('Not an izumi watch-history export.')
   }
-  const incoming = data.history
   let imported = 0
-  localHistory.update((h) => {
-    const next = { ...h }
+  if (options.includeHistory !== false) {
+    const incoming = data.history
+    const next = { ...get(localHistory) }
     for (const [k, raw] of Object.entries(incoming)) {
       const id = Number(k)
       // Reject non-numeric keys, mismatched ids, and non-object entries — a hostile/corrupt file
@@ -101,32 +107,33 @@ export function importJson(text: string): { imported: number } {
         imported++
       }
     }
-    return next
-  })
+    if (imported) localHistory.set(next)
+  }
+  let positionsImported = 0
   if (data.positions && typeof data.positions === 'object') {
-    positions.update((p) => {
-      const next = { ...p }
-      for (const [k, v] of Object.entries(data.positions!)) {
-        // Only accept well-shaped {pos, dur} numbers — a string pos would flow into player_embed.
-        if (v && typeof v === 'object' && typeof (v as Pos).pos === 'number' && typeof (v as Pos).dur === 'number') {
-          const incomingAt = num((v as Pos).updatedAt)
-          const currentAt = num(next[k]?.updatedAt)
-          // Timestamped records are last-write-wins per episode. Legacy backups
-          // had no timestamp, so retain their fill-empty-only behavior.
-          if (!next[k] || (incomingAt > 0 && incomingAt > currentAt)) {
-            next[k] = {
-              pos: (v as Pos).pos,
-              dur: (v as Pos).dur,
-              ...(incomingAt > 0 ? { updatedAt: incomingAt } : {}),
-              ...((v as Pos).cleared === true ? { cleared: true as const } : {}),
-            }
+    const current = get(positions)
+    const next = { ...current }
+    for (const [k, v] of Object.entries(data.positions)) {
+      // Only accept well-shaped {pos, dur} numbers — a string pos would flow into player_embed.
+      if (v && typeof v === 'object' && typeof (v as Pos).pos === 'number' && typeof (v as Pos).dur === 'number') {
+        const incomingAt = num((v as Pos).updatedAt)
+        const currentAt = num(current[k]?.updatedAt)
+        // Timestamped records are last-write-wins per episode. Legacy backups
+        // had no timestamp, so retain their fill-empty-only behavior.
+        if (!current[k] || (incomingAt > 0 && incomingAt > currentAt)) {
+          next[k] = {
+            pos: (v as Pos).pos,
+            dur: (v as Pos).dur,
+            ...(incomingAt > 0 ? { updatedAt: incomingAt } : {}),
+            ...((v as Pos).cleared === true ? { cleared: true as const } : {}),
           }
+          positionsImported++
         }
       }
-      return next
-    })
+    }
+    if (positionsImported) positions.set(next)
   }
-  return { imported }
+  return { imported, positionsImported }
 }
 
 /** Prompt for a location and write the given text there. Returns false if the user cancelled. */
