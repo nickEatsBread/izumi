@@ -1,7 +1,10 @@
 use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
-use crate::models::{CommandRequest, GetRequest, LoadRequest, SetRequest};
+use crate::models::{
+    BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
+    ThumbRequest,
+};
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
     app: &AppHandle<R>,
@@ -38,5 +41,17 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn pip(&self) -> crate::Result<()> {
         Ok(())
+    }
+
+    pub fn brightness(&self, _payload: BrightnessRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn haptic(&self, _payload: HapticRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn thumb(&self, _payload: ThumbRequest) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::Value::Null)
     }
 }

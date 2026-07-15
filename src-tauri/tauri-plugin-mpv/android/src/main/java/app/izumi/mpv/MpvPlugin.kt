@@ -1,8 +1,16 @@
 package app.izumi.mpv
 
 import android.app.Activity
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.media.MediaMetadataRetriever
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.util.Base64
 import android.util.Log
+import java.io.ByteArrayOutputStream
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -39,6 +47,24 @@ class GetArgs {
 class SetArgs {
     var property: String = ""
     var value: String = ""
+}
+
+@InvokeArg
+class BrightnessArgs {
+    var value: Double = -1.0
+}
+
+@InvokeArg
+class HapticArgs {
+    var ms: Int = 20
+}
+
+@InvokeArg
+class ThumbArgs {
+    var url: String = ""
+    var headers: Map<String, String> = emptyMap()
+    var timeSec: Double = 0.0
+    var width: Int = 320
 }
 
 /**
@@ -164,6 +190,78 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             }
             invoke.resolve()
         }
+    }
+
+    /** Set window brightness (0..1), or -1 to restore system/auto. Must touch the window on UI thread. */
+    @Command
+    fun brightness(invoke: Invoke) {
+        val a = invoke.parseArgs(BrightnessArgs::class.java)
+        activity.runOnUiThread {
+            val lp = activity.window.attributes
+            lp.screenBrightness = if (a.value < 0) -1f else a.value.toFloat().coerceIn(0.01f, 1f)
+            activity.window.attributes = lp
+            invoke.resolve()
+        }
+    }
+
+    /** Fire a short haptic pulse (ms). Requires the VIBRATE permission (declared in the plugin manifest). */
+    @Command
+    fun haptic(invoke: Invoke) {
+        val a = invoke.parseArgs(HapticArgs::class.java)
+        val vib = if (Build.VERSION.SDK_INT >= 31) {
+            (activity.getSystemService(android.content.Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            activity.getSystemService(android.content.Context.VIBRATOR_SERVICE) as Vibrator
+        }
+        if (Build.VERSION.SDK_INT >= 26) {
+            vib.vibrate(VibrationEffect.createOneShot(a.ms.toLong(), VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vib.vibrate(a.ms.toLong())
+        }
+        invoke.resolve()
+    }
+
+    /** Extract a preview frame at `timeSec` via MediaMetadataRetriever. Off the UI thread — decoding
+     *  a network frame is slow. Resolves { value: dataUrl } or { value: null } when unsupported. */
+    @Command
+    fun thumb(invoke: Invoke) {
+        val a = invoke.parseArgs(ThumbArgs::class.java)
+        Thread {
+            val ret = JSObject()
+            try {
+                val mmr = MediaMetadataRetriever()
+                if (a.headers.isEmpty()) mmr.setDataSource(a.url, HashMap())
+                else mmr.setDataSource(a.url, HashMap(a.headers))
+                val us = (a.timeSec * 1_000_000L).toLong()
+                val bmp = if (Build.VERSION.SDK_INT >= 27) {
+                    mmr.getScaledFrameAtTime(
+                        us,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        a.width,
+                        a.width * 9 / 16,
+                    )
+                } else {
+                    mmr.getFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                }
+                mmr.release()
+                if (bmp != null) {
+                    val bos = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 70, bos)
+                    ret.put(
+                        "value",
+                        "data:image/jpeg;base64," + Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP),
+                    )
+                } else {
+                    ret.put("value", null as String?)
+                }
+            } catch (e: Exception) {
+                Log.w("MpvPlugin", "thumb failed: ${e.message}")
+                ret.put("value", null as String?)
+            }
+            invoke.resolve(ret)
+        }.start()
     }
 
     @Command

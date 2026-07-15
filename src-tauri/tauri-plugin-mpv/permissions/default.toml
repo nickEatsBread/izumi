@@ -9,6 +9,9 @@ permissions = [
     "allow-mpv-set",
     "allow-mpv-stop",
     "allow-mpv-pip",
+    "allow-mpv-brightness",
+    "allow-mpv-haptic",
+    "allow-mpv-thumb",
     "allow-registerListener",
     "allow-removeListener",
 ]

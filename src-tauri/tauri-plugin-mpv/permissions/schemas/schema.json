@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the mpv_brightness command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-brightness",
+          "markdownDescription": "Enables the mpv_brightness command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_brightness command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-brightness",
+          "markdownDescription": "Denies the mpv_brightness command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_command command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-command",
@@ -317,6 +329,18 @@
           "type": "string",
           "const": "deny-mpv-get",
           "markdownDescription": "Denies the mpv_get command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mpv_haptic command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-haptic",
+          "markdownDescription": "Enables the mpv_haptic command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_haptic command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-haptic",
+          "markdownDescription": "Denies the mpv_haptic command without any pre-configured scope."
         },
         {
           "description": "Enables the mpv_load command without any pre-configured scope.",
@@ -367,6 +391,18 @@
           "markdownDescription": "Denies the mpv_stop command without any pre-configured scope."
         },
         {
+          "description": "Enables the mpv_thumb command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-thumb",
+          "markdownDescription": "Enables the mpv_thumb command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_thumb command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-thumb",
+          "markdownDescription": "Denies the mpv_thumb command without any pre-configured scope."
+        },
+        {
           "description": "Enables the registerListener command without any pre-configured scope.",
           "type": "string",
           "const": "allow-registerListener",
@@ -391,10 +427,10 @@
           "markdownDescription": "Denies the removeListener command without any pre-configured scope."
         },
         {
-          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-registerListener`\n- `allow-removeListener`",
+          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-registerListener`\n- `allow-removeListener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-registerListener`\n- `allow-removeListener`"
+          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-registerListener`\n- `allow-removeListener`"
         }
       ]
     }

@@ -4,7 +4,10 @@ use tauri::{
     AppHandle, Runtime,
 };
 
-use crate::models::{CommandRequest, GetRequest, LoadRequest, SetRequest};
+use crate::models::{
+    BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
+    ThumbRequest,
+};
 
 #[cfg(target_os = "android")]
 const PLUGIN_IDENTIFIER: &str = "app.izumi.mpv";
@@ -47,5 +50,23 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn pip(&self) -> crate::Result<()> {
         self.0.run_mobile_plugin("pip", ()).map_err(Into::into)
+    }
+
+    pub fn brightness(&self, payload: BrightnessRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("brightness", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn haptic(&self, payload: HapticRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("haptic", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn thumb(&self, payload: ThumbRequest) -> crate::Result<serde_json::Value> {
+        self.0
+            .run_mobile_plugin("thumb", payload)
+            .map_err(Into::into)
     }
 }

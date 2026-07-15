@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { addPluginListener, type PluginListener } from '@tauri-apps/api/core'
-import { writable } from 'svelte/store'
+import { writable, get } from 'svelte/store'
 
 // Embedded libmpv player on Android (the "full" flavor). The plugin (plugin:mpv|*) only exists
 // when the app was built with the `android-mpv` Cargo feature; on the "lite" flavor these invokes
@@ -95,6 +95,7 @@ export async function mpvGet(property: string): Promise<string | null> {
 export async function mpvStop(): Promise<void> {
   await invoke('plugin:mpv|mpv_stop')
   mpvState.set({ pos: 0, dur: 0, paused: false, eof: false, buffering: false, cacheEnd: 0 })
+  androidStreamInfo.set(null)
 }
 
 /** Enter Android picture-in-picture. Video keeps rendering into the SurfaceView in the PIP window. */
@@ -155,3 +156,27 @@ export const setSpeed = (v: number) => mpvCommand(['set', 'speed', String(v)])
 /** mpv software volume, 0..100 (clamped). */
 export const setVolume = (v: number) => mpvCommand(['set', 'volume', String(Math.max(0, Math.min(100, Math.round(v))))])
 export const getVolume = async () => Number(await mpvGet('volume')) || 0
+
+// --- Native touch extras (embedded full flavor only; reject → caught no-op on lite) ---
+/** Screen brightness 0..1, or -1 to restore system/auto brightness. */
+export const setBrightness = (value: number) =>
+  invoke('plugin:mpv|mpv_brightness', { payload: { value } }).catch(() => {})
+/** Short haptic pulse (ms). */
+export const haptic = (ms: number) => invoke('plugin:mpv|mpv_haptic', { payload: { ms } }).catch(() => {})
+
+/** Current Android stream URL + headers, for the thumbnail frame source. Null when idle. */
+export const androidStreamInfo = writable<{ url: string; headers: Record<string, string> } | null>(null)
+
+/** Grab a preview frame (data URL) at `timeSec`, or null if this stream can't produce one. */
+export async function grabThumb(timeSec: number, width = 320): Promise<string | null> {
+  const info = get(androidStreamInfo)
+  if (!info) return null
+  try {
+    const r = (await invoke('plugin:mpv|mpv_thumb', {
+      payload: { url: info.url, headers: info.headers, timeSec, width },
+    })) as { value: string | null }
+    return r?.value ?? null
+  } catch {
+    return null
+  }
+}

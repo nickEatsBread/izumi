@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-brightness"
+description = "Enables the mpv_brightness command without any pre-configured scope."
+commands.allow = ["mpv_brightness"]
+
+[[permission]]
+identifier = "deny-mpv-brightness"
+description = "Denies the mpv_brightness command without any pre-configured scope."
+commands.deny = ["mpv_brightness"]

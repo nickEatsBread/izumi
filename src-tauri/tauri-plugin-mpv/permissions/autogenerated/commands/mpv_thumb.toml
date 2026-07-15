@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-thumb"
+description = "Enables the mpv_thumb command without any pre-configured scope."
+commands.allow = ["mpv_thumb"]
+
+[[permission]]
+identifier = "deny-mpv-thumb"
+description = "Denies the mpv_thumb command without any pre-configured scope."
+commands.deny = ["mpv_thumb"]
