@@ -1,8 +1,15 @@
 <script lang="ts">
   // Touch-first overlay for the embedded Android libmpv player. Renders over the transparent
   // webview (video is the SurfaceView behind). Reuses izumi's play/track/aniskip plumbing.
+  //
+  // Interaction model (see docs/superpowers/specs/2026-07-15-android-player-rebuild-design.md):
+  //   left/right thirds  — double-tap seek (by the seek-duration setting), vertical swipe = brightness/volume
+  //   center             — single tap toggles controls, hold = temporary 2× speed
+  //   horizontal drag    — live scrub anywhere over the video
+  // A pure recognizer (android-gestures.ts) classifies each pointer stream; this component wires
+  // its verdicts to mpv/native calls.
   import { onMount } from 'svelte'
-  import { scale } from 'svelte/transition'
+  import { scale, fade } from 'svelte/transition'
   import {
     mpvState,
     androidMpvActive,
@@ -10,6 +17,12 @@
     mpvCommand,
     togglePause,
     seekAbsolute,
+    seekKeyframe,
+    setBrightness,
+    setVolume,
+    getVolume,
+    haptic,
+    grabThumb,
     mpvPip,
     getTracks,
     getChapters,
@@ -17,9 +30,10 @@
     setSubTrack,
     type MpvTrack,
   } from '$lib/player/android-mpv'
+  import { zoneOf, classifyDrag, accumulateSeek, HOLD_MS, DOUBLE_TAP_MS } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen } from '$lib/player/session'
   import { commentsEnabled } from '$lib/comments'
-  import { autoSkip } from '$lib/settings/ui'
+  import { autoSkip, seekDuration, scrubThumbnails } from '$lib/settings/ui'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { playNext, playPrev, playEpisode, finalizeAndroidWatch } from '$lib/stremio/play'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
@@ -34,10 +48,11 @@
   import Gauge from 'lucide-svelte/icons/gauge'
   import MessageSquare from 'lucide-svelte/icons/message-square'
   import Lock from 'lucide-svelte/icons/lock'
-  import Unlock from 'lucide-svelte/icons/lock-open'
   import Ratio from 'lucide-svelte/icons/ratio'
   import Layers from 'lucide-svelte/icons/layers'
   import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
+  import Sun from 'lucide-svelte/icons/sun'
+  import Volume2 from 'lucide-svelte/icons/volume-2'
 
   let controlsShown = $state(true)
   let scrubbing = $state(false)
@@ -45,6 +60,7 @@
   let locked = $state(false)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
   let barEl: HTMLElement | undefined = $state()
+  let rootEl: HTMLElement | undefined = $state()
 
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
@@ -68,8 +84,10 @@
     if (dur > 0 && key !== segKey) {
       segKey = key
       autoSkipped = new Set()
+      thumbCache.clear() // new file → drop cached preview frames
       getSkipSegments(np.malId, np.episode, dur).then((s) => (segments = s))
       getChapters().then((c) => (chapters = c))
+      getVolume().then((v) => { if (v > 0) volumeLevel = v }) // seed the volume shadow from mpv
     }
   })
   $effect(() => {
@@ -92,41 +110,144 @@
   function toggleControls() { controlsShown = !controlsShown; if (controlsShown) armHide() }
   $effect(() => { if (paused) { clearTimeout(hideTimer); controlsShown = true } else if (controlsShown) armHide() })
 
-  // --- Seek bar (draggable) ---
+  // --- Seek preview: one throttled keyframe seek per frame while dragging, exact seek on release ---
   function fracFromX(clientX: number) {
     if (!barEl) return 0
     const r = barEl.getBoundingClientRect()
     return Math.max(0, Math.min(1, (clientX - r.left) / r.width))
   }
-  function onBarDown(e: PointerEvent) { e.stopPropagation(); scrubbing = true; scrubPos = fracFromX(e.clientX) * dur; barEl?.setPointerCapture(e.pointerId); showControls() }
-  function onBarMove(e: PointerEvent) { if (scrubbing) scrubPos = fracFromX(e.clientX) * dur }
-  function onBarUp(e: PointerEvent) { if (!scrubbing) return; seekAbsolute(scrubPos); scrubbing = false; try { barEl?.releasePointerCapture(e.pointerId) } catch { /* ignore */ } armHide() }
+  let rafId = 0
+  let rafTarget = 0
+  function schedulePreview(sec: number) {
+    rafTarget = Math.max(0, dur > 0 ? Math.min(dur, sec) : sec)
+    scrubPos = rafTarget
+    if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; if (dur > 0) seekKeyframe(rafTarget) })
+  }
+  function endScrub() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0 }
+    seekAbsolute(scrubPos) // land precisely
+    scrubbing = false
+  }
+  function onBarDown(e: PointerEvent) {
+    e.stopPropagation(); scrubbing = true; scrubPos = fracFromX(e.clientX) * dur
+    barEl?.setPointerCapture(e.pointerId); showControls()
+  }
+  function onBarMove(e: PointerEvent) { if (scrubbing) schedulePreview(fracFromX(e.clientX) * dur) }
+  function onBarUp(e: PointerEvent) {
+    if (!scrubbing) return
+    endScrub()
+    try { barEl?.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
+    armHide()
+  }
 
   function skip(delta: number) {
     const target = Math.max(0, $mpvState.pos + delta)
     seekAbsolute(dur > 0 ? Math.min(dur, target) : target)
   }
 
-  // --- Double-tap seek ---
+  // --- Scrub thumbnail preview (debounced + cached, best-effort; falls back to the time bubble) ---
+  let thumbUrl = $state<string | null>(null)
+  let thumbDebounce: ReturnType<typeof setTimeout> | undefined
+  const thumbCache = new Map<number, string | null>()
+  const THUMB_BUCKET = 10 // seconds per cached frame
+  function requestThumb(sec: number) {
+    if (!$scrubThumbnails || dur <= 0) { thumbUrl = null; return }
+    const bucket = Math.floor(sec / THUMB_BUCKET)
+    if (thumbCache.has(bucket)) { thumbUrl = thumbCache.get(bucket) ?? null; return }
+    clearTimeout(thumbDebounce)
+    thumbDebounce = setTimeout(async () => {
+      const url = await grabThumb(bucket * THUMB_BUCKET)
+      thumbCache.set(bucket, url)
+      if (scrubbing) thumbUrl = url
+    }, 150)
+  }
+  $effect(() => { if (scrubbing) requestThumb(scrubPos); else thumbUrl = null })
+
+  // --- Double-tap seek (accumulating, honors the seek-duration setting) ---
   let tapTimer: ReturnType<typeof setTimeout> | undefined
   let flashTimer: ReturnType<typeof setTimeout> | undefined
   let seekFlash = $state<{ side: 'l' | 'r'; amt: number } | null>(null)
   function zoneTap(side: 'l' | 'c' | 'r') {
     if (side === 'c') { toggleControls(); return }
-    if (tapTimer) {
+    if (tapTimer) { // second tap of a pair → seek
       clearTimeout(tapTimer); tapTimer = undefined
-      skip(side === 'l' ? -10 : 10)
-      const amt = (seekFlash?.side === side ? seekFlash.amt : 0) + 10
-      seekFlash = { side, amt }
+      const step = $seekDuration
+      skip(side === 'l' ? -step : step)
+      const acc = accumulateSeek(seekFlash ? { dir: seekFlash.side, amt: seekFlash.amt } : null, side, step)
+      seekFlash = { side: acc.dir, amt: acc.amt }
+      haptic(20)
       clearTimeout(flashTimer); flashTimer = setTimeout(() => (seekFlash = null), 650)
-    } else {
-      tapTimer = setTimeout(() => { tapTimer = undefined; toggleControls() }, 260)
+    } else { // first tap → reveal immediately, then wait to see if a second tap lands
+      toggleControls()
+      tapTimer = setTimeout(() => { tapTimer = undefined }, DOUBLE_TAP_MS)
     }
   }
-  function onTap(e: MouseEvent) {
+  function onTap(e: PointerEvent) {
     if (locked) { showLockToggle(); return }
     const w = window.innerWidth
     zoneTap(e.clientX < w / 3 ? 'l' : e.clientX > (2 * w) / 3 ? 'r' : 'c')
+  }
+
+  // --- Whole-surface gesture layer: tap / double-tap / swipe brightness+volume / hold-2× / scrub ---
+  type GestureKind = 'scrub' | 'brightness' | 'volume' | 'hold' | 'none' | null
+  let gesture = $state<GestureKind>(null)
+  let startSample = { x: 0, y: 0, t: 0 }
+  let lastSample = { x: 0, y: 0, t: 0 }
+  let scrubStartPos = 0
+  let holdTimer: ReturnType<typeof setTimeout> | undefined
+  let heldSpeed = false
+  const VIDEO_SCRUB_SPAN = 90 // seconds spanned by a full-width horizontal drag over the video
+
+  let brightnessLevel = $state(1) // 0..1 shadow of the window brightness
+  let volumeLevel = $state(100) // 0..100
+  let hud = $state<{ icon: 'brightness' | 'volume'; pct: number } | null>(null)
+  let hudTimer: ReturnType<typeof setTimeout> | undefined
+  function showHud(icon: 'brightness' | 'volume', pct: number) {
+    hud = { icon, pct: Math.round(pct) }
+    clearTimeout(hudTimer); hudTimer = setTimeout(() => (hud = null), 700)
+  }
+  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
+
+  function onRootDown(e: PointerEvent) {
+    if (locked) return
+    rootEl?.setPointerCapture?.(e.pointerId)
+    startSample = { x: e.clientX, y: e.clientY, t: e.timeStamp }
+    lastSample = { ...startSample }
+    gesture = null
+    holdTimer = setTimeout(() => { // press-and-hold in the center → temporary 2×
+      if (gesture === null && zoneOf(startSample.x, window.innerWidth) === 'c') {
+        gesture = 'hold'; heldSpeed = true; mpvCommand(['set', 'speed', '2']); flashToast('2× speed'); haptic(15)
+      }
+    }, HOLD_MS)
+  }
+  function onRootMove(e: PointerEvent) {
+    if (locked || gesture === 'hold') return
+    const cur = { x: e.clientX, y: e.clientY, t: e.timeStamp }
+    if (gesture === null) {
+      const g = classifyDrag(startSample, cur, window.innerWidth, window.innerHeight)
+      if (g.kind === 'pending') return
+      clearTimeout(holdTimer)
+      gesture = g.kind === 'scrub' || g.kind === 'brightness' || g.kind === 'volume' ? g.kind : 'none'
+      lastSample = { ...startSample }
+      if (gesture === 'scrub') { scrubbing = true; scrubStartPos = $mpvState.pos; showControls() }
+    }
+    if (gesture === 'brightness') {
+      brightnessLevel = clamp(brightnessLevel - (cur.y - lastSample.y) / window.innerHeight, 0, 1)
+      setBrightness(brightnessLevel); showHud('brightness', brightnessLevel * 100); lastSample = cur
+    } else if (gesture === 'volume') {
+      volumeLevel = clamp(volumeLevel - ((cur.y - lastSample.y) / window.innerHeight) * 100, 0, 100)
+      setVolume(volumeLevel); showHud('volume', volumeLevel); lastSample = cur
+    } else if (gesture === 'scrub') {
+      schedulePreview(scrubStartPos + ((cur.x - startSample.x) / window.innerWidth) * VIDEO_SCRUB_SPAN)
+    }
+  }
+  function onRootUp(e: PointerEvent) {
+    clearTimeout(holdTimer)
+    if (heldSpeed) { heldSpeed = false; mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
+    if (gesture === 'scrub') { endScrub(); armHide() }
+    else if (gesture === null) onTap(e) // no drag happened → treat as a tap
+    gesture = null
+    try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
   }
 
   // --- Lock ---
@@ -182,10 +303,19 @@
     androidMpvActive.set(false)
   }
 
-  onMount(() => { armHide(); return () => { clearTimeout(hideTimer); clearTimeout(tapTimer); clearTimeout(flashTimer); clearTimeout(lockToggleTimer); clearTimeout(toastTimer) } })
+  onMount(() => {
+    armHide()
+    return () => {
+      clearTimeout(hideTimer); clearTimeout(tapTimer); clearTimeout(flashTimer)
+      clearTimeout(lockToggleTimer); clearTimeout(toastTimer); clearTimeout(hudTimer)
+      clearTimeout(holdTimer); clearTimeout(thumbDebounce)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
+  })
 </script>
 
-<div class="fixed inset-0 z-50 select-none text-white" class:hidden={overlayHidden} onclick={onTap} role="presentation">
+<div bind:this={rootEl} class="fixed inset-0 z-50 select-none touch-none text-white" class:hidden={overlayHidden}
+     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootUp} role="presentation">
   {#if loading}
     <div class="pointer-events-none absolute inset-0 grid place-items-center"><Loader size={52} class="animate-spin text-white/90" /></div>
   {/if}
@@ -199,24 +329,32 @@
     </div>
   {/if}
 
+  {#if hud}
+    <div class="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 rounded-full bg-black/55 px-5 py-3 backdrop-blur">
+      {#if hud.icon === 'brightness'}<Sun size={22} />{:else}<Volume2 size={22} />{/if}
+      <div class="h-1.5 w-32 overflow-hidden rounded-full bg-white/25"><div class="h-full bg-white" style="width:{hud.pct}%"></div></div>
+      <span class="w-8 text-right text-sm font-bold tabular-nums">{hud.pct}</span>
+    </div>
+  {/if}
+
   {#if toast}
     <div class="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/60 px-5 py-2.5 text-sm font-bold backdrop-blur">{toast}</div>
   {/if}
 
   {#if currentSeg && !($autoSkip && !autoSkipped.has(currentSeg.start))}
-    <button onclick={(e) => { e.stopPropagation(); skipSegment() }} class="absolute bottom-32 right-4 z-10 rounded-lg bg-white/90 px-4 py-2.5 text-sm font-bold text-black shadow-lg">Skip {currentSeg.label}</button>
+    <button transition:fade={{ duration: 180 }} onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skipSegment() }} class="absolute bottom-32 right-4 z-10 rounded-lg bg-white/90 px-4 py-2.5 text-sm font-bold text-black shadow-lg">Skip {currentSeg.label}</button>
   {/if}
 
   <!-- Locked: only an unlock affordance -->
   {#if locked}
     {#if lockToggleShown}
-      <button onclick={(e) => { e.stopPropagation(); toggleLock() }} class="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 grid h-14 w-14 place-items-center rounded-full bg-black/50 backdrop-blur" aria-label="Unlock"><Lock size={24} /></button>
+      <button onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); toggleLock() }} class="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 grid h-14 w-14 place-items-center rounded-full bg-black/50 backdrop-blur" aria-label="Unlock"><Lock size={24} /></button>
     {/if}
   {:else if controlsShown}
-    <div class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/75"></div>
+    <div transition:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/75"></div>
 
     <!-- Top bar -->
-    <div class="absolute inset-x-0 top-0 flex items-center gap-2 p-3 pt-[calc(env(safe-area-inset-top)+0.5rem)]" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div transition:fade={{ duration: 180 }} class="absolute inset-x-0 top-0 flex items-center gap-2 p-3 pt-[calc(env(safe-area-inset-top)+0.5rem)]" onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
       <button onclick={close} class="grid h-11 w-11 shrink-0 place-items-center rounded-full" aria-label="Back"><ChevronLeft size={28} /></button>
       <div class="min-w-0 flex-1">
         <div class="truncate text-base font-bold">{np.animeTitle ?? np.title}</div>
@@ -230,21 +368,21 @@
 
     <!-- Center transport (morphing play/pause) -->
     {#if !loading}
-      <div class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
-        <button onclick={(e) => { e.stopPropagation(); skip(-10) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Back 10s"><RotateCcw size={30} /></button>
-        <button onclick={(e) => { e.stopPropagation(); togglePause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={paused ? 'Play' : 'Pause'}>
+      <div transition:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
+        <button onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
+        <button onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); togglePause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={paused ? 'Play' : 'Pause'}>
           {#key paused}
             <span in:scale={{ duration: 160, start: 0.5 }} class="grid place-items-center">
               {#if paused}<Play size={38} class="ml-1" fill="currentColor" />{:else}<Pause size={38} fill="currentColor" />{/if}
             </span>
           {/key}
         </button>
-        <button onclick={(e) => { e.stopPropagation(); skip(10) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Forward 10s"><RotateCw size={30} /></button>
+        <button onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip($seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Forward"><RotateCw size={30} /></button>
       </div>
     {/if}
 
     <!-- Bottom: seek + labeled action row -->
-    <div class="absolute inset-x-0 bottom-0 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div transition:fade={{ duration: 180 }} class="absolute inset-x-0 bottom-0 px-4 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2" onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="mb-2 flex items-center gap-3">
         <span class="w-14 text-right text-xs tabular-nums text-white/80">{fmt(pos)}</span>
         <div bind:this={barEl} class="relative h-7 flex-1 cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp}
@@ -258,6 +396,12 @@
           </div>
           {#each chapters as c (c)}<div class="absolute top-1/2 h-1 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
           <div class="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-theme shadow-md" style="left:{playedPct}%"></div>
+          {#if scrubbing}
+            <div class="pointer-events-none absolute bottom-6 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
+              {#if thumbUrl}<img src={thumbUrl} alt="" class="h-20 w-36 rounded-md border border-white/20 object-cover shadow-lg" />{/if}
+              <span class="rounded bg-black/80 px-2 py-0.5 text-xs font-bold tabular-nums">{fmt(pos)}</span>
+            </div>
+          {/if}
         </div>
         <span class="w-14 text-xs tabular-nums text-white/80">{fmt(dur)}</span>
       </div>
@@ -275,8 +419,8 @@
 
   <!-- Sheets -->
   {#if sheet}
-    <div class="absolute inset-0 z-10 bg-black/50" onclick={(e) => { e.stopPropagation(); sheet = null }} role="presentation"></div>
-    <div class="absolute inset-x-0 bottom-0 z-20 rounded-t-2xl bg-neutral-900 pb-[calc(env(safe-area-inset-bottom)+1rem)]" style="transform:translateY({sheetDrag}px)" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div class="absolute inset-0 z-10 bg-black/50" onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); sheet = null }} role="presentation"></div>
+    <div class="absolute inset-x-0 bottom-0 z-20 rounded-t-2xl bg-neutral-900 pb-[calc(env(safe-area-inset-bottom)+1rem)]" style="transform:translateY({sheetDrag}px)" onpointerdown={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
       <!-- drag handle (only this dismisses on swipe, so the list scrolls normally) -->
       <div class="cursor-grab py-3 touch-none" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} role="presentation">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>

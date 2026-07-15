@@ -28,7 +28,7 @@ import { fillerEpisodes } from '$lib/anime/filler'
 import { title, cover } from '$lib/anilist/media'
 import { isAndroid } from '$lib/platform'
 import { playViaIntent } from '$lib/player/android-playback'
-import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents } from '$lib/player/android-mpv'
+import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
@@ -715,6 +715,8 @@ export async function playStream(media: Media, episode: number | undefined, stre
         ]
         await startMpvEvents()
         await mpvLoad({ url: stream.url, title: label, startPos: startSeconds || 0, subtitles: subs })
+        // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
+        androidStreamInfo.set({ url: stream.url, headers: (stream.__stream ? stream.__headers : undefined) ?? {} })
         androidMpvActive.set(true)
         onState({ status: 'playing' })
         if (episode != null) attachAndroid(media, episode, onState)
