@@ -1678,10 +1678,12 @@ pub fn run() {
         .manage(TacVerificationConfig::default())
         .manage(FsWasMax::default())
         .setup(|app| {
-            // Iroh opens persistent stores and establishes its relay/discovery state
-            // asynchronously. Keep native window creation responsive while it starts.
+            // Restore iroh only for devices that already opted into a sync group. Fresh
+            // installs remain fully offline until the user enables Device Sync explicitly.
             let sync_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move { sync::initialize(sync_app).await });
+            tauri::async_runtime::spawn(async move {
+                sync::initialize_if_configured(sync_app).await
+            });
 
             // Create the desktop main window HERE (not in tauri.conf.json) so we can attach an
             // on_new_window handler. Tauri denies `window.open` by default, which silently blocks the
@@ -2154,6 +2156,8 @@ pub fn run() {
             download::download_dir_default,
             download::reveal_in_folder,
             sync::sync_status,
+            sync::sync_enable,
+            sync::sync_disable,
             sync::sync_create,
             sync::sync_join,
             sync::sync_nearby_list,
@@ -2181,6 +2185,8 @@ pub fn run() {
         download::download_dir_default,
         download::reveal_in_folder,
         sync::sync_status,
+        sync::sync_enable,
+        sync::sync_disable,
         sync::sync_create,
         sync::sync_join,
         sync::sync_nearby_list,

@@ -33,6 +33,7 @@ use n0_future::StreamExt;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use swarm_discovery::{Discoverer, IpClass, Peer};
 use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_extplayer::{ExtPlayerExt, LanDiscoveryRequest};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     sync::{mpsc, oneshot, Mutex},
@@ -55,6 +56,7 @@ pub struct SyncState {
 #[derive(Default)]
 enum RuntimeState {
     #[default]
+    Disabled,
     Starting,
     Ready(SyncRuntime),
     Failed(String),
@@ -65,8 +67,7 @@ struct SyncRuntime {
     #[allow(dead_code)]
     router: Router,
     endpoint: Endpoint,
-    #[allow(dead_code)]
-    nearby_discovery: JoinHandle<()>,
+    nearby_discovery: NearbyDiscovery,
     pairing: Arc<PairingHub>,
     store: FsStore,
     docs: Docs,
@@ -81,6 +82,7 @@ struct SyncRuntime {
 #[derive(Serialize)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum Status {
+    Disabled,
     Starting,
     Failed {
         error: String,
@@ -91,6 +93,26 @@ pub enum Status {
         paired: bool,
         ticket: Option<String>,
     },
+}
+
+struct NearbyDiscovery {
+    #[allow(dead_code)]
+    task: JoinHandle<()>,
+    control_tx: mpsc::UnboundedSender<DiscoveryControl>,
+}
+
+enum DiscoveryControl {
+    AdvertiseUntil(Instant),
+    Stop(oneshot::Sender<()>),
+}
+
+impl NearbyDiscovery {
+    async fn stop_advertising(&self) {
+        let (done_tx, done_rx) = oneshot::channel();
+        if self.control_tx.send(DiscoveryControl::Stop(done_tx)).is_ok() {
+            let _ = tokio::time::timeout(Duration::from_secs(1), done_rx).await;
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -360,6 +382,10 @@ fn retain_recent_nearby(nearby: &mut HashMap<EndpointId, NearbyPeer>) {
     nearby.retain(|_, peer| peer.seen >= cutoff);
 }
 
+fn advertisement_active(until: Option<Instant>, now: Instant) -> bool {
+    until.is_some_and(|until| until > now)
+}
+
 /// Encode the 32-byte endpoint identity into one DNS-safe label.
 ///
 /// Iroh displays endpoint IDs as 64 hex characters, but an mDNS label may be
@@ -436,13 +462,14 @@ fn publish_endpoint_addr(discovery: &swarm_discovery::DropGuard, addr: &Endpoint
 async fn start_nearby_discovery(
     endpoint: Endpoint,
     pairing: Arc<PairingHub>,
-) -> Result<JoinHandle<()>> {
+) -> Result<NearbyDiscovery> {
     let monitor = netwatch::netmon::Monitor::new()
         .await
         .context("failed to monitor network interfaces for nearby pairing")?;
     let mut interface_watch = monitor.interface_state();
     let initial_interfaces = active_multicast_interfaces(&interface_watch.get());
     let (peer_tx, mut peer_rx) = mpsc::unbounded_channel::<(String, Peer)>();
+    let (control_tx, mut control_rx) = mpsc::unbounded_channel::<DiscoveryControl>();
 
     let discovery = Discoverer::new_interactive(
         PAIR_MDNS_SERVICE.to_string(),
@@ -460,11 +487,39 @@ async fn start_nearby_discovery(
     let mut interface_stream = interface_watch.stream_updates_only();
     let mut endpoint_addr_stream = endpoint.watch_addr().stream();
     let endpoint_closed = endpoint.closed();
+    let mut expiry_tick = tokio::time::interval(Duration::from_secs(1));
     let task = tokio::spawn(async move {
+        let mut latest_addr = None;
+        let mut advertise_until = None;
         tokio::pin!(endpoint_closed);
         loop {
             tokio::select! {
                 _ = &mut endpoint_closed => break,
+                Some(control) = control_rx.recv() => {
+                    match control {
+                        DiscoveryControl::AdvertiseUntil(until) => {
+                            advertise_until = Some(until);
+                            if let Some(addr) = &latest_addr {
+                                publish_endpoint_addr(&discovery, addr);
+                            }
+                        }
+                        DiscoveryControl::Stop(done) => {
+                            advertise_until = None;
+                            discovery.remove_all();
+                            discovery.remove_txt_attribute("relay".to_string());
+                            let _ = done.send(());
+                        }
+                    }
+                }
+                _ = expiry_tick.tick() => {
+                    if advertise_until.is_some()
+                        && !advertisement_active(advertise_until, Instant::now())
+                    {
+                        advertise_until = None;
+                        discovery.remove_all();
+                        discovery.remove_txt_attribute("relay".to_string());
+                    }
+                }
                 Some((peer_id, peer)) = peer_rx.recv() => {
                     let Some(endpoint_id) = endpoint_id_from_discovery_peer_id(&peer_id) else {
                         eprintln!("[sync] ignored invalid nearby endpoint identity: {peer_id}");
@@ -489,13 +544,22 @@ async fn start_nearby_discovery(
                     interfaces = current;
                 }
                 Some(addr) = endpoint_addr_stream.next() => {
-                    publish_endpoint_addr(&discovery, &addr);
+                    latest_addr = Some(addr);
+                    if advertisement_active(advertise_until, Instant::now()) {
+                        publish_endpoint_addr(
+                            &discovery,
+                            latest_addr.as_ref().expect("address was just stored"),
+                        );
+                    }
                 }
                 else => break,
             }
         }
     });
-    Ok(task)
+    Ok(NearbyDiscovery {
+        task,
+        control_tx,
+    })
 }
 
 impl ProtocolHandler for PairingProtocol {
@@ -679,38 +743,85 @@ async fn load_secret_key(path: &Path) -> Result<SecretKey> {
     Ok(key)
 }
 
-pub async fn initialize(app: AppHandle) {
-    let state = app.state::<SyncState>();
-    let result = async {
-        let root = app.path().app_data_dir()?.join("iroh-sync");
-        let mut runtime = SyncRuntime::new(root, app.clone()).await?;
-        if let Err(error) = runtime.restore(app.clone()).await {
-            // A stale or corrupt ticket must not brick the service. Keep the
-            // endpoint usable and let the user form or join a new group.
-            eprintln!("[sync] could not restore saved group: {error:#}");
-            if let Some(task) = runtime.events.take() {
-                task.abort();
-            }
-            runtime.doc = None;
-            runtime.ticket = None;
-            runtime.pairing.set_ticket(None).await;
-            let _ = tokio::fs::remove_file(runtime.root.join("sync-ticket")).await;
+async fn build_runtime(app: AppHandle) -> Result<SyncRuntime> {
+    let root = app.path().app_data_dir()?.join("iroh-sync");
+    let mut runtime = SyncRuntime::new(root, app.clone()).await?;
+    if let Err(error) = runtime.restore(app.clone()).await {
+        // A stale or corrupt ticket must not brick the service. Keep the
+        // endpoint usable and let the user form or join a new group.
+        eprintln!("[sync] could not restore saved group: {error:#}");
+        if let Some(task) = runtime.events.take() {
+            task.abort();
         }
-        Ok::<_, anyhow::Error>(runtime)
+        runtime.doc = None;
+        runtime.ticket = None;
+        runtime.pairing.set_ticket(None).await;
+        let _ = tokio::fs::remove_file(runtime.root.join("sync-ticket")).await;
+    }
+    Ok(runtime)
+}
+
+async fn enable_runtime(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<SyncState>();
+    {
+        let mut guard = state.inner.lock().await;
+        match &*guard {
+            RuntimeState::Ready(_) => return Ok(()),
+            RuntimeState::Starting => return Err("sync is still starting".into()),
+            RuntimeState::Disabled | RuntimeState::Failed(_) => {
+                *guard = RuntimeState::Starting;
+            }
+        }
+    }
+
+    let result = async {
+        app.extplayer()
+            .set_lan_discovery(LanDiscoveryRequest { enabled: true })
+            .context("failed to enable LAN discovery")?;
+        build_runtime(app.clone()).await
     }
     .await;
 
-    let mut guard = state.inner.lock().await;
-    *guard = match result {
-        Ok(runtime) => RuntimeState::Ready(runtime),
-        Err(error) => RuntimeState::Failed(format!("{error:#}")),
-    };
+    let error = result.as_ref().err().map(|error| format!("{error:#}"));
+    {
+        let mut guard = state.inner.lock().await;
+        *guard = match result {
+            Ok(runtime) => RuntimeState::Ready(runtime),
+            Err(error) => RuntimeState::Failed(format!("{error:#}")),
+        };
+    }
+    if error.is_some() {
+        let _ = app
+            .extplayer()
+            .set_lan_discovery(LanDiscoveryRequest { enabled: false });
+    }
     let _ = app.emit("iroh-sync-ready", ());
+    error.map_or(Ok(()), Err)
+}
+
+/// Restore iroh only for users who previously opted into a sync group. A fresh
+/// install has no ticket and therefore opens no endpoint, relay, or mDNS socket.
+pub async fn initialize_if_configured(app: AppHandle) {
+    let Ok(root) = app.path().app_data_dir() else {
+        return;
+    };
+    if tokio::fs::try_exists(root.join("iroh-sync").join("sync-ticket"))
+        .await
+        .unwrap_or(false)
+    {
+        let _ = enable_runtime(app).await;
+    }
+}
+
+#[tauri::command]
+pub async fn sync_enable(app: AppHandle) -> Result<(), String> {
+    enable_runtime(app).await
 }
 
 #[tauri::command]
 pub async fn sync_status(state: tauri::State<'_, SyncState>) -> Result<Status, String> {
     Ok(match &*state.inner.lock().await {
+        RuntimeState::Disabled => Status::Disabled,
         RuntimeState::Starting => Status::Starting,
         RuntimeState::Failed(error) => Status::Failed {
             error: error.clone(),
@@ -788,14 +899,21 @@ pub async fn sync_nearby_list(
 pub async fn sync_pairing_open(
     state: tauri::State<'_, SyncState>,
 ) -> Result<PairingWindow, String> {
-    let pairing = {
+    let (pairing, control_tx) = {
         let guard = state.inner.lock().await;
         let RuntimeState::Ready(runtime) = &*guard else {
             return Err("sync is not ready".into());
         };
-        runtime.pairing.clone()
+        (
+            runtime.pairing.clone(),
+            runtime.nearby_discovery.control_tx.clone(),
+        )
     };
-    pairing.open().await.map_err(|error| error.to_string())
+    let window = pairing.open().await.map_err(|error| error.to_string())?;
+    let _ = control_tx.send(DiscoveryControl::AdvertiseUntil(
+        Instant::now() + PAIRING_WINDOW,
+    ));
+    Ok(window)
 }
 
 #[tauri::command]
@@ -913,10 +1031,51 @@ pub async fn sync_pair_nearby(
 }
 
 #[tauri::command]
-pub async fn sync_leave(state: tauri::State<'_, SyncState>) -> Result<(), String> {
-    let mut guard = state.inner.lock().await;
-    let RuntimeState::Ready(runtime) = &mut *guard else {
-        return Err("sync is not ready".into());
+pub async fn sync_disable(
+    app: AppHandle,
+    state: tauri::State<'_, SyncState>,
+) -> Result<(), String> {
+    let runtime = {
+        let mut guard = state.inner.lock().await;
+        match &*guard {
+            RuntimeState::Disabled => None,
+            RuntimeState::Starting => return Err("sync is still starting".into()),
+            RuntimeState::Ready(runtime) if runtime.doc.is_some() => {
+                return Err("Leave the sync group before disabling device sync".into());
+            }
+            RuntimeState::Ready(_) => match std::mem::replace(&mut *guard, RuntimeState::Disabled) {
+                RuntimeState::Ready(runtime) => Some(runtime),
+                _ => unreachable!("state was checked while locked"),
+            },
+            RuntimeState::Failed(_) => {
+                *guard = RuntimeState::Disabled;
+                None
+            }
+        }
+    };
+    if let Some(runtime) = &runtime {
+        runtime.nearby_discovery.stop_advertising().await;
+    }
+    drop(runtime);
+    app.extplayer()
+        .set_lan_discovery(LanDiscoveryRequest { enabled: false })
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn sync_leave(
+    app: AppHandle,
+    state: tauri::State<'_, SyncState>,
+) -> Result<(), String> {
+    let mut runtime = {
+        let mut guard = state.inner.lock().await;
+        match std::mem::replace(&mut *guard, RuntimeState::Disabled) {
+            RuntimeState::Ready(runtime) => runtime,
+            other => {
+                *guard = other;
+                return Err("sync is not ready".into());
+            }
+        }
     };
     if let Some(task) = runtime.events.take() {
         task.abort();
@@ -926,11 +1085,17 @@ pub async fn sync_leave(state: tauri::State<'_, SyncState>) -> Result<(), String
     }
     runtime.ticket = None;
     runtime.pairing.set_ticket(None).await;
-    match tokio::fs::remove_file(runtime.root.join("sync-ticket")).await {
+    runtime.nearby_discovery.stop_advertising().await;
+    let remove_result = match tokio::fs::remove_file(runtime.root.join("sync-ticket")).await {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.to_string()),
-    }
+    };
+    drop(runtime);
+    app.extplayer()
+        .set_lan_discovery(LanDiscoveryRequest { enabled: false })
+        .map_err(|error| error.to_string())?;
+    remove_result
 }
 
 #[tauri::command]
@@ -1036,6 +1201,26 @@ mod tests {
     #[test]
     fn invalid_discovery_peer_id_is_rejected() {
         assert_eq!(endpoint_id_from_discovery_peer_id("not-an-endpoint"), None);
+    }
+
+    #[test]
+    fn discovery_advertisement_requires_an_active_window() {
+        let now = Instant::now();
+        assert!(!advertisement_active(None, now));
+        assert!(!advertisement_active(Some(now), now));
+        assert!(advertisement_active(
+            Some(now + Duration::from_secs(1)),
+            now
+        ));
+    }
+
+    #[test]
+    fn sync_runtime_defaults_to_disabled() {
+        let state = SyncState::default();
+        assert!(matches!(
+            *state.inner.try_lock().expect("state should be unlocked"),
+            RuntimeState::Disabled
+        ));
     }
 
     #[tokio::test]

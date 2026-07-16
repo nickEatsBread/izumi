@@ -9,7 +9,7 @@
   import Upload from 'lucide-svelte/icons/upload'
   import { copyToClipboard } from '$lib/util/clipboard'
   import {
-    createSyncGroup, getSyncStatus, joinSyncGroup, leaveSyncGroup,
+    createSyncGroup, disableDeviceSync, enableDeviceSync, getSyncStatus, joinSyncGroup, leaveSyncGroup,
     joinNearbyDevice, listNearbyDevices, openNearbyPairing, respondToPairRequest,
     listManualDevices, pullWatchProgress, pushWatchProgress,
     receiveManualSnapshot, sendManualSnapshot, syncDeviceName,
@@ -40,6 +40,8 @@
     try {
       status = await getSyncStatus()
       if (status.state === 'ready' && status.paired) devices = await listManualDevices()
+      if (status.state === 'ready' && !status.paired) await refreshNearby()
+      if (status.state !== 'ready') nearby = []
     } catch (e) { error = String(e) }
   }
 
@@ -57,6 +59,21 @@
       joinTicket = ''
       await pullWatchProgress()
       message = 'Paired. This device will now reconnect automatically.'
+    })
+  }
+
+  function enable() {
+    void action('enable', async () => {
+      await enableDeviceSync()
+      message = 'Device sync is enabled on this device.'
+    })
+  }
+
+  function disable() {
+    void action('disable', async () => {
+      await disableDeviceSync()
+      nearby = []
+      message = 'Device sync is off. Izumi is no longer listening or discoverable.'
     })
   }
 
@@ -130,7 +147,6 @@
 
   onMount(() => {
     void refresh()
-    void refreshNearby()
     const poll = setInterval(() => { if (status.state === 'starting') void refresh() }, 1200)
     const clock = setInterval(() => (now = Date.now()), 1000)
     const unsubs = [
@@ -154,9 +170,22 @@
 
   {#if status.state === 'starting'}
     <div class="max-w-2xl rounded-md border border-border p-4 text-sm text-muted-foreground">Starting the secure sync service…</div>
+  {:else if status.state === 'disabled'}
+    <section class="max-w-2xl rounded-md border border-border p-4">
+      <h3 class="font-bold">Device sync is off</h3>
+      <p class="mt-1 text-sm text-muted-foreground">
+        Izumi does not start iroh, contact a relay, listen for peers, or advertise this device until you enable it.
+      </p>
+      <button onclick={enable} disabled={!!busy} data-focusable class="mt-3 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">
+        {busy === 'enable' ? 'Enabling…' : 'Enable device sync'}
+      </button>
+    </section>
   {:else if status.state === 'failed'}
     <div class="max-w-2xl rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       Sync could not start: {status.error}
+      <button onclick={enable} disabled={!!busy} data-focusable class="mt-3 block rounded-md bg-secondary px-3 py-2 font-bold text-foreground disabled:opacity-50">
+        {busy === 'enable' ? 'Retrying…' : 'Retry'}
+      </button>
     </div>
   {:else if !paired}
     <section class="max-w-2xl space-y-5">
@@ -176,7 +205,10 @@
 
         <div class="mt-4 flex items-center justify-between gap-3">
           <div class="text-sm font-bold">Nearby Izumi devices</div>
-          <button onclick={refreshNearby} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold">Refresh</button>
+          <div class="flex gap-2">
+            <button onclick={refreshNearby} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold">Refresh</button>
+            <button onclick={disable} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold text-destructive">Turn off</button>
+          </div>
         </div>
         {#if nearby.length}
           <ul class="mt-2 space-y-2">

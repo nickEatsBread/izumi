@@ -2,6 +2,7 @@ import type { HistoryEntry } from "$lib/player/history";
 import type { Pos } from "$lib/player/progress";
 
 export type SyncStatus =
+  | { state: "disabled" }
   | { state: "starting" }
   | { state: "failed"; error: string }
   | { state: "ready"; endpointId: string; paired: boolean; ticket?: string | null };
