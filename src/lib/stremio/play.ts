@@ -374,7 +374,12 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu: nu
       episode,
       episodeCount: media.episodes
         ?? (media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : undefined),
-      resolution: get(preferredQuality) === 'any' ? undefined : get(preferredQuality),
+      // Quality is a PREFERENCE, not a source-side filter: the SDK's `resolution` makes sources
+      // hard-EXCLUDE every other tier, so a 4K preference returned zero results for 1080p-only
+      // shows (i.e. nearly all anime — the reference client sidesteps this by not offering a 4K
+      // tier at all). Query unfiltered; pickBest/ranking target the preferred tier and fall back
+      // to the best available, same as the addon path always has.
+      resolution: undefined,
       // libmpv decodes everything we throw at it, so no codec-capability exclusions (the SDK field
       // exists for platforms that can't play HEVC/AC3/etc).
       exclusions: [],
