@@ -1678,10 +1678,12 @@ pub fn run() {
         .manage(TacVerificationConfig::default())
         .manage(FsWasMax::default())
         .setup(|app| {
-            // Iroh opens persistent stores and establishes its relay/discovery state
-            // asynchronously. Keep native window creation responsive while it starts.
+            // Restore iroh only for devices that already opted into a sync group. Fresh
+            // installs remain fully offline until the user enables Device Sync explicitly.
             let sync_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move { sync::initialize(sync_app).await });
+            tauri::async_runtime::spawn(async move {
+                sync::initialize_if_configured(sync_app).await
+            });
 
             // Create the desktop main window HERE (not in tauri.conf.json) so we can attach an
             // on_new_window handler. Tauri denies `window.open` by default, which silently blocks the
@@ -2027,6 +2029,28 @@ pub fn run() {
                         }
                     }
                 });
+                // The edge restores above (boot, focus, gamepad press, navigation) all lose the
+                // property war whenever Steam writes AFTER them with no further edge — Steam owns
+                // the mode from its own XWayland root (a different X server; its writes are
+                // unobservable from in here), and gamescope keeps one global last-writer-wins
+                // value. That's the touch-dead-at-launch-until-a-d-pad-press bug and the random
+                // mid-session touch deaths. So on top of the edges, re-publish passthrough every
+                // 250ms: a same-value XChangeProperty still raises PropertyNotify, which makes
+                // gamescope re-read mode 4 from OUR root. One property write + flush on the local
+                // socket per tick — negligible.
+                if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
+                    let keepalive_win = win.clone();
+                    let mut err_logged = false;
+                    glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
+                        if let Err(e) = player::linux_x11::keepalive_native_touch(&keepalive_win) {
+                            if !err_logged {
+                                err_logged = true;
+                                player::linux_embed::elog(&format!("x11: touch keepalive failed (logged once): {e}"));
+                            }
+                        }
+                        glib::ControlFlow::Continue
+                    });
+                }
                 let _ = win.with_webview(|pw| {
                     use glib::object::ObjectType;
                     use webkit2gtk::{
@@ -2132,6 +2156,8 @@ pub fn run() {
             download::download_dir_default,
             download::reveal_in_folder,
             sync::sync_status,
+            sync::sync_enable,
+            sync::sync_disable,
             sync::sync_create,
             sync::sync_join,
             sync::sync_nearby_list,
@@ -2159,6 +2185,8 @@ pub fn run() {
         download::download_dir_default,
         download::reveal_in_folder,
         sync::sync_status,
+        sync::sync_enable,
+        sync::sync_disable,
         sync::sync_create,
         sync::sync_join,
         sync::sync_nearby_list,

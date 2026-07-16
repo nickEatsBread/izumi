@@ -10,6 +10,9 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-set`
 - `allow-mpv-stop`
 - `allow-mpv-pip`
+- `allow-mpv-brightness`
+- `allow-mpv-haptic`
+- `allow-mpv-thumb`
 - `allow-registerListener`
 - `allow-removeListener`
 
@@ -21,6 +24,32 @@ Allow controlling the embedded libmpv player.
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`mpv:allow-mpv-brightness`
+
+</td>
+<td>
+
+Enables the mpv_brightness command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-brightness`
+
+</td>
+<td>
+
+Denies the mpv_brightness command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -70,6 +99,32 @@ Enables the mpv_get command without any pre-configured scope.
 <td>
 
 Denies the mpv_get command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-haptic`
+
+</td>
+<td>
+
+Enables the mpv_haptic command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-haptic`
+
+</td>
+<td>
+
+Denies the mpv_haptic command without any pre-configured scope.
 
 </td>
 </tr>
@@ -174,6 +229,32 @@ Enables the mpv_stop command without any pre-configured scope.
 <td>
 
 Denies the mpv_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-thumb`
+
+</td>
+<td>
+
+Enables the mpv_thumb command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-thumb`
+
+</td>
+<td>
+
+Denies the mpv_thumb command without any pre-configured scope.
 
 </td>
 </tr>

@@ -58,6 +58,17 @@ export function suppressNativeTooltips() {
   }, true)
 }
 
+// Game mode: a held touchscreen/controller-mouse press can make WebKitGTK open its desktop
+// context menu ("Open Link", "Open Link in New Window", ...). That native menu sits outside
+// the DOM and steals the d-pad until dismissed. Cancel only the browser default; do not stop
+// propagation, so app-owned contextmenu gestures can still handle the event themselves.
+let contextMenusSuppressed = false
+export function suppressNativeContextMenus() {
+  if (contextMenusSuppressed || !get(gameMode)) return
+  contextMenusSuppressed = true
+  window.addEventListener('contextmenu', (e) => e.preventDefault(), true)
+}
+
 // Focus this element on mount when in Game mode (controller/d-pad), so a series page lands on
 // Play and modals land on their primary action. rAF so layout has settled. No-op for mouse/desktop.
 export function focusOnMount(node: HTMLElement) {

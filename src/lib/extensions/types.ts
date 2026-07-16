@@ -13,6 +13,7 @@ export interface TorrentResult {
   accuracy?: 'high' | 'medium' | 'low'
   type?: 'batch' | 'best' | 'alt'
   provider?: string // display name of the source extension that returned it (for the picker label)
+  providerId?: string // stable extension id used for direct Continue Watching resolution
   logo?: string // icon URL/data of the source extension (for the picker logo)
 }
 
@@ -27,16 +28,22 @@ export interface TorrentQuery {
   exclusions?: string[]
   kitsuId?: number
   malId?: number
-  absoluteEpisodeNumber?: number
-  // AniZip enrichment — production-specific ids (field names match the extension runtime so
-  // extensions run unchanged). Some extensions index by AniDB, others by TVDB.
+  absoluteEpisode?: number // absolute episode number (falls back to the per-season number)
+  // AniZip enrichment — production-specific ids. Field names are the extension-SDK CONTRACT
+  // (sources destructure exactly these), not our internal ExtIds names — see extToStreams.
   anidbAid?: number
   anidbEid?: number // AniDB episode id (episode-level; some indexers search by it)
-  tvdbId?: number // show id
-  tvdbEId?: number // episode id
-  tmdbId?: string
-  imdbId?: string
+  tvdbAid?: number // TVDB show id
+  tvdbEid?: number // TVDB episode id
+  mvdbAid?: number | string // TMDB id
+  imdbAid?: string
   season?: number
+  // SDK contract extras: the full AniList media object + raw AniZip mapping objects, passed
+  // verbatim (sources may read production fields we don't distill), and the platform flag.
+  media?: unknown
+  mappingsA?: Record<string, unknown>
+  mappingsE?: Record<string, unknown>
+  isAndroid?: boolean
 }
 
 /** Normalized extension config (both flat config and manifest

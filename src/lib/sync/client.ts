@@ -6,6 +6,7 @@ import { anilistToken } from "$lib/anilist/auth";
 import { malToken } from "$lib/trackers/config";
 import { localHistory } from "$lib/player/history";
 import { positions } from "$lib/player/progress";
+import { sourceOrigins } from "$lib/player/source-origin";
 import { exportJson, importJson } from "$lib/player/history-io";
 import {
   applyManualSnapshot,
@@ -24,6 +25,8 @@ export const syncDeviceName = persisted<string>("sync-device-name", "");
 
 export const trackersOwnProgress = () => !!get(anilistToken) || !!get(malToken);
 export const getSyncStatus = () => invoke<SyncStatus>("sync_status");
+export const enableDeviceSync = () => invoke<void>("sync_enable");
+export const disableDeviceSync = () => invoke<void>("sync_disable");
 export const createSyncGroup = () => invoke<string>("sync_create");
 export const joinSyncGroup = (ticket: string) =>
   invoke<void>("sync_join", { ticket });
@@ -70,7 +73,7 @@ export async function pullWatchProgress(): Promise<number> {
   for (const record of await read("watch")) {
     try {
       const merged = importJson(record.payload, { includeHistory });
-      imported += merged.imported + merged.positionsImported;
+      imported += merged.imported + merged.positionsImported + merged.originsImported;
     } catch {
       /* skip malformed peer record */
     }
@@ -139,6 +142,9 @@ export function initDeviceSync() {
     if (primed && !trackersOwnProgress()) scheduleWatchPush();
   });
   positions.subscribe(() => {
+    if (primed) scheduleWatchPush();
+  });
+  sourceOrigins.subscribe(() => {
     if (primed) scheduleWatchPush();
   });
   anilistToken.subscribe(() => {

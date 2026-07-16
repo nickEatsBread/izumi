@@ -21,6 +21,11 @@ pub struct InstallRequest {
     pub path: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LanDiscoveryRequest {
+    pub enabled: bool,
+}
+
 /// A request to run the in-app OAuth login flow (mobile: a WebView that captures the redirect).
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

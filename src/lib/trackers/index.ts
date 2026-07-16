@@ -231,14 +231,17 @@ export async function getMalProgress(idMal?: number): Promise<{ progress: number
 // 'plan_to_watch'), most-recently-updated first, so the home rows can show the
 // MAL library for MAL-primary users. Returns [] if MAL isn't connected. Map these
 // ids to AniList media via MEDIA_BY_MAL_QUERY to render cards.
-export async function getMalAnimeIds(status: string, limit = 20): Promise<number[]> {
+export async function getMalAnimeIdsOrThrow(status: string, limit = 20): Promise<number[]> {
   if (!get(malToken)) return []
-  try {
-    const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`)
-    if (!r?.ok) return []
-    const j = await r.json() as { data?: { node?: { id?: number } }[] }
-    return (j.data ?? []).map((d) => d.node?.id).filter((n): n is number => typeof n === 'number')
-  }
+  const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`)
+  if (!r) return []
+  if (!r.ok) throw new Error(`MyAnimeList list request failed (${r.status})`)
+  const j = await r.json() as { data?: { node?: { id?: number } }[] }
+  return (j.data ?? []).map((d) => d.node?.id).filter((n): n is number => typeof n === 'number')
+}
+
+export async function getMalAnimeIds(status: string, limit = 20): Promise<number[]> {
+  try { return await getMalAnimeIdsOrThrow(status, limit) }
   catch { return [] }
 }
 

@@ -40,6 +40,11 @@ class OAuthArgs {
     var redirectPrefix: String = ""
 }
 
+@InvokeArg
+class LanDiscoveryArgs {
+    var enabled: Boolean = false
+}
+
 @TauriPlugin
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     private var multicastLock: WifiManager.MulticastLock? = null
@@ -48,20 +53,29 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     // page pinch- / double-tap-zooms on mobile (content zooms while the fixed nav stays put). Kill
     // it at the WebView-settings level the moment the webview is created.
     override fun load(webView: WebView) {
-        // Android filters multicast by default. Keep it enabled for the plugin/app lifetime so
-        // Iroh's Izumi-only mDNS lookup can discover other devices on the local network.
-        if (multicastLock == null) {
+        webView.settings.setSupportZoom(false)
+        webView.settings.builtInZoomControls = false
+        webView.settings.displayZoomControls = false
+        webView.settings.textZoom = 100 // ignore the system font-scale
+    }
+
+    @Command
+    fun setLanDiscovery(invoke: Invoke) {
+        val args = invoke.parseArgs(LanDiscoveryArgs::class.java)
+        if (args.enabled && multicastLock == null) {
             val wifiManager = activity.applicationContext
                 .getSystemService(Context.WIFI_SERVICE) as WifiManager
             multicastLock = wifiManager.createMulticastLock("izumi-lan-discovery").apply {
                 setReferenceCounted(false)
                 acquire()
             }
+        } else if (!args.enabled) {
+            multicastLock?.let {
+                if (it.isHeld) it.release()
+            }
+            multicastLock = null
         }
-        webView.settings.setSupportZoom(false)
-        webView.settings.builtInZoomControls = false
-        webView.settings.displayZoomControls = false
-        webView.settings.textZoom = 100 // ignore the system font-scale
+        invoke.resolve()
     }
 
     @Command

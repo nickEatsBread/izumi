@@ -18,12 +18,13 @@
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
-  import { initInput, initDpadNav, suppressNativeTooltips } from '$lib/nav'
+  import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { enabledAddonUrls } from '$lib/stremio/sources'
+  import { warmExtensions } from '$lib/extensions/manager'
   import { refreshAniListAvatar } from '$lib/trackers/anilist-auth'
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
   import { isAndroid, isMobile, initPlatform } from '$lib/platform'
@@ -41,6 +42,7 @@
   $effect(() => {
     if (!$gameMode) return
     suppressNativeTooltips() // no native `title` hover popups under controller/touch
+    suppressNativeContextMenus() // held presses must not open WebKit's desktop link menu
     invoke('gamepad_start').catch(() => {})
     const stop = startGamepadNav()
     return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
@@ -66,6 +68,10 @@
     // manifest) so the FIRST play skips the ~200ms TLS handshake and the picker has
     // logos ready. Only effective now that http_get pools connections.
     for (const base of get(enabledAddonUrls)) fetchManifest(base).catch(() => {})
+    // Same idea for source extensions: pre-boot the whole runtime (manifest + esm.sh modules +
+    // workers) now, off the click-to-play path — the reference client does this at startup too,
+    // which is why its first picker open is instant while ours paid the full build.
+    warmExtensions()
     // Refresh the signed-in profile (name + avatar) for an already-connected session,
     // so the sidebar shows the real picture without needing a re-login. No-op if not
     // connected. Fire-and-forget.

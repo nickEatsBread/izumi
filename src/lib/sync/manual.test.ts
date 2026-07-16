@@ -6,6 +6,7 @@ import {
   debridProvider,
   disabledExtensions,
   extensionUrls,
+  preferredQuality,
 } from "$lib/settings/ui";
 import {
   applyManualSnapshot,
@@ -31,6 +32,7 @@ describe("manual device sync snapshots", () => {
     disabledExtensions.set([]);
     debridProvider.set("realdebrid");
     debridKey.set("");
+    preferredQuality.set("1080");
   });
 
   it("round-trips sources, extension configuration, secrets, and portable settings", () => {
@@ -55,7 +57,23 @@ describe("manual device sync snapshots", () => {
     expect(get(extensionUrls)).toEqual(["gh:owner/repo"]);
     expect(get(debridProvider)).toBe("alldebrid");
     expect(get(debridKey)).toBe("secret");
+    expect(get(preferredQuality)).toBe("2160");
     expect(JSON.parse(localStorage.getItem("preferred-quality")!)).toBe("2160");
+  });
+
+  it("keeps UI scale local to each device", () => {
+    localStorage.setItem("ui-scale", JSON.stringify(1.25));
+    const snapshot = createManualSnapshot("device-a", "Desktop");
+
+    expect(snapshot.settings).not.toHaveProperty("ui-scale");
+
+    // Older peers may still send ui-scale. Applying their snapshot must not
+    // overwrite the receiving device's locally chosen scale.
+    snapshot.settings["ui-scale"] = 0.8;
+    localStorage.setItem("ui-scale", JSON.stringify(1.5));
+    applyManualSnapshot(snapshot);
+
+    expect(JSON.parse(localStorage.getItem("ui-scale")!)).toBe(1.5);
   });
 
   it("rejects unrelated or malformed JSON", () => {

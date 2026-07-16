@@ -1,7 +1,7 @@
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { get } from 'svelte/store'
 import { malToken, malRefresh, malTokenExpiry, malClientId, malUserName, malUserAvatar } from './config'
 import { captureLogin, redirectUri } from './oauth'
+import { malHttpFetch } from './mal-http'
 
 // Persist a MAL token response: set the access token, rotate the refresh token (MAL returns a fresh
 // one each refresh), and record expiry ONLY when expires_in is present (so a response that omits it
@@ -23,7 +23,7 @@ export async function connectMal() {
   const u = await captureLogin(malAuthUrl, 'MyAnimeList')
   const code = u.searchParams.get('code')
   if (!code) throw new Error('No authorization code returned.')
-  const res = await httpFetch('https://myanimelist.net/v1/oauth2/token', {
+  const res = await malHttpFetch('https://myanimelist.net/v1/oauth2/token', {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ client_id: malClientId, grant_type: 'authorization_code', code, code_verifier: codeVerifier, redirect_uri: redirectUri }).toString(),
   })
@@ -61,7 +61,7 @@ export function refreshMal(): Promise<string | null> {
     const rt = get(malRefresh)
     if (!rt || !malClientId) return null // nothing to refresh — don't nuke a possibly-valid access token
     try {
-      const res = await httpFetch('https://myanimelist.net/v1/oauth2/token', {
+      const res = await malHttpFetch('https://myanimelist.net/v1/oauth2/token', {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ client_id: malClientId, grant_type: 'refresh_token', refresh_token: rt }).toString(),
       })
@@ -83,7 +83,7 @@ export function refreshMal(): Promise<string | null> {
 // Returns null when MAL isn't connected. Use for every user-scoped MAL v2 call.
 export async function malFetch(
   input: string,
-  init: Parameters<typeof httpFetch>[1] = {},
+  init: RequestInit = {},
 ): Promise<Response | null> {
   let token = get(malToken)
   if (!token) return null
@@ -99,11 +99,11 @@ export async function malFetch(
     if (!token) return null // refresh cleared the session (permanent failure)
     if (nt) token = nt
   }
-  let r = await httpFetch(input, withAuth(token))
+  let r = await malHttpFetch(input, withAuth(token))
   if (r.status === 401) {
     const nt = await refreshMal()
     if (!nt) return r // refresh failed (tokens already cleared on a permanent failure)
-    r = await httpFetch(input, withAuth(nt))
+    r = await malHttpFetch(input, withAuth(nt))
   }
   return r
 }

@@ -36,6 +36,34 @@ pub struct SetRequest {
     pub value: String,
 }
 
+/// Set screen brightness (0.0..1.0), or -1.0 to restore system/auto brightness.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BrightnessRequest {
+    pub value: f64,
+}
+
+/// Fire a short haptic pulse of the given duration in milliseconds.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HapticRequest {
+    pub ms: u32,
+}
+
+/// Grab a preview frame from a stream at `time_sec`, scaled to `width` px wide.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThumbRequest {
+    pub url: String,
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
+    pub time_sec: f64,
+    #[serde(default = "default_thumb_width")]
+    pub width: u32,
+}
+
+fn default_thumb_width() -> u32 {
+    320
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

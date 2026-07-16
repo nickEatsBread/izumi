@@ -8,7 +8,7 @@ export const MEDIA_FIELDS = gql`
     season seasonYear format status episodes duration averageScore genres
     synonyms
     startDate { year month day }
-    studios(isMain: true) { nodes { name } }
+    studios(isMain: true) { nodes { id name } }
     coverImage { extraLarge medium color }
     bannerImage
     trailer { id site }

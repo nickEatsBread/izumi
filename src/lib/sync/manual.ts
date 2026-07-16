@@ -1,4 +1,5 @@
 import { get } from "svelte/store";
+import { persisted } from "svelte-persisted-store";
 import { addonUrls, disabledSources } from "$lib/stremio/sources";
 import {
   debridKey,
@@ -32,7 +33,6 @@ export const SYNCED_SETTING_KEYS = [
   "save-local-history",
   "hide-spoilers",
   "carousel-wheel-scroll",
-  "ui-scale",
   "show-adult",
   "schedule-layout",
   "doh-enabled",
@@ -107,8 +107,8 @@ export function parseManualSnapshot(payload: string): ManualSnapshot | null {
   }
 }
 
-/** Apply a user-selected device snapshot. Returns true when a reload is needed. */
-export function applyManualSnapshot(snapshot: ManualSnapshot): boolean {
+/** Apply a user-selected device snapshot to storage and the live app stores. */
+export function applyManualSnapshot(snapshot: ManualSnapshot): void {
   addonUrls.set(
     snapshot.sources.addonUrls.filter(
       (x): x is string => typeof x === "string",
@@ -134,8 +134,12 @@ export function applyManualSnapshot(snapshot: ManualSnapshot): boolean {
   if (typeof snapshot.extensions.debridKey === "string")
     debridKey.set(snapshot.extensions.debridKey);
   for (const key of SYNCED_SETTING_KEYS) {
-    if (Object.hasOwn(snapshot.settings, key))
-      localStorage.setItem(key, JSON.stringify(snapshot.settings[key]));
+    if (Object.hasOwn(snapshot.settings, key)) {
+      const value = snapshot.settings[key];
+      // `persisted` returns the existing store for a key when one has already
+      // been created elsewhere. Updating it here keeps the running UI and
+      // localStorage in sync, so Android does not need a full WebView reload.
+      persisted<unknown>(key, value).set(value);
+    }
   }
-  return true;
 }

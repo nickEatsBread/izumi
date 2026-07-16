@@ -66,16 +66,16 @@
 
 {#if current}
   <div
-    class="relative mb-6 h-[42vh] transition-opacity duration-500 sm:h-[55vh] {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class="relative mb-6 h-[42vh] touch-pan-y transition-opacity duration-500 sm:h-[55vh] {scrolled ? 'opacity-40' : 'opacity-100'}"
     style="--accent:{accent}"
   >
     <!-- Full-bleed banner: on desktop it breaks out of main's left margin (behind the
          sidebar) and up under the frameless titlebar. On mobile there's no sidebar/titlebar,
          so anchor it flush to the viewport edge (left-0/top-0) — the desktop -left-14 would
          otherwise leave a black band on the right. Keyed for a crossfade. -->
-    <div class="absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
+    <div class="pointer-events-none absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
       {#key current.id}
-        <img src={banner(current)} alt=""
+        <img src={banner(current)} alt="" draggable="false"
              class="absolute inset-0 h-full w-full animate-[heroIn_0.6s_ease] object-cover opacity-70"
              style="object-position:center 20%" />
       {/key}

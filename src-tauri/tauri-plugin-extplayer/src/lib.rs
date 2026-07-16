@@ -13,7 +13,7 @@ mod desktop;
 mod mobile;
 
 pub use error::{Error, Result};
-pub use models::{InstallRequest, OAuthRequest, OAuthResponse, PlayRequest};
+pub use models::{InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest};
 
 #[cfg(desktop)]
 use desktop::ExtPlayer;

@@ -101,6 +101,11 @@ export interface ExtIds {
   imdbId?: string
   season?: number
   absoluteEpisodeNumber?: number
+  episodeNumber?: number // per-season episode number (fallback when no absolute is mapped)
+  // Raw AniZip objects, passed through to extensions verbatim (the SDK's TorrentQuery declares
+  // mappingsA/mappingsE and some sources read production fields we don't distill).
+  mappingsA?: Record<string, unknown>
+  mappingsE?: Record<string, unknown>
 }
 export async function getExtensionIds(anilistId: number, episode?: number): Promise<ExtIds> {
   const res = await fetchAniZip(anilistId, episode)
@@ -115,6 +120,9 @@ export async function getExtensionIds(anilistId: number, episode?: number): Prom
     imdbId: m?.imdb_id ?? undefined,
     season: ep?.seasonNumber,
     absoluteEpisodeNumber: ep?.absoluteEpisodeNumber,
+    episodeNumber: ep?.episodeNumber,
+    mappingsA: (m as Record<string, unknown> | undefined) ?? undefined,
+    mappingsE: (ep as Record<string, unknown> | undefined) ?? undefined,
   }
 }
 

@@ -19,3 +19,18 @@ export const normalizeBase = (u: string) => {
   if (!/^https?:\/\//i.test(s)) s = 'https://' + s
   return s
 }
+
+/** Deterministic opaque id for an addon configuration. The full addon URL can contain an API key,
+ *  so remembered/synced source preferences store this fingerprint and match it against the local
+ *  configured URLs instead of copying the credential-bearing URL into watch sync. */
+export function addonOriginId(url: string): string {
+  const text = normalizeBase(url)
+  let a = 0x811c9dc5
+  let b = 0x9e3779b9
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i)
+    a = Math.imul(a ^ code, 0x01000193)
+    b = Math.imul(b ^ code, 0x85ebca6b)
+  }
+  return `${(a >>> 0).toString(16).padStart(8, '0')}${(b >>> 0).toString(16).padStart(8, '0')}`
+}

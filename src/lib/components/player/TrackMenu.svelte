@@ -175,9 +175,9 @@
       <div class="w-[26rem] rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
         {#each roots as r, i (r.key)}
           <button
-            class="my-1 flex w-full select-none items-center rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none hover:bg-white hover:text-black"
-            class:bg-white={rootIdx === i}
-            class:text-black={rootIdx === i}
+            class="my-1 flex w-full select-none items-center rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none"
+            class:bg-white={level === 0 && rootIdx === i}
+            class:text-black={level === 0 && rootIdx === i}
             onpointerenter={() => { if (level === 0) rootIdx = i }}
             onclick={() => { if (level === 0) { rootIdx = i; descend() } }}
           >
@@ -193,7 +193,7 @@
           <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
           {#each subItems as it, i (it.kind + it.id)}
             <button
-              class="my-1 flex w-full select-none items-center gap-3 rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none hover:bg-white hover:text-black"
+              class="my-1 flex w-full select-none items-center gap-3 rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none"
               class:bg-white={subIdx === i}
               class:text-black={subIdx === i}
               onpointerenter={() => (subIdx = i)}

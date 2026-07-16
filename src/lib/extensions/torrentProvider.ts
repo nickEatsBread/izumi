@@ -52,10 +52,10 @@ export function atorrentToResult(t: AnimeTorrent, hash: string): TorrentResult |
 
 /** Query every anime-torrent-provider extension for an episode's torrents, mapped into izumi's
  *  TorrentResult. smartSearch when the provider supports it, else search. Best-effort: [] on any
- *  failure; dedupe by hash. */
-export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia): Promise<TorrentResult[]> {
+ *  failure; dedupe by hash. `onBatch` fires with each provider's results as it settles. */
+export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string): Promise<TorrentResult[]> {
   try {
-    const provs = await runningTorrentProviderExtensions()
+    const provs = await runningTorrentProviderExtensions(onlyId)
     if (!provs.length) return []
     // Release names are romaji-based; a localized display title may never appear in a torrent name,
     // so query by romaji. And when a precise episode/anime id is available the provider locates the
@@ -76,14 +76,24 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia)
           let hash = (t.infoHash ?? '').toLowerCase()
           if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
           const r = atorrentToResult(t, hash)
-          if (r) out.push({ ...r, provider: p.name, logo: p.icon })
+          if (r) out.push({ ...r, provider: p.name, providerId: p.id, logo: p.icon })
         }
+        if (onBatch && out.length) onBatch(out)
         return out
       }
-      catch { return [] }
+      catch (err) {
+        // Silently degrade in release, but surface which provider threw during dev — a provider that
+        // finds the anime then throws (e.g. on the torrent-fetch step) otherwise looks like an empty
+        // result with no clue why. `import.meta.env.DEV` is compiled to `false` in release builds.
+        if (import.meta.env.DEV) console.warn(`[torrent-provider: ${p.name}] threw during query`, err)
+        return []
+      }
     }))
     const seen = new Set<string>()
     return per.flat().filter((r) => { if (seen.has(r.hash)) return false; seen.add(r.hash); return true })
   }
-  catch { return [] }
+  catch (err) {
+    if (import.meta.env.DEV) console.warn('[torrent-providers] query failed', err)
+    return []
+  }
 }

@@ -39,7 +39,7 @@ export function pickEpisode(eps: SnEpisode[], episode: number): SnEpisode | unde
 /** Map one VideoSource (+ its server headers) to a direct streaming Stream. */
 export function videoSourceToStream(
   vs: SnVideoSource, server: string, headers: Record<string, string>, provider: string,
-  epTitle?: string, audio?: 'sub' | 'dub',
+  epTitle?: string, audio?: 'sub' | 'dub', originId?: string,
 ): Stream {
   const quality = vs.quality || 'auto'
   const kind = /m3u8|hls/i.test(vs.type ?? '') ? 'HLS' : 'MP4'
@@ -60,6 +60,7 @@ export function videoSourceToStream(
       isDefault: s.isDefault ?? s.default ?? false,
     })),
     __addonName: provider,
+    __origin: originId ? { kind: 'online-extension', id: originId, name: provider } : undefined,
     behaviorHints: { filename: epTitle?.trim() || `Direct ${kind}${server ? ` · ${server}` : ''}` },
   }
 }
@@ -67,9 +68,9 @@ export function videoSourceToStream(
 /** Resolve direct (non-debrid) streaming sources for an episode from every configured
  *  onlinestream-provider extension, in parallel. Best-effort: [] when none configured / all fail.
  *  Episode only (these providers are episode-indexed). */
-export async function resolveOnlineStreams(media: Media, episode: number | undefined): Promise<Stream[]> {
+export async function resolveOnlineStreams(media: Media, episode: number | undefined, onlyId?: string): Promise<Stream[]> {
   if (episode == null) return []
-  const exts = await runningStreamExtensions()
+  const exts = await runningStreamExtensions(onlyId)
   if (!exts.length) return []
   const titles = [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
     .filter((t): t is string => !!t && t.length > 1)
@@ -105,7 +106,7 @@ export async function resolveOnlineStreams(media: Media, episode: number | undef
       for (const server of servers) {
         const es = (await ext.call('findEpisodeServer', ep, server).catch(() => null)) as SnEpisodeServer | null
         if (es?.videoSources?.length) {
-          for (const vs of es.videoSources) out.push(videoSourceToStream(vs, es.server ?? server, es.headers ?? {}, ext.name, epLabel, audio))
+          for (const vs of es.videoSources) out.push(videoSourceToStream(vs, es.server ?? server, es.headers ?? {}, ext.name, epLabel, audio, ext.id))
         }
       }
       const seen = new Set<string>()

@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Self-update: hand a downloaded APK to the system package installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- Iroh LAN discovery receives mDNS multicast packets while Izumi is running. -->
+    <!-- Iroh LAN discovery receives mDNS only after the user enables Device Sync. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <application>
         <!-- Share a downloaded file to the external video player through a content:// URI

@@ -13,7 +13,10 @@ mod desktop;
 mod mobile;
 
 pub use error::{Error, Result};
-pub use models::{CommandRequest, GetRequest, LoadRequest, SetRequest};
+pub use models::{
+    BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
+    ThumbRequest,
+};
 
 #[cfg(desktop)]
 use desktop::Mpv;
@@ -42,7 +45,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::mpv_get,
             commands::mpv_set,
             commands::mpv_stop,
-            commands::mpv_pip
+            commands::mpv_pip,
+            commands::mpv_brightness,
+            commands::mpv_haptic,
+            commands::mpv_thumb
         ])
         .setup(|app, api| {
             #[cfg(mobile)]
