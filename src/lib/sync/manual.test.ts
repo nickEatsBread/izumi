@@ -6,6 +6,7 @@ import {
   debridProvider,
   disabledExtensions,
   extensionUrls,
+  preferredQuality,
 } from "$lib/settings/ui";
 import {
   applyManualSnapshot,
@@ -31,6 +32,7 @@ describe("manual device sync snapshots", () => {
     disabledExtensions.set([]);
     debridProvider.set("realdebrid");
     debridKey.set("");
+    preferredQuality.set("1080");
   });
 
   it("round-trips sources, extension configuration, secrets, and portable settings", () => {
@@ -55,6 +57,7 @@ describe("manual device sync snapshots", () => {
     expect(get(extensionUrls)).toEqual(["gh:owner/repo"]);
     expect(get(debridProvider)).toBe("alldebrid");
     expect(get(debridKey)).toBe("secret");
+    expect(get(preferredQuality)).toBe("2160");
     expect(JSON.parse(localStorage.getItem("preferred-quality")!)).toBe("2160");
   });
 

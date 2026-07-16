@@ -116,7 +116,7 @@
   function receive(device: ManualDevice) {
     void action('receive', async () => {
       receiveManualSnapshot(device)
-      location.reload()
+      message = `Received setup from ${device.deviceName}. Sources, extensions, and portable settings are now active.`
     })
   }
 
