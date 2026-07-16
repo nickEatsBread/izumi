@@ -28,6 +28,11 @@ export interface Stream {
   // or by the extensions layer (base64 icon + extension name), for the picker.
   __logo?: string
   __addonName?: string
+  // Source-declared match confidence (extension SDK `accuracy`). 'high' = the source verified
+  // this result against the episode's PRODUCTION id (e.g. TVDB episode id), so title heuristics
+  // must not second-guess it — foreign-language release names carry no romaji/english tokens
+  // and would otherwise be dropped as irrelevant.
+  __accuracy?: 'high' | 'medium' | 'low'
   // Direct streaming source (Seanime onlinestream-provider): plays its `url` straight in libmpv
   // with no debrid. __headers → mpv http-header-fields; __subtitles → external sub tracks.
   __stream?: boolean

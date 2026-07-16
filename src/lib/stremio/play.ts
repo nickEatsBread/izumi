@@ -230,6 +230,8 @@ function extToStream(r: TorrentResult, extName: string): Stream {
     // Keep the full magnet (trackers included) when the result carried one, so debrid can find
     // peers for an uncached torrent instead of resolving a bare, trackerless hash.
     __magnet: r.link?.startsWith('magnet:') ? r.link : undefined,
+    // Source-declared confidence: 'high' = id-verified by the source → refine trusts it.
+    __accuracy: r.accuracy,
     name: `[${prov}⬇] ${extName}`,
     // The picker heading reads from __addonName, so the row shows which extension found it; __logo
     // supplies the extension's icon (and, being present, suppresses the redundant name on the right).
@@ -260,15 +262,19 @@ function refineStreams(media: Media, raw: Stream[]): Stream[] {
   // marker) is a different production sharing the id — e.g. the 1995 GitS film / GitS 2: Innocence
   // under the 2026 series. Drop those; keep every S01E01 + season pack. Not applied to movies.
   const isSeries = media.format !== 'MOVIE' && (media.episodes ?? airedTotal) > 1
+  // Direct streams and id-VERIFIED extension results skip the release-NAME heuristics: a source
+  // that matched this exact episode's production id (accuracy 'high') outranks any title parse —
+  // e.g. a CJK-titled release carries zero romaji/english tokens and relevant() would drop it.
+  const trusted = (s: Stream) => !!s.__stream || s.__accuracy === 'high'
   return dedupeStreams(
     collapseBatches(raw)
-      .filter((s) => s.__stream || relevant(s, wantedTitles))
-      .filter((s) => s.__stream || !likelyOtherProduction(s, animeYear, absoluteNumbered))
-      .filter((s) => s.__stream || !isEpisodeExtra(s))
-      .filter((s) => s.__stream || !isSeries || !isStandaloneMovie(s))
+      .filter((s) => trusted(s) || relevant(s, wantedTitles))
+      .filter((s) => trusted(s) || !likelyOtherProduction(s, animeYear, absoluteNumbered))
+      .filter((s) => trusted(s) || !isEpisodeExtra(s))
+      .filter((s) => trusted(s) || !isSeries || !isStandaloneMovie(s))
       // Same-franchise wrong season: base-entry request pulling in "… The Final Season" / "Season 2"
       // files a number-less season gate can't catch (Attack on Titan S1 → Final Season episodes).
-      .filter((s) => s.__stream || !wrongFranchiseSeason(s, wantedTitles)),
+      .filter((s) => trusted(s) || !wrongFranchiseSeason(s, wantedTitles)),
   )
 }
 
