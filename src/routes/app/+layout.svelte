@@ -18,7 +18,7 @@
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
-  import { initInput, initDpadNav, suppressNativeTooltips } from '$lib/nav'
+  import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
@@ -42,6 +42,7 @@
   $effect(() => {
     if (!$gameMode) return
     suppressNativeTooltips() // no native `title` hover popups under controller/touch
+    suppressNativeContextMenus() // held presses must not open WebKit's desktop link menu
     invoke('gamepad_start').catch(() => {})
     const stop = startGamepadNav()
     return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
