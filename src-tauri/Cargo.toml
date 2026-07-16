@@ -58,7 +58,11 @@ iroh = { version = "1.0", default-features = false, features = ["tls-ring", "por
 iroh-docs = { version = "0.101", default-features = false, features = ["fs-store"] }
 iroh-blobs = { version = "0.103", default-features = false, features = ["fs-store"] }
 iroh-gossip = { version = "0.101", default-features = false, features = ["net"] }
-iroh-mdns-address-lookup = "0.4"
+# The higher-level mDNS lookup only multicasts on the OS default interface. Use
+# swarm-discovery directly so multi-homed PCs also query their Wi-Fi/LAN adapters.
+swarm-discovery = "0.6"
+netwatch = "0.19"
+data-encoding = "2.11"
 n0-future = "0.3"
 # Offline downloads: stream a resolved debrid URL to disk (pure reqwest GET — no
 # webview http-scope, no plugin-fs). rustls-tls for the same Android cross-compile reason.
