@@ -4,6 +4,7 @@ import { cacheExchange } from '@urql/exchange-graphcache'
 import { invoke } from '@tauri-apps/api/core'
 import Bottleneck from 'bottleneck'
 import { getToken } from './auth'
+import { ANILIST_CACHE_KEYS } from './cache'
 
 // Normalize any HeadersInit (Headers | array | record) to a plain object for the
 // Rust command.
@@ -77,7 +78,7 @@ export const anilist = new Client({
   // preferGetMethod to 'within-url-limit' (GET for short queries) -> 404.
   preferGetMethod: false,
   exchanges: [
-    cacheExchange({}),
+    cacheExchange({ keys: ANILIST_CACHE_KEYS }),
     authExchange(async (utils) => ({
       addAuthToOperation(op) {
         const t = getToken()
