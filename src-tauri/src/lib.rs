@@ -2027,6 +2027,28 @@ pub fn run() {
                         }
                     }
                 });
+                // The edge restores above (boot, focus, gamepad press, navigation) all lose the
+                // property war whenever Steam writes AFTER them with no further edge — Steam owns
+                // the mode from its own XWayland root (a different X server; its writes are
+                // unobservable from in here), and gamescope keeps one global last-writer-wins
+                // value. That's the touch-dead-at-launch-until-a-d-pad-press bug and the random
+                // mid-session touch deaths. So on top of the edges, re-publish passthrough every
+                // 250ms: a same-value XChangeProperty still raises PropertyNotify, which makes
+                // gamescope re-read mode 4 from OUR root. One property write + flush on the local
+                // socket per tick — negligible.
+                if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
+                    let keepalive_win = win.clone();
+                    let mut err_logged = false;
+                    glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
+                        if let Err(e) = player::linux_x11::keepalive_native_touch(&keepalive_win) {
+                            if !err_logged {
+                                err_logged = true;
+                                player::linux_embed::elog(&format!("x11: touch keepalive failed (logged once): {e}"));
+                            }
+                        }
+                        glib::ControlFlow::Continue
+                    });
+                }
                 let _ = win.with_webview(|pw| {
                     use glib::object::ObjectType;
                     use webkit2gtk::{

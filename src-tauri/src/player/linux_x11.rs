@@ -118,7 +118,23 @@ fn raw_x11(win: &tauri::WebviewWindow) -> Result<(*mut c_void, u64), String> {
 ///
 /// Gamescope then emits wl_touch, XWayland exposes XI2 touch sequences, and WebKitGTK's built-in
 /// touch-only drag/swipe controllers provide native kinetic scrolling.
+///
+/// The mode is ONE global in gamescope, last-writer-wins across every XWayland root — and Steam
+/// keeps rewriting it (to Left, mode 1) from its own root on a server this Flatpak cannot even
+/// see, at unpredictable moments (launch transition end, overlay/keyboard toggles, per-app input
+/// profile loads). Every call here is therefore a re-assert that can be silently clobbered right
+/// after; lib.rs runs a 250ms keepalive tick on top of the event-edge restores for that reason.
 pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> {
+    set_native_touch(window, true)
+}
+
+/// Keepalive variant of [`enable_native_touch`]: identical property write, but no per-call
+/// success log — it runs on a 250ms tick for the app's whole lifetime (see lib.rs setup).
+pub fn keepalive_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> {
+    set_native_touch(window, false)
+}
+
+fn set_native_touch(window: &tauri::WebviewWindow, log: bool) -> Result<(), String> {
     if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
         return Ok(());
     }
@@ -146,11 +162,20 @@ pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> 
             (&value as *const c_ulong).cast(),
             1,
         );
-        // Flush synchronously so Gamescope changes routing before the first touchscreen gesture.
-        XSync(dpy, 0);
+        if log {
+            // Event-edge restores (boot/focus/navigation/controller) need to take effect before
+            // the next gesture, so wait for the local X server to process the property write.
+            XSync(dpy, 0);
+        } else {
+            // The periodic keepalive runs on GTK's main thread. Flushing is enough to deliver its
+            // PropertyNotify without adding a synchronous round trip four times per second.
+            XFlush(dpy);
+        }
     }
 
-    crate::player::linux_embed::elog("x11: requested Gamescope native touch passthrough (mode 4)");
+    if log {
+        crate::player::linux_embed::elog("x11: requested Gamescope native touch passthrough (mode 4)");
+    }
     Ok(())
 }
 
