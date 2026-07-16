@@ -1080,9 +1080,11 @@ pub async fn sync_leave(
     if let Some(task) = runtime.events.take() {
         task.abort();
     }
-    if let Some(doc) = runtime.doc.take() {
-        doc.close().await.map_err(|e| e.to_string())?;
-    }
+    let close_result = if let Some(doc) = runtime.doc.take() {
+        doc.close().await.map_err(|error| error.to_string())
+    } else {
+        Ok(())
+    };
     runtime.ticket = None;
     runtime.pairing.set_ticket(None).await;
     runtime.nearby_discovery.stop_advertising().await;
@@ -1092,10 +1094,13 @@ pub async fn sync_leave(
         Err(error) => Err(error.to_string()),
     };
     drop(runtime);
-    app.extplayer()
+    let lan_result = app
+        .extplayer()
         .set_lan_discovery(LanDiscoveryRequest { enabled: false })
-        .map_err(|error| error.to_string())?;
-    remove_result
+        .map_err(|error| error.to_string());
+    close_result?;
+    remove_result?;
+    lan_result
 }
 
 #[tauri::command]
