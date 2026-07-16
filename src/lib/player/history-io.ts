@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { title } from '$lib/anilist/media'
 import { localHistory, historyEntries, type HistoryEntry } from './history'
 import { positions, type Pos } from './progress'
+import { mergeSourceOrigins, sourceOrigins, type RememberedSource } from './source-origin'
 
 // Import / export of the on-device watch history, so it can be backed up, moved between installs,
 // or used to seed an AniList/MyAnimeList account (or another tracker). Two export formats:
@@ -18,6 +19,8 @@ interface ExportBundle {
   exportedAt: number
   history: Record<number, HistoryEntry>
   positions: Record<string, Pos>
+  /** Bounded, credential-free source preferences; always exported even when a tracker owns progress. */
+  origins?: Record<number, RememberedSource>
 }
 
 interface WatchJsonOptions {
@@ -31,6 +34,7 @@ export function exportJson(options: WatchJsonOptions = {}): string {
     app: 'izumi', kind: 'watch-history', version: 1, exportedAt: Date.now(),
     history: options.includeHistory === false ? {} : get(localHistory),
     positions: get(positions),
+    origins: get(sourceOrigins),
   }
   return JSON.stringify(bundle, null, 2)
 }
@@ -79,7 +83,7 @@ function validRelease(r: unknown): HistoryEntry['release'] {
 /** Merge an izumi JSON export back into local history + resume positions. Malformed entries are
  *  skipped (never poison the store). Existing entries are kept if they're further along (higher
  *  progress / later timestamp). Returns how many merged. */
-export function importJson(text: string, options: WatchJsonOptions = {}): { imported: number; positionsImported: number } {
+export function importJson(text: string, options: WatchJsonOptions = {}): { imported: number; positionsImported: number; originsImported: number } {
   const data = JSON.parse(text) as Partial<ExportBundle>
   if (data.app !== 'izumi' || data.kind !== 'watch-history' || !data.history || typeof data.history !== 'object') {
     throw new Error('Not an izumi watch-history export.')
@@ -133,7 +137,8 @@ export function importJson(text: string, options: WatchJsonOptions = {}): { impo
     }
     if (positionsImported) positions.set(next)
   }
-  return { imported, positionsImported }
+  const originsImported = mergeSourceOrigins(data.origins)
+  return { imported, positionsImported, originsImported }
 }
 
 /** Prompt for a location and write the given text there. Returns false if the user cancelled. */

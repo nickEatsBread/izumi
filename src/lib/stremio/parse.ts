@@ -9,6 +9,14 @@
 // auto-play path, and the season verifier so the Torrentio-vs-Comet knowledge
 // never drifts apart again.
 
+export type StreamOriginKind = 'addon' | 'torrent-extension' | 'online-extension'
+export interface StreamOrigin {
+  kind: StreamOriginKind
+  /** Opaque addon-config fingerprint or stable extension id. Never a credential-bearing URL. */
+  id: string
+  name?: string
+}
+
 export interface Stream {
   url?: string
   name?: string
@@ -28,6 +36,9 @@ export interface Stream {
   // or by the extensions layer (base64 icon + extension name), for the picker.
   __logo?: string
   __addonName?: string
+  // Stable origin used by Continue Watching to query only the source that last succeeded.
+  // Deliberately contains no resolved URL, auth header, magnet, or debrid credential.
+  __origin?: StreamOrigin
   // Source-declared match confidence (extension SDK `accuracy`). 'high' = the source verified
   // this result against the episode's PRODUCTION id (e.g. TVDB episode id), so title heuristics
   // must not second-guess it — foreign-language release names carry no romaji/english tokens

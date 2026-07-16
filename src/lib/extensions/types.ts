@@ -13,6 +13,7 @@ export interface TorrentResult {
   accuracy?: 'high' | 'medium' | 'low'
   type?: 'batch' | 'best' | 'alt'
   provider?: string // display name of the source extension that returned it (for the picker label)
+  providerId?: string // stable extension id used for direct Continue Watching resolution
   logo?: string // icon URL/data of the source extension (for the picker logo)
 }
 

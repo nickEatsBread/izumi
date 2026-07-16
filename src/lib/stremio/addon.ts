@@ -1,6 +1,7 @@
 import { phttp } from '$lib/net/http'
 import { describe, isNotice, isUncached, isWrongSeason, type Stream, type StreamInfo, type CacheState, type StreamSort } from './parse'
 import { fetchManifest } from './manifest'
+import { addonOriginId } from './sources'
 
 // Re-export the parse surface so existing importers keep using `$lib/stremio/addon`.
 export {
@@ -92,7 +93,12 @@ export async function fetchAddonStreams(
       ])
       if (!r.ok) return { streams: [], total: 0 }
       const j = await r.json() as { streams?: Stream[] }
-      const all = (j.streams ?? []).map((s) => ({ ...s, __logo: m?.logo, __addonName: m?.name }))
+      const all = (j.streams ?? []).map((s) => ({
+        ...s,
+        __logo: m?.logo,
+        __addonName: m?.name,
+        __origin: { kind: 'addon' as const, id: addonOriginId(b), name: m?.name },
+      }))
       const usable = all.filter((s) => (!!s.url || !!s.infoHash) && !isNotice(s))
       return { streams: usable, total: all.length }
     } catch { return { streams: [], total: 0 } }

@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
-import { enabledAddonUrls } from './sources'
+import { addonOriginId, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
-import { getStreams, fetchAddonStreams, streamId, pickBest, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
+import { getStreams, fetchAddonStreams, streamId, pickBest, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wrongFranchiseSeason } from './relevance'
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
@@ -18,6 +18,7 @@ import type { TorrentResult } from '$lib/extensions/types'
 import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
+import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
 import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -236,6 +237,7 @@ function extToStream(r: TorrentResult, extName: string): Stream {
     // The picker heading reads from __addonName, so the row shows which extension found it; __logo
     // supplies the extension's icon (and, being present, suppresses the redundant name on the right).
     __addonName: extName,
+    __origin: r.providerId ? { kind: 'torrent-extension', id: r.providerId, name: extName } : undefined,
     __logo: r.logo,
     title: `${r.title}\n👤 ${r.seeders ?? 0}${gb ? ` 💾 ${gb}` : ''}`,
     behaviorHints: { filename: r.title, videoSize: r.size },
@@ -331,7 +333,13 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
 // yet refined — the caller's refine pass dedupes/season-verifies them together with
 // the addon streams). Best-effort: [] on failure/none. Results stream through `onBatch`
 // PER SOURCE as each settles — one slow/wedged source no longer holds back the rest.
-async function extToStreams(media: Media, episode: number | undefined, kitsu: number | undefined, onBatch: (s: Stream[]) => void): Promise<void> {
+async function extToStreams(
+  media: Media,
+  episode: number | undefined,
+  kitsu: number | undefined,
+  onBatch: (s: Stream[]) => void,
+  onlyOriginId?: string,
+): Promise<void> {
   try {
     // Resolve the production-specific AniZip ids (AniDB/TVDB + absolute episode) so ID-based
     // extensions (those keyed by AniDB) hit the RIGHT title + a freshly-aired episode. Cached
@@ -390,8 +398,8 @@ async function extToStreams(media: Media, episode: number | undefined, kitsu: nu
     // (search/smartSearch). Query both concurrently; each source's batch folds in as it lands.
     const fold = (rs: TorrentResult[]) => onBatch(rs.map((r) => extToStream(r, r.provider ?? 'Extension')))
     await Promise.all([
-      queryExtensions(query, fold),
-      queryTorrentProviders(query, toProviderMedia(media), fold),
+      queryExtensions(query, fold, onlyOriginId),
+      queryTorrentProviders(query, toProviderMedia(media), fold, onlyOriginId),
     ])
   } catch { /* best-effort: failed sources contributed nothing */ }
 }
@@ -618,13 +626,65 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   }
 }
 
-/** Resume from Continue Watching / the detail Continue button: play the SAME release the user last
- *  watched this show with (persisted in local history) instead of making them pick again. Threads
- *  that release into playEpisode as a continuity hint, so as sources load a matching one
- *  auto-continues — a cached one plays in about a second (the picker never asks), an uncached one
- *  after the list settles — and only a genuine no-match leaves the picker open for a manual choice.
- *  With no remembered release (a show never played here) it's just a normal play + auto-select. */
+/** Query only the last successful origin for Continue Watching. Resolved URLs are intentionally
+ *  never reused (they expire and can carry credentials); the remembered addon/extension performs
+ *  a fresh episode lookup. A disabled/missing origin, timeout, no release match, or unusable result
+ *  returns undefined so the caller can open the normal picker. */
+async function resolveRememberedSource(media: Media, episode: number, remembered: RememberedSource): Promise<Stream | undefined> {
+  let streams: Stream[] = []
+  if (remembered.origin.kind === 'addon') {
+    const base = get(enabledAddonUrls).find((url) => addonOriginId(url) === remembered.origin.id)
+    if (!base) return undefined
+    const kitsu = await resolveKitsu(media)
+    if (!kitsu) return undefined
+    streams = (await fetchAddonStreams(base, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')).streams
+  } else if (remembered.origin.kind === 'online-extension') {
+    streams = await resolveOnlineStreams(media, episode, remembered.origin.id)
+  } else {
+    const kitsu = await resolveKitsu(media)
+    await extToStreams(media, episode, kitsu, (batch) => { streams = [...streams, ...batch] }, remembered.origin.id)
+  }
+
+  streams = refineStreams(media, streams)
+  const map = await getEpisodeSeasonMap(media.id).catch(() => ({} as Record<number, { season?: number; abs?: number }>))
+  const want = map[episode]
+  if (want && (want.season != null || want.abs != null)) streams = verifySeason(streams, want)
+  if (!streams.length) return undefined
+
+  const release = remembered.release
+  const same = release && (release.infoHash || release.bingeGroup || release.group)
+    ? streams.find((stream) => matchesRelease(stream, release))
+    : undefined
+  if (remembered.origin.kind === 'torrent-extension') {
+    // Extension torrents do not advertise debrid cache state. Reuse only the exact pack/group;
+    // selecting an unrelated first search result would silently change the user's release.
+    return same
+  }
+  if (same && playableNow(same) && !isUncached(same)) return same
+  // Within the already-pinned addon/online origin, use the normal quality preference only when
+  // there is no exact release match. pickBest remains cached/direct-only.
+  return pickBest(rankStreams(streams), get(preferredQuality), want)
+}
+
+/** Resume from Continue Watching / the detail Continue button. First query only the separately
+ *  persisted last-successful origin. Any miss/failure falls back to the normal progressive picker;
+ *  the legacy release hint is still carried there so older history entries remain useful. */
 export async function resumeEpisode(media: Media, episode: number, onState: (s: PlayState) => void) {
+  const remembered = get(sourceOrigins)[media.id]
+  if (remembered) {
+    onState({ status: 'resolving' })
+    try {
+      const stream = await resolveRememberedSource(media, episode, remembered)
+      if (stream) {
+        let failed = false
+        await playStream(media, episode, stream, (state) => {
+          if (state.status === 'error') failed = true
+          else onState(state)
+        })
+        if (!failed) return
+      }
+    } catch { /* stale/offline origin: the full picker below is the recovery path */ }
+  }
   const rel = get(localHistory)[media.id]?.release
   const cont: ContinueHint | undefined =
     rel && (rel.group || rel.bingeGroup) ? { group: rel.group, bingeGroup: rel.bingeGroup } : undefined
@@ -722,6 +782,11 @@ export async function playStream(media: Media, episode: number | undefined, stre
     }
   }
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
+  const rememberSuccess = () => rememberSourceOrigin(media.id, stream.__origin, {
+    infoHash: stream.infoHash,
+    bingeGroup: stream.behaviorHints?.bingeGroup,
+    group: describe(stream).group,
+  })
   try {
     currentMedia = media
     // Resume from the last saved position for this exact episode, if any.
@@ -756,6 +821,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
         // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
         androidStreamInfo.set({ url: stream.url, headers: (stream.__stream ? stream.__headers : undefined) ?? {} })
         androidMpvActive.set(true)
+        rememberSuccess()
         onState({ status: 'playing' })
         if (episode != null) attachAndroid(media, episode, onState)
         return
@@ -765,6 +831,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
       // ACTION_VIEW'd across apps since Android 7).
       const isLocalFile = !/^https?:\/\//i.test(stream.url)
       const ok = await playViaIntent(media, episode ?? null, stream.url, isLocalFile)
+      if (ok) rememberSuccess()
       return onState(
         ok
           ? { status: 'playing' }
@@ -779,6 +846,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
       const path = get(externalPlayerPath)
       if (!path) return onState({ status: 'error', message: 'No external player selected — set its path in Settings.' })
       await invoke('spawn_external_player', { path, url: stream.url })
+      rememberSuccess()
       onState({ status: 'playing' })
       return
     }
@@ -820,6 +888,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
       headers: stream.__stream ? stream.__headers : undefined,
       subtitles: subtitles.length ? subtitles : undefined,
     })
+    rememberSuccess()
     playing.set(true)
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().

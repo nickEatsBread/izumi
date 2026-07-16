@@ -301,9 +301,9 @@
           <div>
             <h3 class="font-bold">Watch progress</h3>
             {#if trackerGate}
-              <p class="mt-1 text-sm text-muted-foreground">Exact episode resume positions sync through Iroh. AniList or MyAnimeList remains the source of truth for watched episode numbers.</p>
+              <p class="mt-1 text-sm text-muted-foreground">Exact resume positions and remembered playback sources sync through Iroh. AniList or MyAnimeList remains the source of truth for watched episode numbers.</p>
             {:else}
-              <p class="mt-1 text-sm text-muted-foreground">Anime history, episode numbers, and exact resume positions sync automatically after playback changes.</p>
+              <p class="mt-1 text-sm text-muted-foreground">Anime history, episode numbers, exact resume positions, and remembered playback sources sync automatically after playback changes.</p>
             {/if}
           </div>
           <button onclick={syncWatchNow} disabled={!!busy} data-focusable class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50"><RefreshCw size={16} /> Sync now</button>

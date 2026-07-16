@@ -1,5 +1,6 @@
 import type { HistoryEntry } from "$lib/player/history";
 import type { Pos } from "$lib/player/progress";
+import type { RememberedSource } from "$lib/player/source-origin";
 
 export type SyncStatus =
   | { state: "disabled" }
@@ -41,6 +42,7 @@ export interface WatchSnapshot {
   exportedAt: number;
   history: Record<number, HistoryEntry>;
   positions: Record<string, Pos>;
+  origins?: Record<number, RememberedSource>;
 }
 
 export interface ManualSnapshot {

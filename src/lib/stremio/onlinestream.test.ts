@@ -33,7 +33,7 @@ describe('videoSourceToStream', () => {
   it('maps a VideoSource to a direct streaming Stream', () => {
     const s = videoSourceToStream(
       { url: 'https://cdn/x.m3u8', type: 'm3u8', quality: '1080p', subtitles: [{ url: 'https://s/en.vtt', lang: 'en' }] },
-      'server-1', { Referer: 'https://site' }, 'ProviderX', 'The Journey', 'sub',
+      'server-1', { Referer: 'https://site' }, 'ProviderX', 'The Journey', 'sub', 'provider-x',
     )
     expect(s.url).toBe('https://cdn/x.m3u8')
     expect(s.__stream).toBe(true)
@@ -41,6 +41,7 @@ describe('videoSourceToStream', () => {
     expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'en', isDefault: false }])
     expect(s.__audio).toBe('sub')
     expect(s.__addonName).toBe('ProviderX')
+    expect(s.__origin).toEqual({ kind: 'online-extension', id: 'provider-x', name: 'ProviderX' })
     expect(s.name).toContain('ProviderX')
     expect(s.name).toContain('1080p')
     expect(s.behaviorHints?.filename).toContain('The Journey')

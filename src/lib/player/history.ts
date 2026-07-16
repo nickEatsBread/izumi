@@ -2,6 +2,7 @@ import { persisted } from 'svelte-persisted-store'
 import { get, writable } from 'svelte/store'
 import { saveLocalHistory } from '$lib/settings/ui'
 import type { Media } from '$lib/anilist/types'
+import { clearSourceOrigins, forgetSourceOrigin } from './source-origin'
 
 // Local watch history — saved on-device regardless of whether AniList/MyAnimeList is linked, so
 // Continue Watching (and resume) work with no account. One entry per anime, keyed by AniList media
@@ -88,11 +89,13 @@ export function recordProgress(media: Media, episode: number) {
 /** Drop one anime from local history. */
 export function forgetMedia(mediaId: number) {
   localHistory.update((h) => { const n = { ...h }; delete n[mediaId]; return n })
+  forgetSourceOrigin(mediaId)
 }
 
 /** Wipe all local watch history. */
 export function clearHistory() {
   localHistory.set({})
+  clearSourceOrigins()
 }
 
 /** History entries as a most-recently-updated-first array (for Continue Watching / the settings list). */

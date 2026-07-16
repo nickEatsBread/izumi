@@ -238,11 +238,13 @@ function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<Tor
  *  returns [] when none are configured or all fail. Never throws.
  *  `onBatch` (optional) fires with each extension's results AS IT SETTLES, so the picker can
  *  fold sources in live instead of waiting on the slowest (or a wedged one's 20s timeout). */
-export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: TorrentResult[]) => void): Promise<TorrentResult[]> {
+export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string): Promise<TorrentResult[]> {
   try {
     if (!get(enabledExtensionUrls).length) return []
     const exts = await ensureRunning()
-    const live = (await Promise.all(exts.map(async (e) => ((await e.ready) ? e : null)))).filter(Boolean) as RunningExt[]
+    const candidates = exts.filter((e) => !onlyId || e.cfg.id === onlyId)
+    const live = (await Promise.all(candidates.map(async (e) => ((await e.ready) ? e : null))))
+      .filter((e): e is RunningExt => !!e)
     // Movies also get single(): SDK sources treat single() as the universal entry (their movie()
     // often returns [] with "single already gets movies with matching media id").
     const methods = query.episode != null ? ['single', 'batch'] : ['single', 'movie']
@@ -251,7 +253,12 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
     // generic "Extension" fallback. Per-extension map (not a flat fan-out) keeps that association.
     const batches = await Promise.all(live.map(async (e) => {
       const rs = (await Promise.all(methods.map((m) => call(e, m, query)))).flat()
-      const stamped = rs.map((r) => ({ ...r, provider: r.provider ?? e.cfg.name, logo: r.logo ?? e.cfg.icon }))
+      const stamped = rs.map((r) => ({
+        ...r,
+        provider: r.provider ?? e.cfg.name,
+        providerId: e.cfg.id,
+        logo: r.logo ?? e.cfg.icon,
+      }))
       if (onBatch && stamped.length) onBatch(stamped)
       return stamped
     }))
@@ -281,28 +288,30 @@ function callRaw(ext: RunningExt, method: string, args: unknown[]): Promise<any>
 
 /** The live onlinestream-provider extensions, each with a bound multi-arg `call`. The
  *  orchestrator (stremio/onlinestream) drives search/findEpisodes/findEpisodeServer through it. */
-export async function runningStreamExtensions(): Promise<
+export async function runningStreamExtensions(onlyId?: string): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
   if (!get(enabledExtensionUrls).length) return []
   const exts = await ensureRunning()
   const live = (await Promise.all(
-    exts.map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
+    exts.filter((e) => !onlyId || e.cfg.id === onlyId)
+      .map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
   )).filter(Boolean) as RunningExt[]
   return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
 }
 
 /** The live anime-torrent-provider extensions, each with a bound multi-arg `call`.
  *  torrentProvider.queryTorrentProviders drives search/smartSearch through it. */
-export async function runningTorrentProviderExtensions(): Promise<
+export async function runningTorrentProviderExtensions(onlyId?: string): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; icon?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
   if (!get(enabledExtensionUrls).length) return []
   const exts = await ensureRunning()
   const live = (await Promise.all(
-    exts.map(async (e) => ((await e.ready) && e.cfg.type === 'anime-torrent-provider' ? e : null)),
+    exts.filter((e) => !onlyId || e.cfg.id === onlyId)
+      .map(async (e) => ((await e.ready) && e.cfg.type === 'anime-torrent-provider' ? e : null)),
   )).filter(Boolean) as RunningExt[]
   return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, icon: e.cfg.icon, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
 }
