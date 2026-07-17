@@ -51,6 +51,11 @@ export interface Stream {
   __subtitles?: { url: string; lang?: string; isDefault?: boolean }[]
   // Resolved audio track for a direct stream: 'dub' or 'sub' (from the provider search pass).
   __audio?: 'sub' | 'dub'
+  // Raw source-reported seeder count for extension torrents, kept STRUCTURALLY (not parsed back
+  // out of the title) so dedupeStreams can keep the best-seeded copy when several indexers return
+  // the same infoHash with disagreeing counts (one live, one 0/unknown). Display still flows
+  // through the 👤 title round-trip; this is ranking-only.
+  __seeders?: number
 }
 
 export type CacheState = 'instant' | 'uncached' | 'down'
