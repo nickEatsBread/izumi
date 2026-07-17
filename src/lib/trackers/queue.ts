@@ -102,8 +102,13 @@ export function enqueue(tracker: TrackerName, op: TrackerOp) {
       if (op.status !== 'REPEATING' && p <= confirmedFloor(tracker, op.mediaId)) return next // already delivered a >= progress
       // Merge with an existing pending progress op for this title (keep the higher progress + newest
       // status/extras), and drop any pending status op (progress carries the authoritative status).
+      // EXCEPT across a rewatch boundary: a REPEATING op merging with a pending non-REPEATING op
+      // (or vice versa) must not inherit the other pass's episode count — a rewatch starting at ep1
+      // absorbing a stale queued ep12 would replay "REPEATING at ep12" and finish the rewatch
+      // instantly. The newer op reflects the newer intent; it wins outright.
       const existing = next.find((e) => e.tracker === tracker && opKey(tracker, e.op) === opKey(tracker, op))
-      const merged: TrackerOp = existing && (existing.op.progress ?? 0) > p
+      const sameWatchPass = existing && (existing.op.status === 'REPEATING') === (op.status === 'REPEATING')
+      const merged: TrackerOp = existing && sameWatchPass && (existing.op.progress ?? 0) > p
         ? { ...op, progress: existing.op.progress }
         : op
       next = next.filter((e) => !(e.tracker === tracker && (e.op.kind === 'progress' || e.op.kind === 'status') && e.op.mediaId === op.mediaId))

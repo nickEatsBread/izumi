@@ -36,6 +36,24 @@ describe('tracker retry queue', () => {
     expect(mine(104)[0].op.status).toBe('REPEATING')
   })
 
+  it('a rewatch (REPEATING) op replaces a pending non-rewatch op instead of inheriting its higher progress', () => {
+    // A completion push failed (ep12 queued), then the user starts a rewatch at ep1. The
+    // rewatch must NOT absorb the stale ep12 — that would replay "REPEATING at ep12" and
+    // instantly finish the rewatch on the tracker.
+    enqueue('AniList', { kind: 'progress', mediaId: 105, progress: 12, status: 'COMPLETED', extras: { completedAt: { year: 2026, month: 1, day: 5 } } })
+    enqueue('AniList', { kind: 'progress', mediaId: 105, progress: 1, status: 'REPEATING' })
+    expect(mine(105)).toHaveLength(1)
+    expect(mine(105)[0].op.progress).toBe(1)
+    expect(mine(105)[0].op.status).toBe('REPEATING')
+  })
+
+  it('rewatch ops still coalesce to the higher progress among themselves', () => {
+    enqueue('AniList', { kind: 'progress', mediaId: 106, progress: 5, status: 'REPEATING' })
+    enqueue('AniList', { kind: 'progress', mediaId: 106, progress: 3, status: 'REPEATING' })
+    expect(mine(106)).toHaveLength(1)
+    expect(mine(106)[0].op.progress).toBe(5)
+  })
+
   it('a progress enqueue evicts a pending status op for the same title', () => {
     enqueue('AniList', statusOp(103))
     enqueue('AniList', progOp(103, 2))
