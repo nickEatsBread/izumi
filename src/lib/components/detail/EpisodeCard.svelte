@@ -7,7 +7,7 @@
   import type { DownloadItem } from '$lib/downloads/state'
   import { ratingBg } from '$lib/anilist/media'
   import { episodeLabels } from '$lib/anilist/episode-labels'
-  import { positionPercent, positions, progressKey } from '$lib/player/progress'
+  import { episodeBarPercent, positions, progressKey } from '$lib/player/progress'
   import { hideSpoilers } from '$lib/settings/ui'
   import Download from 'lucide-svelte/icons/download'
   import Loader from 'lucide-svelte/icons/loader-circle'
@@ -45,7 +45,10 @@
 
   const trackedDone = $derived(watchedThrough >= ep)
   const savedPosition = $derived($positions[progressKey(media.id, ep)])
-  const pct = $derived(released ? (trackedDone ? 100 : Math.round(positionPercent(savedPosition) * 100)) : 0)
+  // Actual saved position wins; the whole-episode "done" flag only fills the bar as a fallback
+  // (finished + cleared, or watched elsewhere) — so a counted-but-not-finished episode shows the
+  // real fraction instead of snapping to a full 100. See episodeBarPercent.
+  const pct = $derived(episodeBarPercent(savedPosition, trackedDone, released))
   const spoiler = $derived($hideSpoilers && !trackedDone)
   const labels = $derived(episodeLabels(ep, meta?.title, spoiler))
 

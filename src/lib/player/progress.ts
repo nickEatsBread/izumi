@@ -44,6 +44,19 @@ export function episodePercent(mediaId: number, episode: number): number {
   return positionPercent(get(positions)[progressKey(mediaId, episode)])
 }
 
+/** Progress-bar percent (0..100) for one episode row. Prefers the ACTUAL saved position so a
+ *  partly-watched episode shows how far in you really got — the whole-episode `watched` flag only
+ *  fills the bar as a FALLBACK, for a finished episode whose resume point was cleared on EOF (pos
+ *  0) or one watched on another device (no local position at all). Without this, the 85%
+ *  watch-threshold that bumps the tracker count flips `watched` true and snapped every counted
+ *  episode's bar to a full 100, hiding the real position. Unreleased/unwatched → 0. */
+export function episodeBarPercent(position: Pos | undefined, watchedThrough: boolean, released = true): number {
+  if (!released) return 0
+  const saved = Math.round(positionPercent(position) * 100)
+  if (saved > 0) return saved
+  return watchedThrough ? 100 : 0
+}
+
 /** Forget the saved position for a media + episode (e.g. once finished). */
 export function clearPosition(mediaId: number, episode: number) {
   positions.update((p) => {
