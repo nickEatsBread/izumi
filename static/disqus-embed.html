@@ -19,13 +19,41 @@
       f=<forum shortname>  t_i=<identifier>  t_u=<canonical page url>  t_t=<title>
   -->
   <meta name="referrer" content="no-referrer" />
+  <!-- Scripts in THIS page: only ours (inline) + embed.js itself. embed.js also injects its "lounge"
+       helper (alfie, from disquscdn) into its HOST page, which runs a link-affiliation tracker
+       (viglink) firing plain-http beacons — none of it is needed for the comments, which live in a
+       cross-origin disqus.com iframe this policy can't touch. script-src drops alfie & friends;
+       img-src https: kills any plain-http beacon from whatever still runs. Fetches (reaction counts
+       to the forum host) stay unrestricted. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="script-src 'unsafe-inline' https://disqus.com https://*.disqus.com; img-src https: data: blob:" />
+  <!-- Warm the TLS handshakes the embed is guaranteed to need: the forum subdomain serves embed.js,
+       disqus.com serves the inner comments iframe, disquscdn serves its app bundle. (Same connection
+       pool as the inner iframe: pooling is partitioned by top-level site, which we share.) The forum
+       subdomain is only known from the query string, so a tiny parser-blocking script injects it
+       before anything else queues. -->
+  <link rel="preconnect" href="https://disqus.com" />
+  <link rel="preconnect" href="https://c.disquscdn.com" />
+  <script>
+    (function () {
+      var f = (new URLSearchParams(location.search).get('f') || '').trim();
+      if (!/^[a-zA-Z0-9-]+$/.test(f)) return;
+      var l = document.createElement('link');
+      l.rel = 'preconnect';
+      l.href = 'https://' + f + '.disqus.com';
+      document.head.appendChild(l);
+    })();
+  </script>
   <!-- Roboto for the embed's own chrome (reactions strip + wrapper). The Disqus comment text itself
        lives in a cross-origin disqus.com iframe we can't restyle (the reference extension forces
-       Roboto there via a content-script injected INTO that iframe — only an extension can). Webfont is
-       fine: the whole embed is online-only, so it loads exactly when the comments do. -->
+       Roboto there via a content-script injected INTO that iframe — only an extension can). Loaded
+       async (preload→stylesheet swap): a plain stylesheet link would hold up the body-end inline
+       script — parser-inserted scripts wait on pending sheets — putting a fonts.googleapis.com round
+       trip in front of the embed.js request. Brief fallback-font flash on the strip is fine. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap"
+        onload="this.onload=null;this.rel='stylesheet'" />
   <style>
     html, body { margin: 0; padding: 0; background: #0a0a0b; color-scheme: dark; font-family: 'Roboto', sans-serif; }
     /* Thin, themed scrollbar (this page is a separate doc, so the app's global scrollbar hiding doesn't
@@ -108,6 +136,7 @@
       var s = document.createElement('script');
       s.src = 'https://' + forum + '.disqus.com/embed.js';
       s.async = true;
+      s.fetchPriority = 'high'; // everything on this page waits on it; no-op where unsupported
       s.referrerPolicy = 'no-referrer';
       s.setAttribute('data-timestamp', +new Date());
       (document.head || document.body).appendChild(s);

@@ -3,7 +3,7 @@
   // on nowPlayingMedia.{media,episode}. Aggregates AniList forum threads (per-series, link-out) + the
   // r/anime episode thread found by search (inline comment bodies) + an optional configured mapper.
   // Read-only for now — posting (AniList free, Reddit OAuth) is a later phase.
-  import { fly, scale, fade } from 'svelte/transition'
+  import { fade } from 'svelte/transition'
   import { invoke } from '@tauri-apps/api/core'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import MessageSquare from 'lucide-svelte/icons/message-square'
@@ -25,6 +25,10 @@
   let tacTimedOut = $state(false)
   let tacPopup: Window | null = null
   let tacPopupPoll: number | undefined
+  // Once the embed's source tab has been selected for this episode, its iframe stays mounted (hidden
+  // via CSS) across tab switches, expand/dock toggles and panel close — remounting an iframe reboots
+  // the whole third-party embed (script re-exec + every no-store API call again), which is seconds.
+  let embedEverShown = $state(false)
   // Dedup guard — NON-reactive on purpose. If this were `$state`, the effect below (which reads AND
   // writes it) would re-trigger itself, cancel its own in-flight fetch, and leave `loading` stuck true.
   let loadedKey = ''
@@ -39,6 +43,7 @@
     loadedKey = key
     loading = true
     filter = 'All'
+    embedEverShown = false
     let cancelled = false
     let completed = false
     fetchDiscussion(np.media, np.episode).then((t) => {
@@ -65,9 +70,9 @@
   const sources = $derived([...new Set(threads.map((t) => t.source))])
   const sourceTabs = $derived(['All', ...sources])
   const shown = $derived(filter === 'All' ? threads : threads.filter((t) => t.source === filter))
-  // When a single source is selected and its thread is embeddable (Disqus/forum), render the embed
-  // inline instead of the comment list / link-out.
-  const embedThread = $derived(filter !== 'All' ? shown.find((t) => t.embedUrl || t.scriptEmbed) : undefined)
+  // The episode's embeddable thread (Disqus/forum/TAC), independent of the selected tab — the iframe
+  // mounts once and is only *shown* when its source tab is selected (see embedActive below).
+  const embedThread = $derived(threads.find((t) => t.embedUrl || t.scriptEmbed))
   const embedUrl = $derived(embedThread?.embedUrl)
   const ep = $derived($nowPlayingMedia?.episode)
   const TAC_ORIGIN = 'https://theanimecommunity.com'
@@ -128,6 +133,12 @@
           : withDark(embedUrl),
   )
   const archiveEmbed = $derived(isDiscussAnimeEmbed(embedUrl))
+  // Visible only while its source tab is selected; mounted from the moment the thread list arrives so
+  // URL embeds pre-boot in the background and the tab is warm on first click. Script embeds (TAC) wait
+  // for first selection instead — loading TAC can kick off interactive Cloudflare verification.
+  const embedActive = $derived(!loading && !!embedSrc && filter !== 'All' && embedThread?.source === filter)
+  const embedMounted = $derived(!!embedSrc && (!embedThread?.scriptEmbed || embedEverShown))
+  $effect(() => { if (embedActive) embedEverShown = true })
   // Note on the archive embed's dark mode: `.dq-archive` is dark-by-default and forced LIGHT only by
   // `@media (prefers-color-scheme: light)`. So the cross-origin lever is the WEBVIEW's color scheme —
   // forced dark in Rust (set_webview_dark → WebView2 SetPreferredColorScheme). The archive's own
@@ -235,7 +246,8 @@
   // black frame with a recovery action that opens the first-party verification view.
   $effect(() => {
     void tacReload
-    if (!directTacEmbed) { tacTimedOut = false; return }
+    // Not mounted yet (TAC mounts on first tab selection) → no widget to time out on.
+    if (!directTacEmbed || !embedMounted) { tacTimedOut = false; return }
     tacReady = false
     tacTimedOut = false
     const timer = window.setTimeout(() => { if (!tacReady) tacTimedOut = true }, 5_000)
@@ -263,8 +275,9 @@
         return
       }
       const amount = dir === 'down' ? 180 : -180
-      const localScroller = archiveScroller ?? listScroller
-      if (localScroller) { localScroller.scrollBy(0, amount); return }
+      // The embed's scroller stays bound while hidden on another tab — pick by what's visible.
+      if (!embedActive) { listScroller?.scrollBy(0, amount); return }
+      if (archiveScroller) { archiveScroller.scrollBy(0, amount); return }
       try { embedIframe?.contentWindow?.scrollBy(0, amount) } catch { /* Cross-origin uses archiveScroller. */ }
     }
     window.addEventListener('comments-nav', onNav)
@@ -353,12 +366,14 @@
     </div>
   {/if}
 
-  {#if !loading && embedSrc}
+  {#if embedMounted}
     <!-- Embeddable source: our same-origin Disqus loader page (which renders its own reactions strip
          above the comments), or a forum's own embed page. onload posts the current mode so the loader
-         styles its reactions compact (side) vs Hayami-tiles (expanded). -->
+         styles its reactions compact (side) vs Hayami-tiles (expanded). Kept mounted (display:none)
+         while other tabs are selected or the panel is closed — detaching an iframe reboots the embed
+         from scratch, so it boots once per episode instead of on every tab switch/expand/reopen. -->
     {#if archiveEmbed}
-      <div bind:this={archiveScroller} class="discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5">
+      <div bind:this={archiveScroller} class={embedActive ? 'discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5' : 'hidden'}>
         <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} scrolling="no"
                 style:height={archiveHeight ? `${archiveHeight}px` : '100%'}
                 class="block min-h-full w-full border-0"
@@ -366,7 +381,7 @@
       </div>
     {:else}
       {#if directTacEmbed}
-        <div class="relative min-h-0 flex-1">
+        <div class={embedActive ? 'relative min-h-0 flex-1' : 'hidden'}>
           <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postIframeState} class="block h-full w-full border-0"
                   sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
           {#if tacTimedOut && !tacReady}
@@ -383,11 +398,13 @@
           {/if}
         </div>
       {:else}
-        <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postIframeState} class="block min-h-0 w-full flex-1 border-0"
+        <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} onload={postIframeState}
+                class="{embedActive ? 'block' : 'hidden'} min-h-0 w-full flex-1 border-0"
                 sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
       {/if}
     {/if}
-  {:else}
+  {/if}
+  {#if !embedActive}
     <div bind:this={listScroller} class="flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3">
       {#if loading}
         {#each Array.from({ length: 5 }) as _}<div class="mb-2 h-20 animate-pulse rounded-lg bg-muted"></div>{/each}
@@ -433,27 +450,24 @@
 <!-- data-comments-panel: the player's overlay-tap handler ignores clicks originating in the panel (and
      the backdrop) so taps on pills/links/backdrop don't toggle play/pause. The window titlebar hides
      itself while the discussion is open — see Titlebar.svelte. -->
-{#if $commentsOpen}
-  {#if $discussionExpanded}
-    <!-- Expanded: clicking the backdrop closes the discussion; the panel is a separate, higher-level
-         pointer target, so interaction inside it never reaches this handler. -->
-    <button type="button" data-comments-panel aria-label="Close discussion" transition:fade={{ duration: 150 }}
-            onclick={() => commentsOpen.set(false)}
-            class="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm"></button>
-    <div class="pointer-events-none absolute inset-0 z-40 grid place-items-center p-4">
-      <div data-comments-panel transition:scale={{ start: 0.96, duration: 160 }}
-           class="pointer-events-auto flex h-[85vh] w-[94vw] max-w-[920px] flex-col overflow-hidden rounded-2xl border border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm">
-        {@render panelBody()}
-      </div>
-    </div>
-  {:else}
-    <!-- Side: docked full-height right sheet. -->
-    <div data-comments-panel transition:fly={{ x: 320, duration: 200 }}
-         class="absolute inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm">
-      {@render panelBody()}
-    </div>
-  {/if}
+{#if $commentsOpen && $discussionExpanded}
+  <!-- Expanded: clicking the backdrop closes the discussion; the panel is a separate, higher-level
+       pointer target, so interaction inside it never reaches this handler. -->
+  <button type="button" data-comments-panel aria-label="Close discussion" transition:fade={{ duration: 150 }}
+          onclick={() => commentsOpen.set(false)}
+          class="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm"></button>
 {/if}
+<!-- Always mounted: open/close and docked/expanded are pure CSS state so the embed iframe inside is
+     never reparented or destroyed (either reboots the third-party embed). Closed = visibility:hidden
+     after the exit animation — no paint cost, and Deck nav's checkVisibility filter skips it. -->
+<div data-comments-panel inert={!$commentsOpen}
+     class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm
+       {$discussionExpanded
+         ? 'inset-0 m-auto h-[85vh] w-[94vw] max-w-[920px] overflow-hidden rounded-2xl border'
+         : 'inset-y-0 right-0 w-full max-w-md border-l'}
+       {$commentsOpen ? '' : $discussionExpanded ? 'dq-closed-pop' : 'dq-closed-slide'}">
+  {@render panelBody()}
+</div>
 
 <style>
   /* The app hides scrollbars globally. The archive has to scroll in this parent because its
@@ -463,4 +477,9 @@
   .discussion-scrollbar::-webkit-scrollbar-track { background: transparent; }
   .discussion-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 8px; }
   .discussion-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.28); }
+  /* Open/close animates via classes (not {#if} transitions) so the panel — and the embed iframe in
+     it — stays in the DOM. Visibility flips only after the exit transform/fade finishes. */
+  .dq-panel { transition: transform 200ms ease, opacity 160ms ease, visibility 0s 0s; }
+  .dq-closed-slide { visibility: hidden; transform: translateX(105%); transition: transform 200ms ease, opacity 160ms ease, visibility 0s 200ms; }
+  .dq-closed-pop { visibility: hidden; opacity: 0; transform: scale(0.96); transition: transform 160ms ease, opacity 160ms ease, visibility 0s 160ms; }
 </style>
