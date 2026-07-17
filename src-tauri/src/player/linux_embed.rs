@@ -598,7 +598,13 @@ fn render_frame(inner: &Inner) {
                 true
             }
             None => {
-                elog("render: EGL surface recreation failed");
+                // The old surface is already destroyed above — leave the resize pending so the
+                // next frame retries recreation. Returning without this stranded the dead handle
+                // in `state`: every later make_current failed and the video froze permanently.
+                // (Re-destroying the stale handle on retry is a harmless EGL error; no new
+                // surface is created in between, so the handle can't have been reused.)
+                state.pending_resize = Some((nw, nh));
+                elog("render: EGL surface recreation failed — retrying next frame");
                 return;
             }
         }
