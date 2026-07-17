@@ -100,6 +100,19 @@
   // lands BELOW it instead of under it.
   let headerH = $state(0)
 
+  // Whether the header is actually pinned (sentinel above it scrolled out of view). The dissolve
+  // gradient only renders while pinned — at rest it has nothing scrolling underneath and just
+  // shades the first row below the header.
+  let stuck = $state(false)
+  let sentinel = $state<HTMLElement | undefined>()
+  $effect(() => {
+    const el = sentinel
+    if (!el) return
+    const io = new IntersectionObserver(([entry]) => { stuck = !entry.isIntersecting })
+    io.observe(el)
+    return () => io.disconnect()
+  })
+
   // Live-ish clock so the "Next up" countdowns tick without each card owning a timer.
   let now = $state(Date.now())
   $effect(() => {
@@ -185,16 +198,19 @@
   <p class="text-muted-foreground">Failed to load schedule: {error}</p>
 {:else}
   <!-- Sticky header: the My Shows/All toggle + Next-up stay pinned so switching view or glancing at
-       what's next never means scrolling back up past the auto-scrolled agenda. -->
-  <div class="sticky top-0 z-20 bg-background pb-1 relative" bind:clientHeight={headerH}>
+       what's next never means scrolling back up past the auto-scrolled agenda. The zero-impact
+       sentinel above it feeds the IntersectionObserver that detects the pinned state. -->
+  <div class="h-px -mb-px" bind:this={sentinel} aria-hidden="true"></div>
+  <div class="sticky top-0 z-20 bg-background pb-1" bind:clientHeight={headerH}>
     {@render toggle()}
     {#if isCurrentWeek}
       <ScheduleNextUp airings={shownDays.flat()} {sets} {now} />
     {/if}
     <!-- Soft dissolve just below the pinned header: agenda rows fade into the background as they
          scroll under it, instead of snapping off at the opaque bar's hard bottom edge (the faint
-         "line" wipe that read as uncanny). pointer-events-none so day cards stay clickable. -->
-    <div class="pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-background to-transparent"></div>
+         "line" wipe that read as uncanny). Faded out entirely while the header is at rest so it
+         never shades the content below. pointer-events-none so day cards stay clickable. -->
+    <div class="pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-background to-transparent transition-opacity duration-200 {stuck ? 'opacity-100' : 'opacity-0'}"></div>
   </div>
   {#if view === 'mine' && mineCount === 0}
     {@render mineEmpty()}
