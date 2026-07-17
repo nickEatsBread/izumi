@@ -13,7 +13,14 @@
   // Offset in whole weeks from the current week (0 = this week).
   let offset = $state(0)
 
-  const base = weekRange(new Date())
+  // Ticking base so the week rolls over if the page is left open across a boundary
+  // (Deck parked on the schedule overnight) — a one-shot weekRange would pin last week.
+  let nowMs = $state(Date.now())
+  $effect(() => {
+    const t = setInterval(() => (nowMs = Date.now()), 60_000)
+    return () => clearInterval(t)
+  })
+  const base = $derived(weekRange(new Date(nowMs)))
   const start = $derived(base.start + offset * WEEK)
   const end = $derived(base.end + offset * WEEK)
 
