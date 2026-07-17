@@ -1,8 +1,14 @@
 <p align="center">
-  <img src="https://socialify.git.ci/nickEatsBread/izumi/image?description=1&descriptionEditable=A%20controller-first%20anime%20client%20%E2%80%94%20native%20mpv%20playback%2C%20Stremio-addon%20support%2C%20and%20AniList%2FMAL%20tracking.&font=Jost&logo=https%3A%2F%2Fraw.githubusercontent.com%2FnickEatsBread%2Fizumi%2Fmain%2Fbrand%2Fpng%2Fizumi-mark-color-512.png&name=1&owner=1&pattern=Plus&theme=Light" alt="izumi" width="880" />
+  <img src="brand/svg/izumi-mark-color.svg" alt="izumi brand mark" width="96" />
 </p>
 
----
+<h1 align="center"><b>izumi</b></h1>
+
+<p align="center">
+  <!-- Add the cover photo here:
+  <img src="path/to/izumi-cover.png" alt="izumi preview" width="100%" />
+  -->
+</p>
 
 izumi is a **personal media library manager** for organizing, tracking, and playing anime allowing you to add your own sources, and stream.
 
@@ -10,10 +16,6 @@ izumi is a **personal media library manager** for organizing, tracking, and play
 > This application **does not host, distribute, or provide media content**.
 >
 > izumi is intended solely as a **personal media library manager** for organizing, tracking, and playing content that you **legally own**. Users are responsible for ensuring that all media content used with this application has been **legally** obtained and that its use complies with all applicable **copyright laws**.
-
-<p align="center">
-  <!-- <img src="screenshots/home.png" width="880" alt="izumi home screen" /> -->
-</p>
 
 ## Features
 
@@ -56,12 +58,11 @@ npm run tauri build
 
 ## Status
 
-Early development (`0.1.0`). The Windows desktop build is the working baseline; Linux / Steam
-Deck (Gaming Mode) is the primary target.
+Release builds are available for Windows, Linux, Steam Deck, and
+Android. Expect ongoing changes and the occasional rough edges. If you encounter any issues, please report them through GitHub Issues.
 
 ## License
 
 [AGPL-3.0-or-later](LICENSE) © izumi contributors.
 
-izumi embeds **libmpv** (mpv, **LGPL-2.1-or-later**) as a replaceable dynamic library —
-compatible with the AGPL. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+izumi embeds **libmpv** (mpv, **LGPL-2.1-or-later**) as a replaceable dynamic library. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
