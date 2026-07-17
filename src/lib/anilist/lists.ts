@@ -5,12 +5,14 @@ import type { Media } from './types'
 export const LIST_QUERY = gql`
   query Lists($userName: String!, $status: MediaListStatus) {
     MediaListCollection(userName: $userName, type: ANIME, status: $status, sort: UPDATED_TIME_DESC) {
-      lists { entries { progress media { ...MediaFields } } }
+      lists { entries { progress updatedAt media { ...MediaFields } } }
     }
   }
   ${MEDIA_FIELDS}`
 
-export interface Entry { media: Media; progress: number }
+// `updatedAt` is AniList's list-entry edit time in EPOCH SECONDS (×1000 for ms); used to order the
+// Continue-Watching row across trackers + local history. Optional so older callers/mocks stay valid.
+export interface Entry { media: Media; progress: number; updatedAt?: number }
 interface Coll { MediaListCollection?: { lists?: { entries?: Entry[] }[] } }
 export function flattenEntries(data: Coll | undefined): Entry[] {
   return (data?.MediaListCollection?.lists ?? []).flatMap((l) => l.entries ?? [])

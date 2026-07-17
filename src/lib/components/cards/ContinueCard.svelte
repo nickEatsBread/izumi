@@ -39,8 +39,8 @@
   $effect(() => { void thumb; imgReady = false })
 
   let resolving = $state(false)
-  // Resume the SAME release we last watched this show with — plays straight through when it's
-  // cached, only falling back to the source picker when it can't be matched.
+  // Prefer the last successful origin/release; if it is missing or fails, resumeEpisode opens the
+  // complete source picker. Playback resumes from this episode's saved position either way.
   function play() { resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' }) }
 </script>
 

@@ -30,7 +30,8 @@ export const sessionProgress = writable<Record<number, number>>({})
 
 // Only the fields the cards / resume / MAL export actually read — NOT description/relations/etc,
 // which the detail-page media object carries and would bloat localStorage (quota + per-play rewrite).
-function mediaSnapshot(m: Media): Media {
+// Exported so the Continue-Watching snapshot stores the same trimmed shape.
+export function mediaSnapshot(m: Media): Media {
   return {
     id: m.id,
     idMal: m.idMal,

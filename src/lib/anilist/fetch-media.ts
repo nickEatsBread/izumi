@@ -1,11 +1,12 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import type { Media } from './types'
 
-// Light fetch-by-id (the fields resolveStreams + download naming need), for cases
-// with no urql client / no in-memory Media — e.g. resuming a persisted download
-// after an app restart. Session-cached.
+// Source-complete fetch-by-id for cases where the caller may only have a trimmed/stale history
+// snapshot — notably Continue Watching and persisted downloads. Keep this aligned with the fields
+// source extensions receive on the detail-page path (synonyms/season/start date are significant for
+// new seasons and ambiguous light-novel titles). Session-cached.
 
-const Q = `query($id:Int!){Media(id:$id,type:ANIME){id idMal title{romaji english userPreferred native} format status episodes duration averageScore genres startDate{year} coverImage{extraLarge medium color} bannerImage nextAiringEpisode{episode timeUntilAiring}}}`
+const Q = `query($id:Int!){Media(id:$id,type:ANIME){id idMal title{romaji english userPreferred native} description(asHtml:false) season seasonYear format status episodes duration averageScore genres synonyms startDate{year month day} studios(isMain:true){nodes{id name}} coverImage{extraLarge medium color} bannerImage trailer{id site} nextAiringEpisode{episode timeUntilAiring}}}`
 
 const cache = new Map<number, Media>()
 

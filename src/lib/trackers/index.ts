@@ -248,17 +248,31 @@ export async function getMalAnimeIds(status: string, limit = 20): Promise<number
 // Like getMalAnimeIds, but keeps the canonical watched-episode count that the list
 // endpoint already returns (fields=list_status) — one request, no per-title lookups.
 // Used by the resume row so MAL-tracked shows resume at the right episode. Most-recent
-// first. Returns [] if MAL isn't connected.
-export async function getMalListProgress(status: string, limit = 20): Promise<{ idMal: number; progress: number }[]> {
+// first. `updatedAt` is the entry's edit time in ms (Continue Watching orders by it).
+export interface MalListEntry { idMal: number; progress: number; updatedAt: number }
+
+// Throwing variant: rejects on an HTTP failure so callers that must distinguish "offline/error"
+// from "genuinely empty list" (Continue Watching's no-clobber guard) can catch it. Returns [] only
+// when MAL isn't connected or the list is truly empty.
+export async function getMalListProgressOrThrow(status: string, limit = 20): Promise<MalListEntry[]> {
   if (!get(malToken)) return []
-  try {
-    const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`)
-    if (!r?.ok) return []
-    const j = await r.json() as { data?: { node?: { id?: number }; list_status?: { num_episodes_watched?: number } }[] }
-    return (j.data ?? [])
-      .map((d) => ({ idMal: d.node?.id, progress: d.list_status?.num_episodes_watched ?? 0 }))
-      .filter((e): e is { idMal: number; progress: number } => typeof e.idMal === 'number')
-  }
+  const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`)
+  if (!r) return []
+  if (!r.ok) throw new Error(`MyAnimeList list request failed (${r.status})`)
+  const j = await r.json() as { data?: { node?: { id?: number }; list_status?: { num_episodes_watched?: number; updated_at?: string } }[] }
+  return (j.data ?? [])
+    .map((d) => ({
+      idMal: d.node?.id,
+      progress: d.list_status?.num_episodes_watched ?? 0,
+      updatedAt: d.list_status?.updated_at ? Date.parse(d.list_status.updated_at) : 0,
+    }))
+    .filter((e): e is MalListEntry => typeof e.idMal === 'number')
+}
+
+// Non-throwing wrapper: swallows errors to [] for callers that treat an empty list the same as a
+// failure (the original resume-row behaviour).
+export async function getMalListProgress(status: string, limit = 20): Promise<MalListEntry[]> {
+  try { return await getMalListProgressOrThrow(status, limit) }
   catch { return [] }
 }
 
