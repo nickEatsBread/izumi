@@ -7,7 +7,7 @@
   // week to the viewer's tracked/watched titles (AniList list + MAL list + local history), a "Next
   // up" countdown strip, and a Watching/Planning badge on your shows even in the All view.
   import { getContextClient } from '@urql/svelte'
-  import { listen } from '@tauri-apps/api/event'
+  import { listenSafe } from '$lib/util/listen'
   import { SCHEDULE_QUERY } from '$lib/anilist/detail-queries'
   import { groupByDay, weekRange, type Airing } from '$lib/anilist/schedule'
   import {
@@ -128,13 +128,11 @@
   // digital buttons — one press = one step — unlike the analog triggers.
   $effect(() => {
     if (!gm) return
-    let un: (() => void) | null = null
-    listen<{ name: string; pressed: boolean }>('gamepad-input', (ev) => {
+    return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (ev) => {
       if (!ev.payload.pressed) return
       if (ev.payload.name === 'l1') selected = (selected + 6) % 7
       else if (ev.payload.name === 'r1') selected = (selected + 1) % 7
-    }).then((u) => { un = u })
-    return () => un?.()
+    })
   })
 </script>
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
-  import { listen } from '@tauri-apps/api/event'
+  import { listenSafe } from '$lib/util/listen'
   import { trackMenuOpen } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
@@ -116,8 +116,7 @@
     // player's Back (B) button — the "B gets stuck" bug.
     open = false
     trackMenuOpen.set(false)
-    let un: (() => void) | null = null
-    listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
+    const unGamepad = listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!e.payload.pressed) return
       if (get(deckKeyboardWarning)) return
       if (e.payload.name === 'start') { open ? closeMenu() : openMenu(); return }
@@ -130,7 +129,7 @@
         case 'a': activate(); break
         case 'b': closeMenu(); break
       }
-    }).then((u) => (un = u))
+    })
     // Keyboard parity (Desktop testing / a physical keyboard on the Deck).
     const onKey = (e: KeyboardEvent) => {
       if (get(deckKeyboardWarning)) return
@@ -147,7 +146,7 @@
     }
     window.addEventListener('keydown', onKey, true)
     return () => {
-      un?.()
+      unGamepad()
       window.removeEventListener('keydown', onKey, true)
       // Never leave the flag stuck true on unmount (player close) — else Back is gated next time.
       trackMenuOpen.set(false)

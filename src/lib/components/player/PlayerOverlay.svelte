@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte'
   import { fade } from 'svelte/transition'
   import { listen } from '@tauri-apps/api/event'
+  import { listenSafe } from '$lib/util/listen'
   import { invoke } from '@tauri-apps/api/core'
   import Controls from './Controls.svelte'
   import TrackMenu from './TrackMenu.svelte'
@@ -391,8 +392,7 @@
 
   $effect(() => {
     if (!gmMode || !$playing) return
-    let un: (() => void) | null = null
-    listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
+    return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!e.payload.pressed) return
       if (get(deckKeyboardWarning)) return
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
@@ -424,8 +424,7 @@
         case 'l1': padEpisode(-1); break
         case 'r1': padEpisode(1); break
       }
-    }).then((u) => { un = u })
-    return () => un?.()
+    })
   })
 
   // TEMP diagnostic: log mpv's actual render-surface size vs the window on first frame,
