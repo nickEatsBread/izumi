@@ -57,12 +57,10 @@
   <style>
     html, body { margin: 0; padding: 0; background: #0a0a0b; color-scheme: dark; font-family: 'Roboto', sans-serif; }
     /* Thin, themed scrollbar (this page is a separate doc, so the app's global scrollbar hiding doesn't
-       reach it). Subtle translucent thumb on a transparent track to match the app's dark chrome. */
+       reach it). STANDARD properties only — ::-webkit-scrollbar custom-painted scrollbars need a
+       main-thread thumb repaint on every scroll offset, and embed.js keeps that thread busy; the
+       native thin scrollbar composites off-thread with the same translucent look. */
     html { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.16) transparent; }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
     #disqus_thread { padding: 10px; }
     #err { padding: 16px; font: 13px system-ui, sans-serif; color: #9aa0a6; }
     /* Reactions strip — public per-thread counts from the forum host, shown above the comments (where
@@ -105,6 +103,13 @@
        disquscdn.com — never services.disqus.com — so hiding that subdomain family is safe. The
        observer below also removes them outright (this only covers any that slip in pre-script). */
     iframe[src*="services.disqus.com"] { display: none !important; }
+    /* Wheel-burst fast path: the comments live in a full-height CROSS-ORIGIN iframe that never
+       scrolls itself, so a wheel over it is hit-tested to the Disqus renderer process first (its
+       first event per sequence even cancelable → blocks on that busy main thread) before the
+       scroll bubbles back to THIS document's scroller. During a wheel burst we drop the inner
+       iframe's hit-testing so wheel targets this scroller directly; hover/clicks inside the
+       comments only pause for the burst + 150ms (the embedded-map pattern). */
+    html.wheeling #disqus_thread iframe { pointer-events: none; }
   </style>
 </head>
 <body>
@@ -132,6 +137,18 @@
         this.page.identifier = identifier;
         this.page.title = title;
       };
+
+      // Wheel-burst marker for the fast-path CSS above. Passive: it only toggles a class, never
+      // consumes the event. (Chromium latches scroll targets per sequence, so the very first tick
+      // of a fresh burst may still route through the Disqus frame — every subsequent sequence
+      // while the class is held goes straight to this document.)
+      var wheelT;
+      window.addEventListener('wheel', function () {
+        var el = document.documentElement;
+        el.classList.add('wheeling');
+        window.clearTimeout(wheelT);
+        wheelT = window.setTimeout(function () { el.classList.remove('wheeling'); }, 150);
+      }, { passive: true });
 
       var s = document.createElement('script');
       s.src = 'https://' + forum + '.disqus.com/embed.js';
