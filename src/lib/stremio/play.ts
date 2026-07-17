@@ -21,7 +21,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { playing, nowPlaying, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
+import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
@@ -795,6 +795,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
       title: label, animeTitle: title(media), id: media.id, malId: media.idMal ?? null,
       episode: episode ?? null, total, airedTotal,
     })
+    nowPlayingUrl.set(stream.url) // for the dev-only Copy URL tool in the track menu
     // Local watch history: record the open now (covers embedded + external playback), so Continue
     // Watching lists this show even with no AniList/MyAnimeList linked. Also remember this source's
     // release identity so Continue Watching can resume the SAME release later. Progress bumps on watch.
@@ -922,6 +923,7 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
     currentMedia = null
     nowPlayingMedia.set(null)
     nowPlaying.set({ title: label, animeTitle: label, id: null, malId: null, episode: null, total: null, airedTotal: null })
+    nowPlayingUrl.set(url) // for the dev-only Copy URL tool in the track menu
     spriteKey.set(null)   // no per-file scrub sprites for cloud items
     bingeSource.set(null) // no release-continuity chain
     await invoke('player_embed', { url, alang: get(preferredAudioLang), slang: get(preferredSubLang) })

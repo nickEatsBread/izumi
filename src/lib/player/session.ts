@@ -42,6 +42,11 @@ export const nowPlaying = writable<{
 // source picker for it mid-playback (the picker's onState/pick then swaps the stream in place).
 export const nowPlayingMedia = writable<{ media: Media; episode: number | undefined } | null>(null)
 
+// The resolved URL of the currently-loaded video. Populated on every load (embedded, external,
+// cloud) purely so the DEV-ONLY "Copy URL" tool in the player's track menu can read it — the UI
+// gates it behind import.meta.env.DEV, so it never surfaces in a production build.
+export const nowPlayingUrl = writable('')
+
 // True while the Game-mode on-screen keyboard is up. The controller translator routes A (type the
 // focused key) / B (close) to it, and directional nav stays trapped on its keys.
 export const oskOpen = writable(false)

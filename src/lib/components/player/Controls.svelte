@@ -19,7 +19,9 @@
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import Check from 'lucide-svelte/icons/check'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, nowPlaying, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen } from '$lib/player/session'
+  import { copyToClipboard } from '$lib/util/clipboard'
+  import Wrench from 'lucide-svelte/icons/wrench'
   import { commentsEnabled, discussionExpanded } from '$lib/comments'
   import { videoFit, playerTitleTop } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode } from '$lib/stremio/play'
@@ -151,7 +153,19 @@
   // category's list) with a Miller-column slide. `menuLevel`/`detailCat` drive the slide;
   // `rootH`/`detailH` are the measured column heights so the panel morphs to fit.
   let menuLevel = $state<'root' | 'detail'>('root')
-  let detailCat = $state<'audio' | 'subs'>('audio')
+  let detailCat = $state<'audio' | 'subs' | 'dev'>('audio')
+
+  // Dev-only tools, reached through the track menu (Subtitles/Audio) as a third "Dev tools"
+  // category. import.meta.env.DEV is compiled to a literal false in production, so both the row
+  // and this whole block are tree-shaken out of a release build. Copy URL is the first tool;
+  // the list is an array so more can be dropped in later.
+  const dev = import.meta.env.DEV
+  function copyUrl() {
+    const url = get(nowPlayingUrl)
+    const ok = !!url && copyToClipboard(url)
+    playerNotice.set(ok ? 'Video URL copied' : 'No video URL to copy')
+  }
+  const devTools: { label: string; run: () => void }[] = [{ label: 'Copy URL', run: copyUrl }]
   let rootH = $state(0), detailH = $state(0)
   async function loadTracks() {
     showOptions = false // only one popover open at a time
@@ -196,7 +210,7 @@
   // `curLabel` is what shows on the collapsed root row for each category (the active
   // track, or "Off"). `pickLeaf` sets the track then slides back to the root.
   const detailItems = $derived(detailCat === 'audio' ? audios : subs)
-  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : 'Subtitles')
+  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'dev' ? 'Dev tools' : 'Subtitles')
   const leafKind = $derived<'aid' | 'sid'>(detailCat === 'audio' ? 'aid' : 'sid')
   const detailOff = $derived(!detailItems.some((t) => t.selected)) // nothing selected ⇒ "Off" is active
   const curLabel = (group: Track[]) => {
@@ -205,7 +219,7 @@
   }
   const curAudioLabel = $derived(curLabel(audios))
   const curSubLabel = $derived(curLabel(subs))
-  function openDetail(cat: 'audio' | 'subs') {
+  function openDetail(cat: 'audio' | 'subs' | 'dev') {
     detailCat = cat
     menuLevel = 'detail'
   }
@@ -417,6 +431,16 @@
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
+                      {#if dev}
+                        <!-- Dev-only (tree-shaken from release): tools like Copy URL. -->
+                        <button data-focusable class="mt-1 flex w-full items-center justify-between gap-2 rounded-lg border-t border-white/10 px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('dev')}>
+                          <span class="flex min-w-0 items-center gap-2">
+                            <Wrench size={15} class="shrink-0 text-white/45" />
+                            <span class="block truncate text-white/80">Dev tools</span>
+                          </span>
+                          <ChevronRight size={18} class="shrink-0 text-white/40" />
+                        </button>
+                      {/if}
                     </div>
                     <!-- DETAIL: the chosen category's list -->
                     <div class="w-1/2 p-2" bind:clientHeight={detailH}>
@@ -425,20 +449,28 @@
                         {detailTitle}
                       </button>
                       <div class="max-h-64 overflow-y-auto">
-                        <!-- "Off" leaf (disable this category) -->
-                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={pickOff}>
-                          <span class="truncate text-white/70">Off</span>
-                          {#if detailOff}<Check size={18} class="shrink-0 text-primary" />{/if}
-                        </button>
-                        {#if detailItems.length}
-                          {#each detailItems as t (t.id)}
-                            <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => pick(leafKind, t.id)}>
-                              <span class="truncate">{label(t, detailItems)}</span>
-                              {#if t.selected}<Check size={18} class="shrink-0 text-primary" />{/if}
+                        {#if detailCat === 'dev'}
+                          {#each devTools as tool (tool.label)}
+                            <button data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={tool.run}>
+                              <span class="truncate">{tool.label}</span>
                             </button>
                           {/each}
                         {:else}
-                          <p class="px-3 py-2 text-white/40">No {detailTitle.toLowerCase()} tracks</p>
+                          <!-- "Off" leaf (disable this category) -->
+                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={pickOff}>
+                            <span class="truncate text-white/70">Off</span>
+                            {#if detailOff}<Check size={18} class="shrink-0 text-primary" />{/if}
+                          </button>
+                          {#if detailItems.length}
+                            {#each detailItems as t (t.id)}
+                              <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => pick(leafKind, t.id)}>
+                                <span class="truncate">{label(t, detailItems)}</span>
+                                {#if t.selected}<Check size={18} class="shrink-0 text-primary" />{/if}
+                              </button>
+                            {/each}
+                          {:else}
+                            <p class="px-3 py-2 text-white/40">No {detailTitle.toLowerCase()} tracks</p>
+                          {/if}
                         {/if}
                       </div>
                     </div>
