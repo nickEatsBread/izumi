@@ -5,6 +5,8 @@
 <h1 align="center"><b>izumi</b></h1>
 
 <p align="center">
+  <img width="100%" height="940" alt="README artwork" src="https://github.com/user-attachments/assets/665d0f1a-8360-4386-9d22-f9159fc1f1ac" />
+
   <!-- Add the cover photo here:
   <img src="path/to/izumi-cover.png" alt="izumi preview" width="100%" />
   -->
