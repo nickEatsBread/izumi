@@ -166,12 +166,16 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
                 let geom = (x as i64, y as i64, cw as i64, ch as i64, row_bytes as i64);
                 let geom_changed = GEOM.lock().ok().map(|g| *g != Some(geom)).unwrap_or(true);
 
+                // mpv's render thread reads the overlay memory directly (overlay-add registers the
+                // address, no copy) until the NEXT overlay-add swaps it. Resizing BUF in place could
+                // realloc — freeing the block mid-read (use-after-free). On a size change, install a
+                // fresh allocation and keep the old one alive in `retired` until after overlay_add.
+                let mut retired: Option<Vec<u8>> = None;
                 let (addr, changed) = {
                     let mut buf = BUF.lock().ok()?;
                     let mut changed = buf.len() != need_crop || geom_changed;
                     if buf.len() != need_crop {
-                        buf.clear();
-                        buf.resize(need_crop, 0);
+                        retired = Some(std::mem::replace(&mut *buf, vec![0u8; need_crop]));
                     }
 
                     for row in 0..ch {
@@ -201,6 +205,10 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
                     let ph = app.try_state::<PlayerHandle>()?;
                     let _ = ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);
                 }
+                // Only now is the pre-resize buffer unreferenced: overlay_add is a synchronous mpv
+                // command, so mpv has switched to the new address before this drop. (On the early-?
+                // paths above the player state is gone — no reader left either way.)
+                drop(retired);
                 Some(())
             };
 
