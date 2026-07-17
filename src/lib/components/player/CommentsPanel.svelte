@@ -453,17 +453,28 @@
 {#if $commentsOpen && $discussionExpanded}
   <!-- Expanded: clicking the backdrop closes the discussion; the panel is a separate, higher-level
        pointer target, so interaction inside it never reaches this handler. -->
+  <!-- No backdrop-filter: the video behind is a separate native surface the webview compositor
+       can't sample, so the blur only ever blurred transparent pixels — while forcing an expensive
+       render surface that janked scrolling in the embed. The dim alone reads identically. -->
   <button type="button" data-comments-panel aria-label="Close discussion" transition:fade={{ duration: 150 }}
           onclick={() => commentsOpen.set(false)}
-          class="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm"></button>
+          class="absolute inset-0 z-40 bg-black/60"></button>
 {/if}
 <!-- Always mounted: open/close and docked/expanded are pure CSS state so the embed iframe inside is
      never reparented or destroyed (either reboots the third-party embed). Closed = visibility:hidden
      after the exit animation — no paint cost, and Deck nav's checkVisibility filter skips it. -->
+<!-- OPAQUE bg + NO backdrop-blur: `backdrop-filter` on an ancestor of the embed iframe forces the
+     whole panel subtree (incl. the cross-origin Disqus surface) through an intermediate texture +
+     blur every scroll frame, off the direct compositing fast path — the main Windows scroll-jank
+     source. And the blur bought nothing: behind the panel is the transparent video hole (mpv is a
+     sibling native window the compositor can't sample). Opaque also restores blend-skipping.
+     While the embed tab is showing in expanded mode, the rounded clip is dropped too — a rounded
+     overflow clip intersecting the iframe surface forces another render surface (kRoundedCorner);
+     the iframe's square bottom corners on the near-identical dark panel are imperceptible. -->
 <div data-comments-panel inert={!$commentsOpen}
-     class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background/95 text-foreground shadow-2xl backdrop-blur-sm
+     class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground shadow-2xl
        {$discussionExpanded
-         ? 'inset-0 m-auto h-[85vh] w-[94vw] max-w-[920px] overflow-hidden rounded-2xl border'
+         ? `inset-0 m-auto h-[85vh] w-[94vw] max-w-[920px] rounded-2xl border ${embedActive ? '' : 'overflow-hidden'}`
          : 'inset-y-0 right-0 w-full max-w-md border-l'}
        {$commentsOpen ? '' : $discussionExpanded ? 'dq-closed-pop' : 'dq-closed-slide'}">
   {@render panelBody()}
