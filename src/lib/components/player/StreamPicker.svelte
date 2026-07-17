@@ -52,6 +52,7 @@
 
   let busy = $state(false)
   let error = $state('')
+  const playbackError = $derived(error || pick?.playbackError || '')
 
   // Autoplay countdown: once sources settle with a best cached pick,
   // fill the Auto button over 5s then play it. Cancelled by hovering/focusing the
@@ -95,6 +96,11 @@
   // Start the countdown once resolving finishes with a best cached pick + auto-select on. With the
   // animation off, skip the fill entirely and pick immediately.
   $effect(() => {
+    if (playbackError) {
+      cancelAuto()
+      autoState = 'off'
+      return
+    }
     if (autoState === 'idle' && !resolving && !!best && !busy && $autoSelectSource) {
       if (!animate) { autoState = 'off'; autoBest(); return }
       autoState = 'counting'
@@ -108,11 +114,15 @@
 
   async function choose(info: StreamInfo) {
     cancelAuto()
-    if (busy || !pick || info.cached === 'down') return
+    // A 'down' (0-seeder) row is still selectable — debrid may already hold it cached, or find
+    // peers via the magnet's trackers. We dim it as a hint but never block the click; sinking a
+    // mislabeled source (see extToStream/dedupe) to unclickable was the actual complaint.
+    if (busy || !pick) return
     // Picking a source supersedes the in-flight resolve: stop it folding in more sources (and, for
     // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
     cancelResolve()
     busy = true; error = ''
+    streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
       if (s.status === 'playing') streamPicker.set(null)
       else if (s.status === 'error') { error = s.message ?? 'Playback failed.'; busy = false }
@@ -226,8 +236,8 @@
         </label>
       </div>
 
-      {#if error}
-        <p class="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">{error}</p>
+      {#if playbackError}
+        <p class="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">{playbackError}</p>
       {/if}
 
       <!-- Results — reveal sources the instant each addon/extension lands;
@@ -248,7 +258,7 @@
         {#each rendered as info (keyOf(info))}
           {@const g = cacheGlyph(info.cached)}
           {@const isBest = info === best}
-          {@const disabled = busy || info.cached === 'down'}
+          {@const disabled = busy}
           <div
             data-focusable
             data-best-source={isBest ? '' : undefined}

@@ -6,7 +6,14 @@ import type { DebridInfo } from '$lib/stremio/debrid/types'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
-export const streamPicker = writable<{ media: Media; episode: number | undefined; streams: Stream[]; cachedCount: number; resolving?: boolean } | null>(null)
+export const streamPicker = writable<{
+  media: Media
+  episode: number | undefined
+  streams: Stream[]
+  cachedCount: number
+  resolving?: boolean
+  playbackError?: string
+} | null>(null)
 
 // Single-window player session. `playing` toggles the in-app player overlay (and
 // the transparent "hole" that lets mpv, embedded in the main window, show

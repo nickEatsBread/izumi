@@ -15,6 +15,8 @@ import { fetchAddonSubtitles, type ExternalSubtitle } from './subtitles'
 import { queryExtensions } from '$lib/extensions/manager'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
+import { extToStream } from './ext-stream'
+import { dedupeStreams, dedupeBy } from './dedupe'
 import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
@@ -26,6 +28,7 @@ import {
   playerCacheMb, playerCacheBytes,
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
+import { applyContinuationState } from './continuation'
 import { title, cover } from '$lib/anilist/media'
 import { isAndroid } from '$lib/platform'
 import { playViaIntent } from '$lib/player/android-playback'
@@ -193,55 +196,12 @@ function verifySeason(streams: Stream[], want: { season?: number; abs?: number }
 // Collapse Torrentio's per-file batch explosion: any infoHash contributing 2+ file
 // rows is a season/complete pack (a single-episode torrent yields exactly one row),
 // so keep one row per packed hash. Fixes One Piece ep1 (a 458-file dub pack → 1).
+// Runs BEFORE dedupeStreams (which keys url-first), so this infoHash pass is the first —
+// and for same-hash extension duplicates the ONLY — place a live-seeded copy can win over a
+// 0/unknown-seeder copy of the same torrent; dedupeBy carries that tiebreak. Batch packs are
+// addon rows (not torrent-ext), so they collapse first-wins exactly as before.
 function collapseBatches(streams: Stream[]): Stream[] {
-  const counts = new Map<string, number>()
-  for (const s of streams) if (s.infoHash) counts.set(s.infoHash, (counts.get(s.infoHash) ?? 0) + 1)
-  const seen = new Set<string>()
-  return streams.filter((s) => {
-    if (!s.infoHash || (counts.get(s.infoHash) ?? 0) <= 1) return true
-    if (seen.has(s.infoHash)) return false
-    seen.add(s.infoHash); return true
-  })
-}
-
-// Drop exact duplicates across addons: the same torrent/file is often returned by
-// several addons as an identical resolve URL (or infoHash) — e.g. Torrentio AND Comet
-// both surface the same S00 special. A duplicate resolve URL would also crash the
-// picker's keyed {#each} (Svelte each_key_duplicate), so this is correctness, not just
-// tidiness. Keyed by resolved url first (collapseBatches only dedupes by infoHash, and
-// resolve-URL rows often carry no infoHash field).
-function dedupeStreams(streams: Stream[]): Stream[] {
-  const seen = new Set<string>()
-  return streams.filter((s) => {
-    const k = s.url ?? s.infoHash ?? s.behaviorHints?.filename ?? s.name ?? ''
-    if (!k) return true
-    if (seen.has(k)) return false
-    seen.add(k); return true
-  })
-}
-
-// Map an extension torrent result into our Stream shape. It carries only an
-// infoHash (no url) — resolved through Real-Debrid on pick (playStream). The ⬇ in
-// the name marks it uncached so describe() flags it and it never auto-plays.
-function extToStream(r: TorrentResult, extName: string): Stream {
-  const gb = r.size ? `${(r.size / 1073741824).toFixed(2)} GB` : ''
-  const prov = (extName.replace(/[^A-Za-z]/g, '').slice(0, 4).toUpperCase() || 'EXT')
-  return {
-    infoHash: r.hash,
-    // Keep the full magnet (trackers included) when the result carried one, so debrid can find
-    // peers for an uncached torrent instead of resolving a bare, trackerless hash.
-    __magnet: r.link?.startsWith('magnet:') ? r.link : undefined,
-    // Source-declared confidence: 'high' = id-verified by the source → refine trusts it.
-    __accuracy: r.accuracy,
-    name: `[${prov}⬇] ${extName}`,
-    // The picker heading reads from __addonName, so the row shows which extension found it; __logo
-    // supplies the extension's icon (and, being present, suppresses the redundant name on the right).
-    __addonName: extName,
-    __origin: r.providerId ? { kind: 'torrent-extension', id: r.providerId, name: extName } : undefined,
-    __logo: r.logo,
-    title: `${r.title}\n👤 ${r.seeders ?? 0}${gb ? ` 💾 ${gb}` : ''}`,
-    behaviorHints: { filename: r.title, videoSize: r.size },
-  }
+  return dedupeBy(streams, (s) => s.infoHash ?? '')
 }
 
 // Resolve the streams for an episode (kitsu id map → addons, plus any enabled
@@ -495,6 +455,20 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   // Open the picker immediately in a skeleton (resolving) state — no "Resolving
   // stream…" text; it fills in with real sources as EACH addon responds.
   streamPicker.set({ media, episode, streams: [], cachedCount: 0, resolving: true })
+  const stillCurrent = () => {
+    const current = get(streamPicker)
+    return !!current && current.media.id === media.id && current.episode === episode
+  }
+  const showPickerError = (message: string) => {
+    if (stillCurrent()) {
+      streamPicker.update((current) => current ? {
+        ...current,
+        resolving: false,
+        playbackError: message,
+      } : current)
+    }
+    onState({ status: 'error', message })
+  }
   try {
     // Instant path: this episode was prefetched near the end of the previous one
     // (binge continuity) — skip the picker entirely.
@@ -523,9 +497,25 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     let acc: Stream[] = []
     let want: { season?: number; abs?: number } | undefined
     let totalRaw = 0
-    let continued = false // set once a same-release source has been auto-continued (cont path)
+    // A remembered release may be tried automatically, but a matching source is not proof that
+    // playback can actually start (the URL/debrid entry/player can still fail). Keep the picker
+    // mounted until playStream reports `playing`; on failure it remains available as the fallback.
+    let continuationAttempted = false
+    let continuationAttempt: Promise<boolean> | null = null
+    let continuationError = ''
     let seasonSettled = false // AniZip season target resolved (or known-absent) — gates auto-continue
-    const stillCurrent = () => { const c = get(streamPicker); return !!c && c.media.id === media.id && c.episode === episode }
+    const tryContinuation = (stream: Stream) => {
+      continuationAttempted = true
+      continuationAttempt = (async () => {
+        let played = false
+        await playStream(media, episode, stream, (state) => {
+          const result = applyContinuationState(state, () => streamPicker.set(null), onState)
+          played ||= result.played
+          continuationError ||= result.error
+        })
+        return played
+      })()
+    }
     const refresh = (resolving: boolean) => {
       if (!stillCurrent()) return
       let s = refineStreams(media, acc)
@@ -537,9 +527,9 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       // seasonSettled so a same-group WRONG-season file can't sneak in before AniZip answers, and on
       // no debrid cache being in flight so we never stomp a source the user just picked themselves
       // (an uncached manual pick keeps the picker open while it caches).
-      if (cont && !continued && seasonSettled && !get(debridCaching)) {
+      if (cont && !continuationAttempted && seasonSettled && !get(debridCaching)) {
         const hit = s.find((x) => matchesRelease(x, cont) && playableNow(x) && !isUncached(x) && !(want && isWrongSeason(x, want)))
-        if (hit) { continued = true; streamPicker.set(null); void playStream(media, episode, hit, onState) }
+        if (hit) tryContinuation(hit)
       }
     }
 
@@ -588,9 +578,13 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // Superseded by a newer play, or the picker was closed → settle to idle NOW so the caller's
     // `resolving` guard clears and the next episode click works (don't wait on orphaned fetches).
     if (signal.aborted) return onState({ status: 'idle' })
-    // A ready-to-play same-release source already auto-continued mid-resolve (picker closed).
-    if (continued) return
+    // A ready-to-play same-release source may have been tried while results streamed in. Wait for
+    // its real outcome: success closes the picker; failure finishes populating it for manual choice.
+    if (continuationAttempt && await continuationAttempt) return
     refresh(false)
+    if (continuationError && stillCurrent()) {
+      streamPicker.update((current) => current ? { ...current, playbackError: continuationError } : current)
+    }
 
     // Binge continuity fallback: no ready-to-play same-release appeared, but a same-release
     // source EXISTS (uncached) — continue on it (debrid caches it, with the cancelable
@@ -600,11 +594,17 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // picked (which closed this picker) or a different episode they navigated to meanwhile, and on
     // no debrid cache in flight (an uncached manual pick keeps the picker open while it caches, so
     // stillCurrent() alone wouldn't catch it).
-    if (cont && stillCurrent() && !get(debridCaching)) {
+    if (cont && !continuationAttempted && stillCurrent() && !get(debridCaching)) {
       let s = refineStreams(media, acc)
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
       const hit = s.find((x) => matchesRelease(x, cont))
-      if (hit) { streamPicker.set(null); return await playStream(media, episode, hit, onState) }
+      if (hit) {
+        tryContinuation(hit)
+        if (continuationAttempt && await continuationAttempt) return
+        if (continuationError && stillCurrent()) {
+          streamPicker.update((current) => current ? { ...current, playbackError: continuationError } : current)
+        }
+      }
     }
 
     // The user already acted on this picker (picked a source / navigated away) → it's no longer
@@ -613,23 +613,21 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
 
     // Nothing playable → honest error.
     if (!get(streamPicker)?.streams.length) {
-      streamPicker.set(null)
-      return onState({ status: 'error', message: totalRaw > 0
+      return showPickerError(totalRaw > 0
         ? `Found ${totalRaw} torrents but none are usable (all dead or notice entries). Try another source.`
-        : 'No streams found for this title/episode yet.' })
+        : 'No streams found for this title/episode yet.')
     }
     onState({ status: 'idle' })
   }
   catch (e) {
-    streamPicker.set(null)
-    onState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
+    showPickerError(e instanceof Error ? e.message : String(e))
   }
 }
 
-/** Query only the last successful origin for Continue Watching. Resolved URLs are intentionally
- *  never reused (they expire and can carry credentials); the remembered addon/extension performs
- *  a fresh episode lookup. A disabled/missing origin, timeout, no release match, or unusable result
- *  returns undefined so the caller can open the normal picker. */
+/** Query the last successful origin for Continue Watching using a freshly fetched Media record.
+ *  Resolved URLs are never reused (they expire and can carry credentials); the origin performs a
+ *  new lookup for this episode. A missing origin/release or unusable result returns undefined so
+ *  the unrestricted progressive picker can take over. */
 async function resolveRememberedSource(media: Media, episode: number, remembered: RememberedSource): Promise<Stream | undefined> {
   let streams: Stream[] = []
   if (remembered.origin.kind === 'addon') {
@@ -656,39 +654,38 @@ async function resolveRememberedSource(media: Media, episode: number, remembered
     ? streams.find((stream) => matchesRelease(stream, release))
     : undefined
   if (remembered.origin.kind === 'torrent-extension') {
-    // Extension torrents do not advertise debrid cache state. Reuse only the exact pack/group;
-    // selecting an unrelated first search result would silently change the user's release.
+    // Torrent extensions cannot advertise debrid cache state. Only reuse the exact release;
+    // an unrelated first search result is not a continuation.
     return same
   }
   if (same && playableNow(same) && !isUncached(same)) return same
-  // Within the already-pinned addon/online origin, use the normal quality preference only when
-  // there is no exact release match. pickBest remains cached/direct-only.
+  // Same origin remains useful even if that origin renamed/repacked the episode. Within the pinned
+  // origin, prefer its best ready source; never auto-start an uncached unrelated torrent.
   return pickBest(rankStreams(streams), get(preferredQuality), want)
 }
 
-/** Resume from Continue Watching / the detail Continue button. First query only the separately
- *  persisted last-successful origin. Any miss/failure falls back to the normal progressive picker;
- *  the legacy release hint is still carried there so older history entries remain useful. */
+/** Resume from Continue Watching / the detail Continue button. Refresh the trimmed home-card Media
+ *  snapshot first, then try the remembered origin. A miss or playback error falls through to the
+ *  same unrestricted picker used by a direct episode click — without retrying the failed release. */
 export async function resumeEpisode(media: Media, episode: number, onState: (s: PlayState) => void) {
-  const remembered = get(sourceOrigins)[media.id]
+  onState({ status: 'resolving' })
+  const current = await fetchMediaById(media.id).catch(() => media)
+  const remembered = get(sourceOrigins)[current.id]
   if (remembered) {
-    onState({ status: 'resolving' })
     try {
-      const stream = await resolveRememberedSource(media, episode, remembered)
+      const stream = await resolveRememberedSource(current, episode, remembered)
       if (stream) {
-        let failed = false
-        await playStream(media, episode, stream, (state) => {
-          if (state.status === 'error') failed = true
-          else onState(state)
+        let played = false
+        await playStream(current, episode, stream, (state) => {
+          if (state.status === 'playing') played = true
+          // Do not surface the remembered-source error yet: the complete picker is the recovery UI.
+          if (state.status !== 'error') onState(state)
         })
-        if (!failed) return
+        if (played) return
       }
-    } catch { /* stale/offline origin: the full picker below is the recovery path */ }
+    } catch { /* stale/offline origin: the complete picker below is the recovery path */ }
   }
-  const rel = get(localHistory)[media.id]?.release
-  const cont: ContinueHint | undefined =
-    rel && (rel.group || rel.bingeGroup) ? { group: rel.group, bingeGroup: rel.bingeGroup } : undefined
-  return await playEpisode(media, episode, onState, cont)
+  return await playEpisode(current, episode, onState)
 }
 
 // Advance to an episode (auto next-episode + the in-player Prev/Next buttons). Continues
