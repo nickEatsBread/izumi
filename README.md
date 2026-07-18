@@ -8,11 +8,15 @@
 
 <p align="center">
   <img width="100%" height="940" alt="README artwork" src="https://github.com/user-attachments/assets/665d0f1a-8360-4386-9d22-f9159fc1f1ac" />
-
-  <!-- Add the cover photo here:
-  <img src="path/to/izumi-cover.png" alt="izumi preview" width="100%" />
-  -->
 </p>
+
+<!-- MANPAGE: BEGIN EXCLUDED SECTION -->
+[![Windows](https://img.shields.io/badge/Windows-.exe-0078D6?style=for-the-badge)][exe]
+[![Steam Deck](https://img.shields.io/badge/Steam%20Deck-.flatpak-1b2838?style=for-the-badge&logo=steamdeck&logoColor=white)][deck]
+[![MacOS](https://img.shields.io/badge/macOS-.dmg-000000?style=for-the-badge&logo=apple&logoColor=white)][dmg]
+[![Source Tarball](https://img.shields.io/badge/-Source_tar-green.svg?style=for-the-badge)](https://github.com/nickEatsBread/izumi/releases/latest/download/izumi.tar.gz)
+[![All versions](https://img.shields.io/badge/-All_Versions-lightgrey.svg?style=for-the-badge)](https://github.com/nickEatsBread/izumi/releases)
+<!-- MANPAGE: END EXCLUDED SECTION -->
 
 izumi is a **personal media library manager** for organizing, tracking, and playing anime allowing you to add your own sources, and stream.
 
@@ -36,6 +40,29 @@ izumi is a **personal media library manager** for organizing, tracking, and play
 - **Offline** — download a resolved stream to disk and play it back locally.
 - **Settings** — interface (UI scale, episode layout), sources, extensions, network, accounts,
   downloads.
+
+## Get started
+izumi will notify you of updates to keep izumi up-to-date. Grab your platform below, or browse all files on the [**Releases**](https://github.com/nickEatsBread/izumi/releases/latest) page.
+
+| Windows | macOS | Linux | Android | Steam Deck |
+|---|---|---|---|---|
+| [`.exe`][exe] | [`.dmg`][dmg] | [`.AppImage`][app] | [`.apk` full][apkf] | [`.flatpakref`][deck] |
+| [`.msi`][msi] | | [`.deb`][deb] [`.rpm`][rpm] | [`.apk` lite][apkl] | |
+
+Android **full** includes an embedded player; **lite** hands off this to an external app. The non-AppImage/Flatpak Linux builds need your distro's `libmpv` (`mpv` / `libmpv-dev`).
+
+> [!WARNING]
+> On Windows, you may need to do the following to run the install after open: SmartScreen → **More info → Run anyway**.
+
+[exe]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x64-setup.exe
+[msi]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x64.msi
+[dmg]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-aarch64.dmg
+[app]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x86_64.AppImage
+[deb]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-amd64.deb
+[rpm]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-x86_64.rpm
+[apkf]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-android-full.apk
+[apkl]: https://github.com/nickEatsBread/izumi/releases/latest/download/izumi-android-lite.apk
+[deck]: https://flatpak.izumi.watch/com.nicho.izumi.flatpakref
 
 ## Prerequisites
 
@@ -62,18 +89,7 @@ npm run tauri build
 
 ## Status
 
-Release builds are available for Windows, Linux, Steam Deck, and
-Android. Expect ongoing changes and the occasional rough edges. If you encounter any issues, please report them through GitHub Issues.
-
-### Steam Deck
-
-Install from the auto-updating Flatpak repo so the app can update itself in the background:
-
-```sh
-flatpak install --user https://flatpak.izumi.watch/com.nicho.izumi.flatpakref
-```
-
-Updates then download silently and apply the next time you launch izumi from Steam. The standalone `.flatpak` bundle attached to each release works too — it bakes in the same update origin, so a direct bundle install auto-updates the same way (the `.flatpakref` is just the simplest one-click install).
+Release builds for Windows, macOS, Linux, Steam Deck, and Android are on the [Releases](https://github.com/nickEatsBread/izumi/releases/latest) page (see [Get started](#get-started)). Expect ongoing changes and the occasional rough edges — please report issues through GitHub Issues.
 
 ## License
 
