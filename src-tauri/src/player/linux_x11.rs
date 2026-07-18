@@ -12,7 +12,9 @@
 //! above. `frac`=0 restores the container to fullscreen (controls hidden → edge-to-edge video).
 //! No map/unmap, no black swap — both are visible simultaneously.
 //!
-//! All X calls run on the GTK main thread (Xlib is used by GTK on the same connection).
+//! All X calls run on the GTK main thread. The container calls below share GTK's Xlib connection
+//! (fetched per-call from the window handle); the STEAM_TOUCH_CLICK_MODE writes use their OWN
+//! dedicated connection (see `TOUCH_DPY`) so they can't dangle when that window handle is torn down.
 
 #![cfg(target_os = "linux")]
 
@@ -37,6 +39,7 @@ extern "C" {
     fn XRaiseWindow(dpy: *mut c_void, w: u64) -> i32;
     fn XFlush(dpy: *mut c_void) -> i32;
     fn XSync(dpy: *mut c_void, discard: i32) -> i32;
+    fn XOpenDisplay(name: *const c_char) -> *mut c_void;
     fn XDefaultRootWindow(dpy: *mut c_void) -> u64;
     fn XInternAtom(dpy: *mut c_void, name: *const c_char, only_if_exists: c_int) -> c_ulong;
     fn XChangeProperty(
@@ -90,6 +93,19 @@ impl X11 {
 
 static STATE: Mutex<Option<X11>> = Mutex::new(None);
 
+// Dedicated Xlib connection used ONLY for the STEAM_TOUCH_CLICK_MODE writes in `set_native_touch`.
+// We own it and it stays open for the whole app lifetime, so — unlike GTK's Display (which was
+// borrowed per-call via `display_handle()`) — it can never dangle when the webview's window/display
+// handle passes through a transient teardown. That borrow was a use-after-free: under gamescope the
+// 250ms keepalive fired mid-transition, `display_handle()` returned a freed Display, and
+// `XDefaultScreen` dereferenced it → SIGSEGV on the main thread (Game-mode-only, minutes in). The
+// root window + property are X-server-global, so a separate connection sets them identically.
+struct TouchDisplay(*mut c_void);
+// SAFETY: the pointer is only dereferenced on the GTK main thread (every caller of
+// `set_native_touch` runs there); the Mutex guards lazy init and makes the static `Send`.
+unsafe impl Send for TouchDisplay {}
+static TOUCH_DPY: Mutex<Option<TouchDisplay>> = Mutex::new(None);
+
 fn raw_x11(win: &tauri::WebviewWindow) -> Result<(*mut c_void, u64), String> {
     let rw = win
         .window_handle()
@@ -125,21 +141,35 @@ fn raw_x11(win: &tauri::WebviewWindow) -> Result<(*mut c_void, u64), String> {
 /// profile loads). Every call here is therefore a re-assert that can be silently clobbered right
 /// after; lib.rs runs a 250ms keepalive tick on top of the event-edge restores for that reason.
 pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> {
-    set_native_touch(window, true)
+    let _ = window; // now writes via our own X connection, not the window's Display
+    set_native_touch(true)
 }
 
 /// Keepalive variant of [`enable_native_touch`]: identical property write, but no per-call
 /// success log — it runs on a 250ms tick for the app's whole lifetime (see lib.rs setup).
 pub fn keepalive_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> {
-    set_native_touch(window, false)
+    let _ = window; // now writes via our own X connection, not the window's Display
+    set_native_touch(false)
 }
 
-fn set_native_touch(window: &tauri::WebviewWindow, log: bool) -> Result<(), String> {
+fn set_native_touch(log: bool) -> Result<(), String> {
     if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
         return Ok(());
     }
 
-    let (dpy, _) = raw_x11(window)?;
+    // Use our OWN dedicated X connection (see `TOUCH_DPY`) instead of borrowing GTK's Display from
+    // the window handle — the latter dangles during webview/window teardown and crashed here.
+    // Opened lazily on first use; the lock is held across the writes so the calls stay serialized.
+    let mut guard = TOUCH_DPY.lock().map_err(|e| e.to_string())?;
+    if guard.is_none() {
+        let dpy = unsafe { XOpenDisplay(std::ptr::null()) };
+        if dpy.is_null() {
+            return Err("XOpenDisplay(NULL) for touch mode failed".into());
+        }
+        *guard = Some(TouchDisplay(dpy));
+    }
+    let dpy = guard.as_ref().unwrap().0;
+
     let name = b"STEAM_TOUCH_CLICK_MODE\0";
     let value: c_ulong = 4; // TouchClickModes::Passthrough
 
