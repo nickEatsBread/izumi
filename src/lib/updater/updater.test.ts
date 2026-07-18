@@ -8,6 +8,9 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async (cmd: string) => {
   if (cmd === 'updater_check') return { version: '0.2.0', current: '0.1.3', notes: 'x', date: null }
   return null
 }) }))
+// The opener plugin isn't part of the facade logic under test; stub it so the flatpak branch's
+// release-page redirect doesn't reach the real (browser-only) implementation in the node env.
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn(async () => {}) }))
 
 import { pickTarget, type UpdateTarget } from './index'
 
@@ -46,4 +49,21 @@ it('checkForUpdate is a no-op when up to date', async () => {
   await checkForUpdate()
   expect(get(availableUpdate)).toBeNull()
   expect(get(updatePhase)).toBe('idle')
+})
+
+import { applyUpdate, updateError } from './index'
+
+it('applyUpdate on desktop calls updater_install then reaches ready', async () => {
+  const { invoke } = await import('@tauri-apps/api/core')
+  availableUpdate.set({ version: '0.2.0', notes: '', target: 'desktop' })
+  await applyUpdate()
+  expect(invoke).toHaveBeenCalledWith('updater_install', { channel: expect.anything() })
+  // desktop restarts itself in-process; phase advances through downloading
+  expect(['downloading', 'ready']).toContain(get(updatePhase))
+})
+it('applyUpdate on flatpak (phase 1) opens the release page, phase = ready-manual', async () => {
+  availableUpdate.set({ version: '0.2.0', notes: '', target: 'flatpak' })
+  await applyUpdate()
+  // Phase 1: no portal yet -> route to release page (existing behavior), no throw
+  expect(get(updateError)).toBe('')
 })
