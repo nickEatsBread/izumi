@@ -14,8 +14,11 @@ vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn(async () => {}) }))
 
 import { pickTarget, type UpdateTarget } from './index'
 
+// Reset shared mock state before EVERY test in the file — the later top-level it() blocks live
+// outside the describe, so a describe-scoped beforeEach wouldn't isolate them (order-independence).
+beforeEach(() => { h.isAndroid = false; h.flatpak = false })
+
 describe('updater facade', () => {
-  beforeEach(() => { h.isAndroid = false; h.flatpak = false })
   it('routes desktop to the tauri updater', async () => {
     expect(await pickTarget()).toBe<UpdateTarget>('desktop')
   })
