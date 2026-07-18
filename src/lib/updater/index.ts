@@ -1,6 +1,5 @@
 import { get, writable } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
-import { getVersion } from '@tauri-apps/api/app'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { isAndroid } from '$lib/platform'
 import { updateChannel } from '$lib/settings/ui'
@@ -25,6 +24,7 @@ export async function pickTarget(): Promise<UpdateTarget> {
 
 /** Check the active channel for an update. Never throws — errors set updateError + leave phase idle. */
 export async function checkForUpdate(): Promise<void> {
+  updateError.set('') // clear any stale error from a prior failed check
   try {
     const target = await pickTarget()
     if (target === 'android') {
