@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, poll } from '../http'
+import { jfetch, form, magnetOf, poll, authError } from '../http'
 import type { DebridProvider } from '../types'
 
 // Mega-Debrid (EXPERIMENTAL). Credential is USERNAME + PASSWORD (not an API key) —
@@ -12,8 +12,8 @@ const BASE = 'https://www.mega-debrid.eu/api.php'
 async function md(action: string, params: Record<string, string>, body?: string): Promise<any> {
   const qs = new URLSearchParams({ action, ...params }).toString()
   const { ok, status, json } = await jfetch(`${BASE}?${qs}`, body ? { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body } : {})
-  if (!ok) throw new Error(`Mega-Debrid request failed (${status}).`)
-  if (json?.response_code && json.response_code !== 'ok') throw new Error(json?.response_text ?? 'Mega-Debrid request failed.')
+  if (!ok) throw new Error(authError('Mega-Debrid', { status }, 'login') ?? `Mega-Debrid request failed (${status}).`)
+  if (json?.response_code && json.response_code !== 'ok') throw new Error(authError('Mega-Debrid', { code: json?.response_code, message: json?.response_text }, 'login') ?? json?.response_text ?? 'Mega-Debrid request failed.')
   return json
 }
 

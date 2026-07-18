@@ -1,4 +1,4 @@
-import { jfetch, hashOf, poll } from '../http'
+import { jfetch, hashOf, poll, authError } from '../http'
 import type { DebridProvider } from '../types'
 
 // LinkSnappy (EXPERIMENTAL). Torrent API is secondary to its hoster core and the
@@ -11,8 +11,8 @@ const BASE = 'https://linksnappy.com/api'
 async function ls(path: string, key: string): Promise<any> {
   const sep = path.includes('?') ? '&' : '?'
   const { ok, status, json } = await jfetch(`${BASE}${path}${sep}apiKey=${encodeURIComponent(key)}`)
-  if (!ok) throw new Error(`LinkSnappy request failed (${status}).`)
-  if (json?.status === 'ERROR') throw new Error(json?.error ?? 'LinkSnappy request failed.')
+  if (!ok) throw new Error(authError('LinkSnappy', { status }) ?? `LinkSnappy request failed (${status}).`)
+  if (json?.status === 'ERROR') throw new Error(authError('LinkSnappy', { message: json?.error }) ?? json?.error ?? 'LinkSnappy request failed.')
   return json?.return ?? json
 }
 
