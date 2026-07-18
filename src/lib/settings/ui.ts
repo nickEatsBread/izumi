@@ -132,6 +132,8 @@ export const scheduleLayout = persisted<ScheduleLayout>('schedule-layout', 'agen
 /** Auto-updater release channel: 'stable' (normal GitHub releases) or 'beta'
  *  (GitHub pre-releases). Drives which endpoint the updater checks. */
 export const updateChannel = persisted<'stable' | 'beta'>('update-channel', 'stable')
+/** Auto-check for updates at launch + every 6h. On by default; the toast is still opt-in to APPLY. */
+export const autoUpdateCheck = persisted<boolean>('autoUpdateCheck', true)
 
 // --- Network ---
 // NOTE: these are best-effort for our debrid + libmpv model (see settings copy).
