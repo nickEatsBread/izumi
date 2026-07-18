@@ -67,3 +67,14 @@ it('applyUpdate on flatpak (phase 1) opens the release page, phase = ready-manua
   // Phase 1: no portal yet -> route to release page (existing behavior), no throw
   expect(get(updateError)).toBe('')
 })
+
+// append to updater.test.ts — fake timers drive the schedule
+it('startUpdateChecks runs an initial check after the delay + respects the auto toggle', async () => {
+  vi.useFakeTimers()
+  const { startUpdateChecks } = await import('./index')
+  availableUpdate.set(null); updatePhase.set('idle')
+  const stop = startUpdateChecks(() => true /* autoEnabled */)
+  await vi.advanceTimersByTimeAsync(5001)
+  expect(get(updatePhase)).toBe('available')
+  stop(); vi.useRealTimers()
+})
