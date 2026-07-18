@@ -128,3 +128,9 @@ gilrs = "0.11"
 # with accelerated compositing on, WebKit's layer subsurfaces don't clear on a transparent
 # view, leaving ghost rectangles (menus/tooltips) until a resize.
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+# Steam Deck Flatpak auto-update: drive the org.freedesktop.portal.Flatpak UpdateMonitor
+# (detect a pending OSTree update + ask the portal to install it) over the XDG portal — no
+# sandbox holes / --talk-name needed. `tokio` matches our async commands; `flatpak` gates the
+# UpdateMonitor API (the module is behind that feature). Uses the same zbus 5 as the rest of the
+# tree, so no duplicate D-Bus stack. Linux-only (portals don't exist elsewhere).
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "flatpak"] }

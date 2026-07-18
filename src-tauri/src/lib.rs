@@ -1599,6 +1599,114 @@ async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), S
     Ok(())
 }
 
+/// Flatpak (Steam Deck) update check via the XDG `org.freedesktop.portal.Flatpak` UpdateMonitor.
+/// The sandbox can't run the binary updater (see `updater_install`), so the Deck instead relies on
+/// the portal + a GPG-signed OSTree repo. Returns `Some(commit)` when the portal reports a pending
+/// update for this app ref, `None` when up to date (or off Flatpak / off Linux).
+///
+/// Registered for all desktop targets (like the sibling Linux commands) but only does real work on
+/// Linux; the frontend never reaches it off a Flatpak because `is_flatpak` gates the flatpak path.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn flatpak_update_check() -> Result<Option<String>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        if !running_in_flatpak() {
+            return Ok(None);
+        }
+        use ashpd::flatpak::Flatpak;
+        use futures_util::StreamExt;
+        let proxy = Flatpak::new().await.map_err(|e| e.to_string())?;
+        let monitor = proxy
+            .create_update_monitor(Default::default())
+            .await
+            .map_err(|e| e.to_string())?;
+        // The portal emits `UpdateAvailable` asynchronously once it has polled the remote — there
+        // is no synchronous "check now" call. Await a single signal with a short timeout and treat
+        // "nothing yet" as up to date, so the command always returns promptly.
+        let mut updates = monitor
+            .receive_update_available()
+            .await
+            .map_err(|e| e.to_string())?;
+        let available = match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            updates.next(),
+        )
+        .await
+        {
+            // `remote_commit` is the OSTree commit that WOULD be installed (the actual update);
+            // `running_commit` is what we're on now. We want the former.
+            Ok(Some(info)) => Some(info.remote_commit().to_string()),
+            _ => None,
+        };
+        let _ = monitor.close().await;
+        return Ok(available);
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Ok(None)
+    }
+}
+
+/// Flatpak (Steam Deck) update install via the portal UpdateMonitor. Asks the portal to fetch +
+/// stage the new deploy; the portal applies it atomically and it takes effect on the NEXT launch
+/// (we never self-relaunch under gamescope — the toast tells the user to quit + relaunch from
+/// Steam). Streams the portal's `Progress` to the webview as `flatpak-update-progress` (0..100) so
+/// the toast can show a percentage. Errors (incl. a portal `Failed` status) propagate to the UI.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn flatpak_update_install(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        if !running_in_flatpak() {
+            return Err("not a flatpak build".into());
+        }
+        use ashpd::flatpak::update_monitor::UpdateStatus;
+        use ashpd::flatpak::Flatpak;
+        use futures_util::StreamExt;
+        let proxy = Flatpak::new().await.map_err(|e| e.to_string())?;
+        let monitor = proxy
+            .create_update_monitor(Default::default())
+            .await
+            .map_err(|e| e.to_string())?;
+        // Subscribe to `Progress` BEFORE asking for the update so no early signal is missed.
+        let mut progress = monitor
+            .receive_progress()
+            .await
+            .map_err(|e| e.to_string())?;
+        // No parent window (Game mode has none) and default options.
+        monitor
+            .update(None, Default::default())
+            .await
+            .map_err(|e| e.to_string())?;
+        // Forward the portal's progress to the toast and stop on a terminal status.
+        while let Some(p) = progress.next().await {
+            if let Some(pct) = p.progress() {
+                let _ = app.emit("flatpak-update-progress", pct);
+            }
+            match p.status() {
+                Some(UpdateStatus::Done) | Some(UpdateStatus::Empty) => break,
+                Some(UpdateStatus::Failed) => {
+                    let _ = monitor.close().await;
+                    return Err(p
+                        .error_message()
+                        .unwrap_or("flatpak update failed")
+                        .to_string());
+                }
+                _ => {}
+            }
+        }
+        let _ = app.emit("flatpak-update-progress", 100u32);
+        let _ = monitor.close().await;
+        return Ok(());
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        Err("not a flatpak build".into())
+    }
+}
+
 /// Turn OFF WebKitGTK's damage-propagation feature flags (`PropagateDamagingInformation`,
 /// `UnifyDamagedRegions`) — enabled by DEFAULT in WebKitGTK 2.50 (which the Deck's GNOME-49
 /// runtime now ships: libwebkit2gtk-4.1.so.0.21.8). They pass only CHANGED rectangles to the
@@ -2137,6 +2245,8 @@ pub fn run() {
             updater_check,
             updater_install,
             is_flatpak,
+            flatpak_update_check,
+            flatpak_update_install,
             player_tracks,
             player_chapters,
             player_toggle_fullscreen,
