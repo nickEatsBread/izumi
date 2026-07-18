@@ -25,3 +25,25 @@ describe('updater facade', () => {
     expect(await pickTarget()).toBe<UpdateTarget>('flatpak')
   })
 })
+
+import { checkForUpdate, availableUpdate, updatePhase } from './index'
+import { get } from 'svelte/store'
+
+it('checkForUpdate populates the store + phase on desktop', async () => {
+  await checkForUpdate()
+  expect(get(availableUpdate)?.version).toBe('0.2.0')
+  expect(get(updatePhase)).toBe('available')
+})
+it('checkForUpdate is a no-op when up to date', async () => {
+  // updater_check returns null -> no update. checkForUpdate makes two invoke calls on the
+  // desktop path (is_flatpak in pickTarget, then updater_check), so null out both for this
+  // check; the default mock is restored afterwards.
+  const { invoke } = await import('@tauri-apps/api/core')
+  ;(invoke as any)
+    .mockImplementationOnce(async () => null) // is_flatpak -> desktop
+    .mockImplementationOnce(async () => null) // updater_check -> no update
+  availableUpdate.set(null); updatePhase.set('idle')
+  await checkForUpdate()
+  expect(get(availableUpdate)).toBeNull()
+  expect(get(updatePhase)).toBe('idle')
+})
