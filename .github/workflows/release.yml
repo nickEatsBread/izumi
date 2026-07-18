@@ -254,6 +254,12 @@ jobs:
           # dbus-run-session: flatpak's --user ops need a session bus (absent on bare runners).
           # --install-deps-from=flathub pulls the GNOME 49 runtime/SDK + rust/node SDK extensions the
           # manifest pins (no hardcoded branch here). --disable-rofiles-fuse avoids fuse-in-CI issues.
+          # Import the signing key + export a BINARY public key FIRST, so build-bundle can bake an
+          # update ORIGIN into the .flatpak itself (--repo-url) plus the key that verifies it
+          # (--gpg-keys). That's what lets a DIRECT `.flatpak` install (not just the .flatpakref)
+          # `flatpak update` from Pages afterwards — the bundle is no longer install-only.
+          echo "${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}" | gpg --batch --import
+          gpg --export ${{ secrets.FLATPAK_GPG_KEY_ID }} > flatpak/izumi-key.gpg
           dbus-run-session -- bash -euxo pipefail -c '
             flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
             cd flatpak
@@ -261,16 +267,17 @@ jobs:
               --repo=_repo _build com.nicho.izumi.yml
             flatpak build-bundle _repo \
               "../izumi-${{ steps.meta.outputs.tag }}-steamdeck.flatpak" \
-              com.nicho.izumi --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+              com.nicho.izumi \
+              --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+              --repo-url=https://flatpak.izumi.watch/ \
+              --gpg-keys=izumi-key.gpg
           '
 
-      # Turn ./flatpak/_repo into a real, GPG-verified update ORIGIN published on GitHub Pages, so a
-      # `.flatpakref` install gains a remote it can `flatpak update` from (the .flatpak bundle above
-      # stays install-only — see the Attach step). Signing/deltas run on the on-disk repo directly
-      # (no session bus needed). GPG key is separate from the minisign updater key.
-      - name: Import the OSTree GPG signing key
-        run: echo "${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}" | gpg --batch --import
-
+      # Turn ./flatpak/_repo into a real, GPG-verified update ORIGIN published on GitHub Pages, so
+      # BOTH the `.flatpakref` install and the direct `.flatpak` bundle (which now bakes in this same
+      # origin, above) can `flatpak update` from it. Signing/deltas run on the on-disk repo directly
+      # (no session bus needed). The key is already imported in the build step above; the minisign
+      # updater key is separate.
       - name: Sign the OSTree repo + generate static deltas
         run: |
           set -euxo pipefail
@@ -289,20 +296,25 @@ jobs:
           [Flatpak Ref]
           Name=com.nicho.izumi
           Branch=master
-          Url=https://nickeatsbread.github.io/izumi/
+          Url=https://flatpak.izumi.watch/
           GPGKey=$(base64 -w0 flatpak/_repo/izumi.gpg)
           IsRuntime=false
           RuntimeRepo=https://flathub.org/repo/flathub.flatpakrepo
           EOF
 
-      # keep_files: never delete older commits/deltas — clients updating from an older build need the
-      # deltas between their commit and HEAD to remain reachable.
-      - name: Publish the OSTree repo to GitHub Pages
+      # Publish to GitHub Pages, served at the custom domain flatpak.izumi.watch (the `cname` input
+      # writes the CNAME file). The URL baked into the bundle + .flatpakref is that DOMAIN, not the
+      # host — so Pages can be swapped for R2 / any static host later by re-pointing the domain, with
+      # no client rebuild/re-release. keep_files: never delete older commits/deltas — clients on an
+      # older build need the objects + deltas between their commit and HEAD to stay reachable.
+      # (GitHub Pages allows up to 100 MB/file + 1 GB/site, which fits izumi's OSTree objects.)
+      - name: Publish the OSTree repo to GitHub Pages (flatpak.izumi.watch)
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./flatpak/_repo
           keep_files: true
+          cname: flatpak.izumi.watch
 
       - name: Attach the Flatpak to the release
         env:

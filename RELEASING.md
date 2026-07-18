@@ -38,9 +38,16 @@ ignores them; the Worker returns `403` if they're missing/wrong.
      `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
    - **Flatpak OSTree signing (Steam Deck auto-update):** generate a GPG key, then add its armored
      private key + key id as secrets `FLATPAK_GPG_PRIVATE_KEY` + `FLATPAK_GPG_KEY_ID`. CI signs the
-     OSTree repo it publishes to GitHub Pages; the Deck installs from the `.flatpakref` there (see
-     README) and updates via the Flatpak portal. Back this key up off-CI like the updater key —
-     losing it means re-keying the repo + a one-time reinstall for users.
+     OSTree repo it publishes; the Deck installs from the `.flatpakref` (see README) and updates via
+     the Flatpak portal. Back this key up off-CI like the updater key — losing it means re-keying the
+     repo + a one-time reinstall for users.
+   - **Flatpak repo hosting (GitHub Pages → `flatpak.izumi.watch`):** the CI publishes the OSTree
+     repo to GitHub Pages and writes a `CNAME` for **`flatpak.izumi.watch`**. Set it up once: in the
+     `izumi` repo → Settings → Pages, set the custom domain to `flatpak.izumi.watch`; add a DNS
+     `CNAME flatpak → nickeatsbread.github.io` on the `izumi.watch` Cloudflare zone (DNS-only / grey
+     cloud so GitHub can issue the cert). The bundle + `.flatpakref` bake in `https://flatpak.izumi.watch/`
+     (the domain, not the host), so Pages can later be swapped for R2 / any static host by re-pointing
+     the domain — no client rebuild/re-release. (Pages limits: 100 MB/file, 1 GB/site.)
 
 3. **Repo slug** is `nickEatsBread/izumi`, already wired in 3 spots (update on a rename):
    - `src-tauri/tauri.conf.json` → `plugins.updater.endpoints`
