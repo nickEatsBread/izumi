@@ -194,6 +194,27 @@ jobs:
           # macOS injects the dynamically-built frameworks list (MAC_ARGS) from the bundling step.
           args: ${{ startsWith(matrix.platform, 'macos') && env.MAC_ARGS || matrix.args }}
 
+      # Upload version-less COPIES beside Tauri's versioned artifacts, so the README can link
+      # permanent /releases/latest/download/<name> URLs that never change — GitHub-native, no
+      # third party, no README edits per release. The versioned files stay; these are extra copies.
+      - name: Publish stable-named copies
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tag="${{ github.ref_name }}"; [[ "$tag" == *-* ]] && tag=beta   # betas publish to the rolling `beta` release
+          B=src-tauri/target/release/bundle
+          # copy <glob> <stable-name>: nullglob means only THIS runner's platform bundles match.
+          copy() { local m=($1); [ ${#m[@]} -gt 0 ] || return 0; cp "${m[0]}" "$2"; gh release upload "$tag" "$2" --repo "${{ github.repository }}" --clobber; }
+          copy "$B/nsis/*-setup.exe"     izumi-x64-setup.exe
+          copy "$B/msi/*.msi"           izumi-x64.msi
+          copy "$B/dmg/*.dmg"           izumi-aarch64.dmg
+          copy "$B/appimage/*.AppImage" izumi-x86_64.AppImage
+          copy "$B/deb/*.deb"           izumi-amd64.deb
+          copy "$B/rpm/*.rpm"           izumi-x86_64.rpm
+
   cleanup-release-signatures:
     needs: [create-release, build]
     runs-on: ubuntu-latest
@@ -433,8 +454,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "${{ steps.meta.outputs.tag }}" \
-            "izumi-${{ steps.meta.outputs.tag }}-android-arm64-${{ matrix.flavor }}.apk" --repo "${{ github.repository }}" --clobber
+          T="${{ steps.meta.outputs.tag }}"
+          VER="izumi-$T-android-arm64-${{ matrix.flavor }}.apk"
+          gh release upload "$T" "$VER" --repo "${{ github.repository }}" --clobber
+          # Version-less copy for the README's permanent /latest/download link (versioned one stays).
+          cp "$VER" "izumi-android-${{ matrix.flavor }}.apk"
+          gh release upload "$T" "izumi-android-${{ matrix.flavor }}.apk" --repo "${{ github.repository }}" --clobber
 
   publish-release:
     needs: [create-release, build, cleanup-release-signatures]
