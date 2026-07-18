@@ -15,7 +15,7 @@ const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`
 export type UpdateInfo = { version: string; notes: string; apkUrl: string }
 
 /** Compare dotted numeric versions. >0 if a is newer than b, 0 equal, <0 older. */
-function cmpVersion(a: string, b: string): number {
+export function cmpVersion(a: string, b: string): number {
   const pa = a.split('.').map((n) => parseInt(n, 10) || 0)
   const pb = b.split('.').map((n) => parseInt(n, 10) || 0)
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
