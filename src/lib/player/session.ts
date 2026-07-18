@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import type { Media } from '$lib/anilist/types'
 import type { Stream } from '$lib/stremio/addon'
 import type { DebridInfo } from '$lib/stremio/debrid/types'
+import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
@@ -87,6 +88,17 @@ export const debridCaching = writable<null | {
 // Transient toast shown in the player overlay (e.g. "Loading next episode…",
 // "Next episode has no cached source"). Cleared automatically by the overlay.
 export const playerNotice = writable<string>('')
+
+// needsFetch subtitle candidates (OpenSubtitles / SubDL) found on play — listed in the in-player
+// "Online subtitles" menu for manual pick. Populated by playStream at embed time; never sent to
+// player_embed. `status` drives the menu's searching/empty states; reset each episode so stale rows
+// from the previous one don't linger.
+export const onlineSubCandidates = writable<{ status: 'idle' | 'searching' | 'ready' | 'error'; items: SubtitleCandidate[] }>({ status: 'idle', items: [] })
+
+// Actionable subtitle-provider notice (e.g. quota reached / sign in again), shown in the subtitle
+// menu. Parallel to playerNotice but NEVER flips PlayState to error — a subtitle failure must not
+// kill video playback. '' = none.
+export const subtitleNotice = writable<string>('')
 
 // Cache key (infoHash, else `<mediaId>-<episode>`) of the stream now playing, used
 // by the seekbar to request/poll its scrub-preview sprite sheet. null = no sprite.
