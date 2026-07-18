@@ -63,3 +63,17 @@ export async function applyUpdate(): Promise<void> {
     await openUrl(RELEASES)
   } catch (e) { updateError.set(String(e)); updatePhase.set('error') }
 }
+
+const FIRST_DELAY = 5_000       // let first paint / boot settle
+const INTERVAL = 6 * 60 * 60_000 // 6h
+
+/** Kick off the initial (delayed) check + a 6h interval. Returns a stop fn. `autoEnabled` is read
+ *  each tick so toggling the setting takes effect without a restart. Callers gate to packaged builds. */
+export function startUpdateChecks(autoEnabled: () => boolean): () => void {
+  let interval: ReturnType<typeof setInterval> | null = null
+  const first = setTimeout(() => {
+    if (autoEnabled()) void checkForUpdate()
+    interval = setInterval(() => { if (autoEnabled()) void checkForUpdate() }, INTERVAL)
+  }, FIRST_DELAY)
+  return () => { clearTimeout(first); if (interval) clearInterval(interval) }
+}
