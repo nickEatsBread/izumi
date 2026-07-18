@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, poll } from '../http'
+import { jfetch, form, magnetOf, poll, authError } from '../http'
 import type { DebridProvider } from '../types'
 
 // Deepbrid (EXPERIMENTAL). Torrent endpoints are premium-gated; response shapes are
@@ -14,7 +14,7 @@ async function db(method: string, path: string, key: string, body?: string): Pro
     headers: { Authorization: `Bearer ${key}`, ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     ...(body ? { body } : {}),
   })
-  if (!ok) throw new Error(`Deepbrid request failed (${status}).`)
+  if (!ok) throw new Error(authError('Deepbrid', { status }) ?? `Deepbrid request failed (${status}).`)
   return json
 }
 
