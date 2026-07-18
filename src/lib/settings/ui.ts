@@ -160,6 +160,37 @@ export const extensionUrls = persisted<string[]>('extension-urls', [])
 export const disabledExtensions = persisted<string[]>('disabled-extensions', [])
 export const enabledExtensionUrls = derived([extensionUrls, disabledExtensions], ([$urls, $off]) => $urls.filter((u) => !$off.includes(u)))
 
+// --- Subtitle providers ---
+// Direct-REST subtitle sources (OpenSubtitles / SubDL), folded into the same aggregator as the
+// Stremio subtitle addons. Secrets follow the existing plain-`persisted` model, exactly like
+// `debridKey` above — no new primitive. The embedded OpenSubtitles Api-Key is a build constant
+// (see subtitles/opensubtitles.ts), not a store.
+/** Which direct-REST subtitle providers are enabled. Default: OpenSubtitles (keyless search). */
+export const subtitleProviders = persisted<string[]>('subtitle-providers', ['opensubtitles'])
+/** OpenSubtitles account JWT from /login (reused until expiry). Secret. */
+export const openSubtitlesToken = persisted<string>('opensubtitles-jwt', '')
+/** Epoch-ms expiry of the JWT above; reuse the token until Date.now() >= this. */
+export const openSubtitlesExpiry = persisted<number>('opensubtitles-jwt-exp', 0)
+/** Connected OpenSubtitles username, for the connected-state display. */
+export const openSubtitlesUserName = persisted<string>('opensubtitles-user', '')
+/** VIP host returned by /login (base_url quirk); all subsequent calls go here when set. */
+export const openSubtitlesBaseUrl = persisted<string>('opensubtitles-base', '')
+/** Opt-in: store the password so izumi can silently re-login on expiry. Default off. */
+export const openSubtitlesStaySignedIn = persisted<boolean>('opensubtitles-stay', false)
+/** OpenSubtitles credentials, written ONLY when "Stay signed in" is on. Secret. */
+export const openSubtitlesCreds = persisted<string>('opensubtitles-creds', '')
+/** SubDL API key (bring-your-own; required even to search). Secret. */
+export const subDlApiKey = persisted<string>('subdl-api-key', '')
+
+/** The subtitle providers that can actually run: OpenSubtitles is always searchable (embedded
+ *  Api-Key); SubDL needs a key even to search, so it's dropped when the key is empty. */
+export const enabledSubtitleProviders = derived(
+  [subtitleProviders, subDlApiKey],
+  ([$on, $subdl]) => $on.filter((p) =>
+    p === 'opensubtitles' ||
+    (p === 'subdl' && !!$subdl)),
+)
+
 // --- Offline downloads ---
 /** Where downloaded episodes are written. Empty = app-data/downloads (resolved in Rust). */
 export const downloadDir = persisted<string>('download-dir', '')
