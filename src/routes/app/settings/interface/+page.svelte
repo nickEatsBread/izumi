@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, type EpisodeLayout, type ScheduleLayout } from '$lib/settings/ui'
+  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleHeaderFade, type EpisodeLayout, type ScheduleLayout } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
   const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
@@ -54,6 +54,10 @@
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>
       {/each}
+    </div>
+
+    <div class="mb-4">
+      <Toggle label="Schedule header fade" desc="Softly fade the schedule rows into the sticky header as they scroll under it. Off = no overlay (its opaque top edge can read as a dark band over the first row)." value={$scheduleHeaderFade} onToggle={() => ($scheduleHeaderFade = !$scheduleHeaderFade)} />
     </div>
 
     <div class="space-y-3">

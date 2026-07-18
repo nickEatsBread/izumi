@@ -17,7 +17,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { localHistory } from '$lib/player/history'
   import { gameMode } from '$lib/player/session'
-  import { scheduleLayout } from '$lib/settings/ui'
+  import { scheduleLayout, scheduleHeaderFade } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
   import DayColumn from './DayColumn.svelte'
   import AgendaWeek from './AgendaWeek.svelte'
@@ -204,11 +204,12 @@
     {#if isCurrentWeek}
       <ScheduleNextUp airings={shownDays.flat()} {sets} {now} />
     {/if}
-    <!-- Soft dissolve just below the pinned header: agenda rows fade into the background as they
-         scroll under it, instead of snapping off at the opaque bar's hard bottom edge (the faint
-         "line" wipe that read as uncanny). Faded out entirely while the header is at rest so it
-         never shades the content below. pointer-events-none so day cards stay clickable. -->
-    <div class="pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-background to-background/0 transition-opacity duration-200 {stuck ? 'opacity-100' : 'opacity-0'}"></div>
+    <!-- Optional soft dissolve just below the pinned header (toggle in Settings → Interface). OFF by
+         default: its opaque top edge (from-background) shades the first content row as a dark band,
+         which some dislike. pointer-events-none so day cards stay clickable. -->
+    {#if $scheduleHeaderFade}
+      <div class="pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-background to-background/0 transition-opacity duration-200 {stuck ? 'opacity-100' : 'opacity-0'}"></div>
+    {/if}
   </div>
   {#if view === 'mine' && mineCount === 0}
     {@render mineEmpty()}
