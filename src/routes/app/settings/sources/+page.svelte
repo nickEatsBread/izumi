@@ -15,7 +15,7 @@
 
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Sources</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Stremio addons (Torrentio/Comet) backed by your debrid, and how sources are chosen.</p>
+  <p class="mb-4 text-sm text-muted-foreground">Stremio addons backed by your debrid, and how sources are chosen.</p>
 
   <div class="mb-6 max-w-2xl space-y-3">
     <Toggle label="Auto-play the best source" desc="When the source list loads, count down ~5 seconds — the Auto button fills left→right — then play the best cached match for your preferred quality. Cancel any time by picking another source or interacting. Off = always choose manually." value={$autoSelectSource} onToggle={() => ($autoSelectSource = !$autoSelectSource)} />
@@ -35,7 +35,7 @@
   </div>
 
   <div class="max-w-2xl">
-    <p class="mb-2 text-sm text-muted-foreground">Paste a debrid-configured addon manifest URL (e.g. your Torrentio/Comet Real-Debrid link).</p>
+    <p class="mb-2 text-sm text-muted-foreground">Paste a debrid-configured addon manifest URL (e.g. your Real-Debrid link).</p>
     <div class="flex gap-2">
       <input bind:value={input} data-focusable placeholder="https://…/manifest.json" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
       <button onclick={add} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Add</button>
