@@ -1,8 +1,10 @@
-<p align="center">
+<h1 align="center">
   <img src="brand/svg/izumi-mark-color.svg" alt="izumi brand mark" width="96" />
-</p>
+  <br>
+  <b>izumi</b>
+</h1>
 
-<h1 align="center"><b>izumi</b></h1>
+<!-- <h1 align="center"><b>izumi</b></h1> -->
 
 <p align="center">
   <img width="100%" height="940" alt="README artwork" src="https://github.com/user-attachments/assets/665d0f1a-8360-4386-9d22-f9159fc1f1ac" />
