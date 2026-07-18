@@ -264,6 +264,46 @@ jobs:
               com.nicho.izumi --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
           '
 
+      # Turn ./flatpak/_repo into a real, GPG-verified update ORIGIN published on GitHub Pages, so a
+      # `.flatpakref` install gains a remote it can `flatpak update` from (the .flatpak bundle above
+      # stays install-only — see the Attach step). Signing/deltas run on the on-disk repo directly
+      # (no session bus needed). GPG key is separate from the minisign updater key.
+      - name: Import the OSTree GPG signing key
+        run: echo "${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - name: Sign the OSTree repo + generate static deltas
+        run: |
+          set -euxo pipefail
+          flatpak build-sign flatpak/_repo \
+            --gpg-sign=${{ secrets.FLATPAK_GPG_KEY_ID }} com.nicho.izumi
+          flatpak build-update-repo flatpak/_repo \
+            --generate-static-deltas --gpg-sign=${{ secrets.FLATPAK_GPG_KEY_ID }}
+          gpg --export --armor ${{ secrets.FLATPAK_GPG_KEY_ID }} > flatpak/_repo/izumi.gpg
+
+      # The one-file install descriptor users open on the Deck. Embeds the repo URL + the base64
+      # GPG public key so `flatpak install <url>/com.nicho.izumi.flatpakref` trusts the origin.
+      - name: Emit the .flatpakref
+        run: |
+          set -euxo pipefail
+          cat > flatpak/_repo/com.nicho.izumi.flatpakref <<EOF
+          [Flatpak Ref]
+          Name=com.nicho.izumi
+          Branch=master
+          Url=https://nickeatsbread.github.io/izumi/
+          GPGKey=$(base64 -w0 flatpak/_repo/izumi.gpg)
+          IsRuntime=false
+          RuntimeRepo=https://flathub.org/repo/flathub.flatpakrepo
+          EOF
+
+      # keep_files: never delete older commits/deltas — clients updating from an older build need the
+      # deltas between their commit and HEAD to remain reachable.
+      - name: Publish the OSTree repo to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./flatpak/_repo
+          keep_files: true
+
       - name: Attach the Flatpak to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
