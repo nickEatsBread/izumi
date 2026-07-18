@@ -1,4 +1,4 @@
-import { jfetch, magnetOf, pickLargestVideo, poll, VIDEO, JUNK } from '../http'
+import { jfetch, magnetOf, pickLargestVideo, poll, VIDEO, JUNK, authError } from '../http'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // TorBox. Auto-selects; readiness via booleans; per-file link via requestdl (which
@@ -9,12 +9,15 @@ const BASE = 'https://api.torbox.app/v1/api'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tb(method: string, path: string, key: string, body?: FormData): Promise<any> {
-  const { json } = await jfetch(`${BASE}${path}`, {
+  const { status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}` },
     ...(body ? { body } : {}),
   })
-  if (json?.success === false) throw new Error(json?.detail ?? json?.error ?? 'TorBox request failed.')
+  if (json?.success === false) {
+    const auth = authError('TorBox', { status, code: json?.error, message: json?.detail })
+    throw new Error(auth ?? json?.detail ?? json?.error ?? 'TorBox request failed.')
+  }
   return json?.data
 }
 

@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, pickLargestVideo, poll, VIDEO, JUNK } from '../http'
+import { jfetch, form, magnetOf, pickLargestVideo, poll, VIDEO, JUNK, authError } from '../http'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // AllDebrid. Auto-selects files; ready = statusCode===4; the file link MUST be
@@ -7,12 +7,15 @@ import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../type
 const BASE = 'https://api.alldebrid.com'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function ad(path: string, key: string, body: string): Promise<any> {
-  const { json } = await jfetch(`${BASE}${path}`, {
+  const { status, json } = await jfetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   })
-  if (json?.status !== 'success') throw new Error(json?.error?.message ?? 'AllDebrid request failed.')
+  if (json?.status !== 'success') {
+    const auth = authError('AllDebrid', { status, code: json?.error?.code, message: json?.error?.message })
+    throw new Error(auth ?? json?.error?.message ?? 'AllDebrid request failed.')
+  }
   return json.data
 }
 
