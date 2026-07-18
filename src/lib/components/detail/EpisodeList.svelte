@@ -32,9 +32,17 @@
   ))
 
   const PER = 48
-  let page = $state(0)
+  // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
+  // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
+  // you're up to, not episode 1. Deriving it (vs a one-shot init) keeps it right if progress
+  // hydrates a tick late, and it stops following once the user hits Prev/Next.
+  let page = $state<number | null>(null)
   const pages = $derived(Math.max(1, Math.ceil(total / PER)))
-  const startIdx = $derived(page * PER)
+  const autoPage = $derived(
+    Math.min(pages - 1, Math.max(0, Math.floor((Math.min(watchedThrough + 1, total) - 1) / PER))),
+  )
+  const curPage = $derived(page ?? autoPage)
+  const startIdx = $derived(curPage * PER)
   const eps = $derived(Array.from({ length: Math.max(0, Math.min(PER, total - startIdx)) }, (_, i) => startIdx + i + 1))
 
   // Per-episode metadata from AniZip (thumbnail/title/rating). Best-effort; the
@@ -234,10 +242,10 @@
 
   {#if pages > 1}
     <div class="mt-4 flex items-center gap-3 text-sm">
-      <button data-focusable disabled={page === 0} onclick={() => (page -= 1)}
+      <button data-focusable disabled={curPage === 0} onclick={() => (page = curPage - 1)}
               class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Prev</button>
-      <span class="text-muted-foreground">Episodes {startIdx + 1}–{startIdx + eps.length} of {total} · page {page + 1}/{pages}</span>
-      <button data-focusable disabled={page >= pages - 1} onclick={() => (page += 1)}
+      <span class="text-muted-foreground">Episodes {startIdx + 1}–{startIdx + eps.length} of {total} · page {curPage + 1}/{pages}</span>
+      <button data-focusable disabled={curPage >= pages - 1} onclick={() => (page = curPage + 1)}
               class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Next</button>
     </div>
   {/if}
