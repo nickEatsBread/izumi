@@ -15,7 +15,7 @@
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
   import { playing, fullscreen, gameMode, initGameMode, debridCaching } from '$lib/player/session'
-  import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
+  import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, autoUpdateCheck } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
@@ -31,7 +31,8 @@
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { initTrackerQueue } from '$lib/trackers/queue'
   import { initDeviceSync } from '$lib/sync/client'
-  import { checkAndroidUpdate, downloadAndInstall, androidUpdate, androidUpdateDismissed } from '$lib/updater/android'
+  import { startUpdateChecks } from '$lib/updater'
+  import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
   import { get } from 'svelte/store'
   let { children } = $props()
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
@@ -49,11 +50,13 @@
   })
   $effect(() => {
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
-    if (get(isAndroid)) {
-      initReturnTracking() // return-to-app = watched (external-player flow)
-      // Quiet self-update check: surface a banner if a newer release exists (no auto-download).
-      checkAndroidUpdate().then((u) => { if (u) androidUpdate.set(u) })
-    }
+    if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
+    // Cross-platform update check: a delayed launch check + a 6h interval. Gated to packaged
+    // builds so dev never nags. The facade dispatches per platform (desktop/android/flatpak);
+    // the toast is still opt-in to APPLY. `autoUpdateCheck` is read each tick, so toggling it
+    // in settings takes effect without a restart.
+    let stopUpdates: (() => void) | null = null
+    if (!import.meta.env.DEV) stopUpdates = startUpdateChecks(() => get(autoUpdateCheck))
     initInput()
     initDpadNav()
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
@@ -77,6 +80,7 @@
     // connected. Fire-and-forget.
     refreshAniListAvatar().catch(() => {})
     refreshMalViewer().catch(() => {})
+    return () => stopUpdates?.() // tear the update timer down on unmount (mirrors the gamepad effect)
   })
 
   // Push the DNS-over-HTTPS setting into the Rust HTTP client. Reactive: runs on
@@ -150,18 +154,6 @@
   afterNavigate(() => {
     if (get(gameMode)) invoke('restore_native_touch').catch(() => {})
   })
-
-  // Android self-update: download the release APK and hand it to the system installer.
-  let updating = $state(false)
-  let updateErr = $state('')
-  async function runUpdate() {
-    const u = get(androidUpdate)
-    if (!u || updating) return
-    updating = true; updateErr = ''
-    try { await downloadAndInstall(u) }
-    catch (e) { updateErr = e instanceof Error ? e.message : String(e) }
-    finally { updating = false }
-  }
 </script>
 
 <!-- Solid app floor; hidden while playing so mpv (behind the webview) shows. -->
@@ -202,15 +194,5 @@
     <button data-focusable onclick={() => $watchToast?.undo()} class="shrink-0 font-bold text-theme">Undo</button>
   </div>
 {/if}
-<!-- Android self-update prompt (surfaced by the on-launch check). Sits above the bottom nav. -->
-{#if $androidUpdate && !$androidUpdateDismissed}
-  <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
-    <span class="truncate">
-      {updating ? 'Downloading update…' : updateErr ? `Update failed: ${updateErr}` : `Update ${$androidUpdate.version} available`}
-    </span>
-    {#if !updating}
-      <button data-focusable onclick={runUpdate} class="shrink-0 font-bold text-theme">{updateErr ? 'Retry' : 'Update'}</button>
-      <button data-focusable onclick={() => androidUpdateDismissed.set(true)} class="shrink-0 text-muted-foreground">Later</button>
-    {/if}
-  </div>
-{/if}
+<!-- Cross-platform update toast (available → downloading → ready); opt-in to apply. -->
+<UpdateToast />
