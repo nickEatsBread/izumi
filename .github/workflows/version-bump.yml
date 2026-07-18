@@ -1,7 +1,8 @@
 name: version bump
 
 # Manual trigger from the Actions tab. Pick a bump type; this updates the version in
-# package.json, tauri.conf.json, Cargo.toml (+ Cargo.lock), commits, tags, and pushes.
+# package.json, tauri.conf.json, Cargo.toml (+ Cargo.lock), and the AppStream metainfo,
+# then commits, tags, and pushes.
 # The pushed tag triggers `release.yml` — BUT only if pushed with a PAT (GitHub blocks
 # GITHUB_TOKEN pushes from triggering other workflows). See RELEASING.md for the
 # one-time RELEASE_PAT setup; without it the tag is still created, just re-run/trigger
@@ -51,6 +52,11 @@ jobs:
           sed -i "s/^  \"version\": \".*\"/  \"version\": \"$NEW\"/" src-tauri/tauri.conf.json
           sed -i "s/^version = \".*\"/version = \"$NEW\"/" src-tauri/Cargo.toml
           sed -i '/^name = "izumi"$/{n;s/^version = ".*"/version = "'"$NEW"'"/}' src-tauri/Cargo.lock
+          # AppStream metainfo <release> — GNOME Software / Discover read this to show + install the
+          # version. It drifted before because the bump skipped it (the manifest only patched it in
+          # the built artifact). The space in "<release " is required so we don't also match the
+          # <releases> wrapper and produce malformed XML.
+          sed -i "s|<release [^>]*/>|<release version=\"$NEW\" date=\"$(date +%F)\"/>|" flatpak/com.nicho.izumi.metainfo.xml
           echo "### Bumped to \`v$NEW\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Commit, tag, push
@@ -58,7 +64,7 @@ jobs:
           NEW=${{ steps.v.outputs.version }}
           git config user.name "nickEatsBread"
           git config user.email "nickEatsBread@users.noreply.github.com"
-          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock flatpak/com.nicho.izumi.metainfo.xml
           git commit -m "chore: release v$NEW"
           git tag "v$NEW"
           git push origin HEAD:main

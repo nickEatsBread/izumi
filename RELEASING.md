@@ -75,10 +75,13 @@ from triggering workflows, so without the PAT the tag is created but you re-run
 
 ### Manual
 
-1. Bump the version in **all three** (keep in sync):
+1. Bump the version in **all of these** (keep in sync — the `version bump` workflow does all of
+   them for you):
    - `src-tauri/tauri.conf.json` → `version`
    - `package.json` → `version`
-   - `src-tauri/Cargo.toml` → `version`
+   - `src-tauri/Cargo.toml` → `version` (and the `izumi` entry in `src-tauri/Cargo.lock`)
+   - `flatpak/com.nicho.izumi.metainfo.xml` → `<release version="…" date="…"/>` (GNOME
+     Software / Discover read this; the build-time sed in the manifest is only a fallback)
 
    For a beta, use a pre-release version (e.g. `0.3.0-beta.1`) — the updater compares
    semver, so beta testers get each new pre-release.
