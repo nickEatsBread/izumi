@@ -71,6 +71,14 @@ describe('authError', () => {
     expect(m).toContain('login')
     expect(m).not.toContain('API key')
   })
+  it('quota message names the limit, the daily allowance, and the Subtitles settings location', () => {
+    const m = authError('OpenSubtitles', { status: 401, message: 'You have downloaded your allowed 20 subtitles for 24 hours.' })!
+    expect(m).toContain('OpenSubtitles')
+    expect(m).toContain('limit reached')
+    expect(m).toContain('20/day')
+    expect(m).toContain('Settings → Subtitles')
+    expect(m).not.toContain('Settings → Extensions')
+  })
   it('returns undefined for a non-auth failure so the caller keeps its own message', () => {
     expect(authError('Real-Debrid', { status: 451 })).toBeUndefined()
     expect(authError('Premiumize', { status: 200, message: 'not cached' })).toBeUndefined()
