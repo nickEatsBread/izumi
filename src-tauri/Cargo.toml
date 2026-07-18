@@ -80,6 +80,13 @@ libmpv2 = "6.0.0"
 libmpv2-sys = "4.0.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 tauri-plugin-updater = "2"
+# Direct-API subtitle providers (OpenSubtitles/SubDL). SubDL delivers subtitles as ZIP archives
+# that Rust must unzip (first .srt/.ass), and every downloaded body needs charset detection +
+# decode to UTF-8 before mpv can load it. All pure-Rust: `zip` with the zlib-rs deflate backend
+# (no C toolchain), `chardetng` guesses the legacy encoding, `encoding_rs` decodes it.
+zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+encoding_rs = "0.8"
+chardetng = "0.1"
 
 # Embedded libmpv player for the Android "full" flavor. Optional + only pulled in when the
 # `android-mpv` feature is on, so the "lite" build compiles zero player code / bundles no .so.
