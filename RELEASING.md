@@ -36,6 +36,11 @@ ignores them; the Worker returns `403` if they're missing/wrong.
      (replace `REPLACE_WITH_YOUR_TAURI_UPDATER_PUBLIC_KEY`).
    - Private key + password → GitHub Actions **secrets**
      `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+   - **Flatpak OSTree signing (Steam Deck auto-update):** generate a GPG key, then add its armored
+     private key + key id as secrets `FLATPAK_GPG_PRIVATE_KEY` + `FLATPAK_GPG_KEY_ID`. CI signs the
+     OSTree repo it publishes to GitHub Pages; the Deck installs from the `.flatpakref` there (see
+     README) and updates via the Flatpak portal. Back this key up off-CI like the updater key —
+     losing it means re-keying the repo + a one-time reinstall for users.
 
 3. **Repo slug** is `nickEatsBread/izumi`, already wired in 3 spots (update on a rename):
    - `src-tauri/tauri.conf.json` → `plugins.updater.endpoints`

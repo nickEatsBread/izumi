@@ -63,6 +63,16 @@ npm run tauri build
 Release builds are available for Windows, Linux, Steam Deck, and
 Android. Expect ongoing changes and the occasional rough edges. If you encounter any issues, please report them through GitHub Issues.
 
+### Steam Deck
+
+Install from the auto-updating Flatpak repo so the app can update itself in the background:
+
+```sh
+flatpak install --user https://nickeatsbread.github.io/izumi/com.nicho.izumi.flatpakref
+```
+
+Updates then download silently and apply the next time you launch izumi from Steam. The standalone `.flatpak` bundle attached to each release is **install-only** — it has no update origin, so reinstall from the `.flatpakref` above if you want auto-updates.
+
 ## License
 
 [AGPL-3.0-or-later](LICENSE) © izumi contributors.
