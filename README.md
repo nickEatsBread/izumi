@@ -68,10 +68,10 @@ Android. Expect ongoing changes and the occasional rough edges. If you encounter
 Install from the auto-updating Flatpak repo so the app can update itself in the background:
 
 ```sh
-flatpak install --user https://nickeatsbread.github.io/izumi/com.nicho.izumi.flatpakref
+flatpak install --user https://flatpak.izumi.watch/com.nicho.izumi.flatpakref
 ```
 
-Updates then download silently and apply the next time you launch izumi from Steam. The standalone `.flatpak` bundle attached to each release is **install-only** — it has no update origin, so reinstall from the `.flatpakref` above if you want auto-updates.
+Updates then download silently and apply the next time you launch izumi from Steam. The standalone `.flatpak` bundle attached to each release works too — it bakes in the same update origin, so a direct bundle install auto-updates the same way (the `.flatpakref` is just the simplest one-click install).
 
 ## License
 

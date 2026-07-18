@@ -23,4 +23,10 @@ src-tauri/macos-frameworks/
 
 # Local Flatpak bundle artifact (built + deployed, not committed)
 izumi.flatpak
+
+# Flatpak build artifacts (OSTree repo, build dir, exported signing pubkey) — CI + local
+flatpak/_repo/
+flatpak/_build/
+flatpak/.flatpak-builder/
+flatpak/izumi-key.gpg
 .claude/
