@@ -9,9 +9,10 @@ import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf } from '$lib/downloads/state'
-import { resolveHash, providerName } from './debrid'
+import { resolveHash, providerName, type EpisodeWant } from './debrid'
 import { resolveOnlineStreams } from './onlinestream'
-import { fetchAddonSubtitles, type ExternalSubtitle } from './subtitles'
+import { fetchExternalSubtitles } from './subtitles'
+import type { SubtitleCandidate } from './subtitles/types'
 import { queryExtensions } from '$lib/extensions/manager'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
@@ -21,7 +22,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching } from '$lib/player/session'
+import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching, onlineSubCandidates } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
@@ -36,6 +37,25 @@ import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents,
 import type { Media } from '$lib/anilist/types'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
+
+// Filename of the currently-playing stream, captured for on-demand subtitle re-search.
+let lastSubFilename: string | undefined
+
+/** Re-run the external-subtitle search for the currently-playing episode (the in-player "Search
+ *  again" button). Writes onlineSubCandidates through a searching → ready|error transition. The
+ *  optional `query` is reserved for a future provider-side freetext search; v1 ignores it (the menu
+ *  filters the fetched list client-side). */
+export async function searchOnlineSubtitles(_query?: string): Promise<void> {
+  const np = get(nowPlayingMedia)
+  if (!np) return
+  onlineSubCandidates.update((s) => ({ status: 'searching', items: s.items }))
+  try {
+    const cands = await fetchExternalSubtitles(get(enabledAddonUrls), np.media, np.episode ?? undefined, lastSubFilename)
+    onlineSubCandidates.set({ status: 'ready', items: cands.filter((c) => c.download?.needsFetch) })
+  } catch {
+    onlineSubCandidates.set({ status: 'error', items: [] })
+  }
+}
 
 // Module-level listener handles from the *previous* play. We unlisten these
 // before attaching new ones so repeated plays don't stack listeners (this is a
@@ -397,6 +417,18 @@ function pickSameRelease(media: Media, streams: Stream[], want?: { season?: numb
   return streams.find((s) => matchesRelease(s, c) && playableNow(s) && !isUncached(s) && !(want && isWrongSeason(s, want)))
 }
 
+// Episode-selection context for debrid: tells the provider WHICH file of a (possibly
+// batch/season-pack) torrent to play, instead of its legacy largest-file pick. AniZip's
+// season/abs pair disambiguates absolute-numbered files and multi-season packs; the
+// addon's behaviorHints.filename (batch rows name the exact in-pack file) is an exact
+// match hint. Best-effort — an empty want keeps the legacy behavior.
+async function episodeWant(media: Media, episode: number | undefined, stream?: Stream): Promise<EpisodeWant | undefined> {
+  if (episode == null) return undefined
+  const map = await getEpisodeSeasonMap(media.id).catch(() => ({} as Record<number, { season?: number; abs?: number }>))
+  const sm = map[episode]
+  return { episode, abs: sm?.abs, season: sm?.season, filename: stream?.behaviorHints?.filename }
+}
+
 // Next episode resolved ahead of time (near the end of the current one) so Next /
 // auto-advance starts instantly — no addon query or debrid round-trip at the cut.
 let prefetched: { mediaId: number; episode: number; stream: Stream } | null = null
@@ -418,7 +450,9 @@ async function prefetchNext(media: Media, episode: number) {
     if (!best) return // no cached same-release — leave it to the picker rather than force a download
     let s = best
     if (!s.url && s.infoHash) {
-      s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash) }
+      s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash, {
+        want: { episode: next, abs: want?.abs, season: want?.season, filename: s.behaviorHints?.filename },
+      }) }
     }
     if (s.url) prefetched = { mediaId: media.id, episode: next, stream: s }
   }
@@ -718,12 +752,13 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
+  lastSubFilename = stream.behaviorHints?.filename
   // Fetch external subtitles from any subtitle-capable addon (OpenSubtitles etc) CONCURRENTLY with the
   // slow source resolve below, so they're ready by embed time without adding latency. Skipped for the
   // external/Android players (they own subtitle handling). Best-effort — [] on any failure.
-  const subsP: Promise<ExternalSubtitle[]> = get(isAndroid) || get(enableExternalPlayer)
+  const subsP: Promise<SubtitleCandidate[]> = get(isAndroid) || get(enableExternalPlayer)
     ? Promise.resolve([])
-    : fetchAddonSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename).catch(() => [])
+    : fetchExternalSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename).catch(() => [])
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
   // visible in it); auto-next calls this with no picker open.
   // Extension / P2P results carry only an infoHash — resolve it to a cached HTTP url
@@ -765,6 +800,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
         signal: controller.signal,
         timeoutMs: 30 * 60 * 1000,
         onStatus: (i) => { if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c)) },
+        want: await episodeWant(media, episode, stream),
       })
       clearTimeout(overlayTimer)
       stream = { ...stream, url }
@@ -809,10 +845,10 @@ export async function playStream(media: Media, episode: number | undefined, stre
       // app was built with the `android-mpv` feature; on the "lite" build hasEmbeddedPlayer() is
       // false and we fall through to the external-player intent below.
       if (await hasEmbeddedPlayer()) {
-        const addonSubs = await Promise.race([subsP, new Promise<ExternalSubtitle[]>((r) => setTimeout(() => r([]), 4000))])
+        const addonSubs = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 4000))])
         const subs = [
           ...(stream.__stream ? (stream.__subtitles ?? []).map((s: { url: string }) => s.url) : []),
-          ...addonSubs.map((s) => s.url),
+          ...addonSubs.filter((s) => !!s.url).map((s) => s.url!),
         ]
         await startMpvEvents()
         await mpvLoad({ url: stream.url, title: label, startPos: startSeconds || 0, subtitles: subs })
@@ -872,10 +908,14 @@ export async function playStream(media: Media, episode: number | undefined, stre
     // Await the addon subtitles (bounded — a slow subtitle addon must not hold up playback), and merge
     // them with any the source itself carried (online-stream __subtitles). mpv sub-adds all of them;
     // slang auto-selects the preferred language.
-    const addonSubs = await Promise.race([subsP, new Promise<ExternalSubtitle[]>((r) => setTimeout(() => r([]), 4000))])
+    const candidates = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 4000))])
+    // Partition: url-bearing candidates (addons) merge into mpv at load exactly as before; needsFetch
+    // candidates (OpenSubtitles/SubDL) are menu-only — stashed for manual pick, never sent to
+    // player_embed. Set fresh each episode so last episode's rows don't linger.
+    onlineSubCandidates.set({ status: 'ready', items: candidates.filter((s) => s.download?.needsFetch) })
     const subtitles = [
       ...(stream.__stream ? stream.__subtitles ?? [] : []),
-      ...addonSubs.map((s) => ({ url: s.url, lang: s.lang })),
+      ...candidates.filter((s) => !!s.url).map((s) => ({ url: s.url!, lang: s.lang })),
     ]
     // alang/slang drive mpv's preferred-language track auto-selection.
     await invoke('player_embed', {
@@ -963,7 +1003,9 @@ export async function resolveDownloadUrl(mediaId: number, episode: number): Prom
   if (!url && best.infoHash) {
     const p = get(debridProvider), key = get(debridKey)
     if (!key) throw new Error(`Add a ${providerName(p)} key in Settings → Extensions.`)
-    url = await resolveHash(p, key, best.__magnet ?? best.infoHash)
+    url = await resolveHash(p, key, best.__magnet ?? best.infoHash, {
+      want: { episode, abs: want?.abs, season: want?.season, filename: best.behaviorHints?.filename },
+    })
     prov = providerName(p)
   }
   if (!url) throw new Error('That source has no downloadable link.')
