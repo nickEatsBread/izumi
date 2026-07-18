@@ -127,6 +127,9 @@ export const showAdult = persisted<boolean>('show-adult', false)
  *  (day tabs + one big day). Ignored in Game mode — the Deck always shows one day. */
 export type ScheduleLayout = 'agenda' | 'days'
 export const scheduleLayout = persisted<ScheduleLayout>('schedule-layout', 'agenda')
+// Soft fade of schedule rows into the pinned header as they scroll under it. Off by default —
+// it's purely decorative and some find it just shades the content.
+export const scheduleHeaderFade = persisted<boolean>('schedule-header-fade', false)
 
 // --- Updates ---
 /** Auto-updater release channel: 'stable' (normal GitHub releases) or 'beta'
