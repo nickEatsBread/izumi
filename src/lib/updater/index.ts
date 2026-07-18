@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { isAndroid } from '$lib/platform'
 import { updateChannel } from '$lib/settings/ui'
+import { listenSafe } from '$lib/util/listen'
 import { checkAndroidUpdate, downloadAndInstall, type UpdateInfo as AndroidUpdate } from './android'
 
 export type UpdateTarget = 'android' | 'flatpak' | 'desktop'
@@ -59,8 +60,26 @@ export async function applyUpdate(): Promise<void> {
       updatePhase.set('ready')
       return
     }
-    // flatpak — Phase 1: route to the release page (Phase 2 replaces this with the portal flow)
-    await openUrl(RELEASES)
+    // flatpak (Steam Deck) — apply via the org.freedesktop.portal.Flatpak UpdateMonitor. It swaps
+    // the deploy atomically; the new version takes effect on next launch (no self-relaunch under
+    // gamescope). Progress arrives on the `flatpak-update-progress` event.
+    if (u.target === 'flatpak') {
+      updatePhase.set('downloading')
+      const unlisten = listenSafe<number>('flatpak-update-progress', (e) => updateProgress.set((e.payload ?? 0) / 100))
+      try {
+        await invoke('flatpak_update_install')
+        updateProgress.set(1)
+        updatePhase.set('ready') // toast: quit + relaunch from Steam
+      } catch {
+        // No update origin (offline-bundle install) or the portal is unavailable — send the user to
+        // the release page to reinstall from the .flatpakref.
+        await openUrl(RELEASES)
+        updateDismissed.set(true)
+        updatePhase.set('idle')
+      } finally {
+        unlisten()
+      }
+    }
   } catch (e) { updateError.set(String(e)); updatePhase.set('error') }
 }
 

@@ -11,6 +11,8 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async (cmd: string) => {
 // The opener plugin isn't part of the facade logic under test; stub it so the flatpak branch's
 // release-page redirect doesn't reach the real (browser-only) implementation in the node env.
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn(async () => {}) }))
+// The flatpak branch subscribes to a progress event via listenSafe; stub listen so it no-ops.
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
 
 import { pickTarget, type UpdateTarget } from './index'
 
@@ -64,10 +66,13 @@ it('applyUpdate on desktop calls updater_install then reaches ready', async () =
   // desktop restarts itself in-process; phase advances through downloading
   expect(['downloading', 'ready']).toContain(get(updatePhase))
 })
-it('applyUpdate on flatpak (phase 1) opens the release page, phase = ready-manual', async () => {
+it('applyUpdate on flatpak uses the portal + ends in ready (no relaunch)', async () => {
+  const { invoke } = await import('@tauri-apps/api/core')
   availableUpdate.set({ version: '0.2.0', notes: '', target: 'flatpak' })
+  updatePhase.set('idle')
   await applyUpdate()
-  // Phase 1: no portal yet -> route to release page (existing behavior), no throw
+  expect(invoke).toHaveBeenCalledWith('flatpak_update_install')
+  expect(get(updatePhase)).toBe('ready')
   expect(get(updateError)).toBe('')
 })
 
