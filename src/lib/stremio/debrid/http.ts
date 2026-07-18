@@ -105,6 +105,8 @@ export function authError(
 ): string | undefined {
   const kind = classifyAuth(sig)
   if (!kind) return undefined
+  if (kind === 'quota')
+    return `${provider}: subtitle download limit reached — free OpenSubtitles allows 20/day. Resets in ~24h, or sign in with a VIP account in Settings → Subtitles.`
   if (kind === 'subscription')
     return `${provider}: access denied — your subscription looks inactive or expired. Renew it and try again.`
   if (kind === 'token')
