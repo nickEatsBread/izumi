@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, pickLargestVideo, poll } from '../http'
+import { jfetch, form, magnetOf, pickLargestVideo, poll, authError } from '../http'
 import type { DebridProvider } from '../types'
 
 // Offcloud. key query param. add /cloud → poll /cloud/status until 'downloaded' →
@@ -10,10 +10,12 @@ const BASE = 'https://offcloud.com/api'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function oc(method: string, path: string, key: string, body?: string): Promise<any> {
   const sep = path.includes('?') ? '&' : '?'
-  const { json } = await jfetch(`${BASE}${path}${sep}key=${encodeURIComponent(key)}`, {
+  const { status, json } = await jfetch(`${BASE}${path}${sep}key=${encodeURIComponent(key)}`, {
     method,
     ...(body ? { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body } : {}),
   })
+  const auth = authError('Offcloud', { status, message: json?.error })
+  if (auth) throw new Error(auth)
   return json
 }
 

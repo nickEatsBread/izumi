@@ -1,4 +1,4 @@
-import { jfetch, magnetOf, pickLargestVideo, poll, VIDEO, JUNK } from '../http'
+import { jfetch, magnetOf, pickLargestVideo, poll, VIDEO, JUNK, authError } from '../http'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // Premiumize. apikey query param on every call. FAST PATH: /transfer/directdl
@@ -11,7 +11,11 @@ const BASE = 'https://www.premiumize.me/api'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function pm(method: string, path: string, key: string, fd?: FormData): Promise<any> {
   const sep = path.includes('?') ? '&' : '?'
-  const { json } = await jfetch(`${BASE}${path}${sep}apikey=${encodeURIComponent(key)}`, fd ? { method, body: fd } : { method })
+  const { status, json } = await jfetch(`${BASE}${path}${sep}apikey=${encodeURIComponent(key)}`, fd ? { method, body: fd } : { method })
+  // Only throw on an auth/subscription failure; a plain status:'error' (e.g. directdl
+  // "not cached") must still fall through to the caller's slow path.
+  const auth = authError('Premiumize', { status, message: json?.message })
+  if (auth) throw new Error(auth)
   return json
 }
 

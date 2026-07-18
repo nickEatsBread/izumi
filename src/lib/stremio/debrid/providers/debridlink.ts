@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, hashOf, pickLargestVideo, poll, VIDEO, JUNK } from '../http'
+import { jfetch, form, magnetOf, hashOf, pickLargestVideo, poll, VIDEO, JUNK, authError } from '../http'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // Debrid-Link. Simplest torrent flow: add magnet → poll /seedbox/list until 100% →
@@ -8,12 +8,15 @@ const BASE = 'https://debrid-link.fr/api/v2'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function dl(method: string, path: string, key: string, body?: string): Promise<any> {
-  const { json } = await jfetch(`${BASE}${path}`, {
+  const { status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     ...(body ? { body } : {}),
   })
-  if (json?.success === false) throw new Error(json?.error ?? 'Debrid-Link request failed.')
+  if (json?.success === false) {
+    const auth = authError('Debrid-Link', { status, code: json?.error })
+    throw new Error(auth ?? json?.error ?? 'Debrid-Link request failed.')
+  }
   return json
 }
 
