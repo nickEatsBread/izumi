@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll } from '../http'
+import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError } from '../http'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // Real-Debrid. Flow: addMagnet → selectFiles(all) [RD is the only one that requires
@@ -24,7 +24,8 @@ async function rd(method: string, path: string, key: string, body?: string): Pro
   if (!ok) {
     const code = json && typeof json === 'object' ? (json as { error_code?: number }).error_code : undefined
     if (code === 35) throw new Error('Real-Debrid blocked this release (infringing file) — pick a different source.')
-    throw new Error(`Real-Debrid request failed (${status}).`)
+    const auth = authError('Real-Debrid', { status, code: code != null ? String(code) : undefined, message: (json as { error?: string })?.error })
+    throw new Error(auth ?? `Real-Debrid request failed (${status}).`)
   }
   return json
 }
