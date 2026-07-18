@@ -740,6 +740,87 @@ async fn ext_fetch(
     Ok(HttpFullReply { status, headers: hdrs, body })
 }
 
+/// izumi's embedded OpenSubtitles consumer Api-Key — makes *search* keyless for users (download
+/// still needs the user's own JWT + quota). A consumer key is client-embedded by design (it ships in
+/// the binary), so it's effectively public; the `OPENSUBTITLES_API_KEY` build env overrides the
+/// baked default so it can be rotated without a code change.
+#[cfg(not(target_os = "android"))]
+const OPENSUBTITLES_API_KEY: &str = match option_env!("OPENSUBTITLES_API_KEY") {
+    Some(k) => k,
+    None => "kpwJltOBFOqFaoRvWSIPph7katlIMxas",
+};
+
+/// Mandatory OpenSubtitles `User-Agent` — a missing/default/duplicate UA is an instant 403. Built
+/// from the crate version at compile time (e.g. "izumi v0.1.4").
+#[cfg(not(target_os = "android"))]
+const OPENSUBTITLES_USER_AGENT: &str = concat!("izumi v", env!("CARGO_PKG_VERSION"));
+
+/// Result of an OpenSubtitles `POST /api/v1/login`. Serialized with the Rust field names
+/// (snake_case) because the frontend destructures `{ token, base_url, allowed_downloads,
+/// remaining, level, expires_at }`. `expires_at` is a client-computed epoch-ms deadline
+/// (there is no refresh token; the JWT lives ~12h) after which the frontend must re-login.
+/// `base_url` is the resolved (possibly VIP) API base all later calls must target.
+#[cfg(not(target_os = "android"))]
+#[derive(serde::Serialize)]
+pub struct OpenSubtitlesSession {
+    token: String,
+    base_url: String,
+    allowed_downloads: i64,
+    remaining: i64,
+    level: String,
+    expires_at: i64,
+}
+
+/// Parse an OpenSubtitles `/login` response body into a session, computing `expires_at` from
+/// `now_ms`. Factored out (no network) so it is unit-testable. A returned `base_url` arrives bare
+/// (e.g. "vip-api.opensubtitles.com"); it is normalized to an absolute `https://…/api/v1` base the
+/// frontend can prefix directly. The login response carries `allowed_downloads` but not
+/// `remaining` (that comes from `/download`), so `remaining` defaults to the allowance.
+#[cfg(not(target_os = "android"))]
+fn parse_opensubtitles_login(body: &str, now_ms: i64) -> Result<OpenSubtitlesSession, String> {
+    let v: serde_json::Value =
+        serde_json::from_str(body).map_err(|_| "bad login json".to_string())?;
+    let token = v
+        .get("token")
+        .and_then(|t| t.as_str())
+        .ok_or("login: no token")?
+        .to_string();
+    let user = v.get("user");
+    let allowed_downloads = user
+        .and_then(|u| u.get("allowed_downloads"))
+        .and_then(|n| n.as_i64())
+        .unwrap_or(0);
+    let remaining = user
+        .and_then(|u| u.get("remaining_downloads"))
+        .and_then(|n| n.as_i64())
+        .unwrap_or(allowed_downloads);
+    let level = user
+        .and_then(|u| u.get("level"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let base_url = match v.get("base_url").and_then(|s| s.as_str()) {
+        Some(host) if !host.is_empty() => {
+            if host.starts_with("http") {
+                format!("{}/api/v1", host.trim_end_matches('/'))
+            } else {
+                format!("https://{}/api/v1", host.trim_end_matches('/'))
+            }
+        }
+        _ => String::new(),
+    };
+    // ~12h token, no refresh; expire ~1h early so a download never races the deadline.
+    let expires_at = now_ms + 11 * 60 * 60 * 1000;
+    Ok(OpenSubtitlesSession {
+        token,
+        base_url,
+        allowed_downloads,
+        remaining,
+        level,
+        expires_at,
+    })
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -2316,4 +2397,37 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+#[cfg(not(target_os = "android"))]
+mod subtitle_login_tests {
+    use super::*;
+
+    #[test]
+    fn parses_vip_login() {
+        let body = r#"{"token":"eyJTEST","status":200,"base_url":"vip-api.opensubtitles.com","user":{"allowed_downloads":1000,"level":"VIP member","vip":true,"user_id":42}}"#;
+        let s = parse_opensubtitles_login(body, 1_000_000).unwrap();
+        assert_eq!(s.token, "eyJTEST");
+        assert_eq!(s.base_url, "https://vip-api.opensubtitles.com/api/v1");
+        assert_eq!(s.allowed_downloads, 1000);
+        assert_eq!(s.remaining, 1000);
+        assert_eq!(s.level, "VIP member");
+        assert_eq!(s.expires_at, 1_000_000 + 11 * 60 * 60 * 1000);
+    }
+
+    #[test]
+    fn parses_free_login() {
+        let body = r#"{"token":"free1","user":{"allowed_downloads":20,"level":"Sub leecher"}}"#;
+        let s = parse_opensubtitles_login(body, 0).unwrap();
+        assert_eq!(s.token, "free1");
+        assert_eq!(s.base_url, "");
+        assert_eq!(s.allowed_downloads, 20);
+        assert_eq!(s.remaining, 20);
+    }
+
+    #[test]
+    fn rejects_login_without_token() {
+        assert!(parse_opensubtitles_login("{}", 0).is_err());
+    }
 }
