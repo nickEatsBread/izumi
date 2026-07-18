@@ -108,11 +108,11 @@
         <div class="text-sm font-bold">Update available — v{$availableUpdate.version}</div>
         {#if $availableUpdate.notes}<p class="mt-1 line-clamp-4 whitespace-pre-line text-xs text-muted-foreground">{$availableUpdate.notes}</p>{/if}
         {#if flatpak}
-          <p class="mt-1 text-xs text-muted-foreground">On the Steam Deck, download the new <span class="font-bold">.flatpak</span> from the release page and reinstall it (the app can't replace itself inside the Flatpak sandbox).</p>
+          <p class="mt-1 text-xs text-muted-foreground">On the Steam Deck the update installs in the background and applies the next time you launch izumi from Steam.</p>
         {/if}
         <button data-focusable onclick={applyUpdate} disabled={installing}
                 class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition disabled:opacity-60">
-          {installing ? (flatpak ? 'Opening…' : 'Downloading…') : flatpak ? 'Open release page' : $isAndroid ? 'Download & install' : 'Restart & install'}
+          {installing ? (flatpak ? 'Installing…' : 'Downloading…') : flatpak ? 'Install update' : $isAndroid ? 'Download & install' : 'Restart & install'}
         </button>
       </div>
     {:else}
