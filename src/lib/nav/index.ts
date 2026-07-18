@@ -25,7 +25,12 @@ export function initDpadNav() {
     // navigation to its focusables so the d-pad/stick can't wander onto the browse behind it.
     const trap = document.querySelector('[data-nav-trap]')
     const root: ParentNode = trap ?? document
-    const els = [...root.querySelectorAll<HTMLElement>('[data-focusable]')].filter(el => el.checkVisibility?.() ?? true)
+    const els = [...root.querySelectorAll<HTMLElement>('[data-focusable]')]
+      .filter(el => el.checkVisibility?.() ?? true)
+      // A disabled button can't be actioned, so skip it as a nav target — otherwise `down` from the
+      // last episode row dead-ends on a greyed-out Prev/Next. (Only real `disabled` buttons: divs
+      // with `aria-disabled`, like unaired episodes, stay focusable on purpose.)
+      .filter(el => !(el instanceof HTMLButtonElement && el.disabled))
     const active = document.activeElement as HTMLElement
     // No real focus yet (just opened / focus sits on <body>): the FIRST press must land on the
     // first content focusable — NOT spatial-search from <body>'s full-page rect, which measures
@@ -56,9 +61,17 @@ export function initDpadNav() {
     const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
     const sameRegion = all.filter(c => inSidebar(c.el) === activeInSidebar)
     let pick = pickInDirection(cur, sameRegion, dir)
-    if (!pick && !vertical) {
-      const otherRegion = all.filter(c => inSidebar(c.el) !== activeInSidebar)
-      pick = pickInDirection(cur, otherRegion, dir, /* cone */ false)
+    if (!pick) {
+      if (vertical) {
+        // Nothing straight down/up in-region: drop the alignment cone (still same-region) so a
+        // centred bottom-row card can reach the pagination row's Prev/Next sitting off to the sides
+        // below it — the ×4 off-axis weighting still prefers the nearest one — instead of the press
+        // doing nothing and forcing a LEFT/RIGHT detour.
+        pick = pickInDirection(cur, sameRegion, dir, /* cone */ false)
+      } else {
+        const otherRegion = all.filter(c => inSidebar(c.el) !== activeInSidebar)
+        pick = pickInDirection(cur, otherRegion, dir, /* cone */ false)
+      }
     }
     if (pick?.el) {
       // Focus WITHOUT the browser's instant jump-scroll, then smooth-scroll ONLY along the axis
