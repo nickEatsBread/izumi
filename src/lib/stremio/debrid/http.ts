@@ -68,19 +68,24 @@ export async function poll(probe: () => Promise<DebridInfo>, opts: ResolveOpts =
 // every provider can turn "access denied" into an actionable message. Signals were
 // researched per provider — see docs/superpowers/specs/2026-07-18-debrid-access-denied-messages-design.md.
 
-export type AuthFailure = 'token' | 'subscription' | 'access'
+export type AuthFailure = 'token' | 'subscription' | 'access' | 'quota'
 
 // Premium / plan / trial — the account is fine but not entitled. NB: bare "expired" is
 // deliberately absent (an expired *token* must stay a token failure, not subscription).
 const SUBSCRIPTION_RE = /must_be_premium|free_trial|not[\s_-]?premium|premium[\s_-]?(?:required|only|member|account|subscription)|\bpremium\b|subscription|renew|\bvip\b|not[\s_-]?active|inactive|plan[\s_-]?(?:restrict|required)/i
 // Bad / missing / expired key, token, or login.
 const TOKEN_RE = /api[\s_-]?key|bad[\s_-]?token|badtoken|no_auth|auth_error|auth_bad|auth_missing|auth_blocked|auth_user_banned|invalid[\s_-]?(?:api|token|client|key|sign)|unauthor|expired[\s_-]?token|hided[\s_-]?token|token[\s_-]?error|not[\s_-]?logged|bad[\s_-]?login|login[\s_-]?fail|access[\s_-]?denied/i
+// Download-quota exhaustion. OpenSubtitles returns HTTP 401 for BOTH a spent daily
+// quota AND a bad key, so the body must decide — this pre-empts the 401→token fallback
+// in classifyAuth. The caller must thread the response body into `message` for it to fire.
+const QUOTA_RE = /you have downloaded your allowed|download (?:limit|quota)|quota[\s_-]?exceeded|too many downloads|remaining[\s_-]?downloads?\W+0\b/i
 
 /** Classify an auth/subscription failure from any mix of HTTP status, provider error
  *  code, and human message. Returns undefined when it is NOT an auth/subscription
  *  problem, so the caller keeps its own specific/generic message. */
 export function classifyAuth(sig: { status?: number; code?: string; message?: string }): AuthFailure | undefined {
   const text = `${sig.code ?? ''} ${sig.message ?? ''}`
+  if (QUOTA_RE.test(text)) return 'quota' // body wins over status: OS returns 401 for BOTH quota and bad key
   const sub = sig.status === 402 || SUBSCRIPTION_RE.test(text)
   const tok = TOKEN_RE.test(text)
   if (sub && tok) return 'access'

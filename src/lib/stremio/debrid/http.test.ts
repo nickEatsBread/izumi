@@ -33,6 +33,15 @@ describe('classifyAuth', () => {
   it('LinkSnappy "Account not active" -> subscription', () => expect(classifyAuth({ message: 'Account not active' })).toBe('subscription'))
   // Mega-Debrid
   it('Mega-Debrid "Token error, please log-in" -> token', () => expect(classifyAuth({ message: 'Token error, please log-in' })).toBe('token'))
+  // OpenSubtitles — HTTP 401 is returned for BOTH a spent quota AND a bad key; the body decides.
+  it('OpenSubtitles 401 quota body -> quota (body wins over status)', () =>
+    expect(classifyAuth({ status: 401, message: 'You have downloaded your allowed 20 subtitles for 24 hours.' })).toBe('quota'))
+  it('OpenSubtitles 401 "remaining downloads: 0" -> quota', () =>
+    expect(classifyAuth({ status: 401, message: 'remaining downloads: 0' })).toBe('quota'))
+  it('OpenSubtitles 401 "Invalid API key" -> token (not quota)', () =>
+    expect(classifyAuth({ status: 401, message: 'Invalid API key' })).toBe('token'))
+  it('OpenSubtitles bare 401 with no body stays token', () =>
+    expect(classifyAuth({ status: 401 })).toBe('token'))
   // Combined + negatives
   it('both premium AND key keywords -> access', () => expect(classifyAuth({ message: 'premium api key invalid' })).toBe('access'))
   it('a non-auth message is undefined', () => expect(classifyAuth({ status: 200, message: 'not cached' })).toBeUndefined())
