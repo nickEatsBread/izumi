@@ -127,11 +127,11 @@
          cover focal, clamped title, pill chips + score, expandable description, a full-width primary
          CTA, and a compact action row (4 icons + overflow menu). -->
     <div class="relative px-4 pb-6">
-      <!-- Background art (banner) behind the cover + title, like desktop: visible at the top,
+      <!-- Background art (banner) behind the cover + title, like desktop: prominent at the top,
            dissolving into the page before the description so text stays legible. -->
-      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 overflow-hidden">
-        <img src={banner(m)} alt="" class="h-full w-screen -translate-x-4 object-cover opacity-60" style="object-position:center 20%" />
-        <div class="absolute inset-0 bg-gradient-to-b from-background/25 via-background/80 to-background"></div>
+      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-80 overflow-hidden">
+        <img src={banner(m)} alt="" class="h-full w-screen -translate-x-4 object-cover opacity-70" style="object-position:center 20%" />
+        <div class="absolute inset-0 bg-gradient-to-b from-background/10 via-background/55 to-background"></div>
       </div>
 
       <div class="flex gap-4 pt-6">
@@ -140,7 +140,7 @@
           {#if m.title.native || m.title.romaji}
             <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
           {/if}
-          <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
+          <h1 class="line-clamp-2 text-xl font-black leading-tight drop-shadow-[0_1px_4px_rgba(0,0,0,0.85)]">{title(m)}</h1>
           <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
             {#if format(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{format(m)}</span>{/if}
             {#if status(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{status(m)}</span>{/if}
