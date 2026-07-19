@@ -66,7 +66,7 @@
 
 {#if current}
   <div
-    class="relative mb-6 h-[42vh] touch-pan-y transition-opacity duration-500 sm:h-[55vh] {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class="relative mb-6 h-[40vh] touch-pan-y transition-opacity duration-500 sm:h-[55vh] {scrolled ? 'opacity-40' : 'opacity-100'}"
     style="--accent:{accent}"
   >
     <!-- Full-bleed banner: on desktop it breaks out of main's left margin (behind the
@@ -85,7 +85,7 @@
     </div>
 
     {#if showOverlay}
-      <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-8 sm:px-8">
+      <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-6 sm:px-8 sm:pb-8">
         <div class="max-w-2xl">
           <h1 class="truncate text-2xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)] sm:text-4xl">{title(current)}</h1>
 
@@ -100,7 +100,7 @@
           </div>
 
           {#if current.description}
-            <p class="mt-3 line-clamp-3 max-w-xl text-sm text-white/70 drop-shadow">{cleanDesc(current.description)}</p>
+            <p class="mt-3 line-clamp-2 max-w-xl text-sm text-white/70 drop-shadow sm:line-clamp-3">{cleanDesc(current.description)}</p>
           {/if}
 
           {#if current.genres?.length}
