@@ -5,6 +5,7 @@
   // `cards` vs simple `compact` rows) follows the persisted Appearance setting;
   // per-episode thumbnails/titles/ratings come from AniZip.
   import { playEpisode, type PlayState } from '$lib/stremio/play'
+  import { airedCount, totalEpisodes } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { getEpisodeMeta } from '$lib/anizip'
   import type { EpMeta } from '$lib/anizip/types'
@@ -21,10 +22,17 @@
   let { media }: { media: Media } = $props()
 
   const next = $derived(media.nextAiringEpisode)
-  // aired = last episode that has already aired.
-  const aired = $derived(next?.episode ? Math.max(0, next.episode - 1) : (media.episodes ?? 0))
-  // total to show = planned total if known, else up to the next airing episode.
-  const total = $derived(media.episodes ?? (next?.episode ?? aired))
+  // Planned total + how many have already aired. Both fall back to the per-episode airing
+  // schedule when AniList's scalar `episodes`/`nextAiringEpisode` are null (common on OVAs/
+  // ONAs and adult titles), so a title known only through its schedule still lists its
+  // episodes instead of collapsing to "Episodes TBA".
+  const total = $derived(totalEpisodes(media))
+  // aired = last episode that has already aired, never more than the total. airedCount can
+  // be Infinity when the count is genuinely unknown — clamp that to the total (0 → "TBA").
+  const aired = $derived.by(() => {
+    const a = airedCount(media)
+    return Math.min(total, Number.isFinite(a) ? a : total)
+  })
   const watchedThrough = $derived(Math.max(
     media.mediaListEntry?.progress ?? 0,
     $localHistory[media.id]?.progress ?? 0,

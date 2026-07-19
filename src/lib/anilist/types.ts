@@ -22,6 +22,10 @@ export interface Media {
   bannerImage?: string
   trailer?: { id?: string; site?: string } | null
   nextAiringEpisode?: { episode: number; timeUntilAiring: number } | null
+  // Per-episode air schedule. AniList populates this on many OVAs/ONAs and adult titles
+  // that never get a scalar `episodes` count, so it's our fallback source for the episode
+  // total + aired count (see media.ts). airingAt is a unix timestamp in SECONDS.
+  airingSchedule?: { nodes?: { episode: number; airingAt: number }[] } | null
   isFavourite?: boolean
   // The viewer's list entry. score is 0-100 (read via score(format: POINT_100), tracker-format
   // independent); repeat = rewatch count; startedAt/completedAt are the viewer's own dates.

@@ -6,7 +6,7 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { title, cover, format, status, season, ratingBg, resumeEp } from '$lib/anilist/media'
+  import { title, cover, format, status, season, ratingBg, resumeEp, totalEpisodes } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { resumeEpisode, type PlayState } from '$lib/stremio/play'
   import { focusOnMount } from '$lib/nav'
@@ -81,10 +81,9 @@
 
   const stripHtml = (s?: string) => (s ? s.replace(/<[^>]+>/g, '') : '')
 
-  // Total episodes for the badge: planned total, else aired (nextAiring-1).
-  function epsTotal(m: Media) {
-    return m.episodes ?? (m.nextAiringEpisode?.episode ? m.nextAiringEpisode.episode - 1 : 0)
-  }
+  // Total episodes for the badge — schedule-aware so OVAs/ONAs with a null AniList count
+  // still show a number (see totalEpisodes).
+  const epsTotal = totalEpisodes
   async function onFavourite(m: Media) {
     if (!$anilistToken || favBusy) return
     favBusy = true
