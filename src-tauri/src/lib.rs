@@ -887,6 +887,25 @@ fn unzip_first_subtitle(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
+/// Decode subtitle `bytes` to a UTF-8 `String`. A UTF-8/UTF-16 BOM authoritatively identifies the
+/// encoding (trusted over the heuristic); otherwise chardetng guesses the legacy encoding and
+/// encoding_rs decodes it. `Encoding::decode` strips a leading BOM itself; the trailing
+/// `strip_prefix` removes any residual U+FEFF so it can never leak into the first cue.
+#[cfg(not(target_os = "android"))]
+fn normalize_subtitle_charset(bytes: &[u8]) -> String {
+    let text = if let Some((enc, _)) = encoding_rs::Encoding::for_bom(bytes) {
+        enc.decode(bytes).0.into_owned()
+    } else {
+        let mut det = chardetng::EncodingDetector::new();
+        det.feed(bytes, true);
+        det.guess(None, true).decode(bytes).0.into_owned()
+    };
+    match text.strip_prefix('\u{feff}') {
+        Some(stripped) => stripped.to_string(),
+        None => text,
+    }
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -2464,6 +2483,41 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+#[cfg(not(target_os = "android"))]
+mod subtitle_charset_tests {
+    use super::*;
+
+    #[test]
+    fn strips_utf8_bom() {
+        assert_eq!(normalize_subtitle_charset(b"\xEF\xBB\xBFHello"), "Hello");
+    }
+
+    #[test]
+    fn decodes_utf16le_bom() {
+        assert_eq!(normalize_subtitle_charset(b"\xFF\xFEH\x00i\x00"), "Hi");
+    }
+
+    #[test]
+    fn decodes_utf16be_bom() {
+        assert_eq!(normalize_subtitle_charset(b"\xFE\xFF\x00H\x00i"), "Hi");
+    }
+
+    #[test]
+    fn decodes_windows_1252() {
+        let src = "Voilà déjà là où l'été était très agréable à Genève";
+        let (bytes, _, _) = encoding_rs::WINDOWS_1252.encode(src);
+        assert_eq!(normalize_subtitle_charset(&bytes), src);
+    }
+
+    #[test]
+    fn decodes_shift_jis() {
+        let src = "これは日本語の字幕ファイルです。文字化けせずに正しく表示されることを確認するテストです。";
+        let (bytes, _, _) = encoding_rs::SHIFT_JIS.encode(src);
+        assert_eq!(normalize_subtitle_charset(&bytes), src);
+    }
 }
 
 #[cfg(test)]
