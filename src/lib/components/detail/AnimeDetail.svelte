@@ -94,13 +94,13 @@
     favBusy = true
     const prev = fav ?? m.isFavourite ?? false
     fav = !prev // optimistic
-    try { await toggleFavourite(m) } catch { fav = prev }
+    try { await toggleFavourite(m); h.success() } catch { fav = prev; h.error() }
     finally { favBusy = false }
   }
   async function onBookmark(m: Media) {
     if (!($anilistToken || $malToken) || bookmarkBusy) return
     bookmarkBusy = true
-    try { await setStatus(m, 'PLANNING'); bookmarked = true } catch { /* ignore */ }
+    try { await setStatus(m, 'PLANNING'); bookmarked = true; h.success() } catch { h.error() }
     finally { bookmarkBusy = false }
   }
   function onShare(m: Media) {
