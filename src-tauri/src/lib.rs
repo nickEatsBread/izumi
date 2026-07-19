@@ -821,6 +821,43 @@ fn parse_opensubtitles_login(body: &str, now_ms: i64) -> Result<OpenSubtitlesSes
     })
 }
 
+/// Sign in to OpenSubtitles and return the JWT + quota + resolved base URL. This is the ONLY place
+/// the user's OpenSubtitles credentials go over the wire; the frontend stores just the returned
+/// token (and, only with "Stay signed in", the credentials). `POST /api/v1/login` on the pooled
+/// client with the embedded Api-Key + mandatory User-Agent. KONG rate-limits `/login`; on a non-2xx
+/// (incl. 401) we surface the body and stop — the frontend must not spam re-login.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn opensubtitles_login(
+    username: String,
+    password: String,
+) -> Result<OpenSubtitlesSession, String> {
+    let body = serde_json::json!({ "username": username, "password": password }).to_string();
+    let resp = http_client()
+        .post("https://api.opensubtitles.com/api/v1/login")
+        .header("Api-Key", OPENSUBTITLES_API_KEY)
+        .header("User-Agent", OPENSUBTITLES_USER_AGENT)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .map_err(|_| "login request failed".to_string())?;
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|_| "login read failed".to_string())?;
+    if !status.is_success() {
+        return Err(format!("opensubtitles login {}: {text}", status.as_u16()));
+    }
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    parse_opensubtitles_login(&text, now_ms)
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -2337,6 +2374,7 @@ pub fn run() {
             player_diag,
             mpv_version,
             player_command,
+            opensubtitles_login,
             oauth_capture,
             da_reaction_state,
             da_react,
