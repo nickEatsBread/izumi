@@ -1,10 +1,16 @@
 <script lang="ts">
   import { availableUpdate, updatePhase, updateProgress, updateError, updateDismissed, applyUpdate } from '$lib/updater'
+  import { isMobile } from '$lib/platform'
   const pct = $derived(Math.round($updateProgress * 100))
 </script>
 
 {#if $availableUpdate && !$updateDismissed}
-  <div class="fixed bottom-4 right-4 z-50 w-80 rounded-lg border border-border bg-secondary p-3 shadow-xl">
+  <!-- Mobile: sit ABOVE the fixed bottom tab bar (~52px + gesture inset) and span the width, instead
+       of the desktop bottom-right corner card that otherwise lands on top of the nav. -->
+  <div
+    class="fixed z-50 rounded-lg border border-border bg-secondary p-3 shadow-xl
+      {$isMobile ? 'bottom-[calc(4rem+env(safe-area-inset-bottom))] left-3 right-3' : 'bottom-4 right-4 w-80'}"
+  >
     {#if $updatePhase === 'available'}
       <p class="mb-2 text-sm font-bold">Version {$availableUpdate.version} is ready.</p>
       <div class="flex gap-2">
