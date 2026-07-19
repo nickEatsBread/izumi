@@ -38,11 +38,23 @@ export interface DebridFile {
   playable: boolean   // is a video file (VIDEO regex, minus JUNK)
 }
 
+/** Which episode the caller actually wants out of a (possibly multi-file) torrent.
+ *  Providers use it to pick the RIGHT file from a batch/season pack instead of the
+ *  legacy largest-file heuristic (see episode-file.ts). All fields optional — an
+ *  empty/missing want keeps the legacy behavior. */
+export interface EpisodeWant {
+  episode?: number  // per-season episode number
+  abs?: number      // absolute episode number (long-runners / TVDB absolute)
+  season?: number   // wanted season — gates files that parse a contradicting season
+  filename?: string // addon behaviorHints.filename: the exact in-pack file, when known
+}
+
 export interface ResolveOpts {
   onStatus?: (info: DebridInfo) => void
   pollMs?: number // default 3000
   timeoutMs?: number // default 10 min
   signal?: AbortSignal
+  want?: EpisodeWant // episode-aware file selection inside multi-file torrents
 }
 
 export interface DebridProviderMeta {

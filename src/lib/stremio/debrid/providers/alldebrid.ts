@@ -1,4 +1,5 @@
-import { jfetch, form, magnetOf, pickLargestVideo, poll, VIDEO, JUNK, authError } from '../http'
+import { jfetch, form, magnetOf, poll, VIDEO, JUNK, authError } from '../http'
+import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // AllDebrid. Auto-selects files; ready = statusCode===4; the file link MUST be
@@ -81,7 +82,7 @@ export const alldebrid: DebridProvider = {
     const flat: { name: string; bytes: number; link: string }[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(function walk(ns: any[]) { for (const n of ns) { if (n.e) walk(n.e); else flat.push({ name: n.n, bytes: n.s ?? 0, link: n.l }) } })(tree)
-    const best = pickLargestVideo(flat)
+    const best = pickVideoFile(flat, opts?.want)
     if (!best?.link) throw new Error('No playable file in that torrent.')
     const unlocked = await ad('/v4/link/unlock', key, form({ link: best.link }))
     return unlocked.link ?? unlocked.download
