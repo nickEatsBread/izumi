@@ -18,10 +18,12 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
   import { malToken } from '$lib/trackers/config'
-  import { setStatus, toggleFavourite, getMalProgress, setScore } from '$lib/trackers'
-  import Heart from 'lucide-svelte/icons/heart'
-  import Star from 'lucide-svelte/icons/star'
+  import { getMalProgress } from '$lib/trackers'
+  import type { AniStatus } from '$lib/trackers'
+  import { malToAni, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
+  import ListEditor from '$lib/components/detail/ListEditor.svelte'
   import BookmarkPlus from 'lucide-svelte/icons/bookmark-plus'
+  import ChevronDown from 'lucide-svelte/icons/chevron-down'
   import Share2 from 'lucide-svelte/icons/share-2'
   import Clapperboard from 'lucide-svelte/icons/clapperboard'
   import ExternalLink from 'lucide-svelte/icons/external-link'
@@ -80,7 +82,7 @@
     if (!base) return base
     const malP = malEntry?.progress ?? 0
     if (malP <= (base.mediaListEntry?.progress ?? 0)) return base
-    return { ...base, mediaListEntry: { progress: malP, status: base.mediaListEntry?.status ?? malEntry?.status } }
+    return { ...base, mediaListEntry: { ...base.mediaListEntry, progress: malP, status: base.mediaListEntry?.status ?? malEntry?.status } }
   })
 
   // Resume target for the hero CTA. Offline = first not-yet-watched DOWNLOADED episode (else the
@@ -105,30 +107,23 @@
   let heroPlay = $state<PlayState>({ status: 'idle' })
 
   // Action-bar transient/optimistic state.
-  let fav = $state<boolean | undefined>(undefined)
-  let favBusy = $state(false)
-  let bookmarked = $state(false)
-  let bookmarkBusy = $state(false)
   let copied = $state(false)
   let showTrailer = $state(false)
   let showMore = $state(false)      // mobile action overflow menu
   let descExpanded = $state(false)  // mobile description clamp toggle
-  // User rating (canonical 0-100). Optimistic override wins while set; else the AniList list-entry
-  // score, else the MAL score (0-10 → 0-100). Displayed as 5 stars (each = 20 / MAL 2 points).
-  let scoreOpt = $state<number | undefined>(undefined)
-  let scoreBusy = $state(false)
-  const userScore = $derived.by(() => {
-    if (scoreOpt !== undefined) return scoreOpt
-    const ani = $store.data?.Media?.mediaListEntry?.score ?? 0
-    return ani > 0 ? ani : (malEntry?.score ?? 0) * 10
+  // List-editor state. `listOpt` is the optimistic patch applied after a save so the status pill +
+  // progress badge reflect instantly (the tracker queue reconciles AniList/MAL in the background).
+  let showEditor = $state(false)
+  let listOpt = $state<{ status?: AniStatus; progress?: number; score?: number; removed?: boolean }>({})
+  const rawEntry = $derived($store.data?.Media?.mediaListEntry) // AniList list entry (has id/status/score)
+  const effStatus = $derived.by((): AniStatus | undefined => {
+    if (listOpt.removed) return undefined
+    if (listOpt.status) return listOpt.status
+    return (rawEntry?.status as AniStatus | undefined) ?? malToAni(malEntry?.status)
   })
-  const filledStars = $derived(Math.round(userScore / 20))
-  async function onScore(m: Media, value0to100: number) {
-    if (!($anilistToken || $malToken) || scoreBusy) return
-    scoreBusy = true
-    scoreOpt = value0to100 // optimistic; the queue delivers it even if the live push fails
-    try { await setScore(m, value0to100) } finally { scoreBusy = false }
-  }
+  const effProgress = $derived(listOpt.removed ? 0 : (listOpt.progress ?? rawEntry?.progress ?? malEntry?.progress ?? 0))
+  const effScore100 = $derived(listOpt.removed ? 0 : (listOpt.score ?? rawEntry?.score ?? (malEntry?.score ?? 0) * 10))
+  const hasEntry = $derived(!!effStatus)
 
   const fmtDate = (d?: { year?: number; month?: number; day?: number } | null) =>
     d?.year ? [d.year, d.month, d.day].filter(Boolean).join('-') : ''
@@ -138,20 +133,6 @@
   // Total episodes for the badge — schedule-aware so OVAs/ONAs with a null AniList count
   // still show a number (see totalEpisodes).
   const epsTotal = totalEpisodes
-  async function onFavourite(m: Media) {
-    if (!$anilistToken || favBusy) return
-    favBusy = true
-    const prev = fav ?? m.isFavourite ?? false
-    fav = !prev // optimistic
-    try { await toggleFavourite(m); h.success() } catch { fav = prev; h.error() }
-    finally { favBusy = false }
-  }
-  async function onBookmark(m: Media) {
-    if (!($anilistToken || $malToken) || bookmarkBusy) return
-    bookmarkBusy = true
-    try { await setStatus(m, 'PLANNING'); bookmarked = true; h.success() } catch { h.error() }
-    finally { bookmarkBusy = false }
-  }
   function onShare(m: Media) {
     // navigator.clipboard is absent in the WebKitGTK webview — use the webview-safe helper.
     if (copyToClipboard(`https://anilist.co/anime/${m.id}`)) {
@@ -169,7 +150,6 @@
   <div class="p-8 text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if media}
   {@const m = media}
-  {@const isFav = fav ?? m.isFavourite ?? false}
   {@const trackerConnected = !!($anilistToken || $malToken)}
   {#if $isMobile}
     <!-- Mobile: poster-forward header. `isolate` makes this a stacking context so the -z-10
@@ -199,7 +179,7 @@
       </div>
 
       <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
-        <span class="rounded-full bg-secondary px-2 py-0.5">{m.mediaListEntry?.progress ?? 0}/{epsTotal(m) || '?'} Episodes</span>
+        <span class="rounded-full bg-secondary px-2 py-0.5">{effProgress}/{epsTotal(m) || '?'} Episodes</span>
         {#if season(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{season(m)}</span>{/if}
       </div>
 
@@ -219,16 +199,16 @@
 
       <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
       <div class="relative mt-2 flex items-center gap-2">
-        <button data-focusable onclick={() => { h.tap(); onBookmark(m) }} disabled={!trackerConnected || bookmarkBusy || bookmarked}
-                aria-label="Add to Planning"
-                class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary disabled:opacity-40">
-          {#if bookmarked}<Check size={18} class="text-theme" />{:else}<BookmarkPlus size={18} />{/if}
-        </button>
-        <button data-focusable onclick={() => { h.tap(); onFavourite(m) }} disabled={!$anilistToken || favBusy}
-                aria-label="Favourite" aria-pressed={isFav}
-                class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary disabled:opacity-40">
-          <Heart size={18} class={isFav ? 'fill-theme text-theme' : ''} />
-        </button>
+        {#if trackerConnected}
+          <button data-focusable onclick={() => { h.tap(); showEditor = true }} aria-label="Edit list status"
+                  class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
+            {#if effStatus}
+              <span class="size-2.5 shrink-0 rounded-full" style="background:{STATUS_COLOR[effStatus]}"></span>{STATUS_LABEL[effStatus]}
+            {:else}
+              <BookmarkPlus size={16} /> Add
+            {/if}
+          </button>
+        {/if}
         <button data-focusable onclick={() => { h.tap(); onShare(m) }} aria-label="Copy link"
                 class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
           {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
@@ -251,17 +231,6 @@
           <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
                   class="fixed inset-0 z-10 cursor-default"></button>
           <div class="absolute bottom-full right-0 z-20 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-            {#if trackerConnected}
-              <div class="px-2 pb-1 text-[0.65rem] uppercase text-muted-foreground">Your rating</div>
-              <div class="mb-2 flex items-center justify-between px-1" role="group" aria-label="Your rating">
-                {#each [1, 2, 3, 4, 5] as n (n)}
-                  <button data-focusable onclick={() => { h.select(); onScore(m, userScore === n * 20 ? 0 : n * 20) }} disabled={scoreBusy}
-                          aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`} class="grid h-9 w-9 place-items-center rounded-md hover:bg-accent">
-                    <Star size={20} class={n <= filledStars ? 'fill-theme text-theme' : 'text-muted-foreground'} />
-                  </button>
-                {/each}
-              </div>
-            {/if}
             <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://anilist.co/anime/${m.id}`) }}
                     class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
               <ExternalLink size={15} /> Open on AniList
@@ -327,7 +296,7 @@
         <h1 class="mb-3 text-3xl font-black">{title(m)}</h1>
 
         <div class="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold">
-          <span class="rounded-full bg-secondary px-3 py-1">{m.mediaListEntry?.progress ?? 0}/{epsTotal(m) || '?'} Episodes</span>
+          <span class="rounded-full bg-secondary px-3 py-1">{effProgress}/{epsTotal(m) || '?'} Episodes</span>
           {#if format(m)}<span class="rounded-full bg-secondary px-3 py-1">{format(m)}</span>{/if}
           {#if status(m)}<span class="rounded-full bg-secondary px-3 py-1">{status(m)}</span>{/if}
           {#if season(m)}<span class="rounded-full bg-secondary px-3 py-1">{season(m)}</span>{/if}
@@ -351,31 +320,16 @@
             <Play size={16} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
 
-          <button data-focusable onclick={() => onFavourite(m)} disabled={!$anilistToken || favBusy}
-                  title={$anilistToken ? (isFav ? 'Unfavourite' : 'Favourite') : 'Connect AniList'}
-                  aria-pressed={isFav}
-                  class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40">
-            <Heart size={18} class={isFav ? 'fill-theme text-theme' : ''} />
-          </button>
-
-          <button data-focusable onclick={() => onBookmark(m)} disabled={!trackerConnected || bookmarkBusy || bookmarked}
-                  title={trackerConnected ? (bookmarked ? 'Added to Planning' : 'Add to Planning') : 'Connect a tracker'}
-                  class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40">
-            {#if bookmarked}<Check size={18} class="text-theme" />{:else}<BookmarkPlus size={18} />{/if}
-          </button>
-
           {#if trackerConnected}
-            <!-- User rating: 5 stars, each = 20 (AniList 0-100) / 2 (MAL 0-10). Click the current
-                 top star to clear. Half-star granularity isn't exposed (Deck/gamepad-friendly). -->
-            <div class="ml-1 flex items-center" role="group" aria-label="Your rating">
-              {#each [1, 2, 3, 4, 5] as n (n)}
-                <button data-focusable onclick={() => onScore(m, userScore === n * 20 ? 0 : n * 20)} disabled={scoreBusy}
-                        title={`Rate ${n * 2}/10`} aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`}
-                        class="grid h-10 w-6 place-items-center rounded-md transition-colors hover:bg-accent disabled:opacity-40">
-                  <Star size={18} class={n <= filledStars ? 'fill-theme text-theme' : 'text-muted-foreground'} />
-                </button>
-              {/each}
-            </div>
+            <button data-focusable onclick={() => (showEditor = true)} title="Edit list status"
+                    class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
+              {#if effStatus}
+                <span class="size-2.5 rounded-full" style="background:{STATUS_COLOR[effStatus]}"></span>{STATUS_LABEL[effStatus]}
+              {:else}
+                <BookmarkPlus size={18} /> Add to List
+              {/if}
+              <ChevronDown size={16} class="opacity-60" />
+            </button>
           {/if}
 
           <button data-focusable onclick={() => onShare(m)} title="Copy AniList link"
@@ -457,6 +411,19 @@
       <button data-focusable onclick={() => (showTrailer = false)}
               class="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-md bg-secondary px-3 py-2 text-sm font-bold">Close</button>
     </div>
+  {/if}
+
+  {#if showEditor}
+    <ListEditor
+      media={m}
+      initStatus={effStatus}
+      initProgress={effProgress}
+      initScore0to100={effScore100}
+      total={epsTotal(m) || 0}
+      {hasEntry}
+      onclose={() => (showEditor = false)}
+      onsaved={(patch) => (listOpt = { ...listOpt, ...patch })}
+    />
   {/if}
 {:else if $offlineMode}
   <div class="grid min-h-[50vh] place-items-center p-8 text-center">

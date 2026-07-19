@@ -15,7 +15,7 @@ import type { FuzzyDate } from '$lib/anilist/types'
 // index.ts at runtime (only the AniStatus TYPE, which is erased). index.ts → queue.ts is one-way.
 
 export type TrackerName = 'AniList' | 'MAL'
-export type OpKind = 'progress' | 'status' | 'score'
+export type OpKind = 'progress' | 'status' | 'score' | 'remove'
 
 // Extra list-entry fields that ride along with a progress push (start/finish dates, rewatch count).
 export interface ProgressExtras {
@@ -30,6 +30,7 @@ export interface TrackerOp {
   kind: OpKind
   mediaId: number
   idMal?: number
+  listEntryId?: number // AniList mediaList entry id — required to DELETE the entry (kind 'remove')
   progress?: number
   status?: AniStatus
   score?: number // 0-100 (canonical); mapped per-tracker at push time
@@ -111,11 +112,18 @@ export function enqueue(tracker: TrackerName, op: TrackerOp) {
       const merged: TrackerOp = existing && sameWatchPass && (existing.op.progress ?? 0) > p
         ? { ...op, progress: existing.op.progress }
         : op
-      next = next.filter((e) => !(e.tracker === tracker && (e.op.kind === 'progress' || e.op.kind === 'status') && e.op.mediaId === op.mediaId))
+      next = next.filter((e) => !(e.tracker === tracker && (e.op.kind === 'progress' || e.op.kind === 'status' || e.op.kind === 'remove') && e.op.mediaId === op.mediaId))
       next = [...next, entry(tracker, merged, existing, now)]
+    } else if (op.kind === 'remove') {
+      // A delete supersedes every other pending op for the title — no point replaying a write then
+      // deleting the entry.
+      const existing = next.find((e) => e.tracker === tracker && opKey(tracker, e.op) === opKey(tracker, op))
+      next = next.filter((e) => !(e.tracker === tracker && e.op.mediaId === op.mediaId))
+      next = [...next, entry(tracker, op, existing, now)]
     } else {
       const existing = next.find((e) => e.tracker === tracker && opKey(tracker, e.op) === opKey(tracker, op))
-      next = next.filter((e) => !(e.tracker === tracker && opKey(tracker, e.op) === opKey(tracker, op)))
+      // Drop the same-kind op it replaces, plus any pending delete for the title (a re-add cancels it).
+      next = next.filter((e) => !(e.tracker === tracker && (opKey(tracker, e.op) === opKey(tracker, op) || (e.op.kind === 'remove' && e.op.mediaId === op.mediaId))))
       next = [...next, entry(tracker, op, existing, now)]
     }
     // Hard cap: evict the oldest-touched entries if we somehow blow past the ceiling.
