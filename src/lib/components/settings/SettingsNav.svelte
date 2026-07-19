@@ -7,6 +7,7 @@
   import User from 'lucide-svelte/icons/user'
   import Globe from 'lucide-svelte/icons/globe'
   import Download from 'lucide-svelte/icons/download'
+  import Captions from 'lucide-svelte/icons/captions'
   import Info from 'lucide-svelte/icons/info'
   import ScrollText from 'lucide-svelte/icons/scroll-text'
   import History from 'lucide-svelte/icons/history'
@@ -17,6 +18,7 @@
     { title: 'Interface', href: '/app/settings/interface', icon: LayoutGrid },
     { title: 'Sources', href: '/app/settings/sources', icon: Rss },
     { title: 'Extensions', href: '/app/settings/extensions', icon: Puzzle },
+    { title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions },
     { title: 'Downloads', href: '/app/settings/downloads', icon: Download },
     { title: 'History', href: '/app/settings/history', icon: History },
     { title: 'Device sync', href: '/app/settings/sync', icon: RefreshCw },
