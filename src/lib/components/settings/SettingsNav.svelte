@@ -41,7 +41,10 @@
       { title: 'About', href: '/app/settings/about', icon: Info },
     ] },
   ]
-  const flat = groups.flatMap((g) => g.items) // desktop rail order
+  // Navigation configures the mobile shell (bottom tab bar + top icons), so it's mobile-only — the
+  // desktop app uses the fixed sidebar instead. Keep it out of the desktop rail (mobile renders
+  // `groups` directly, and that whole branch is already gated on $isMobile).
+  const flat = groups.flatMap((g) => g.items).filter((it) => it.href !== '/app/settings/navigation') // desktop rail order
   const active = (href: string) =>
     $page.url.pathname === href ||
     $page.url.pathname.startsWith(href + '/') ||
