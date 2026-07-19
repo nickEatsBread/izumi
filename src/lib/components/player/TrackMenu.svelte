@@ -2,8 +2,13 @@
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, playerNotice } from '$lib/player/session'
   import { get } from 'svelte/store'
+  import { searchOnlineSubtitles } from '$lib/stremio/play'
+  import { subDlApiKey, openSubtitlesToken } from '$lib/settings/ui'
+  import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
+  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded } from './online-subs'
+  import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import Check from 'lucide-svelte/icons/check'
@@ -22,6 +27,12 @@
   const audios = $derived(tracks.filter((t) => t.type === 'audio'))
   const subs = $derived(tracks.filter((t) => t.type === 'sub'))
 
+  // Online subtitle candidates (searched on play) + the titles of the currently-selected sub
+  // tracks, so a candidate shows its Check once its downloaded track is live and selected.
+  const onlineItems = $derived($onlineSubCandidates.items)
+  const loadedSubTitles = $derived(subs.filter((s) => s.selected).map((s) => s.title ?? ''))
+  const onlineLeafLabel = (c: SubtitleCandidate) => `${c.lang ?? 'und'} · ${c.release ?? providerBadge(c.provider)}`
+
   // Disambiguating label (matches the mouse track menu): title else UPPER lang else "Track N",
   // with codec/channels appended when two share a name, plus Forced/Default flags.
   const chLabel = (n?: number) =>
@@ -38,21 +49,34 @@
     return bits.length ? `${base} · ${bits.join(' ')}` : base
   }
 
-  type Leaf = { id: number; kind: 'aid' | 'sid'; label: string; selected: boolean }
-  // Only surface a category that actually has tracks.
+  // A leaf is either an mpv track (audio/sub), an online-subtitle candidate to download, or the
+  // "Search again" action. Distinguished by `kind` so `apply` knows what to do on A/click.
+  type Leaf =
+    | { kind: 'aid' | 'sid'; id: number; label: string; selected: boolean }
+    | { kind: 'online'; label: string; selected: boolean; candidate: SubtitleCandidate }
+    | { kind: 'search'; label: string; selected: false }
+  // Only surface a category that has tracks; Online shows when candidates were found on play.
   const roots = $derived([
     ...(audios.length ? [{ key: 'audio' as const, label: 'Audio' }] : []),
     ...(subs.length ? [{ key: 'subs' as const, label: 'Subtitles' }] : []),
+    ...(onlineItems.length ? [{ key: 'online' as const, label: 'Online subtitles' }] : []),
   ])
-  // Track list for the highlighted category. Subtitles gets a leading "Off".
+  // Track list for the highlighted category. Subtitles gets a leading "Off"; Online gets a trailing
+  // "Search again". No free-text input in Game mode (needs the OSK) — result list + re-search only.
   function itemsFor(key: string | undefined): Leaf[] {
-    if (key === 'audio') return audios.map((t) => ({ id: t.id, kind: 'aid' as const, label: label(t, audios), selected: !!t.selected }))
+    if (key === 'audio') return audios.map((t) => ({ kind: 'aid' as const, id: t.id, label: label(t, audios), selected: !!t.selected }))
     if (key === 'subs') return [
-      { id: -1, kind: 'sid' as const, label: 'Off', selected: !subs.some((s) => s.selected) },
-      ...subs.map((t) => ({ id: t.id, kind: 'sid' as const, label: label(t, subs), selected: !!t.selected })),
+      { kind: 'sid' as const, id: -1, label: 'Off', selected: !subs.some((s) => s.selected) },
+      ...subs.map((t) => ({ kind: 'sid' as const, id: t.id, label: label(t, subs), selected: !!t.selected })),
+    ]
+    if (key === 'online') return [
+      ...onlineItems.map((c) => ({ kind: 'online' as const, label: onlineLeafLabel(c), selected: isCandidateLoaded(c, loadedSubTitles), candidate: c })),
+      { kind: 'search' as const, label: 'Search again', selected: false as const },
     ]
     return []
   }
+  // Stable {#each} key across the union (online/search leaves have no track id).
+  const leafKey = (it: Leaf) => it.kind === 'online' ? candidateKey(it.candidate) : it.kind === 'search' ? 'search' : `${it.kind}${it.id}`
 
   let open = $state(false)
   let level = $state(0) // 0 = category column, 1 = track column
@@ -100,7 +124,29 @@
     if (level === 0) { if (roots.length) rootIdx = (rootIdx + delta + roots.length) % roots.length }
     else if (subItems.length) subIdx = (subIdx + delta + subItems.length) % subItems.length
   }
+  async function addOnlineSub(c: SubtitleCandidate) {
+    try {
+      await invoke('player_add_subtitle', {
+        provider: c.provider,
+        url: c.download?.zipUrl,
+        fileId: c.download?.fileId,
+        lang: c.lang ?? 'und',
+        title: candidateTitle(c),
+        apiKey: c.provider === 'subdl' ? get(subDlApiKey) : OPEN_SUBS_API_KEY,
+        token: get(openSubtitlesToken),
+      })
+      tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]
+    }
+    catch (e) {
+      console.warn('add online subtitle failed', e)
+      playerNotice.set('Subtitle download failed')
+    }
+  }
   function apply(leaf: Leaf) {
+    // "Search again" re-runs the aggregator; an online candidate downloads + live-loads. Both keep
+    // the menu open so the updated list/Check stays visible (only track picks close the menu).
+    if (leaf.kind === 'search') { void searchOnlineSubtitles(); return }
+    if (leaf.kind === 'online') { void addOnlineSub(leaf.candidate); return }
     cmd('set', [leaf.kind, leaf.id === -1 ? 'no' : String(leaf.id)])
     // Reflect the new selection locally so the check mark is instant.
     const type = leaf.kind === 'aid' ? 'audio' : 'sub'
@@ -174,6 +220,7 @@
       <div class="w-[26rem] rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
         {#each roots as r, i (r.key)}
           <button
+            data-focusable
             class="my-1 flex w-full select-none items-center rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none"
             class:bg-white={level === 0 && rootIdx === i}
             class:text-black={level === 0 && rootIdx === i}
@@ -190,8 +237,9 @@
       {#if level === 1}
         <div bind:this={trackColEl} class="max-h-[85vh] w-[26rem] overflow-y-auto rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
           <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
-          {#each subItems as it, i (it.kind + it.id)}
+          {#each subItems as it, i (leafKey(it))}
             <button
+              data-focusable
               class="my-1 flex w-full select-none items-center gap-3 rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none"
               class:bg-white={subIdx === i}
               class:text-black={subIdx === i}
