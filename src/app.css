@@ -24,6 +24,11 @@ body { overflow-x: clip; }
    Applied to <main> so every route clears the status bar; the bottom tab bar handles
    the gesture-area inset itself. Needs viewport-fit=cover (app.html) to resolve non-zero. */
 @media (max-width: 640px) { main { padding-top: env(safe-area-inset-top); } }
+/* Mobile density ramp: the browse UI was sized in rem for desktop, so the default 16px root
+   made type/spacing ~1/6 too large on a ~390px phone viewport. Tighten the rem base on phones
+   only — desktop and Steam Deck are unaffected (Deck scales via `zoom`, a different lever, and
+   never matches this query). Fixed-px tiles are handled separately (they don't follow rem). */
+@media (max-width: 640px) { :root { font-size: 14.5px; } }
 ::-webkit-scrollbar { display: none; }
 .bg-striped { background: repeating-linear-gradient(-45deg, #202020 0 6px, #2a2a2a 6px 12px); }
 .bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }
