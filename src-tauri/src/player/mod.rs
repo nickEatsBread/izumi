@@ -854,6 +854,8 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         let _ = init.set_option("deband", "yes");
         let _ = init.set_option("dither-depth", "auto");
         let _ = init.set_option("screenshot-format", "png");
+        // Name saved screenshots "izumi-shot0001.png" etc. (mpv's default is "mpv-shot%n").
+        let _ = init.set_option("screenshot-template", "izumi-shot%n");
         // Network streaming (seekable debrid HTTP URLs): force seekability + a large
         // demuxer cache so scrubbing fetches new ranges instead of looping the buffered
         // window, with a small fast-start probe.
@@ -1028,6 +1030,8 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // Screenshots (player screenshot button) as PNG; the directory is set per-shot
         // from Rust (app Pictures dir) since mpv init can't resolve the app path here.
         let _ = init.set_option("screenshot-format", "png");
+        // Name saved screenshots "izumi-shot0001.png" etc. (mpv's default is "mpv-shot%n").
+        let _ = init.set_option("screenshot-template", "izumi-shot%n");
 
         // --- Network streaming (debrid HTTP URLs with range-request support) ---
         // Real-Debrid links are seekable via HTTP ranges, but mpv sometimes marks
