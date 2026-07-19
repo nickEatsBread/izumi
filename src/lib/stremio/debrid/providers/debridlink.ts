@@ -1,4 +1,5 @@
-import { jfetch, form, magnetOf, hashOf, pickLargestVideo, poll, VIDEO, JUNK, authError } from '../http'
+import { jfetch, form, magnetOf, hashOf, poll, VIDEO, JUNK, authError } from '../http'
+import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // Debrid-Link. Simplest torrent flow: add magnet → poll /seedbox/list until 100% →
@@ -73,7 +74,7 @@ export const debridlink: DebridProvider = {
     }, opts)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mapped = files.map((f: any) => ({ name: f.name ?? '', bytes: f.size ?? 0, downloadUrl: f.downloadUrl }))
-    const best = pickLargestVideo(mapped)
+    const best = pickVideoFile(mapped, opts?.want)
     if (!best?.downloadUrl) throw new Error('No playable file in that torrent.')
     return best.downloadUrl
   },

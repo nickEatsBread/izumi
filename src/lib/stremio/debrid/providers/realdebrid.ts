@@ -1,4 +1,5 @@
 import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError } from '../http'
+import { pickEpisodeVideo } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // Real-Debrid. Flow: addMagnet → selectFiles(all) [RD is the only one that requires
@@ -93,7 +94,13 @@ export const realdebrid: DebridProvider = {
     }, opts)
     const selected = (info.files ?? []).filter((f) => f.selected)
     const videos = selected.filter((f) => VIDEO.test(f.path) && !JUNK.test(f.path))
-    const chosen = [...(videos.length ? videos : selected)].sort((a, b) => b.bytes - a.bytes)[0]
+    // Episode-aware pick first (batch/season packs: play the file the user asked for,
+    // not the biggest); legacy largest-video fallback otherwise. Matched on the full
+    // in-torrent path — links[] stays index-coupled to the SELECTED subset, so the
+    // chosen object must be one of `selected`'s own elements (it is: `f` is a ref).
+    const chosen =
+      pickEpisodeVideo(selected.map((f) => ({ name: f.path, bytes: f.bytes, f })), opts?.want)?.f
+      ?? [...(videos.length ? videos : selected)].sort((a, b) => b.bytes - a.bytes)[0]
     if (!chosen) throw new Error('No playable file in that torrent.')
     const idx = selected.indexOf(chosen)
     const link = info.links?.[idx] ?? info.links?.[0]

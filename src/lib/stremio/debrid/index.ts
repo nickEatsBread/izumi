@@ -9,7 +9,7 @@ import { deepbrid } from './providers/deepbrid'
 import { linksnappy } from './providers/linksnappy'
 import { megadebrid } from './providers/megadebrid'
 
-export type { DebridProvider, DebridProviderMeta, DebridInfo, ResolveOpts, DebridItem, DebridFile } from './types'
+export type { DebridProvider, DebridProviderMeta, DebridInfo, ResolveOpts, DebridItem, DebridFile, EpisodeWant } from './types'
 
 // Stable providers first, experimental last (Cocoleech/DASAN are omitted — link-only,
 // can't resolve a torrent infoHash).
