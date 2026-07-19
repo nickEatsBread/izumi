@@ -2601,6 +2601,11 @@ pub fn run() {
     #[cfg(all(target_os = "android", feature = "android-mpv"))]
     let builder = builder.plugin(tauri_plugin_mpv::init());
 
+    // UI-wide haptics on mobile (both Android flavors + iOS). Desktop never registers this — the
+    // JS wrapper (src/lib/haptics.ts) also gates on $isAndroid, so nothing calls it off-mobile.
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let builder = builder.plugin(tauri_plugin_haptics::init());
+
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

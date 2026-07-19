@@ -88,10 +88,12 @@ zip = { version = "4", default-features = false, features = ["deflate-flate2-zli
 encoding_rs = "0.8"
 chardetng = "0.1"
 
-# Embedded libmpv player for the Android "full" flavor. Optional + only pulled in when the
-# `android-mpv` feature is on, so the "lite" build compiles zero player code / bundles no .so.
-[target.'cfg(target_os = "android")'.dependencies]
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+# Embedded libmpv player for the Android "full" flavor (optional; see the `android-mpv` feature).
 tauri-plugin-mpv = { path = "tauri-plugin-mpv", optional = true }
+# UI-wide haptics (impact/notification/selection). Android/iOS only; no desktop haptics engine,
+# so it is never compiled into the desktop/Deck builds. Registered unconditionally on mobile.
+tauri-plugin-haptics = "2"
 
 # Raw Win32 for true borderless fullscreen + mpv-child input passthrough, and the
 # WebView2 COM call to make the webview background transparent (Stremio's model:
