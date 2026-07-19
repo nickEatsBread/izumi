@@ -1,4 +1,5 @@
-import { jfetch, magnetOf, pickLargestVideo, poll, VIDEO, JUNK, authError } from '../http'
+import { jfetch, magnetOf, poll, VIDEO, JUNK, authError } from '../http'
+import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // TorBox. Auto-selects; readiness via booleans; per-file link via requestdl (which
@@ -73,8 +74,10 @@ export const torbox: DebridProvider = {
       return tbStatus(t ?? {})
     }, opts)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mapped = files.map((f: any) => ({ name: f.short_name ?? f.name ?? '', bytes: f.size ?? 0, id: f.id }))
-    const best = pickLargestVideo(mapped)
+    // Prefer the fuller `name` (may carry a Season-N folder path the episode matcher can
+    // read); short_name is the bare filename fallback.
+    const mapped = files.map((f: any) => ({ name: f.name ?? f.short_name ?? '', bytes: f.size ?? 0, id: f.id }))
+    const best = pickVideoFile(mapped, opts?.want)
     if (best?.id == null) throw new Error('No playable file in that torrent.')
     // requestdl: token is a QUERY param here (not Bearer). data is the URL string.
     const dl = await tb('GET', `/torrents/requestdl?token=${encodeURIComponent(key)}&torrent_id=${id}&file_id=${best.id}`, key)
