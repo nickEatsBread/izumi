@@ -21,17 +21,31 @@
   import Loader from 'lucide-svelte/icons/loader-circle'
   import Pause from 'lucide-svelte/icons/pause'
   import Check from 'lucide-svelte/icons/check'
-  let { media }: { media: Media } = $props()
+  let { media, offline = false }: { media: Media; offline?: boolean } = $props()
+
+  // Offline: the playable set is exactly the DOWNLOADED episodes (the download keys carry the
+  // episode number), sourced from the store — independent of totalEpisodes()/the schedule, which
+  // would collapse to 0 for OVA/ONA/adult snapshots and hide the very episodes you have on disk.
+  const offlineEps = $derived(
+    offline
+      ? Object.values($downloads)
+          .filter((d) => d.mediaId === media.id && d.status === 'done')
+          .map((d) => d.episode)
+          .sort((a, b) => a - b)
+      : [],
+  )
 
   const next = $derived(media.nextAiringEpisode)
   // Planned total + how many have already aired. Both fall back to the per-episode airing
   // schedule when AniList's scalar `episodes`/`nextAiringEpisode` are null (common on OVAs/
   // ONAs and adult titles), so a title known only through its schedule still lists its
   // episodes instead of collapsing to "Episodes TBA".
-  const total = $derived(totalEpisodes(media))
+  const total = $derived(offline ? offlineEps.length : totalEpisodes(media))
   // aired = last episode that has already aired, never more than the total. airedCount can
   // be Infinity when the count is genuinely unknown — clamp that to the total (0 → "TBA").
+  // Offline: every downloaded episode is playable, so aired = the highest downloaded number.
   const aired = $derived.by(() => {
+    if (offline) return offlineEps.at(-1) ?? 0
     const a = airedCount(media)
     return Math.min(total, Number.isFinite(a) ? a : total)
   })
@@ -53,7 +67,11 @@
   )
   const curPage = $derived(page ?? autoPage)
   const startIdx = $derived(curPage * PER)
-  const eps = $derived(Array.from({ length: Math.max(0, Math.min(PER, total - startIdx)) }, (_, i) => startIdx + i + 1))
+  const eps = $derived(
+    offline
+      ? offlineEps.slice(startIdx, startIdx + PER)
+      : Array.from({ length: Math.max(0, Math.min(PER, total - startIdx)) }, (_, i) => startIdx + i + 1),
+  )
 
   // Oldest/Newest toggle: reorders the current page's episodes for display. Pagination itself
   // still pages ascending (startIdx/PER above are unchanged) — see the note near the toggle.
@@ -66,6 +84,7 @@
   let meta = $state<Record<number, EpMeta>>({})
   let metaLoading = $state(true)
   $effect(() => {
+    if (offline) { meta = {}; metaLoading = false; return } // no per-episode metadata fetch offline
     let cancelled = false
     metaLoading = true
     getEpisodeMeta(media.id, watchedThrough).then((m) => { if (!cancelled) { meta = m; metaLoading = false } })
@@ -83,6 +102,7 @@
   // Filler episodes (AnimeFillerList) — marked in the list.
   let fillerSet = $state<Set<number>>(new Set())
   $effect(() => {
+    if (offline) return // no filler-list fetch offline
     let cancelled = false
     fillerEpisodes(media.id).then((list) => { if (!cancelled) fillerSet = new Set(list) })
     return () => { cancelled = true }
@@ -138,10 +158,12 @@
           <button data-focusable onclick={() => toggleSort('desc')}
                   class="rounded-md px-3 py-1 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
-        <button data-focusable onclick={startSelect}
-                class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-1.5 text-sm font-bold transition-colors hover:bg-accent">
-          <Download size={15} /> Download…
-        </button>
+        {#if !offline}
+          <button data-focusable onclick={startSelect}
+                  class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-1.5 text-sm font-bold transition-colors hover:bg-accent">
+            <Download size={15} /> Download…
+          </button>
+        {/if}
       {:else}
         <span class="mr-1 text-sm font-bold text-muted-foreground">
           {selected.size ? `${selected.size} selected` : 'Select episodes'}

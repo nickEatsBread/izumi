@@ -4,6 +4,8 @@
   import { openItem } from '$lib/stremio/debrid/cloud'
   import FileBrowser from '$lib/components/cloud/FileBrowser.svelte'
   import { heroMedia } from '$lib/stores/hero'
+  import { offlineMode } from '$lib/stores/offline'
+  import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import type { DebridItem } from '$lib/stremio/debrid/types'
   import Search from 'lucide-svelte/icons/search'
   import Play from 'lucide-svelte/icons/play'
@@ -54,10 +56,13 @@
     catch (e) { notice = e instanceof Error ? e.message : String(e) }
   }
 
-  // Reload whenever the active provider changes.
-  $effect(() => { void prov; load() })
+  // Reload whenever the active provider changes. Skipped in offline mode (network-only).
+  $effect(() => { void prov; if ($offlineMode) return; load() })
 </script>
 
+{#if $offlineMode}
+  <OfflineUnavailable title="Cloud is unavailable offline" subtitle="Your debrid cloud library needs a connection. Downloaded titles are available on the Downloads page." />
+{:else}
 <div class="p-4 sm:p-8">
   <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-2xl font-black">Cloud</h1>
@@ -111,3 +116,4 @@
 </div>
 
 <FileBrowser />
+{/if}

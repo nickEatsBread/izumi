@@ -8,7 +8,12 @@
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { banner, title, cover, format, status, season, ratingBg, resumeEp, totalEpisodes } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
-  import { resumeEpisode, type PlayState } from '$lib/stremio/play'
+  import { resumeEpisode, playEpisode, type PlayState } from '$lib/stremio/play'
+  import { offlineMode } from '$lib/stores/offline'
+  import { downloads, downloadedMedia } from '$lib/downloads/state'
+  import { localHistory } from '$lib/player/history'
+  import { seriesTitle } from '$lib/downloads/library'
+  import { readable } from 'svelte/store'
   import { focusOnMount } from '$lib/nav'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
@@ -32,7 +37,16 @@
   let { id }: { id: number } = $props()
 
   const client = getContextClient()
-  const store = $derived(queryStore<{ Media: Media }>({ client, query: MEDIA_BY_ID, variables: { id } }))
+  // Offline: never touch AniList — feed a static empty store and build media from the local
+  // snapshot instead. Recreating the real queryStore on reconnect refetches automatically.
+  const EMPTY_STORE = readable(
+    { fetching: false, error: undefined, data: undefined } as {
+      fetching: boolean; error?: { message: string }; data?: { Media: Media }
+    },
+  )
+  const store = $derived(
+    $offlineMode ? EMPTY_STORE : queryStore<{ Media: Media }>({ client, query: MEDIA_BY_ID, variables: { id } }),
+  )
 
   // MAL read-back: pull the viewer's watched-episode count from MAL and merge it
   // into the AniList media, so progress shows even when the user tracks on MAL
@@ -44,13 +58,48 @@
     malEntry = null
     if (base?.idMal) getMalProgress(base.idMal).then((e) => (malEntry = e))
   })
+  // Offline: build the page's media from the local snapshot (downloadedMedia → localHistory →
+  // synthesized from the DownloadItems) with progress folded from local history, so the header
+  // badge, the CTA label, and the episode marks all agree. `null` = a title with no downloads.
+  const offlineMedia = $derived.by((): Media | null | undefined => {
+    if (!$offlineMode) return undefined
+    const doneItems = Object.values($downloads).filter((d) => d.mediaId === id && d.status === 'done')
+    const snap = $downloadedMedia[id] ?? $localHistory[id]?.media
+    if (!snap && !doneItems.length) return null
+    const base: Media = snap ?? ({
+      id, title: { userPreferred: seriesTitle(doneItems[0]?.title ?? '') },
+      coverImage: { extraLarge: doneItems[0]?.poster },
+    } as Media)
+    const progress = Math.max($localHistory[id]?.progress ?? 0, base.mediaListEntry?.progress ?? 0)
+    return { ...base, mediaListEntry: { ...(base.mediaListEntry ?? {}), progress } } as Media
+  })
+
   const media = $derived.by(() => {
+    if ($offlineMode) return offlineMedia
     const base = $store.data?.Media
     if (!base) return base
     const malP = malEntry?.progress ?? 0
     if (malP <= (base.mediaListEntry?.progress ?? 0)) return base
     return { ...base, mediaListEntry: { progress: malP, status: base.mediaListEntry?.status ?? malEntry?.status } }
   })
+
+  // Resume target for the hero CTA. Offline = first not-yet-watched DOWNLOADED episode (else the
+  // first downloaded) — never resumeEp(), which reads tracker progress and could point at an
+  // episode that isn't on disk. `playCta` also routes offline through playEpisode (the local swap)
+  // instead of resumeEpisode (which would fire a live fetchMediaById + online resolve).
+  function offlineResumeEp(m: Media): number {
+    const doneEps = Object.values($downloads)
+      .filter((d) => d.mediaId === m.id && d.status === 'done').map((d) => d.episode).sort((a, b) => a - b)
+    if (!doneEps.length) return 1
+    const prog = $localHistory[m.id]?.progress ?? 0
+    return doneEps.find((e) => e > prog) ?? doneEps[0]
+  }
+  const ctaEp = (m: Media) => ($offlineMode ? offlineResumeEp(m) : resumeEp(m))
+  function playCta(m: Media) {
+    h.impact('medium')
+    if ($offlineMode) playEpisode(m, offlineResumeEp(m), (s) => (heroPlay = s))
+    else resumeEpisode(m, resumeEp(m), (s) => (heroPlay = s))
+  }
 
   let active = $state('Episodes')
   let heroPlay = $state<PlayState>({ status: 'idle' })
@@ -114,9 +163,9 @@
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
 
-{#if $store.fetching}
+{#if !$offlineMode && $store.fetching}
   <div class="h-[42vh] w-full animate-pulse bg-muted"></div>
-{:else if $store.error}
+{:else if !$offlineMode && $store.error}
   <div class="p-8 text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if media}
   {@const m = media}
@@ -163,9 +212,9 @@
 
       <!-- Primary CTA -->
       <button data-focusable use:focusOnMount
-              onclick={() => { h.impact('medium'); resumeEpisode(m, resumeEp(m), (s) => (heroPlay = s)) }}
+              onclick={() => playCta(m)}
               class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
-        <Play size={18} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${resumeEp(m)}` : 'Play'}
+        <Play size={18} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
       </button>
 
       <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
@@ -236,7 +285,7 @@
       <div class="mt-6">
         <Tabs tabs={['Episodes', 'Relations', 'Details']} bind:active />
         {#if active === 'Episodes'}
-          <EpisodeList media={m} />
+          <EpisodeList media={m} offline={$offlineMode} />
         {:else if active === 'Relations'}
           {#if m.relations?.edges?.length}
             <div class="mt-3 flex flex-wrap gap-3">
@@ -297,9 +346,9 @@
 
         <!-- Action bar -->
         <div class="flex flex-wrap items-center gap-2">
-          <button data-focusable use:focusOnMount onclick={() => resumeEpisode(m, resumeEp(m), (s) => (heroPlay = s))}
+          <button data-focusable use:focusOnMount onclick={() => playCta(m)}
                   class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">
-            <Play size={16} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${resumeEp(m)}` : 'Play'}
+            <Play size={16} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
 
           <button data-focusable onclick={() => onFavourite(m)} disabled={!$anilistToken || favBusy}
@@ -358,7 +407,7 @@
 
     <Tabs tabs={['Episodes', 'Relations', 'Details']} bind:active />
     {#if active === 'Episodes'}
-      <EpisodeList media={m} />
+      <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}
       {#if m.relations?.edges?.length}
         <div class="flex flex-wrap gap-4">
@@ -409,6 +458,13 @@
               class="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-md bg-secondary px-3 py-2 text-sm font-bold">Close</button>
     </div>
   {/if}
+{:else if $offlineMode}
+  <div class="grid min-h-[50vh] place-items-center p-8 text-center">
+    <div class="max-w-sm text-muted-foreground">
+      <p class="mb-4">This title isn't available offline. Download episodes while connected to watch them here.</p>
+      <a href="/app/downloads" data-focusable class="rounded-md bg-secondary px-4 py-2 text-sm font-bold text-foreground">Go to Downloads</a>
+    </div>
+  </div>
 {:else}
   <div class="p-8 text-muted-foreground">Not found.</div>
 {/if}

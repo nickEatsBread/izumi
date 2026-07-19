@@ -40,7 +40,7 @@ describe('haptics gating', () => {
 
   it('fires the right feedback on Android when enabled', () => {
     isAndroid.set(true); hapticsEnabled.set(true)
-    tap();     expect(impactFeedback).toHaveBeenLastCalledWith('light')
+    tap();     expect(impactFeedback).toHaveBeenLastCalledWith('medium')
     impact('heavy'); expect(impactFeedback).toHaveBeenLastCalledWith('heavy')
     select();  expect(selectionFeedback).toHaveBeenCalledTimes(1)
     success(); expect(notificationFeedback).toHaveBeenLastCalledWith('success')

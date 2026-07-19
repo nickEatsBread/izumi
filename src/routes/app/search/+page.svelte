@@ -4,6 +4,8 @@
   import type { SearchFilters } from '$lib/anilist/detail-queries'
   import { heroMedia } from '$lib/stores/hero'
   import { showAdult } from '$lib/settings/ui'
+  import { offlineMode } from '$lib/stores/offline'
+  import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { page } from '$app/state'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
@@ -37,11 +39,15 @@
   const key = $derived(JSON.stringify(debounced) + '|' + $showAdult)
 </script>
 
-<div class="p-4 sm:p-8">
-  <FilterBar bind:filters />
-  <div class="mt-6">
-    {#key key}
-      <SearchResults filters={debounced} />
-    {/key}
+{#if $offlineMode}
+  <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
+{:else}
+  <div class="p-4 sm:p-8">
+    <FilterBar bind:filters />
+    <div class="mt-6">
+      {#key key}
+        <SearchResults filters={debounced} />
+      {/key}
+    </div>
   </div>
-</div>
+{/if}

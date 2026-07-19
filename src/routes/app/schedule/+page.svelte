@@ -4,6 +4,8 @@
   import { weekRange } from '$lib/anilist/schedule'
   import ScheduleGrid from '$lib/components/schedule/ScheduleGrid.svelte'
   import { heroMedia } from '$lib/stores/hero'
+  import { offlineMode } from '$lib/stores/offline'
+  import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
   heroMedia.set(null)
@@ -32,6 +34,9 @@
   })
 </script>
 
+{#if $offlineMode}
+  <OfflineUnavailable title="Schedule is unavailable offline" subtitle="The airing schedule needs a connection. Your downloads are available on the Downloads page." />
+{:else}
 <div class="p-4 sm:p-8">
   <div class="mb-6 flex items-center gap-3">
     <h1 class="text-lg font-black">Schedule</h1>
@@ -56,3 +61,4 @@
     <ScheduleGrid {start} {end} />
   {/key}
 </div>
+{/if}

@@ -5,6 +5,7 @@
   import { downloadDir, downloadConcurrency, downloadCachedOnly } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
   import { downloads } from '$lib/downloads/store'
+  import { forceOffline } from '$lib/stores/offline'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
   // Desktop: native folder picker → an absolute filesystem path the reqwest downloader can write to.
@@ -39,6 +40,8 @@
   <p class="mb-4 text-sm text-muted-foreground">Where episodes are saved for offline playback, and how many download at once.</p>
 
   <div class="max-w-2xl space-y-3">
+    <Toggle label="Offline mode" desc="Show only downloaded content and skip network requests. Turns on automatically if you open the app with no connection." value={$forceOffline} onToggle={() => ($forceOffline = !$forceOffline)} />
+
     <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Download folder</span>
       <span class="flex gap-2">

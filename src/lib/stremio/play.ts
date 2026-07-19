@@ -32,6 +32,7 @@ import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
 import { title, cover, airedCount, totalEpisodes } from '$lib/anilist/media'
 import { isAndroid } from '$lib/platform'
+import { offlineMode } from '$lib/stores/offline'
 import { playViaIntent } from '$lib/player/android-playback'
 import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
@@ -768,7 +769,9 @@ export async function playStream(media: Media, episode: number | undefined, stre
   // Fetch external subtitles from any subtitle-capable addon (OpenSubtitles etc) CONCURRENTLY with the
   // slow source resolve below, so they're ready by embed time without adding latency. Skipped for the
   // external/Android players (they own subtitle handling). Best-effort — [] on any failure.
-  const subsP: Promise<SubtitleCandidate[]> = get(isAndroid) || get(enableExternalPlayer)
+  // Also skipped in offline mode — the external-subtitle addons are network-only, and offline
+  // playback is always a local file (any embedded/downloaded subs travel with it).
+  const subsP: Promise<SubtitleCandidate[]> = get(isAndroid) || get(enableExternalPlayer) || get(offlineMode)
     ? Promise.resolve([])
     : fetchExternalSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename).catch(() => [])
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
