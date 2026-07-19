@@ -455,6 +455,10 @@ jobs:
             rm -f src-tauri/capabilities/android-mpv.json
           fi
           npx tauri android init
+          # navigator.onLine only reflects real connectivity when the app holds ACCESS_NETWORK_STATE;
+          # without it the WebView always reports online, so offline mode's launch auto-detect + the
+          # offline banner never fire on Android. Applies to BOTH flavors (both are WebView apps).
+          sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
           if [ "${{ matrix.flavor }}" = "full" ]; then
             sed -i -E 's/kotlin-gradle-plugin:[0-9.]+/kotlin-gradle-plugin:2.2.0/' src-tauri/gen/android/build.gradle.kts
             sed -i 's#android:name=".MainActivity"#android:name=".MainActivity"\n            android:supportsPictureInPicture="true"#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
