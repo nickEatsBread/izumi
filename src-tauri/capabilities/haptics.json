@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/android-schema.json",
+  "identifier": "haptics",
+  "description": "Grant UI haptic feedback on mobile.",
+  "platforms": ["android", "iOS"],
+  "windows": ["main"],
+  "permissions": ["haptics:default"]
+}
