@@ -13,12 +13,14 @@ describe('SettingsNav', () => {
     expect(src).toContain("{ title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions }")
   })
 
-  it('orders Subtitles between Extensions and Downloads', () => {
-    const ext = src.indexOf("href: '/app/settings/extensions'")
+  it('groups Subtitles under Playback, ahead of the Content entries', () => {
+    const player = src.indexOf("href: '/app/settings/player'")
     const subs = src.indexOf("href: '/app/settings/subtitles'")
+    const ext = src.indexOf("href: '/app/settings/extensions'")
     const dl = src.indexOf("href: '/app/settings/downloads'")
-    expect(ext).toBeGreaterThan(-1)
-    expect(subs).toBeGreaterThan(ext)
-    expect(dl).toBeGreaterThan(subs)
+    expect(player).toBeGreaterThan(-1)
+    expect(subs).toBeGreaterThan(player)
+    expect(ext).toBeGreaterThan(subs)
+    expect(dl).toBeGreaterThan(ext)
   })
 })
