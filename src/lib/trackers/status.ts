@@ -41,8 +41,8 @@ export function malToAni(s?: string | null): AniStatus | undefined {
 
 /** Descriptive 0-10 score labels (the canonical izumi score is 0-100 → /10 here). Index 0 = unrated. */
 export const SCORE_LABELS: readonly string[] = [
-  'Not rated', 'Appalling', 'Horrible', 'Very bad', 'Bad',
-  'Average', 'Fine', 'Good', 'Very good', 'Great', 'Masterpiece',
+  'Not rated', 'Appalling', 'Horrible', 'Very Bad', 'Bad',
+  'Average', 'Fine', 'Good', 'Very Good', 'Great', 'Masterpiece',
 ]
 
 /** Label for a 0-10 score (rounds + clamps). */
