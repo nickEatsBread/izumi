@@ -76,6 +76,18 @@ export function markConfirmed(t: TrackerName, mediaId: number, progress: number)
   })
 }
 
+/** After a SUCCESSFUL live push, drop queued entries it supersedes for the same title:
+ *  - a landed write (progress/status/score) cancels a pending 'remove' — else the replay would
+ *    DELETE the entry the user just re-created;
+ *  - a landed 'remove' cancels pending writes — they'd re-create a just-deleted entry.
+ *  (enqueue() only coalesces on the FAILURE path; this handles the live-success path.) */
+export function dropSuperseded(tracker: TrackerName, mediaId: number, justPushed: OpKind) {
+  trackerQueue.update((q) => q.filter((e) => {
+    if (e.tracker !== tracker || e.op.mediaId !== mediaId) return true
+    return justPushed === 'remove' ? false : e.op.kind !== 'remove'
+  }))
+}
+
 /** Classify an HTTP status into retryable (transient — keep) vs permanent (drop). */
 export function classifyStatus(status: number): 'retry' | 'drop' {
   if (status === 408 || status === 429 || status >= 500) return 'retry'
