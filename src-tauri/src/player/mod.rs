@@ -402,6 +402,18 @@ impl PlayerHandle {
         mpv.command(name, args).map_err(|e| e.to_string())
     }
 
+    /// Add an external subtitle file to the LIVE core and select it. Mirrors the load-time
+    /// `sub-add` loop in `load_file` but for a subtitle fetched mid-playback via the online-subtitle
+    /// menu. mpv's arg order is `sub-add <url> <flags> <title> <lang>`, so `title` (the menu label)
+    /// goes in the title slot and `lang` (iso code) in the lang slot. Errors if no player is running.
+    /// `player_tracks` then re-reads the live `track-list` to show the new track.
+    pub fn add_subtitle(&self, path: &str, lang: &str, title: &str) -> Result<(), String> {
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+        mpv.command("sub-add", &[path, "select", title, lang])
+            .map_err(|e| e.to_string())
+    }
+
     /// Add/replace a raw-memory OSD overlay on the video (Game-mode controls). `addr` is the
     /// address of a premultiplied-BGRA buffer of `w`×`h` (bytes = `stride`×`h`) that MUST stay
     /// valid + at a stable address until [`overlay_remove`] or the next `overlay_add` for `id`
@@ -1067,4 +1079,19 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         );
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_subtitle_without_core_errors() {
+        // No mpv core has been created, so add_subtitle must report "no player" rather than panic.
+        let h = PlayerHandle::new();
+        assert_eq!(
+            h.add_subtitle("/tmp/x.srt", "en", "English"),
+            Err("no player".to_string())
+        );
+    }
 }
