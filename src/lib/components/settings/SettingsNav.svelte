@@ -54,15 +54,15 @@
   <div class="space-y-5">
     {#each groups as g (g.label)}
       <div>
-        <div class="mb-1 px-1 text-[0.7rem] font-bold uppercase tracking-wide text-muted-foreground">{g.label}</div>
+        <div class="mb-1.5 px-1 text-sm font-bold text-muted-foreground">{g.label}</div>
         <div class="overflow-hidden rounded-xl bg-secondary/40">
           {#each g.items as it (it.href)}
             {@const Icon = it.icon}
             <a href={it.href} data-focusable onclick={() => h.tap()}
-               class="flex items-center gap-3 border-b border-border/50 px-4 py-3 text-sm font-bold last:border-b-0 transition-colors active:bg-accent">
-              <Icon size={18} class="text-muted-foreground" />
+               class="flex items-center gap-3 border-b border-border/50 px-4 py-3.5 text-[0.95rem] font-bold last:border-b-0 transition-colors active:bg-accent">
+              <Icon size={20} class="text-muted-foreground" />
               <span class="flex-1">{it.title}</span>
-              <ChevronRight size={16} class="text-muted-foreground" />
+              <ChevronRight size={18} class="text-muted-foreground" />
             </a>
           {/each}
         </div>

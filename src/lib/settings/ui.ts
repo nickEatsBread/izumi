@@ -134,9 +134,11 @@ export const haptics = persisted<boolean>('haptics', true)
  *  (day tabs + one big day). Ignored in Game mode — the Deck always shows one day. */
 export type ScheduleLayout = 'agenda' | 'days'
 export const scheduleLayout = persisted<ScheduleLayout>('schedule-layout', 'agenda')
-// Soft fade of schedule rows into the pinned header as they scroll under it. Off by default —
-// it's purely decorative and some find it just shades the content.
-export const scheduleHeaderFade = persisted<boolean>('schedule-header-fade', false)
+// Pin the schedule header (My Shows/All toggle + Next-up strip) to the top while scrolling.
+// Fresh key + platform default: on for desktop/Deck, OFF on Android — a floating pinned bar
+// reads as un-native on a phone, where the header should scroll away with the list.
+const scheduleStickyDefault = !(typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent))
+export const scheduleStickyHeader = persisted<boolean>('schedule-sticky-header', scheduleStickyDefault)
 
 // --- Updates ---
 /** Auto-updater release channel: 'stable' (normal GitHub releases) or 'beta'

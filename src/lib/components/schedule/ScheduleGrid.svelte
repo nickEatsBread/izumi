@@ -17,7 +17,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { localHistory } from '$lib/player/history'
   import { gameMode } from '$lib/player/session'
-  import { scheduleLayout, scheduleHeaderFade } from '$lib/settings/ui'
+  import { scheduleLayout, scheduleStickyHeader } from '$lib/settings/ui'
   import type { Media } from '$lib/anilist/types'
   import DayColumn from './DayColumn.svelte'
   import AgendaWeek from './AgendaWeek.svelte'
@@ -99,19 +99,6 @@
   // Measured height of the sticky header (toggle + Next-up) so the agenda's auto-scroll-to-today
   // lands BELOW it instead of under it.
   let headerH = $state(0)
-
-  // Whether the header is actually pinned (sentinel above it scrolled out of view). The dissolve
-  // gradient only renders while pinned — at rest it has nothing scrolling underneath and just
-  // shades the first row below the header.
-  let stuck = $state(false)
-  let sentinel = $state<HTMLElement | undefined>()
-  $effect(() => {
-    const el = sentinel
-    if (!el) return
-    const io = new IntersectionObserver(([entry]) => { stuck = !entry.isIntersecting })
-    io.observe(el)
-    return () => io.disconnect()
-  })
 
   // Live-ish clock so the "Next up" countdowns tick without each card owning a timer.
   let now = $state(Date.now())
@@ -195,20 +182,12 @@
 {:else if error}
   <p class="text-muted-foreground">Failed to load schedule: {error}</p>
 {:else}
-  <!-- Sticky header: the My Shows/All toggle + Next-up stay pinned so switching view or glancing at
-       what's next never means scrolling back up past the auto-scrolled agenda. The zero-impact
-       sentinel above it feeds the IntersectionObserver that detects the pinned state. -->
-  <div class="h-px -mb-px" bind:this={sentinel} aria-hidden="true"></div>
-  <div class="sticky top-0 z-20 bg-background pb-1" bind:clientHeight={headerH}>
+  <!-- Header: the My Shows/All toggle + Next-up. Pinned to the top while scrolling when the
+       "Pin schedule header" setting is on (default off on Android — it scrolls away with the list). -->
+  <div class="{$scheduleStickyHeader ? 'sticky top-0' : ''} z-20 bg-background pb-1" bind:clientHeight={headerH}>
     {@render toggle()}
     {#if isCurrentWeek}
       <ScheduleNextUp airings={shownDays.flat()} {sets} {now} />
-    {/if}
-    <!-- Optional soft dissolve just below the pinned header (toggle in Settings → Interface). OFF by
-         default: its opaque top edge (from-background) shades the first content row as a dark band,
-         which some dislike. pointer-events-none so day cards stay clickable. -->
-    {#if $scheduleHeaderFade}
-      <div class="pointer-events-none absolute inset-x-0 top-full h-4 bg-gradient-to-b from-background to-background/0 transition-opacity duration-200 {stuck ? 'opacity-100' : 'opacity-0'}"></div>
     {/if}
   </div>
   {#if view === 'mine' && mineCount === 0}
@@ -218,6 +197,6 @@
   {:else if layout === 'days'}
     {@render dayView(false)}
   {:else}
-    <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} headerOffset={headerH} />
+    <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} headerOffset={$scheduleStickyHeader ? headerH : 0} />
   {/if}
 {/if}

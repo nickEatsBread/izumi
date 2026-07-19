@@ -29,6 +29,10 @@ body { overflow-x: clip; }
    only — desktop and Steam Deck are unaffected (Deck scales via `zoom`, a different lever, and
    never matches this query). Fixed-px tiles are handled separately (they don't follow rem). */
 @media (max-width: 640px) { :root { font-size: 14.5px; } }
+/* Mobile settings sub-pages: the back-header shows the category title, so hide each child page's
+   own redundant leading heading (its :first-child h2) — content starts right under the bar, native
+   app feel. Deeper section headings are never their parent's :first-child, so they still show. */
+@media (max-width: 640px) { .settings-child > div > h2:first-child { display: none; } }
 ::-webkit-scrollbar { display: none; }
 .bg-striped { background: repeating-linear-gradient(-45deg, #202020 0 6px, #2a2a2a 6px 12px); }
 .bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }
