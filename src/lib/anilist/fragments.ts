@@ -13,4 +13,5 @@ export const MEDIA_FIELDS = gql`
     bannerImage
     trailer { id site }
     nextAiringEpisode { episode timeUntilAiring }
+    airingSchedule(perPage: 100) { nodes { episode airingAt } }
   }`

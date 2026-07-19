@@ -6,7 +6,7 @@ import type { Media } from './types'
 // source extensions receive on the detail-page path (synonyms/season/start date are significant for
 // new seasons and ambiguous light-novel titles). Session-cached.
 
-const Q = `query($id:Int!){Media(id:$id,type:ANIME){id idMal title{romaji english userPreferred native} description(asHtml:false) season seasonYear format status episodes duration averageScore genres synonyms startDate{year month day} studios(isMain:true){nodes{id name}} coverImage{extraLarge medium color} bannerImage trailer{id site} nextAiringEpisode{episode timeUntilAiring}}}`
+const Q = `query($id:Int!){Media(id:$id,type:ANIME){id idMal title{romaji english userPreferred native} description(asHtml:false) season seasonYear format status episodes duration averageScore genres synonyms startDate{year month day} studios(isMain:true){nodes{id name}} coverImage{extraLarge medium color} bannerImage trailer{id site} nextAiringEpisode{episode timeUntilAiring} airingSchedule(perPage:100){nodes{episode airingAt}}}}`
 
 const cache = new Map<number, Media>()
 
