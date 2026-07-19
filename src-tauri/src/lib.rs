@@ -906,6 +906,18 @@ fn normalize_subtitle_charset(bytes: &[u8]) -> String {
     }
 }
 
+/// Write `bytes` to `out` atomically (temp file + rename) so a reader never sees a partial file.
+/// Mirrors the scrub-tile writer in `player/mod.rs`, but for the normalized subtitle cache.
+#[cfg(not(target_os = "android"))]
+fn write_text_atomic(out: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    let tmp = out.with_extension("part");
+    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, out).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -2483,6 +2495,28 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+#[cfg(not(target_os = "android"))]
+mod subtitle_cache_tests {
+    use super::*;
+
+    #[test]
+    fn atomic_write_roundtrips_and_blake3_is_stable() {
+        let bytes = b"1\n00:00:01,000 --> 00:00:02,000\nHi\n";
+        let h1 = blake3::hash(bytes).to_hex().to_string();
+        let h2 = blake3::hash(bytes).to_hex().to_string();
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64);
+        let dir = std::env::temp_dir().join("izumi_sub_atomic_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join(format!("{h1}.srt"));
+        let _ = std::fs::remove_file(&out);
+        write_text_atomic(&out, bytes).unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), bytes);
+        let _ = std::fs::remove_file(&out);
+    }
 }
 
 #[cfg(test)]
