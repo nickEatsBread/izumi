@@ -134,7 +134,12 @@ modules:
       # makes GNOME Software / Discover show + install the flatpak as the OLD version.
       - APPVER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -1); sed -i "s|<release [^>]*/>|<release version=\"$APPVER\" date=\"$(date +%F)\"/>|" flatpak/com.nicho.izumi.metainfo.xml
       - install -Dm644 flatpak/com.nicho.izumi.metainfo.xml /app/share/metainfo/com.nicho.izumi.metainfo.xml
+      # Icons for the launcher AND for AppStream. The GNOME 49 SDK's `appstreamcli compose` (run by
+      # flatpak-builder) needs a 64x64 stock icon in hicolor; without it the component was dropped
+      # from the catalogue entirely, so the published repo had no AppStream and opening the
+      # .flatpakref showed only the raw id (no name/summary/icon). 64x64 is the load-bearing add.
       - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/com.nicho.izumi.png
+      - install -Dm644 src-tauri/icons/64x64.png /app/share/icons/hicolor/64x64/apps/com.nicho.izumi.png
       - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.nicho.izumi.png
       - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256/apps/com.nicho.izumi.png
     sources:
