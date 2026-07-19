@@ -28,6 +28,7 @@
   import { refreshAniListAvatar } from '$lib/trackers/anilist-auth'
   import { refreshMalViewer } from '$lib/trackers/mal-auth'
   import { isAndroid, isMobile, initPlatform } from '$lib/platform'
+  import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { initTrackerQueue } from '$lib/trackers/queue'
   import { initDeviceSync } from '$lib/sync/client'
@@ -50,6 +51,7 @@
   })
   $effect(() => {
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
+    initOffline() // latch offline mode from launch connectivity + the persisted force toggle
     if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
     // Cross-platform update check: a delayed launch check + a 6h interval. Gated to packaged
     // builds so dev never nags. The facade dispatches per platform (desktop/android/flatpak);

@@ -42,7 +42,12 @@ export function setDownloadedMedia(m: Media) {
     id: m.id, idMal: m.idMal, title: m.title, format: m.format, status: m.status,
     episodes: m.episodes, duration: m.duration, averageScore: m.averageScore, genres: m.genres,
     startDate: m.startDate, coverImage: m.coverImage, bannerImage: m.bannerImage,
-    nextAiringEpisode: m.nextAiringEpisode,
+    nextAiringEpisode: m.nextAiringEpisode, season: m.season, seasonYear: m.seasonYear,
+    // Keep the airing schedule: OVA/ONA/adult titles have episodes + nextAiringEpisode both null,
+    // and their ONLY episode-count signal is airingSchedule.nodes. Without it totalEpisodes()=0
+    // OFFLINE → the detail page shows "Episodes TBA" with zero rows even for downloaded episodes
+    // (the exact bug offline mode exists to fix). Mirrors mediaSnapshot() in player/history.ts.
+    airingSchedule: m.airingSchedule,
   } as Media
   downloadedMedia.update((d) => ({ ...d, [m.id]: lite }))
 }
