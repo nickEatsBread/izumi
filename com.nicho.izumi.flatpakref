@@ -1,6 +1,13 @@
 [Flatpak Ref]
+Version=1
 Name=com.nicho.izumi
 Branch=master
+SuggestRemoteName=izumi
+Title=izumi
+Comment=Controller-first desktop anime client
+Description=Stream anime with a controller-first interface, native mpv playback, AniList and MyAnimeList tracking, and Stremio-addon sourcing.
+Icon=https://flatpak.izumi.watch/com.nicho.izumi.png
+Homepage=https://github.com/nickEatsBread/izumi
 Url=https://flatpak.izumi.watch/
 GPGKey=LS0tLS1CRUdJTiBQR1AgUFVCTElDIEtFWSBCTE9DSy0tLS0tCgptRE1FYWx1R1BoWUpLd1lCQkFIYVJ3OEJBUWRBZXRhWEpaRTY1UVA3MmRreHMvb2t2TmVBa3NWa2prZjQ0V09sCndyYWpxWGkwRldsNmRXMXBJR1pzWVhSd1lXc2djMmxuYm1sdVo0aVRCQk1XQ2dBN0ZpRUVXNUR4UDFDbElUNy8KRjdoT25rc1pLQWQ3UThvRkFtcGJoajRDR3dNRkN3a0lCd0lDSWdJR0ZRb0pDQXNDQkJZQ0F3RUNIZ2NDRjRBQQpDZ2tRbmtzWktBZDdROHFVWUFFQTB5TldvdzdNenZ1SFdZNjU4akdaa2tWMitadEU0NVVvdUxtOEZ0NWxSSW9BCi8zUHY1a2E5S2lPMlJPelZuNjc0RUdCd1ppQ2RSRHpxWk9hUkZ6bzN6NXNKCj1jV1BoCi0tLS0tRU5EIFBHUCBQVUJMSUMgS0VZIEJMT0NLLS0tLS0K
 IsRuntime=false
