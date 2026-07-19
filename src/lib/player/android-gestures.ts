@@ -45,12 +45,9 @@ export function classifyDrag(
   const adx = Math.abs(dx)
   const ady = Math.abs(dy)
   if (adx < MOVE_PX && ady < MOVE_PX) return { kind: 'pending' }
-  if (adx >= ady) return { kind: 'scrub', dx } // horizontal intent
-  if (start.y > height - bottomIgnore) return { kind: 'none' } // near controls: no swipe
-  const zone = zoneOf(start.x, width)
-  // Brightness gesture removed (left-zone vertical does nothing) — it caused accidental
-  // brightness changes when reaching for play/pause. Only the right zone controls volume.
-  if (zone === 'r') return { kind: 'volume', dy: -dy } // drag up = louder
+  if (adx >= ady) return { kind: 'scrub', dx } // horizontal intent → scrub
+  // Vertical swipes do nothing: both the brightness (left) and volume (right) shortcuts were
+  // removed — they caused accidental changes when reaching for play/pause.
   return { kind: 'none' }
 }
 
