@@ -45,6 +45,12 @@ export function mediaSnapshot(m: Media): Media {
     averageScore: m.averageScore,
     genres: m.genres,
     nextAiringEpisode: m.nextAiringEpisode,
+    // Needed so Continue Watching can cap the aired/resume episode: many OVAs/ONAs and adult
+    // titles have episodes + nextAiringEpisode both null and their ONLY episode-count signal
+    // is the airing schedule. Without it airedCount() is Infinity → a caught-up show never
+    // hides and its resume badge reads one past the finale (e.g. "Ep 5" of a 4-ep title).
+    // Tiny (≤100 {episode,airingAt} nodes, capped by the query).
+    airingSchedule: m.airingSchedule,
   } as Media
 }
 

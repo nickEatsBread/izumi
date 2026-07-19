@@ -1,8 +1,9 @@
 import { get } from 'svelte/store'
 import { anilist } from '$lib/anilist/client'
 import { gql } from '@urql/core'
-import { anilistToken, malToken } from './config'
+import { anilistToken, malToken, malUser, malClientId } from './config'
 import { malFetch } from './mal-auth'
+import { malHttpFetch } from './mal-http'
 import { recordProgress, localHistory } from '$lib/player/history'
 import {
   enqueue, markConfirmed, confirmedFloor, flushQueue, registerReplay, classifyStatus,
@@ -227,17 +228,42 @@ export async function getMalProgress(idMal?: number): Promise<{ progress: number
   catch { return null }
 }
 
+// One MAL animelist row (shared shape of the OAuth @me and public-username endpoints — MAL
+// returns identical JSON for both).
+interface MalListNode { node?: { id?: number }; list_status?: { num_episodes_watched?: number; updated_at?: string } }
+
+// Fetch a MAL anime list for `status`, most-recently-updated first. Prefers the signed-in
+// viewer (OAuth @me); falls back to the PUBLIC list of a read-only `malUser` username, which
+// MAL's official API serves with just the app's X-MAL-CLIENT-ID header (no token). Returns
+// null when neither is configured; throws on an HTTP error so callers can tell "offline/error"
+// from "genuinely empty".
+async function fetchMalListRaw(status: string, limit: number): Promise<MalListNode[] | null> {
+  const q = `animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`
+  if (get(malToken)) {
+    const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/${q}`)
+    if (!r) return null
+    if (!r.ok) throw new Error(`MyAnimeList list request failed (${r.status})`)
+    return ((await r.json()) as { data?: MalListNode[] }).data ?? []
+  }
+  const user = get(malUser)
+  if (user && malClientId) {
+    const r = await malHttpFetch(`https://api.myanimelist.net/v2/users/${encodeURIComponent(user)}/${q}`, {
+      headers: { 'X-MAL-CLIENT-ID': malClientId },
+    })
+    if (!r.ok) throw new Error(`MyAnimeList list request failed (${r.status})`)
+    return ((await r.json()) as { data?: MalListNode[] }).data ?? []
+  }
+  return null
+}
+
 // Fetch the viewer's MAL anime-list ids for a status (e.g. 'watching',
 // 'plan_to_watch'), most-recently-updated first, so the home rows can show the
-// MAL library for MAL-primary users. Returns [] if MAL isn't connected. Map these
+// MAL library for MAL-primary users. Returns [] if MAL isn't connected/set. Map these
 // ids to AniList media via MEDIA_BY_MAL_QUERY to render cards.
 export async function getMalAnimeIdsOrThrow(status: string, limit = 20): Promise<number[]> {
-  if (!get(malToken)) return []
-  const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`)
-  if (!r) return []
-  if (!r.ok) throw new Error(`MyAnimeList list request failed (${r.status})`)
-  const j = await r.json() as { data?: { node?: { id?: number } }[] }
-  return (j.data ?? []).map((d) => d.node?.id).filter((n): n is number => typeof n === 'number')
+  const data = await fetchMalListRaw(status, limit)
+  if (!data) return []
+  return data.map((d) => d.node?.id).filter((n): n is number => typeof n === 'number')
 }
 
 export async function getMalAnimeIds(status: string, limit = 20): Promise<number[]> {
@@ -255,12 +281,9 @@ export interface MalListEntry { idMal: number; progress: number; updatedAt: numb
 // from "genuinely empty list" (Continue Watching's no-clobber guard) can catch it. Returns [] only
 // when MAL isn't connected or the list is truly empty.
 export async function getMalListProgressOrThrow(status: string, limit = 20): Promise<MalListEntry[]> {
-  if (!get(malToken)) return []
-  const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`)
-  if (!r) return []
-  if (!r.ok) throw new Error(`MyAnimeList list request failed (${r.status})`)
-  const j = await r.json() as { data?: { node?: { id?: number }; list_status?: { num_episodes_watched?: number; updated_at?: string } }[] }
-  return (j.data ?? [])
+  const data = await fetchMalListRaw(status, limit)
+  if (!data) return []
+  return data
     .map((d) => ({
       idMal: d.node?.id,
       progress: d.list_status?.num_episodes_watched ?? 0,

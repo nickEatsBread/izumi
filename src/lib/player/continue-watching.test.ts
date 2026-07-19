@@ -54,6 +54,19 @@ describe('mergeInstant (instant paint)', () => {
     expect(out).toEqual([])
   })
 
+  it('caps aired count from the airing schedule (no phantom "one past the finale" row)', () => {
+    // AniList id 178445 shape: episodes + nextAiringEpisode both null; a 4-episode airing
+    // schedule (all aired) is the ONLY count signal. Watched all 4 -> caught up -> hidden.
+    const past = Math.floor(Date.now() / 1000) - 86400
+    const sched = { airingSchedule: { nodes: [1, 2, 3, 4].map((episode) => ({ episode, airingAt: past })) } }
+    const ova = (over = {}) => media(1, { episodes: undefined, nextAiringEpisode: null, status: 'RELEASING', ...sched, ...over })
+    expect(mergeInstant([{ media: ova(), progress: 4, updatedAt: 100, source: 'tracker' }], {}, {})).toEqual([])
+    // Watched 3 of 4 -> still one aired episode to resume.
+    const partial = mergeInstant([{ media: ova(), progress: 3, updatedAt: 100, source: 'tracker' }], {}, {})
+    expect(partial).toHaveLength(1)
+    expect(partial[0].progress).toBe(3)
+  })
+
   it('resumes an opened-but-unfinished episode via episode - 1', () => {
     // opened ep 5 (episode:5), completed count 2 -> progress = max(2, 4) = 4, resume lands on ep 5
     const out = mergeInstant([], { 1: hist(1, { episode: 5, progress: 2 }) }, {})

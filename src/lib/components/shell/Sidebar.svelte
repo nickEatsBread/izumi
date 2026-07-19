@@ -10,7 +10,7 @@
   import { page } from '$app/state'
   import { playing } from '$lib/player/session'
   import { inputType } from '$lib/nav'
-  import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar } from '$lib/trackers/config'
+  import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
@@ -20,7 +20,7 @@
     { href: '/app/downloads', icon: Download, label: 'Downloads', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
     { href: '/app/cloud', icon: Cloud, label: 'Cloud', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
   ]
-  const name = $derived($anilistUserName || $malUserName || $anilistUser)
+  const name = $derived($anilistUserName || $malUserName || $anilistUser || $malUser)
   const avatarUrl = $derived($anilistUserAvatar || $malUserAvatar)
   const initial = $derived((name || '').trim().charAt(0).toUpperCase())
 

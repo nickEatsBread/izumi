@@ -8,8 +8,10 @@
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
-  import { anilistUserName, malToken } from '$lib/trackers/config'
+  import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
   import { isMobile } from '$lib/platform'
+  import { offlineMode } from '$lib/stores/offline'
+  import DownloadedLibrary from '$lib/components/offline/DownloadedLibrary.svelte'
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META } from '$lib/settings/nav'
   import type { Media } from '$lib/anilist/types'
@@ -47,7 +49,11 @@
 
   // Re-subscribe whenever the hero store is recreated (on retry). The subscribe's
   // unsubscriber becomes the effect's teardown, so the old store is dropped first.
-  $effect(() => heroStore.subscribe((v) => (hero = v as HeroResult)))
+  // Skip the trending query entirely in offline mode (the offline branch never renders the hero).
+  $effect(() => {
+    if ($offlineMode) return
+    return heroStore.subscribe((v) => (hero = v as HeroResult))
+  })
 
   const heroMedias = $derived.by(() => {
     const all = hero.data?.Page.media ?? []
@@ -64,7 +70,41 @@
   }
 </script>
 
-{#if failed}
+{#if $isMobile}
+  <!-- Top app bar: brand mark + wordmark on the left, configured top icons on the right. In-flow
+       (NOT pinned) so it only shows at the very top and scrolls away with the page. Kept ABOVE the
+       offline/online split so the offline home shares the same chrome. -->
+  <!-- pt-3 only: <main> already adds env(safe-area-inset-top) on mobile, so re-adding it here
+       double-counted the status-bar inset and left a big black gap above the logo. -->
+  <div class="flex items-center justify-between px-4 pb-3 pt-3">
+    <a href="/app/home" aria-label="Home" class="flex items-center gap-2">
+      <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
+      <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="h-5" draggable="false" />
+    </a>
+    {#if topNav.length}
+      <div class="flex items-center gap-1">
+        {#each topNav as c (c.id)}
+          {@const meta = NAV_META[c.id]}
+          {@const Icon = meta.icon}
+          <a href={meta.href} data-focusable aria-label={meta.label} onclick={() => h.tap()}
+             class="grid size-9 place-items-center rounded-full text-foreground transition-colors active:bg-white/10">
+            <Icon size={22} />
+          </a>
+        {/each}
+      </div>
+    {/if}
+  </div>
+{/if}
+
+{#if $offlineMode}
+  <!-- Offline: local-first Continue Watching + the downloaded-series library. No network fired. -->
+  <div class="space-y-4 pb-16 pt-2">
+    {#key listUser}
+      <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
+    {/key}
+    <DownloadedLibrary />
+  </div>
+{:else if failed}
   <div class="grid min-h-[60vh] place-items-center p-8 text-center">
     <div class="max-w-md">
       <h2 class="mb-2 text-lg font-black">Couldn't reach AniList</h2>
@@ -78,30 +118,6 @@
     </div>
   </div>
 {:else}
-  {#if $isMobile}
-    <!-- Top app bar: brand mark + wordmark on the left, configured top icons on the right. In-flow
-         (NOT pinned) so it only shows at the very top and scrolls away with the page. -->
-    <!-- pt-3 only: <main> already adds env(safe-area-inset-top) on mobile, so re-adding it here
-         double-counted the status-bar inset and left a big black gap above the logo. -->
-    <div class="flex items-center justify-between px-4 pb-3 pt-3">
-      <a href="/app/home" aria-label="Home" class="flex items-center gap-2">
-        <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
-        <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="h-5" draggable="false" />
-      </a>
-      {#if topNav.length}
-        <div class="flex items-center gap-1">
-          {#each topNav as c (c.id)}
-            {@const meta = NAV_META[c.id]}
-            {@const Icon = meta.icon}
-            <a href={meta.href} data-focusable aria-label={meta.label} onclick={() => h.tap()}
-               class="grid size-9 place-items-center rounded-full text-foreground transition-colors active:bg-white/10">
-              <Icon size={22} />
-            </a>
-          {/each}
-        </div>
-      {/if}
-    </div>
-  {/if}
   <div class="pb-16">
     {#if heroMedias.length}
       <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} oninfo={(m) => goto(`/app/anime/${m.id}`)} />
@@ -114,7 +130,7 @@
            one carousel of landscape resume cards. Always rendered (auto-hides when empty) so it
            works from local history alone, with no tracker linked. -->
       {#key listUser}
-        <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken} />
+        <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
       {/key}
       {#if listUser}
         {#key listUser}
@@ -123,7 +139,7 @@
       {/if}
       <!-- MAL-sourced "plan to watch" for MAL-primary users (auto-hides when empty, so
            it doesn't duplicate the AniList row for single-tracker users). -->
-      {#if $malToken}
+      {#if $malToken || $malUser}
         <MalListRow title="Your List" status="plan_to_watch" />
       {/if}
 
