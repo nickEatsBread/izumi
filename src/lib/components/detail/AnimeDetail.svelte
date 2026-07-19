@@ -6,7 +6,7 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { title, cover, format, status, season, ratingBg, resumeEp, totalEpisodes } from '$lib/anilist/media'
+  import { banner, title, cover, format, status, season, ratingBg, resumeEp, totalEpisodes } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { resumeEpisode, type PlayState } from '$lib/stremio/play'
   import { focusOnMount } from '$lib/nav'
@@ -22,6 +22,9 @@
   import ExternalLink from 'lucide-svelte/icons/external-link'
   import Play from 'lucide-svelte/icons/play'
   import Check from 'lucide-svelte/icons/check'
+  import MoreHorizontal from 'lucide-svelte/icons/more-horizontal'
+  import { isMobile } from '$lib/platform'
+  import * as h from '$lib/haptics'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -59,6 +62,8 @@
   let bookmarkBusy = $state(false)
   let copied = $state(false)
   let showTrailer = $state(false)
+  let showMore = $state(false)      // mobile action overflow menu
+  let descExpanded = $state(false)  // mobile description clamp toggle
   // User rating (canonical 0-100). Optimistic override wins while set; else the AniList list-entry
   // score, else the MAL score (0-10 → 0-100). Displayed as 5 stars (each = 20 / MAL 2 points).
   let scoreOpt = $state<number | undefined>(undefined)
@@ -115,6 +120,135 @@
   {@const m = media}
   {@const isFav = fav ?? m.isFavourite ?? false}
   {@const trackerConnected = !!($anilistToken || $malToken)}
+  {#if $isMobile}
+    <!-- Mobile: poster-forward header. Own short blurred backdrop (not the 42vh Hero), a portrait
+         cover focal, clamped title, pill chips + score, expandable description, a full-width primary
+         CTA, and a compact action row (4 icons + overflow menu). -->
+    <div class="relative px-4 pb-6">
+      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-56 overflow-hidden">
+        <img src={banner(m)} alt="" class="h-full w-screen -translate-x-4 object-cover opacity-40 blur-sm" />
+        <div class="absolute inset-0 bg-gradient-to-b from-background/40 via-background/80 to-background"></div>
+      </div>
+
+      <div class="flex gap-4 pt-6">
+        <img src={cover(m)} alt="" class="aspect-[2/3] w-32 shrink-0 rounded-lg object-cover shadow-lg" />
+        <div class="min-w-0 flex-1 self-end">
+          {#if m.title.native || m.title.romaji}
+            <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
+          {/if}
+          <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
+          <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
+            {#if format(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{format(m)}</span>{/if}
+            {#if status(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{status(m)}</span>{/if}
+            {#if m.averageScore}<span class="rounded-full px-2 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
+        <span class="rounded-full bg-secondary px-2 py-0.5">{m.mediaListEntry?.progress ?? 0}/{epsTotal(m) || '?'} Episodes</span>
+        {#if season(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{season(m)}</span>{/if}
+      </div>
+
+      {#if m.description}
+        <button type="button" onclick={() => (descExpanded = !descExpanded)}
+                class="mt-3 block w-full text-left text-sm text-muted-foreground {descExpanded ? '' : 'line-clamp-3'}">
+          {stripHtml(m.description)}
+        </button>
+      {/if}
+
+      <!-- Primary CTA -->
+      <button data-focusable use:focusOnMount
+              onclick={() => { h.impact('medium'); resumeEpisode(m, resumeEp(m), (s) => (heroPlay = s)) }}
+              class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
+        <Play size={18} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${resumeEp(m)}` : 'Play'}
+      </button>
+
+      <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
+      <div class="relative mt-2 flex items-center gap-2">
+        <button data-focusable onclick={() => { h.tap(); onBookmark(m) }} disabled={!trackerConnected || bookmarkBusy || bookmarked}
+                aria-label="Add to Planning"
+                class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary disabled:opacity-40">
+          {#if bookmarked}<Check size={18} class="text-theme" />{:else}<BookmarkPlus size={18} />{/if}
+        </button>
+        <button data-focusable onclick={() => { h.tap(); onFavourite(m) }} disabled={!$anilistToken || favBusy}
+                aria-label="Favourite" aria-pressed={isFav}
+                class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary disabled:opacity-40">
+          <Heart size={18} class={isFav ? 'fill-theme text-theme' : ''} />
+        </button>
+        <button data-focusable onclick={() => { h.tap(); onShare(m) }} aria-label="Copy link"
+                class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
+          {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
+        </button>
+        {#if m.trailer?.id}
+          <button data-focusable onclick={() => { h.tap(); showTrailer = true }} aria-label="Trailer"
+                  class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
+            <Clapperboard size={18} />
+          </button>
+        {/if}
+        <button data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
+                class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
+          <MoreHorizontal size={18} />
+        </button>
+
+        {#if showMore}
+          <div class="absolute bottom-full right-0 z-20 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
+            {#if trackerConnected}
+              <div class="px-2 pb-1 text-[0.65rem] uppercase text-muted-foreground">Your rating</div>
+              <div class="mb-2 flex items-center justify-between px-1" role="group" aria-label="Your rating">
+                {#each [1, 2, 3, 4, 5] as n (n)}
+                  <button data-focusable onclick={() => { h.select(); onScore(m, userScore === n * 20 ? 0 : n * 20) }} disabled={scoreBusy}
+                          aria-label={`Rate ${n} star${n > 1 ? 's' : ''}`} class="grid h-9 w-9 place-items-center rounded-md hover:bg-accent">
+                    <Star size={20} class={n <= filledStars ? 'fill-theme text-theme' : 'text-muted-foreground'} />
+                  </button>
+                {/each}
+              </div>
+            {/if}
+            <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://anilist.co/anime/${m.id}`) }}
+                    class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+              <ExternalLink size={15} /> Open on AniList
+            </button>
+            {#if m.idMal}
+              <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://myanimelist.net/anime/${m.idMal}`) }}
+                      class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+                <ExternalLink size={15} /> Open on MyAnimeList
+              </button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      {#if heroPlay.status === 'resolving'}
+        <p class="mt-3 text-sm text-muted-foreground">Resolving stream…</p>
+      {:else if heroPlay.status === 'error'}
+        <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
+      {/if}
+
+      <div class="mt-6">
+        <Tabs tabs={['Episodes', 'Relations', 'Details']} bind:active />
+        {#if active === 'Episodes'}
+          <EpisodeList media={m} />
+        {:else if active === 'Relations'}
+          {#if m.relations?.edges?.length}
+            <div class="mt-3 flex flex-wrap gap-3">
+              {#each m.relations.edges as e (e.node.id)}
+                <div class="w-28"><SmallCard media={e.node} /></div>
+              {/each}
+            </div>
+          {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
+        {:else}
+          <div class="mt-3 space-y-4">
+            {#if m.description}<p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>{/if}
+            <dl class="grid grid-cols-1 gap-2 text-sm">
+              {#if m.studios?.nodes?.length}<div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{m.studios.nodes.map((s) => s.name).join(', ')}</dd></div>{/if}
+              {#if fmtDate(m.startDate)}<div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>{/if}
+              {#if m.synonyms?.length}<div><dt class="font-bold">Synonyms</dt><dd class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>{/if}
+            </dl>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {:else}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
   <Hero medias={[m]} showOverlay={false} />
   <div class="relative -mt-[20vh] px-4 pb-16 sm:px-8">
@@ -248,6 +382,7 @@
       </div>
     {/if}
   </div>
+  {/if}
 
   {#if showTrailer && m.trailer?.id}
     <div
