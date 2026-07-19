@@ -30,7 +30,7 @@
   import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
   import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
-  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded } from './online-subs'
+  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice } from './online-subs'
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
@@ -266,10 +266,11 @@
         token: get(openSubtitlesToken),
       })
       tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]
+      subtitleNotice.set('')
     }
     catch (e) {
       console.warn('add online subtitle failed', e)
-      playerNotice.set('Subtitle download failed')
+      subtitleNotice.set(subtitleErrorNotice(c.provider, e))
     }
     finally { downloadingKey = null }
   }

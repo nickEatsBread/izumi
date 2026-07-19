@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded } from './online-subs'
+import { subtitleErrorNotice } from './online-subs'
 import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
 
 describe('providerBadge', () => {
@@ -43,5 +44,16 @@ describe('isCandidateLoaded', () => {
   })
   it('false otherwise', () => {
     expect(isCandidateLoaded(c, ['fr · OTHER'])).toBe(false)
+  })
+})
+
+describe('subtitleErrorNotice', () => {
+  it('surfaces the quota message for an OpenSubtitles 401 quota body', () => {
+    const n = subtitleErrorNotice('opensubtitles', 'opensubtitles /download 401: You have downloaded your allowed 20 subtitles for 24 hours.')
+    expect(n).toContain('limit reached')
+    expect(n).toContain('Settings → Subtitles')
+  })
+  it('falls back to a generic notice for a network error', () => {
+    expect(subtitleErrorNotice('subdl', new Error('zip fetch failed'))).toBe('Subtitle download failed')
   })
 })
