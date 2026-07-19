@@ -15,6 +15,7 @@
   import History from 'lucide-svelte/icons/history'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
+  import PanelBottom from 'lucide-svelte/icons/panel-bottom'
 
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
@@ -29,6 +30,7 @@
     ] },
     { label: 'App', items: [
       { title: 'Interface', href: '/app/settings/interface', icon: LayoutGrid },
+      { title: 'Navigation', href: '/app/settings/navigation', icon: PanelBottom },
       { title: 'History', href: '/app/settings/history', icon: History },
       { title: 'Device sync', href: '/app/settings/sync', icon: RefreshCw },
       { title: 'Accounts', href: '/app/settings/accounts', icon: User },

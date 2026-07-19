@@ -18,6 +18,8 @@
   import { localHistory } from '$lib/player/history'
   import { gameMode } from '$lib/player/session'
   import { scheduleLayout, scheduleStickyHeader } from '$lib/settings/ui'
+  import { isMobile } from '$lib/platform'
+  import * as h from '$lib/haptics'
   import type { Media } from '$lib/anilist/types'
   import DayColumn from './DayColumn.svelte'
   import AgendaWeek from './AgendaWeek.svelte'
@@ -143,7 +145,7 @@
 {#snippet dayView(showHint: boolean)}
   <div class="mb-4 flex gap-1.5">
     {#each SHORT as d, i (d)}
-      <button data-focusable onclick={() => (selected = i)}
+      <button data-focusable onclick={() => { if (i !== selected) h.tap(); selected = i }}
         class="relative flex-1 rounded-lg py-2 text-center text-sm font-black transition-colors
                {i === selected ? 'bg-primary text-primary-foreground' : 'bg-secondary hover:bg-accent'}">
         {d}
@@ -194,7 +196,7 @@
     {@render mineEmpty()}
   {:else if gm}
     {@render dayView(true)}
-  {:else if layout === 'days'}
+  {:else if layout === 'days' || $isMobile}
     {@render dayView(false)}
   {:else}
     <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} headerOffset={$scheduleStickyHeader ? headerH : 0} />
