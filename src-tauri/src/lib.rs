@@ -858,6 +858,35 @@ async fn opensubtitles_login(
     parse_opensubtitles_login(&text, now_ms)
 }
 
+/// Pick the first subtitle entry from a SubDL ZIP archive and return its raw (still-encoded) bytes.
+/// Prefers the first `.srt`; falls back to the first `.ass`/`.ssa`. SubDL always returns a ZIP (a
+/// non-`unpack` response is never a bare `.srt`). Two-pass so a later `.srt` beats an earlier `.ass`.
+#[cfg(not(target_os = "android"))]
+fn unzip_first_subtitle(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).map_err(|e| e.to_string())?;
+    let mut srt_idx: Option<usize> = None;
+    let mut ass_idx: Option<usize> = None;
+    for i in 0..zip.len() {
+        let name = zip
+            .by_index(i)
+            .map_err(|e| e.to_string())?
+            .name()
+            .to_ascii_lowercase();
+        if name.ends_with(".srt") {
+            if srt_idx.is_none() {
+                srt_idx = Some(i);
+            }
+        } else if (name.ends_with(".ass") || name.ends_with(".ssa")) && ass_idx.is_none() {
+            ass_idx = Some(i);
+        }
+    }
+    let idx = srt_idx.or(ass_idx).ok_or("no subtitle entry in archive")?;
+    let mut entry = zip.by_index(idx).map_err(|e| e.to_string())?;
+    let mut buf = Vec::with_capacity(entry.size() as usize);
+    std::io::Read::read_to_end(&mut entry, &mut buf).map_err(|e| e.to_string())?;
+    Ok(buf)
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -2435,6 +2464,53 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+#[cfg(not(target_os = "android"))]
+mod subtitle_zip_tests {
+    use super::*;
+
+    fn make_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        use std::io::Write;
+        let mut buf = Vec::new();
+        {
+            let mut w = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            for (name, data) in entries {
+                w.start_file(*name, opts).unwrap();
+                w.write_all(data).unwrap();
+            }
+            w.finish().unwrap();
+        }
+        buf
+    }
+
+    #[test]
+    fn picks_first_srt() {
+        let zip = make_zip(&[
+            ("readme.txt", b"hi"),
+            ("Subs/movie.ass", b"[Script Info]"),
+            ("Subs/movie.srt", b"1\n00:00:01,000 --> 00:00:02,000\nHello\n"),
+        ]);
+        assert_eq!(
+            unzip_first_subtitle(&zip).unwrap(),
+            b"1\n00:00:01,000 --> 00:00:02,000\nHello\n"
+        );
+    }
+
+    #[test]
+    fn falls_back_to_ass() {
+        let zip = make_zip(&[("a.txt", b"x"), ("b.ass", b"[Events]")]);
+        assert_eq!(unzip_first_subtitle(&zip).unwrap(), b"[Events]");
+    }
+
+    #[test]
+    fn errors_when_no_subtitle() {
+        let zip = make_zip(&[("a.txt", b"x"), ("b.nfo", b"y")]);
+        assert!(unzip_first_subtitle(&zip).is_err());
+    }
 }
 
 #[cfg(test)]
