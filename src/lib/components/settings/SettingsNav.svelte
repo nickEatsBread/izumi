@@ -19,7 +19,7 @@
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
     { label: 'Playback', items: [
-      { title: 'Player', href: '/app/settings', icon: Play },
+      { title: 'Player', href: '/app/settings/player', icon: Play },
       { title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions },
     ] },
     { label: 'Content', items: [
@@ -40,8 +40,7 @@
     ] },
   ]
   const flat = groups.flatMap((g) => g.items) // desktop rail order
-  const active = (href: string) =>
-    href === '/app/settings' ? $page.url.pathname === href : $page.url.pathname.startsWith(href)
+  const active = (href: string) => $page.url.pathname === href || $page.url.pathname.startsWith(href + '/')
 </script>
 
 {#if $isMobile}
