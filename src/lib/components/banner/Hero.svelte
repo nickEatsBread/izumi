@@ -4,6 +4,7 @@
   import Play from 'lucide-svelte/icons/play'
   import Info from 'lucide-svelte/icons/info'
   import Heart from 'lucide-svelte/icons/heart'
+  import * as h from '$lib/haptics'
 
   // Bottom-left content column + clean linear scrims, polished with:
   // coverImage.color accent, rating-tinted score, blur-in image, rich badge row,
@@ -30,6 +31,19 @@
   const DURATION = 15000 // a 15s cadence
 
   function go(n: number) { i = n; progress = 0; start = null }
+
+  // Swipe left/right to change the featured slide (only when there's more than one). `touch-pan-y`
+  // on the container lets the browser own vertical scroll while horizontal swipes reach here.
+  let touchX = 0
+  function onTouchStart(e: TouchEvent) { touchX = e.touches[0].clientX }
+  function onTouchEnd(e: TouchEvent) {
+    const n = medias.length
+    if (n < 2) return
+    const dx = e.changedTouches[0].clientX - touchX
+    if (Math.abs(dx) < 40) return
+    h.tap()
+    go((i + (dx < 0 ? 1 : -1) + n) % n)
+  }
 
   // rAF auto-advance + scroll fade, only when there's an overlay (Home).
   $effect(() => {
@@ -68,6 +82,10 @@
   <div
     class="relative mb-6 h-[40vh] touch-pan-y transition-opacity duration-500 sm:h-[55vh] {scrolled ? 'opacity-40' : 'opacity-100'}"
     style="--accent:{accent}"
+    role="group"
+    aria-label="Featured"
+    ontouchstart={onTouchStart}
+    ontouchend={onTouchEnd}
   >
     <!-- Full-bleed banner: on desktop it breaks out of main's left margin (behind the
          sidebar) and up under the frameless titlebar. On mobile there's no sidebar/titlebar,
