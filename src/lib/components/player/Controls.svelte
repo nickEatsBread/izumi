@@ -18,13 +18,19 @@
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import Check from 'lucide-svelte/icons/check'
+  import Languages from 'lucide-svelte/icons/languages'
+  import Search from 'lucide-svelte/icons/search'
+  import RefreshCw from 'lucide-svelte/icons/refresh-cw'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates } from '$lib/player/session'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { commentsEnabled, discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop } from '$lib/settings/ui'
-  import { playPrev, playNext, playEpisode } from '$lib/stremio/play'
+  import { videoFit, playerTitleTop, subDlApiKey, openSubtitlesToken } from '$lib/settings/ui'
+  import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
+  import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
+  import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
+  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded } from './online-subs'
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
@@ -153,7 +159,7 @@
   // category's list) with a Miller-column slide. `menuLevel`/`detailCat` drive the slide;
   // `rootH`/`detailH` are the measured column heights so the panel morphs to fit.
   let menuLevel = $state<'root' | 'detail'>('root')
-  let detailCat = $state<'audio' | 'subs' | 'dev'>('audio')
+  let detailCat = $state<'audio' | 'subs' | 'dev' | 'online'>('audio')
 
   // Dev-only tools, reached through the track menu (Subtitles/Audio) as a third "Dev tools"
   // category. import.meta.env.DEV is compiled to a literal false in production, so both the row
@@ -210,7 +216,7 @@
   // `curLabel` is what shows on the collapsed root row for each category (the active
   // track, or "Off"). `pickLeaf` sets the track then slides back to the root.
   const detailItems = $derived(detailCat === 'audio' ? audios : subs)
-  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'dev' ? 'Dev tools' : 'Subtitles')
+  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : 'Subtitles')
   const leafKind = $derived<'aid' | 'sid'>(detailCat === 'audio' ? 'aid' : 'sid')
   const detailOff = $derived(!detailItems.some((t) => t.selected)) // nothing selected ⇒ "Off" is active
   const curLabel = (group: Track[]) => {
@@ -219,7 +225,7 @@
   }
   const curAudioLabel = $derived(curLabel(audios))
   const curSubLabel = $derived(curLabel(subs))
-  function openDetail(cat: 'audio' | 'subs' | 'dev') {
+  function openDetail(cat: 'audio' | 'subs' | 'dev' | 'online') {
     detailCat = cat
     menuLevel = 'detail'
   }
@@ -228,6 +234,44 @@
     const type = detailCat === 'audio' ? 'audio' : 'sub'
     cmd('set', [leafKind, 'no'])
     tracks = tracks.map((t) => (t.type === type ? { ...t, selected: false } : t))
+  }
+
+  // Online subtitles (OpenSubtitles / SubDL): candidates are searched on play and stashed in
+  // `onlineSubCandidates`; picking a row hands the byte work to Rust, which downloads + normalizes
+  // + live `sub-add`s it, after which we re-read the track-list so the new sub shows selected.
+  let subQuery = $state('')
+  let downloadingKey = $state<string | null>(null)
+  // Titles of the currently-selected sub tracks — a candidate shows its Check when a selected
+  // track carries the exact title we passed to `sub-add`.
+  const loadedSubTitles = $derived(subs.filter((s) => s.selected).map((s) => s.title ?? ''))
+  function reSearchOnline() { void searchOnlineSubtitles() }
+  function onSubQueryKey(e: KeyboardEvent) { if (e.key === 'Enter') { e.preventDefault(); reSearchOnline() } }
+  // The manual box filters the already-fetched candidates client-side (release/lang substring); the
+  // refresh button / Enter re-fetches from the providers (id-based) for the current episode.
+  const filteredCandidates = $derived(
+    subQuery.trim()
+      ? $onlineSubCandidates.items.filter((c) => `${c.lang ?? ''} ${c.release ?? ''}`.toLowerCase().includes(subQuery.trim().toLowerCase()))
+      : $onlineSubCandidates.items,
+  )
+  async function addOnlineSub(c: SubtitleCandidate) {
+    downloadingKey = candidateKey(c)
+    try {
+      await invoke('player_add_subtitle', {
+        provider: c.provider,
+        url: c.download?.zipUrl,
+        fileId: c.download?.fileId,
+        lang: c.lang ?? 'und',
+        title: candidateTitle(c),
+        apiKey: c.provider === 'subdl' ? get(subDlApiKey) : OPEN_SUBS_API_KEY,
+        token: get(openSubtitlesToken),
+      })
+      tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]
+    }
+    catch (e) {
+      console.warn('add online subtitle failed', e)
+      playerNotice.set('Subtitle download failed')
+    }
+    finally { downloadingKey = null }
   }
 
   // Drive the Game-mode snapshot overlay to its fast (60fps) cadence while a popover is open so
@@ -431,6 +475,14 @@
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
+                      <!-- Online subtitles (OpenSubtitles / SubDL): searched on play, picked here. -->
+                      <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('online')}>
+                        <span class="flex min-w-0 items-center gap-2">
+                          <Languages size={15} class="shrink-0 text-white/45" />
+                          <span class="block truncate text-white/80">Online subtitles</span>
+                        </span>
+                        <ChevronRight size={18} class="shrink-0 text-white/40" />
+                      </button>
                       {#if dev}
                         <!-- Dev-only (tree-shaken from release): tools like Copy URL. -->
                         <button data-focusable class="mt-1 flex w-full items-center justify-between gap-2 rounded-lg border-t border-white/10 px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('dev')}>
@@ -444,35 +496,81 @@
                     </div>
                     <!-- DETAIL: the chosen category's list -->
                     <div class="w-1/2 p-2" bind:clientHeight={detailH}>
-                      <button data-focusable class="mb-1 flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (menuLevel = 'root')}>
-                        <ChevronLeft size={18} class="shrink-0 text-white/60" />
-                        {detailTitle}
-                      </button>
-                      <div class="max-h-64 overflow-y-auto">
-                        {#if detailCat === 'dev'}
-                          {#each devTools as tool (tool.label)}
-                            <button data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={tool.run}>
-                              <span class="truncate">{tool.label}</span>
-                            </button>
-                          {/each}
-                        {:else}
-                          <!-- "Off" leaf (disable this category) -->
-                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={pickOff}>
-                            <span class="truncate text-white/70">Off</span>
-                            {#if detailOff}<Check size={18} class="shrink-0 text-primary" />{/if}
+                      <div class="mb-1 flex items-center gap-1">
+                        <button data-focusable class="flex flex-1 items-center gap-1 rounded-lg px-2 py-1.5 text-left font-semibold transition hover:bg-white/10" onclick={() => (menuLevel = 'root')}>
+                          <ChevronLeft size={18} class="shrink-0 text-white/60" />
+                          {detailTitle}
+                        </button>
+                        {#if detailCat === 'online'}
+                          <button data-focusable onclick={reSearchOnline} aria-label="Search again"
+                                  class="grid size-8 shrink-0 place-items-center rounded-lg text-white/60 transition hover:bg-white/10">
+                            <RefreshCw size={16} class={$onlineSubCandidates.status === 'searching' ? 'animate-spin' : ''} />
                           </button>
-                          {#if detailItems.length}
-                            {#each detailItems as t (t.id)}
-                              <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => pick(leafKind, t.id)}>
-                                <span class="truncate">{label(t, detailItems)}</span>
-                                {#if t.selected}<Check size={18} class="shrink-0 text-primary" />{/if}
+                        {/if}
+                      </div>
+                      {#if detailCat === 'online'}
+                        <label class="mb-2 flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5">
+                          <Search size={15} class="shrink-0 text-white/50" />
+                          <input data-focusable bind:value={subQuery} onkeydown={onSubQueryKey} placeholder="Search subtitles…" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+                        </label>
+                        {#if $subtitleNotice}
+                          <p class="mb-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-white/55">{$subtitleNotice}</p>
+                        {/if}
+                        <div class="max-h-56 overflow-y-auto">
+                          {#if $onlineSubCandidates.status === 'searching'}
+                            <div class="flex items-center gap-2 px-3 py-2 text-white/60">
+                              <span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>
+                              Searching…
+                            </div>
+                          {:else if filteredCandidates.length}
+                            {#each filteredCandidates as c (candidateKey(c))}
+                              <button data-focusable disabled={downloadingKey === candidateKey(c)} onclick={() => addOnlineSub(c)}
+                                      class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10 disabled:opacity-50">
+                                <span class="min-w-0">
+                                  <span class="flex items-center gap-1.5">
+                                    <span class="truncate font-bold">{c.lang ?? 'und'}</span>
+                                    <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{providerBadge(c.provider)}</span>
+                                  </span>
+                                  {#if c.release}<span class="block truncate text-xs text-white/45">{c.release}</span>{/if}
+                                </span>
+                                {#if downloadingKey === candidateKey(c)}
+                                  <span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>
+                                {:else if isCandidateLoaded(c, loadedSubTitles)}
+                                  <Check size={18} class="shrink-0 text-primary" />
+                                {/if}
                               </button>
                             {/each}
                           {:else}
-                            <p class="px-3 py-2 text-white/40">No {detailTitle.toLowerCase()} tracks</p>
+                            <p class="px-3 py-2 text-white/40">No online subtitles found</p>
                           {/if}
-                        {/if}
-                      </div>
+                        </div>
+                      {:else}
+                        <div class="max-h-64 overflow-y-auto">
+                          {#if detailCat === 'dev'}
+                            {#each devTools as tool (tool.label)}
+                              <button data-focusable class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={tool.run}>
+                                <span class="truncate">{tool.label}</span>
+                              </button>
+                            {/each}
+                          {:else}
+                            <!-- "Off" leaf (disable this category) -->
+                            <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={pickOff}>
+                              <span class="truncate text-white/70">Off</span>
+                              {#if detailOff}<Check size={18} class="shrink-0 text-primary" />{/if}
+                            </button>
+                            {#if detailItems.length}
+                              {#each detailItems as t (t.id)}
+                                <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => pick(leafKind, t.id)}>
+                                  <span class="truncate">{label(t, detailItems)}</span>
+                                  {#if t.selected}<Check size={18} class="shrink-0 text-primary" />{/if}
+                                </button>
+                              {/each}
+                            {:else}
+                              <p class="px-3 py-2 text-white/40">No {detailTitle.toLowerCase()} tracks</p>
+                            {/if}
+                          {/if}
+                        </div>
+                      {/if}
                     </div>
                   </div>
                 </div>
