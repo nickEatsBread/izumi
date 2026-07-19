@@ -112,7 +112,7 @@
             <input type="checkbox" bind:checked={osStay} data-focusable class="mt-0.5" />
             <span>
               <span class="font-bold">Stay signed in</span>
-              <span class="block text-xs text-muted-foreground">Stores your password locally so izumi can renew the session without asking again.</span>
+              <span class="block text-xs text-muted-foreground">Stores your sign-in locally so it's reused next launch. You may need to sign in again when it expires.</span>
             </span>
           </label>
           <button onclick={connectOpenSubtitles} data-focusable disabled={osBusy} class="self-start rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">

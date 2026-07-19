@@ -2,12 +2,12 @@
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen, onlineSubCandidates, playerNotice } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { searchOnlineSubtitles } from '$lib/stremio/play'
   import { subDlApiKey, openSubtitlesToken } from '$lib/settings/ui'
   import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
-  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded } from './online-subs'
+  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice } from './online-subs'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
@@ -136,10 +136,11 @@
         token: get(openSubtitlesToken),
       })
       tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]
+      subtitleNotice.set('')
     }
     catch (e) {
       console.warn('add online subtitle failed', e)
-      playerNotice.set('Subtitle download failed')
+      subtitleNotice.set(subtitleErrorNotice(c.provider, e))
     }
   }
   function apply(leaf: Leaf) {

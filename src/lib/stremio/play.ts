@@ -22,7 +22,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching, onlineSubCandidates } from '$lib/player/session'
+import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
@@ -30,13 +30,23 @@ import {
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
-import { title, cover } from '$lib/anilist/media'
+import { title, cover, airedCount, totalEpisodes } from '$lib/anilist/media'
 import { isAndroid } from '$lib/platform'
 import { playViaIntent } from '$lib/player/android-playback'
 import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
+
+// Finite aired-episode count for player bounds (auto-advance / prefetch) + the in-player Next
+// button gate. airedCount() consults the airing schedule — many OVAs/ONAs/adult titles have
+// episodes=null AND nextAiringEpisode=null on AniList yet a full schedule (e.g. id 178445) —
+// and collapses its "unknown" Infinity back to the AniList scalar (0 when absent) so a bound
+// like `next <= airedTotal` and `episode < airedTotal` stay sane instead of always-true.
+const airedTotalOf = (media: Media): number => {
+  const a = airedCount(media)
+  return Number.isFinite(a) ? a : (media.episodes ?? 0)
+}
 
 // Filename of the currently-playing stream, captured for on-demand subtitle re-search.
 let lastSubFilename: string | undefined
@@ -46,6 +56,7 @@ let lastSubFilename: string | undefined
  *  optional `query` is reserved for a future provider-side freetext search; v1 ignores it (the menu
  *  filters the fetched list client-side). */
 export async function searchOnlineSubtitles(_query?: string): Promise<void> {
+  subtitleNotice.set('')
   const np = get(nowPlayingMedia)
   if (!np) return
   onlineSubCandidates.update((s) => ({ status: 'searching', items: s.items }))
@@ -129,7 +140,7 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
       // implies auto-advance. Advance continues the same release seamlessly, else opens the picker.
       clearPosition(media.id, episode)
       if (!get(autoplayNext) && !get(bingePreload)) return
-      const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? 0)
+      const airedTotal = airedTotalOf(media)
       let next = episode + 1
       // Optionally skip past filler episodes (AnimeFillerList).
       if (get(skipFiller)) {
@@ -153,7 +164,7 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
   const onEnded = async () => {
     clearPosition(media.id, episode)
     if (!get(autoplayNext) && !get(bingePreload)) return
-    const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? 0)
+    const airedTotal = airedTotalOf(media)
     let next = episode + 1
     if (get(skipFiller)) {
       const filler = await fillerEpisodes(media.id)
@@ -238,12 +249,12 @@ function refineStreams(media: Media, raw: Stream[]): Stream[] {
   // "One Piece - 001", never scene "S01E01" — so any SxxExx file is a different
   // production (the live action / a remake). airedTotal covers ongoing shows whose
   // media.episodes is still null.
-  const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? 0)
-  const absoluteNumbered = (media.episodes ?? airedTotal) > 60
+  const totalEps = totalEpisodes(media)
+  const absoluteNumbered = totalEps > 60
   // A MULTI-EPISODE SERIES (not a movie/single-ep OVA): a standalone-movie file (no episode/batch
   // marker) is a different production sharing the id — e.g. the 1995 GitS film / GitS 2: Innocence
   // under the 2026 series. Drop those; keep every S01E01 + season pack. Not applied to movies.
-  const isSeries = media.format !== 'MOVIE' && (media.episodes ?? airedTotal) > 1
+  const isSeries = media.format !== 'MOVIE' && totalEps > 1
   // Direct streams and id-VERIFIED extension results skip the release-NAME heuristics: a source
   // that matched this exact episode's production id (accuracy 'high') outranks any title parse —
   // e.g. a CJK-titled release carries zero romaji/english tokens and relevant() would drop it.
@@ -360,8 +371,7 @@ async function extToStreams(
       // Airing shows often have episodes=null on AniList; derive the aired count like the
       // reference runtime so sources' "is this episodic" gates still work mid-season.
       episode,
-      episodeCount: media.episodes
-        ?? (media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : undefined),
+      episodeCount: totalEpisodes(media) || undefined,
       // Quality is a PREFERENCE, not a source-side filter: the SDK's `resolution` makes sources
       // hard-EXCLUDE every other tier, so a 4K preference returned zero results for 1080p-only
       // shows (i.e. nearly all anime — the reference client sidesteps this by not offering a 4K
@@ -439,7 +449,7 @@ let prefetching = false
  *  proactively starts a debrid download). */
 async function prefetchNext(media: Media, episode: number) {
   if (!get(bingePreload)) return
-  const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? 0)
+  const airedTotal = airedTotalOf(media)
   const next = episode + 1
   if (next > airedTotal || prefetching) return
   if (prefetched?.mediaId === media.id && prefetched.episode === next) return
@@ -753,6 +763,8 @@ export async function playStream(media: Media, episode: number | undefined, stre
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
   lastSubFilename = stream.behaviorHints?.filename
+  onlineSubCandidates.set({ status: 'idle', items: [] })
+  subtitleNotice.set('')
   // Fetch external subtitles from any subtitle-capable addon (OpenSubtitles etc) CONCURRENTLY with the
   // slow source resolve below, so they're ready by embed time without adding latency. Skipped for the
   // external/Android players (they own subtitle handling). Best-effort — [] on any failure.
@@ -825,8 +837,11 @@ export async function playStream(media: Media, episode: number | undefined, stre
     // Resume from the last saved position for this exact episode, if any.
     const startSeconds = episode != null ? getPosition(media.id, episode) : 0
     const label = episode != null ? `${title(media)} — Episode ${episode}` : title(media)
-    const airedTotal = media.nextAiringEpisode?.episode ? media.nextAiringEpisode.episode - 1 : (media.episodes ?? null)
-    const total = media.episodes ?? airedTotal
+    // Schedule-aware so the Next button + "Ep X / N" work on airing-schedule-only titles
+    // (episodes/nextAiringEpisode both null on AniList). null when genuinely unknown, so the
+    // Next gate (`airedTotal != null && episode < airedTotal`) stays hidden rather than wrong.
+    const airedTotal = airedTotalOf(media) || null
+    const total = totalEpisodes(media) || airedTotal
     nowPlaying.set({
       title: label, animeTitle: title(media), id: media.id, malId: media.idMal ?? null,
       episode: episode ?? null, total, airedTotal,
