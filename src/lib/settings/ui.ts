@@ -67,6 +67,10 @@ export const seekDuration = persisted<number>('player-seek-seconds', 10)
 /** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
  *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
+/** Keep the screen awake (no dim/sleep) while a video is playing — fixes the Steam Deck
+ *  turning the screen off mid-episode. Released when paused / stopped, so battery-saver still
+ *  kicks in when you're not watching. Default on. */
+export const keepAwakeWhilePlaying = persisted<boolean>('player-keep-awake', true)
 /** Player demuxer read-ahead cache in MiB — the main tunable playback RAM cost. Presets:
  *  Low 32 / Balanced 128 / High 256; any value is allowed (Custom); CACHE_UNCAPPED = no ceiling.
  *  The stored value is a BASELINE that auto-scales up with the file's bitrate (see playerCacheBytes)

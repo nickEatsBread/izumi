@@ -2,7 +2,7 @@
   import {
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
-    scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED,
+    scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
   } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
@@ -78,6 +78,7 @@
   {:else}
   <div class="max-w-2xl space-y-3">
     <Toggle label="Auto-play next episode" desc="Play the next episode automatically when one finishes." value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />
+    <Toggle label="Keep screen awake while playing" desc="Stop the screen dimming or sleeping during playback (fixes the Steam Deck screen turning off mid-episode). Releases when paused, so battery-saver still works when you're not watching." value={$keepAwakeWhilePlaying} onToggle={() => ($keepAwakeWhilePlaying = !$keepAwakeWhilePlaying)} />
     <Toggle label="Binge next episode (preload)" desc="Keep the same release across episodes and pre-resolve + warm-buffer the next one near the end, so Next / auto-play starts instantly." value={$bingePreload} onToggle={() => ($bingePreload = !$bingePreload)} />
     <Toggle label="Auto-skip openings & endings" desc="Skip OP/ED/recap segments automatically (AniSkip). Off shows a manual Skip button." value={$autoSkip} onToggle={() => ($autoSkip = !$autoSkip)} />
     <Toggle label="Skip filler episodes" desc="Auto next-episode jumps past filler (AnimeFillerList). Filler is always marked in the episode list." value={$skipFiller} onToggle={() => ($skipFiller = !$skipFiller)} />

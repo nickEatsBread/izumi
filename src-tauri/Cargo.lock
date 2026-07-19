@@ -3174,6 +3174,7 @@ dependencies = [
  "url",
  "wayland-client",
  "wayland-egl",
+ "wayland-protocols",
  "wayland-protocols-wlr",
  "webkit2gtk",
  "webview2-com",
