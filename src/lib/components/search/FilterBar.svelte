@@ -41,7 +41,9 @@
 
   const thisYear = new Date().getFullYear()
   const YEARS = Array.from({ length: thisYear - 1939 + 2 }, (_, i) => thisYear + 1 - i)
-  const label = (s: string) => s.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+  // Title-case, but keep known acronyms fully uppercase (TV, OVA, ONA) — not "Tv"/"Ova".
+  const ACRONYMS = new Set(['TV', 'OVA', 'ONA'])
+  const label = (s: string) => s.split('_').map((w) => ACRONYMS.has(w.toUpperCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
 
   const clear = () => (filters = {})
 </script>

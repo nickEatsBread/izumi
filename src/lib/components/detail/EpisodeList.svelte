@@ -238,9 +238,6 @@
               {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
               {#if dl?.status === 'done'}<span class="shrink-0 rounded bg-green-500/20 px-1 text-[0.55rem] font-bold text-green-400">SAVED</span>{/if}
             </span>
-            {#if labels.concealSecondary}
-              <span class="block truncate text-[0.7rem] text-muted-foreground blur-sm">{labels.secondary}</span>
-            {/if}
             {#if isNext}
               <span class="block text-[0.7rem] font-bold text-theme">airing in {countdown(next?.timeUntilAiring)}</span>
             {:else if !released}

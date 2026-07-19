@@ -81,7 +81,9 @@
   {#if $isMobile}
     <!-- Top app bar: brand mark + wordmark on the left, configured top icons on the right. In-flow
          (NOT pinned) so it only shows at the very top and scrolls away with the page. -->
-    <div class="flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+    <!-- pt-3 only: <main> already adds env(safe-area-inset-top) on mobile, so re-adding it here
+         double-counted the status-bar inset and left a big black gap above the logo. -->
+    <div class="flex items-center justify-between px-4 pb-3 pt-3">
       <a href="/app/home" aria-label="Home" class="flex items-center gap-2">
         <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
         <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="h-5" draggable="false" />

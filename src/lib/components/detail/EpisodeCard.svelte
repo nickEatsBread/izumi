@@ -104,7 +104,6 @@
     <div class="relative aspect-video w-full overflow-hidden bg-muted">
       {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <img src={img} alt="" loading="lazy" decoding="async" onload={() => (imgReady = true)}
-           class:blur-lg={spoiler}
            class="h-full w-full object-cover transform-gpu will-change-transform transition-[opacity,transform] duration-500 {imgReady ? 'opacity-100' : 'opacity-0'} {released ? 'group-hover:scale-105' : 'grayscale'}" />
       <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
 
@@ -114,7 +113,7 @@
            leaves NO gap (the rating used to be offset to clear a fixed download-icon slot). -->
       <div class="absolute right-2 top-2 flex items-center gap-1.5">
         {#if rating != null}
-          <span class:blur-sm={spoiler} class="rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
+          <span class="rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
         {/if}
         {@render statusBadge('')}
       </div>
@@ -144,7 +143,10 @@
     <div class="flex items-center gap-2 p-2">
       <div class="min-w-0 flex-1">
         <span class="block truncate text-sm font-bold">{labels.primary}</span>
-        <span class:blur-sm={labels.concealSecondary} class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
+        <!-- Spoiler mode hides the real title (shows only "Episode N") — no blur. -->
+        {#if !labels.concealSecondary}
+          <span class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
+        {/if}
       </div>
     </div>
   {:else}
@@ -155,9 +157,6 @@
           <span class="truncate text-sm font-bold">{labels.primary}</span>
           {#if filler}<span class="shrink-0 rounded bg-yellow-400 px-1 text-[0.6rem] font-bold text-black">FILLER</span>{/if}
         </span>
-        {#if labels.concealSecondary}
-          <span class="block truncate text-[0.7rem] text-muted-foreground blur-sm">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>
-        {/if}
         {#if isNext}
           <span class="block text-[0.7rem] font-bold text-theme">airing in {countdown(next?.timeUntilAiring)}</span>
         {:else if !released}
@@ -168,7 +167,7 @@
       </div>
 
       {#if rating != null}
-        <span class:blur-sm={spoiler} class="shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
+        <span class="shrink-0 rounded px-1.5 py-0.5 text-[0.65rem] font-black text-white {ratingBg(rating)}">{rating}%</span>
       {/if}
 
       {@render statusBadge('shrink-0')}
