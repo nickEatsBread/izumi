@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { get } from 'svelte/store'
-import { trackerQueue, enqueue, markConfirmed, classifyStatus, type TrackerOp } from './queue'
+import { trackerQueue, enqueue, markConfirmed, classifyStatus, dropSuperseded, type TrackerOp } from './queue'
 
 const progOp = (mediaId: number, progress: number): TrackerOp => ({ kind: 'progress', mediaId, progress, status: 'CURRENT' })
 const statusOp = (mediaId: number): TrackerOp => ({ kind: 'status', mediaId, status: 'PLANNING' })
@@ -59,6 +59,30 @@ describe('tracker retry queue', () => {
     enqueue('AniList', progOp(103, 2))
     expect(mine(103)).toHaveLength(1)
     expect(mine(103)[0].op.kind).toBe('progress')
+  })
+
+  it('a remove op supersedes pending writes for the title', () => {
+    enqueue('AniList', progOp(200, 5))
+    enqueue('AniList', { kind: 'remove', mediaId: 200, listEntryId: 9 })
+    expect(mine(200)).toHaveLength(1)
+    expect(mine(200)[0].op.kind).toBe('remove')
+  })
+
+  it('a write cancels a pending remove (re-add before the delete replays)', () => {
+    enqueue('AniList', { kind: 'remove', mediaId: 201, listEntryId: 9 })
+    enqueue('AniList', statusOp(201))
+    expect(mine(201).some((e) => e.op.kind === 'remove')).toBe(false)
+    expect(mine(201)[0].op.kind).toBe('status')
+  })
+
+  it('dropSuperseded: a landed write clears a queued remove; a landed remove clears queued writes', () => {
+    enqueue('AniList', { kind: 'remove', mediaId: 202, listEntryId: 9 })
+    dropSuperseded('AniList', 202, 'progress') // a live progress push succeeded → the delete is stale
+    expect(mine(202)).toHaveLength(0)
+
+    enqueue('AniList', progOp(203, 4))
+    dropSuperseded('AniList', 203, 'remove') // a live remove succeeded → the write would re-create it
+    expect(mine(203)).toHaveLength(0)
   })
 
   it('classifies transient vs permanent HTTP statuses', () => {

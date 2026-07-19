@@ -26,9 +26,10 @@
 
   // Seed the form ONCE from the props (untrack = intentional one-time capture; the editor remounts
   // on each open via `{#if showEditor}`, so these are always current, then independently editable).
+  const initScore10 = untrack(() => Math.round(initScore0to100 / 10))
   let status = $state(untrack(() => initStatus ?? 'CURRENT'))
   let progress = $state(untrack(() => initProgress))
-  let score10 = $state(untrack(() => Math.round(initScore0to100 / 10))) // 0-10
+  let score10 = $state(initScore10) // 0-10
   let busy = $state(false)
 
   // Date.now()/new Date() are allowed at app runtime (the ban is workflow-scripts only).
@@ -42,13 +43,16 @@
     let p = Math.max(0, total ? Math.min(progress, total) : progress)
     const extras: ProgressExtras = {}
     if (status === 'COMPLETED' && total) { p = total; extras.completedAt = todayFuzzy() } // fill + stamp finish
-    const patch: { status?: AniStatus; progress?: number; score?: number } = {}
+    const patch: { status?: AniStatus; progress?: number; score?: number; removed?: boolean } = {}
     if (status !== initStatus || p !== initProgress) {
       await updateProgress(media, p, status, extras)
       patch.status = status; patch.progress = p
     }
-    const score100 = score10 * 10
-    if (score100 !== initScore0to100) { await setScore(media, score100); patch.score = score100 }
+    // Compare the quantized 0-10 value, NOT the raw 0-100 init — otherwise an untouched AniList score
+    // that isn't a multiple of 10 (e.g. 83) gets silently rounded (→80) on the first save.
+    if (score10 !== initScore10) { await setScore(media, score10 * 10); patch.score = score10 * 10 }
+    // Any write re-establishes the entry — clear a prior optimistic remove so the pill/badge show it.
+    if (patch.status !== undefined || patch.score !== undefined) patch.removed = false
     h.success()
     onsaved(patch)
     onclose()

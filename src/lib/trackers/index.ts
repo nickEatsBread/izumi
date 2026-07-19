@@ -6,7 +6,7 @@ import { malFetch } from './mal-auth'
 import { malHttpFetch } from './mal-http'
 import { recordProgress, localHistory } from '$lib/player/history'
 import {
-  enqueue, markConfirmed, confirmedFloor, flushQueue, registerReplay, classifyStatus,
+  enqueue, markConfirmed, confirmedFloor, flushQueue, registerReplay, classifyStatus, dropSuperseded,
   type TrackerOp, type TrackerName, type PushResult, type ProgressExtras,
 } from './queue'
 import type { Media, FuzzyDate } from '$lib/anilist/types'
@@ -148,13 +148,13 @@ async function push(media: Media, op: Omit<TrackerOp, 'mediaId' | 'idMal'>): Pro
   if (get(anilistToken)) {
     const aop: TrackerOp = { ...op, mediaId: media.id }
     const r = await pushAniList(aop)
-    if (r.ok) { results.push('AniList'); if (prog != null) markConfirmed('AniList', media.id, prog) }
+    if (r.ok) { results.push('AniList'); if (prog != null) markConfirmed('AniList', media.id, prog); dropSuperseded('AniList', media.id, op.kind) }
     else if (r.retryable) enqueue('AniList', aop)
   }
   if (get(malToken) && idMal) {
     const mop: TrackerOp = { ...op, mediaId: media.id, idMal }
     const r = await pushMal(mop)
-    if (r.ok) { results.push('MAL'); if (prog != null) markConfirmed('MAL', media.id, prog) }
+    if (r.ok) { results.push('MAL'); if (prog != null) markConfirmed('MAL', media.id, prog); dropSuperseded('MAL', media.id, op.kind) }
     else if (r.retryable) enqueue('MAL', mop)
   }
   if (results.length) void flushQueue() // connectivity just confirmed → drain any backlog
