@@ -1,4 +1,5 @@
-import { jfetch, magnetOf, pickLargestVideo, poll, VIDEO, JUNK, authError } from '../http'
+import { jfetch, magnetOf, poll, VIDEO, JUNK, authError } from '../http'
+import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
 // Premiumize. apikey query param on every call. FAST PATH: /transfer/directdl
@@ -69,7 +70,7 @@ export const premiumize: DebridProvider = {
     const fd = new FormData(); fd.set('src', magnet)
     const dd = await pm('POST', '/transfer/directdl', key, fd)
     if (dd?.status === 'success' && Array.isArray(dd.content) && dd.content.length) {
-      const best = pickLargestVideo(flattenContent(dd.content))
+      const best = pickVideoFile(flattenContent(dd.content), opts?.want)
       if (best?.link) return best.link
     }
     // Fallback — uncached: create + poll + resolve folder.
@@ -88,7 +89,7 @@ export const premiumize: DebridProvider = {
     if (folderId) files = flattenContent((await pm('GET', `/folder/list?id=${folderId}`, key)).content ?? [])
     else if (fileId) { const d = await pm('GET', `/item/details?id=${fileId}`, key); files = [{ name: d.name ?? '', bytes: d.size ?? 0, link: d.link, stream_link: d.stream_link }] }
     else files = []
-    const best = pickLargestVideo(files)
+    const best = pickVideoFile(files, opts?.want)
     if (!best?.link && !best?.stream_link) throw new Error('No playable file in that torrent.')
     return (best.link ?? best.stream_link)!
   },

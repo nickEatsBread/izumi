@@ -1,4 +1,5 @@
-import { jfetch, form, magnetOf, pickLargestVideo, poll, authError } from '../http'
+import { jfetch, form, magnetOf, poll, authError } from '../http'
+import { pickVideoFile } from '../episode-file'
 import type { DebridProvider } from '../types'
 
 // Offcloud. key query param. add /cloud → poll /cloud/status until 'downloaded' →
@@ -41,7 +42,9 @@ export const offcloud: DebridProvider = {
     try { const ex = await oc('GET', `/cloud/explore/${rid}`, key); if (Array.isArray(ex)) urls = ex } catch { /* single-file */ }
     if (!urls.length && add.url) urls = [add.url]
     const mapped = urls.map((u) => ({ name: decodeURIComponent(u.split('/').pop() ?? ''), bytes: 0, url: u }))
-    const best = pickLargestVideo(mapped) ?? mapped[0]
+    // No sizes here (bytes all 0) — the legacy "largest" fallback is effectively
+    // first-video-name; the episode-aware pick is a strict upgrade on filenames alone.
+    const best = pickVideoFile(mapped, opts?.want) ?? mapped[0]
     if (!best?.url) throw new Error('No playable file in that torrent.')
     return best.url
   },
