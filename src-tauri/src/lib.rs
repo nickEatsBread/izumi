@@ -585,36 +585,16 @@ fn set_player_cache(bytes: u64) {
 
 /// Inhibit the OS idle / screen-blank while a video is actively playing — so the Steam Deck's
 /// screen doesn't dim mid-episode. Called with `on=false` when paused, at EOF, or when the
-/// player closes, so battery-saver still kicks in on those (and on other screens). Linux only
-/// (a held `systemd-inhibit` child); a no-op elsewhere. The embedded libmpv render path has no
-/// window, so mpv's own `stop-screensaver` can't do this for us.
-#[cfg(target_os = "linux")]
-fn idle_inhibit_slot() -> &'static std::sync::Mutex<Option<std::process::Child>> {
-    static SLOT: std::sync::OnceLock<std::sync::Mutex<Option<std::process::Child>>> = std::sync::OnceLock::new();
-    SLOT.get_or_init(|| std::sync::Mutex::new(None))
-}
+/// player closes (and gated by the user's "Keep screen awake while playing" setting), so
+/// battery-saver still kicks in then and on other screens. Per-OS backends live in
+/// [`player::wakelock`] — Wayland idle-inhibit on the Deck (gamescope ignores the old
+/// systemd-inhibit logind lock), SetThreadExecutionState on Windows, `caffeinate` on macOS,
+/// systemd-inhibit fallback on X11. The embedded libmpv render path has no window, so mpv's
+/// own `stop-screensaver` can't do this for us.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn set_idle_inhibit(on: bool) {
-    #[cfg(target_os = "linux")]
-    {
-        let mut slot = idle_inhibit_slot().lock().unwrap();
-        if on {
-            if slot.is_none() {
-                if let Ok(child) = std::process::Command::new("systemd-inhibit")
-                    .args(["--what=idle:sleep", "--who=izumi", "--why=Playing video", "--mode=block", "sleep", "infinity"])
-                    .spawn()
-                {
-                    *slot = Some(child);
-                }
-            }
-        } else if let Some(mut child) = slot.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = on;
+fn set_idle_inhibit(app: AppHandle, on: bool) {
+    player::wakelock::set(&app, on);
 }
 
 /// Write a UTF-8 text file to an absolute path chosen via the save dialog. Used by the local-history

@@ -102,6 +102,8 @@ tauri-plugin-mpv = { path = "tauri-plugin-mpv", optional = true }
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  # SetThreadExecutionState — keep the display + system awake while a video plays.
+  "Win32_System_Power",
   "Win32_UI_WindowsAndMessaging",
 ] }
 webview2-com = "0.38"
@@ -120,6 +122,10 @@ gl = "0.14"
 khronos-egl = { version = "6", features = ["dynamic"] }
 wayland-client = "0.31"
 wayland-egl = "0.32"
+# zwp_idle_inhibit_manager_v1 — keep the screen awake during playback. gamescope (Deck Game
+# mode) honors this Wayland protocol but ignores logind idle locks (systemd-inhibit), so this
+# is the only path that stops the Deck screen dimming mid-episode. Pairs with wayland-client 0.31.
+wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 # Steam Deck Game mode (gamescope): gamescope exposes NO wl_subcompositor (so the subsurface
 # path above can't run) but DOES expose zwlr_layer_shell_v1 + dmabuf. We render the video into
 # a layer-shell BACKGROUND surface and keep the transparent webview toplevel on top → gamescope
