@@ -9,6 +9,7 @@
   import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
   import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice } from './online-subs'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
+  import { trackLabel, langName } from '$lib/player/track-label'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import Check from 'lucide-svelte/icons/check'
@@ -31,23 +32,12 @@
   // tracks, so a candidate shows its Check once its downloaded track is live and selected.
   const onlineItems = $derived($onlineSubCandidates.items)
   const loadedSubTitles = $derived(subs.filter((s) => s.selected).map((s) => s.title ?? ''))
-  const onlineLeafLabel = (c: SubtitleCandidate) => `${c.lang ?? 'und'} · ${c.release ?? providerBadge(c.provider)}`
+  const onlineLeafLabel = (c: SubtitleCandidate) => `${langName(c.lang) ?? 'Unknown'} · ${c.release ?? providerBadge(c.provider)}`
 
-  // Disambiguating label (matches the mouse track menu): title else UPPER lang else "Track N",
-  // with codec/channels appended when two share a name, plus Forced/Default flags.
-  const chLabel = (n?: number) =>
-    !n ? '' : n >= 8 ? '7.1' : n >= 6 ? '5.1' : n === 2 ? '2.0' : n === 1 ? 'Mono' : `${n}ch`
-  const baseOf = (t: Track) => t.title?.trim() || (t.lang ? t.lang.toUpperCase() : `Track ${t.id}`)
-  function label(t: Track, group: Track[]): string {
-    const base = baseOf(t)
-    const collide = group.filter((o) => baseOf(o) === base).length > 1
-    const bits: string[] = []
-    if (collide && t.codec) bits.push(t.codec.toUpperCase())
-    if (t.type === 'audio') { const c = chLabel(t.channels); if (c) bits.push(c) }
-    if (t.forced) bits.push('Forced')
-    if (t.default) bits.push('Default')
-    return bits.length ? `${base} · ${bits.join(' ')}` : base
-  }
+  // Language-forward, deduped track labels — shared with the desktop menu (Controls.svelte) so
+  // the two never diverge. Leads with the language name so a multi-language Blu-ray's subtitle
+  // tracks (identical "Full Subtitles"/codec titles) are actually distinguishable. See track-label.ts.
+  const label = trackLabel
 
   // A leaf is either an mpv track (audio/sub), an online-subtitle candidate to download, or the
   // "Search again" action. Distinguished by `kind` so `apply` knows what to do on A/click.
