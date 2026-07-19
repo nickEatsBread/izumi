@@ -100,8 +100,8 @@
     <label class="mb-4 block">
       <span class="mb-1 block text-sm font-bold">Score</span>
       <select bind:value={score10} data-focusable class="w-full rounded-md bg-input px-3 py-2 text-sm">
-        {#each Array.from({ length: 11 }, (_, i) => 10 - i) as n (n)}
-          <option value={n}>{n === 0 ? scoreLabel(0) : `${n} — ${scoreLabel(n)}`}</option>
+        {#each [0, ...Array.from({ length: 10 }, (_, i) => 10 - i)] as n (n)}
+          <option value={n}>{n === 0 ? 'Select' : `(${n}) ${scoreLabel(n)}`}</option>
         {/each}
       </select>
     </label>
