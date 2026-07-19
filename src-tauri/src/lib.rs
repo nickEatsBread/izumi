@@ -918,6 +918,134 @@ fn write_text_atomic(out: &std::path::Path, bytes: &[u8]) -> Result<(), String> 
     })
 }
 
+/// Download a picked subtitle, normalize it to UTF-8, and cache it under `<app-cache>/subs`.
+///
+/// OpenSubtitles: `POST /api/v1/download {file_id}` (Api-Key + Bearer + User-Agent) yields a
+/// temporary `link`; GET that link (no extra headers) for the raw subtitle bytes. SubDL: GET the
+/// ZIP `url` (attaching `x-api-key` for paid CDN keys; ignored on the free tier) and take the first
+/// `.srt`/`.ass` entry. Bytes are charset-detected, decoded to UTF-8, and written atomically to a
+/// blake3-content-named `.srt`. Transport is modelled on `ext_fetch` (pooled client + arbitrary auth
+/// headers) but reads `bytes()` — SubDL bodies are binary zips, never text. Returns the cache path.
+#[cfg(not(target_os = "android"))]
+async fn fetch_normalize_subtitle(
+    app: &AppHandle,
+    provider: &str,
+    url: Option<&str>,
+    file_id: Option<i64>,
+    api_key: Option<&str>,
+    token: Option<&str>,
+) -> Result<String, String> {
+    let client = http_client();
+    let raw: Vec<u8> = match provider {
+        "opensubtitles" => {
+            let file_id = file_id.ok_or("missing file_id")?;
+            let key = api_key.unwrap_or("");
+            let bearer = token.unwrap_or("");
+            let body = serde_json::json!({ "file_id": file_id }).to_string();
+            let dl = client
+                .post("https://api.opensubtitles.com/api/v1/download")
+                .header("Api-Key", key)
+                .header("Authorization", format!("Bearer {bearer}"))
+                .header("User-Agent", OPENSUBTITLES_USER_AGENT)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .body(body)
+                .send()
+                .await
+                .map_err(|_| "download request failed".to_string())?;
+            let status = dl.status();
+            let text = dl
+                .text()
+                .await
+                .map_err(|_| "download read failed".to_string())?;
+            if !status.is_success() {
+                // Body surfaced verbatim so the TS classifier can tell quota (401 + quota body) from a bad token.
+                return Err(format!("opensubtitles /download {}: {text}", status.as_u16()));
+            }
+            let meta: serde_json::Value =
+                serde_json::from_str(&text).map_err(|_| "bad download json".to_string())?;
+            let link = meta
+                .get("link")
+                .and_then(|v| v.as_str())
+                .ok_or("no download link")?;
+            let file = client
+                .get(link)
+                .send()
+                .await
+                .map_err(|_| "link fetch failed".to_string())?;
+            if !file.status().is_success() {
+                return Err(format!("opensubtitles link {}", file.status().as_u16()));
+            }
+            file.bytes()
+                .await
+                .map_err(|_| "link read failed".to_string())?
+                .to_vec()
+        }
+        "subdl" => {
+            let zip_url = url.ok_or("missing zip url")?;
+            let mut req = client.get(zip_url);
+            if let Some(k) = api_key {
+                if !k.is_empty() {
+                    req = req.header("x-api-key", k);
+                }
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|_| "zip fetch failed".to_string())?;
+            if !resp.status().is_success() {
+                return Err(format!("subdl zip {}", resp.status().as_u16()));
+            }
+            let zip_bytes = resp
+                .bytes()
+                .await
+                .map_err(|_| "zip read failed".to_string())?;
+            unzip_first_subtitle(&zip_bytes)?
+        }
+        other => return Err(format!("unknown subtitle provider: {other}")),
+    };
+
+    let text = normalize_subtitle_charset(&raw);
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("subs");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = dir.join(format!("{}.srt", blake3::hash(&raw).to_hex()));
+    write_text_atomic(&dest, text.as_bytes())?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Download a picked online subtitle (OpenSubtitles `/download` or a SubDL ZIP), normalize it to
+/// UTF-8, and add it to the LIVE mpv core as a selected track. The async byte work runs first, then
+/// the sync `sub-add` on the reused core; the frontend re-reads `player_tracks` to reflect the new
+/// selected track. Never auto-invoked — only on a manual pick in the subtitle menu.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn player_add_subtitle(
+    app: AppHandle,
+    provider: String,
+    url: Option<String>,
+    file_id: Option<i64>,
+    lang: String,
+    title: String,
+    api_key: Option<String>,
+    token: Option<String>,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<(), String> {
+    let path = fetch_normalize_subtitle(
+        &app,
+        &provider,
+        url.as_deref(),
+        file_id,
+        api_key.as_deref(),
+        token.as_deref(),
+    )
+    .await?;
+    player.add_subtitle(&path, &lang, &title)
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -2434,6 +2562,7 @@ pub fn run() {
             player_diag,
             mpv_version,
             player_command,
+            player_add_subtitle,
             opensubtitles_login,
             oauth_capture,
             da_reaction_state,
