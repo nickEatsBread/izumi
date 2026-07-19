@@ -350,10 +350,21 @@ jobs:
       - name: Emit the .flatpakref
         run: |
           set -euxo pipefail
+          # Keep the presentation metadata in the ref as well as AppStream. Discover and other
+          # software centres can render this immediately, before they have downloaded the repo's
+          # AppStream catalogue; without it their fallback is the raw Name (com.nicho.izumi).
+          install -Dm644 src-tauri/icons/128x128.png flatpak/_repo/com.nicho.izumi.png
           cat > flatpak/_repo/com.nicho.izumi.flatpakref <<EOF
           [Flatpak Ref]
+          Version=1
           Name=com.nicho.izumi
           Branch=master
+          SuggestRemoteName=izumi
+          Title=izumi
+          Comment=Controller-first desktop anime client
+          Description=Stream anime with a controller-first interface, native mpv playback, AniList and MyAnimeList tracking, and Stremio-addon sourcing.
+          Icon=https://flatpak.izumi.watch/com.nicho.izumi.png
+          Homepage=https://github.com/nickEatsBread/izumi
           Url=https://flatpak.izumi.watch/
           GPGKey=$(base64 -w0 flatpak/_repo/izumi.gpg)
           IsRuntime=false
