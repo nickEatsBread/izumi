@@ -1,8 +1,13 @@
 {
   "$schema": "../gen/schemas/android-schema.json",
   "identifier": "haptics",
-  "description": "Grant UI haptic feedback on mobile.",
+  "description": "Grant UI haptic feedback on mobile. NOTE: this plugin ships NO `haptics:default` set — the allow-* commands must be listed explicitly or every haptic invoke is silently denied and nothing vibrates.",
   "platforms": ["android", "iOS"],
   "windows": ["main"],
-  "permissions": ["haptics:default"]
+  "permissions": [
+    "haptics:allow-vibrate",
+    "haptics:allow-impact-feedback",
+    "haptics:allow-notification-feedback",
+    "haptics:allow-selection-feedback"
+  ]
 }

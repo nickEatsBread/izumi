@@ -2,6 +2,7 @@
   // Shared settings toggle row (label + description + switch). The switch uses the
   // pink `theme` accent (the app's `--primary` is near-white, so a white knob on a
   // primary track would be invisible).
+  import * as h from '$lib/haptics'
   let { label, desc, value, onToggle }: {
     label: string
     desc: string
@@ -12,7 +13,7 @@
 
 <button
   data-focusable
-  onclick={onToggle}
+  onclick={() => { h.tap(); onToggle() }}
   aria-pressed={value}
   class="flex w-full items-center justify-between rounded-md border border-border p-3 text-left transition-colors hover:bg-secondary"
 >

@@ -76,12 +76,16 @@
   </div>
 {:else}
   {#if $isMobile}
-    <!-- Search moved off the bottom bar to a top-right icon on the browse header (AniStation-style). -->
-    <a href="/app/search" data-focusable aria-label="Search" onclick={() => h.tap()}
-       class="fixed right-3 z-30 grid size-10 place-items-center rounded-full bg-background/50 text-foreground shadow-lg backdrop-blur transition-colors active:bg-accent"
-       style="top:max(0.75rem,env(safe-area-inset-top))">
-      <Search size={20} />
-    </a>
+    <!-- Top app bar: brand mark left, search right, over a downward scrim so both stay legible on
+         top of the hero art (Crunchyroll/AniStation style). The bar passes touches through except
+         its two controls, so the hero underneath stays swipeable. -->
+    <div class="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-gradient-to-b from-background/90 via-background/40 to-transparent px-4 pb-8 pt-[max(0.5rem,env(safe-area-inset-top))]">
+      <img src="/brand/izumi-mark-color.svg" alt="izumi" class="pointer-events-auto h-7 w-7" draggable="false" />
+      <a href="/app/search" data-focusable aria-label="Search" onclick={() => h.tap()}
+         class="pointer-events-auto grid size-9 place-items-center rounded-full text-foreground transition-colors active:bg-white/10">
+        <Search size={22} />
+      </a>
+    </div>
   {/if}
   <div class="pb-16">
     {#if heroMedias.length}
