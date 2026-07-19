@@ -25,14 +25,18 @@
     <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
     {#if listUser}
       <ListRow title="Watching" userName={listUser} status="CURRENT" />
+      <ListRow title="Rewatching" userName={listUser} status="REPEATING" />
       <ListRow title="Planning" userName={listUser} status="PLANNING" />
       <ListRow title="Completed" userName={listUser} status="COMPLETED" />
       <ListRow title="Paused" userName={listUser} status="PAUSED" />
+      <ListRow title="Dropped" userName={listUser} status="DROPPED" />
     {/if}
     {#if $malToken || $malUser}
       <MalListRow title="Watching (MAL)" status="watching" />
       <MalListRow title="Plan to Watch (MAL)" status="plan_to_watch" />
       <MalListRow title="Completed (MAL)" status="completed" />
+      <MalListRow title="On Hold (MAL)" status="on_hold" />
+      <MalListRow title="Dropped (MAL)" status="dropped" />
     {/if}
   {:else}
     <div class="grid min-h-[50vh] place-items-center text-center">

@@ -38,6 +38,12 @@ const TOGGLE_FAVOURITE = gql`mutation ($animeId: Int) {
   ToggleFavourite(animeId: $animeId) { anime { nodes { id } } }
 }`
 
+// Delete the viewer's list entry entirely. Takes the mediaList ENTRY id (mediaListEntry.id), NOT
+// the media id. A 404 (already gone) is treated as permanent-drop by the queue, which is correct.
+const DELETE_ENTRY = gql`mutation ($id: Int) {
+  DeleteMediaListEntry(id: $id) { deleted }
+}`
+
 const MAL_LIST = (idMal: number) => `https://api.myanimelist.net/v2/anime/${idMal}/my_list_status`
 const FORM = { 'Content-Type': 'application/x-www-form-urlencoded' }
 
@@ -81,6 +87,9 @@ async function pushAniList(op: TrackerOp): Promise<PushResult> {
       }).toPromise()
     } else if (op.kind === 'status') {
       r = await anilist.mutation(SET_STATUS, { mediaId: op.mediaId, status: op.status }).toPromise()
+    } else if (op.kind === 'remove') {
+      if (!op.listEntryId) return { ok: false, retryable: false } // no AniList entry to delete
+      r = await anilist.mutation(DELETE_ENTRY, { id: op.listEntryId }).toPromise()
     } else {
       r = await anilist.mutation(SAVE_SCORE, { mediaId: op.mediaId, scoreRaw: aniScore(op.score ?? 0) }).toPromise()
     }
@@ -112,7 +121,10 @@ function malBody(op: TrackerOp): string {
 async function pushMal(op: TrackerOp): Promise<PushResult> {
   if (!op.idMal) return { ok: false, retryable: false } // can't address MAL without idMal
   try {
-    const r = await malFetch(MAL_LIST(op.idMal), { method: 'PATCH', headers: FORM, body: malBody(op) })
+    const init: RequestInit = op.kind === 'remove'
+      ? { method: 'DELETE' }
+      : { method: 'PATCH', headers: FORM, body: malBody(op) }
+    const r = await malFetch(MAL_LIST(op.idMal), init)
     if (!r) return { ok: false, retryable: false } // no token → not connected
     if (r.ok) return { ok: true }
     // malFetch already refreshed-and-retried once on 401, so a 401 here is a dead token (permanent).
@@ -201,6 +213,13 @@ export function setStatus(media: Media, status: AniStatus): Promise<string[]> {
 // Set the viewer's rating (canonical 0-100) on every connected tracker. Best-effort. score 0 clears.
 export function setScore(media: Media, score0to100: number): Promise<string[]> {
   return push(media, { kind: 'score', score: score0to100 })
+}
+
+// Remove the title from the viewer's list entirely (AniList DeleteMediaListEntry by entry id + MAL
+// DELETE my_list_status). Best-effort; the AniList delete no-ops when we don't have the entry id
+// (e.g. MAL-only). Pass the media whose mediaListEntry.id was fetched by the detail query.
+export function removeFromList(media: Media): Promise<string[]> {
+  return push(media, { kind: 'remove', listEntryId: media.mediaListEntry?.id })
 }
 
 // Toggle the AniList favourite flag for a title (AniList only; MAL has no
