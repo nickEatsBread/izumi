@@ -13,6 +13,8 @@
   import { localHistory, sessionProgress } from '$lib/player/history'
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
+  import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
+  import * as h from '$lib/haptics'
   import { enqueueMany, downloads, keyFor } from '$lib/downloads/store'
   import EpisodeCard from './EpisodeCard.svelte'
   import Download from 'lucide-svelte/icons/download'
@@ -52,6 +54,12 @@
   const curPage = $derived(page ?? autoPage)
   const startIdx = $derived(curPage * PER)
   const eps = $derived(Array.from({ length: Math.max(0, Math.min(PER, total - startIdx)) }, (_, i) => startIdx + i + 1))
+
+  // Oldest/Newest toggle: reorders the current page's episodes for display. Pagination itself
+  // still pages ascending (startIdx/PER above are unchanged) — see the note near the toggle.
+  let sortDir = $state<SortDir>('asc')
+  const rows = $derived(orderEpisodes(eps, sortDir))
+  function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
 
   // Per-episode metadata from AniZip (thumbnail/title/rating). Best-effort; the
   // cards fall back to the show art when a given episode has no entry.
@@ -124,6 +132,12 @@
   {#if aired > 0}
     <div class="mb-3 flex flex-wrap items-center gap-2">
       {#if !selecting}
+        <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
+          <button data-focusable onclick={() => toggleSort('asc')}
+                  class="rounded-md px-3 py-1 transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
+          <button data-focusable onclick={() => toggleSort('desc')}
+                  class="rounded-md px-3 py-1 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
+        </div>
         <button data-focusable onclick={startSelect}
                 class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-1.5 text-sm font-bold transition-colors hover:bg-accent">
           <Download size={15} /> Download…
@@ -152,7 +166,7 @@
     <!-- Immediate skeleton grid (shape matches the setting) so the list appears at
          once and doesn't flip layouts; real cards then fade their thumbnails in. -->
     {#if $episodeLayout === 'cards'}
-      <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
         {#each eps as ep (ep)}
           <div class="overflow-hidden rounded-lg bg-secondary">
             <div class="aspect-video w-full skeloader"></div>
@@ -171,8 +185,8 @@
       </div>
     {/if}
   {:else if $episodeLayout === 'cards'}
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-      {#each eps as ep (ep)}
+    <div class="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+      {#each rows as ep (ep)}
         <EpisodeCard
           {media}
           {ep}
@@ -192,7 +206,7 @@
     </div>
   {:else}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
-      {#each eps as ep (ep)}
+      {#each rows as ep (ep)}
         {@const released = ep <= aired}
         {@const isNext = next?.episode === ep}
         {@const filler = fillerSet.has(ep)}
@@ -205,10 +219,10 @@
           tabindex="0"
           aria-disabled={!released || resolving}
           aria-pressed={selecting ? sel : undefined}
-          onclick={() => !resolving && tap(ep)}
+          onclick={() => { if (!resolving) { h.tap(); tap(ep) } }}
           onkeydown={(e) => { if (!resolving && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); tap(ep) } }}
           title={selecting ? (released ? (sel ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play episode ${ep}${filler ? ' (filler)' : ''}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
-          class="group flex items-center gap-3 rounded-md px-3 py-2 text-left transition-colors
+          class="group flex items-center gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors sm:px-3 sm:py-2
             {released ? 'cursor-pointer bg-secondary hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'} {filler ? 'ring-1 ring-yellow-400/70' : ''} {sel ? 'ring-2 ring-primary' : ''}"
         >
           {#if selecting && released}
@@ -216,7 +230,7 @@
               <Check size={16} />
             </span>
           {:else}
-            <span class="grid h-8 w-8 shrink-0 place-items-center rounded bg-background/40 text-sm font-black">{ep}</span>
+            <span class="grid h-7 w-7 shrink-0 place-items-center rounded bg-background/40 text-sm font-black sm:h-8 sm:w-8">{ep}</span>
           {/if}
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-1.5">
