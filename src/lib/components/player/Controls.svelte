@@ -116,7 +116,29 @@
   let speed = $state(1)
   const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2]
   function setSpeed(v: number) { speed = v; cmd('set', ['speed', String(v)]) }
-  const adjust = (prop: string, delta: number) => cmd('add', [prop, String(delta)])
+  // Subtitle/audio delay + subtitle scale, adjusted from the options popover. mpv holds the real
+  // values; we read them so the menu shows a live number — otherwise a press looks like a no-op.
+  // After a press we await the `add`, then re-read, so the number reflects what mpv actually applied
+  // (a stuck value would expose a real failure instead of hiding it). Read on popover open too.
+  let delays = $state<Record<string, number>>({ 'sub-delay': 0, 'audio-delay': 0, 'sub-scale': 1 })
+  async function readProp(prop: string) {
+    try {
+      const v = parseFloat(await invoke<string>('player_get_property', { name: prop }))
+      if (!Number.isNaN(v)) delays[prop] = v
+    } catch { /* no player / not loaded — keep the last value */ }
+  }
+  const readDelays = () => { for (const p of ['sub-delay', 'audio-delay', 'sub-scale']) readProp(p) }
+  async function adjust(prop: string, delta: number) {
+    await invoke('player_command', { name: 'add', args: [prop, String(delta)] }).catch(() => {})
+    await readProp(prop)
+  }
+  async function resetProp(prop: string) {
+    await invoke('player_command', { name: 'set', args: [prop, prop === 'sub-scale' ? '1' : '0'] }).catch(() => {})
+    await readProp(prop)
+  }
+  // sub-delay/audio-delay show as signed seconds (+0.3s / 0.0s); sub-scale as a multiplier (1.20×).
+  const fmtDelay = (prop: string, v: number) =>
+    prop === 'sub-scale' ? `${v.toFixed(2)}×` : `${v > 0 ? '+' : ''}${v.toFixed(1)}s`
 
   // Change source: re-open the source picker for the CURRENTLY-playing episode. Picking a new
   // source swaps the stream in place (playStream loads it into the running player).
@@ -379,7 +401,7 @@
         <!-- Playback options: speed, audio/subtitle delay, subtitle size. In Game mode it sits to
              the RIGHT of the Subtitles button (Crunchy-Deck order) via order-last. -->
         <div class="relative {gm ? 'order-last' : ''}">
-          <button data-focusable class={iconBtn} onclick={() => { showOptions = !showOptions; showTracks = false }} aria-label="Playback options"><Settings size={icSize} /></button>
+          <button data-focusable class={iconBtn} onclick={() => { showOptions = !showOptions; showTracks = false; if (showOptions) readDelays() }} aria-label="Playback options"><Settings size={icSize} /></button>
           {#if showOptions}
             <!-- NO backdrop-blur (video is a separate surface the webview can't sample → blurs
                  black). Desktop promotes to its own compositing layer (translateZ/will-change) so
@@ -406,8 +428,9 @@
               {#each [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']] as [label, prop]}
                 <div class="flex items-center justify-between gap-2 py-0.5">
                   <span>{label}</span>
-                  <span class="flex gap-1">
+                  <span class="flex items-center gap-1">
                     <button data-focusable onclick={() => adjust(prop, -0.1)} class="grid size-6 place-items-center rounded bg-white/10 hover:bg-white/20" aria-label="Decrease {label}">−</button>
+                    <button data-focusable onclick={() => resetProp(prop)} title="Reset {label}" class="w-12 text-center text-xs tabular-nums text-white/70 transition-colors hover:text-white" aria-label="Reset {label}">{fmtDelay(prop, delays[prop] ?? 0)}</button>
                     <button data-focusable onclick={() => adjust(prop, 0.1)} class="grid size-6 place-items-center rounded bg-white/10 hover:bg-white/20" aria-label="Increase {label}">+</button>
                   </span>
                 </div>
