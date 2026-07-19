@@ -34,7 +34,7 @@
 <Carousel {title} viewMoreHref={viewMoreHref(vars)}>
   {#if $store.fetching}
     {#each Array.from({ length: 8 }) as _}
-      <div class="aspect-[2/3] w-28 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
+      <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
     {/each}
   {:else if $store.data}
     {#each $store.data.Page.media as media (media.id)}

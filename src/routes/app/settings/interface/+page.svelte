@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleHeaderFade, haptics, type EpisodeLayout, type ScheduleLayout } from '$lib/settings/ui'
+  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, type EpisodeLayout, type ScheduleLayout } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
 
@@ -64,7 +64,7 @@
     </div>
 
     <div class="mb-4">
-      <Toggle label="Schedule header fade" desc="Softly fade the schedule rows into the sticky header as they scroll under it. Off = no overlay (its opaque top edge can read as a dark band over the first row)." value={$scheduleHeaderFade} onToggle={() => ($scheduleHeaderFade = !$scheduleHeaderFade)} />
+      <Toggle label="Pin schedule header" desc="Keep the My Shows / All toggle and Next-up strip stuck to the top while scrolling the schedule. Off = the header scrolls away with the list (default on Android)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
     </div>
 
     <div class="space-y-3">

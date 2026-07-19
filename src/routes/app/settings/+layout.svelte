@@ -30,6 +30,22 @@
   // every other settings route is a "child" that shows a back-header. Treat the exact /app/settings
   // path as the index on mobile.
   const isIndex = $derived($page.url.pathname === '/app/settings')
+
+  // Category title for the mobile back-header, so each child page's own leading heading can be
+  // hidden (see <style>) — one title in the bar, app-style, not a redundant second heading below.
+  const childTitles: Record<string, string> = {
+    '/app/settings/player': 'Player', '/app/settings/subtitles': 'Subtitles',
+    '/app/settings/sources': 'Sources', '/app/settings/extensions': 'Extensions',
+    '/app/settings/downloads': 'Downloads', '/app/settings/interface': 'Interface',
+    '/app/settings/history': 'History', '/app/settings/sync': 'Device sync',
+    '/app/settings/accounts': 'Accounts', '/app/settings/network': 'Network',
+    '/app/settings/changelog': 'Changelog', '/app/settings/about': 'About',
+  }
+  const childTitle = $derived.by(() => {
+    const p = $page.url.pathname
+    const hit = Object.keys(childTitles).find((k) => p === k || p.startsWith(k + '/'))
+    return hit ? childTitles[hit] : 'Settings'
+  })
 </script>
 
 {#if $isMobile}
@@ -52,9 +68,9 @@
            class="grid h-10 w-10 place-items-center rounded-full transition-colors active:bg-accent">
           <ChevronLeft size={22} />
         </a>
-        <span class="text-lg font-black">Settings</span>
+        <span class="text-lg font-black">{childTitle}</span>
       </div>
-      {@render children()}
+      <div class="settings-child">{@render children()}</div>
     </div>
   {/if}
 {:else}

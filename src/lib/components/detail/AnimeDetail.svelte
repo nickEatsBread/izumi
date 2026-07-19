@@ -127,9 +127,11 @@
          cover focal, clamped title, pill chips + score, expandable description, a full-width primary
          CTA, and a compact action row (4 icons + overflow menu). -->
     <div class="relative px-4 pb-6">
-      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-56 overflow-hidden">
-        <img src={banner(m)} alt="" class="h-full w-screen -translate-x-4 object-cover opacity-40 blur-sm" />
-        <div class="absolute inset-0 bg-gradient-to-b from-background/40 via-background/80 to-background"></div>
+      <!-- Background art (banner) behind the cover + title, like desktop: visible at the top,
+           dissolving into the page before the description so text stays legible. -->
+      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 overflow-hidden">
+        <img src={banner(m)} alt="" class="h-full w-screen -translate-x-4 object-cover opacity-60" style="object-position:center 20%" />
+        <div class="absolute inset-0 bg-gradient-to-b from-background/25 via-background/80 to-background"></div>
       </div>
 
       <div class="flex gap-4 pt-6">
@@ -154,7 +156,7 @@
 
       {#if m.description}
         <button type="button" onclick={() => (descExpanded = !descExpanded)}
-                class="mt-3 block w-full text-left text-sm text-muted-foreground {descExpanded ? '' : 'line-clamp-3'}">
+                class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
           {stripHtml(m.description)}
         </button>
       {/if}

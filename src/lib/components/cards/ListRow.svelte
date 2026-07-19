@@ -13,7 +13,7 @@
 {#if $store.fetching}
   <Carousel {title}>
     {#each Array.from({ length: 6 }) as _}
-      <div class="aspect-[2/3] w-28 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
+      <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
     {/each}
   </Carousel>
 {:else if entries.length}
