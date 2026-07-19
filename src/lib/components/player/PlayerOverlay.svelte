@@ -479,7 +479,16 @@
     // window listener registered first, at app start) — otherwise a seek arrow would ALSO walk
     // focus onto the chrome (the back button, the sidebar logo) while the video plays.
     const PLAYER_KEYS = new Set([' ', 'k', 'Escape', 'ArrowLeft', 'ArrowRight', 'n', 'N', 'p', 'P', 'f'])
+    const isTextField = (el: EventTarget | null): boolean => {
+      const t = el as HTMLElement | null
+      return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || !!t.isContentEditable)
+    }
     const onKeyCapture = (e: KeyboardEvent) => {
+      // A focused text field (e.g. the "Search subtitles…" box) OWNS every key. Otherwise typing a
+      // language like "spa[n]ish" / "ja[p]anese" fires n→next / p→prev — which re-resolves the
+      // episode and pops the source picker ("change source search") — plus f→fullscreen, space/k→pause.
+      // Capture-phase runs before the input's own handler, so this guard (not stopPropagation) is the fix.
+      if (isTextField(e.target)) return
       if (!PLAYER_KEYS.has(e.key)) return
       if (get(deckKeyboardWarning)) return
       e.preventDefault(); e.stopImmediatePropagation()
