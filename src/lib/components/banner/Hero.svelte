@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
-  import { banner, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
+  import { banner, cover, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
   import Play from 'lucide-svelte/icons/play'
   import Info from 'lucide-svelte/icons/info'
   import Heart from 'lucide-svelte/icons/heart'
   import * as h from '$lib/haptics'
+  import { isMobile } from '$lib/platform'
 
   // Bottom-left content column + clean linear scrims, polished with:
   // coverImage.color accent, rating-tinted score, blur-in image, rich badge row,
@@ -79,6 +80,61 @@
 </script>
 
 {#if current}
+  {#if $isMobile && showOverlay}
+    <!-- Mobile Home: a CONTAINED poster block (not a full-bleed banner) — reads far better on a
+         phone (Netflix-style). Portrait cover art, dark bottom scrim, title/meta/genres + Watch,
+         swipeable with dot pips. -->
+    <div
+      class="relative mx-4 mb-6 aspect-[3/4] touch-pan-y overflow-hidden rounded-2xl shadow-xl"
+      style="--accent:{accent}"
+      role="group"
+      aria-label="Featured"
+      ontouchstart={onTouchStart}
+      ontouchend={onTouchEnd}
+    >
+      {#key current.id}
+        <img src={cover(current)} alt="" draggable="false"
+             class="absolute inset-0 h-full w-full animate-[fade_0.4s_ease] object-cover" />
+      {/key}
+      <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
+      <div class="absolute inset-x-0 bottom-0 flex flex-col gap-2 p-4">
+        <h1 class="line-clamp-2 text-2xl font-black leading-tight text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-white/90
+                    [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
+          {#if format(current)}<span>{format(current)}</span>{/if}
+          {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} Eps</span>{/if}
+          {#if status(current)}<span>{status(current)}</span>{/if}
+          {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}%</span>{/if}
+        </div>
+        {#if current.genres?.length}
+          <div class="flex flex-wrap gap-1.5">
+            {#each current.genres.slice(0, 3) as g (g)}
+              <span class="rounded-full bg-white/15 px-2.5 py-0.5 text-[0.7rem] font-bold" style="color:var(--accent)">{g}</span>
+            {/each}
+          </div>
+        {/if}
+        <div class="mt-1 flex items-center gap-2">
+          <button data-focusable onclick={() => onplay?.(current)}
+                  class="flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 font-bold text-black shadow-lg"
+                  style="background:var(--accent)">
+            <Play size={18} fill="currentColor" /> Watch
+          </button>
+          <button data-focusable onclick={() => oninfo?.(current)}
+                  class="flex items-center gap-2 rounded-lg bg-white/15 px-4 py-2.5 font-bold text-white backdrop-blur">
+            <Info size={18} /> Details
+          </button>
+        </div>
+        {#if medias.length > 1}
+          <div class="mt-1.5 flex justify-center gap-1.5">
+            {#each medias as _, idx (idx)}
+              <button data-focusable onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
+                      class="h-1.5 rounded-full transition-all duration-300 {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+  {:else}
   <div
     class="relative mb-6 h-[40vh] touch-pan-y transition-opacity duration-500 sm:h-[55vh] {scrolled ? 'opacity-40' : 'opacity-100'}"
     style="--accent:{accent}"
@@ -165,4 +221,5 @@
       </div>
     {/if}
   </div>
+  {/if}
 {/if}
