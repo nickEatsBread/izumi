@@ -11,7 +11,7 @@
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
-  import { autoSkip, seekDuration, videoFit, uiScale } from '$lib/settings/ui'
+  import { autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { startNativeGamepadSeek } from '$lib/player/gamepad'
@@ -353,7 +353,8 @@
   // Keep the screen awake ONLY while actively watching — inhibit the OS idle/screen-blank when
   // playing, release it when paused or at EOF (so the Deck's battery-saver can dim then). The
   // player closing (onDestroy below) releases it too, so browsing/paused screens dim normally.
-  $effect(() => { invoke('set_idle_inhibit', { on: !paused && !eof }).catch(() => {}) })
+  // Gated by the user setting: toggling it off re-runs this effect → releases immediately.
+  $effect(() => { invoke('set_idle_inhibit', { on: $keepAwakeWhilePlaying && !paused && !eof }).catch(() => {}) })
 
   onDestroy(() => {
     // Close the discussion panel on every player-close path (← button, B, navigate-away) so the

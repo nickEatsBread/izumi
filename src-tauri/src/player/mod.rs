@@ -24,6 +24,9 @@
 //! [`spawn_event_loop`].
 
 mod headless;
+// Playback wakelock: inhibit OS idle/screen-blank while a video plays (per-OS backends). See wakelock.rs.
+#[cfg(not(target_os = "android"))]
+pub mod wakelock;
 // Linux embedded player: a wl_subsurface placed below the (transparent) webview,
 // rendered by mpv's OpenGL render API. Never touches the webview's GTK tree.
 #[cfg(target_os = "linux")]
