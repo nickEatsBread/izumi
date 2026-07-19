@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleHeaderFade, type EpisodeLayout, type ScheduleLayout } from '$lib/settings/ui'
+  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleHeaderFade, haptics, type EpisodeLayout, type ScheduleLayout } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
+  import { isAndroid } from '$lib/platform'
 
   const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
     { value: 'cards', label: 'Cards', hint: 'Thumbnails, titles, ratings and a watch-progress bar.' },
@@ -18,6 +19,12 @@
   <p class="mb-4 text-sm text-muted-foreground">Layout, scale, and content visibility.</p>
 
   <div class="max-w-2xl">
+    {#if $isAndroid}
+      <div class="mb-4">
+        <Toggle label="Haptics" desc="Vibrate on taps, toggles, and actions." value={$haptics} onToggle={() => ($haptics = !$haptics)} />
+      </div>
+    {/if}
+
     <p class="mb-1 text-sm font-bold">Episode list layout</p>
     <div class="mb-4 grid gap-2 sm:grid-cols-2">
       {#each layouts as opt (opt.value)}
