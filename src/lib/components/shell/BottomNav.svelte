@@ -7,6 +7,7 @@
   import Download from 'lucide-svelte/icons/download'
   import Settings from 'lucide-svelte/icons/settings'
   import { page } from '$app/state'
+  import * as h from '$lib/haptics'
 
   // Schedule takes Cloud's tab slot (Cloud is reachable from the Downloads header instead — both
   // are "your library"). Keeps the bar at 5 so it doesn't crowd on a phone.
@@ -29,6 +30,7 @@
     <a
       href={it.href}
       data-focusable
+      onclick={() => h.tap()}
       class="flex flex-1 flex-col items-center gap-0.5 py-2 text-[0.62rem] font-bold transition-colors
         {active(it.href) ? 'text-theme' : 'text-muted-foreground'}"
     >
