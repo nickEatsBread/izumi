@@ -14,8 +14,9 @@ export type Gesture =
   | { kind: 'brightness'; dy: number }
   | { kind: 'volume'; dy: number }
 
-/** Travel (px) before a drag is classified as anything. */
-export const MOVE_PX = 12
+/** Travel (px) before a drag is classified as anything. Higher = a slightly-wobbly tap (e.g.
+ *  reaching for play/pause) stays a tap instead of misfiring as a swipe. */
+export const MOVE_PX = 18
 /** Press duration (ms) with no travel that triggers hold-to-2× (component-side timer). */
 export const HOLD_MS = 350
 /** Window (ms) to pair two taps into a double-tap (component-side timer). */
@@ -47,9 +48,10 @@ export function classifyDrag(
   if (adx >= ady) return { kind: 'scrub', dx } // horizontal intent
   if (start.y > height - bottomIgnore) return { kind: 'none' } // near controls: no swipe
   const zone = zoneOf(start.x, width)
-  if (zone === 'l') return { kind: 'brightness', dy: -dy } // drag up = brighter
+  // Brightness gesture removed (left-zone vertical does nothing) — it caused accidental
+  // brightness changes when reaching for play/pause. Only the right zone controls volume.
   if (zone === 'r') return { kind: 'volume', dy: -dy } // drag up = louder
-  return { kind: 'none' } // center vertical = ignore
+  return { kind: 'none' }
 }
 
 /** Accumulating double-tap seek counter — grows in one direction, resets when it flips. */

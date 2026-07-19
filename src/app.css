@@ -50,6 +50,9 @@ body { overflow-x: clip; }
    handled separately by forcing WebKit's non-accelerated crisp path while the player is up.) */
 .gamemode *, .gamemode *::before, .gamemode *::after { will-change: auto !important; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+/* YouTube-style double-tap seek: the side arc flashes then fades (base opacity-0 keeps it hidden
+   at rest; re-keyed per accumulated tap so it re-pulses). */
+@keyframes seekpulse { 0% { opacity: 0; } 25% { opacity: 0.3; } 100% { opacity: 0; } }
 /* Opacity-only (no `filter: blur`): WebKitGTK blurs the WHOLE page during CSS filter
    animations (Tauri #9088), and the hero re-fires this on every hero change ({#key}), which
    left the Deck UI soft. A plain fade avoids the bug on both Deck modes. */

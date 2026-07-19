@@ -21,11 +21,9 @@ describe('classifyDrag', () => {
     expect(classifyDrag(s, { x: 200, y: 105, t: 1 }, W, H).kind).toBe('scrub')
   })
 
-  it('classifies left-zone vertical travel as brightness (up = positive dy)', () => {
+  it('ignores left-zone vertical travel (brightness gesture removed)', () => {
     const start = { x: 30, y: 150, t: 0 }
-    const g = classifyDrag(start, { x: 32, y: 100, t: 1 }, W, H)
-    expect(g.kind).toBe('brightness')
-    expect(g.kind === 'brightness' && g.dy > 0).toBe(true)
+    expect(classifyDrag(start, { x: 32, y: 100, t: 1 }, W, H).kind).toBe('none')
   })
 
   it('classifies right-zone vertical travel as volume', () => {

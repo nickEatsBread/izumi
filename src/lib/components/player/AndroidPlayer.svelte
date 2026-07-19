@@ -19,7 +19,6 @@
     seekAbsolute,
     seekKeyframe,
     seekRelative,
-    setBrightness,
     setVolume,
     getVolume,
     haptic,
@@ -231,7 +230,6 @@
   let heldSpeed = false
   const VIDEO_SCRUB_SPAN = 90 // seconds spanned by a full-width horizontal drag over the video
 
-  let brightnessLevel = $state(1) // 0..1 shadow of the window brightness
   let volumeLevel = $state(100) // 0..100
   let hud = $state<{ icon: 'brightness' | 'volume'; pct: number } | null>(null)
   let hudTimer: ReturnType<typeof setTimeout> | undefined
@@ -260,14 +258,11 @@
       const g = classifyDrag(startSample, cur, window.innerWidth, window.innerHeight)
       if (g.kind === 'pending') return
       clearTimeout(holdTimer)
-      gesture = g.kind === 'scrub' || g.kind === 'brightness' || g.kind === 'volume' ? g.kind : 'none'
+      gesture = g.kind === 'scrub' || g.kind === 'volume' ? g.kind : 'none'
       lastSample = { ...startSample }
       if (gesture === 'scrub') { scrubbing = true; scrubStartPos = $mpvState.pos; showControls() }
     }
-    if (gesture === 'brightness') {
-      brightnessLevel = clamp(brightnessLevel - (cur.y - lastSample.y) / window.innerHeight, 0, 1)
-      setBrightness(brightnessLevel); showHud('brightness', brightnessLevel * 100); lastSample = cur
-    } else if (gesture === 'volume') {
+    if (gesture === 'volume') {
       volumeLevel = clamp(volumeLevel - ((cur.y - lastSample.y) / window.innerHeight) * 100, 0, 100)
       setVolume(volumeLevel); showHud('volume', volumeLevel); lastSample = cur
     } else if (gesture === 'scrub') {
@@ -349,15 +344,22 @@
 
 <div bind:this={rootEl} class="fixed inset-0 z-50 select-none touch-none text-white" class:hidden={overlayHidden}
      onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootUp} role="presentation">
-  {#if loading}
+  <!-- Buffering shows a spinner INSTEAD of the play/pause transport, but only while playing — when
+       paused, keep the play button so you can resume. -->
+  {#if loading && !paused}
     <div class="pointer-events-none absolute inset-0 grid place-items-center"><Loader size={52} class="animate-spin text-white/90" /></div>
   {/if}
 
   {#if seekFlash}
-    <div class="pointer-events-none absolute inset-y-0 {seekFlash.side === 'l' ? 'left-0' : 'right-0'} flex w-1/3 items-center justify-center">
-      <div class="flex flex-col items-center gap-1 rounded-full bg-black/45 px-6 py-5 backdrop-blur">
-        {#if seekFlash.side === 'l'}<RotateCcw size={30} />{:else}<RotateCw size={30} />{/if}
-        <span class="text-sm font-bold">{seekFlash.amt}s</span>
+    <!-- YouTube-style curved pulse: the side third with a rounded (arc) inner edge, a pulse that
+         re-fires on each accumulated tap, and the direction arrow + running total. -->
+    <div class="pointer-events-none absolute inset-y-0 flex w-2/5 items-center justify-center overflow-hidden {seekFlash.side === 'l' ? 'left-0 rounded-r-[50%]' : 'right-0 rounded-l-[50%]'}">
+      {#key seekFlash.amt}
+        <div class="absolute inset-0 animate-[seekpulse_0.5s_ease-out] bg-white/90 opacity-0"></div>
+      {/key}
+      <div class="relative flex flex-col items-center gap-1 text-white drop-shadow-lg">
+        {#if seekFlash.side === 'l'}<RotateCcw size={34} />{:else}<RotateCw size={34} />{/if}
+        <span class="text-base font-black">{seekFlash.amt}s</span>
       </div>
     </div>
   {/if}
@@ -399,8 +401,9 @@
       {/if}
     </div>
 
-    <!-- Center transport (morphing play/pause) -->
-    {#if !loading}
+    <!-- Center transport (morphing play/pause). Hidden while buffering-and-playing (spinner shows);
+         always shown when paused so you can resume. -->
+    {#if !loading || paused}
       <div transition:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
         <button onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
         <button onpointerdown={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); togglePause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={paused ? 'Play' : 'Pause'}>
