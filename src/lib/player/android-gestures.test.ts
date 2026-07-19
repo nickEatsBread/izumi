@@ -26,9 +26,9 @@ describe('classifyDrag', () => {
     expect(classifyDrag(start, { x: 32, y: 100, t: 1 }, W, H).kind).toBe('none')
   })
 
-  it('classifies right-zone vertical travel as volume', () => {
+  it('ignores right-zone vertical travel (volume gesture removed)', () => {
     const start = { x: 280, y: 150, t: 0 }
-    expect(classifyDrag(start, { x: 282, y: 100, t: 1 }, W, H).kind).toBe('volume')
+    expect(classifyDrag(start, { x: 282, y: 100, t: 1 }, W, H).kind).toBe('none')
   })
 
   it('ignores center-zone vertical travel', () => {
