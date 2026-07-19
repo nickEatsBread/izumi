@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
-  import { banner, title, format, season } from '$lib/anilist/media'
+  import { banner, title, format, season, totalEpisodes } from '$lib/anilist/media'
   import { goto } from '$app/navigation'
   import { anilistToken } from '$lib/anilist/auth'
   import { toggleFavourite, setStatus, anyTrackerConnected } from '$lib/trackers'
@@ -54,7 +54,7 @@
         <Plus size={16} />
       </button>
     </div>
-    <div class="mt-2 text-[11px] text-muted-foreground">{format(media)} · {media.episodes ?? '?'} eps · {season(media)} · {media.averageScore ?? '–'}%</div>
+    <div class="mt-2 text-[11px] text-muted-foreground">{format(media)} · {totalEpisodes(media) || '?'} eps · {season(media)} · {media.averageScore ?? '–'}%</div>
     <p class="mt-1 line-clamp-4 text-[0.7rem] text-muted-foreground">{(media.description ?? '').replace(/<[^>]+>/g, '')}</p>
   </div>
 </div>

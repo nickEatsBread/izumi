@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
-  import { banner, title, format, status, season } from '$lib/anilist/media'
+  import { banner, title, format, status, season, totalEpisodes } from '$lib/anilist/media'
   import Play from 'lucide-svelte/icons/play'
   import Info from 'lucide-svelte/icons/info'
   import Heart from 'lucide-svelte/icons/heart'
@@ -93,7 +93,7 @@
           <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90
                       [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
             {#if format(current)}<span>{format(current)}</span>{/if}
-            {#if current.episodes && current.episodes !== 1}<span>{current.episodes} Episodes</span>{/if}
+            {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} Episodes</span>{/if}
             {#if status(current)}<span>{status(current)}</span>{/if}
             {#if season(current)}<span>{season(current)}</span>{/if}
             {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}%</span>{/if}
