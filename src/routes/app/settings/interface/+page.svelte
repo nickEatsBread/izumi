@@ -1,11 +1,16 @@
 <script lang="ts">
-  import { episodeLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, type EpisodeLayout, type ScheduleLayout } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, type EpisodeLayout, type BrowseLayout, type ScheduleLayout } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
 
   const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
     { value: 'cards', label: 'Cards', hint: 'Thumbnails, titles, ratings and a watch-progress bar.' },
     { value: 'compact', label: 'Compact', hint: 'Simple text rows — denser, lighter on data.' },
+  ]
+
+  const browseLayouts: { value: BrowseLayout; label: string; hint: string }[] = [
+    { value: 'grid', label: 'Grid', hint: 'Cover-art tiles, three across.' },
+    { value: 'list', label: 'List', hint: 'A vertical list of compact rows — small cover, title and meta. Denser, text-forward.' },
   ]
 
   const scheduleLayouts: { value: ScheduleLayout; label: string; hint: string }[] = [
@@ -38,6 +43,25 @@
           <div class="flex items-center justify-between">
             <span class="font-bold">{opt.label}</span>
             {#if $episodeLayout === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
+        </button>
+      {/each}
+    </div>
+
+    <p class="mb-1 text-sm font-bold">Browse layout</p>
+    <div class="mb-4 grid gap-2 sm:grid-cols-2">
+      {#each browseLayouts as opt (opt.value)}
+        <button
+          data-focusable
+          onclick={() => ($browseLayout = opt.value)}
+          aria-pressed={$browseLayout === opt.value}
+          class="rounded-md border p-3 text-left transition-colors
+            {$browseLayout === opt.value ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}"
+        >
+          <div class="flex items-center justify-between">
+            <span class="font-bold">{opt.label}</span>
+            {#if $browseLayout === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
           </div>
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>

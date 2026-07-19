@@ -6,6 +6,7 @@
   import { heroMedia } from '$lib/stores/hero'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import * as h from '$lib/haptics'
+  import { fly } from 'svelte/transition'
 
   let { children } = $props()
 
@@ -70,7 +71,9 @@
         </a>
         <span class="text-lg font-black">{childTitle}</span>
       </div>
-      <div class="settings-child">{@render children()}</div>
+      {#key $page.url.pathname}
+        <div class="settings-child" in:fly={{ x: 22, duration: 190 }}>{@render children()}</div>
+      {/key}
     </div>
   {/if}
 {:else}

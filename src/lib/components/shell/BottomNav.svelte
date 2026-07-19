@@ -1,9 +1,8 @@
 <script lang="ts">
-  // Mobile bottom tab bar (replaces the fixed left sidebar rail on narrow/Android). Same
-  // destinations, flattened to the 5 that fit a phone bar; Settings absorbs the profile link.
+  // Mobile bottom tab bar (replaces the fixed left sidebar rail on narrow/Android). Four
+  // destinations; Search lives as a top-right icon on the browse header, Settings absorbs profile.
   import Home from 'lucide-svelte/icons/house'
   import Calendar from 'lucide-svelte/icons/calendar'
-  import Search from 'lucide-svelte/icons/search'
   import Download from 'lucide-svelte/icons/download'
   import Settings from 'lucide-svelte/icons/settings'
   import { page } from '$app/state'
@@ -11,10 +10,11 @@
 
   // Schedule takes Cloud's tab slot (Cloud is reachable from the Downloads header instead — both
   // are "your library"). Keeps the bar at 5 so it doesn't crowd on a phone.
+  // Four tabs (Search moved to a top-right icon on the browse header, so the bar stays compact and
+  // in line with native anime apps). Home · Schedule · Downloads · Settings.
   const items = [
     { href: '/app/home', icon: Home, label: 'Home' },
     { href: '/app/schedule', icon: Calendar, label: 'Schedule' },
-    { href: '/app/search', icon: Search, label: 'Search' },
     { href: '/app/downloads', icon: Download, label: 'Downloads' },
     { href: '/app/settings', icon: Settings, label: 'Settings' },
   ]
