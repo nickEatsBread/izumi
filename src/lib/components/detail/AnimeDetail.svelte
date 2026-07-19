@@ -123,10 +123,10 @@
   {@const isFav = fav ?? m.isFavourite ?? false}
   {@const trackerConnected = !!($anilistToken || $malToken)}
   {#if $isMobile}
-    <!-- Mobile: poster-forward header. Own short blurred backdrop (not the 42vh Hero), a portrait
-         cover focal, clamped title, pill chips + score, expandable description, a full-width primary
-         CTA, and a compact action row (4 icons + overflow menu). -->
-    <div class="relative px-4 pb-6">
+    <!-- Mobile: poster-forward header. `isolate` makes this a stacking context so the -z-10
+         background-art layer stays BEHIND the cover/title yet ABOVE the opaque page background
+         (without it, -z-10 escapes to the root and the banner is hidden by the body bg). -->
+    <div class="relative isolate px-4 pb-6">
       <!-- Background art (banner) behind the cover + title, like desktop: prominent at the top,
            dissolving into the page before the description so text stays legible. -->
       <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-80 overflow-hidden">
