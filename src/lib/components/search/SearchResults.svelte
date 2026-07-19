@@ -12,6 +12,8 @@
   import { getContextClient } from '@urql/svelte'
   import { searchQuery, searchVariables, type SearchFilters } from '$lib/anilist/detail-queries'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
+  import { browseLayout } from '$lib/settings/ui'
+  import { title, cover, format, season } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
 
   let { filters }: { filters: SearchFilters } = $props()
@@ -68,17 +70,44 @@
   })
 </script>
 
-<div class="flex flex-wrap gap-3">
-  {#each media as m (m.id)}
-    <SmallCard media={m} />
-  {/each}
-
-  {#if loading}
-    {#each Array.from({ length: media.length ? 6 : 12 }) as _}
-      <div class="h-[228px] w-[152px] animate-pulse rounded-md bg-muted"></div>
+{#if $browseLayout === 'list'}
+  <!-- List: a vertical run of compact rows (small cover + title + meta) — denser, text-forward. -->
+  <div class="flex flex-col gap-1.5">
+    {#each media as m (m.id)}
+      <a href={`/app/anime/${m.id}`} data-focusable
+         class="load-in flex items-center gap-3 rounded-lg p-2 transition-colors active:bg-accent hover:bg-secondary">
+        <img src={cover(m)} alt="" loading="lazy" decoding="async"
+             class="aspect-[2/3] w-12 shrink-0 rounded-md bg-muted object-cover" />
+        <div class="min-w-0 flex-1">
+          <div class="line-clamp-2 text-sm font-black leading-tight">{title(m)}</div>
+          <div class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+            {#if format(m)}<span>{format(m)}</span>{/if}
+            {#if season(m)}<span>{season(m)}</span>{/if}
+            {#if m.averageScore}<span>{m.averageScore}%</span>{/if}
+          </div>
+        </div>
+      </a>
     {/each}
-  {/if}
-</div>
+    {#if loading}
+      {#each Array.from({ length: media.length ? 4 : 8 }) as _}
+        <div class="flex items-center gap-3 p-2"><div class="aspect-[2/3] w-12 shrink-0 animate-pulse rounded-md bg-muted"></div><div class="h-4 flex-1 animate-pulse rounded bg-muted"></div></div>
+      {/each}
+    {/if}
+  </div>
+{:else}
+  <!-- Grid: cover-art tiles. Three across on phones (fills edge-to-edge, no dead right margin);
+       an auto-fill responsive grid on desktop. -->
+  <div class="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
+    {#each media as m (m.id)}
+      <SmallCard media={m} fill />
+    {/each}
+    {#if loading}
+      {#each Array.from({ length: media.length ? 6 : 12 }) as _}
+        <div class="aspect-[2/3] w-full animate-pulse rounded-md bg-muted"></div>
+      {/each}
+    {/if}
+  </div>
+{/if}
 
 {#if error && !media.length}
   <p class="mt-4 text-muted-foreground">Search failed: {error}</p>

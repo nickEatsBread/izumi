@@ -130,6 +130,11 @@ export const showAdult = persisted<boolean>('show-adult', false)
  *  always no-ops regardless). Default on. */
 export const haptics = persisted<boolean>('haptics', true)
 
+/** Browse/search result layout: 'grid' (cover-art tiles, default) or 'list' (a vertical list of
+ *  compact rows — small cover + title + meta, denser and text-forward). */
+export type BrowseLayout = 'grid' | 'list'
+export const browseLayout = persisted<BrowseLayout>('browse-layout', 'grid')
+
 /** Desktop Schedule layout: 'agenda' (full-width day sections, default) or 'days'
  *  (day tabs + one big day). Ignored in Game mode — the Deck always shows one day. */
 export type ScheduleLayout = 'agenda' | 'days'

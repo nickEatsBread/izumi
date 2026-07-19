@@ -9,6 +9,9 @@
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken } from '$lib/trackers/config'
+  import { isMobile } from '$lib/platform'
+  import * as h from '$lib/haptics'
+  import Search from 'lucide-svelte/icons/search'
   import type { Media } from '$lib/anilist/types'
 
   const client = getContextClient()
@@ -72,6 +75,14 @@
     </div>
   </div>
 {:else}
+  {#if $isMobile}
+    <!-- Search moved off the bottom bar to a top-right icon on the browse header (AniStation-style). -->
+    <a href="/app/search" data-focusable aria-label="Search" onclick={() => h.tap()}
+       class="fixed right-3 z-30 grid size-10 place-items-center rounded-full bg-background/50 text-foreground shadow-lg backdrop-blur transition-colors active:bg-accent"
+       style="top:max(0.75rem,env(safe-area-inset-top))">
+      <Search size={20} />
+    </a>
+  {/if}
   <div class="pb-16">
     {#if heroMedias.length}
       <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} oninfo={(m) => goto(`/app/anime/${m.id}`)} />

@@ -11,8 +11,10 @@ import { impactFeedback, notificationFeedback, selectionFeedback } from '@tauri-
 
 const enabled = () => get(isAndroid) && get(hapticsEnabled)
 
-/** Light tap — buttons, nav, list rows. */
-export const tap = () => { if (enabled()) impactFeedback('light').catch(() => {}) }
+/** Tap — buttons, nav, list rows. Uses the 'medium' pattern: the plugin's 'light'/selection
+ *  waveforms are amplitude ~30/255 (~12%) and imperceptible on phones like the S24; 'medium'
+ *  (amp ~50) is the faint-but-clearly-felt click users expect from native nav. */
+export const tap = () => { if (enabled()) impactFeedback('medium').catch(() => {}) }
 /** Selection change — toggles, segmented controls, tab/sort switches. */
 export const select = () => { if (enabled()) selectionFeedback().catch(() => {}) }
 /** Firmer impact for primary/confirm actions. */

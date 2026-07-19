@@ -18,7 +18,9 @@
   import { gameMode } from '$lib/player/session'
   import { isMobile } from '$lib/platform'
   import PreviewCard from './PreviewCard.svelte'
-  let { media }: { media: Media } = $props()
+  // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
+  // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
+  let { media, fill = false }: { media: Media; fill?: boolean } = $props()
 
   let hovered = $state(false)
   let pos = $state({ left: 0, top: 0 })
@@ -59,8 +61,8 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div bind:this={el} class="w-36 shrink-0 sm:w-[152px]" onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
-  <a href={`/app/anime/${media.id}`} data-focusable class="load-in group block w-36 sm:w-[152px]">
+<div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
+  <a href={`/app/anime/${media.id}`} data-focusable class="load-in group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'}">
     <div class="focus-cover aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
