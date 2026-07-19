@@ -1,6 +1,7 @@
 <script lang="ts">
   // Mobile bottom tab bar. Home is a fixed anchor (always first); the remaining tabs come from the
   // user's nav config (Settings → Navigation). Items placed 'top' or 'hidden' don't appear here.
+  import { onMount } from 'svelte'
   import { page } from '$app/state'
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META, HOME_META } from '$lib/settings/nav'
@@ -8,11 +9,28 @@
   const bottom = $derived($effectiveNav.filter((c) => c.placement === 'bottom'))
   const active = (href: string) => page.url.pathname.startsWith(href)
   const HomeIcon = HOME_META.icon
+
+  // Auto-hide on scroll: glide the bar down when scrolling down (more content on screen), slide it
+  // back up on any upward scroll or near the top. Matches the native "immersive nav" pattern.
+  let hidden = $state(false)
+  let lastY = 0
+  onMount(() => {
+    lastY = window.scrollY
+    const onScroll = () => {
+      const y = window.scrollY
+      if (y > lastY + 6 && y > 64) hidden = true
+      else if (y < lastY - 6 || y < 64) hidden = false
+      lastY = y
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  })
 </script>
 
 <nav
   data-nav-sidebar
-  class="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur"
+  class="fixed inset-x-0 bottom-0 z-30 flex items-stretch justify-around border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur transition-transform duration-300 ease-out
+    {hidden ? 'translate-y-full' : 'translate-y-0'}"
 >
   <a
     href={HOME_META.href}

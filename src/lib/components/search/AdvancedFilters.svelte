@@ -60,11 +60,11 @@
 
 <div
   role="dialog" aria-modal="true" aria-label="Advanced filters" tabindex="-1" data-nav-trap
-  class="fixed inset-0 z-50 grid place-items-center bg-black/70 p-2 sm:p-4"
+  class="fixed inset-0 z-50 grid place-items-center bg-black/70 p-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:p-4"
   onclick={(e) => { if (e.target === e.currentTarget) onClose() }}
   onkeydown={(e) => { if (e.key === 'Escape') onClose() }}
 >
-  <div class="flex max-h-[94dvh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl sm:max-h-[88vh]">
+  <div class="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl sm:max-h-[88vh]">
     <div class="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
       <h2 class="text-lg font-black">Advanced filters</h2>
       <button data-focusable onclick={onClose} aria-label="Close"

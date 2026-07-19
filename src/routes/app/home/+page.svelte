@@ -79,15 +79,15 @@
   </div>
 {:else}
   {#if $isMobile}
-    <!-- Top app bar: brand mark left, search right, over a downward scrim so both stay legible on
-         top of the hero art (Crunchyroll/AniStation style). The bar passes touches through except
-         its two controls, so the hero underneath stays swipeable. -->
-    <div class="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-gradient-to-b from-background/90 via-background/40 to-transparent px-4 pb-8 pt-[max(0.5rem,env(safe-area-inset-top))]">
-      <a href="/app/home" aria-label="Home" class="pointer-events-auto">
-        <img src="/brand/izumi-mark-color.svg" alt="izumi" class="h-7 w-7" draggable="false" />
+    <!-- Top app bar: brand mark + wordmark on the left, configured top icons on the right. In-flow
+         (NOT pinned) so it only shows at the very top and scrolls away with the page. -->
+    <div class="flex items-center justify-between px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+      <a href="/app/home" aria-label="Home" class="flex items-center gap-2">
+        <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
+        <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="h-5" draggable="false" />
       </a>
       {#if topNav.length}
-        <div class="pointer-events-auto flex items-center gap-1">
+        <div class="flex items-center gap-1">
           {#each topNav as c (c.id)}
             {@const meta = NAV_META[c.id]}
             {@const Icon = meta.icon}

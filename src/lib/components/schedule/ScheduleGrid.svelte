@@ -113,6 +113,13 @@
   let selected = $state(-1)
   $effect(() => { if (selected < 0) selected = todayIdx >= 0 ? todayIdx : 0 })
 
+  // Keep the selected day card centered in the horizontally-scrollable day strip (mobile).
+  let dayRow = $state<HTMLElement>()
+  $effect(() => {
+    const el = dayRow?.children[selected] as HTMLElement | undefined
+    el?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  })
+
   // Game mode only: L1/R1 (bumpers) step the selected day (wrapping). Bumpers are clean
   // digital buttons — one press = one step — unlike the analog triggers.
   $effect(() => {
@@ -143,10 +150,10 @@
 {/snippet}
 
 {#snippet dayView(showHint: boolean)}
-  <div class="mb-4 flex gap-1.5">
+  <div bind:this={dayRow} class="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] snap-x sm:overflow-visible">
     {#each SHORT as d, i (d)}
       <button data-focusable onclick={() => { if (i !== selected) h.tap(); selected = i }}
-        class="relative flex-1 rounded-lg py-2 text-center text-sm font-black transition-colors
+        class="relative w-20 shrink-0 snap-center rounded-lg py-2.5 text-center text-sm font-black transition-colors sm:w-auto sm:flex-1 sm:shrink
                {i === selected ? 'bg-primary text-primary-foreground' : 'bg-secondary hover:bg-accent'}">
         {d}
         <span class="block text-[0.65rem] font-normal opacity-70">{dayDate(i)}</span>
