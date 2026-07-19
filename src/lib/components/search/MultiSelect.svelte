@@ -18,7 +18,9 @@
   let open = $state(false)
   let root = $state<HTMLElement>()
   let panelTop = $state(0)
-  const pretty = (s: string) => s.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())
+  // Title-case, keeping known acronyms uppercase (TV, OVA, ONA) instead of "Tv"/"Ova"/"Ona".
+  const ACRONYMS = new Set(['TV', 'OVA', 'ONA'])
+  const pretty = (s: string) => s.split('_').map((w) => ACRONYMS.has(w.toUpperCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
 
   function toggleOpen() {
     open = !open

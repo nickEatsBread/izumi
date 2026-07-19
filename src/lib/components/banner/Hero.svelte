@@ -84,8 +84,10 @@
     <!-- Mobile Home: a CONTAINED poster block (not a full-bleed banner) — reads far better on a
          phone (Netflix-style). Portrait cover art, dark bottom scrim, title/meta/genres + Watch,
          swipeable with dot pips. -->
+    <!-- Height in vh (not a portrait aspect ratio): stays bounded + usable in landscape, where a
+         3/4 aspect on a wide viewport overflowed the screen. A touch smaller than before. -->
     <div
-      class="relative mx-4 mb-6 aspect-[3/4] touch-pan-y overflow-hidden rounded-2xl shadow-xl"
+      class="relative mx-4 mb-6 h-[46vh] touch-pan-y overflow-hidden rounded-2xl shadow-xl"
       style="--accent:{accent}"
       role="group"
       aria-label="Featured"
