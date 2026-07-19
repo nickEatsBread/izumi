@@ -2,7 +2,8 @@ import { derived, get, writable, type Readable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
 import type { Client } from '@urql/svelte'
 import { LIST_QUERY, MEDIA_BY_IDS_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries } from '$lib/anilist/lists'
-import { getMalListProgressOrThrow } from '$lib/trackers'
+import { getMalListProgressOrThrow, setStatus } from '$lib/trackers'
+import { cwDismissAction } from '$lib/settings/ui'
 import { hasAiredEpisodeToWatch } from '$lib/anilist/media'
 import { localHistory, sessionProgress, historyEntries, mediaSnapshot, type HistoryEntry } from './history'
 import type { Media } from '$lib/anilist/types'
@@ -23,6 +24,12 @@ export interface CwEntry {
 
 /** Persisted view cache of the last merged Continue Watching list. NOT localHistory. */
 export const cwSnapshot = persisted<CwEntry[]>('cw-snapshot', [])
+
+/** Series the user removed from Continue Watching, keyed to the watched-episode count AT removal.
+ *  mergeInstant hides an entry whose progress is <= its dismissed floor, so the removal survives a
+ *  tracker reconcile — yet the series reappears automatically once a NEWER episode is watched
+ *  (progress exceeds the floor). No manual "un-dismiss" needed. */
+export const cwDismissed = persisted<Record<number, number>>('cw-dismissed', {})
 
 /** True while a background reconcile is in flight (drives the grayed-out "provisional" cue). */
 export const reconciling = writable(false)
@@ -52,6 +59,7 @@ export function mergeInstant(
   snapshot: CwEntry[],
   history: Record<number, HistoryEntry>,
   session: Record<number, number>,
+  dismissed: Record<number, number> = {},
 ): CwEntry[] {
   const map = new Map<number, CwEntry>()
   for (const e of snapshot) upsert(map, e)
@@ -64,14 +72,25 @@ export function mergeInstant(
   }
   return [...map.values()]
     .filter((e) => hasAiredEpisodeToWatch(e.media, e.progress))
+    // Hide user-dismissed series until a NEWER episode is watched (progress passes the floor).
+    .filter((e) => { const d = dismissed[e.media.id]; return d == null || e.progress > d })
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-/** Renders instantly from the local snapshot ∪ history; recomputes as any of the three stores change. */
+/** Renders instantly from the local snapshot ∪ history (minus dismissals); recomputes as any store changes. */
 export const continueWatching: Readable<CwEntry[]> = derived(
-  [cwSnapshot, localHistory, sessionProgress],
-  ([$snapshot, $history, $session]) => mergeInstant($snapshot, $history, $session),
+  [cwSnapshot, localHistory, sessionProgress, cwDismissed],
+  ([$snapshot, $history, $session, $dismissed]) => mergeInstant($snapshot, $history, $session, $dismissed),
 )
+
+/** Remove a series from Continue Watching. Records a dismissed floor (survives reconcile, self-heals
+ *  on a new watch) and applies the configured tracker side-effect (none / On Hold / Dropped). */
+export function dismissContinueWatching(media: Media, progress: number): void {
+  cwDismissed.update((d) => ({ ...d, [media.id]: progress }))
+  const action = get(cwDismissAction)
+  if (action === 'dropped') void setStatus(media, 'DROPPED')
+  else if (action === 'paused') void setStatus(media, 'PAUSED')
+}
 
 // ── Reconcile ────────────────────────────────────────────────────────────────────────────────────
 

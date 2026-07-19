@@ -72,6 +72,14 @@ describe('mergeInstant (instant paint)', () => {
     const out = mergeInstant([], { 1: hist(1, { episode: 5, progress: 2 }) }, {})
     expect(out[0].progress).toBe(4)
   })
+
+  it('hides a dismissed series until a newer episode is watched (dismissed floor)', () => {
+    const snapshot = [entry(1, 3, 200), entry(2, 5, 100)]
+    // Dismissed id 1 at progress 3 -> hidden while progress stays at/below the floor.
+    expect(mergeInstant(snapshot, {}, {}, { 1: 3 }).map((e) => e.media.id)).toEqual([2])
+    // A newer episode watched (session lifts progress to 4 > floor 3) -> it reappears.
+    expect(mergeInstant(snapshot, {}, { 1: 4 }, { 1: 3 }).map((e) => e.media.id)).toEqual([1, 2])
+  })
 })
 
 describe('buildSnapshot (reconcile merge)', () => {

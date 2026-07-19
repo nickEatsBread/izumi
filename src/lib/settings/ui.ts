@@ -8,6 +8,11 @@ export type EpisodeLayout = 'cards' | 'compact'
 /** Persisted episode-list layout preference (default: rich cards). */
 export const episodeLayout = persisted<EpisodeLayout>('episode-layout', 'cards')
 
+/** What removing a series from Continue Watching (press D on a card) also does to the tracker.
+ *  'none' = just hide it from the row (default). */
+export type CwDismissAction = 'none' | 'paused' | 'dropped'
+export const cwDismissAction = persisted<CwDismissAction>('cw-dismiss-action', 'none')
+
 /** Which title to show for anime across the app (see `title()` in anilist/media). */
 export type TitleLanguage = 'romaji' | 'english'
 /** Persisted title-language preference (default: Romaji). */
