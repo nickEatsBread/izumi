@@ -55,7 +55,7 @@
   onclick={play}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
-  class="group flex w-[264px] shrink-0 cursor-pointer flex-col text-left"
+  class="group flex w-[72vw] shrink-0 cursor-pointer flex-col text-left sm:w-[264px]"
 >
   <div class="focus-cover relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
     {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}

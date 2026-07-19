@@ -25,7 +25,7 @@
 {#if cold}
   <Carousel {title}>
     {#each Array.from({ length: 5 }) as _}
-      <div class="aspect-video w-[264px] shrink-0 animate-pulse rounded-lg bg-muted"></div>
+      <div class="aspect-video w-[72vw] shrink-0 animate-pulse rounded-lg bg-muted sm:w-[264px]"></div>
     {/each}
   </Carousel>
 {:else if items.length}

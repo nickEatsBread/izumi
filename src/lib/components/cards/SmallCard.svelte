@@ -59,9 +59,9 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div bind:this={el} class="w-[152px] shrink-0" onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
-  <a href={`/app/anime/${media.id}`} data-focusable class="load-in group block w-[152px]">
-    <div class="focus-cover h-[228px] w-[152px] overflow-hidden rounded-md bg-muted">
+<div bind:this={el} class="w-28 shrink-0 sm:w-[152px]" onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
+  <a href={`/app/anime/${media.id}`} data-focusable class="load-in group block w-28 sm:w-[152px]">
+    <div class="focus-cover aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
            browser promotes the one card being hovered on demand; that's all this needs. -->
