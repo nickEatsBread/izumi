@@ -126,6 +126,9 @@ export const wheelScrollAcross = persisted<boolean>('carousel-wheel-scroll', fal
 export const uiScale = persisted<number>('ui-scale', 1)
 /** Include 18+ / adult titles in browse + search (AniList isAdult filter). */
 export const showAdult = persisted<boolean>('show-adult', false)
+/** Haptic feedback on taps/toggles/actions (Android only; desktop has no haptics engine and
+ *  always no-ops regardless). Default on. */
+export const haptics = persisted<boolean>('haptics', true)
 
 /** Desktop Schedule layout: 'agenda' (full-width day sections, default) or 'days'
  *  (day tabs + one big day). Ignored in Game mode — the Deck always shows one day. */
