@@ -1,10 +1,14 @@
 <script lang="ts">
   import { anilistUser } from '$lib/anilist/account'
-  import { anilistToken, anilistUserName, malToken, malUserName } from '$lib/trackers/config'
+  import { anilistToken, anilistUserName, malToken, malUserName, malUser } from '$lib/trackers/config'
 
-  let userInput = $state($anilistUser)
-  function saveUser() { $anilistUser = userInput.trim() }
-  function clearUser() { $anilistUser = ''; userInput = '' }
+  // Read-only usernames (no login) — one per tracker. Public lists only; progress never syncs back.
+  let aniInput = $state($anilistUser)
+  function saveAni() { $anilistUser = aniInput.trim() }
+  function clearAni() { $anilistUser = ''; aniInput = '' }
+  let malInput = $state($malUser)
+  function saveMal() { $malUser = malInput.trim() }
+  function clearMal() { $malUser = ''; malInput = '' }
 
   let aniBusy = $state(false)
   let aniError = $state('')
@@ -39,21 +43,36 @@
 
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Accounts</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Read-only AniList username for Home, or connect AniList/MyAnimeList to sync progress.</p>
+  <p class="mb-4 text-sm text-muted-foreground">Show a public AniList or MyAnimeList library without logging in, or connect an account to sync progress.</p>
 
   <section class="mb-8 max-w-2xl">
-    <h3 class="mb-2 font-bold">AniList username (read-only)</h3>
+    <h3 class="mb-1 font-bold">Read-only (no login)</h3>
+    <p class="mb-3 text-sm text-muted-foreground">Enter a public username to browse that library. Progress only syncs when you connect an account below.</p>
+
+    <!-- AniList username -->
+    <label for="ani-user" class="mb-1 block text-sm font-bold">AniList username</label>
     <div class="flex gap-2">
-      <input bind:value={userInput} data-focusable placeholder="AniList username" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
-      <button onclick={saveUser} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Save</button>
+      <input id="ani-user" bind:value={aniInput} data-focusable placeholder="AniList username" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
+      <button onclick={saveAni} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Save</button>
     </div>
     {#if $anilistUser}
-      <div class="mt-3 flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
-        <span class="truncate">Signed in as <span class="font-bold">{$anilistUser}</span></span>
-        <button onclick={clearUser} data-focusable class="ml-2 text-destructive">Clear</button>
+      <div class="mt-2 flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
+        <span class="truncate">Reading <span class="font-bold">{$anilistUser}</span>’s AniList</span>
+        <button onclick={clearAni} data-focusable class="ml-2 text-destructive">Clear</button>
       </div>
-    {:else}
-      <p class="mt-3 text-sm text-muted-foreground">No username set.</p>
+    {/if}
+
+    <!-- MyAnimeList username -->
+    <label for="mal-user" class="mb-1 mt-4 block text-sm font-bold">MyAnimeList username</label>
+    <div class="flex gap-2">
+      <input id="mal-user" bind:value={malInput} data-focusable placeholder="MyAnimeList username" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
+      <button onclick={saveMal} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Save</button>
+    </div>
+    {#if $malUser}
+      <div class="mt-2 flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
+        <span class="truncate">Reading <span class="font-bold">{$malUser}</span>’s MyAnimeList</span>
+        <button onclick={clearMal} data-focusable class="ml-2 text-destructive">Clear</button>
+      </div>
     {/if}
   </section>
 

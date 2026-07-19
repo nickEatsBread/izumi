@@ -5,26 +5,31 @@
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import MalListRow from '$lib/components/cards/MalListRow.svelte'
   import { anilistUser } from '$lib/anilist/account'
-  import { anilistUserName, malToken } from '$lib/trackers/config'
+  import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
   import { heroMedia } from '$lib/stores/hero'
+  import { offlineMode } from '$lib/stores/offline'
+  import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
 
   // No shared hero banner on this page.
   heroMedia.set(null)
   const listUser = $derived($anilistUserName || $anilistUser)
 </script>
 
+{#if $offlineMode}
+  <OfflineUnavailable title="Your List is unavailable offline" subtitle="Your tracker lists need a connection. Downloaded titles are available on the Downloads page." />
+{:else}
 <div class="p-4 pb-16 sm:p-8">
   <h1 class="mb-4 text-2xl font-black">My List</h1>
 
-  {#if listUser || $malToken}
-    <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken} />
+  {#if listUser || $malToken || $malUser}
+    <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
     {#if listUser}
       <ListRow title="Watching" userName={listUser} status="CURRENT" />
       <ListRow title="Planning" userName={listUser} status="PLANNING" />
       <ListRow title="Completed" userName={listUser} status="COMPLETED" />
       <ListRow title="Paused" userName={listUser} status="PAUSED" />
     {/if}
-    {#if $malToken}
+    {#if $malToken || $malUser}
       <MalListRow title="Watching (MAL)" status="watching" />
       <MalListRow title="Plan to Watch (MAL)" status="plan_to_watch" />
       <MalListRow title="Completed (MAL)" status="completed" />
@@ -39,3 +44,4 @@
     </div>
   {/if}
 </div>
+{/if}
