@@ -112,6 +112,8 @@
   }
 </script>
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
+
 {#if $store.fetching}
   <div class="h-[42vh] w-full animate-pulse bg-muted"></div>
 {:else if $store.error}
@@ -187,11 +189,16 @@
           </button>
         {/if}
         <button data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
+                aria-haspopup="true" aria-expanded={showMore}
                 class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
           <MoreHorizontal size={18} />
         </button>
 
         {#if showMore}
+          <!-- Full-screen backdrop (below the menu) so a tap anywhere else dismisses it, matching
+               the trailer dialog's dismissal convention. Escape is handled on <svelte:window>. -->
+          <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
+                  class="fixed inset-0 z-10 cursor-default"></button>
           <div class="absolute bottom-full right-0 z-20 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
             {#if trackerConnected}
               <div class="px-2 pb-1 text-[0.65rem] uppercase text-muted-foreground">Your rating</div>

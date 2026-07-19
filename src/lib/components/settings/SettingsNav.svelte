@@ -40,7 +40,12 @@
     ] },
   ]
   const flat = groups.flatMap((g) => g.items) // desktop rail order
-  const active = (href: string) => $page.url.pathname === href || $page.url.pathname.startsWith(href + '/')
+  const active = (href: string) =>
+    $page.url.pathname === href ||
+    $page.url.pathname.startsWith(href + '/') ||
+    // The bare /app/settings landing renders the Player pane (desktop passthrough), so highlight
+    // Player there too — otherwise the default Settings screen has no active rail item.
+    (href === '/app/settings/player' && $page.url.pathname === '/app/settings')
 </script>
 
 {#if $isMobile}
