@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, type EpisodeLayout, type BrowseLayout, type ScheduleLayout } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, cwDismissAction, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type CwDismissAction } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
+
+  const cwActions: { value: CwDismissAction; label: string; hint: string }[] = [
+    { value: 'none', label: 'Do nothing', hint: 'Just hide it from the row.' },
+    { value: 'paused', label: 'Set On Hold', hint: 'Also move it to On Hold / Paused on your tracker.' },
+    { value: 'dropped', label: 'Set Dropped', hint: 'Also mark it Dropped on your tracker.' },
+  ]
 
   const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
     { value: 'cards', label: 'Cards', hint: 'Thumbnails, titles, ratings and a watch-progress bar.' },
@@ -89,6 +95,28 @@
 
     <div class="mb-4">
       <Toggle label="Pin schedule header" desc="Keep the My Shows / All toggle and Next-up strip stuck to the top while scrolling the schedule. Off = the header scrolls away with the list (default on Android)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
+    </div>
+
+    <p class="mb-1 text-sm font-bold">Remove from Continue Watching</p>
+    <p class="mb-2 text-xs text-muted-foreground">
+      Press <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-[0.7rem] font-bold">D</kbd> while hovering (or selecting) a series in the Continue Watching row to remove it. This can also update your tracker:
+    </p>
+    <div class="mb-4 grid gap-2 sm:grid-cols-3">
+      {#each cwActions as opt (opt.value)}
+        <button
+          data-focusable
+          onclick={() => ($cwDismissAction = opt.value)}
+          aria-pressed={$cwDismissAction === opt.value}
+          class="rounded-md border p-3 text-left transition-colors
+            {$cwDismissAction === opt.value ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}"
+        >
+          <div class="flex items-center justify-between">
+            <span class="font-bold">{opt.label}</span>
+            {#if $cwDismissAction === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
+        </button>
+      {/each}
     </div>
 
     <div class="space-y-3">
