@@ -11,11 +11,14 @@
   import { anilistUserName, malToken } from '$lib/trackers/config'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
-  import Search from 'lucide-svelte/icons/search'
+  import { effectiveNav, NAV_META } from '$lib/settings/nav'
   import type { Media } from '$lib/anilist/types'
 
   const client = getContextClient()
   const sections = homeSections(new Date())
+
+  // Top-bar icons come from the nav config (items the user placed 'top').
+  const topNav = $derived($effectiveNav.filter((c) => c.placement === 'top'))
 
   // Personalized rows use the connected AniList account name (from OAuth) if present,
   // otherwise the manually-entered username.
@@ -80,11 +83,21 @@
          top of the hero art (Crunchyroll/AniStation style). The bar passes touches through except
          its two controls, so the hero underneath stays swipeable. -->
     <div class="pointer-events-none fixed inset-x-0 top-0 z-30 flex items-center justify-between bg-gradient-to-b from-background/90 via-background/40 to-transparent px-4 pb-8 pt-[max(0.5rem,env(safe-area-inset-top))]">
-      <img src="/brand/izumi-mark-color.svg" alt="izumi" class="pointer-events-auto h-7 w-7" draggable="false" />
-      <a href="/app/search" data-focusable aria-label="Search" onclick={() => h.tap()}
-         class="pointer-events-auto grid size-9 place-items-center rounded-full text-foreground transition-colors active:bg-white/10">
-        <Search size={22} />
+      <a href="/app/home" aria-label="Home" class="pointer-events-auto">
+        <img src="/brand/izumi-mark-color.svg" alt="izumi" class="h-7 w-7" draggable="false" />
       </a>
+      {#if topNav.length}
+        <div class="pointer-events-auto flex items-center gap-1">
+          {#each topNav as c (c.id)}
+            {@const meta = NAV_META[c.id]}
+            {@const Icon = meta.icon}
+            <a href={meta.href} data-focusable aria-label={meta.label} onclick={() => h.tap()}
+               class="grid size-9 place-items-center rounded-full text-foreground transition-colors active:bg-white/10">
+              <Icon size={22} />
+            </a>
+          {/each}
+        </div>
+      {/if}
     </div>
   {/if}
   <div class="pb-16">
