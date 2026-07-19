@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 // Mock the native plugin; every fn returns a resolved promise (the wrapper .catch()es it).
-const ok = () => Promise.resolve()
+const ok = (..._args: unknown[]) => Promise.resolve()
 const impactFeedback = vi.fn(ok)
 const notificationFeedback = vi.fn(ok)
 const selectionFeedback = vi.fn(ok)
@@ -10,8 +10,6 @@ vi.mock('@tauri-apps/plugin-haptics', () => ({
   impactFeedback: (s: string) => impactFeedback(s),
   notificationFeedback: (t: string) => notificationFeedback(t),
   selectionFeedback: () => selectionFeedback(),
-  ImpactFeedbackStyle: { Light: 'Light', Medium: 'Medium', Heavy: 'Heavy' },
-  NotificationFeedbackType: { Success: 'Success', Warning: 'Warning', Error: 'Error' },
 }))
 
 import { isAndroid } from '$lib/platform'
@@ -42,11 +40,11 @@ describe('haptics gating', () => {
 
   it('fires the right feedback on Android when enabled', () => {
     isAndroid.set(true); hapticsEnabled.set(true)
-    tap();     expect(impactFeedback).toHaveBeenLastCalledWith('Light')
-    impact('heavy'); expect(impactFeedback).toHaveBeenLastCalledWith('Heavy')
+    tap();     expect(impactFeedback).toHaveBeenLastCalledWith('light')
+    impact('heavy'); expect(impactFeedback).toHaveBeenLastCalledWith('heavy')
     select();  expect(selectionFeedback).toHaveBeenCalledTimes(1)
-    success(); expect(notificationFeedback).toHaveBeenLastCalledWith('Success')
-    error();   expect(notificationFeedback).toHaveBeenLastCalledWith('Error')
+    success(); expect(notificationFeedback).toHaveBeenLastCalledWith('success')
+    error();   expect(notificationFeedback).toHaveBeenLastCalledWith('error')
     expect(get(hapticsEnabled)).toBe(true)
   })
 })
