@@ -103,16 +103,17 @@
   bind:this={dialog}
   role="dialog" aria-modal="true" aria-label="Edit list entry" tabindex="-1"
   data-nav-trap
-  class="fixed inset-0 z-50 grid place-items-end bg-black/70 sm:place-items-center sm:p-4"
+  class="fixed inset-0 z-50 grid h-[100dvh] place-items-end overflow-hidden bg-black/70 sm:place-items-center sm:p-4"
   onclick={(e) => { if (e.target === e.currentTarget) onclose() }}
   onkeydown={(e) => { if (e.key === 'Escape') onclose() }}
 >
-  <div class="max-h-[calc(100vh-1rem)] w-full max-w-md overflow-y-auto rounded-t-2xl border border-border bg-card p-5 shadow-2xl sm:rounded-2xl">
-    <div class="mb-4 flex items-center justify-between">
+  <div class="flex max-h-[100dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:rounded-2xl">
+    <div class="flex shrink-0 items-center justify-between px-5 pb-3 pt-5">
       <h3 class="text-lg font-black">Edit list</h3>
       <button data-focusable aria-label="Close" onclick={onclose} class="grid size-8 place-items-center rounded-md hover:bg-accent"><X size={18} /></button>
     </div>
 
+    <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5">
     <fieldset class="mb-4">
       <legend class="mb-2 text-sm font-bold">Status</legend>
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -161,8 +162,9 @@
           class="grid size-11 place-items-center rounded-md bg-background/70 transition-colors hover:bg-accent disabled:opacity-30"><Plus size={18} /></button>
       </div>
     </div>
+    </div>
 
-    <div class="flex items-center gap-2">
+    <div class="flex shrink-0 items-center gap-2 border-t border-border bg-card px-5 pt-3" style="padding-bottom: max(1rem, env(safe-area-inset-bottom));">
       {#if hasEntry}
         <button data-focusable onclick={remove} disabled={busy} aria-label="Remove from list"
                 class="grid size-10 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-40"><Trash2 size={18} /></button>
