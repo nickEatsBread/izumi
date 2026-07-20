@@ -17,6 +17,7 @@
   import { startNativeGamepadSeek } from '$lib/player/gamepad'
   import { commentsEnabled, discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
+  import { reportWatchPlayback } from '$lib/watch-together/client'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -455,12 +456,13 @@
       listen<[number, number]>('player-progress', (e) => {
         pos = e.payload[0]
         dur = e.payload[1]
+        reportWatchPlayback(pos, dur, paused)
         // First real frame shown → stop treating core-idle as "still loading".
         if (dur > 0 && !coreIdle) firstFrame = true
         if (!metaLoaded && dur > 0 && np.malId && np.episode) loadMeta()
       }),
       listen<number>('player-buffer', (e) => (buffer = e.payload)),
-      listen<boolean>('player-paused', (e) => (paused = e.payload)),
+      listen<boolean>('player-paused', (e) => { paused = e.payload; reportWatchPlayback(pos, dur, paused) }),
       listen<boolean>('player-buffering', (e) => (buffering = e.payload)),
       listen<boolean>('player-core-idle', (e) => (coreIdle = e.payload)),
       listen<boolean>('player-seeking', (e) => (seeking = e.payload)),

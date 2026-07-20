@@ -31,6 +31,7 @@
   import { zoneOf, classifyDrag, HOLD_MS, DOUBLE_TAP_MS } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen } from '$lib/player/session'
   import { commentsEnabled } from '$lib/comments'
+  import { reportWatchPlayback } from '$lib/watch-together/client'
   import { autoSkip, seekDuration, scrubThumbnails } from '$lib/settings/ui'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { playNext, playPrev, playEpisode, finalizeAndroidWatch } from '$lib/stremio/play'
@@ -62,6 +63,7 @@
   const dur = $derived($mpvState.dur)
   const paused = $derived($mpvState.paused)
   const loading = $derived($mpvState.buffering || dur === 0)
+  $effect(() => { reportWatchPlayback($mpvState.pos, $mpvState.dur, $mpvState.paused) })
   const playedPct = $derived(dur > 0 ? Math.min(100, (pos / dur) * 100) : 0)
   const cachePct = $derived(dur > 0 ? Math.min(100, ($mpvState.cacheEnd / dur) * 100) : 0)
 

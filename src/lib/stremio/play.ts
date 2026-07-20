@@ -8,7 +8,7 @@ import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wro
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
-import { downloadOf } from '$lib/downloads/state'
+import { downloadOf, type DownloadPreferences } from '$lib/downloads/state'
 import { resolveHash, providerName, type EpisodeWant } from './debrid'
 import { resolveOnlineStreams } from './onlinestream'
 import { fetchExternalSubtitles } from './subtitles'
@@ -75,9 +75,9 @@ export async function searchOnlineSubtitles(_query?: string): Promise<void> {
 let stop: Array<() => void> = []
 
 // The in-flight source resolve (playEpisode). A new play or an explicit picker close aborts it
-// so a superseded resolve settles to idle AT ONCE — instead of blocking the next episode click
-// (the caller's `resolving` flag stayed stuck) while its now-orphaned fetches finish. The fetches
-// themselves are best-effort and left to complete in the background.
+// so a closed resolve settles to idle at once instead of leaving its caller stuck in `resolving`.
+// A superseded resolve stays silent because the newer request now owns caller state. The fetches
+// themselves are best-effort and may finish harmlessly in the background.
 let resolveAbort: AbortController | null = null
 /** Abort the in-flight source resolve — called when the picker is closed (X / click-off / Esc). */
 export function cancelResolve() { resolveAbort?.abort(); resolveAbort = null }
@@ -502,17 +502,26 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   streamPicker.set({ media, episode, streams: [], cachedCount: 0, resolving: true })
   const stillCurrent = () => {
     const current = get(streamPicker)
-    return !!current && current.media.id === media.id && current.episode === episode
+    // Media + episode are not a unique request identity: a closed picker can be reopened for the
+    // same episode while this request's uncancelled network work is still settling. Only the latest
+    // controller may mutate the picker, otherwise stale batches/errors leak into the new request.
+    return resolveAbort === abort && !signal.aborted
+      && !!current && current.media.id === media.id && current.episode === episode
   }
   const showPickerError = (message: string) => {
-    if (stillCurrent()) {
-      streamPicker.update((current) => current ? {
-        ...current,
-        resolving: false,
-        playbackError: message,
-      } : current)
-    }
+    if (!stillCurrent()) return
+    streamPicker.update((current) => current ? {
+      ...current,
+      resolving: false,
+      playbackError: message,
+    } : current)
     onState({ status: 'error', message })
+  }
+  // Closing the picker aborts and clears the controller, so its caller still needs to leave the
+  // resolving state. A newer request replaces the controller; the superseded caller must not emit
+  // a late idle/error that can overwrite that newer request's state.
+  const settleCancellation = () => {
+    if (resolveAbort === null) onState({ status: 'idle' })
   }
   try {
     // Instant path: this episode was prefetched near the end of the previous one
@@ -620,9 +629,9 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       }
     })
     await seasonReady
-    // Superseded by a newer play, or the picker was closed → settle to idle NOW so the caller's
-    // `resolving` guard clears and the next episode click works (don't wait on orphaned fetches).
-    if (signal.aborted) return onState({ status: 'idle' })
+    // If the picker was closed, settle its caller to idle now so the next click works. If a newer
+    // play superseded this one, stay silent because that request now owns the caller's state.
+    if (signal.aborted) return settleCancellation()
     // A ready-to-play same-release source may have been tried while results streamed in. Wait for
     // its real outcome: success closes the picker; failure finishes populating it for manual choice.
     if (continuationAttempt && await continuationAttempt) return
@@ -665,6 +674,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     onState({ status: 'idle' })
   }
   catch (e) {
+    if (signal.aborted) return settleCancellation()
     showPickerError(e instanceof Error ? e.message : String(e))
   }
 }
@@ -1011,10 +1021,28 @@ export interface ResolvedDownload { url: string; filename: string; quality?: str
 // the same resolveStreams+pickBest path as playback; resolves an uncached/extension
 // pick through debrid when nothing is cached. Fetches the Media by id so it works
 // even for a persisted download resumed after an app restart.
-export async function resolveDownloadUrl(mediaId: number, episode: number): Promise<ResolvedDownload> {
+export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences): Promise<ResolvedDownload> {
   const media = await fetchMediaById(mediaId)
   const { streams, want } = await resolveStreams(media, episode)
-  const best = pickBest(streams, get(preferredQuality), want) ?? streams[0]
+  let eligible = streams
+  if (preferences?.cachedOnly) eligible = eligible.filter((stream) => !isUncached(stream))
+  const raw = (stream: Stream) => `${stream.name ?? ''} ${stream.title ?? ''} ${stream.behaviorHints?.filename ?? ''}`.toLowerCase()
+  if (preferences?.audio && preferences.audio !== 'any') {
+    const preferred = eligible.filter((stream) => preferences.audio === 'dub'
+      ? /\b(?:dub|dual[ ._-]?audio|english[ ._-]?audio)\b/i.test(raw(stream))
+      : !/\b(?:dub|english[ ._-]?audio)\b/i.test(raw(stream)))
+    if (preferred.length) eligible = preferred
+  }
+  if (preferences?.codec && preferences.codec !== 'any') {
+    const patterns = {
+      h264: /\b(?:h\.?264|x264|avc)\b/i,
+      h265: /\b(?:h\.?265|x265|hevc)\b/i,
+      av1: /\bav1\b/i,
+    }
+    const preferred = eligible.filter((stream) => patterns[preferences.codec as 'h264' | 'h265' | 'av1'].test(raw(stream)))
+    if (preferred.length) eligible = preferred
+  }
+  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want) ?? eligible[0]
   if (!best) throw new Error('No source found to download.')
   let url = best.url
   let prov: string | undefined

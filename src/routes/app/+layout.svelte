@@ -32,6 +32,8 @@
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { initTrackerQueue } from '$lib/trackers/queue'
   import { initDeviceSync } from '$lib/sync/client'
+  import { initAutoDownloads } from '$lib/downloads/rules'
+  import { initWatchTogether } from '$lib/watch-together/client'
   import { startUpdateChecks } from '$lib/updater'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
   import { get } from 'svelte/store'
@@ -65,6 +67,8 @@
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
     initDeviceSync() // account-free Iroh watch sync (automatically gated off by AniList/MAL)
+    const stopAutoDownloads = initAutoDownloads()
+    const stopWatchTogether = initWatchTogether()
     // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
     // (persisted to idb after), so a fresh install's FIRST play doesn't eat it on the
     // click-to-play path. Fire-and-forget; getIndex is cached/idempotent.
@@ -82,7 +86,7 @@
     // connected. Fire-and-forget.
     refreshAniListAvatar().catch(() => {})
     refreshMalViewer().catch(() => {})
-    return () => stopUpdates?.() // tear the update timer down on unmount (mirrors the gamepad effect)
+    return () => { stopUpdates?.(); stopAutoDownloads(); stopWatchTogether() }
   })
 
   // Push the DNS-over-HTTPS setting into the Rust HTTP client. Reactive: runs on

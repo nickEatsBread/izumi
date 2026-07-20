@@ -6,6 +6,12 @@ import type { Media } from '$lib/anilist/types'
 // a local file without a circular import. The queue/actions live in store.ts.
 
 export type DlStatus = 'queued' | 'downloading' | 'paused' | 'done' | 'error'
+export interface DownloadPreferences {
+  quality?: '2160' | '1080' | '720' | '480' | 'any'
+  cachedOnly?: boolean
+  audio?: 'any' | 'sub' | 'dub'
+  codec?: 'any' | 'h264' | 'h265' | 'av1'
+}
 export interface DownloadItem {
   id: string
   mediaId: number
@@ -24,6 +30,8 @@ export interface DownloadItem {
   error?: string
   addedAt: number
   completedAt?: number
+  preferences?: DownloadPreferences
+  ruleId?: string
 }
 
 /** Persisted map keyed by `<mediaId>:<episode>`. */
