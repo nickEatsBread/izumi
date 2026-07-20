@@ -68,6 +68,12 @@ body { overflow-x: clip; }
 /* Hover-preview card fade/scale-in (smooth crossfade between adjacent cards). */
 @keyframes preview-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 .preview-in { animation: preview-in 0.14s ease-out both; }
+.settings-search-hit {
+  border-color: hsl(346.6 79.12% 51.18%) !important;
+  background: hsl(346.6 79.12% 51.18% / 0.12) !important;
+  box-shadow: 0 0 0 2px hsl(346.6 79.12% 51.18% / 0.35);
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg); } 75% { transform: rotate(12deg); } }
 @keyframes bounce-sm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes swing { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-10deg); } 60% { transform: rotate(6deg); } }

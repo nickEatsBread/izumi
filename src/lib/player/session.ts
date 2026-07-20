@@ -60,6 +60,10 @@ export const exitPrompt = writable(false)
 // to close it (instead of navigating the page back, which would leave the search page).
 export const advancedFiltersOpen = writable(false)
 
+// Series-page AniList/MAL editor. While open, the Deck controller keeps directional focus inside
+// the dialog, A activates its controls, and B dismisses it instead of leaving the series page.
+export const listEditorOpen = writable(false)
+
 // Game-mode track menu (Deck ☰ button): the controller-navigable audio/subtitle picker.
 // While true it CAPTURES the pad — the app-wide nav translator and the player's own A/B/L1/R1
 // handlers early-return so d-pad/A/B drive the menu instead of seeking/pausing/focus-nav.
