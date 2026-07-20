@@ -42,7 +42,7 @@ use tokio::{
 
 const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024;
 const MAX_PAIR_FRAME_BYTES: usize = 64 * 1024;
-const VALID_CATEGORIES: [&str; 2] = ["watch", "manual"];
+const VALID_CATEGORIES: [&str; 3] = ["watch", "manual", "watch-party"];
 const PAIR_ALPN: &[u8] = b"/izumi/device-pair/1";
 const PAIR_MDNS_SERVICE: &str = "izumi-sync-v1";
 const PAIRING_WINDOW: Duration = Duration::from_secs(120);

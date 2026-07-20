@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { resolveDownloadUrl } from '$lib/stremio/play'
 import { downloadDir, downloadConcurrency } from '$lib/settings/ui'
-import { downloads, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem } from './state'
+import { downloads, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem, type DownloadPreferences } from './state'
 import { getEpisodeMeta } from '$lib/anizip'
 import type { Media } from '$lib/anilist/types'
 
@@ -21,7 +21,7 @@ const posterOf = (m: Media) => m.coverImage?.extraLarge ?? m.coverImage?.medium
 const filenameOf = (it?: DownloadItem) => it?.filename ?? `${it?.title ?? 'download'}.mkv`
 
 /** Queue one episode for download (no-op if already queued/downloading/done). */
-export function enqueue(media: Media, episode: number) {
+export function enqueue(media: Media, episode: number, preferences?: DownloadPreferences, ruleId?: string) {
   const id = keyFor(media.id, episode)
   const cur = get(downloads)[id]
   if (cur && cur.status !== 'error') return
@@ -29,6 +29,7 @@ export function enqueue(media: Media, episode: number) {
     id, mediaId: media.id, episode,
     title: `${media.title.userPreferred ?? media.title.romaji ?? 'Anime'} — E${episode}`,
     poster: posterOf(media), bytes: 0, downloaded: 0, status: 'queued', addedAt: Date.now(),
+    preferences, ruleId,
   } }))
   // Cache the series info for OFFLINE use: a media snapshot (persisted) + the AniZip
   // episode metadata (idb-cached) so the downloads page + offline playback show titles
@@ -64,7 +65,7 @@ async function runJob(item: DownloadItem) {
   running.add(item.id)
   try {
     const dir = await ensureDir()
-    const r = await resolveDownloadUrl(item.mediaId, item.episode)
+    const r = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences)
     setItem(item.id, { url: r.url, filename: r.filename, infoHash: r.infoHash, provider: r.provider, quality: r.quality })
     // Resolves when the file is fully written OR paused; progress/done come via events.
     await invoke('download_start', { id: item.id, url: r.url, dir, filename: r.filename })

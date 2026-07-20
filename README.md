@@ -38,6 +38,12 @@ izumi is a **personal media library manager** for organizing, tracking, and play
   OP/ED/recap skipping, AnimeThemes-aware first-play, audio/subtitle menus, video-fit toggle,
   screenshot, next/prev episode, full controller/d-pad navigation.
 - **Offline** — download a resolved stream to disk and play it back locally.
+- **Local library** — recursively scan existing video folders, infer season/episode numbers,
+  match titles through AniList, and manually correct uncertain matches.
+- **Automatic downloads** — follow a show and collect aired episodes using per-series quality,
+  audio, codec, cache, delay, and starting-episode rules.
+- **Watch Together** — host or join synchronized playback rooms across paired Izumi devices;
+  every participant resolves their own source while the host controls play, pause, and seeking.
 - **Settings** — interface (UI scale, episode layout), sources, extensions, network, accounts,
   downloads.
 
