@@ -25,6 +25,9 @@ export const syncDeviceName = persisted<string>("sync-device-name", "");
 
 export const trackersOwnProgress = () => !!get(anilistToken) || !!get(malToken);
 export const getSyncStatus = () => invoke<SyncStatus>("sync_status");
+export const getSyncRelayConfig = () => invoke<{ customUrl?: string | null }>("sync_relay_config");
+export const setSyncRelay = (customUrl?: string | null) =>
+  invoke<void>("sync_set_relay", { customUrl: customUrl?.trim() || null });
 export const enableDeviceSync = () => invoke<void>("sync_enable");
 export const disableDeviceSync = () => invoke<void>("sync_disable");
 export const createSyncGroup = () => invoke<string>("sync_create");

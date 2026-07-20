@@ -166,6 +166,9 @@ export const doHUrl = persisted<string>('doh-url', 'https://cloudflare-dns.com/d
 /** Transfer speed limit (Mb/s). Applies to torrent downloads; inert with debrid
  *  streaming (Real-Debrid serves over its own CDN — nothing local to throttle). */
 export const transferSpeedLimit = persisted<number>('transfer-speed-limit', 40)
+/** Public n0 relays are the default. Set this to an Iroh relay URL to use a self-hosted relay. */
+export const syncRelayMode = persisted<'public' | 'custom'>('sync-relay-mode', 'public')
+export const syncRelayUrl = persisted<string>('sync-relay-url', '')
 
 // --- Source extensions ---
 /** Which debrid service resolves extension torrent results. */

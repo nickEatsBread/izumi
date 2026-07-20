@@ -22,7 +22,8 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, debridCaching, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
+import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
+import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
@@ -773,6 +774,9 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
+  // Capture the original source before a torrent is exchanged for an account-bound
+  // debrid CDN URL. The latter must never cross a Watch Together room.
+  nowPlayingPartySource.set(shareableSource(stream))
   lastSubFilename = stream.behaviorHints?.filename
   onlineSubCandidates.set({ status: 'idle', items: [] })
   subtitleNotice.set('')
@@ -990,6 +994,7 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
     // These items carry no Media, so Prev/Next must not act on a stale one.
     currentMedia = null
     nowPlayingMedia.set(null)
+    nowPlayingPartySource.set({ source: null, error: 'Cloud-library links are private to this device.' })
     nowPlaying.set({ title: label, animeTitle: label, id: null, malId: null, episode: null, total: null, airedTotal: null })
     nowPlayingUrl.set(url) // for the dev-only Copy URL tool in the track menu
     spriteKey.set(null)   // no per-file scrub sprites for cloud items

@@ -4,6 +4,7 @@ import type { Media } from '$lib/anilist/types'
 import type { Stream } from '$lib/stremio/addon'
 import type { DebridInfo } from '$lib/stremio/debrid/types'
 import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
+import type { SharedSourceState } from '$lib/watch-together/source'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
@@ -42,6 +43,10 @@ export const nowPlaying = writable<{
 // The Media + episode currently playing, so the player's "Change source" option can re-open the
 // source picker for it mid-playback (the picker's onState/pick then swaps the stream in place).
 export const nowPlayingMedia = writable<{ media: Media; episode: number | undefined } | null>(null)
+
+// Credential-safe identity of the source selected before any debrid resolution.
+// Watch Together sends this instead of nowPlayingUrl, which may be account-bound.
+export const nowPlayingPartySource = writable<SharedSourceState>({ source: null, error: '' })
 
 // The resolved URL of the currently-loaded video. Populated on every load (embedded, external,
 // cloud) purely so the DEV-ONLY "Copy URL" tool in the player's track menu can read it — the UI
