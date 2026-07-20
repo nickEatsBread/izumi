@@ -68,11 +68,31 @@ body { overflow-x: clip; }
 /* Hover-preview card fade/scale-in (smooth crossfade between adjacent cards). */
 @keyframes preview-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 .preview-in { animation: preview-in 0.14s ease-out both; }
+
+/* Android's native press affordance: the touched surface depresses immediately, then springs
+   back on release. Scope the classes from Svelte via `isAndroid`, so desktop hover/controller
+   transforms and WebKitGTK rendering stay unchanged. */
+.android-hero-press {
+  transform: scale(1);
+  transform-origin: center;
+  transition: transform 110ms cubic-bezier(.2, 0, 0, 1), filter 110ms ease;
+}
+.android-hero-press:has(.android-hero-hit:active) { transform: scale(.982); filter: brightness(.9); }
+.android-card-press .focus-cover {
+  transform: scale(1);
+  transform-origin: center;
+  transition: transform 110ms cubic-bezier(.2, 0, 0, 1), filter 110ms ease;
+}
+.android-card-press:active .focus-cover { transform: scale(.955); filter: brightness(.82); }
+.android-row-press:active { transform: scale(.985); }
 .settings-search-hit {
   border-color: hsl(346.6 79.12% 51.18%) !important;
   background: hsl(346.6 79.12% 51.18% / 0.12) !important;
   box-shadow: 0 0 0 2px hsl(346.6 79.12% 51.18% / 0.35);
   transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .android-hero-press, .android-card-press .focus-cover, .android-row-press { transition-duration: 0.01ms; }
 }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg); } 75% { transform: rotate(12deg); } }
 @keyframes bounce-sm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }

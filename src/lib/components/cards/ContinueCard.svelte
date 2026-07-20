@@ -16,6 +16,8 @@
   import type { EpMeta } from '$lib/anizip/types'
   import Play from 'lucide-svelte/icons/play'
   import Loader from 'lucide-svelte/icons/loader-circle'
+  import { isAndroid } from '$lib/platform'
+  import * as h from '$lib/haptics'
 
   let { media, progress }: { media: Media; progress: number } = $props()
 
@@ -41,7 +43,7 @@
   let resolving = $state(false)
   // Prefer the last successful origin/release; if it is missing or fails, resumeEpisode opens the
   // complete source picker. Playback resumes from this episode's saved position either way.
-  function play() { resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' }) }
+  function play() { h.tap(); resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' }) }
 </script>
 
 <!-- ONE focusable (the card) = play. The cover is marked `.focus-cover` so controller/keyboard
@@ -55,7 +57,7 @@
   onclick={play}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
-  class="group flex w-[72vw] shrink-0 cursor-pointer flex-col text-left sm:w-[264px]"
+  class="group flex w-[72vw] shrink-0 cursor-pointer flex-col text-left sm:w-[264px] {$isAndroid ? 'android-card-press' : ''}"
 >
   <div class="focus-cover relative aspect-video w-full overflow-hidden rounded-lg bg-muted">
     {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
