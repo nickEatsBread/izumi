@@ -5,7 +5,7 @@
   import Info from 'lucide-svelte/icons/info'
   import Heart from 'lucide-svelte/icons/heart'
   import * as h from '$lib/haptics'
-  import { isMobile } from '$lib/platform'
+  import { isAndroid, isMobile } from '$lib/platform'
 
   // Bottom-left content column + clean linear scrims, polished with:
   // coverImage.color accent, rating-tinted score, blur-in image, rich badge row,
@@ -36,14 +36,24 @@
   // Swipe left/right to change the featured slide (only when there's more than one). `touch-pan-y`
   // on the container lets the browser own vertical scroll while horizontal swipes reach here.
   let touchX = 0
-  function onTouchStart(e: TouchEvent) { touchX = e.touches[0].clientX }
+  let swiped = false
+  function onTouchStart(e: TouchEvent) { touchX = e.touches[0].clientX; swiped = false }
   function onTouchEnd(e: TouchEvent) {
     const n = medias.length
     if (n < 2) return
     const dx = e.changedTouches[0].clientX - touchX
     if (Math.abs(dx) < 40) return
+    swiped = true
     h.tap()
     go((i + (dx < 0 ? 1 : -1) + n) % n)
+  }
+
+  function openCurrent() {
+    // A horizontal swipe ends with a synthetic click on some Android WebViews. Consume it so
+    // changing slides never also opens the title underneath the finger.
+    if (swiped) { swiped = false; return }
+    h.tap()
+    oninfo?.(current)
   }
 
   // rAF auto-advance + scroll fade, only when there's an overlay (Home).
@@ -87,7 +97,7 @@
     <!-- Height in vh (not a portrait aspect ratio): stays bounded + usable in landscape, where a
          3/4 aspect on a wide viewport overflowed the screen. A touch smaller than before. -->
     <div
-      class="relative mx-4 mb-6 h-[46vh] touch-pan-y overflow-hidden rounded-2xl shadow-xl"
+      class="relative mx-4 mb-6 h-[46vh] touch-pan-y overflow-hidden rounded-2xl shadow-xl {$isAndroid ? 'android-hero-press' : ''}"
       style="--accent:{accent}"
       role="group"
       aria-label="Featured"
@@ -99,7 +109,13 @@
              class="absolute inset-0 h-full w-full animate-[fade_0.4s_ease] object-cover" />
       {/key}
       <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
-      <div class="absolute inset-x-0 bottom-0 flex flex-col gap-2 p-4">
+      {#if $isAndroid && oninfo}
+        <!-- Whole-card Android hit target. It sits above the artwork but below the explicit
+             actions, so Watch/Details/pips retain their own behaviour. -->
+        <button type="button" data-focusable class="android-hero-hit absolute inset-0 z-10"
+                onclick={openCurrent} aria-label={`View details for ${title(current)}`}></button>
+      {/if}
+      <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col gap-2 p-4">
         <h1 class="line-clamp-2 text-2xl font-black leading-tight text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-white/90
                     [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
@@ -117,12 +133,12 @@
         {/if}
         <div class="mt-1 flex items-center gap-2">
           <button data-focusable onclick={() => onplay?.(current)}
-                  class="flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 font-bold text-black shadow-lg"
+                  class="pointer-events-auto flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 font-bold text-black shadow-lg"
                   style="background:var(--accent)">
             <Play size={18} fill="currentColor" /> Watch
           </button>
           <button data-focusable onclick={() => oninfo?.(current)}
-                  class="flex items-center gap-2 rounded-lg bg-white/15 px-4 py-2.5 font-bold text-white backdrop-blur">
+                  class="pointer-events-auto flex items-center gap-2 rounded-lg bg-white/15 px-4 py-2.5 font-bold text-white backdrop-blur">
             <Info size={18} /> Details
           </button>
         </div>
@@ -130,7 +146,7 @@
           <div class="mt-1.5 flex justify-center gap-1.5">
             {#each medias as _, idx (idx)}
               <button data-focusable onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
-                      class="h-1.5 rounded-full transition-all duration-300 {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
+                      class="pointer-events-auto h-1.5 rounded-full transition-all duration-300 {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
             {/each}
           </div>
         {/if}

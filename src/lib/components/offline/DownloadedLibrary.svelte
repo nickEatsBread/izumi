@@ -1,6 +1,8 @@
 <script lang="ts">
   import { downloads, downloadedMedia } from '$lib/downloads/state'
   import { groupDownloads } from '$lib/downloads/library'
+  import { isAndroid } from '$lib/platform'
+  import * as h from '$lib/haptics'
   // Offline home library: every series with at least one completed download, poster grid.
   const series = $derived(groupDownloads($downloads, $downloadedMedia))
 </script>
@@ -10,7 +12,8 @@
     <h2 class="mb-3 text-lg font-black">Downloaded</h2>
     <div class="grid grid-cols-3 gap-3 sm:grid-cols-5 lg:grid-cols-6">
       {#each series as s (s.mediaId)}
-        <a href="/app/anime/{s.mediaId}" data-focusable class="group block">
+        <a href="/app/anime/{s.mediaId}" data-focusable onclick={() => h.tap()}
+           class="group block {$isAndroid ? 'android-card-press' : ''}">
           <div class="focus-cover relative aspect-[2/3] overflow-hidden rounded-lg bg-muted">
             {#if s.poster}<img src={s.poster} alt="" class="h-full w-full object-cover" />{/if}
             <span
