@@ -10,11 +10,10 @@ import Download from 'lucide-svelte/icons/download'
 import Settings from 'lucide-svelte/icons/settings'
 import Search from 'lucide-svelte/icons/search'
 import Bookmark from 'lucide-svelte/icons/bookmark'
-import LibraryBig from 'lucide-svelte/icons/library-big'
 import Users from 'lucide-svelte/icons/users'
 
 export type NavPlacement = 'bottom' | 'top' | 'hidden'
-export type NavItemId = 'schedule' | 'downloads' | 'library' | 'watch' | 'settings' | 'mylist' | 'search'
+export type NavItemId = 'schedule' | 'downloads' | 'watch' | 'settings' | 'mylist' | 'search'
 
 export interface NavMeta { label: string; href: string; icon: ComponentType }
 
@@ -22,7 +21,6 @@ export interface NavMeta { label: string; href: string; icon: ComponentType }
 export const NAV_META: Record<NavItemId, NavMeta> = {
   schedule: { label: 'Schedule', href: '/app/schedule', icon: Calendar },
   downloads: { label: 'Downloads', href: '/app/downloads', icon: Download },
-  library: { label: 'Library', href: '/app/library', icon: LibraryBig },
   watch: { label: 'Together', href: '/app/watch', icon: Users },
   mylist: { label: 'My List', href: '/app/mylist', icon: Bookmark },
   search: { label: 'Search', href: '/app/search', icon: Search },
@@ -39,7 +37,6 @@ export interface NavItemConfig { id: NavItemId; placement: NavPlacement }
 export const DEFAULT_NAV: NavItemConfig[] = [
   { id: 'schedule', placement: 'bottom' },
   { id: 'downloads', placement: 'bottom' },
-  { id: 'library', placement: 'bottom' },
   { id: 'settings', placement: 'bottom' },
   { id: 'search', placement: 'top' },
   { id: 'watch', placement: 'top' },

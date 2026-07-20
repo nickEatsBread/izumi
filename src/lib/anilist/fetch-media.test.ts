@@ -24,4 +24,17 @@ describe('fetchMediaById', () => {
     expect(query).toContain('startDate{year month day}')
     expect(query).toContain('studios(isMain:true)')
   })
+
+  it('can bypass the session cache for automatic airing checks', async () => {
+    const id = 987655
+    const first = { id, title: { userPreferred: 'First' } }
+    const second = { id, title: { userPreferred: 'Updated' } }
+    httpFetch
+      .mockResolvedValueOnce({ json: async () => ({ data: { Media: first } }) })
+      .mockResolvedValueOnce({ json: async () => ({ data: { Media: second } }) })
+
+    await expect(fetchMediaById(id)).resolves.toBe(first)
+    await expect(fetchMediaById(id, true)).resolves.toBe(second)
+    expect(httpFetch).toHaveBeenCalledTimes(2)
+  })
 })

@@ -2,30 +2,31 @@ import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import type { Media } from '$lib/anilist/types'
-import type { LibraryMedia } from '$lib/library/types'
-import { hasLibraryEpisode } from '$lib/library/store'
 import { downloads, keyFor, type DownloadPreferences } from './state'
 import { enqueue } from './store'
+import {
+  autoDownloadDelayMinutes, downloadAudio, downloadCachedOnly, downloadCodec, downloadQuality,
+} from '$lib/settings/ui'
 
-export interface AutoDownloadRule extends DownloadPreferences {
+export interface AutoDownloadRule {
   id: string
   mediaId: number
   title: string
   poster?: string
   enabled: boolean
   nextEpisode: number
-  delayMinutes: number
   createdAt: number
   lastRunAt?: number
   lastError?: string
 }
 
-export const autoDownloadRules = persisted<AutoDownloadRule[]>('auto-download-rules-v1', [])
+export const autoDownloadRules = persisted<AutoDownloadRule[]>('auto-download-subscriptions-v2', [])
 export const autoDownloadRunning = writable(false)
 
-const mediaTitle = (media: LibraryMedia | Media) => media.title.userPreferred || media.title.english || media.title.romaji || 'Anime'
+const mediaTitle = (media: Media) => media.title.userPreferred || media.title.english || media.title.romaji || 'Anime'
 
-export function createAutoDownloadRule(media: LibraryMedia | Media, nextEpisode = 1): AutoDownloadRule {
+/** Subscribe to episodes that air after the user enables this from Download. */
+export function subscribeAutoDownloads(media: Media, nextEpisode: number): AutoDownloadRule {
   const rule: AutoDownloadRule = {
     id: `${media.id}-${Date.now().toString(36)}`,
     mediaId: media.id,
@@ -33,11 +34,18 @@ export function createAutoDownloadRule(media: LibraryMedia | Media, nextEpisode 
     poster: media.coverImage?.extraLarge ?? media.coverImage?.medium ?? undefined,
     enabled: true,
     nextEpisode: Math.max(1, Math.floor(nextEpisode)),
-    delayMinutes: 10,
-    quality: '1080', cachedOnly: true, audio: 'sub', codec: 'any', createdAt: Date.now(),
+    createdAt: Date.now(),
   }
   autoDownloadRules.update((rules) => [...rules.filter((item) => item.mediaId !== media.id), rule])
   return rule
+}
+
+export function autoDownloadRuleFor(mediaId: number): AutoDownloadRule | undefined {
+  return get(autoDownloadRules).find((rule) => rule.mediaId === mediaId)
+}
+
+export function removeAutoDownloadForMedia(mediaId: number) {
+  autoDownloadRules.update((rules) => rules.filter((rule) => rule.mediaId !== mediaId))
 }
 
 export function updateAutoDownloadRule(id: string, patch: Partial<AutoDownloadRule>) {
@@ -46,6 +54,15 @@ export function updateAutoDownloadRule(id: string, patch: Partial<AutoDownloadRu
 
 export function removeAutoDownloadRule(id: string) {
   autoDownloadRules.update((rules) => rules.filter((rule) => rule.id !== id))
+}
+
+export function currentDownloadPreferences(): DownloadPreferences {
+  return {
+    quality: get(downloadQuality),
+    cachedOnly: get(downloadCachedOnly),
+    audio: get(downloadAudio),
+    codec: get(downloadCodec),
+  }
 }
 
 export function airedEpisodes(media: Media, nowSeconds: number): number[] {
@@ -58,6 +75,17 @@ export function airedEpisodes(media: Media, nowSeconds: number): number[] {
   return next && next > 1 ? Array.from({ length: next - 1 }, (_, i) => i + 1) : []
 }
 
+export function dueAutoDownloadEpisodes(
+  media: Media,
+  nextEpisode: number,
+  nowMs: number,
+  delayMinutes: number,
+): number[] {
+  const releaseCutoff = nowMs - Math.max(0, delayMinutes) * 60_000
+  return airedEpisodes(media, Math.floor(releaseCutoff / 1000))
+    .filter((episode) => episode >= Math.max(1, nextEpisode))
+}
+
 export async function runAutoDownloadRules(now = Date.now()): Promise<number> {
   if (get(autoDownloadRunning)) return 0
   autoDownloadRunning.set(true)
@@ -65,18 +93,23 @@ export async function runAutoDownloadRules(now = Date.now()): Promise<number> {
   try {
     for (const rule of get(autoDownloadRules).filter((item) => item.enabled)) {
       try {
-        const media = await fetchMediaById(rule.mediaId)
-        const dueAt = now - Math.max(0, rule.delayMinutes) * 60_000
-        const due = airedEpisodes(media, Math.floor(dueAt / 1000)).filter((episode) => episode >= rule.nextEpisode)
+        // Airing schedules change over time, so scheduler checks must bypass the
+        // playback-oriented session cache and read current AniList state.
+        const media = await fetchMediaById(rule.mediaId, true)
+        const due = dueAutoDownloadEpisodes(media, rule.nextEpisode, now, get(autoDownloadDelayMinutes))
+        let nextEpisode = rule.nextEpisode
         for (const episode of due) {
           const existing = get(downloads)[keyFor(media.id, episode)]
-          if ((existing && existing.status !== 'error') || hasLibraryEpisode(media.id, episode)) continue
-          enqueue(media, episode, {
-            quality: rule.quality, cachedOnly: rule.cachedOnly, audio: rule.audio, codec: rule.codec,
-          }, rule.id)
+          // Once an episode has entered the queue successfully, move the subscription past it.
+          // Errors stay eligible so a source that appears late is retried on the next check.
+          if (existing && existing.status !== 'error') {
+            nextEpisode = Math.max(nextEpisode, episode + 1)
+            continue
+          }
+          enqueue(media, episode, currentDownloadPreferences(), rule.id)
           queued++
         }
-        updateAutoDownloadRule(rule.id, { lastRunAt: now, lastError: undefined })
+        updateAutoDownloadRule(rule.id, { nextEpisode, lastRunAt: now, lastError: undefined })
       } catch (error) {
         updateAutoDownloadRule(rule.id, { lastRunAt: now, lastError: error instanceof Error ? error.message : String(error) })
       }

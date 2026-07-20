@@ -9,13 +9,18 @@
   import type { Media } from '$lib/anilist/types'
   import { getEpisodeMeta } from '$lib/anizip'
   import type { EpMeta } from '$lib/anizip/types'
-  import { episodeLayout, hideSpoilers } from '$lib/settings/ui'
+  import {
+    episodeLayout, hideSpoilers, downloadQuality, downloadAudio, downloadCodec, downloadCachedOnly,
+  } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
   import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
   import * as h from '$lib/haptics'
   import { enqueueMany, downloads, keyFor } from '$lib/downloads/store'
+  import {
+    autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
+  } from '$lib/downloads/rules'
   import EpisodeCard from './EpisodeCard.svelte'
   import Download from 'lucide-svelte/icons/download'
   import Loader from 'lucide-svelte/icons/loader-circle'
@@ -117,7 +122,9 @@
   // enters select mode: tapping episodes toggles them, then one action queues the batch.
   let selecting = $state(false)
   let selected = $state<Set<number>>(new Set())
+  let followNew = $state(false)
   const airedList = $derived(Array.from({ length: aired }, (_, i) => i + 1))
+  const subscription = $derived($autoDownloadRules.find((rule) => rule.mediaId === media.id))
   // A tap on a released episode plays it — or, in select mode, toggles its selection.
   // Upcoming (unaired) episodes are neither playable nor selectable.
   function tap(ep: number) {
@@ -127,13 +134,22 @@
     n.has(ep) ? n.delete(ep) : n.add(ep)
     selected = n
   }
-  function startSelect() { selecting = true; selected = new Set() }
-  function cancelSelect() { selecting = false; selected = new Set() }
+  function startSelect() { selecting = true; selected = new Set(); followNew = !!subscription }
+  function cancelSelect() { selecting = false; selected = new Set(); followNew = false }
   const allAiredSelected = $derived(aired > 0 && selected.size >= aired)
   function toggleAllAired() { selected = allAiredSelected ? new Set() : new Set(airedList) }
   function confirmDownload() {
-    if (!selected.size) return
-    enqueueMany(media, [...selected].sort((a, b) => a - b))
+    if (!selected.size && followNew === !!subscription) return
+    if (selected.size) {
+      enqueueMany(media, [...selected].sort((a, b) => a - b), {
+        quality: $downloadQuality,
+        cachedOnly: $downloadCachedOnly,
+        audio: $downloadAudio,
+        codec: $downloadCodec,
+      })
+    }
+    if (followNew) subscribeAutoDownloads(media, subscription?.nextEpisode ?? aired + 1)
+    else if (subscription) removeAutoDownloadForMedia(media.id)
     cancelSelect()
   }
 
@@ -172,9 +188,14 @@
                 class="rounded-md bg-secondary px-3 py-1.5 text-sm font-bold transition-colors hover:bg-accent">
           {allAiredSelected ? 'Clear' : `All aired (${aired})`}
         </button>
-        <button data-focusable disabled={!selected.size} onclick={confirmDownload}
+        <label class="flex cursor-pointer items-center gap-2 rounded-md bg-secondary px-3 py-1.5 text-sm font-bold">
+          <input data-focusable type="checkbox" bind:checked={followNew} />
+          Auto-download new episodes
+        </label>
+        <a data-focusable href="/app/settings/downloads" class="text-xs font-bold text-theme hover:underline">Matching settings</a>
+        <button data-focusable disabled={!selected.size && followNew === !!subscription} onclick={confirmDownload}
                 class="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-40">
-          <Download size={15} /> Download{selected.size ? ` (${selected.size})` : ''}
+          <Download size={15} /> Apply{selected.size ? ` · Download ${selected.size}` : ''}
         </button>
         <button data-focusable onclick={cancelSelect}
                 class="ml-auto rounded-md px-3 py-1.5 text-sm font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
@@ -182,6 +203,9 @@
         </button>
       {/if}
     </div>
+    {#if !selecting && subscription}
+      <p class="mb-3 text-xs font-bold text-theme">Auto-download is watching for episode {subscription.nextEpisode}.</p>
+    {/if}
   {/if}
 
   {#if metaLoading}

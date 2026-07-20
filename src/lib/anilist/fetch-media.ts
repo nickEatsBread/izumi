@@ -10,8 +10,8 @@ const Q = `query($id:Int!){Media(id:$id,type:ANIME){id idMal title{romaji englis
 
 const cache = new Map<number, Media>()
 
-export async function fetchMediaById(id: number): Promise<Media> {
-  const hit = cache.get(id)
+export async function fetchMediaById(id: number, fresh = false): Promise<Media> {
+  const hit = fresh ? undefined : cache.get(id)
   if (hit) return hit
   const r = await httpFetch('https://graphql.anilist.co', {
     method: 'POST',
