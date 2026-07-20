@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, commentsOpen } from '$lib/player/session'
+import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
 import { inputType } from './input'
 import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
@@ -112,6 +112,14 @@ export function startGamepadNav(): () => void {
     if (get(streamPicker)) {
       if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
       else if (name === 'b') streamPicker.set(null)
+      return
+    }
+    // The series list editor owns A/B while open. Directional input is already confined to its
+    // `data-nav-trap`, and the custom status/counter controls avoid native select popups that do
+    // not reliably open from a synthetic controller click under gamescope/WebKitGTK.
+    if (get(listEditorOpen)) {
+      if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
+      else if (name === 'b') window.dispatchEvent(new Event('list-editor-close'))
       return
     }
     // The advanced-filters modal captures A/B: A activates the focused control; B closes it

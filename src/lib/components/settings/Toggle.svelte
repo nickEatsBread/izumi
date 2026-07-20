@@ -3,16 +3,19 @@
   // pink `theme` accent (the app's `--primary` is near-white, so a white knob on a
   // primary track would be invisible).
   import * as h from '$lib/haptics'
+  import { settingKey as keyForSetting } from '$lib/settings/search'
   let { label, desc, value, onToggle }: {
     label: string
     desc: string
     value: boolean
     onToggle: () => void
   } = $props()
+  const settingKey = $derived(keyForSetting(label))
 </script>
 
 <button
   data-focusable
+  data-setting-key={settingKey}
   onclick={() => { h.tap(); onToggle() }}
   aria-pressed={value}
   class="flex w-full items-center justify-between rounded-md border border-border p-3 text-left transition-colors hover:bg-secondary"

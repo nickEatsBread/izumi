@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { page } from '$app/stores'
   import SettingsNav from '$lib/components/settings/SettingsNav.svelte'
+  import SettingsSearch from '$lib/components/settings/SettingsSearch.svelte'
   import { isMobile } from '$lib/platform'
   import { heroMedia } from '$lib/stores/hero'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
@@ -47,13 +48,43 @@
     const hit = Object.keys(childTitles).find((k) => p === k || p.startsWith(k + '/'))
     return hit ? childTitles[hit] : 'Settings'
   })
+
+  // Search results for shared Toggle rows carry a stable key. Once the destination page has
+  // rendered, bring that exact control into view and briefly tint it so the user's eye lands on
+  // the setting they searched for. Retry for a few frames because mobile route transitions mount
+  // the child after the URL store updates.
+  $effect(() => {
+    const path = $page.url.pathname
+    const key = $page.url.searchParams.get('setting')
+    void path
+    if (!key || typeof document === 'undefined') return
+    let cancelled = false
+    let tries = 0
+    let timer: ReturnType<typeof setTimeout>
+    const find = () => {
+      if (cancelled) return
+      const target = document.querySelector<HTMLElement>(`[data-setting-key="${CSS.escape(key)}"]`)
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        target.classList.add('settings-search-hit')
+        timer = setTimeout(() => target.classList.remove('settings-search-hit'), 1800)
+      } else if (++tries < 12) {
+        timer = setTimeout(find, 50)
+      }
+    }
+    timer = setTimeout(find, 0)
+    return () => { cancelled = true; clearTimeout(timer) }
+  })
 </script>
 
 {#if $isMobile}
   {#if isIndex}
     <!-- Mobile index: the grouped list, full width. -->
     <div class="p-4">
-      <h1 class="mb-4 px-1 text-2xl font-black">Settings</h1>
+      <div class="mb-4 flex items-center justify-between px-1">
+        <h1 class="text-2xl font-black">Settings</h1>
+        <SettingsSearch compact />
+      </div>
       <SettingsNav />
       <div class="mt-6 space-y-0.5 px-1 text-xs text-muted-foreground">
         {#if appVersion}<div>Client v{appVersion}</div>{/if}
@@ -70,6 +101,7 @@
           <ChevronLeft size={22} />
         </a>
         <span class="text-lg font-black">{childTitle}</span>
+        <span class="ml-auto"><SettingsSearch compact /></span>
       </div>
       {#key $page.url.pathname}
         <div class="settings-child" in:fly={{ x: 22, duration: 190 }}>{@render children()}</div>
@@ -79,8 +111,9 @@
 {:else}
   <!-- Desktop: nav rail + content side-by-side (unchanged). -->
   <div class="flex min-h-screen flex-row">
-    <aside class="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-border p-4">
-      <h1 class="mb-4 px-3 text-2xl font-black">Settings</h1>
+    <aside class="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-border bg-background p-4">
+      <h1 class="mb-3 px-3 text-2xl font-black">Settings</h1>
+      <div class="mb-4 px-1"><SettingsSearch /></div>
       <SettingsNav />
       <div class="mt-auto space-y-0.5 px-3 pt-6 text-xs text-muted-foreground">
         {#if appVersion}<div>Client v{appVersion}</div>{/if}

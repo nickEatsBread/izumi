@@ -53,8 +53,9 @@ let refreshInFlight: Promise<string | null> | null = null
 
 // MAL access tokens are long-lived (~31 days) but DO expire. Exchange the stored refresh token for a
 // new access token (rotating the refresh token). Returns the new access token, or null. A HARD refresh
-// failure (revoked/expired refresh token → !ok) is PERMANENT: clear all MAL tokens so the UI reverts
-// to "Connect" (re-auth). A network error is TRANSIENT: keep tokens, return null, try again later.
+// failure (`invalid_grant`: revoked/expired refresh token) is PERMANENT: clear all MAL tokens so the
+// UI reverts to "Connect" (re-auth). Network errors, rate limits, 5xx responses, and malformed replies
+// are TRANSIENT: keep tokens, return null, and try again later.
 export function refreshMal(): Promise<string | null> {
   if (refreshInFlight) return refreshInFlight
   const p = (async () => {
@@ -65,9 +66,17 @@ export function refreshMal(): Promise<string | null> {
         method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ client_id: malClientId, grant_type: 'refresh_token', refresh_token: rt }).toString(),
       })
-      if (!res.ok) { disconnectMal(); return null } // invalid_grant / revoked → permanent
-      const json = await res.json() as { access_token?: string; refresh_token?: string; expires_in?: number }
-      if (!json.access_token) { disconnectMal(); return null }
+      const json = await res.json().catch(() => ({})) as {
+        access_token?: string
+        refresh_token?: string
+        expires_in?: number
+        error?: string
+      }
+      if (!res.ok) {
+        if (json.error === 'invalid_grant') disconnectMal()
+        return null
+      }
+      if (!json.access_token) return null
       persistMalTokens(json)
       return json.access_token
     }
