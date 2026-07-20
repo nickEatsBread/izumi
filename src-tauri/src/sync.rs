@@ -18,7 +18,7 @@ use data_encoding::BASE32_NOPAD;
 use iroh::{
     endpoint::Connection,
     protocol::{AcceptError, ProtocolHandler, Router},
-    Endpoint, EndpointAddr, EndpointId, SecretKey, TransportAddr, Watcher,
+    Endpoint, EndpointAddr, EndpointId, RelayMode, RelayUrl, SecretKey, TransportAddr, Watcher,
 };
 use iroh_blobs::{api::blobs::Blobs, store::fs::FsStore, BlobsProtocol, ALPN as BLOBS_ALPN};
 use iroh_docs::{
@@ -47,6 +47,13 @@ const PAIR_ALPN: &[u8] = b"/izumi/device-pair/1";
 const PAIR_MDNS_SERVICE: &str = "izumi-sync-v1";
 const PAIRING_WINDOW: Duration = Duration::from_secs(120);
 const PAIRING_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const RELAY_CONFIG_FILE: &str = "relay.json";
+
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelaySettings {
+    custom_url: Option<String>,
+}
 
 #[derive(Default)]
 pub struct SyncState {
@@ -637,10 +644,14 @@ impl SyncRuntime {
     async fn new(root: PathBuf, app: AppHandle) -> Result<Self> {
         tokio::fs::create_dir_all(&root).await?;
         let key = load_secret_key(&root.join("endpoint-key")).await?;
-        let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
-            .secret_key(key)
-            .bind()
-            .await?;
+        let relay = load_relay_settings(&root).await?;
+        let mut endpoint_builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+            .secret_key(key);
+        if let Some(url) = relay.custom_url {
+            let relay_url = RelayUrl::from_str(&url).context("invalid custom relay URL")?;
+            endpoint_builder = endpoint_builder.relay_mode(RelayMode::custom([relay_url]));
+        }
+        let endpoint = endpoint_builder.bind().await?;
         let endpoint_id = endpoint.id().to_string();
         let pairing = Arc::new(PairingHub::new(app, endpoint.id()));
         let nearby_discovery = start_nearby_discovery(endpoint.clone(), pairing.clone()).await?;
@@ -743,6 +754,32 @@ async fn load_secret_key(path: &Path) -> Result<SecretKey> {
     Ok(key)
 }
 
+async fn load_relay_settings(root: &Path) -> Result<RelaySettings> {
+    let path = root.join(RELAY_CONFIG_FILE);
+    let Ok(raw) = tokio::fs::read_to_string(path).await else {
+        return Ok(RelaySettings::default());
+    };
+    serde_json::from_str(&raw).context("invalid saved relay configuration")
+}
+
+fn relay_settings(custom_url: Option<String>) -> Result<RelaySettings> {
+    let custom_url = custom_url.and_then(|url| {
+        let trimmed = url.trim().to_string();
+        (!trimmed.is_empty()).then_some(trimmed)
+    });
+    if let Some(url) = &custom_url {
+        RelayUrl::from_str(url)
+            .context("Enter a valid Iroh relay URL, for example https://relay.example.com.")?;
+    }
+    Ok(RelaySettings { custom_url })
+}
+
+async fn save_relay_settings(root: &Path, settings: &RelaySettings) -> Result<()> {
+    tokio::fs::create_dir_all(root).await?;
+    tokio::fs::write(root.join(RELAY_CONFIG_FILE), serde_json::to_vec_pretty(settings)?).await?;
+    Ok(())
+}
+
 async fn build_runtime(app: AppHandle) -> Result<SyncRuntime> {
     let root = app.path().app_data_dir()?.join("iroh-sync");
     let mut runtime = SyncRuntime::new(root, app.clone()).await?;
@@ -832,6 +869,51 @@ pub async fn sync_status(state: tauri::State<'_, SyncState>) -> Result<Status, S
             ticket: runtime.ticket.as_ref().map(ToString::to_string),
         },
     })
+}
+
+#[tauri::command]
+pub async fn sync_relay_config(app: AppHandle) -> Result<RelaySettings, String> {
+    let root = app.path().app_data_dir().map_err(|error| error.to_string())?.join("iroh-sync");
+    load_relay_settings(&root).await.map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn sync_set_relay(
+    custom_url: Option<String>,
+    app: AppHandle,
+    state: tauri::State<'_, SyncState>,
+) -> Result<(), String> {
+    let settings = relay_settings(custom_url).map_err(|error| error.to_string())?;
+    let root = app.path().app_data_dir().map_err(|error| error.to_string())?.join("iroh-sync");
+    save_relay_settings(&root, &settings).await.map_err(|error| error.to_string())?;
+
+    let runtime = {
+        let mut guard = state.inner.lock().await;
+        match std::mem::replace(&mut *guard, RuntimeState::Starting) {
+            RuntimeState::Ready(runtime) => Some(runtime),
+            RuntimeState::Disabled => { *guard = RuntimeState::Disabled; None }
+            RuntimeState::Failed(error) => { *guard = RuntimeState::Failed(error); None }
+            RuntimeState::Starting => {
+                *guard = RuntimeState::Starting;
+                return Err("sync is still starting".into());
+            }
+        }
+    };
+    let Some(runtime) = runtime else { return Ok(()); };
+    runtime.nearby_discovery.stop_advertising().await;
+    drop(runtime);
+
+    let result = build_runtime(app.clone()).await;
+    let error = result.as_ref().err().map(|error| format!("{error:#}"));
+    {
+        let mut guard = state.inner.lock().await;
+        *guard = match result {
+            Ok(runtime) => RuntimeState::Ready(runtime),
+            Err(error) => RuntimeState::Failed(format!("{error:#}")),
+        };
+    }
+    let _ = app.emit("iroh-sync-ready", ());
+    error.map_or(Ok(()), Err)
 }
 
 #[tauri::command]
@@ -1170,6 +1252,17 @@ pub async fn sync_read(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relay_settings_select_public_or_custom() {
+        assert!(relay_settings(None).unwrap().custom_url.is_none());
+        assert!(relay_settings(Some("   ".into())).unwrap().custom_url.is_none());
+        assert_eq!(
+            relay_settings(Some(" https://relay.example.com. ".into())).unwrap().custom_url.as_deref(),
+            Some("https://relay.example.com.")
+        );
+        assert!(relay_settings(Some("not a relay".into())).is_err());
+    }
 
     #[test]
     fn confirmation_code_is_symmetric_and_readable() {
