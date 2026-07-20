@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use futures_util::StreamExt;
+use reqwest::{header::CONTENT_RANGE, StatusCode};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::AsyncWriteExt;
 
@@ -23,6 +24,74 @@ fn sanitize(name: &str) -> String {
     name.chars()
         .map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c })
         .collect()
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ResumeResponse {
+    Append { total: Option<u64> },
+    Restart { total: Option<u64> },
+    Complete,
+}
+
+/// Parse `Content-Range: bytes START-END/TOTAL` (or `bytes */TOTAL` on 416).
+/// The first tuple item is absent for the unsatisfied-range form.
+fn parse_content_range(value: &str) -> Option<(Option<u64>, u64)> {
+    let value = value.trim().strip_prefix("bytes ")?;
+    let (range, total) = value.split_once('/')?;
+    let total = total.parse::<u64>().ok()?;
+    if range == "*" {
+        return Some((None, total));
+    }
+    let (start, end) = range.split_once('-')?;
+    let start = start.parse::<u64>().ok()?;
+    let end = end.parse::<u64>().ok()?;
+    (start <= end && end < total).then_some((Some(start), total))
+}
+
+/// Decide how a response to a resume request may touch the existing partial file.
+/// A 200 means the server ignored Range, so the file must be truncated before its
+/// body is consumed. A 206 is append-safe only when Content-Range starts exactly
+/// where the local file ends. A 416 is complete only when both totals agree.
+fn classify_resume_response(
+    received: u64,
+    status: StatusCode,
+    content_range: Option<&str>,
+    content_length: Option<u64>,
+) -> Result<ResumeResponse, String> {
+    let parsed_range = content_range.and_then(parse_content_range);
+    if received == 0 {
+        if !status.is_success() {
+            return Err(format!("Download failed (HTTP {}).", status.as_u16()));
+        }
+        if status == StatusCode::PARTIAL_CONTENT && !matches!(parsed_range, Some((Some(0), _))) {
+            return Err("Initial partial response is missing a valid Content-Range header.".into());
+        }
+        let total = parsed_range.map(|(_, total)| total).or(content_length);
+        return Ok(ResumeResponse::Append { total });
+    }
+    match status {
+        StatusCode::PARTIAL_CONTENT => match parsed_range {
+            Some((Some(start), total)) if start == received => {
+                Ok(ResumeResponse::Append { total: Some(total) })
+            }
+            Some((Some(start), _)) => Err(format!(
+                "Resume response starts at byte {start}, expected {received}."
+            )),
+            _ => Err("Resume response is missing a valid Content-Range header.".into()),
+        },
+        StatusCode::OK => Ok(ResumeResponse::Restart {
+            total: content_length,
+        }),
+        StatusCode::RANGE_NOT_SATISFIABLE => match parsed_range {
+            Some((None, total)) if total == received => Ok(ResumeResponse::Complete),
+            _ => Ok(ResumeResponse::Restart { total: None }),
+        },
+        _ if status.is_success() => Err(format!(
+            "Download server returned HTTP {} for a resume request.",
+            status.as_u16()
+        )),
+        _ => Err(format!("Download failed (HTTP {}).", status.as_u16())),
+    }
 }
 
 /// The default download root: `<app_data_dir>/downloads` (created if missing).
@@ -117,15 +186,36 @@ async fn run_download(
             }
         };
         let status = resp.status();
-        // 416 Range Not Satisfiable on a resume = the .part already holds the whole file → finish.
-        if status.as_u16() == 416 && received > 0 {
-            break;
-        }
-        if !status.is_success() {
-            return Err(format!("Download failed (HTTP {}).", status.as_u16()));
-        }
-        if total == 0 {
-            total = resp.content_length().map(|l| l + received).unwrap_or(0);
+        let content_length = resp.content_length();
+        let content_range = resp
+            .headers()
+            .get(CONTENT_RANGE)
+            .and_then(|value| value.to_str().ok());
+        match classify_resume_response(received, status, content_range, content_length)? {
+            ResumeResponse::Complete => break,
+            ResumeResponse::Restart {
+                total: response_total,
+            } => {
+                // The server ignored Range (200), or rejected a stale/oversized partial (416).
+                // Truncate before consuming a 200 body; for 416, retry once without Range.
+                file.set_len(0).await.map_err(|e| e.to_string())?;
+                received = 0;
+                total = response_total.unwrap_or(0);
+                last_bytes = 0;
+                last_emit = Instant::now();
+                if status == StatusCode::RANGE_NOT_SATISFIABLE {
+                    continue;
+                }
+            }
+            ResumeResponse::Append {
+                total: response_total,
+            } => {
+                if total == 0 {
+                    total = response_total
+                        .or_else(|| content_length.map(|length| length + received))
+                        .unwrap_or(0);
+                }
+            }
         }
 
         let mut stream = resp.bytes_stream();
@@ -216,4 +306,72 @@ pub fn download_delete(path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn reveal_in_folder(path: String) -> Result<(), String> {
     tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_satisfied_and_unsatisfied_content_ranges() {
+        assert_eq!(
+            parse_content_range("bytes 50-99/100"),
+            Some((Some(50), 100))
+        );
+        assert_eq!(parse_content_range("bytes */100"), Some((None, 100)));
+        assert_eq!(parse_content_range("bytes 100-50/100"), None);
+    }
+
+    #[test]
+    fn restarts_when_a_server_ignores_range() {
+        assert_eq!(
+            classify_resume_response(50, StatusCode::OK, None, Some(100)).unwrap(),
+            ResumeResponse::Restart { total: Some(100) },
+        );
+    }
+
+    #[test]
+    fn appends_only_when_partial_content_starts_at_local_length() {
+        assert_eq!(
+            classify_resume_response(
+                50,
+                StatusCode::PARTIAL_CONTENT,
+                Some("bytes 50-99/100"),
+                Some(50),
+            )
+            .unwrap(),
+            ResumeResponse::Append { total: Some(100) },
+        );
+        assert!(classify_resume_response(
+            50,
+            StatusCode::PARTIAL_CONTENT,
+            Some("bytes 40-99/100"),
+            Some(60),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn accepts_416_only_when_the_partial_is_complete() {
+        assert_eq!(
+            classify_resume_response(
+                100,
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                Some("bytes */100"),
+                Some(0),
+            )
+            .unwrap(),
+            ResumeResponse::Complete,
+        );
+        assert_eq!(
+            classify_resume_response(
+                80,
+                StatusCode::RANGE_NOT_SATISFIABLE,
+                Some("bytes */100"),
+                Some(0),
+            )
+            .unwrap(),
+            ResumeResponse::Restart { total: None },
+        );
+    }
 }
