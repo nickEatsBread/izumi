@@ -1,7 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod doh;
 mod download;
-mod library;
 mod sync;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
@@ -2554,7 +2553,6 @@ pub fn run() {
             download::download_delete,
             download::download_dir_default,
             download::reveal_in_folder,
-            library::library_scan,
             sync::sync_status,
             sync::sync_relay_config,
             sync::sync_set_relay,
@@ -2586,7 +2584,6 @@ pub fn run() {
         download::download_delete,
         download::download_dir_default,
         download::reveal_in_folder,
-        library::library_scan,
         sync::sync_status,
         sync::sync_relay_config,
         sync::sync_set_relay,

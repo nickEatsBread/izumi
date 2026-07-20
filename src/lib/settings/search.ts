@@ -49,6 +49,10 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Download folder', category: 'Downloads', href: '/app/settings/downloads', keywords: 'directory path storage location' },
   { title: 'Simultaneous downloads', category: 'Downloads', href: '/app/settings/downloads', keywords: 'concurrent concurrency number' },
   { title: 'Only download cached sources', category: 'Downloads', href: '/app/settings/downloads', keywords: 'instant debrid', anchored: true },
+  { title: 'Download quality', category: 'Downloads', href: '/app/settings/downloads', keywords: 'automatic offline release matching' },
+  { title: 'Download audio', category: 'Downloads', href: '/app/settings/downloads', keywords: 'sub dub release matching' },
+  { title: 'Download codec', category: 'Downloads', href: '/app/settings/downloads', keywords: 'h264 h265 hevc av1 release matching' },
+  { title: 'Automatic downloads', category: 'Downloads', href: '/app/settings/downloads', keywords: 'new episode subscription airing schedule' },
   { title: 'Storage used', category: 'Downloads', href: '/app/settings/downloads', keywords: 'disk space size' },
 
   { title: 'Haptics', category: 'Interface', href: '/app/settings/interface', keywords: 'vibration feedback Android', anchored: true },

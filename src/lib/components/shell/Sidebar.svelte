@@ -5,7 +5,6 @@
   import Search from 'lucide-svelte/icons/search'
   import Download from 'lucide-svelte/icons/download'
   import Cloud from 'lucide-svelte/icons/cloud'
-  import LibraryBig from 'lucide-svelte/icons/library-big'
   import Users from 'lucide-svelte/icons/users'
   import Settings from 'lucide-svelte/icons/settings'
   import LogIn from 'lucide-svelte/icons/log-in'
@@ -20,7 +19,6 @@
     { href: '/app/schedule', icon: Calendar, label: 'Schedule', anim: 'group-hover:animate-[swing_0.5s_ease]' },
     { href: '/app/search', icon: Search, label: 'Search', anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
     { href: '/app/downloads', icon: Download, label: 'Downloads', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
-    { href: '/app/library', icon: LibraryBig, label: 'Library', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
     { href: '/app/watch', icon: Users, label: 'Watch Together', anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
     { href: '/app/cloud', icon: Cloud, label: 'Cloud', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
   ]

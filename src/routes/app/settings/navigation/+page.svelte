@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { navConfig, resetNav, NAV_META, HOME_META, type NavPlacement } from '$lib/settings/nav'
+  import { navConfig, effectiveNav, resetNav, NAV_META, HOME_META, type NavPlacement } from '$lib/settings/nav'
   import * as h from '$lib/haptics'
   import ChevronUp from 'lucide-svelte/icons/chevron-up'
   import ChevronDown from 'lucide-svelte/icons/chevron-down'
@@ -14,16 +14,17 @@
 
   function setPlacement(id: string, p: NavPlacement) {
     h.tap()
-    navConfig.update((c) => c.map((it) => (it.id === id ? { ...it, placement: p } : it)))
+    navConfig.set($effectiveNav.map((it) => (it.id === id ? { ...it, placement: p } : it)))
   }
   function move(i: number, dir: -1 | 1) {
-    navConfig.update((c) => {
+    navConfig.set((() => {
+      const c = $effectiveNav
       const j = i + dir
       if (j < 0 || j >= c.length) return c
       const next = [...c]
       ;[next[i], next[j]] = [next[j], next[i]]
       return next
-    })
+    })())
     h.tap()
   }
 </script>
@@ -39,7 +40,7 @@
       <span class="text-xs">Always bottom</span>
     </div>
 
-    {#each $navConfig as it, i (it.id)}
+    {#each $effectiveNav as it, i (it.id)}
       {@const meta = NAV_META[it.id]}
       {@const Icon = meta.icon}
       <div class="flex items-center gap-2 rounded-md border border-border p-2.5">
@@ -56,7 +57,7 @@
         <div class="flex shrink-0 flex-col">
           <button data-focusable aria-label="Move up" disabled={i === 0} onclick={() => move(i, -1)}
                   class="grid size-6 place-items-center rounded transition-colors hover:bg-accent disabled:opacity-30"><ChevronUp size={15} /></button>
-          <button data-focusable aria-label="Move down" disabled={i === $navConfig.length - 1} onclick={() => move(i, 1)}
+          <button data-focusable aria-label="Move down" disabled={i === $effectiveNav.length - 1} onclick={() => move(i, 1)}
                   class="grid size-6 place-items-center rounded transition-colors hover:bg-accent disabled:opacity-30"><ChevronDown size={15} /></button>
         </div>
       </div>

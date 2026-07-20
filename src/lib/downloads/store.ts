@@ -38,8 +38,8 @@ export function enqueue(media: Media, episode: number, preferences?: DownloadPre
   getEpisodeMeta(media.id).catch(() => {})
   pump()
 }
-export function enqueueMany(media: Media, episodes: number[]) {
-  for (const ep of episodes) enqueue(media, ep)
+export function enqueueMany(media: Media, episodes: number[], preferences?: DownloadPreferences) {
+  for (const ep of episodes) enqueue(media, ep, preferences)
 }
 
 // Ids with a live download_start this session. Used so the startup requeue never
