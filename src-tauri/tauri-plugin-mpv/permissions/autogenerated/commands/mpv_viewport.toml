@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-viewport"
+description = "Enables the mpv_viewport command without any pre-configured scope."
+commands.allow = ["mpv_viewport"]
+
+[[permission]]
+identifier = "deny-mpv-viewport"
+description = "Denies the mpv_viewport command without any pre-configured scope."
+commands.deny = ["mpv_viewport"]

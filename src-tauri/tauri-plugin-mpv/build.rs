@@ -8,6 +8,7 @@ const COMMANDS: &[&str] = &[
     "mpv_set",
     "mpv_stop",
     "mpv_pip",
+    "mpv_viewport",
     "mpv_brightness",
     "mpv_haptic",
     "mpv_thumb",
