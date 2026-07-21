@@ -33,10 +33,19 @@ export const mpvState = writable<{
   cacheEnd: 0,
 })
 
-// Ignore old time-pos observations only while an exact seek command is in flight. The command's
-// completion clears this immediately; unlike a timer, it cannot leave the skimmer artificially stuck.
+// Android resolves mpv_command as soon as libmpv has QUEUED it, before the matching time-pos event.
+// Keep ignoring older observations until that acknowledgement arrives, otherwise a stale event can
+// snap the UI back and make the next relative seek use the wrong starting position.
 let pendingSeekTarget: number | null = null
 let seekGeneration = 0
+let pendingSeekTimer: ReturnType<typeof setTimeout> | undefined
+
+function clearPendingSeek(generation?: number) {
+  if (generation != null && generation !== seekGeneration) return
+  pendingSeekTarget = null
+  clearTimeout(pendingSeekTimer)
+  pendingSeekTimer = undefined
+}
 
 let embeddedChecked: boolean | undefined
 /** Whether the embedded-player plugin is compiled in (full flavor). Cached after first probe. */
@@ -61,7 +70,7 @@ export async function startMpvEvents(): Promise<void> {
     mpvState.update((s) => {
       if (property === 'time-pos' && typeof value === 'number') {
         if (pendingSeekTarget != null) {
-          if (Math.abs(value - pendingSeekTarget) <= 2.5) pendingSeekTarget = null
+          if (Math.abs(value - pendingSeekTarget) <= 2.5) clearPendingSeek()
           else return s
         }
         return { ...s, pos: value }
@@ -77,8 +86,8 @@ export async function startMpvEvents(): Promise<void> {
 }
 
 export async function mpvLoad(p: MpvLoad): Promise<void> {
-  pendingSeekTarget = null
   seekGeneration++
+  clearPendingSeek()
   // Reset UI state for the new file (fresh time-pos/duration events will repopulate it).
   // buffering starts true — the spinner shows until the first frame's duration/time-pos lands.
   mpvState.set({ pos: 0, dur: 0, paused: false, eof: false, buffering: true, cacheEnd: 0 })
@@ -107,8 +116,8 @@ export async function mpvGet(property: string): Promise<string | null> {
 
 export async function mpvStop(): Promise<void> {
   await invoke('plugin:mpv|mpv_stop')
-  pendingSeekTarget = null
   seekGeneration++
+  clearPendingSeek()
   mpvState.set({ pos: 0, dur: 0, paused: false, eof: false, buffering: false, cacheEnd: 0 })
   androidStreamInfo.set(null)
 }
@@ -191,9 +200,23 @@ function requestExactSeek(sec: number) {
     return { ...s, pos: target }
   })
   const generation = ++seekGeneration
+  clearTimeout(pendingSeekTimer)
   pendingSeekTarget = target
-  return mpvCommand(['seek', target.toFixed(3), 'absolute+exact']).finally(() => {
-    if (generation === seekGeneration) pendingSeekTarget = null
+  return mpvCommand(['seek', target.toFixed(3), 'absolute+exact']).then(() => {
+    if (generation !== seekGeneration || pendingSeekTarget == null) return
+    // A failed/missing native observation must not pin the optimistic position forever. Reconcile
+    // after a generous window; normal seeks clear this from their time-pos event almost instantly.
+    pendingSeekTimer = setTimeout(async () => {
+      if (generation !== seekGeneration || pendingSeekTarget == null) return
+      const rawActual = await mpvGet('time-pos')
+      const actual = rawActual == null ? Number.NaN : Number(rawActual)
+      if (generation !== seekGeneration) return
+      clearPendingSeek(generation)
+      if (Number.isFinite(actual)) mpvState.update((s) => ({ ...s, pos: actual }))
+    }, 2000)
+  }).catch((error) => {
+    clearPendingSeek(generation)
+    throw error
   })
 }
 

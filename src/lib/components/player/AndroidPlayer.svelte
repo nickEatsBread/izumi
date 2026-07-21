@@ -56,6 +56,8 @@
   let controlsShown = $state(true)
   let scrubbing = $state(false)
   let scrubPos = $state(0)
+  let scrubOwner: 'bar' | 'surface' | null = null
+  let scrubPointerId: number | null = null
   let locked = $state(false)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
   let barEl: HTMLElement | undefined = $state()
@@ -109,9 +111,13 @@
     return `${h > 0 ? h + ':' : ''}${mm}:${sec.toString().padStart(2, '0')}`
   }
 
-  function armHide() { clearTimeout(hideTimer); if (!paused) hideTimer = setTimeout(() => (controlsShown = false), 3500) }
+  function armHide() { clearTimeout(hideTimer); if (!paused && !scrubbing) hideTimer = setTimeout(() => (controlsShown = false), 3500) }
   function showControls() { controlsShown = true; armHide() }
-  function toggleControls() { controlsShown = !controlsShown; if (controlsShown) armHide() }
+  function toggleControls() {
+    if (scrubbing) { controlsShown = true; return }
+    controlsShown = !controlsShown
+    if (controlsShown) armHide()
+  }
   $effect(() => { if (paused) { clearTimeout(hideTimer); controlsShown = true } else if (controlsShown) armHide() })
 
   // --- Seek preview: move the UI thumb while dragging, then issue one exact seek on release ---
@@ -123,32 +129,77 @@
   function schedulePreview(sec: number) {
     scrubPos = Math.max(0, dur > 0 ? Math.min(dur, sec) : sec)
   }
-  function endScrub() {
-    if (!scrubbing) return
-    const target = scrubPos
+  function clearScrub() {
+    const owner = scrubOwner
+    const pointerId = scrubPointerId
     scrubbing = false
+    scrubOwner = null
+    scrubPointerId = null
+    if (pointerId == null) return
+    const el = owner === 'bar' ? barEl : owner === 'surface' ? rootEl : null
+    try { if (el?.hasPointerCapture(pointerId)) el.releasePointerCapture(pointerId) } catch { /* ignore */ }
+  }
+  function cancelScrub() {
+    if (!scrubbing && scrubOwner == null) return
+    clearScrub()
+  }
+  function beginScrub(owner: 'bar' | 'surface', pointerId: number, initialPos: number) {
+    // A new gesture always invalidates an orphaned preview from a lost/cancelled pointer.
+    cancelScrub()
+    resetTapSequence()
+    scrubOwner = owner
+    scrubPointerId = pointerId
+    scrubPos = Math.max(0, dur > 0 ? Math.min(dur, initialPos) : initialPos)
+    scrubbing = true
+    clearTimeout(hideTimer)
+    controlsShown = true
+  }
+  function endScrub(owner: 'bar' | 'surface', pointerId: number) {
+    if (!scrubbing || scrubOwner !== owner || scrubPointerId !== pointerId) return false
+    const target = scrubPos
+    clearScrub()
     void seekAbsolute(target).catch(() => {}) // state must clear even if the native command rejects
+    return true
   }
   function onBarDown(e: PointerEvent) {
-    e.stopPropagation(); scrubbing = true; scrubPos = fracFromX(e.clientX) * dur
-    barEl?.setPointerCapture(e.pointerId); showControls()
+    if (!e.isPrimary) return
+    e.stopPropagation()
+    beginScrub('bar', e.pointerId, fracFromX(e.clientX) * dur)
+    barEl?.setPointerCapture(e.pointerId)
   }
   // stopPropagation on move+up too: the bar captures the pointer, but the events still BUBBLE to the
   // root gesture layer, whose stale start-sample would fire a competing 90s video-scrub and make the
   // bar "only skim a tiny amount". Stopping them here lets the bar own the drag cleanly.
-  function onBarMove(e: PointerEvent) { if (scrubbing) { e.stopPropagation(); schedulePreview(fracFromX(e.clientX) * dur) } }
+  function onBarMove(e: PointerEvent) {
+    if (scrubOwner === 'bar' && scrubPointerId === e.pointerId) {
+      e.stopPropagation(); schedulePreview(fracFromX(e.clientX) * dur)
+    }
+  }
   function onBarUp(e: PointerEvent) {
-    if (!scrubbing) return
     e.stopPropagation()
-    endScrub()
-    try { barEl?.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
-    armHide()
+    if (endScrub('bar', e.pointerId)) armHide()
+  }
+  function onBarCancel(e: PointerEvent) {
+    e.stopPropagation()
+    if (scrubOwner === 'bar' && scrubPointerId === e.pointerId) {
+      cancelScrub()
+      armHide()
+    }
+  }
+  function onBarLostCapture(e: PointerEvent) {
+    if (scrubOwner === 'bar' && scrubPointerId === e.pointerId) {
+      cancelScrub()
+      armHide()
+    }
   }
 
   function skip(delta: number) {
+    cancelScrub()
+    resetTapSequence()
     const target = Math.max(0, $mpvState.pos + delta)
-    seekAbsolute(dur > 0 ? Math.min(dur, target) : target)
+    void seekAbsolute(dur > 0 ? Math.min(dur, target) : target)
   }
+  function pressPause() { cancelScrub(); resetTapSequence(); void togglePause() }
 
   // --- Scrub thumbnail preview (debounced + cached, best-effort; falls back to the time bubble) ---
   let thumbUrl = $state<string | null>(null)
@@ -184,6 +235,11 @@
 
   function endSeekMode() {
     seekActive = false; seekSide = null; seekFlash = null
+  }
+  function resetTapSequence() {
+    clearTimeout(pendingToggle); pendingToggle = undefined; firstTapSide = null
+    clearTimeout(seekModeTimer); seekModeTimer = undefined
+    endSeekMode()
   }
   function armSeekTimer() {
     clearTimeout(seekModeTimer); seekModeTimer = setTimeout(endSeekMode, SEEK_MODE_MS)
@@ -222,10 +278,13 @@
   let scrubStartPos = 0
   let holdTimer: ReturnType<typeof setTimeout> | undefined
   let heldSpeed = false
+  let rootPointerId: number | null = null
   const VIDEO_SCRUB_SPAN = 90 // seconds spanned by a full-width horizontal drag over the video
 
   function onRootDown(e: PointerEvent) {
-    if (locked) return
+    if (locked || !e.isPrimary || rootPointerId != null) return
+    cancelScrub()
+    rootPointerId = e.pointerId
     rootEl?.setPointerCapture?.(e.pointerId)
     startSample = { x: e.clientX, y: e.clientY, t: e.timeStamp }
     gesture = null
@@ -236,26 +295,44 @@
     }, HOLD_MS)
   }
   function onRootMove(e: PointerEvent) {
-    if (locked || gesture === 'hold') return
+    if (locked || gesture === 'hold' || rootPointerId !== e.pointerId) return
     const cur = { x: e.clientX, y: e.clientY, t: e.timeStamp }
     if (gesture === null) {
       const g = classifyDrag(startSample, cur, window.innerWidth, window.innerHeight)
       if (g.kind === 'pending') return
       clearTimeout(holdTimer)
       gesture = g.kind === 'scrub' ? 'scrub' : 'none'
-      if (gesture === 'scrub') { scrubbing = true; scrubStartPos = $mpvState.pos; showControls() }
+      if (gesture === 'scrub') {
+        scrubStartPos = $mpvState.pos
+        beginScrub('surface', e.pointerId, scrubStartPos)
+      }
     }
     if (gesture === 'scrub') {
       schedulePreview(scrubStartPos + ((cur.x - startSample.x) / window.innerWidth) * VIDEO_SCRUB_SPAN)
     }
   }
   function onRootUp(e: PointerEvent) {
+    if (rootPointerId !== e.pointerId) return
+    rootPointerId = null
     clearTimeout(holdTimer)
     if (heldSpeed) { heldSpeed = false; mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
-    if (gesture === 'scrub') { endScrub(); armHide() }
+    if (gesture === 'scrub') { endScrub('surface', e.pointerId); armHide() }
     else if (gesture === null) onTap(e) // no drag happened → treat as a tap
     gesture = null
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
+  }
+  function onRootCancel(e: PointerEvent) {
+    if (rootPointerId !== e.pointerId) return
+    rootPointerId = null
+    clearTimeout(holdTimer)
+    if (heldSpeed) { heldSpeed = false; void mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
+    if (scrubOwner === 'surface' && scrubPointerId === e.pointerId) cancelScrub()
+    gesture = null
+    armHide()
+    try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
+  }
+  function onRootLostCapture(e: PointerEvent) {
+    if (rootPointerId === e.pointerId) onRootCancel(e)
   }
 
   // --- Lock ---
@@ -342,6 +419,7 @@
       clearTimeout(hideTimer); clearTimeout(pendingToggle); clearTimeout(seekModeTimer)
       clearTimeout(lockToggleTimer); clearTimeout(toastTimer)
       clearTimeout(holdTimer); clearTimeout(thumbDebounce)
+      cancelScrub()
       cancelAnimationFrame(viewportFrame)
       orientation.removeEventListener('change', scheduleViewportSync)
       window.removeEventListener('resize', scheduleViewportSync)
@@ -352,7 +430,7 @@
 <div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px`}>
   <section bind:this={rootEl} class="video-frame relative touch-none overflow-hidden bg-transparent"
-    onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootUp} role="presentation">
+    onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture} role="presentation">
   <!-- Buffering shows a spinner INSTEAD of the play/pause transport, but only while playing — when
        paused, keep the play button so you can resume. -->
   {#if loading && !paused}
@@ -408,7 +486,7 @@
     {#if !loading || paused}
       <div transition:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
         <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
-        <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); togglePause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={paused ? 'Play' : 'Pause'}>
+        <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={paused ? 'Play' : 'Pause'}>
           {#key paused}
             <span in:scale={{ duration: 160, start: 0.5 }} class="grid place-items-center">
               {#if paused}<Play size={38} class="ml-1" fill="currentColor" />{:else}<Pause size={38} fill="currentColor" />{/if}
@@ -423,7 +501,7 @@
     <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 px-3 pb-1 landscape:px-4" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="flex items-center gap-2 landscape:gap-3">
         <span class="w-14 text-right text-xs tabular-nums text-white/80">{fmt(pos)}</span>
-        <div bind:this={barEl} class="relative h-7 flex-1 cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarUp}
+        <div bind:this={barEl} class="relative h-7 flex-1 cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
              role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
           <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/25">
             <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
