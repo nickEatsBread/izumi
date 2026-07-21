@@ -55,8 +55,8 @@
     </label>
 
     <section class="rounded-md border border-border p-3">
-      <div class="font-bold">Device sync & Watch Together relay</div>
-      <p class="mt-1 text-xs text-muted-foreground">Izumi uses Iroh’s public relay network when a direct peer-to-peer path is unavailable. You can point this device at your own Iroh relay instead; room traffic remains end-to-end encrypted.</p>
+      <div class="font-bold">Peer-to-peer relay</div>
+      <p class="mt-1 text-xs text-muted-foreground">Device Sync and Watch Together use separate encrypted connections, but may independently use this Iroh relay when a direct path is unavailable. A custom relay changes routing only; it never combines their data.</p>
       <div class="mt-3 grid grid-cols-2 gap-2">
         <button data-focusable onclick={() => ($syncRelayMode = 'public')} class="rounded-md px-3 py-2 text-sm font-bold {$syncRelayMode === 'public' ? 'bg-theme text-white' : 'bg-secondary'}">Public relay</button>
         <button data-focusable onclick={() => ($syncRelayMode = 'custom')} class="rounded-md px-3 py-2 text-sm font-bold {$syncRelayMode === 'custom' ? 'bg-theme text-white' : 'bg-secondary'}">Custom relay</button>
@@ -68,6 +68,7 @@
         </label>
       {/if}
       <button data-focusable disabled={applyingRelay || ($syncRelayMode === 'custom' && !$syncRelayUrl.trim())} onclick={applyRelay} class="mt-3 rounded-md bg-secondary px-4 py-2 text-sm font-bold disabled:opacity-50">{applyingRelay ? 'Applying…' : 'Apply relay'}</button>
+      <p class="mt-2 text-xs text-muted-foreground">The selection is used for new connections. Leave and rejoin an active room after changing it.</p>
       {#if relayNotice}<p class="mt-2 text-xs text-green-500">{relayNotice}</p>{/if}
       {#if relayError}<p class="mt-2 text-xs text-destructive">{relayError}</p>{/if}
     </section>

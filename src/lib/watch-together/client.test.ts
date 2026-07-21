@@ -14,25 +14,23 @@ describe('Watch Together room codes', () => {
 })
 
 describe('Watch Together room validation', () => {
-  const record = (role: 'host' | 'guest', roomCode: string, updatedAt: number) => ({
-    deviceId: `${role}-device`,
-    payload: JSON.stringify({
+  const wire = (role: 'host' | 'guest', roomCode: string, updatedAt: number) =>
+    JSON.stringify({
       app: 'izumi', kind: 'watch-party', version: 1,
       deviceId: `${role}-device`, name: role, role, roomCode, updatedAt,
-    }),
-  })
+    })
 
   it('finds a live host for the exact room', () => {
     const now = 100_000
     expect(liveRoomHost([
-      record('guest', 'ABC234', now),
-      record('host', 'ABC234', now - 1000),
-      record('host', 'ZZZ999', now),
+      wire('guest', 'ABC234', now),
+      wire('host', 'ABC234', now - 1000),
+      wire('host', 'ZZZ999', now),
     ], 'ABC234', now)?.role).toBe('host')
   })
 
   it('rejects stale hosts', () => {
     const now = 100_000
-    expect(liveRoomHost([record('host', 'ABC234', now - 30_000)], 'ABC234', now)).toBeNull()
+    expect(liveRoomHost([wire('host', 'ABC234', now - 30_000)], 'ABC234', now)).toBeNull()
   })
 })

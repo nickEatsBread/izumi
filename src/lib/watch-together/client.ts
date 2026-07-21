@@ -1,9 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
-import { getSyncStatus, syncDeviceName } from '$lib/sync/client'
-import type { SyncRecord } from '$lib/sync/types'
 import { nowPlayingMedia, nowPlayingPartySource, playing } from '$lib/player/session'
 import { playStream } from '$lib/stremio/play'
 import { isAndroid } from '$lib/platform'
@@ -34,17 +31,20 @@ interface PartyWireState extends PartyParticipant {
 }
 
 const LIVE_ROOM_MS = 30_000
-const JOIN_TIMEOUT_MS = 10_000
 
-export const watchParty = persisted<WatchPartySession | null>('watch-party-session-v1', null)
+// Room membership is intentionally ephemeral. It must never restore or attach
+// the user to a persistent Device Sync group after restarting Izumi.
+export const watchParty = writable<WatchPartySession | null>(null)
 export const partyParticipants = writable<PartyParticipant[]>([])
 export const partyError = writable('')
 export const partySyncing = writable(false)
+const partyDeviceId = persisted<string>('watch-party-device-id-v1', '')
+const partyDisplayName = persisted<string>('watch-party-name-v1', '')
 
-let endpointId = ''
 let localClock = { position: 0, duration: 0, paused: false }
 let sequence = 0
 let lastPublished = 0
+let lastHostPlayback: PartyPlayback | undefined
 let applyingRemote = false
 let loadingRemote = ''
 let remoteRequestedAt = 0
@@ -60,29 +60,28 @@ export function generateRoomCode(randomValues?: Uint8Array): string {
     .join('')
 }
 
-async function readyEndpoint() {
-  const status = await getSyncStatus()
-  if (status.state !== 'ready' || !status.paired) throw new Error('Pair this device in Settings → Device sync first.')
-  endpointId = status.endpointId
-  return status
+function localDeviceId() {
+  let id = get(partyDeviceId)
+  if (!id) {
+    id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+    partyDeviceId.set(id)
+  }
+  return id
 }
 
-async function writeState(playback?: PartyPlayback) {
-  const session = get(watchParty)
-  if (!session) return
-  if (!endpointId) await readyEndpoint()
-  const state: PartyWireState = {
+function wireState(session: WatchPartySession, playback?: PartyPlayback): PartyWireState {
+  const deviceId = localDeviceId()
+  return {
     app: 'izumi', kind: 'watch-party', version: 1,
-    roomCode: session.roomCode, role: session.role, deviceId: endpointId,
-    name: get(syncDeviceName) || `Izumi ${endpointId.slice(0, 6)}`,
+    roomCode: session.roomCode, role: session.role, deviceId,
+    name: get(partyDisplayName) || `${navigator.platform || 'Izumi'} ${deviceId.slice(0, 6)}`,
     updatedAt: Date.now(), playback,
   }
-  await invoke('sync_write', { category: 'watch-party', payload: JSON.stringify(state) })
 }
 
-function parse(record: SyncRecord): PartyWireState | null {
+function parse(payload: string): PartyWireState | null {
   try {
-    const value = JSON.parse(record.payload) as PartyWireState
+    const value = JSON.parse(payload) as PartyWireState
     if (value?.app !== 'izumi' || value.kind !== 'watch-party' || value.version !== 1 || !value.roomCode) return null
     if (value.playback?.source) {
       const source = parseSharedSource(value.playback.source)
@@ -90,30 +89,16 @@ function parse(record: SyncRecord): PartyWireState | null {
         ? { ...value.playback, source }
         : { ...value.playback, source: undefined, sourceError: 'The host sent an invalid or credential-bearing source.' }
     }
-    return { ...value, deviceId: record.deviceId }
+    return value
   } catch { return null }
 }
 
-export function liveRoomHost(records: SyncRecord[], roomCode: string, now = Date.now()): PartyWireState | null {
+export function liveRoomHost(records: string[], roomCode: string, now = Date.now()): PartyWireState | null {
   return records
     .map(parse)
     .filter((value): value is PartyWireState => !!value)
     .filter((value) => value.roomCode === roomCode && value.role === 'host' && now - value.updatedAt < LIVE_ROOM_MS)
     .sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null
-}
-
-async function readPartyRecords() {
-  return invoke<SyncRecord[]>('sync_read', { category: 'watch-party' })
-}
-
-async function waitForLiveHost(roomCode: string): Promise<PartyWireState> {
-  const deadline = Date.now() + JOIN_TIMEOUT_MS
-  do {
-    const host = liveRoomHost(await readPartyRecords(), roomCode)
-    if (host) return host
-    await new Promise((resolve) => setTimeout(resolve, 750))
-  } while (Date.now() < deadline)
-  throw new Error('Room not found or the host cannot be reached. Check the code, relay, and host connection.')
 }
 
 async function commandRemote(position: number, paused: boolean) {
@@ -165,47 +150,70 @@ async function applyHostPlayback(playback: PartyPlayback) {
   } finally { applyingRemote = false }
 }
 
-export async function refreshWatchParty() {
+async function consumeRecords(records: string[], session: WatchPartySession) {
+  const states = records.map(parse).filter((value): value is PartyWireState => !!value)
+    .filter((value) => value.roomCode === session.roomCode && Date.now() - value.updatedAt < LIVE_ROOM_MS)
+  partyParticipants.set(states.map(({ deviceId, name, role, updatedAt }) => ({ deviceId, name, role, updatedAt })))
+  const host = states.filter((value) => value.role === 'host' && value.playback)
+    .sort((left, right) => right.updatedAt - left.updatedAt)[0]
+  if (host?.playback) await applyHostPlayback(host.playback)
+  partyError.set('')
+}
+
+async function exchange(playback?: PartyPlayback) {
   const session = get(watchParty)
-  if (!session) { partyParticipants.set([]); return }
+  if (!session) return
+  if (session.role === 'host' && playback) lastHostPlayback = playback
+  const state = wireState(session, session.role === 'host' ? lastHostPlayback : undefined)
+  const records = await invoke<string[]>('watch_room_exchange', { payload: JSON.stringify(state) })
+  await consumeRecords(records, session)
+}
+
+export async function refreshWatchParty() {
+  if (!get(watchParty)) { partyParticipants.set([]); return }
   try {
-    if (!endpointId) await readyEndpoint()
-    const records = await readPartyRecords()
-    const states = records.map(parse).filter((value): value is PartyWireState => !!value)
-      .filter((value) => value.roomCode === session.roomCode && Date.now() - value.updatedAt < LIVE_ROOM_MS)
-    partyParticipants.set(states.map(({ deviceId, name, role, updatedAt }) => ({ deviceId, name, role, updatedAt })))
-    const host = states.filter((value) => value.role === 'host' && value.playback)
-      .sort((left, right) => right.updatedAt - left.updatedAt)[0]
-    if (host?.playback) await applyHostPlayback(host.playback)
-    partyError.set('')
+    await exchange()
   } catch (error) { partyError.set(error instanceof Error ? error.message : String(error)) }
 }
 
 export async function createWatchParty() {
-  await readyEndpoint()
-  const records = await readPartyRecords()
-  let roomCode = generateRoomCode()
-  for (let attempt = 0; attempt < 8 && liveRoomHost(records, roomCode); attempt++) roomCode = generateRoomCode()
-  if (liveRoomHost(records, roomCode)) throw new Error('Could not allocate a unique room code. Try again.')
-  watchParty.set({ roomCode, role: 'host', joinedAt: Date.now() })
-  await writeState()
-  await refreshWatchParty()
+  const session: WatchPartySession = { roomCode: generateRoomCode(), role: 'host', joinedAt: Date.now() }
+  lastHostPlayback = undefined
+  try {
+    const records = await invoke<string[]>('watch_room_host', {
+      code: session.roomCode, payload: JSON.stringify(wireState(session)),
+    })
+    watchParty.set(session)
+    await consumeRecords(records, session)
+  } catch (error) {
+    await invoke('watch_room_leave').catch(() => {})
+    throw error
+  }
 }
 
 export async function joinWatchParty(code: string) {
-  await readyEndpoint()
   const clean = code.trim().toUpperCase().replace(/[^A-Z2-9]/g, '')
   if (clean.length !== 6) throw new Error('Enter the six-character room code.')
-  await waitForLiveHost(clean)
-  watchParty.set({ roomCode: clean, role: 'guest', joinedAt: Date.now() })
-  await writeState()
-  await refreshWatchParty()
+  const session: WatchPartySession = { roomCode: clean, role: 'guest', joinedAt: Date.now() }
+  try {
+    const records = await invoke<string[]>('watch_room_join', {
+      code: clean, payload: JSON.stringify(wireState(session)),
+    })
+    if (!liveRoomHost(records, clean)) throw new Error('The host did not confirm this room.')
+    watchParty.set(session)
+    await consumeRecords(records, session)
+  } catch (error) {
+    await invoke('watch_room_leave').catch(() => {})
+    throw error
+  }
 }
 
-export function leaveWatchParty() {
+export async function leaveWatchParty() {
   watchParty.set(null)
   partyParticipants.set([])
   partyError.set('')
+  lastHostPlayback = undefined
+  await invoke('watch_room_leave').catch(() => {})
 }
 
 /** Feed the shared clock from either desktop or Android's embedded player. */
@@ -219,11 +227,13 @@ export function reportWatchPlayback(position: number, duration: number, paused: 
   if (!current) return
   const shared = get(nowPlayingPartySource)
   lastPublished = now
-  void writeState({
+  const playback: PartyPlayback = {
     media: current.media, episode: current.episode, position, duration, paused,
     source: shared.source ?? undefined, sourceError: shared.error || undefined,
     sequence: ++sequence, sentAt: now,
-  }).catch((error) => partyError.set(error instanceof Error ? error.message : String(error)))
+  }
+  lastHostPlayback = playback
+  void exchange(playback).catch((error) => partyError.set(error instanceof Error ? error.message : String(error)))
 }
 
 let initialized = false
@@ -233,11 +243,8 @@ export function initWatchTogether() {
   const heartbeat = setInterval(() => {
     if (get(watchParty)) {
       if (get(watchParty)?.role === 'host' && get(nowPlayingMedia)) reportWatchPlayback(localClock.position, localClock.duration, localClock.paused)
-      else void writeState().catch(() => {})
-      void refreshWatchParty()
+      else void refreshWatchParty()
     }
-  }, 5_000)
-  const unlisten = listen('iroh-sync-update', () => { if (get(watchParty)) void refreshWatchParty() })
-  if (get(watchParty)) void refreshWatchParty()
-  return () => { clearInterval(heartbeat); void unlisten.then((stop) => stop()); initialized = false }
+  }, 1_000)
+  return () => { clearInterval(heartbeat); initialized = false }
 }

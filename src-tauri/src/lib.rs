@@ -2,6 +2,7 @@
 mod doh;
 mod download;
 mod sync;
+mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
 mod player;
@@ -2069,6 +2070,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(download::Downloads::default())
         .manage(sync::SyncState::default())
+        .manage(watch_room::WatchRoomState::default())
         .manage(TacVerificationConfig::default())
         .manage(FsWasMax::default())
         .setup(|app| {
@@ -2566,7 +2568,11 @@ pub fn run() {
             sync::sync_pair_respond,
             sync::sync_leave,
             sync::sync_write,
-            sync::sync_read
+            sync::sync_read,
+            watch_room::watch_room_host,
+            watch_room::watch_room_join,
+            watch_room::watch_room_exchange,
+            watch_room::watch_room_leave
         ]);
 
     #[cfg(target_os = "android")]
@@ -2597,7 +2603,11 @@ pub fn run() {
         sync::sync_pair_respond,
         sync::sync_leave,
         sync::sync_write,
-        sync::sync_read
+        sync::sync_read,
+        watch_room::watch_room_host,
+        watch_room::watch_room_join,
+        watch_room::watch_room_exchange,
+        watch_room::watch_room_leave
     ]);
 
     // "Full" Android flavor only: the embedded libmpv player plugin (registers its own
