@@ -18,7 +18,6 @@
     mpvCommand,
     togglePause,
     seekAbsolute,
-    seekKeyframe,
     seekRelative,
     haptic,
     grabThumb,
@@ -62,6 +61,10 @@
   let barEl: HTMLElement | undefined = $state()
   let rootEl: HTMLElement | undefined = $state()
   let landscape = $state(false)
+  let safeTop = $state(0)
+  let safeRight = $state(0)
+  let safeBottom = $state(0)
+  let safeLeft = $state(0)
 
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
@@ -111,22 +114,17 @@
   function toggleControls() { controlsShown = !controlsShown; if (controlsShown) armHide() }
   $effect(() => { if (paused) { clearTimeout(hideTimer); controlsShown = true } else if (controlsShown) armHide() })
 
-  // --- Seek preview: one throttled keyframe seek per frame while dragging, exact seek on release ---
+  // --- Seek preview: move the UI thumb while dragging, then issue one exact seek on release ---
   function fracFromX(clientX: number) {
     if (!barEl) return 0
     const r = barEl.getBoundingClientRect()
     return Math.max(0, Math.min(1, (clientX - r.left) / r.width))
   }
-  let rafId = 0
-  let rafTarget = 0
   function schedulePreview(sec: number) {
-    rafTarget = Math.max(0, dur > 0 ? Math.min(dur, sec) : sec)
-    scrubPos = rafTarget
-    if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; if (dur > 0) seekKeyframe(rafTarget) })
+    scrubPos = Math.max(0, dur > 0 ? Math.min(dur, sec) : sec)
   }
-  function endScrub() {
-    if (rafId) { cancelAnimationFrame(rafId); rafId = 0 }
-    seekAbsolute(scrubPos) // land precisely
+  async function endScrub() {
+    await seekAbsolute(scrubPos) // one command avoids out-of-order network seeks while dragging
     scrubbing = false
   }
   function onBarDown(e: PointerEvent) {
@@ -140,7 +138,7 @@
   function onBarUp(e: PointerEvent) {
     if (!scrubbing) return
     e.stopPropagation()
-    endScrub()
+    void endScrub()
     try { barEl?.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
     armHide()
   }
@@ -173,42 +171,32 @@
   // every FURTHER single tap on that side adds another step (10 → 20 → 30…) — you don't re-double-tap.
   // Tapping the other side reverses. A lone side tap only toggles controls, and that toggle is delayed
   // by the double-tap window so rapid taps aren't misread as toggles (the flicker/stuck-state failure).
-  // Actual mpv seeks are coalesced to one relative seek per burst so rapid taps don't thrash the stream.
+  // Every recognized seek tap is applied immediately; the visual total remains until seek mode closes.
   const SEEK_MODE_MS = 650 // seek mode stays open this long after the last tap (DoubleTapPlayerView default)
-  const SEEK_COMMIT_MS = 250 // debounce before the accumulated delta is actually seeked
   let seekFlash = $state<{ side: 'l' | 'r'; amt: number } | null>(null)
   let seekActive = false
   let seekSide: 'l' | 'r' | null = null
-  let pendingDelta = 0
   let pendingToggle: ReturnType<typeof setTimeout> | undefined
   let firstTapSide: 'l' | 'r' | null = null
   let seekModeTimer: ReturnType<typeof setTimeout> | undefined
-  let seekCommitTimer: ReturnType<typeof setTimeout> | undefined
 
-  function commitSeek() {
-    clearTimeout(seekCommitTimer); seekCommitTimer = undefined
-    if (pendingDelta !== 0) { seekRelative(pendingDelta); pendingDelta = 0 }
-  }
   function endSeekMode() {
-    commitSeek()
     seekActive = false; seekSide = null; seekFlash = null
   }
-  function armSeekTimers() {
-    clearTimeout(seekCommitTimer); seekCommitTimer = setTimeout(commitSeek, SEEK_COMMIT_MS)
+  function armSeekTimer() {
     clearTimeout(seekModeTimer); seekModeTimer = setTimeout(endSeekMode, SEEK_MODE_MS)
   }
   // One seek "tap" while in (or entering) seek mode: accumulate on the same side, reverse on the other.
   function bumpSeek(side: 'l' | 'r') {
     const step = $seekDuration
-    if (seekActive && seekSide !== side) commitSeek() // reversing → flush the old direction first
     if (!seekActive || seekSide !== side) {
       seekActive = true; seekSide = side; seekFlash = { side, amt: step }
     } else {
       seekFlash = { side, amt: (seekFlash?.amt ?? 0) + step }
     }
-    pendingDelta += side === 'r' ? step : -step
+    void seekRelative(side === 'r' ? step : -step)
     haptic(15)
-    armSeekTimers()
+    armSeekTimer()
   }
   function onTap(e: PointerEvent) {
     if (locked) { showLockToggle(); return }
@@ -262,7 +250,7 @@
   function onRootUp(e: PointerEvent) {
     clearTimeout(holdTimer)
     if (heldSpeed) { heldSpeed = false; mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
-    if (gesture === 'scrub') { endScrub(); armHide() }
+    if (gesture === 'scrub') { void endScrub(); armHide() }
     else if (gesture === null) onTap(e) // no drag happened → treat as a tap
     gesture = null
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
@@ -322,11 +310,19 @@
     androidMpvActive.set(false)
   }
 
-  function syncViewport() {
-    landscape = window.matchMedia('(orientation: landscape)').matches
+  let viewportGeneration = 0
+  async function syncViewport() {
+    const generation = ++viewportGeneration
+    const nextLandscape = window.matchMedia('(orientation: landscape)').matches
+    landscape = nextLandscape
     const ratioHeight = Math.round(window.innerWidth * 9 / 16)
     const dpr = window.devicePixelRatio || 1
-    setPlayerViewport(0, landscape ? 0 : ratioHeight * dpr, landscape)
+    const insets = await setPlayerViewport(0, nextLandscape ? 0 : ratioHeight * dpr, nextLandscape)
+    if (generation !== viewportGeneration) return
+    safeTop = insets.top / dpr
+    safeRight = insets.right / dpr
+    safeBottom = insets.bottom / dpr
+    safeLeft = insets.left / dpr
   }
 
   onMount(() => {
@@ -341,10 +337,9 @@
     window.addEventListener('resize', scheduleViewportSync)
     scheduleViewportSync()
     return () => {
-      clearTimeout(hideTimer); clearTimeout(pendingToggle); clearTimeout(seekModeTimer); clearTimeout(seekCommitTimer)
+      clearTimeout(hideTimer); clearTimeout(pendingToggle); clearTimeout(seekModeTimer)
       clearTimeout(lockToggleTimer); clearTimeout(toastTimer)
       clearTimeout(holdTimer); clearTimeout(thumbDebounce)
-      if (rafId) cancelAnimationFrame(rafId)
       cancelAnimationFrame(viewportFrame)
       orientation.removeEventListener('change', scheduleViewportSync)
       window.removeEventListener('resize', scheduleViewportSync)
@@ -352,7 +347,8 @@
   })
 </script>
 
-<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden bg-neutral-950 text-white" class:hidden={overlayHidden}>
+<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden}
+  style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px`}>
   <section bind:this={rootEl} class="video-frame relative touch-none overflow-hidden bg-transparent"
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootUp} role="presentation">
   <!-- Buffering shows a spinner INSTEAD of the play/pause transport, but only while playing — when
@@ -392,7 +388,7 @@
     <div transition:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/75"></div>
 
     <!-- Top bar -->
-    <div transition:fade={{ duration: 180 }} class="absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3 landscape:pt-[calc(env(safe-area-inset-top)+0.5rem)]" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
+    <div transition:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
       <button onclick={close} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/20 active:scale-90" aria-label="Back"><ChevronLeft size={27} /></button>
       <div class="min-w-0 flex-1">
         <div class="truncate text-sm font-bold landscape:text-base">{np.animeTitle ?? np.title}</div>
@@ -418,7 +414,7 @@
     {/if}
 
     <!-- Bottom timeline; secondary controls live in Video settings. -->
-    <div transition:fade={{ duration: 180 }} class="absolute inset-x-0 bottom-0 px-3 pb-1 landscape:px-4 landscape:pb-[calc(env(safe-area-inset-bottom)+0.65rem)]" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
+    <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 px-3 pb-1 landscape:px-4" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="flex items-center gap-2 landscape:gap-3">
         <span class="w-14 text-right text-xs tabular-nums text-white/80">{fmt(pos)}</span>
         <div bind:this={barEl} class="relative h-7 flex-1 cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp}
@@ -515,16 +511,17 @@
 </div>
 
 <style>
-  .player-shell { touch-action: none; }
-  .video-frame { width: 100%; aspect-ratio: 16 / 9; }
-  .watch-details { height: calc(100% - (100vw * 9 / 16)); touch-action: pan-y; }
+  .player-shell { touch-action: none; background: transparent; }
+  .video-frame { width: 100%; margin-top: var(--player-safe-top); aspect-ratio: 16 / 9; }
+  .watch-details { height: calc(100% - var(--player-safe-top) - (100vw * 9 / 16)); touch-action: pan-y; background: #0a0a0b; }
   .watch-action { display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 0.35rem; font-size: 0.7rem; font-weight: 600; color: rgb(255 255 255 / 0.82); }
   .settings-sheet { inset-inline: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; }
   .settings-body { max-height: calc(86vh - 5.25rem); touch-action: pan-y; }
 
   @media (orientation: landscape) {
-    .player-shell { background: transparent; }
-    .video-frame { width: 100%; height: 100%; aspect-ratio: auto; }
+    .video-frame { width: 100%; height: 100%; margin-top: 0; aspect-ratio: auto; }
+    .player-top-bar { padding-top: max(0.75rem, var(--player-safe-top)); padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
+    .player-timeline { padding-right: max(1rem, var(--player-safe-right)); padding-bottom: max(0.65rem, var(--player-safe-bottom)); padding-left: max(1rem, var(--player-safe-left)); }
     .settings-sheet { inset-block: 0; right: 0; left: auto; width: min(28rem, 48vw); max-height: none; border-radius: 1.25rem 0 0 1.25rem; transform: none !important; }
     .settings-body { max-height: calc(100vh - 5.75rem); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
     .sheet-handle { display: none; }

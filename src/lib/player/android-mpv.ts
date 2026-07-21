@@ -33,6 +33,10 @@ export const mpvState = writable<{
   cacheEnd: 0,
 })
 
+// mpv can emit one or two old time-pos observations while an exact seek is being queued. Keep the
+// UI on the requested position until mpv catches up so the thumb never snaps back to the old frame.
+let pendingSeek: { target: number; expires: number } | null = null
+
 let embeddedChecked: boolean | undefined
 /** Whether the embedded-player plugin is compiled in (full flavor). Cached after first probe. */
 export async function hasEmbeddedPlayer(): Promise<boolean> {
@@ -54,7 +58,14 @@ export async function startMpvEvents(): Promise<void> {
   progressSub = await addPluginListener('mpv', 'progress', (e: unknown) => {
     const { property, value } = e as { property: string; value: unknown }
     mpvState.update((s) => {
-      if (property === 'time-pos' && typeof value === 'number') return { ...s, pos: value }
+      if (property === 'time-pos' && typeof value === 'number') {
+        if (pendingSeek) {
+          if (Math.abs(value - pendingSeek.target) <= 2.5) pendingSeek = null
+          else if (Date.now() < pendingSeek.expires) return s
+          else pendingSeek = null
+        }
+        return { ...s, pos: value }
+      }
       if (property === 'duration' && typeof value === 'number') return { ...s, dur: value }
       if (property === 'pause' && typeof value === 'boolean') return { ...s, paused: value }
       if (property === 'eof-reached') return { ...s, eof: value === true }
@@ -66,6 +77,7 @@ export async function startMpvEvents(): Promise<void> {
 }
 
 export async function mpvLoad(p: MpvLoad): Promise<void> {
+  pendingSeek = null
   // Reset UI state for the new file (fresh time-pos/duration events will repopulate it).
   // buffering starts true — the spinner shows until the first frame's duration/time-pos lands.
   mpvState.set({ pos: 0, dur: 0, paused: false, eof: false, buffering: true, cacheEnd: 0 })
@@ -94,6 +106,7 @@ export async function mpvGet(property: string): Promise<string | null> {
 
 export async function mpvStop(): Promise<void> {
   await invoke('plugin:mpv|mpv_stop')
+  pendingSeek = null
   mpvState.set({ pos: 0, dur: 0, paused: false, eof: false, buffering: false, cacheEnd: 0 })
   androidStreamInfo.set(null)
 }
@@ -105,10 +118,26 @@ export const mpvPip = () => invoke('plugin:mpv|mpv_pip')
  * Align the native video surface with the WebView player shell. A zero height restores full-screen.
  * Coordinates are physical Android pixels, not CSS pixels.
  */
-export const setPlayerViewport = (top: number, height: number, immersive: boolean) =>
-  invoke('plugin:mpv|mpv_viewport', {
-    payload: { top: Math.round(top), height: Math.round(height), immersive },
-  }).catch(() => {})
+export interface PlayerViewportInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+export async function setPlayerViewport(
+  top: number,
+  height: number,
+  immersive: boolean,
+): Promise<PlayerViewportInsets> {
+  try {
+    return (await invoke('plugin:mpv|mpv_viewport', {
+      payload: { top: Math.round(top), height: Math.round(height), immersive },
+    })) as PlayerViewportInsets
+  } catch {
+    return { top: 0, right: 0, bottom: 0, left: 0 }
+  }
+}
 
 /** mpv chapter marker times (seconds), via sub-property paths. Empty when the file has no chapters. */
 export async function getChapters(): Promise<number[]> {
@@ -157,10 +186,27 @@ export const setSubTrack = (id: number | 'no') => mpvCommand(['set', 'sid', Stri
 export const togglePause = () => mpvCommand(['cycle', 'pause'])
 export const setPaused = (paused: boolean) => mpvCommand(['set', 'pause', paused ? 'yes' : 'no'])
 /** Precise seek — `+exact` avoids the keyframe snap that made taps/scrubs feel imprecise. */
-export const seekAbsolute = (sec: number) => mpvCommand(['seek', sec.toFixed(3), 'absolute+exact'])
+export function seekAbsolute(sec: number) {
+  let target = Math.max(0, sec)
+  mpvState.update((s) => {
+    target = s.dur > 0 ? Math.min(s.dur, target) : target
+    pendingSeek = { target, expires: Date.now() + 1500 }
+    return { ...s, pos: target }
+  })
+  return mpvCommand(['seek', target.toFixed(3), 'absolute+exact'])
+}
 /** Fast, inexact seek for live scrub preview (snaps to keyframes, cheap on network streams). */
 export const seekKeyframe = (sec: number) => mpvCommand(['seek', sec.toFixed(3), 'absolute+keyframes'])
-export const seekRelative = (delta: number) => mpvCommand(['seek', delta.toString(), 'relative+exact'])
+export function seekRelative(delta: number) {
+  let target = 0
+  mpvState.update((s) => {
+    target = Math.max(0, s.pos + delta)
+    if (s.dur > 0) target = Math.min(s.dur, target)
+    pendingSeek = { target, expires: Date.now() + 1500 }
+    return { ...s, pos: target }
+  })
+  return mpvCommand(['seek', delta.toString(), 'relative+exact'])
+}
 export const setSpeed = (v: number) => mpvCommand(['set', 'speed', String(v)])
 /** mpv software volume, 0..100 (clamped). */
 export const setVolume = (v: number) => mpvCommand(['set', 'volume', String(Math.max(0, Math.min(100, Math.round(v))))])

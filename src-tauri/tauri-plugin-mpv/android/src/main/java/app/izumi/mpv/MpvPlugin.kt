@@ -15,6 +15,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.FrameLayout
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -25,6 +27,7 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import dev.jdtech.mpv.MPVLib
+import kotlin.math.max
 
 @InvokeArg
 class LoadArgs {
@@ -92,6 +95,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val win = activity.window
         WindowCompat.setDecorFitsSystemWindows(win, !on)
         val ctrl = WindowInsetsControllerCompat(win, win.decorView)
+        ctrl.isAppearanceLightStatusBars = false
+        ctrl.isAppearanceLightNavigationBars = false
         if (on) {
             ctrl.hide(WindowInsetsCompat.Type.systemBars())
             ctrl.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -212,17 +217,36 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val a = invoke.parseArgs(ViewportArgs::class.java)
         activity.runOnUiThread {
             setImmersive(a.immersive)
+            val rootInsets = ViewCompat.getRootWindowInsets(activity.window.decorView)
+            val cutout = rootInsets?.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.displayCutout(),
+            ) ?: Insets.NONE
+            val status = if (a.immersive) Insets.NONE else rootInsets?.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.statusBars(),
+            ) ?: Insets.NONE
+            val navigation = if (a.immersive) Insets.NONE else rootInsets?.getInsetsIgnoringVisibility(
+                WindowInsetsCompat.Type.navigationBars(),
+            ) ?: Insets.NONE
+            val safeTop = max(cutout.top, status.top)
+            val safeRight = max(cutout.right, max(status.right, navigation.right))
+            val safeBottom = max(cutout.bottom, navigation.bottom)
+            val safeLeft = max(cutout.left, max(status.left, navigation.left))
             view?.let { playerView ->
                 val height = if (a.height > 0) a.height else ViewGroup.LayoutParams.MATCH_PARENT
                 val params = (playerView.layoutParams as? FrameLayout.LayoutParams)
                     ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
                 params.width = ViewGroup.LayoutParams.MATCH_PARENT
                 params.height = height
-                params.topMargin = a.top.coerceAtLeast(0)
+                params.topMargin = a.top.coerceAtLeast(0) + if (a.immersive) 0 else safeTop
                 playerView.layoutParams = params
                 playerView.requestLayout()
             }
-            invoke.resolve()
+            val ret = JSObject()
+            ret.put("top", safeTop)
+            ret.put("right", safeRight)
+            ret.put("bottom", safeBottom)
+            ret.put("left", safeLeft)
+            invoke.resolve(ret)
         }
     }
 
