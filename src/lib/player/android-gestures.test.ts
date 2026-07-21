@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { zoneOf, classifyDrag, accumulateSeek } from './android-gestures'
+import { zoneOf, classifyDrag, accumulateSeek, shouldDismissSheet } from './android-gestures'
 
 describe('zoneOf', () => {
   it('splits the width into left/center/right thirds', () => {
@@ -48,5 +48,19 @@ describe('accumulateSeek', () => {
   })
   it('resets when the direction flips', () => {
     expect(accumulateSeek({ dir: 'r', amt: 20 }, 'l', 10)).toEqual({ dir: 'l', amt: 10 })
+  })
+})
+
+describe('shouldDismissSheet', () => {
+  it('dismisses a sheet after a substantial pull', () => {
+    expect(shouldDismissSheet(120, 0.1, 800)).toBe(true)
+  })
+
+  it('dismisses a short, fast downward fling', () => {
+    expect(shouldDismissSheet(30, 0.7, 800)).toBe(true)
+  })
+
+  it('snaps back after a short, slow pull', () => {
+    expect(shouldDismissSheet(30, 0.1, 800)).toBe(false)
   })
 })
