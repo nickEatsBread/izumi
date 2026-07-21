@@ -22,6 +22,17 @@ describe('Watch Together source sharing', () => {
     expect(JSON.stringify(result)).not.toContain('debrid.example')
   })
 
+  it('recovers Torrentio resolver hashes without sharing the path token', () => {
+    const hash = '161c22aecdc3ed95fb629c275ee23f77ca601f3c'
+    const result = shareableSource({
+      url: `https://torrentio.strem.fun/resolve/realdebrid/private-token/${hash}/null/undefined/release.mkv`,
+      name: '[RD+] Torrentio',
+      behaviorHints: { filename: 'release.mkv' },
+    })
+    expect(result.source).toMatchObject({ kind: 'torrent', infoHash: hash, filename: 'release.mkv' })
+    expect(JSON.stringify(result)).not.toContain('private-token')
+  })
+
   it('round-trips an exact torrent and file hint for local resolution', () => {
     const source = shareableSource({
       infoHash: '0123456789abcdef0123456789abcdef01234567',
