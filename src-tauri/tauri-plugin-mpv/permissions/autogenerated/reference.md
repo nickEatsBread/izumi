@@ -10,6 +10,7 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-set`
 - `allow-mpv-stop`
 - `allow-mpv-pip`
+- `allow-mpv-viewport`
 - `allow-mpv-brightness`
 - `allow-mpv-haptic`
 - `allow-mpv-thumb`
@@ -255,6 +256,32 @@ Enables the mpv_thumb command without any pre-configured scope.
 <td>
 
 Denies the mpv_thumb command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-viewport`
+
+</td>
+<td>
+
+Enables the mpv_viewport command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-viewport`
+
+</td>
+<td>
+
+Denies the mpv_viewport command without any pre-configured scope.
 
 </td>
 </tr>
