@@ -101,6 +101,15 @@ export async function mpvStop(): Promise<void> {
 /** Enter Android picture-in-picture. Video keeps rendering into the SurfaceView in the PIP window. */
 export const mpvPip = () => invoke('plugin:mpv|mpv_pip')
 
+/**
+ * Align the native video surface with the WebView player shell. A zero height restores full-screen.
+ * Coordinates are physical Android pixels, not CSS pixels.
+ */
+export const setPlayerViewport = (top: number, height: number, immersive: boolean) =>
+  invoke('plugin:mpv|mpv_viewport', {
+    payload: { top: Math.round(top), height: Math.round(height), immersive },
+  }).catch(() => {})
+
 /** mpv chapter marker times (seconds), via sub-property paths. Empty when the file has no chapters. */
 export async function getChapters(): Promise<number[]> {
   const count = Number(await mpvGet('chapter-list/count')) || 0

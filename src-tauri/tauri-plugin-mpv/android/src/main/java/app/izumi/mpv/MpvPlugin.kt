@@ -14,6 +14,7 @@ import java.io.ByteArrayOutputStream
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
+import android.widget.FrameLayout
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -67,6 +68,15 @@ class ThumbArgs {
     var width: Int = 320
 }
 
+@InvokeArg
+class ViewportArgs {
+    /** Physical pixels from the top of the activity content. */
+    var top: Int = 0
+    /** Physical pixel height. Zero means fill the activity. */
+    var height: Int = 0
+    var immersive: Boolean = false
+}
+
 /**
  * Embedded libmpv player. Renders into a [IzumiMpvView] (SurfaceView) inserted behind the
  * (made-transparent) Tauri WebView, and forwards observed properties to JS as plugin events.
@@ -77,8 +87,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var mpv: MPVLib? = null
     private var view: IzumiMpvView? = null
 
-    /** Edge-to-edge immersive: hide the status + navigation bars during playback (swipe reveals
-     *  them transiently), restore on stop. Fixes the nav bar overlapping the controls in portrait. */
+    /** Hide system bars for landscape playback and restore them for the portrait watch page/stop. */
     private fun setImmersive(on: Boolean) {
         val win = activity.window
         WindowCompat.setDecorFitsSystemWindows(win, !on)
@@ -187,6 +196,31 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                     .build()
                 @Suppress("DEPRECATION")
                 activity.enterPictureInPictureMode(params)
+            }
+            invoke.resolve()
+        }
+    }
+
+    /**
+     * Keep the native SurfaceView aligned with the web player shell. In portrait the WebView
+     * presents a YouTube-style watch page with a 16:9 video at the top; in landscape the video
+     * returns to a full-screen immersive surface. Values arrive in physical pixels because Android
+     * layout params do not use WebView CSS pixels.
+     */
+    @Command
+    fun viewport(invoke: Invoke) {
+        val a = invoke.parseArgs(ViewportArgs::class.java)
+        activity.runOnUiThread {
+            setImmersive(a.immersive)
+            view?.let { playerView ->
+                val height = if (a.height > 0) a.height else ViewGroup.LayoutParams.MATCH_PARENT
+                val params = (playerView.layoutParams as? FrameLayout.LayoutParams)
+                    ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
+                params.width = ViewGroup.LayoutParams.MATCH_PARENT
+                params.height = height
+                params.topMargin = a.top.coerceAtLeast(0)
+                playerView.layoutParams = params
+                playerView.requestLayout()
             }
             invoke.resolve()
         }
