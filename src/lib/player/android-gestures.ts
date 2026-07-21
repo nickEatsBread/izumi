@@ -60,3 +60,9 @@ export function accumulateSeek(
   if (prev && prev.dir === dir) return { dir, amt: prev.amt + step }
   return { dir, amt: step }
 }
+
+/** Material-style bottom sheets dismiss after a meaningful pull or a deliberate downward fling. */
+export function shouldDismissSheet(distance: number, velocityY: number, viewportHeight: number): boolean {
+  const distanceThreshold = Math.min(160, Math.max(80, viewportHeight * 0.15))
+  return distance >= distanceThreshold || velocityY >= 0.5
+}

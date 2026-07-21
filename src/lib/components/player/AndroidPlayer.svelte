@@ -29,7 +29,7 @@
     setPlayerViewport,
     type MpvTrack,
   } from '$lib/player/android-mpv'
-  import { zoneOf, classifyDrag, HOLD_MS, DOUBLE_TAP_MS } from '$lib/player/android-gestures'
+  import { zoneOf, classifyDrag, shouldDismissSheet, HOLD_MS, DOUBLE_TAP_MS } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen } from '$lib/player/session'
   import { commentsEnabled } from '$lib/comments'
   import { reportWatchPlayback } from '$lib/watch-together/client'
@@ -362,7 +362,27 @@
   const audioTracks = $derived(tracks.filter((t) => t.type === 'audio'))
   const subTracks = $derived(tracks.filter((t) => t.type === 'sub'))
   const subOff = $derived(!subTracks.some((t) => t.selected))
-  async function openSettings() { clearTimeout(hideTimer); sheet = 'settings'; tracks = await getTracks() }
+  async function openSettings() {
+    clearTimeout(hideTimer)
+    clearTimeout(sheetCloseTimer)
+    cancelAnimationFrame(sheetOpenFrame)
+    sheetDragging = false
+    sheetClosing = false
+    sheetDrag = landscape ? 0 : window.innerHeight
+    sheetBackdropOpacity = landscape ? 1 : 0
+    sheet = 'settings'
+    if (!landscape) {
+      // Two frames guarantee the off-screen transform is painted before the animated resting state.
+      sheetOpenFrame = requestAnimationFrame(() => {
+        sheetOpenFrame = requestAnimationFrame(() => {
+          if (!sheet || sheetClosing) return
+          sheetDrag = 0
+          sheetBackdropOpacity = 1
+        })
+      })
+    }
+    tracks = await getTracks()
+  }
   function trackLabel(t: MpvTrack) { return [t.lang?.toUpperCase(), t.title].filter(Boolean).join(' · ') || `Track ${t.id}` }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
   async function pickSub(id: number | 'no') { await setSubTrack(id); tracks = await getTracks() }
@@ -375,12 +395,86 @@
 
   const overlayHidden = $derived($streamPicker != null || $commentsOpen)
 
-  // Swipe-down on the sheet HANDLE to dismiss (kept off the scrollable body so it doesn't fight scroll).
+  // Pull-down sheet: follow the finger exactly, then animate either home or fully off-screen.
   let sheetDrag = $state(0)
+  let sheetBackdropOpacity = $state(1)
+  let sheetDragging = $state(false)
+  let sheetClosing = $state(false)
+  let sheetPointerId: number | null = null
   let sheetStartY = 0
-  function handleDown(e: PointerEvent) { sheetStartY = e.clientY; (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) }
-  function handleMove(e: PointerEvent) { if (sheetStartY) sheetDrag = Math.max(0, e.clientY - sheetStartY) }
-  function handleUp() { if (sheetDrag > 70) sheet = null; sheetDrag = 0; sheetStartY = 0 }
+  let sheetLastY = 0
+  let sheetLastTime = 0
+  let sheetVelocityY = 0
+  let sheetCloseTimer: ReturnType<typeof setTimeout> | undefined
+  let sheetOpenFrame = 0
+  function resetSheetState() {
+    sheetDrag = 0
+    sheetBackdropOpacity = 1
+    sheetDragging = false
+    sheetClosing = false
+    sheetPointerId = null
+    sheetStartY = 0
+    sheetVelocityY = 0
+  }
+  function finishSheetClose() { sheet = null; resetSheetState() }
+  function dismissSettings() {
+    if (!sheet || sheetClosing) return
+    cancelAnimationFrame(sheetOpenFrame)
+    if (landscape) { finishSheetClose(); return }
+    sheetDragging = false
+    sheetClosing = true
+    sheetBackdropOpacity = 0
+    sheetDrag = Math.max(sheetDrag, window.innerHeight)
+    clearTimeout(sheetCloseTimer)
+    sheetCloseTimer = setTimeout(finishSheetClose, 280)
+  }
+  function handleDown(e: PointerEvent) {
+    if (!e.isPrimary || landscape || sheetClosing) return
+    e.stopPropagation()
+    sheetPointerId = e.pointerId
+    sheetStartY = e.clientY
+    sheetLastY = e.clientY
+    sheetLastTime = e.timeStamp
+    sheetVelocityY = 0
+    sheetDragging = true
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  function handleMove(e: PointerEvent) {
+    if (sheetPointerId !== e.pointerId) return
+    e.stopPropagation()
+    const dt = Math.max(1, e.timeStamp - sheetLastTime)
+    const instantaneousVelocity = (e.clientY - sheetLastY) / dt
+    sheetVelocityY = sheetVelocityY * 0.65 + instantaneousVelocity * 0.35
+    sheetLastY = e.clientY
+    sheetLastTime = e.timeStamp
+    sheetDrag = Math.max(0, e.clientY - sheetStartY)
+    sheetBackdropOpacity = Math.max(0, 1 - sheetDrag / Math.max(320, window.innerHeight * 0.55))
+  }
+  function releaseSheetPointer(e: PointerEvent) {
+    sheetPointerId = null
+    try {
+      const el = e.currentTarget as HTMLElement
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
+    } catch { /* ignore */ }
+  }
+  function handleUp(e: PointerEvent) {
+    if (sheetPointerId !== e.pointerId) return
+    e.stopPropagation()
+    const idleMs = Math.max(0, e.timeStamp - sheetLastTime)
+    const releaseVelocity = sheetVelocityY * Math.max(0, 1 - idleMs / 160)
+    releaseSheetPointer(e)
+    sheetDragging = false
+    if (shouldDismissSheet(sheetDrag, releaseVelocity, window.innerHeight)) dismissSettings()
+    else { sheetDrag = 0; sheetBackdropOpacity = 1 }
+  }
+  function handleCancel(e: PointerEvent) {
+    if (sheetPointerId !== e.pointerId) return
+    e.stopPropagation()
+    releaseSheetPointer(e)
+    sheetDragging = false
+    sheetDrag = 0
+    sheetBackdropOpacity = 1
+  }
 
   async function close() {
     finalizeAndroidWatch($mpvState.pos, $mpvState.dur)
@@ -418,7 +512,8 @@
     return () => {
       clearTimeout(hideTimer); clearTimeout(pendingToggle); clearTimeout(seekModeTimer)
       clearTimeout(lockToggleTimer); clearTimeout(toastTimer)
-      clearTimeout(holdTimer); clearTimeout(thumbDebounce)
+      clearTimeout(holdTimer); clearTimeout(thumbDebounce); clearTimeout(sheetCloseTimer)
+      cancelAnimationFrame(sheetOpenFrame)
       cancelScrub()
       cancelAnimationFrame(viewportFrame)
       orientation.removeEventListener('change', scheduleViewportSync)
@@ -498,30 +593,29 @@
     {/if}
 
     <!-- Bottom timeline; secondary controls live in Video settings. -->
-    <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 px-3 pb-1 landscape:px-4" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
-      <div class="flex items-center gap-2 landscape:gap-3">
-        <span class="w-14 text-right text-xs tabular-nums text-white/80">{fmt(pos)}</span>
-        <div bind:this={barEl} class="relative h-7 flex-1 cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
-             role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
-          <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/25">
-            <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
-            {#each segments as s (s.type + s.start)}
-              <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
-            {/each}
-            <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
-          </div>
-          {#each chapters as c (c)}<div class="absolute top-1/2 h-1 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
-          <div class="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-theme shadow-md" style="left:{playedPct}%"></div>
-          {#if scrubbing}
-            <div class="pointer-events-none absolute bottom-6 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
-              {#if thumbUrl}<img src={thumbUrl} alt="" class="h-20 w-36 rounded-md border border-white/20 object-cover shadow-lg" />{/if}
-              <span class="rounded bg-black/80 px-2 py-0.5 text-xs font-bold tabular-nums">{fmt(pos)}</span>
-            </div>
-          {/if}
-        </div>
-        <span class="w-14 text-xs tabular-nums text-white/80">{fmt(dur)}</span>
+    <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
+      <div class="timeline-times pointer-events-none absolute inset-x-0 bottom-6 flex items-center justify-between px-3 text-xs tabular-nums text-white/80">
+        <span>{fmt(pos)}</span>
+        <span>{fmt(dur)}</span>
       </div>
-
+      <div bind:this={barEl} class="relative h-7 w-full cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
+             role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
+        <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden bg-white/25">
+          <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
+          {#each segments as s (s.type + s.start)}
+            <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
+          {/each}
+          <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
+        </div>
+        {#each chapters as c (c)}<div class="absolute top-1/2 h-1 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
+        <div class="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-theme shadow-md" style="left:{playedPct}%"></div>
+        {#if scrubbing}
+          <div class="pointer-events-none absolute bottom-9 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
+            {#if thumbUrl}<img src={thumbUrl} alt="" class="h-20 w-36 rounded-md border border-white/20 object-cover shadow-lg" />{/if}
+            <span class="rounded bg-black/80 px-2 py-0.5 text-xs font-bold tabular-nums">{fmt(pos)}</span>
+          </div>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -550,17 +644,17 @@
 
   <!-- Sheets -->
   {#if sheet}
-    <div class="absolute inset-0 z-30 bg-black/60" onpointerdown={(e) => e.stopPropagation()} onpointermove={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); sheet = null }} role="presentation"></div>
+    <div class="settings-backdrop absolute inset-0 z-30 bg-black/60" style:opacity={sheetBackdropOpacity} onpointerdown={(e) => e.stopPropagation()} onpointermove={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); dismissSettings() }} role="presentation"></div>
     <!-- stopPropagation on move+up too (not just down) so swiping the sheet / scrolling the list never
          leaks to the video's gesture layer underneath (the "interferes with the video" bug). -->
-    <div class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" style="transform:translateY({sheetDrag}px)" onpointerdown={(e) => e.stopPropagation()} onpointermove={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
+    <div class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={(e) => e.stopPropagation()} onpointermove={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
       <!-- drag handle (only this dismisses on swipe, so the list scrolls normally) -->
-      <div class="sheet-handle cursor-grab py-3 touch-none" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} role="presentation">
+      <div class="sheet-handle cursor-grab py-4 touch-none active:cursor-grabbing" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleCancel} role="presentation">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>
       </div>
       <div class="flex items-center justify-between px-5 pb-3 landscape:pt-4">
         <div><h2 class="text-lg font-extrabold">Video settings</h2><p class="text-xs text-white/45">Everything for this stream, in one place</p></div>
-        <button onclick={() => (sheet = null)} class="grid h-10 w-10 place-items-center rounded-full bg-white/10" aria-label="Close"><X size={21} /></button>
+        <button onclick={dismissSettings} class="grid h-10 w-10 place-items-center rounded-full bg-white/10" aria-label="Close"><X size={21} /></button>
       </div>
       <div class="settings-body overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <button onclick={changeSource} class="mb-3 flex w-full items-center gap-3 rounded-lg bg-white/10 px-3 py-3 text-left text-sm font-bold hover:bg-white/15"><Layers size={20} /> Change source…</button>
@@ -599,14 +693,17 @@
   .video-frame { width: 100%; margin-top: var(--player-safe-top); aspect-ratio: 16 / 9; }
   .watch-details { height: calc(100% - var(--player-safe-top) - (100vw * 9 / 16)); touch-action: pan-y; background: #0a0a0b; }
   .watch-action { display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 0.35rem; font-size: 0.7rem; font-weight: 600; color: rgb(255 255 255 / 0.82); }
-  .settings-sheet { inset-inline: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; }
+  .settings-backdrop { transition: opacity 240ms ease-out; }
+  .settings-sheet { inset-inline: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
+  .settings-sheet.sheet-dragging { transition: none; }
   .settings-body { max-height: calc(86vh - 5.25rem); touch-action: pan-y; }
 
   @media (orientation: landscape) {
     .video-frame { width: 100%; height: 100%; margin-top: 0; aspect-ratio: auto; }
     .player-top-bar { padding-top: max(0.75rem, var(--player-safe-top)); padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
-    .player-timeline { padding-right: max(1rem, var(--player-safe-right)); padding-bottom: max(0.65rem, var(--player-safe-bottom)); padding-left: max(1rem, var(--player-safe-left)); }
-    .settings-sheet { inset-block: 0; right: 0; left: auto; width: min(28rem, 48vw); max-height: none; border-radius: 1.25rem 0 0 1.25rem; transform: none !important; }
+    .player-timeline { padding-right: 0; padding-bottom: max(0.35rem, var(--player-safe-bottom)); padding-left: 0; }
+    .timeline-times { padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
+    .settings-sheet { inset-block: 0; right: 0; left: auto; width: min(28rem, 48vw); max-height: none; border-radius: 1.25rem 0 0 1.25rem; transform: none !important; transition: none; }
     .settings-body { max-height: calc(100vh - 5.75rem); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
     .sheet-handle { display: none; }
   }
