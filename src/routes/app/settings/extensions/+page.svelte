@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { debridKey, debridProvider, extensionUrls, disabledExtensions } from '$lib/settings/ui'
+  import { debridKey, debridProvider, extensionUrls, disabledExtensions, torrentPlaybackMode } from '$lib/settings/ui'
   import { fetchExtensionMeta } from '$lib/extensions/manager'
   import { providerList, providerMeta } from '$lib/stremio/debrid'
   import Puzzle from 'lucide-svelte/icons/puzzle'
@@ -22,11 +22,22 @@
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Extensions</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">
-    Community source extensions, resolved through your chosen debrid service (no torrent client). Their results appear in the source picker alongside your addons (marked uncached until the debrid resolves them).
+    Community source extensions can play through your debrid service or Izumi's built-in direct torrent engine. Their results appear in the source picker alongside your addons.
     <span class="text-amber-400">Experimental — extensions run as untrusted third-party code in an isolated worker. Only add manifests you trust.</span>
   </p>
 
   <div class="max-w-2xl">
+    <label class="mb-4 flex flex-col gap-1">
+      <span class="text-sm font-bold">Torrent playback</span>
+      <select data-focusable bind:value={$torrentPlaybackMode} class="rounded-md bg-input px-3 py-2 text-sm">
+        <option value="debrid">Prefer debrid</option>
+        <option value="direct">Direct P2P</option>
+      </select>
+      <span class="text-xs text-muted-foreground">
+        {#if $torrentPlaybackMode === 'direct'}Downloads only the selected episode from peers and streams it locally. Your IP address is visible to torrent peers.{:else}Uses your configured debrid service. If no credential is configured, Izumi falls back to direct P2P playback.{/if}
+      </span>
+    </label>
+
     <label class="mb-4 flex flex-col gap-1">
       <span class="text-sm font-bold">Debrid service</span>
       <select data-focusable bind:value={$debridProvider} class="rounded-md bg-input px-3 py-2 text-sm">

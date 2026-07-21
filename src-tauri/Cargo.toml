@@ -43,12 +43,12 @@ tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
 # In-tree plugin: launch an external Android video player via ACTION_VIEW (no-op on desktop).
 tauri-plugin-extplayer = { path = "tauri-plugin-extplayer" }
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 # rustls (not native-tls) so the whole HTTP stack cross-compiles for Android — native-tls needs
 # OpenSSL, which has no Android target here.
 tauri-plugin-http = { version = "2.5.9", default-features = false, features = ["rustls-tls"] }
-tokio = { version = "1", features = ["time", "fs", "io-util", "net"] }
+tokio = { version = "1", features = ["time", "fs", "io-util", "net", "sync"] }
 anyhow = "1"
 blake3 = "1"
 # Account-free device sync. Keep only the runtime features Izumi uses: relay-capable
@@ -71,6 +71,9 @@ futures-util = "0.3"
 # Native file dialog — pick the external-player executable.
 tauri-plugin-dialog = "2"
 url = "2"
+# Embedded BitTorrent engine. Its read-only localhost HTTP endpoint supports
+# byte ranges, so mpv can seek while only the selected episode is downloaded.
+librqbit = { version = "8.1.1", default-features = false, features = ["rust-tls", "http-api", "tracing-subscriber-utils"] }
 
 # Native-player + desktop-only deps, EXCLUDED from the Android build (which delegates playback to
 # an external app): libmpv (no Android target here), the scrub-thumbnail image codec (its only
@@ -101,6 +104,9 @@ tauri-plugin-haptics = "2"
 # Tauri 2.11's own versions so the `with_webview` controller interface unifies.
 # Iroh's wmi edge is separately locked to windows 0.62 in Cargo.lock.
 [target.'cfg(windows)'.dependencies]
+# librqbit uses AWS-LC's legacy SHA-1 implementation for torrent piece hashes.
+# Bundle NASM for Windows builders instead of requiring a system installation.
+aws-lc-rs = { version = "1.17.3", features = ["prebuilt-nasm"] }
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",

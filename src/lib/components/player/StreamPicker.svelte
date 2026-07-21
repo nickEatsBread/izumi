@@ -11,7 +11,7 @@
   import { streamPicker, gameMode } from '$lib/player/session'
   import { rankInfos, pickBest, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
-  import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectAnimate } from '$lib/settings/ui'
+  import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectAnimate, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
   import { title, banner, cover } from '$lib/anilist/media'
   import Search from 'lucide-svelte/icons/search'
   import Zap from 'lucide-svelte/icons/zap'
@@ -28,6 +28,7 @@
   const visible = $derived($showDeadSources ? all : all.filter((i) => i.cached !== 'down'))
   const uncachedCount = $derived(all.filter((i) => i.cached === 'uncached').length)
   const deadCount = $derived(all.filter((i) => i.cached === 'down').length)
+  const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
 
   let filter = $state('')
   const shown = $derived(
@@ -139,7 +140,7 @@
     e.stopPropagation()
     // Prefer the resolved URL; for an uncached torrent copy a real magnet (pasteable into a client),
     // not the bare infoHash. Uses the webview-safe helper (navigator.clipboard is absent on the Deck).
-    const link = info.stream.url ?? (info.stream.infoHash ? `magnet:?xt=urn:btih:${info.stream.infoHash}` : '')
+    const link = info.stream.url ?? info.stream.__magnet ?? (info.stream.infoHash ? `magnet:?xt=urn:btih:${info.stream.infoHash}` : '')
     if (!link || !copyToClipboard(link)) return
     const k = keyOf(info)
     copiedKey = k
@@ -164,8 +165,8 @@
     n == null ? 'text-muted-foreground' : n >= 20 ? 'text-green-400' : n < 5 ? 'text-red-400' : 'text-yellow-400'
   const cacheGlyph = (c: StreamInfo['cached']) =>
     c === 'instant' ? { i: '⚡', cls: 'text-green-400', t: 'Cached — instant play' }
-    : c === 'uncached' ? { i: '⬇', cls: 'text-amber-400', t: 'Not cached — will download to debrid' }
-    : { i: '✖', cls: 'text-red-400', t: 'Dead — no seeders on debrid' }
+    : c === 'uncached' ? { i: '⬇', cls: 'text-amber-400', t: directP2p ? 'Direct P2P — streams from peers' : 'Not cached — will download to debrid' }
+    : { i: '✖', cls: 'text-red-400', t: directP2p ? 'No reported seeders — direct playback may stall' : 'Dead — no seeders on debrid' }
 </script>
 
 {#if pick}
@@ -304,7 +305,7 @@
               <!-- meta + badges -->
               <span class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.7rem]">
                 {#if info.provider}<span class="font-bold text-theme">{info.provider}</span>{/if}
-                {#if info.cached === 'uncached'}<span class="text-amber-400">will download</span>{/if}
+                {#if info.cached === 'uncached'}<span class="text-amber-400">{directP2p ? 'direct P2P' : 'will download'}</span>{/if}
                 {#if info.seeders != null}<span class={seedClass(info.seeders)}>👤 {info.seeders}</span>{/if}
                 {#if info.sizeLabel}<span class="text-muted-foreground">💾 {info.sizeLabel}</span>{/if}
                 {#each info.badges as b}

@@ -43,6 +43,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
 
   { title: 'Debrid provider', category: 'Extensions', href: '/app/settings/extensions', keywords: 'Real-Debrid AllDebrid Premiumize TorBox' },
   { title: 'Debrid token', category: 'Extensions', href: '/app/settings/extensions', keywords: 'api key credential password' },
+  { title: 'Torrent playback', category: 'Extensions', href: '/app/settings/extensions', keywords: 'magnet direct p2p peer debrid' },
   { title: 'Extension repositories', category: 'Extensions', href: '/app/settings/extensions', keywords: 'manifest github url plugins' },
 
   { title: 'Offline mode', category: 'Downloads', href: '/app/settings/downloads', keywords: 'no network local', anchored: true },

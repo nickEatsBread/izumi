@@ -1,6 +1,8 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod doh;
 mod download;
+mod direct_torrent;
+mod direct_torrent_select;
 mod sync;
 mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
@@ -2069,6 +2071,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(download::Downloads::default())
+        .manage(direct_torrent::DirectTorrentState::default())
         .manage(sync::SyncState::default())
         .manage(watch_room::WatchRoomState::default())
         .manage(TacVerificationConfig::default())
@@ -2555,6 +2558,7 @@ pub fn run() {
             download::download_delete,
             download::download_dir_default,
             download::reveal_in_folder,
+            direct_torrent::torrent_playback_url,
             sync::sync_status,
             sync::sync_relay_config,
             sync::sync_set_relay,
@@ -2590,6 +2594,7 @@ pub fn run() {
         download::download_delete,
         download::download_dir_default,
         download::reveal_in_folder,
+        direct_torrent::torrent_playback_url,
         sync::sync_status,
         sync::sync_relay_config,
         sync::sync_set_relay,
