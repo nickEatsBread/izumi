@@ -27,7 +27,7 @@ import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
-  playerCacheMb, playerCacheBytes,
+  playerCacheMb, playerCacheBytes, torrentPlaybackMode,
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
@@ -39,6 +39,13 @@ import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents,
 import type { Media } from '$lib/anilist/types'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
+
+type DirectTorrentPlayback = {
+  url: string
+  filename: string
+  fileIndex: number
+  size: number
+}
 
 // Finite aired-episode count for player bounds (auto-advance / prefetch) + the in-player Next
 // button gate. airedCount() consults the airing schedule — many OVAs/ONAs/adult titles have
@@ -790,57 +797,76 @@ export async function playStream(media: Media, episode: number | undefined, stre
     : fetchExternalSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename).catch(() => [])
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
   // visible in it); auto-next calls this with no picker open.
-  // Extension / P2P results carry only an infoHash — resolve it to a cached HTTP url
-  // through Real-Debrid before playing (addon-provided streams already have a url).
+  // Torrent results carry only an infoHash/magnet. Turn that into a player-openable URL
+  // through either the local P2P engine or the user's debrid service.
   if (!stream?.url && stream?.infoHash) {
     const provider = get(debridProvider)
     const key = get(debridKey)
-    const pname = providerName(provider)
-    if (!key) return onState({ status: 'error', message: `This source needs a ${pname} key — add it in Settings → Extensions.` })
-    onState({ status: 'resolving' })
-    // A CACHED (⚡/[RD+]) source resolves in ~1s (debrid already has it), so it plays off the
-    // picker's lightweight spinner with no full-screen "downloading to debrid" screen. That
-    // screen is only for a genuine multi-minute cache: shown upfront for a known-uncached pick,
-    // and escalated to if a supposedly-cached hash turns out stale and actually starts
-    // downloading. The AbortController lets Cancel stop the poll (the torrent keeps caching at
-    // the service, so a later retry is instant).
-    const controller = new AbortController()
-    let overlayShown = false
-    const showCaching = () => {
-      if (overlayShown) return
-      overlayShown = true
-      debridCaching.set({
-        provider: pname, title: title(media), episode, cover: cover(media), info: { stage: 'queued' },
-        // Optimistic cancel: close the screen IMMEDIATELY on the first click, then abort the poll in
-        // the background. The eventual AbortError just settles playStream to 'idle' (re-enabling the
-        // picker); a late onStatus can't resurrect the screen because the store is already null.
-        cancel: () => { debridCaching.set(null); controller.abort() },
-      })
+    const torrent = stream.__magnet ?? stream.infoHash
+    const direct = get(torrentPlaybackMode) === 'direct' || !key
+    if (direct) {
+      onState({ status: 'resolving' })
+      try {
+        const playback = await invoke<DirectTorrentPlayback>('torrent_playback_url', {
+          magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${torrent}`,
+          preferredFilename: stream.behaviorHints?.filename,
+        })
+        stream = {
+          ...stream,
+          url: playback.url,
+          behaviorHints: { ...stream.behaviorHints, filename: playback.filename, videoSize: playback.size },
+        }
+      } catch (e) {
+        return onState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
+      }
     }
-    // Known-uncached → show the caching screen upfront. Otherwise DELAY it: a genuinely-cached hash
-    // resolves in ~1s (no screen, no flash), but a stale/mislabeled "cached" hash that RD has to
-    // re-fetch dwells in 'queued'/'downloading' — after a short grace the screen appears so the user
-    // isn't stuck on a frozen picker with no way to cancel. (poll only ever reports queued/downloading.)
-    let overlayTimer: ReturnType<typeof setTimeout> | undefined
-    if (isUncached(stream)) showCaching()
-    else overlayTimer = setTimeout(showCaching, 1500)
-    try {
-      const url = await resolveHash(provider, key, stream.__magnet ?? stream.infoHash, {
-        signal: controller.signal,
-        timeoutMs: 30 * 60 * 1000,
-        onStatus: (i) => { if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c)) },
-        want: await episodeWant(media, episode, stream),
-      })
-      clearTimeout(overlayTimer)
-      stream = { ...stream, url }
-      debridCaching.set(null)
-    }
-    catch (e) {
-      clearTimeout(overlayTimer)
-      debridCaching.set(null)
-      // User-initiated cancel: quietly return to the picker, no error toast.
-      if (e instanceof Error && e.name === 'AbortError') return onState({ status: 'idle' })
-      return onState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
+    if (!stream.url) {
+      const pname = providerName(provider)
+      onState({ status: 'resolving' })
+      // A CACHED (⚡/[RD+]) source resolves in ~1s (debrid already has it), so it plays off the
+      // picker's lightweight spinner with no full-screen "downloading to debrid" screen. That
+      // screen is only for a genuine multi-minute cache: shown upfront for a known-uncached pick,
+      // and escalated to if a supposedly-cached hash turns out stale and actually starts
+      // downloading. The AbortController lets Cancel stop the poll (the torrent keeps caching at
+      // the service, so a later retry is instant).
+      const controller = new AbortController()
+      let overlayShown = false
+      const showCaching = () => {
+        if (overlayShown) return
+        overlayShown = true
+        debridCaching.set({
+          provider: pname, title: title(media), episode, cover: cover(media), info: { stage: 'queued' },
+          // Optimistic cancel: close the screen IMMEDIATELY on the first click, then abort the poll in
+          // the background. The eventual AbortError just settles playStream to 'idle' (re-enabling the
+          // picker); a late onStatus can't resurrect the screen because the store is already null.
+          cancel: () => { debridCaching.set(null); controller.abort() },
+        })
+      }
+      // Known-uncached → show the caching screen upfront. Otherwise DELAY it: a genuinely-cached hash
+      // resolves in ~1s (no screen, no flash), but a stale/mislabeled "cached" hash that RD has to
+      // re-fetch dwells in 'queued'/'downloading' — after a short grace the screen appears so the user
+      // isn't stuck on a frozen picker with no way to cancel. (poll only ever reports queued/downloading.)
+      let overlayTimer: ReturnType<typeof setTimeout> | undefined
+      if (isUncached(stream)) showCaching()
+      else overlayTimer = setTimeout(showCaching, 1500)
+      try {
+        const url = await resolveHash(provider, key, torrent, {
+          signal: controller.signal,
+          timeoutMs: 30 * 60 * 1000,
+          onStatus: (i) => { if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c)) },
+          want: await episodeWant(media, episode, stream),
+        })
+        clearTimeout(overlayTimer)
+        stream = { ...stream, url }
+        debridCaching.set(null)
+      }
+      catch (e) {
+        clearTimeout(overlayTimer)
+        debridCaching.set(null)
+        // User-initiated cancel: quietly return to the picker, no error toast.
+        if (e instanceof Error && e.name === 'AbortError') return onState({ status: 'idle' })
+        return onState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
+      }
     }
   }
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })

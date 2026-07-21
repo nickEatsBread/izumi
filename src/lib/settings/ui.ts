@@ -177,6 +177,9 @@ export const debridProvider = persisted<string>('debrid-provider', 'realdebrid')
  *  extension torrent results (infoHash → cached HTTP url). Separate from any key
  *  embedded in Stremio addon URLs. Secret. */
 export const debridKey = persisted<string>('debrid-key', '')
+/** How infoHash/magnet sources are made playable. Direct uses Izumi's local
+ * BitTorrent engine; debrid keeps the existing account-backed CDN path. */
+export const torrentPlaybackMode = persisted<'debrid' | 'direct'>('torrent-playback-mode', 'debrid')
 /** Installed source-extension manifest URLs (JSON manifests or gh:/npm: shorthand). */
 export const extensionUrls = persisted<string[]>('extension-urls', [])
 export const disabledExtensions = persisted<string[]>('disabled-extensions', [])
