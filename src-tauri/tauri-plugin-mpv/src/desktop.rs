@@ -3,7 +3,7 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
     BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
-    ThumbRequest,
+    ThumbRequest, ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -41,6 +41,10 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn pip(&self) -> crate::Result<()> {
         Ok(())
+    }
+
+    pub fn viewport(&self, _payload: ViewportRequest) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::json!({ "top": 0, "right": 0, "bottom": 0, "left": 0 }))
     }
 
     pub fn brightness(&self, _payload: BrightnessRequest) -> crate::Result<()> {

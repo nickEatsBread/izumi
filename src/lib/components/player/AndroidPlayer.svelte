@@ -123,9 +123,11 @@
   function schedulePreview(sec: number) {
     scrubPos = Math.max(0, dur > 0 ? Math.min(dur, sec) : sec)
   }
-  async function endScrub() {
-    await seekAbsolute(scrubPos) // one command avoids out-of-order network seeks while dragging
+  function endScrub() {
+    if (!scrubbing) return
+    const target = scrubPos
     scrubbing = false
+    void seekAbsolute(target).catch(() => {}) // state must clear even if the native command rejects
   }
   function onBarDown(e: PointerEvent) {
     e.stopPropagation(); scrubbing = true; scrubPos = fracFromX(e.clientX) * dur
@@ -138,7 +140,7 @@
   function onBarUp(e: PointerEvent) {
     if (!scrubbing) return
     e.stopPropagation()
-    void endScrub()
+    endScrub()
     try { barEl?.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
     armHide()
   }
@@ -250,7 +252,7 @@
   function onRootUp(e: PointerEvent) {
     clearTimeout(holdTimer)
     if (heldSpeed) { heldSpeed = false; mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
-    if (gesture === 'scrub') { void endScrub(); armHide() }
+    if (gesture === 'scrub') { endScrub(); armHide() }
     else if (gesture === null) onTap(e) // no drag happened → treat as a tap
     gesture = null
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
@@ -417,7 +419,7 @@
     <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 px-3 pb-1 landscape:px-4" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="flex items-center gap-2 landscape:gap-3">
         <span class="w-14 text-right text-xs tabular-nums text-white/80">{fmt(pos)}</span>
-        <div bind:this={barEl} class="relative h-7 flex-1 cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp}
+        <div bind:this={barEl} class="relative h-7 flex-1 cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarUp}
              role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
           <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/25">
             <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>

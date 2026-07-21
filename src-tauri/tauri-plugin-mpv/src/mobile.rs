@@ -6,7 +6,7 @@ use tauri::{
 
 use crate::models::{
     BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
-    ThumbRequest,
+    ThumbRequest, ViewportRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -50,6 +50,12 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn pip(&self) -> crate::Result<()> {
         self.0.run_mobile_plugin("pip", ()).map_err(Into::into)
+    }
+
+    pub fn viewport(&self, payload: ViewportRequest) -> crate::Result<serde_json::Value> {
+        self.0
+            .run_mobile_plugin("viewport", payload)
+            .map_err(Into::into)
     }
 
     pub fn brightness(&self, payload: BrightnessRequest) -> crate::Result<()> {
