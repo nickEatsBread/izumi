@@ -48,6 +48,16 @@ pub struct HapticRequest {
     pub ms: u32,
 }
 
+/// Position the native video surface and toggle immersive system bars.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ViewportRequest {
+    /// Physical pixels from the top of the activity content.
+    pub top: i32,
+    /// Physical pixel height. Zero fills the activity.
+    pub height: i32,
+    pub immersive: bool,
+}
+
 /// Grab a preview frame from a stream at `time_sec`, scaled to `width` px wide.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,5 +108,14 @@ mod tests {
         let r: SetRequest = serde_json::from_str(r#"{"property":"pause","value":"yes"}"#).unwrap();
         assert_eq!(r.property, "pause");
         assert_eq!(r.value, "yes");
+    }
+
+    #[test]
+    fn viewport_request_deserializes() {
+        let r: ViewportRequest =
+            serde_json::from_str(r#"{"top":12,"height":1080,"immersive":false}"#).unwrap();
+        assert_eq!(r.top, 12);
+        assert_eq!(r.height, 1080);
+        assert!(!r.immersive);
     }
 }

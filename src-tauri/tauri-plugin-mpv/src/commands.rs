@@ -3,7 +3,7 @@ use tauri::{command, AppHandle, Runtime};
 use crate::{
     models::{
         BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
-        ThumbRequest,
+        ThumbRequest, ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -42,6 +42,14 @@ pub(crate) async fn mpv_stop<R: Runtime>(app: AppHandle<R>) -> Result<()> {
 #[command]
 pub(crate) async fn mpv_pip<R: Runtime>(app: AppHandle<R>) -> Result<()> {
     app.mpv().pip()
+}
+
+#[command]
+pub(crate) async fn mpv_viewport<R: Runtime>(
+    app: AppHandle<R>,
+    payload: ViewportRequest,
+) -> Result<serde_json::Value> {
+    app.mpv().viewport(payload)
 }
 
 #[command]

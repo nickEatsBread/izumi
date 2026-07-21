@@ -231,6 +231,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             val safeRight = max(cutout.right, max(status.right, navigation.right))
             val safeBottom = max(cutout.bottom, navigation.bottom)
             val safeLeft = max(cutout.left, max(status.left, navigation.left))
+            Log.i(
+                "MpvPlugin",
+                "viewport immersive=${a.immersive} top=$safeTop height=${a.height}",
+            )
             view?.let { playerView ->
                 val height = if (a.height > 0) a.height else ViewGroup.LayoutParams.MATCH_PARENT
                 val params = (playerView.layoutParams as? FrameLayout.LayoutParams)
