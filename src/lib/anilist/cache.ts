@@ -7,4 +7,5 @@ export const ANILIST_CACHE_KEYS: KeyingConfig = {
   MediaTitle: () => null,
   MediaCoverImage: () => null,
   FuzzyDate: () => null,
+  AiringSchedule: () => null,
 }
