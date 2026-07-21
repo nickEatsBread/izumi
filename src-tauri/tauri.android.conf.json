@@ -1,6 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "app": {
+    "security": {
+      "capabilities": ["default", "haptics"]
+    },
     "windows": [
       {
         "title": "izumi",
