@@ -37,7 +37,6 @@ export const SYNCED_SETTING_KEYS = [
   "schedule-layout",
   "doh-enabled",
   "doh-url",
-  "transfer-speed-limit",
   "comments-enabled",
   "comments-default-platform",
 ] as const;

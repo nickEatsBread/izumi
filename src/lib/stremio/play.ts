@@ -28,6 +28,7 @@ import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
+  torrentDownloadLimitMbps, torrentUploadLimitMode, torrentUpstreamCapacityMbps,
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
@@ -37,6 +38,10 @@ import { offlineMode } from '$lib/stores/offline'
 import { playViaIntent } from '$lib/player/android-playback'
 import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
+import {
+  activateDirectTorrentPlayback, currentDirectTorrentPlaybackId,
+  reportDirectTorrentBuffer, stopDirectTorrentPlayback,
+} from '$lib/player/direct-torrent'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
 
@@ -45,6 +50,7 @@ type DirectTorrentPlayback = {
   filename: string
   fileIndex: number
   size: number
+  playbackId: number
 }
 
 // Finite aired-episode count for player bounds (auto-advance / prefetch) + the in-player Next
@@ -184,7 +190,8 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
   // mpvState updates on every observed time-pos/duration/pause/eof — same cadence as the desktop
   // player-progress event, so the throttle + watch-threshold logic transfers directly.
   const unsub = mpvState.subscribe((s) => {
-    const { pos, dur, eof } = s
+    const { pos, dur, eof, cacheEnd } = s
+    reportDirectTorrentBuffer(pos, cacheEnd)
     if (dur > 0 && Date.now() - lastSave > 5000) {
       savePosition(media.id, episode, pos, dur)
       lastSave = Date.now()
@@ -779,6 +786,7 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 // Play a specific chosen stream: embed mpv into the main window + wire progress /
 // resume / auto next-episode. Closes the picker.
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
+  let directPlaybackId: number | null = null
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
   // Capture the original source before a torrent is exchanged for an account-bound
@@ -810,7 +818,13 @@ export async function playStream(media: Media, episode: number | undefined, stre
         const playback = await invoke<DirectTorrentPlayback>('torrent_playback_url', {
           magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${torrent}`,
           preferredFilename: stream.behaviorHints?.filename,
+          downloadLimitMbps: Math.max(0, Number(get(torrentDownloadLimitMbps)) || 0),
+          upstreamCapacityMbps: get(torrentUploadLimitMode) === 'capacity'
+            ? Math.max(0.1, Number(get(torrentUpstreamCapacityMbps)) || 0.1)
+            : null,
         })
+        directPlaybackId = playback.playbackId
+        activateDirectTorrentPlayback(playback.playbackId)
         stream = {
           ...stream,
           url: playback.url,
@@ -870,6 +884,11 @@ export async function playStream(media: Media, episode: number | undefined, stre
     }
   }
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
+  // A newly resolved direct torrent replaces the old one in the native engine. Any other source
+  // ends the previous torrent's watch phase before the new player load begins.
+  if (directPlaybackId == null && currentDirectTorrentPlaybackId() != null) {
+    await stopDirectTorrentPlayback()
+  }
   const rememberSuccess = () => rememberSourceOrigin(media.id, stream.__origin, {
     infoHash: stream.infoHash,
     bingeGroup: stream.behaviorHints?.bingeGroup,
@@ -922,7 +941,14 @@ export async function playStream(media: Media, episode: number | undefined, stre
       // native side exposes it through a FileProvider content:// URI (a raw file path can't be
       // ACTION_VIEW'd across apps since Android 7).
       const isLocalFile = !/^https?:\/\//i.test(stream.url)
-      const ok = await playViaIntent(media, episode ?? null, stream.url, isLocalFile)
+      const ok = await playViaIntent(
+        media,
+        episode ?? null,
+        stream.url,
+        isLocalFile,
+        directPlaybackId == null ? undefined : () => stopDirectTorrentPlayback(directPlaybackId),
+      )
+      if (!ok && directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)
       if (ok) rememberSuccess()
       return onState(
         ok
@@ -937,7 +963,20 @@ export async function playStream(media: Media, episode: number | undefined, stre
     if (get(enableExternalPlayer)) {
       const path = get(externalPlayerPath)
       if (!path) return onState({ status: 'error', message: 'No external player selected — set its path in Settings.' })
-      await invoke('spawn_external_player', { path, url: stream.url })
+      let unlistenExit: (() => void) | undefined
+      if (directPlaybackId != null) {
+        const id = directPlaybackId
+        unlistenExit = await listen('external-player-exited', () => {
+          unlistenExit?.()
+          void stopDirectTorrentPlayback(id)
+        })
+      }
+      try {
+        await invoke('spawn_external_player', { path, url: stream.url })
+      } catch (error) {
+        unlistenExit?.()
+        throw error
+      }
       rememberSuccess()
       onState({ status: 'playing' })
       return
@@ -990,7 +1029,10 @@ export async function playStream(media: Media, episode: number | undefined, stre
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
     if (episode != null) await attach(media, episode, onState)
   }
-  catch (e) { onState({ status: 'error', message: String(e) }) }
+  catch (e) {
+    if (directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)
+    onState({ status: 'error', message: String(e) })
+  }
 }
 
 // The Media currently playing, so the in-player Prev/Next buttons can resolve the

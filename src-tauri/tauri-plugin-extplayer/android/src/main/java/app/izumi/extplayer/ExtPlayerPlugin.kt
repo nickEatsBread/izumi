@@ -3,8 +3,11 @@ package app.izumi.extplayer
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.net.Uri
+import android.os.BatteryManager
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -57,6 +60,23 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         webView.settings.builtInZoomControls = false
         webView.settings.displayZoomControls = false
         webView.settings.textZoom = 100 // ignore the system font-scale
+    }
+
+    @Command
+    fun deviceStatus(invoke: Invoke) {
+        val connectivity = activity.applicationContext
+            .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val capabilities = connectivity.activeNetwork?.let(connectivity::getNetworkCapabilities)
+        val unmetered = capabilities?.hasCapability(
+            NetworkCapabilities.NET_CAPABILITY_NOT_METERED
+        ) == true
+        val battery = activity.applicationContext
+            .getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        invoke.resolve(
+            JSObject()
+                .put("unmetered", unmetered)
+                .put("charging", battery.isCharging)
+        )
     }
 
     @Command

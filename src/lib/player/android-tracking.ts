@@ -9,11 +9,16 @@ import type { Media } from '$lib/anilist/types'
 // the first app resume after it.
 
 let pending: { media: Media; episode: number } | null = null
+let pendingReturn: (() => void) | undefined
 
 /** Arm tracking for {media, episode} — called after a SUCCESSFUL external launch. */
-export function armPendingWatch(media: Media, episode: number) {
+export function armPendingWatch(media: Media, episode: number, onReturn?: () => void) {
   pending = { media, episode }
+  pendingReturn = onReturn
 }
+
+/** Arm a return callback even for a movie/raw stream that has no episode-tracking record. */
+export function armPendingReturn(onReturn: () => void) { pendingReturn = onReturn }
 
 /** Transient "marked watched — undo" toast (the in-player overlay isn't mounted on Android, so we
  *  render this in the app shell). null = hidden. */
@@ -23,6 +28,9 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined
 /** Wire the resume listeners. Idempotent-safe to call once at boot on Android. */
 export function initReturnTracking() {
   const onResume = () => {
+    const returned = pendingReturn
+    pendingReturn = undefined
+    returned?.()
     const p = pending
     if (!p) return
     pending = null

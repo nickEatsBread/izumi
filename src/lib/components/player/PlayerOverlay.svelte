@@ -18,6 +18,7 @@
   import { commentsEnabled, discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
+  import { reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -365,6 +366,7 @@
     // skim-to-the-end still saves the resume point + marks watched — fires on every close path
     // (← button, B, navigate-away). play.ts's window listener is still live at this point.
     window.dispatchEvent(new CustomEvent('player-finalize', { detail: { pos, dur } }))
+    void stopDirectTorrentPlayback()
     gmDynDisposed = true
     if (gmDynRaf) cancelAnimationFrame(gmDynRaf)
     if (gmDynLastVisible) invoke('player_gm_dynamic_overlay', { state: hiddenGmDynamicState() }).catch(() => {})
@@ -456,12 +458,16 @@
       listen<[number, number]>('player-progress', (e) => {
         pos = e.payload[0]
         dur = e.payload[1]
+        reportDirectTorrentBuffer(pos, buffer)
         reportWatchPlayback(pos, dur, paused)
         // First real frame shown → stop treating core-idle as "still loading".
         if (dur > 0 && !coreIdle) firstFrame = true
         if (!metaLoaded && dur > 0 && np.malId && np.episode) loadMeta()
       }),
-      listen<number>('player-buffer', (e) => (buffer = e.payload)),
+      listen<number>('player-buffer', (e) => {
+        buffer = e.payload
+        reportDirectTorrentBuffer(pos, buffer)
+      }),
       listen<boolean>('player-paused', (e) => { paused = e.payload; reportWatchPlayback(pos, dur, paused) }),
       listen<boolean>('player-buffering', (e) => (buffering = e.payload)),
       listen<boolean>('player-core-idle', (e) => (coreIdle = e.payload)),

@@ -250,17 +250,21 @@ fn gamepad_trigger_state() -> GamepadTriggerState {
 /// in that app's own window (we get no progress events back).
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn spawn_external_player(path: String, url: String) -> Result<(), String> {
+fn spawn_external_player(app: AppHandle, path: String, url: String) -> Result<(), String> {
     if url.is_empty() {
         return Err("no stream url".into());
     }
     if path.is_empty() {
         return Err("No external player selected — set its path in Settings.".into());
     }
-    std::process::Command::new(&path)
+    let mut child = std::process::Command::new(&path)
         .arg(&url)
         .spawn()
         .map_err(|e| format!("Couldn't launch external player: {e}"))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+        let _ = app.emit("external-player-exited", ());
+    });
     Ok(())
 }
 
@@ -2559,6 +2563,8 @@ pub fn run() {
             download::download_dir_default,
             download::reveal_in_folder,
             direct_torrent::torrent_playback_url,
+            direct_torrent::torrent_playback_buffer,
+            direct_torrent::torrent_playback_stop,
             sync::sync_status,
             sync::sync_relay_config,
             sync::sync_set_relay,
@@ -2595,6 +2601,8 @@ pub fn run() {
         download::download_dir_default,
         download::reveal_in_folder,
         direct_torrent::torrent_playback_url,
+        direct_torrent::torrent_playback_buffer,
+        direct_torrent::torrent_playback_stop,
         sync::sync_status,
         sync::sync_relay_config,
         sync::sync_set_relay,

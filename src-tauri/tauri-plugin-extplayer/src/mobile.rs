@@ -5,7 +5,7 @@ use tauri::{
 };
 
 use crate::models::{
-    InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
+    DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -33,6 +33,12 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn install_apk(&self, payload: InstallRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("installApk", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn device_status(&self) -> crate::Result<DeviceStatus> {
+        self.0
+            .run_mobile_plugin("deviceStatus", ())
             .map_err(Into::into)
     }
 

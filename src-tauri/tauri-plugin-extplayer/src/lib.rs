@@ -13,7 +13,9 @@ mod desktop;
 mod mobile;
 
 pub use error::{Error, Result};
-pub use models::{InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest};
+pub use models::{
+    DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
+};
 
 #[cfg(desktop)]
 use desktop::ExtPlayer;
@@ -38,7 +40,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("extplayer")
         .invoke_handler(tauri::generate_handler![
             commands::play_external,
-            commands::install_apk
+            commands::install_apk,
+            commands::device_status
         ])
         .setup(|app, api| {
             #[cfg(mobile)]

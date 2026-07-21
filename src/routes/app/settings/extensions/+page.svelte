@@ -34,7 +34,7 @@
         <option value="direct">Direct P2P</option>
       </select>
       <span class="text-xs text-muted-foreground">
-        {#if $torrentPlaybackMode === 'direct'}Downloads only the selected episode from peers and streams it locally. Your IP address is visible to torrent peers.{:else}Uses your configured debrid service. If no credential is configured, Izumi falls back to direct P2P playback.{/if}
+        {#if $torrentPlaybackMode === 'direct'}Streams the selected episode from peers and seeds with a protected upload limit. Playback data is temporary and your IP address is visible to torrent peers.{:else}Uses your configured debrid service. If no credential is configured, Izumi falls back to direct P2P playback.{/if}
       </span>
     </label>
 

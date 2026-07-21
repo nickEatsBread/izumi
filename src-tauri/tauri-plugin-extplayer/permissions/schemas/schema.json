@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the device_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-device-status",
+          "markdownDescription": "Enables the device_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the device_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-device-status",
+          "markdownDescription": "Denies the device_status command without any pre-configured scope."
+        },
+        {
           "description": "Enables the install_apk command without any pre-configured scope.",
           "type": "string",
           "const": "allow-install-apk",
@@ -319,10 +331,10 @@
           "markdownDescription": "Denies the play_external command without any pre-configured scope."
         },
         {
-          "description": "Allow launching an external Android video player and the package installer for self-update.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`",
+          "description": "Allow Android playback, self-update, and power/network checks for responsible seeding.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow launching an external Android video player and the package installer for self-update.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`"
+          "markdownDescription": "Allow Android playback, self-update, and power/network checks for responsible seeding.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`"
         }
       ]
     }

@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Iroh LAN discovery receives mDNS only after the user enables Device Sync. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Determine whether optional post-play torrent seeding is on an unmetered network. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <application>
         <!-- Share a downloaded file to the external video player through a content:// URI
              (a raw file path can't be ACTION_VIEW'd across apps since Android 7). A UNIQUE

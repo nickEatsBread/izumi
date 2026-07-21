@@ -17,6 +17,11 @@ describe('settings search', () => {
     expect(searchSettings('title language', true)[0]?.title).toBe('Title language')
   })
 
+  it('hides Android-only controls on desktop', () => {
+    expect(searchSettings('continue seeding', false)).toHaveLength(0)
+    expect(searchSettings('continue seeding', true)[0]?.title).toBe('Continue seeding after playback')
+  })
+
   it('uses the same stable keys as Toggle rows', () => {
     expect(settingKey('Auto-skip openings & endings')).toBe('auto-skip-openings-endings')
   })

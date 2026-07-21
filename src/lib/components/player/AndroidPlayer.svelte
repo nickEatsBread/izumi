@@ -35,6 +35,7 @@
   import { autoSkip, seekDuration, scrubThumbnails } from '$lib/settings/ui'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { playNext, playPrev, playEpisode, finalizeAndroidWatch } from '$lib/stremio/play'
+  import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import Play from 'lucide-svelte/icons/play'
   import Pause from 'lucide-svelte/icons/pause'
@@ -314,6 +315,7 @@
   async function close() {
     finalizeAndroidWatch($mpvState.pos, $mpvState.dur)
     await mpvStop().catch(() => {})
+    await stopDirectTorrentPlayback()
     androidMpvActive.set(false)
   }
 
