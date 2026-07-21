@@ -392,10 +392,14 @@
     <!-- Top bar -->
     <div transition:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
       <button onclick={close} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/20 active:scale-90" aria-label="Back"><ChevronLeft size={27} /></button>
-      <div class="min-w-0 flex-1">
-        <div class="truncate text-sm font-bold landscape:text-base">{np.animeTitle ?? np.title}</div>
-        {#if np.episode != null}<div class="truncate text-[11px] text-white/70">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>{/if}
-      </div>
+      {#if landscape}
+        <div class="min-w-0 flex-1">
+          <div class="truncate text-base font-bold">{np.animeTitle ?? np.title}</div>
+          {#if np.episode != null}<div class="truncate text-[11px] text-white/70">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>{/if}
+        </div>
+      {:else}
+        <div class="flex-1"></div>
+      {/if}
       <button onclick={openSettings} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/20 active:scale-90" aria-label="Video settings"><Settings size={22} /></button>
     </div>
 
