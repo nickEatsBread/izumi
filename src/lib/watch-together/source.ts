@@ -1,4 +1,5 @@
 import type { Stream } from '$lib/stremio/parse'
+import { torrentioResolverInfoHash } from '$lib/stremio/resolver-url'
 
 export type SharedSource =
   | {
@@ -60,8 +61,11 @@ export function shareableSource(stream: Stream): SharedSourceState {
     ? Math.max(0, Math.floor(stream.behaviorHints!.videoSize!))
     : undefined
 
-  if (stream.infoHash) {
-    const infoHash = stream.infoHash.trim().toLowerCase()
+  // Torrentio puts the debrid credential in its resolver URL path. Treat that URL as the torrent
+  // identity it represents, not shareable HTTP, so the private token can never cross the room.
+  const resolverHash = torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
+  if (stream.infoHash || resolverHash) {
+    const infoHash = (stream.infoHash ?? resolverHash)!.trim().toLowerCase()
     if (!/^[a-f0-9]{40}$/.test(infoHash) && !/^[a-z2-7]{32}$/.test(infoHash)) {
       return { source: null, error: 'The selected torrent has an invalid info hash.' }
     }

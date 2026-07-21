@@ -42,6 +42,7 @@ import {
   activateDirectTorrentPlayback, currentDirectTorrentPlaybackId,
   reportDirectTorrentBuffer, stopDirectTorrentPlayback,
 } from '$lib/player/direct-torrent'
+import { torrentioResolverInfoHash } from './resolver-url'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
 
@@ -787,6 +788,12 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 // resume / auto next-episode. Closes the picker.
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
   let directPlaybackId: number | null = null
+  // Torrentio's debrid `url` contains an account token and can resolve to RD's tiny copyright
+  // placeholder while still looking like a valid video to mpv. Recover the public infohash and
+  // deliberately discard that private URL: Izumi's resolver has provider-error + filesize guards,
+  // and Watch Together may now share the hash without leaking the token embedded in the path.
+  const resolverHash = torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
+  if (resolverHash) stream = { ...stream, url: undefined, infoHash: resolverHash }
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
   // Capture the original source before a torrent is exchanged for an account-bound
