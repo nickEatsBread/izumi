@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('idb-keyval', () => ({ get: mocks.get, set: mocks.set }))
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 
-import { fetchAniZip, parseEpisodes } from './index'
+import { episodeRatingPercent, fetchAniZip, parseEpisodes } from './index'
 
 const RES = {
   episodes: {
@@ -27,6 +27,13 @@ describe('parseEpisodes', () => {
   })
   it('ignores non-numeric (special) keys', () => expect((parseEpisodes(RES as any) as any).S1).toBeUndefined())
   it('empty on missing', () => expect(Object.keys(parseEpisodes(undefined as any)).length).toBe(0))
+})
+
+describe('episodeRatingPercent', () => {
+  it('shows scores only after an episode has aired', () => {
+    expect(episodeRatingPercent(8.4, true)).toBe(84)
+    expect(episodeRatingPercent(8.4, false)).toBeUndefined()
+  })
 })
 
 describe('fetchAniZip watched titles', () => {

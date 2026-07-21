@@ -3,7 +3,7 @@ import { ANILIST_CACHE_KEYS } from './cache'
 import { MEDIA_FIELDS } from './fragments'
 
 describe('AniList Graphcache keys', () => {
-  it.each(['MediaTitle', 'MediaCoverImage', 'FuzzyDate'])('%s is embedded on its parent', (type) => {
+  it.each(['MediaTitle', 'MediaCoverImage', 'FuzzyDate', 'AiringSchedule'])('%s is embedded on its parent', (type) => {
     expect(ANILIST_CACHE_KEYS[type]({ __typename: type })).toBeNull()
   })
 

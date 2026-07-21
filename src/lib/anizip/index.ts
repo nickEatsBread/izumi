@@ -25,6 +25,12 @@ export function parseEpisodes(res: AniZipResponse | undefined): Record<number, E
   return out
 }
 
+/** AniZip can publish provisional scores before an episode has aired. Keep
+ * those internal values out of the UI until the episode is actually playable. */
+export function episodeRatingPercent(rating: number | undefined, released: boolean): number | undefined {
+  return released && typeof rating === 'number' ? Math.round(rating * 10) : undefined
+}
+
 const key = (id: number) => `anizip-${id}`
 const fetchedAtKey = (id: number) => `anizip-${id}-fetched-at`
 const MISSING_TITLE_RETRY_MS = 60 * 60 * 1000

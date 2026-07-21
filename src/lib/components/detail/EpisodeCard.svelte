@@ -4,6 +4,7 @@
   // div[role=button] (not <button>) so the nested Download button is valid HTML.
   import type { Media } from '$lib/anilist/types'
   import type { EpMeta } from '$lib/anizip/types'
+  import { episodeRatingPercent } from '$lib/anizip'
   import type { DownloadItem } from '$lib/downloads/state'
   import { ratingBg } from '$lib/anilist/media'
   import { episodeLabels } from '$lib/anilist/episode-labels'
@@ -41,7 +42,7 @@
   // download instead of the whole grid popping at once. Reset when the src changes.
   let imgReady = $state(false)
   $effect(() => { void img; imgReady = false })
-  const rating = $derived(typeof meta?.rating === 'number' ? Math.round(meta.rating * 10) : undefined)
+  const rating = $derived(episodeRatingPercent(meta?.rating, released))
 
   const trackedDone = $derived(watchedThrough >= ep)
   const savedPosition = $derived($positions[progressKey(media.id, ep)])

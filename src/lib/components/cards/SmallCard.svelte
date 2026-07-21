@@ -24,6 +24,9 @@
   let { media, fill = false }: { media: Media; fill?: boolean } = $props()
 
   let hovered = $state(false)
+  const coverSrc = $derived(cover(media))
+  let coverReady = $state(false)
+  $effect(() => { void coverSrc; coverReady = false })
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
   let closeT: ReturnType<typeof setTimeout>
@@ -64,13 +67,14 @@
 
 <div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
   <a href={`/app/anime/${media.id}`} data-focusable onclick={() => h.tap()}
-     class="load-in group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
-    <div class="focus-cover aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
+     class="group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
+    <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
            browser promotes the one card being hovered on demand; that's all this needs. -->
-      <img src={cover(media)} alt={title(media)} decoding="async" loading="lazy"
-           class="h-full w-full object-cover transition-transform duration-150 ease-out group-hover:scale-105" />
+      {#if !coverReady}<div class="absolute inset-0 skeloader"></div>{/if}
+      <img src={coverSrc} alt={title(media)} decoding="async" onload={() => (coverReady = true)}
+           class="relative h-full w-full object-cover transition-[opacity,transform] duration-150 ease-out {coverReady ? 'opacity-100' : 'opacity-0'} group-hover:scale-105" />
     </div>
     <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
       <span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{title(media)}
