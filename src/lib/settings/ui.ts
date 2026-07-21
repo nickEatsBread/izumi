@@ -163,9 +163,14 @@ export const autoUpdateCheck = persisted<boolean>('auto-update-check', true)
  *  own resolver, so there's no single funnel to force this through yet. */
 export const enableDoH = persisted<boolean>('doh-enabled', false)
 export const doHUrl = persisted<string>('doh-url', 'https://cloudflare-dns.com/dns-query')
-/** Transfer speed limit (Mb/s). Applies to torrent downloads; inert with debrid
- *  streaming (Real-Debrid serves over its own CDN — nothing local to throttle). */
-export const transferSpeedLimit = persisted<number>('transfer-speed-limit', 40)
+/** Direct-torrent download limit in Mb/s. Zero means uncapped; debrid streams are unaffected. */
+export const torrentDownloadLimitMbps = persisted<number>('torrent-download-limit-mbps', 0)
+/** Automatic upload is a conservative 1 Mb/s. Capacity mode treats the entered value as the
+ * connection's measured upstream and uses at most 70%, leaving headroom for playback ACKs. */
+export const torrentUploadLimitMode = persisted<'auto' | 'capacity'>('torrent-upload-limit-mode', 'auto')
+export const torrentUpstreamCapacityMbps = persisted<number>('torrent-upstream-capacity-mbps', 10)
+/** Mobile post-play seeding is opt-in and additionally requires charging + an unmetered network. */
+export const torrentAndroidPostSeed = persisted<boolean>('torrent-android-post-seed', false)
 /** Public n0 relays are the default. Set this to an Iroh relay URL to use a self-hosted relay. */
 export const syncRelayMode = persisted<'public' | 'custom'>('sync-relay-mode', 'public')
 export const syncRelayUrl = persisted<string>('sync-relay-url', '')

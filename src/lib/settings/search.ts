@@ -7,6 +7,7 @@ export type SettingSearchItem = {
   /** Shared Toggle rows expose a matching DOM anchor, allowing search to scroll to the control. */
   anchored?: boolean
   desktopOnly?: boolean
+  androidOnly?: boolean
 }
 
 export const settingKey = (title: string) =>
@@ -82,7 +83,9 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
 
   { title: 'Use DNS over HTTPS', category: 'Network', href: '/app/settings/network', keywords: 'doh privacy resolver', anchored: true },
   { title: 'DNS-over-HTTPS URL', category: 'Network', href: '/app/settings/network', keywords: 'endpoint cloudflare resolver' },
-  { title: 'Transfer speed limit', category: 'Network', href: '/app/settings/network', keywords: 'throttle bandwidth mbps torrent downloads' },
+  { title: 'Torrent download limit', category: 'Network', href: '/app/settings/network', keywords: 'direct p2p throttle bandwidth mbps uncapped' },
+  { title: 'Torrent upload limit', category: 'Network', href: '/app/settings/network', keywords: 'direct p2p seed seeding upstream bandwidth auto capacity' },
+  { title: 'Continue seeding after playback', category: 'Network', href: '/app/settings/network', keywords: 'android torrent charging unmetered wifi ratio', anchored: true, androidOnly: true },
 
   { title: 'Auto-check for updates', category: 'About', href: '/app/settings/about', keywords: 'upgrade release launch', anchored: true },
   { title: 'Update channel', category: 'About', href: '/app/settings/about', keywords: 'stable beta release' },
@@ -97,7 +100,7 @@ export function searchSettings(query: string, android = false): SettingSearchIte
   if (!q) return []
   const words = q.split(/\s+/)
   return SETTINGS_SEARCH_INDEX
-    .filter((item) => !android || !item.desktopOnly)
+    .filter((item) => android ? !item.desktopOnly : !item.androidOnly)
     .map((item) => {
       const title = normalize(item.title)
       const category = normalize(item.category)

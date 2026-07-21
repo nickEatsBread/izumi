@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { enableDoH, doHUrl, transferSpeedLimit, syncRelayMode, syncRelayUrl } from '$lib/settings/ui'
+  import {
+    enableDoH, doHUrl, torrentAndroidPostSeed, torrentDownloadLimitMbps,
+    torrentUploadLimitMode, torrentUpstreamCapacityMbps, syncRelayMode, syncRelayUrl,
+  } from '$lib/settings/ui'
   import { getSyncRelayConfig, setSyncRelay } from '$lib/sync/client'
+  import { isAndroid } from '$lib/platform'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
   let applyingRelay = $state(false)
@@ -43,16 +47,51 @@
       </label>
     {/if}
 
-    <label class="flex items-center justify-between rounded-md border border-border p-3">
-      <div class="pr-4">
-        <div class="font-bold">Transfer speed limit</div>
-        <p class="mt-1 text-xs text-muted-foreground">Applies to torrent downloads. Inert with debrid streaming (Real-Debrid serves over its own CDN — nothing local to throttle).</p>
-      </div>
-      <span class="flex items-center gap-2">
-        <input type="number" min="1" max="1000" data-focusable bind:value={$transferSpeedLimit} class="w-24 rounded-md bg-input px-3 py-2 text-right text-sm" />
-        <span class="text-sm text-muted-foreground">Mb/s</span>
-      </span>
-    </label>
+    <section class="rounded-md border border-border p-3">
+      <div class="font-bold">Direct torrent bandwidth</div>
+      <p class="mt-1 text-xs text-muted-foreground">Only affects Direct P2P playback. Downloads are uncapped by default; upload is limited separately so seeding cannot saturate a slow upstream connection.</p>
+
+      <label class="mt-3 flex items-center justify-between gap-4">
+        <span>
+          <span class="block text-sm font-bold">Download limit</span>
+          <span class="block text-xs text-muted-foreground">Use 0 for uncapped.</span>
+        </span>
+        <span class="flex items-center gap-2">
+          <input type="number" min="0" max="10000" step="1" data-focusable bind:value={$torrentDownloadLimitMbps} class="w-24 rounded-md bg-input px-3 py-2 text-right text-sm" />
+          <span class="text-sm text-muted-foreground">Mb/s</span>
+        </span>
+      </label>
+
+      <label class="mt-3 flex items-center justify-between gap-4">
+        <span>
+          <span class="block text-sm font-bold">Upload limit</span>
+          <span class="block text-xs text-muted-foreground">Auto caps seeding at 1 Mb/s.</span>
+        </span>
+        <select data-focusable bind:value={$torrentUploadLimitMode} class="rounded-md bg-input px-3 py-2 text-sm">
+          <option value="auto">Auto (1 Mb/s)</option>
+          <option value="capacity">Use my upstream</option>
+        </select>
+      </label>
+
+      {#if $torrentUploadLimitMode === 'capacity'}
+        <label class="mt-3 flex items-center justify-between gap-4">
+          <span>
+            <span class="block text-sm font-bold">Upstream capacity</span>
+            <span class="block text-xs text-muted-foreground">Izumi uses at most 70% ({Math.max(0, Number($torrentUpstreamCapacityMbps) || 0) * 0.7} Mb/s).</span>
+          </span>
+          <span class="flex items-center gap-2">
+            <input type="number" min="0.1" max="10000" step="0.1" data-focusable bind:value={$torrentUpstreamCapacityMbps} class="w-24 rounded-md bg-input px-3 py-2 text-right text-sm" />
+            <span class="text-sm text-muted-foreground">Mb/s</span>
+          </span>
+        </label>
+      {/if}
+
+      <p class="mt-3 text-xs text-muted-foreground">One torrent seeds while you watch. When playback closes, desktop continues for up to 30 minutes or a 0.25 ratio, whichever happens first. Upload is reduced automatically whenever less than one minute is buffered.</p>
+    </section>
+
+    {#if $isAndroid}
+      <Toggle label="Continue seeding after playback" desc="Android only: continue toward the 30-minute / 0.25-ratio target when the device is charging on an unmetered network. Off by default; active playback still seeds." value={$torrentAndroidPostSeed} onToggle={() => ($torrentAndroidPostSeed = !$torrentAndroidPostSeed)} />
+    {/if}
 
     <section class="rounded-md border border-border p-3">
       <div class="font-bold">Peer-to-peer relay</div>

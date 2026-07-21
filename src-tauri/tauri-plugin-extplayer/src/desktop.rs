@@ -2,7 +2,7 @@ use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
-    InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
+    DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -23,6 +23,13 @@ impl<R: Runtime> ExtPlayer<R> {
 
     pub fn install_apk(&self, _payload: InstallRequest) -> crate::Result<()> {
         Ok(())
+    }
+
+    pub fn device_status(&self) -> crate::Result<DeviceStatus> {
+        Ok(DeviceStatus {
+            unmetered: true,
+            charging: true,
+        })
     }
 
     pub fn set_lan_discovery(&self, _payload: LanDiscoveryRequest) -> crate::Result<()> {

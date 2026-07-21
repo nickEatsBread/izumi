@@ -1,4 +1,4 @@
-const COMMANDS: &[&str] = &["play_external", "install_apk"];
+const COMMANDS: &[&str] = &["play_external", "install_apk", "device_status"];
 
 fn main() {
     tauri_plugin::Builder::new(COMMANDS)

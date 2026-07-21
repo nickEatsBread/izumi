@@ -21,6 +21,14 @@ pub struct InstallRequest {
     pub path: String,
 }
 
+/// Android power/network state used to decide whether optional background seeding is responsible.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceStatus {
+    pub unmetered: bool,
+    pub charging: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LanDiscoveryRequest {
     pub enabled: bool,

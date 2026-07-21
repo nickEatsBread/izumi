@@ -1,25 +1,59 @@
-use std::{collections::HashSet, net::Ipv4Addr, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet,
+    net::Ipv4Addr,
+    num::NonZeroU32,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use librqbit::{
+    api::TorrentIdOrHash,
     http_api::{HttpApi, HttpApiOptions},
-    AddTorrent, AddTorrentOptions, AddTorrentResponse, Api, Session,
+    AddTorrent, AddTorrentOptions, AddTorrentResponse, Api, ManagedTorrent, Session,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
-use tokio::{net::TcpListener, sync::OnceCell, time::timeout};
+use tokio::{
+    net::TcpListener,
+    sync::{Mutex, OnceCell},
+    task::JoinHandle,
+    time::{sleep, timeout, Instant},
+};
 
 use crate::direct_torrent_select::{select_file, TorrentFile};
 
 const METADATA_TIMEOUT: Duration = Duration::from_secs(60);
+const POST_PLAYBACK_SEED_TIME: Duration = Duration::from_secs(30 * 60);
+const SEED_CHECK_INTERVAL: Duration = Duration::from_secs(10);
+const PLAYBACK_BUFFER_FLOOR_SECONDS: f64 = 60.0;
+const AUTO_UPLOAD_MBPS: f64 = 1.0;
+const USER_CAPACITY_FRACTION: f64 = 0.70;
+const BUFFERING_UPLOAD_BPS: u32 = 64 * 1024;
 
 #[derive(Default)]
 pub struct DirectTorrentState {
     engine: OnceCell<Arc<DirectTorrentEngine>>,
+    active: Arc<Mutex<Option<ActivePlayback>>>,
+    next_playback_id: AtomicU64,
 }
 
 struct DirectTorrentEngine {
     session: Arc<Session>,
     port: u16,
+}
+
+struct ActivePlayback {
+    playback_id: u64,
+    torrent_id: usize,
+    handle: Arc<ManagedTorrent>,
+    selected_size: u64,
+    uploaded_at_start: u64,
+    upload_bps: NonZeroU32,
+    upload_reduced: bool,
+    cleanup_task: Option<JoinHandle<()>>,
 }
 
 #[derive(Serialize)]
@@ -29,6 +63,31 @@ pub struct DirectTorrentPlayback {
     filename: String,
     file_index: usize,
     size: u64,
+    playback_id: u64,
+}
+
+fn mbps_to_bps(value: f64) -> Option<NonZeroU32> {
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
+    let bytes_per_second = (value * 1_000_000.0 / 8.0)
+        .round()
+        .clamp(1.0, u32::MAX as f64) as u32;
+    NonZeroU32::new(bytes_per_second)
+}
+
+fn upload_limit(upstream_capacity_mbps: Option<f64>) -> NonZeroU32 {
+    mbps_to_bps(
+        upstream_capacity_mbps
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .map(|value| value * USER_CAPACITY_FRACTION)
+            .unwrap_or(AUTO_UPLOAD_MBPS),
+    )
+    .expect("the automatic torrent upload limit is non-zero")
+}
+
+fn ratio_target_bytes(selected_size: u64) -> u64 {
+    selected_size.saturating_add(3) / 4
 }
 
 impl DirectTorrentState {
@@ -40,6 +99,17 @@ impl DirectTorrentState {
                     .app_cache_dir()
                     .map_err(|e| format!("Could not locate Izumi's cache folder: {e}"))?
                     .join("direct-torrents");
+
+                // Direct playback is deliberately ephemeral rather than a local library. If the
+                // app was killed before its normal seeding cleanup, discard that abandoned cache
+                // before starting a fresh torrent session.
+                match tokio::fs::remove_dir_all(&folder).await {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(format!("Could not clear the old torrent cache: {error}"))
+                    }
+                }
                 tokio::fs::create_dir_all(&folder)
                     .await
                     .map_err(|e| format!("Could not create the torrent cache: {e}"))?;
@@ -73,12 +143,34 @@ impl DirectTorrentState {
     }
 }
 
+async fn delete_active(
+    session: &Arc<Session>,
+    active: &Arc<Mutex<Option<ActivePlayback>>>,
+    playback_id: u64,
+) {
+    let torrent_id = {
+        let mut guard = active.lock().await;
+        if guard.as_ref().map(|item| item.playback_id) != Some(playback_id) {
+            return;
+        }
+        guard.take().map(|item| item.torrent_id)
+    };
+
+    if let Some(torrent_id) = torrent_id {
+        if let Err(error) = session.delete(TorrentIdOrHash::Id(torrent_id), true).await {
+            eprintln!("could not delete direct torrent playback cache: {error:#}");
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn torrent_playback_url(
     app: AppHandle,
     state: tauri::State<'_, DirectTorrentState>,
     magnet: String,
     preferred_filename: Option<String>,
+    download_limit_mbps: Option<f64>,
+    upstream_capacity_mbps: Option<f64>,
 ) -> Result<DirectTorrentPlayback, String> {
     let magnet = magnet.trim();
     if !magnet.to_ascii_lowercase().starts_with("magnet:?") {
@@ -122,25 +214,62 @@ pub async fn torrent_playback_url(
     let selected = select_file(&files, preferred_filename.as_deref())
         .ok_or_else(|| "This torrent does not contain a supported video file.".to_string())?;
 
-    let added = engine
+    let upload_bps = upload_limit(upstream_capacity_mbps);
+    engine.session.ratelimits.set_upload_bps(Some(upload_bps));
+    engine
         .session
-        .add_torrent(
-            AddTorrent::from_bytes(listing.torrent_bytes),
-            Some(AddTorrentOptions {
-                only_files: Some(vec![selected.index]),
-                overwrite: true,
-                initial_peers: Some(listing.seen_peers),
-                ..Default::default()
-            }),
-        )
-        .await
-        .map_err(|e| format!("Could not start the torrent: {e:#}"))?;
-    let handle = added
-        .into_handle()
-        .ok_or_else(|| "The torrent did not start.".to_string())?;
+        .ratelimits
+        .set_download_bps(download_limit_mbps.and_then(mbps_to_bps));
 
-    // A season pack may already be active from the previous episode. Update its
-    // selection so only the newly requested episode is fetched.
+    // Serialize replacement with post-play cleanup. Reuse the same managed torrent for another
+    // episode in a season pack; otherwise remove the previous torrent and its ephemeral files
+    // before admitting the new one. This keeps exactly one torrent active.
+    let mut active = state.active.lock().await;
+    let same_torrent = active
+        .as_ref()
+        .filter(|item| item.handle.info_hash() == listing.info_hash)
+        .map(|item| item.handle.clone());
+
+    if same_torrent.is_none() {
+        if let Some(mut previous) = active.take() {
+            if let Some(task) = previous.cleanup_task.take() {
+                task.abort();
+            }
+            engine
+                .session
+                .delete(TorrentIdOrHash::Id(previous.torrent_id), true)
+                .await
+                .map_err(|e| format!("Could not replace the previous torrent: {e:#}"))?;
+        }
+    } else if let Some(current) = active.as_mut() {
+        if let Some(task) = current.cleanup_task.take() {
+            task.abort();
+        }
+    }
+
+    let handle = if let Some(handle) = same_torrent {
+        handle
+    } else {
+        let added = engine
+            .session
+            .add_torrent(
+                AddTorrent::from_bytes(listing.torrent_bytes),
+                Some(AddTorrentOptions {
+                    only_files: Some(vec![selected.index]),
+                    overwrite: true,
+                    initial_peers: Some(listing.seen_peers),
+                    ..Default::default()
+                }),
+            )
+            .await
+            .map_err(|e| format!("Could not start the torrent: {e:#}"))?;
+        added
+            .into_handle()
+            .ok_or_else(|| "The torrent did not start.".to_string())?
+    };
+
+    // A season pack may already be active from the previous episode. Update its selection so only
+    // the newly requested episode is fetched. Active HTTP streams still receive priority.
     let only_files = HashSet::from([selected.index]);
     engine
         .session
@@ -148,15 +277,172 @@ pub async fn torrent_playback_url(
         .await
         .map_err(|e| format!("Could not select the episode inside the torrent: {e:#}"))?;
 
+    let playback_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
+    let uploaded_at_start = handle.stats().uploaded_bytes;
+    let torrent_id = handle.id();
+    *active = Some(ActivePlayback {
+        playback_id,
+        torrent_id,
+        handle,
+        selected_size: selected.length,
+        uploaded_at_start,
+        upload_bps,
+        upload_reduced: false,
+        cleanup_task: None,
+    });
+    drop(active);
+
     Ok(DirectTorrentPlayback {
         url: format!(
             "http://127.0.0.1:{}/torrents/{}/stream/{}",
-            engine.port,
-            handle.id(),
-            selected.index
+            engine.port, torrent_id, selected.index
         ),
         filename: selected.name,
         file_index: selected.index,
         size: selected.length,
+        playback_id,
     })
+}
+
+/// Protect playback from upload-induced buffer starvation. The player reports seconds buffered
+/// ahead; below one minute, upload is reduced to 64 KiB/s (or the user's lower cap).
+#[tauri::command]
+pub async fn torrent_playback_buffer(
+    state: tauri::State<'_, DirectTorrentState>,
+    playback_id: u64,
+    buffered_seconds: f64,
+) -> Result<(), String> {
+    let Some(engine) = state.engine.get() else {
+        return Ok(());
+    };
+    let mut active = state.active.lock().await;
+    let Some(current) = active.as_mut() else {
+        return Ok(());
+    };
+    if current.playback_id != playback_id || current.cleanup_task.is_some() {
+        return Ok(());
+    }
+
+    let should_reduce =
+        buffered_seconds.is_finite() && buffered_seconds.max(0.0) < PLAYBACK_BUFFER_FLOOR_SECONDS;
+    if should_reduce != current.upload_reduced {
+        let limit = if should_reduce {
+            NonZeroU32::new(current.upload_bps.get().min(BUFFERING_UPLOAD_BPS))
+                .expect("the buffering upload limit is non-zero")
+        } else {
+            current.upload_bps
+        };
+        engine.session.ratelimits.set_upload_bps(Some(limit));
+        current.upload_reduced = should_reduce;
+    }
+    Ok(())
+}
+
+/// End playback. Desktop normally enters a bounded seeding window. Android passes false unless
+/// the user opted in and the device is currently charging on an unmetered network.
+#[tauri::command]
+pub async fn torrent_playback_stop(
+    state: tauri::State<'_, DirectTorrentState>,
+    playback_id: u64,
+    allow_post_playback_seed: bool,
+) -> Result<(), String> {
+    let Some(engine) = state.engine.get().cloned() else {
+        return Ok(());
+    };
+
+    let mut active = state.active.lock().await;
+    let Some(current) = active.as_mut() else {
+        return Ok(());
+    };
+    if current.playback_id != playback_id {
+        return Ok(());
+    }
+    if current.cleanup_task.is_some() {
+        return Ok(());
+    }
+
+    if !allow_post_playback_seed {
+        let torrent_id = current.torrent_id;
+        *active = None;
+        drop(active);
+        engine
+            .session
+            .delete(TorrentIdOrHash::Id(torrent_id), true)
+            .await
+            .map_err(|e| format!("Could not clear the torrent playback cache: {e:#}"))?;
+        return Ok(());
+    }
+
+    // Stop fetching the remainder once playback ends, while keeping already-downloaded pieces
+    // available to peers for the bounded post-playback seeding window.
+    engine
+        .session
+        .update_only_files(&current.handle, &HashSet::new())
+        .await
+        .map_err(|e| format!("Could not switch the torrent into seeding mode: {e:#}"))?;
+    engine
+        .session
+        .ratelimits
+        .set_upload_bps(Some(current.upload_bps));
+    current.upload_reduced = false;
+
+    let active_state = state.active.clone();
+    let session = engine.session.clone();
+    let task_playback_id = playback_id;
+    let task = tokio::spawn(async move {
+        let started = Instant::now();
+        // Give the player a moment to close its local HTTP stream before a ratio already reached
+        // during playback causes immediate cache deletion.
+        sleep(Duration::from_secs(2)).await;
+        loop {
+            let should_delete = {
+                let guard = active_state.lock().await;
+                let Some(item) = guard.as_ref() else {
+                    return;
+                };
+                if item.playback_id != task_playback_id {
+                    return;
+                }
+                let uploaded = item
+                    .handle
+                    .stats()
+                    .uploaded_bytes
+                    .saturating_sub(item.uploaded_at_start);
+                uploaded >= ratio_target_bytes(item.selected_size)
+                    || started.elapsed() >= POST_PLAYBACK_SEED_TIME
+            };
+            if should_delete {
+                break;
+            }
+            sleep(SEED_CHECK_INTERVAL).await;
+        }
+        delete_active(&session, &active_state, task_playback_id).await;
+    });
+    current.cleanup_task = Some(task);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{mbps_to_bps, ratio_target_bytes, upload_limit};
+
+    #[test]
+    fn automatic_upload_is_one_megabit() {
+        assert_eq!(upload_limit(None).get(), 125_000);
+    }
+
+    #[test]
+    fn supplied_upstream_uses_seventy_percent() {
+        assert_eq!(upload_limit(Some(10.0)).get(), 875_000);
+    }
+
+    #[test]
+    fn zero_download_limit_means_uncapped() {
+        assert_eq!(mbps_to_bps(0.0), None);
+    }
+
+    #[test]
+    fn ratio_target_rounds_up_to_a_quarter() {
+        assert_eq!(ratio_target_bytes(10), 3);
+    }
 }
