@@ -47,6 +47,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::mpv_stop,
             commands::mpv_pip,
             commands::mpv_viewport,
+            commands::mpv_fullscreen,
             commands::mpv_brightness,
             commands::mpv_haptic,
             commands::mpv_thumb

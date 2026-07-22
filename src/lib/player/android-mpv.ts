@@ -146,6 +146,10 @@ export async function setPlayerViewport(
   })) as PlayerViewportInsets
 }
 
+/** Enter/exit the Android landscape player. Exit briefly requests portrait, then restores sensor rotation. */
+export const setPlayerFullscreen = (enabled: boolean) =>
+  invoke('plugin:mpv|mpv_fullscreen', { payload: { enabled } })
+
 /** mpv chapter marker times (seconds), via sub-property paths. Empty when the file has no chapters. */
 export async function getChapters(): Promise<number[]> {
   const count = Number(await mpvGet('chapter-list/count')) || 0

@@ -2,8 +2,8 @@ use tauri::{command, AppHandle, Runtime};
 
 use crate::{
     models::{
-        BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
-        ThumbRequest, ViewportRequest,
+        BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest,
+        LoadRequest, SetRequest, ThumbRequest, ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -50,6 +50,14 @@ pub(crate) async fn mpv_viewport<R: Runtime>(
     payload: ViewportRequest,
 ) -> Result<serde_json::Value> {
     app.mpv().viewport(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_fullscreen<R: Runtime>(
+    app: AppHandle<R>,
+    payload: FullscreenRequest,
+) -> Result<()> {
+    app.mpv().fullscreen(payload)
 }
 
 #[command]

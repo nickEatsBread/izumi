@@ -22,6 +22,29 @@ export const HOLD_MS = 350
 /** Window (ms) to pair two taps into a double-tap (component-side timer). */
 export const DOUBLE_TAP_MS = 280
 
+/**
+ * Progress for the portrait-player pull-up gesture. It only activates when the drag starts in
+ * the lower half of the video and vertical travel clearly wins over horizontal travel, so it
+ * cannot steal ordinary taps or timeline/horizontal scrubs.
+ */
+export function fullscreenPullProgress(
+  start: Sample,
+  cur: Sample,
+  playerTop: number,
+  playerHeight: number,
+): number {
+  const dx = cur.x - start.x
+  const dy = cur.y - start.y
+  if (start.y < playerTop + playerHeight * 0.45 || dy >= -MOVE_PX || Math.abs(dy) <= Math.abs(dx)) return 0
+  const travel = Math.min(240, Math.max(120, playerHeight * 0.55))
+  return Math.min(1, -dy / travel)
+}
+
+/** Commit a deliberate pull or a short upward fling; otherwise spring the player back. */
+export function shouldEnterFullscreen(progress: number, velocityY: number): boolean {
+  return progress >= 0.45 || velocityY <= -0.5
+}
+
 export function zoneOf(x: number, width: number): Zone {
   if (x < width / 3) return 'l'
   if (x > (2 * width) / 3) return 'r'

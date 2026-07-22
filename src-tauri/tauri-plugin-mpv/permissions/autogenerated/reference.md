@@ -11,6 +11,7 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-stop`
 - `allow-mpv-pip`
 - `allow-mpv-viewport`
+- `allow-mpv-fullscreen`
 - `allow-mpv-brightness`
 - `allow-mpv-haptic`
 - `allow-mpv-thumb`
@@ -74,6 +75,32 @@ Enables the mpv_command command without any pre-configured scope.
 <td>
 
 Denies the mpv_command command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-fullscreen`
+
+</td>
+<td>
+
+Enables the mpv_fullscreen command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-fullscreen`
+
+</td>
+<td>
+
+Denies the mpv_fullscreen command without any pre-configured scope.
 
 </td>
 </tr>

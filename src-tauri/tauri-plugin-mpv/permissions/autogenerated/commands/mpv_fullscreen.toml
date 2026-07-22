@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-fullscreen"
+description = "Enables the mpv_fullscreen command without any pre-configured scope."
+commands.allow = ["mpv_fullscreen"]
+
+[[permission]]
+identifier = "deny-mpv-fullscreen"
+description = "Denies the mpv_fullscreen command without any pre-configured scope."
+commands.deny = ["mpv_fullscreen"]

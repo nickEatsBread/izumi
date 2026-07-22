@@ -28,9 +28,18 @@
     setAudioTrack,
     setSubTrack,
     setPlayerViewport,
+    setPlayerFullscreen,
     type MpvTrack,
   } from '$lib/player/android-mpv'
-  import { zoneOf, classifyDrag, shouldDismissSheet, HOLD_MS, DOUBLE_TAP_MS } from '$lib/player/android-gestures'
+  import {
+    zoneOf,
+    classifyDrag,
+    fullscreenPullProgress,
+    shouldEnterFullscreen,
+    shouldDismissSheet,
+    HOLD_MS,
+    DOUBLE_TAP_MS,
+  } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen } from '$lib/player/session'
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import { autoSkip, seekDuration, scrubThumbnails } from '$lib/settings/ui'
@@ -49,6 +58,8 @@
   import Layers from 'lucide-svelte/icons/layers'
   import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
   import Settings from 'lucide-svelte/icons/settings'
+  import Maximize from 'lucide-svelte/icons/maximize'
+  import Minimize from 'lucide-svelte/icons/minimize'
   import X from 'lucide-svelte/icons/x'
   import AndroidWatchDetails from './AndroidWatchDetails.svelte'
 
@@ -66,6 +77,10 @@
   let safeRight = $state(0)
   let safeBottom = $state(0)
   let safeLeft = $state(0)
+  let portraitVideoHeight: number | null = $state(null)
+  let fullscreenPull = $state(0)
+  let fullscreenPullDragging = $state(false)
+  let orientationForced = false
 
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
@@ -271,14 +286,86 @@
   }
 
   // --- Whole-surface gesture layer: tap / double-tap / swipe brightness+volume / hold-2× / scrub ---
-  type GestureKind = 'scrub' | 'brightness' | 'volume' | 'hold' | 'none' | null
+  type GestureKind = 'scrub' | 'fullscreen' | 'brightness' | 'volume' | 'hold' | 'none' | null
   let gesture = $state<GestureKind>(null)
   let startSample = { x: 0, y: 0, t: 0 }
   let scrubStartPos = 0
   let holdTimer: ReturnType<typeof setTimeout> | undefined
   let heldSpeed = false
   let rootPointerId: number | null = null
+  let pullPlayerTop = 0
+  let pullPlayerHeight = 0
+  let pullLastY = 0
+  let pullLastTime = 0
+  let pullVelocityY = 0
+  let pullViewportBusy = false
+  let pendingPullViewportHeight: number | null = null
   const VIDEO_SCRUB_SPAN = 90 // seconds spanned by a full-width horizontal drag over the video
+
+  function queuePullViewport(heightCssPx: number) {
+    pendingPullViewportHeight = heightCssPx
+    if (pullViewportBusy) return
+    pullViewportBusy = true
+    void (async () => {
+      while (pendingPullViewportHeight != null) {
+        const height = pendingPullViewportHeight
+        pendingPullViewportHeight = null
+        const dpr = window.devicePixelRatio || 1
+        await setPlayerViewport(0, height * dpr, false).catch(() => {})
+      }
+      pullViewportBusy = false
+    })()
+  }
+
+  function updateFullscreenPull(e: PointerEvent) {
+    const dt = Math.max(1, e.timeStamp - pullLastTime)
+    const velocity = (e.clientY - pullLastY) / dt
+    pullVelocityY = pullVelocityY * 0.65 + velocity * 0.35
+    pullLastY = e.clientY
+    pullLastTime = e.timeStamp
+    fullscreenPull = fullscreenPullProgress(
+      startSample,
+      { x: e.clientX, y: e.clientY, t: e.timeStamp },
+      pullPlayerTop,
+      pullPlayerHeight,
+    )
+    const available = Math.max(pullPlayerHeight, window.innerHeight - safeTop)
+    portraitVideoHeight = pullPlayerHeight + (available - pullPlayerHeight) * fullscreenPull
+    queuePullViewport(portraitVideoHeight)
+  }
+
+  function resetFullscreenPull() {
+    fullscreenPullDragging = false
+    fullscreenPull = 0
+    const restingHeight = Math.round(window.innerWidth * 9 / 16)
+    portraitVideoHeight = restingHeight
+    queuePullViewport(restingHeight)
+  }
+
+  async function enterFullscreen() {
+    orientationForced = true
+    controlsShown = false
+    try {
+      await setPlayerFullscreen(true)
+    } catch {
+      orientationForced = false
+      resetFullscreenPull()
+      flashToast('Could not enter fullscreen')
+    }
+  }
+
+  async function exitAndroidFullscreen() {
+    orientationForced = false
+    await setPlayerFullscreen(false).catch(() => {})
+    showControls()
+  }
+
+  function toggleAndroidFullscreen() {
+    cancelScrub()
+    resetTapSequence()
+    if (landscape) void exitAndroidFullscreen()
+    else void enterFullscreen()
+  }
 
   function onRootDown(e: PointerEvent) {
     if (locked || !e.isPrimary || rootPointerId != null) return
@@ -286,6 +373,12 @@
     rootPointerId = e.pointerId
     rootEl?.setPointerCapture?.(e.pointerId)
     startSample = { x: e.clientX, y: e.clientY, t: e.timeStamp }
+    const rect = rootEl?.getBoundingClientRect()
+    pullPlayerTop = rect?.top ?? 0
+    pullPlayerHeight = rect?.height ?? Math.round(window.innerWidth * 9 / 16)
+    pullLastY = e.clientY
+    pullLastTime = e.timeStamp
+    pullVelocityY = 0
     gesture = null
     holdTimer = setTimeout(() => { // press-and-hold in the center → temporary 2×
       if (gesture === null && zoneOf(startSample.x, window.innerWidth) === 'c') {
@@ -297,6 +390,17 @@
     if (locked || gesture === 'hold' || rootPointerId !== e.pointerId) return
     const cur = { x: e.clientX, y: e.clientY, t: e.timeStamp }
     if (gesture === null) {
+      const pull = !landscape
+        ? fullscreenPullProgress(startSample, cur, pullPlayerTop, pullPlayerHeight)
+        : 0
+      if (pull > 0) {
+        clearTimeout(holdTimer)
+        gesture = 'fullscreen'
+        fullscreenPullDragging = true
+        resetTapSequence()
+        updateFullscreenPull(e)
+        return
+      }
       const g = classifyDrag(startSample, cur, window.innerWidth, window.innerHeight)
       if (g.kind === 'pending') return
       clearTimeout(holdTimer)
@@ -308,6 +412,8 @@
     }
     if (gesture === 'scrub') {
       schedulePreview(scrubStartPos + ((cur.x - startSample.x) / window.innerWidth) * VIDEO_SCRUB_SPAN)
+    } else if (gesture === 'fullscreen') {
+      updateFullscreenPull(e)
     }
   }
   function onRootUp(e: PointerEvent) {
@@ -316,6 +422,11 @@
     clearTimeout(holdTimer)
     if (heldSpeed) { heldSpeed = false; mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
     if (gesture === 'scrub') { endScrub('surface', e.pointerId); armHide() }
+    else if (gesture === 'fullscreen') {
+      fullscreenPullDragging = false
+      if (shouldEnterFullscreen(fullscreenPull, pullVelocityY)) void enterFullscreen()
+      else { resetFullscreenPull(); armHide() }
+    }
     else if (gesture === null) onTap(e) // no drag happened → treat as a tap
     gesture = null
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
@@ -326,6 +437,7 @@
     clearTimeout(holdTimer)
     if (heldSpeed) { heldSpeed = false; void mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
     if (scrubOwner === 'surface' && scrubPointerId === e.pointerId) cancelScrub()
+    if (gesture === 'fullscreen') resetFullscreenPull()
     gesture = null
     armHide()
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
@@ -477,6 +589,7 @@
     finalizeAndroidWatch($mpvState.pos, $mpvState.dur)
     await mpvStop().catch(() => {})
     await stopDirectTorrentPlayback()
+    if (orientationForced) await setPlayerFullscreen(false).catch(() => {})
     androidMpvActive.set(false)
   }
   async function openRelated(id: number) {
@@ -493,6 +606,9 @@
     const dpr = window.devicePixelRatio || 1
     const insets = await setPlayerViewport(0, nextLandscape ? 0 : ratioHeight * dpr, nextLandscape)
     if (generation !== viewportGeneration) return
+    fullscreenPullDragging = false
+    fullscreenPull = 0
+    portraitVideoHeight = nextLandscape ? null : ratioHeight
     safeTop = insets.top / dpr
     safeRight = insets.right / dpr
     safeBottom = insets.bottom / dpr
@@ -515,6 +631,7 @@
       clearTimeout(lockToggleTimer); clearTimeout(toastTimer)
       clearTimeout(holdTimer); clearTimeout(thumbDebounce); clearTimeout(sheetCloseTimer)
       cancelAnimationFrame(sheetOpenFrame)
+      pendingPullViewportHeight = null
       cancelScrub()
       cancelAnimationFrame(viewportFrame)
       orientation.removeEventListener('change', scheduleViewportSync)
@@ -523,8 +640,8 @@
   })
 </script>
 
-<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden}
-  style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px`}>
+<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden} class:pulling-fullscreen={fullscreenPullDragging}
+  style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
   <section bind:this={rootEl} class="video-frame relative touch-none overflow-hidden bg-transparent"
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture} role="presentation">
   <!-- Buffering shows a spinner INSTEAD of the play/pause transport, but only while playing — when
@@ -595,25 +712,33 @@
       </div>
     {/if}
 
-    <!-- Bottom timeline; secondary controls live in Video settings. -->
-    <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
-      <div class="timeline-times pointer-events-none absolute inset-x-0 bottom-6 flex items-center justify-between px-3 text-xs tabular-nums text-white/80">
-        <span>{fmt(pos)}</span>
-        <span>{fmt(dur)}</span>
+    <!-- Timeline sits on the actual bottom edge of the video, matching native mobile players. -->
+    <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 h-14" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
+      <div class="timeline-controls absolute inset-x-0 bottom-3 flex items-center justify-between px-3 text-xs tabular-nums text-white/90">
+        <span class="pointer-events-none">{fmt(pos)} / {fmt(dur)}</span>
+        <button
+          class="grid h-9 w-9 place-items-center active:scale-90"
+          onpointerdown={(e) => e.stopPropagation()}
+          onpointerup={(e) => e.stopPropagation()}
+          onclick={(e) => { e.stopPropagation(); toggleAndroidFullscreen() }}
+          aria-label={landscape ? 'Exit fullscreen' : 'Enter fullscreen'}
+        >
+          {#if landscape}<Minimize size={22} />{:else}<Maximize size={22} />{/if}
+        </button>
       </div>
-      <div bind:this={barEl} class="relative h-7 w-full cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
+      <div bind:this={barEl} class="timeline-hitbox absolute inset-x-0 bottom-0 h-5 w-full cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
              role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
-        <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden bg-white/25">
+        <div class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-white/25">
           <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
           {#each segments as s (s.type + s.start)}
             <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
           {/each}
           <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
         </div>
-        {#each chapters as c (c)}<div class="absolute top-1/2 h-1 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
-        <div class="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-theme shadow-md" style="left:{playedPct}%"></div>
+        {#each chapters as c (c)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
+        <div class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:{playedPct}%"></div>
         {#if scrubbing}
-          <div class="pointer-events-none absolute bottom-9 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
+          <div class="pointer-events-none absolute bottom-8 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
             {#if thumbUrl}<img src={thumbUrl} alt="" class="h-20 w-36 rounded-md border border-white/20 object-cover shadow-lg" />{/if}
             <span class="rounded bg-black/80 px-2 py-0.5 text-xs font-bold tabular-nums">{fmt(pos)}</span>
           </div>
@@ -692,8 +817,9 @@
 
 <style>
   .player-shell { touch-action: none; background: transparent; }
-  .video-frame { width: 100%; margin-top: var(--player-safe-top); aspect-ratio: 16 / 9; }
-  .watch-details { height: calc(100% - var(--player-safe-top) - (100vw * 9 / 16)); touch-action: pan-y; background: #0a0a0b; }
+  .video-frame { width: 100%; height: var(--portrait-player-height); margin-top: var(--player-safe-top); transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .watch-details { height: calc(100% - var(--player-safe-top) - var(--portrait-player-height)); touch-action: pan-y; background: #0a0a0b; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .pulling-fullscreen .video-frame, .pulling-fullscreen .watch-details { transition: none; }
   .settings-backdrop { transition: opacity 240ms ease-out; }
   .settings-sheet { inset-inline: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
   .settings-sheet.sheet-dragging { transition: none; }
@@ -702,8 +828,8 @@
   @media (orientation: landscape) {
     .video-frame { width: 100%; height: 100%; margin-top: 0; aspect-ratio: auto; }
     .player-top-bar { padding-top: max(0.75rem, var(--player-safe-top)); padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
-    .player-timeline { padding-right: 0; padding-bottom: max(0.35rem, var(--player-safe-bottom)); padding-left: 0; }
-    .timeline-times { padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
+    .player-timeline { height: calc(3.5rem + max(0.35rem, var(--player-safe-bottom))); padding-right: 0; padding-bottom: max(0.35rem, var(--player-safe-bottom)); padding-left: 0; }
+    .timeline-controls { padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
     .settings-sheet { inset-block: 0; right: 0; left: auto; width: min(28rem, 48vw); max-height: none; border-radius: 1.25rem 0 0 1.25rem; transform: none !important; transition: none; }
     .settings-body { max-height: calc(100vh - 5.75rem); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
     .sheet-handle { display: none; }
