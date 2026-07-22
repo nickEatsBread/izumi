@@ -21,6 +21,12 @@ pub struct InstallRequest {
     pub path: String,
 }
 
+/// A URL to show in Android's browser-backed Custom Tab.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BrowserRequest {
+    pub url: String,
+}
+
 /// Android power/network state used to decide whether optional background seeding is responsible.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

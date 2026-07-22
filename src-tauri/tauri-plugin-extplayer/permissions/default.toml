@@ -1,5 +1,5 @@
 "$schema" = "schemas/schema.json"
 
 [default]
-description = "Allow Android playback, self-update, and power/network checks for responsible seeding."
-permissions = ["allow-play-external", "allow-install-apk", "allow-device-status"]
+description = "Allow Android playback, browser authentication, self-update, and power/network checks."
+permissions = ["allow-play-external", "allow-install-apk", "allow-device-status", "allow-open-browser"]

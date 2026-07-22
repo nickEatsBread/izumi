@@ -1,7 +1,7 @@
 use tauri::{command, AppHandle, Runtime};
 
 use crate::{
-    models::{DeviceStatus, InstallRequest, PlayRequest},
+    models::{BrowserRequest, DeviceStatus, InstallRequest, PlayRequest},
     ExtPlayerExt, Result,
 };
 
@@ -27,4 +27,13 @@ pub(crate) async fn install_apk<R: Runtime>(
     payload: InstallRequest,
 ) -> Result<()> {
     app.extplayer().install_apk(payload)
+}
+
+/// Open an HTTPS authentication page using Android's browser-backed Custom Tab.
+#[command]
+pub(crate) async fn open_browser<R: Runtime>(
+    app: AppHandle<R>,
+    payload: BrowserRequest,
+) -> Result<()> {
+    app.extplayer().open_browser(payload)
 }
