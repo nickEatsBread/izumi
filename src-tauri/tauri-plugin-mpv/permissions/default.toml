@@ -10,6 +10,7 @@ permissions = [
     "allow-mpv-stop",
     "allow-mpv-pip",
     "allow-mpv-viewport",
+    "allow-mpv-fullscreen",
     "allow-mpv-brightness",
     "allow-mpv-haptic",
     "allow-mpv-thumb",

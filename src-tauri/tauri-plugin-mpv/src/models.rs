@@ -58,6 +58,12 @@ pub struct ViewportRequest {
     pub immersive: bool,
 }
 
+/// Lock playback to landscape, or return to the normal portrait watch page.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FullscreenRequest {
+    pub enabled: bool,
+}
+
 /// Grab a preview frame from a stream at `time_sec`, scaled to `width` px wide.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -99,7 +105,8 @@ mod tests {
 
     #[test]
     fn command_request_args() {
-        let r: CommandRequest = serde_json::from_str(r#"{"args":["seek","10","relative"]}"#).unwrap();
+        let r: CommandRequest =
+            serde_json::from_str(r#"{"args":["seek","10","relative"]}"#).unwrap();
         assert_eq!(r.args, vec!["seek", "10", "relative"]);
     }
 
@@ -117,5 +124,11 @@ mod tests {
         assert_eq!(r.top, 12);
         assert_eq!(r.height, 1080);
         assert!(!r.immersive);
+    }
+
+    #[test]
+    fn fullscreen_request_deserializes() {
+        let r: FullscreenRequest = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
+        assert!(r.enabled);
     }
 }

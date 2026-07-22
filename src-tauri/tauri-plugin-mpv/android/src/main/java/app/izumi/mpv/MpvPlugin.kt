@@ -4,6 +4,7 @@ import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.media.MediaMetadataRetriever
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -78,6 +79,11 @@ class ViewportArgs {
     /** Physical pixel height. Zero means fill the activity. */
     var height: Int = 0
     var immersive: Boolean = false
+}
+
+@InvokeArg
+class FullscreenArgs {
+    var enabled: Boolean = false
 }
 
 /**
@@ -251,6 +257,29 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             ret.put("bottom", safeBottom)
             ret.put("left", safeLeft)
             invoke.resolve(ret)
+        }
+    }
+
+    /** Enter the landscape player from the portrait watch page, or return to portrait. */
+    @Command
+    fun fullscreen(invoke: Invoke) {
+        val a = invoke.parseArgs(FullscreenArgs::class.java)
+        activity.runOnUiThread {
+            activity.requestedOrientation = if (a.enabled) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            }
+            if (!a.enabled) {
+                // Release the temporary portrait request once rotation has settled so turning the
+                // phone naturally can enter landscape again on the next playback interaction.
+                activity.window.decorView.postDelayed({
+                    if (activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) {
+                        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    }
+                }, 650L)
+            }
+            invoke.resolve()
         }
     }
 

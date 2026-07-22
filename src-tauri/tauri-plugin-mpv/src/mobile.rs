@@ -5,8 +5,8 @@ use tauri::{
 };
 
 use crate::models::{
-    BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
-    ThumbRequest, ViewportRequest,
+    BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest, LoadRequest,
+    SetRequest, ThumbRequest, ViewportRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -27,7 +27,9 @@ pub struct Mpv<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Mpv<R> {
     pub fn load(&self, payload: LoadRequest) -> crate::Result<()> {
-        self.0.run_mobile_plugin("load", payload).map_err(Into::into)
+        self.0
+            .run_mobile_plugin("load", payload)
+            .map_err(Into::into)
     }
 
     pub fn command(&self, payload: CommandRequest) -> crate::Result<()> {
@@ -55,6 +57,12 @@ impl<R: Runtime> Mpv<R> {
     pub fn viewport(&self, payload: ViewportRequest) -> crate::Result<serde_json::Value> {
         self.0
             .run_mobile_plugin("viewport", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn fullscreen(&self, payload: FullscreenRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("fullscreen", payload)
             .map_err(Into::into)
     }
 

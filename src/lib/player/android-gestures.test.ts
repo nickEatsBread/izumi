@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { zoneOf, classifyDrag, accumulateSeek, shouldDismissSheet } from './android-gestures'
+import {
+  zoneOf,
+  classifyDrag,
+  accumulateSeek,
+  fullscreenPullProgress,
+  shouldEnterFullscreen,
+  shouldDismissSheet,
+} from './android-gestures'
 
 describe('zoneOf', () => {
   it('splits the width into left/center/right thirds', () => {
@@ -62,5 +69,41 @@ describe('shouldDismissSheet', () => {
 
   it('snaps back after a short, slow pull', () => {
     expect(shouldDismissSheet(30, 0.1, 800)).toBe(false)
+  })
+})
+
+describe('portrait fullscreen pull', () => {
+  const top = 30
+  const height = 360
+
+  it('tracks an upward pull beginning in the lower half of the video', () => {
+    const progress = fullscreenPullProgress(
+      { x: 180, y: 300, t: 0 },
+      { x: 184, y: 210, t: 100 },
+      top,
+      height,
+    )
+    expect(progress).toBeGreaterThan(0.4)
+  })
+
+  it('does not steal horizontal scrubs or pulls from the top of the video', () => {
+    expect(fullscreenPullProgress(
+      { x: 180, y: 300, t: 0 },
+      { x: 260, y: 270, t: 100 },
+      top,
+      height,
+    )).toBe(0)
+    expect(fullscreenPullProgress(
+      { x: 180, y: 100, t: 0 },
+      { x: 180, y: 20, t: 100 },
+      top,
+      height,
+    )).toBe(0)
+  })
+
+  it('commits a substantial pull or a fast upward fling', () => {
+    expect(shouldEnterFullscreen(0.5, -0.1)).toBe(true)
+    expect(shouldEnterFullscreen(0.2, -0.7)).toBe(true)
+    expect(shouldEnterFullscreen(0.2, -0.1)).toBe(false)
   })
 })

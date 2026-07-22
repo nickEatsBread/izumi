@@ -2,8 +2,8 @@ use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
-    BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
-    ThumbRequest, ViewportRequest,
+    BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest, LoadRequest,
+    SetRequest, ThumbRequest, ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -45,6 +45,10 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn viewport(&self, _payload: ViewportRequest) -> crate::Result<serde_json::Value> {
         Ok(serde_json::json!({ "top": 0, "right": 0, "bottom": 0, "left": 0 }))
+    }
+
+    pub fn fullscreen(&self, _payload: FullscreenRequest) -> crate::Result<()> {
+        Ok(())
     }
 
     pub fn brightness(&self, _payload: BrightnessRequest) -> crate::Result<()> {
