@@ -1,6 +1,7 @@
 package app.izumi.extplayer
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -17,7 +18,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -57,6 +61,32 @@ class LanDiscoveryArgs {
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     private var multicastLock: WifiManager.MulticastLock? = null
 
+    private fun openDisqusLogin(rawUrl: String) {
+        val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return
+        val host = uri.host.orEmpty().lowercase()
+        val pathAndQuery = "${uri.path.orEmpty()}?${uri.query.orEmpty()}".lowercase()
+        val isDisqus = uri.scheme == "https" && (host == "disqus.com" || host.endsWith(".disqus.com"))
+        val isLogin = pathAndQuery.contains("login") || pathAndQuery.contains("signin") ||
+            pathAndQuery.contains("auth")
+        if (!isDisqus || !isLogin) return
+
+        activity.runOnUiThread {
+            try {
+                CustomTabsIntent.Builder()
+                    .setShowTitle(true)
+                    .setShareState(CustomTabsIntent.SHARE_STATE_OFF)
+                    .setColorScheme(CustomTabsIntent.COLOR_SCHEME_SYSTEM)
+                    .build()
+                    .launchUrl(activity, uri)
+            } catch (_: ActivityNotFoundException) {
+                val browser = Intent(Intent.ACTION_VIEW, uri)
+                if (browser.resolveActivity(activity.packageManager) != null) {
+                    activity.startActivity(browser)
+                }
+            }
+        }
+    }
+
     // WRY's Android WebView keeps zoom enabled and ignores the viewport `user-scalable=no`, so the
     // page pinch- / double-tap-zooms on mobile (content zooms while the fixed nav stays put). Kill
     // it at the WebView-settings level the moment the webview is created.
@@ -68,6 +98,57 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
             setAcceptThirdPartyCookies(webView, true)
+        }
+        // Disqus renders its login control inside a cross-origin child frame. Install a narrowly
+        // scoped document-start hook in those frames so choosing Login opens Android's browser
+        // Custom Tab (saved passwords/cookies and proper browser chrome) instead of a raw WebView.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+        ) {
+            val origins = setOf("https://disqus.com", "https://*.disqus.com")
+            WebViewCompat.addWebMessageListener(
+                webView,
+                "IzumiDisqusBrowser",
+                origins,
+            ) { _, message, sourceOrigin, _, _ ->
+                val sourceHost = sourceOrigin.host.orEmpty().lowercase()
+                if (sourceHost == "disqus.com" || sourceHost.endsWith(".disqus.com")) {
+                    message.data?.let(::openDisqusLogin)
+                }
+            }
+            WebViewCompat.addDocumentStartJavaScript(
+                webView,
+                """
+                (() => {
+                  if (window.__izumiDisqusLoginHook) return;
+                  window.__izumiDisqusLoginHook = true;
+                  const send = (raw) => {
+                    try {
+                      const url = new URL(String(raw || ''), location.href);
+                      const host = url.hostname.toLowerCase();
+                      const target = (url.pathname + '?' + url.search).toLowerCase();
+                      if (url.protocol !== 'https:' || !(host === 'disqus.com' || host.endsWith('.disqus.com'))) return false;
+                      if (!target.includes('login') && !target.includes('signin') && !target.includes('auth')) return false;
+                      IzumiDisqusBrowser.postMessage(url.href);
+                      return true;
+                    } catch (_) { return false; }
+                  };
+                  const originalOpen = window.open;
+                  window.open = function(url, target, features) {
+                    if (send(url)) return null;
+                    return originalOpen.call(window, url, target, features);
+                  };
+                  window.addEventListener('click', (event) => {
+                    const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+                    if (link && send(link.href)) {
+                      event.preventDefault();
+                      event.stopImmediatePropagation();
+                    }
+                  }, true);
+                })();
+                """.trimIndent(),
+                origins,
+            )
         }
     }
 
