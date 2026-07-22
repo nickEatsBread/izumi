@@ -37,6 +37,7 @@
     fullscreenPullProgress,
     shouldEnterFullscreen,
     shouldDismissSheet,
+    MOVE_PX,
     HOLD_MS,
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
@@ -71,6 +72,9 @@
   let locked = $state(false)
   let hideTimer: ReturnType<typeof setTimeout> | undefined
   let barEl: HTMLElement | undefined = $state()
+  let barGesture: 'pending' | 'scrub' | 'fullscreen' | null = null
+  let barPointerId: number | null = null
+  let barStartSample = { x: 0, y: 0, t: 0 }
   let rootEl: HTMLElement | undefined = $state()
   let landscape = $state(false)
   let safeTop = $state(0)
@@ -178,33 +182,76 @@
   function onBarDown(e: PointerEvent) {
     if (!e.isPrimary) return
     e.stopPropagation()
-    beginScrub('bar', e.pointerId, fracFromX(e.clientX) * dur)
+    cancelScrub()
+    resetTapSequence()
+    barGesture = 'pending'
+    barPointerId = e.pointerId
+    barStartSample = { x: e.clientX, y: e.clientY, t: e.timeStamp }
+    const rect = rootEl?.getBoundingClientRect()
+    pullPlayerTop = rect?.top ?? 0
+    pullPlayerHeight = rect?.height ?? Math.round(window.innerWidth * 9 / 16)
+    pullLastY = e.clientY
+    pullLastTime = e.timeStamp
+    pullVelocityY = 0
+    clearTimeout(hideTimer)
+    controlsShown = true
     barEl?.setPointerCapture(e.pointerId)
   }
-  // stopPropagation on move+up too: the bar captures the pointer, but the events still BUBBLE to the
-  // root gesture layer, whose stale start-sample would fire a competing 90s video-scrub and make the
-  // bar "only skim a tiny amount". Stopping them here lets the bar own the drag cleanly.
+  // The bar delays claiming the pointer until intent is clear. Horizontal movement/taps seek;
+  // an upward pull from the bottom edge is handed to the portrait fullscreen gesture.
   function onBarMove(e: PointerEvent) {
-    if (scrubOwner === 'bar' && scrubPointerId === e.pointerId) {
-      e.stopPropagation(); schedulePreview(fracFromX(e.clientX) * dur)
+    if (barPointerId !== e.pointerId) return
+    e.stopPropagation()
+    if (barGesture === 'pending') {
+      const dx = e.clientX - barStartSample.x
+      const dy = e.clientY - barStartSample.y
+      if (Math.abs(dx) < MOVE_PX && Math.abs(dy) < MOVE_PX) return
+      if (!landscape && dy < -MOVE_PX && Math.abs(dy) > Math.abs(dx)) {
+        barGesture = 'fullscreen'
+        fullscreenPullDragging = true
+        startSample = barStartSample
+        updateFullscreenPull(e)
+        return
+      }
+      barGesture = 'scrub'
+      beginScrub('bar', e.pointerId, fracFromX(barStartSample.x) * dur)
+    }
+    if (barGesture === 'scrub') {
+      schedulePreview(fracFromX(e.clientX) * dur)
+    } else if (barGesture === 'fullscreen') {
+      updateFullscreenPull(e)
     }
   }
   function onBarUp(e: PointerEvent) {
+    if (barPointerId !== e.pointerId) return
     e.stopPropagation()
-    if (endScrub('bar', e.pointerId)) armHide()
+    barPointerId = null
+    if (barGesture === 'pending') {
+      beginScrub('bar', e.pointerId, fracFromX(e.clientX) * dur)
+      endScrub('bar', e.pointerId)
+      armHide()
+    } else if (barGesture === 'scrub') {
+      if (endScrub('bar', e.pointerId)) armHide()
+    } else if (barGesture === 'fullscreen') {
+      fullscreenPullDragging = false
+      if (shouldEnterFullscreen(fullscreenPull, pullVelocityY)) void enterFullscreen()
+      else { resetFullscreenPull(); armHide() }
+    }
+    barGesture = null
+    try { if (barEl?.hasPointerCapture(e.pointerId)) barEl.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
   }
   function onBarCancel(e: PointerEvent) {
+    if (barPointerId !== e.pointerId) return
     e.stopPropagation()
-    if (scrubOwner === 'bar' && scrubPointerId === e.pointerId) {
-      cancelScrub()
-      armHide()
-    }
+    barPointerId = null
+    if (barGesture === 'scrub') cancelScrub()
+    if (barGesture === 'fullscreen') resetFullscreenPull()
+    barGesture = null
+    armHide()
+    try { if (barEl?.hasPointerCapture(e.pointerId)) barEl.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
   }
   function onBarLostCapture(e: PointerEvent) {
-    if (scrubOwner === 'bar' && scrubPointerId === e.pointerId) {
-      cancelScrub()
-      armHide()
-    }
+    if (barPointerId === e.pointerId) onBarCancel(e)
   }
 
   function skip(delta: number) {
@@ -642,7 +689,7 @@
 
 <div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden} class:pulling-fullscreen={fullscreenPullDragging}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
-  <section bind:this={rootEl} class="video-frame relative touch-none overflow-hidden bg-transparent"
+  <section bind:this={rootEl} class="video-frame relative touch-none overflow-visible bg-transparent"
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture} role="presentation">
   <!-- Buffering shows a spinner INSTEAD of the play/pause transport, but only while playing — when
        paused, keep the play button so you can resume. -->
@@ -728,15 +775,15 @@
       </div>
       <div bind:this={barEl} class="timeline-hitbox absolute inset-x-0 bottom-0 h-5 w-full cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
              role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
-        <div class="absolute inset-x-0 bottom-[5px] h-1 overflow-hidden bg-white/25">
+        <div class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-white/25">
           <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
           {#each segments as s (s.type + s.start)}
             <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
           {/each}
           <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
         </div>
-        {#each chapters as c (c)}<div class="absolute bottom-[5px] h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
-        <div class="absolute bottom-0 h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:{playedPct}%"></div>
+        {#each chapters as c (c)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
+        <div class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:clamp(7px, {playedPct}%, calc(100% - 7px))"></div>
         {#if scrubbing}
           <div class="pointer-events-none absolute bottom-8 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
             {#if thumbUrl}<img src={thumbUrl} alt="" class="h-20 w-36 rounded-md border border-white/20 object-cover shadow-lg" />{/if}
@@ -826,10 +873,10 @@
   .settings-body { max-height: calc(86vh - 5.25rem); touch-action: pan-y; }
 
   @media (orientation: landscape) {
-    .video-frame { width: 100%; height: 100%; margin-top: 0; aspect-ratio: auto; }
+    .video-frame { width: 100%; height: 100%; margin-top: 0; aspect-ratio: auto; overflow: hidden; }
     .player-top-bar { padding-top: max(0.75rem, var(--player-safe-top)); padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
-    .player-timeline { bottom: max(2.5rem, calc(var(--player-safe-bottom) + 1.25rem)); height: 3.5rem; padding: 0; }
-    .timeline-controls { padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
+    .player-timeline { left: max(3rem, calc(var(--player-safe-left) + 1.5rem), 6vw); right: max(3rem, calc(var(--player-safe-right) + 1.5rem), 6vw); bottom: max(2.5rem, calc(var(--player-safe-bottom) + 1.25rem)); height: 3.5rem; padding: 0; }
+    .timeline-controls { padding: 0; }
     .settings-sheet { inset-block: 0; right: 0; left: auto; width: min(28rem, 48vw); max-height: none; border-radius: 1.25rem 0 0 1.25rem; transform: none !important; transition: none; }
     .settings-body { max-height: calc(100vh - 5.75rem); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
     .sheet-handle { display: none; }
