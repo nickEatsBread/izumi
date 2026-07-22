@@ -21,8 +21,11 @@ describe('fetchMediaById', () => {
     expect(body.variables.id).toBe(media.id)
     expect(query).toContain('season seasonYear')
     expect(query).toContain('genres synonyms')
+    expect(query).toContain('averageScore popularity trending')
     expect(query).toContain('startDate{year month day}')
     expect(query).toContain('studios(isMain:true)')
+    expect(query).toContain('relations{edges{relationType node{')
+    expect((query.match(/\{/g) ?? []).length).toBe((query.match(/\}/g) ?? []).length)
   })
 
   it('can bypass the session cache for automatic airing checks', async () => {

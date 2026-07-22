@@ -14,6 +14,8 @@ export interface Media {
   episodes?: number
   duration?: number
   averageScore?: number
+  popularity?: number
+  trending?: number
   genres?: string[]
   synonyms?: string[]
   startDate?: FuzzyDate | null

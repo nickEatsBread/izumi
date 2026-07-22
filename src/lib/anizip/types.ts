@@ -32,6 +32,8 @@ export interface EpMeta {
   title?: string
   rating?: number
   overview?: string
+  airDate?: string
+  runtime?: number
   season?: number
   abs?: number
 }

@@ -10,6 +10,7 @@
   // A pure recognizer (android-gestures.ts) classifies each pointer stream; this component wires
   // its verdicts to mpv/native calls.
   import { onMount } from 'svelte'
+  import { goto } from '$app/navigation'
   import { scale, fade } from 'svelte/transition'
   import {
     mpvState,
@@ -31,27 +32,25 @@
   } from '$lib/player/android-mpv'
   import { zoneOf, classifyDrag, shouldDismissSheet, HOLD_MS, DOUBLE_TAP_MS } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen } from '$lib/player/session'
-  import { commentsEnabled } from '$lib/comments'
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import { autoSkip, seekDuration, scrubThumbnails } from '$lib/settings/ui'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { playNext, playPrev, playEpisode, finalizeAndroidWatch } from '$lib/stremio/play'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
+  import ChevronDown from 'lucide-svelte/icons/chevron-down'
   import Play from 'lucide-svelte/icons/play'
   import Pause from 'lucide-svelte/icons/pause'
-  import SkipBack from 'lucide-svelte/icons/skip-back'
-  import SkipForward from 'lucide-svelte/icons/skip-forward'
   import RotateCcw from 'lucide-svelte/icons/rotate-ccw'
   import RotateCw from 'lucide-svelte/icons/rotate-cw'
   import Loader from 'lucide-svelte/icons/loader-circle'
-  import MessageSquare from 'lucide-svelte/icons/message-square'
   import Lock from 'lucide-svelte/icons/lock'
   import Ratio from 'lucide-svelte/icons/ratio'
   import Layers from 'lucide-svelte/icons/layers'
   import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
   import Settings from 'lucide-svelte/icons/settings'
   import X from 'lucide-svelte/icons/x'
+  import AndroidWatchDetails from './AndroidWatchDetails.svelte'
 
   let controlsShown = $state(true)
   let scrubbing = $state(false)
@@ -391,8 +390,6 @@
   let speed = $state(1)
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
   function setSpeed(v: number) { speed = v; mpvCommand(['set', 'speed', String(v)]) }
-  function openComments() { commentsOpen.set(true) }
-
   const overlayHidden = $derived($streamPicker != null || $commentsOpen)
 
   // Pull-down sheet: follow the finger exactly, then animate either home or fully off-screen.
@@ -482,6 +479,10 @@
     await stopDirectTorrentPlayback()
     androidMpvActive.set(false)
   }
+  async function openRelated(id: number) {
+    await close()
+    await goto(`/app/anime/${id}`)
+  }
 
   let viewportGeneration = 0
   async function syncViewport() {
@@ -564,7 +565,9 @@
 
     <!-- Top bar -->
     <div transition:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
-      <button onclick={close} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/20 active:scale-90" aria-label="Back"><ChevronLeft size={27} /></button>
+      <button onclick={close} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label="Close player">
+        {#if landscape}<ChevronLeft size={27} />{:else}<ChevronDown size={29} />{/if}
+      </button>
       {#if landscape}
         <div class="min-w-0 flex-1">
           <div class="truncate text-base font-bold">{np.animeTitle ?? np.title}</div>
@@ -573,7 +576,7 @@
       {:else}
         <div class="flex-1"></div>
       {/if}
-      <button onclick={openSettings} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/20 active:scale-90" aria-label="Video settings"><Settings size={22} /></button>
+      <button onclick={openSettings} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label="Video settings"><Settings size={24} /></button>
     </div>
 
     <!-- Center transport (morphing play/pause). Hidden while buffering-and-playing (spinner shows);
@@ -622,23 +625,22 @@
   </section>
 
   {#if !landscape}
-    <section class="watch-details overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5">
-      <h1 class="text-xl font-extrabold leading-tight">{np.animeTitle ?? np.title}</h1>
-      {#if np.episode != null}<p class="mt-1 text-sm text-white/55">Episode {np.episode}{np.total ? ` of ${np.total}` : ''}</p>{/if}
-      <div class="mt-5 grid grid-cols-4 gap-2 border-y border-white/10 py-3">
-        <button onclick={() => playPrev()} disabled={!hasPrev} class="watch-action disabled:opacity-30" aria-label="Previous episode"><SkipBack size={22} /><span>Previous</span></button>
-        {#if $commentsEnabled}
-          <button onclick={openComments} class="watch-action" aria-label="Discussion"><MessageSquare size={22} /><span>Discuss</span></button>
-        {:else}
-          <button onclick={toggleLock} class="watch-action" aria-label="Lock controls"><Lock size={22} /><span>Lock</span></button>
-        {/if}
-        <button onclick={() => { controlsShown = false; mpvPip() }} class="watch-action" aria-label="Picture in picture"><PictureInPicture size={22} /><span>Miniplayer</span></button>
-        <button onclick={() => playNext()} disabled={!hasNext} class="watch-action disabled:opacity-30" aria-label="Next episode"><SkipForward size={22} /><span>Next</span></button>
-      </div>
-      <button onclick={openSettings} class="mt-5 flex w-full items-center gap-3 rounded-xl bg-white/[0.07] px-4 py-3 text-left active:scale-[0.99]">
-        <span class="grid h-9 w-9 place-items-center rounded-full bg-white/10"><Settings size={19} /></span>
-        <span class="min-w-0 flex-1"><strong class="block text-sm">Video settings</strong><span class="block truncate text-xs text-white/45">Source, audio, subtitles, speed and display</span></span>
-      </button>
+    <section class="watch-details overflow-y-auto">
+      {#if $nowPlayingMedia}
+        <AndroidWatchDetails
+          media={$nowPlayingMedia.media}
+          episode={np.episode}
+          total={np.total}
+          {hasPrev}
+          {hasNext}
+          onPrev={() => playPrev()}
+          onNext={() => playNext()}
+          onPip={() => { controlsShown = false; void mpvPip() }}
+          onRelated={openRelated}
+        />
+      {:else}
+        <div class="px-4 py-5"><h1 class="text-xl font-extrabold">{np.animeTitle ?? np.title}</h1></div>
+      {/if}
     </section>
   {/if}
 
@@ -692,7 +694,6 @@
   .player-shell { touch-action: none; background: transparent; }
   .video-frame { width: 100%; margin-top: var(--player-safe-top); aspect-ratio: 16 / 9; }
   .watch-details { height: calc(100% - var(--player-safe-top) - (100vw * 9 / 16)); touch-action: pan-y; background: #0a0a0b; }
-  .watch-action { display: flex; min-width: 0; flex-direction: column; align-items: center; gap: 0.35rem; font-size: 0.7rem; font-weight: 600; color: rgb(255 255 255 / 0.82); }
   .settings-backdrop { transition: opacity 240ms ease-out; }
   .settings-sheet { inset-inline: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
   .settings-sheet.sheet-dragging { transition: none; }
