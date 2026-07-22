@@ -32,7 +32,6 @@
     type MpvTrack,
   } from '$lib/player/android-mpv'
   import {
-    zoneOf,
     classifyDrag,
     fullscreenPullProgress,
     shouldEnterFullscreen,
@@ -338,7 +337,7 @@
   let startSample = { x: 0, y: 0, t: 0 }
   let scrubStartPos = 0
   let holdTimer: ReturnType<typeof setTimeout> | undefined
-  let heldSpeed = false
+  let heldSpeed = $state(false)
   let rootPointerId: number | null = null
   let pullPlayerTop = 0
   let pullPlayerHeight = 0
@@ -427,9 +426,9 @@
     pullLastTime = e.timeStamp
     pullVelocityY = 0
     gesture = null
-    holdTimer = setTimeout(() => { // press-and-hold in the center → temporary 2×
-      if (gesture === null && zoneOf(startSample.x, window.innerWidth) === 'c') {
-        gesture = 'hold'; heldSpeed = true; mpvCommand(['set', 'speed', '2']); flashToast('2× speed'); haptic(15)
+    holdTimer = setTimeout(() => { // press-and-hold anywhere on unobstructed video → temporary 2×
+      if (gesture === null) {
+        gesture = 'hold'; heldSpeed = true; mpvCommand(['set', 'speed', '2']); haptic(15)
       }
     }, HOLD_MS)
   }
@@ -713,6 +712,12 @@
 
   {#if toast}
     <div class="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/60 px-5 py-2.5 text-sm font-bold backdrop-blur">{toast}</div>
+  {/if}
+
+  {#if heldSpeed}
+    <div class="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full bg-black/65 px-4 py-2 text-sm font-black backdrop-blur landscape:top-[max(1rem,var(--player-safe-top))]">
+      2× speed
+    </div>
   {/if}
 
   {#if currentSeg && !($autoSkip && !autoSkipped.has(currentSeg.start))}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import type { Media } from '$lib/anilist/types'
   import type { DiscussionComment, DiscussionThread } from '$lib/comments'
   import type { EpMeta } from '$lib/anizip/types'
@@ -117,6 +118,25 @@
     commentsLoading || discussion ? ['comments', 'episodes', 'related'] : ['episodes', 'comments', 'related'],
   )
   let tabsEl = $state<HTMLElement>()
+  let disqusFrame = $state<HTMLIFrameElement>()
+  let disqusHeight = $state(480)
+
+  onMount(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== disqusFrame?.contentWindow) return
+      if (event.data?.type !== 'izumi-disqus-height') return
+      const height = Number(event.data.height)
+      if (Number.isFinite(height)) disqusHeight = Math.max(480, Math.min(20_000, Math.ceil(height)))
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  })
+
+  $effect(() => {
+    discussion?.kind === 'disqus' ? discussion.embedSrc : null
+    disqusHeight = 480
+  })
+
   function chooseTab(tab: Tab, scroll = false) {
     tabTouched = true
     active = tab
@@ -198,23 +218,26 @@
     <button onclick={onNext} disabled={!hasNext} class="watch-action disabled:opacity-30" aria-label="Next episode"><SkipForward size={22} /><span>Next</span></button>
   </div>
 
-  <div bind:this={tabsEl} class="scroll-mt-3 pt-5">
-    <div class="flex gap-2 overflow-x-auto pb-1">
-      {#each tabs as tab (tab)}
-        <button onclick={() => chooseTab(tab)} class="inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition-colors
-          {active === tab ? 'bg-white text-black' : 'bg-white/10 text-white/85'}">
-          {#if tab === 'comments'}<MessageSquare size={17} />{:else if tab === 'episodes'}<ListVideo size={17} />{:else}<PanelsTopLeft size={17} />{/if}
-          {tabLabel(tab)}
-        </button>
-      {/each}
+  <div bind:this={tabsEl} class="scroll-mt-3 pt-2">
+    <div class="sticky top-0 z-20 -mx-4 bg-[#0a0a0b]/95 px-4 py-3 backdrop-blur">
+      <div class="flex gap-2 overflow-x-auto">
+        {#each tabs as tab (tab)}
+          <button onclick={() => chooseTab(tab)} class="inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-bold transition-colors
+            {active === tab ? 'bg-white text-black' : 'bg-white/10 text-white/85'}">
+            {#if tab === 'comments'}<MessageSquare size={17} />{:else if tab === 'episodes'}<ListVideo size={17} />{:else}<PanelsTopLeft size={17} />{/if}
+            {tabLabel(tab)}
+          </button>
+        {/each}
+      </div>
     </div>
 
-    <div class="pt-4">
+    <div class="pt-1">
       {#if active === 'comments'}
         {#if commentsLoading}
           <div class="space-y-2">{#each Array.from({ length: 4 }) as _}<div class="h-20 animate-pulse rounded-xl bg-white/[0.06]"></div>{/each}</div>
         {:else if discussion?.kind === 'disqus'}
-          <iframe title="Episode comments" src={discussion.embedSrc} class="h-[65vh] min-h-[30rem] w-full rounded-xl border-0 bg-white"
+          <iframe bind:this={disqusFrame} title="Episode comments" src={discussion.embedSrc} scrolling="no"
+            style:height={`${disqusHeight}px`} class="min-h-[30rem] w-full rounded-xl border-0 bg-white"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
         {:else if discussion?.kind === 'reddit'}
           <article class="rounded-xl bg-white/[0.05] px-3 py-2">

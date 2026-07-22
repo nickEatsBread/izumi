@@ -56,6 +56,8 @@
         onload="this.onload=null;this.rel='stylesheet'" />
   <style>
     html, body { margin: 0; padding: 0; background: #0a0a0b; color-scheme: dark; font-family: 'Roboto', sans-serif; }
+    html.izumi-expand, html.izumi-expand body { overflow: hidden; }
+    html.izumi-expand #disqus_thread { overflow: visible; }
     /* Thin, themed scrollbar (this page is a separate doc, so the app's global scrollbar hiding doesn't
        reach it). STANDARD properties only — ::-webkit-scrollbar custom-painted scrollbars need a
        main-thread thumb repaint on every scroll offset, and embed.js keeps that thread busy; the
@@ -123,6 +125,33 @@
       var url = (q.get('t_u') || '').trim();
       var identifier = (q.get('t_i') || '').trim();
       var title = (q.get('t_t') || '').trim();
+      var expand = q.get('izumi_expand') === '1';
+
+      if (expand) {
+        document.documentElement.classList.add('izumi-expand');
+        var lastReportedHeight = 0;
+        var heightFrame = 0;
+        var reportHeight = function () {
+          window.cancelAnimationFrame(heightFrame);
+          heightFrame = window.requestAnimationFrame(function () {
+            var thread = document.getElementById('disqus_thread');
+            var height = Math.max(
+              document.documentElement.scrollHeight,
+              document.body ? document.body.scrollHeight : 0,
+              thread ? thread.scrollHeight : 0
+            );
+            if (height > 0 && Math.abs(height - lastReportedHeight) > 1) {
+              lastReportedHeight = height;
+              window.parent.postMessage({ type: 'izumi-disqus-height', height: height }, location.origin);
+            }
+          });
+        };
+        new ResizeObserver(reportHeight).observe(document.documentElement);
+        if (document.body) new ResizeObserver(reportHeight).observe(document.body);
+        new MutationObserver(reportHeight).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+        window.addEventListener('load', reportHeight);
+        reportHeight();
+      }
 
       // Validate the shortname (goes into a subdomain) — alnum + hyphen only.
       if (!/^[a-zA-Z0-9-]+$/.test(forum)) {

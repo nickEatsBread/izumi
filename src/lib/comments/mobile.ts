@@ -18,13 +18,18 @@ export function preferredMobileDiscussion(threads: DiscussionThread[]): MobileDi
 /** A bare disqus.com inner iframe needs Izumi's same-origin embed.js loader to render. */
 export function mobileEmbedSrc(embed: string): string {
   try {
-    const url = new URL(embed)
+    const url = new URL(embed, globalThis.location?.origin ?? 'https://izumi.invalid')
+    if (url.pathname === '/disqus-embed.html') {
+      url.searchParams.set('izumi_expand', '1')
+      return `${url.pathname}?${url.searchParams.toString()}`
+    }
     if (url.hostname === 'disqus.com' && url.pathname.startsWith('/embed/comments')) {
       const out = new URLSearchParams()
       for (const key of ['f', 't_i', 't_u', 't_t']) {
         const value = url.searchParams.get(key)
         if (value != null) out.set(key, value)
       }
+      out.set('izumi_expand', '1')
       return `/disqus-embed.html?${out.toString()}`
     }
     url.searchParams.set('theme', 'dark')
