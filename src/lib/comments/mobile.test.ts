@@ -29,6 +29,11 @@ describe('preferredMobileDiscussion', () => {
 describe('mobileEmbedSrc', () => {
   it('routes a Disqus inner iframe through the local loader', () => {
     expect(mobileEmbedSrc('https://disqus.com/embed/comments/?f=anime&t_i=ep-1&t_t=Title'))
-      .toBe('/disqus-embed.html?f=anime&t_i=ep-1&t_t=Title')
+      .toBe('/disqus-embed.html?f=anime&t_i=ep-1&t_t=Title&izumi_expand=1')
+  })
+
+  it('enables expanded scrolling for an existing local loader URL', () => {
+    expect(mobileEmbedSrc('/disqus-embed.html?f=anime&t_i=ep-1'))
+      .toBe('/disqus-embed.html?f=anime&t_i=ep-1&izumi_expand=1')
   })
 })
