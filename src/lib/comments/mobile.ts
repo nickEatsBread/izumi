@@ -33,3 +33,25 @@ export function mobileEmbedSrc(embed: string): string {
     return embed
   }
 }
+
+/** Forum shortname carried by Izumi's local loader or Disqus's original embed URL. */
+export function disqusForum(embed: string): string | null {
+  try {
+    const value = new URL(embed, 'https://izumi.invalid').searchParams.get('f')?.trim() ?? ''
+    return /^[a-zA-Z0-9-]+$/.test(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+/** Disqus's documented native-WebView login entry point for a forum embed. */
+export function disqusLoginUrl(embed: string): string | null {
+  const forum = disqusForum(embed)
+  return forum ? `https://disqus.com/next/login/?forum=${encodeURIComponent(forum)}` : null
+}
+
+export function reloadedEmbedSrc(embed: string, generation: number): string {
+  const url = new URL(embed, 'https://izumi.invalid')
+  url.searchParams.set('izumi_login', String(generation))
+  return url.origin === 'https://izumi.invalid' ? `${url.pathname}${url.search}` : url.toString()
+}

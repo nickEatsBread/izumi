@@ -11,6 +11,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.Base64
 import android.util.Log
+import android.view.OrientationEventListener
 import java.io.ByteArrayOutputStream
 import android.view.View
 import android.view.ViewGroup
@@ -95,6 +96,35 @@ class FullscreenArgs {
 class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.EventObserver {
     private var mpv: MPVLib? = null
     private var view: IzumiMpvView? = null
+    private var landscapeReleaseListener: OrientationEventListener? = null
+
+    private fun stopLandscapeReleaseListener() {
+        landscapeReleaseListener?.disable()
+        landscapeReleaseListener = null
+    }
+
+    /**
+     * Force the initial portrait -> landscape transition, then hand orientation back to Android as
+     * soon as the phone is physically landscape. That preserves the fullscreen button while still
+     * allowing a normal turn back to portrait without tapping an exit control.
+     */
+    private fun enterLandscapeWithSensorReturn() {
+        stopLandscapeReleaseListener()
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        val listener = object : OrientationEventListener(activity) {
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == ORIENTATION_UNKNOWN) return
+                val physicallyLandscape = orientation in 60..120 || orientation in 240..300
+                if (!physicallyLandscape) return
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                stopLandscapeReleaseListener()
+            }
+        }
+        if (listener.canDetectOrientation()) {
+            landscapeReleaseListener = listener
+            listener.enable()
+        }
+    }
 
     /** Hide system bars for landscape playback and restore them for the portrait watch page/stop. */
     private fun setImmersive(on: Boolean) {
@@ -265,12 +295,11 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun fullscreen(invoke: Invoke) {
         val a = invoke.parseArgs(FullscreenArgs::class.java)
         activity.runOnUiThread {
-            activity.requestedOrientation = if (a.enabled) {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            if (a.enabled) {
+                enterLandscapeWithSensorReturn()
             } else {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            }
-            if (!a.enabled) {
+                stopLandscapeReleaseListener()
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                 // Release the temporary portrait request once rotation has settled so turning the
                 // phone naturally can enter landscape again on the next playback interaction.
                 activity.window.decorView.postDelayed({
@@ -358,6 +387,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     @Command
     fun stop(invoke: Invoke) {
         activity.runOnUiThread {
+            stopLandscapeReleaseListener()
             setImmersive(false)
             view?.let { (it.parent as? ViewGroup)?.removeView(it) }
             mpv?.let {

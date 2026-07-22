@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invoke } from '@tauri-apps/api/core'
   import type { Media } from '$lib/anilist/types'
   import type { DiscussionComment, DiscussionThread } from '$lib/comments'
   import type { EpMeta } from '$lib/anizip/types'
@@ -7,7 +8,7 @@
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
   import { commentsEnabled, fetchDiscussion } from '$lib/comments'
-  import { preferredMobileDiscussion } from '$lib/comments/mobile'
+  import { disqusLoginUrl, preferredMobileDiscussion, reloadedEmbedSrc } from '$lib/comments/mobile'
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
@@ -18,6 +19,7 @@
   import SkipBack from 'lucide-svelte/icons/skip-back'
   import SkipForward from 'lucide-svelte/icons/skip-forward'
   import ArrowBigUp from 'lucide-svelte/icons/arrow-big-up'
+  import LogIn from 'lucide-svelte/icons/log-in'
 
   type Tab = 'comments' | 'episodes' | 'related'
 
@@ -113,6 +115,31 @@
     return () => { cancelled = true }
   })
   const discussion = $derived(preferredMobileDiscussion(threads))
+  let disqusReload = $state(0)
+  let disqusSigningIn = $state(false)
+  let disqusLoginError = $state('')
+  const disqusFrameSrc = $derived(
+    discussion?.kind === 'disqus' ? reloadedEmbedSrc(discussion.embedSrc, disqusReload) : '',
+  )
+  async function signInToDisqus() {
+    if (discussion?.kind !== 'disqus' || disqusSigningIn) return
+    const authUrl = disqusLoginUrl(discussion.embedSrc)
+    if (!authUrl) { disqusLoginError = 'Disqus sign-in is unavailable for this thread.'; return }
+    disqusSigningIn = true
+    disqusLoginError = ''
+    try {
+      await invoke<string>('oauth_capture', {
+        authUrl,
+        redirectPrefix: 'https://disqus.com/next/login-success/',
+      })
+      disqusReload += 1
+    } catch (error) {
+      const message = String(error)
+      if (!message.toLowerCase().includes('cancel')) disqusLoginError = 'Disqus sign-in did not complete.'
+    } finally {
+      disqusSigningIn = false
+    }
+  }
   const tabs = $derived<Tab[]>(
     commentsLoading || discussion ? ['comments', 'episodes', 'related'] : ['episodes', 'comments', 'related'],
   )
@@ -214,7 +241,15 @@
         {#if commentsLoading}
           <div class="space-y-2">{#each Array.from({ length: 4 }) as _}<div class="h-20 animate-pulse rounded-xl bg-white/[0.06]"></div>{/each}</div>
         {:else if discussion?.kind === 'disqus'}
-          <iframe title="Episode comments" src={discussion.embedSrc} class="h-[65vh] min-h-[30rem] w-full rounded-xl border-0 bg-white"
+          <div class="mb-2 flex items-center justify-between gap-3 rounded-xl bg-white/[0.06] px-3 py-2.5">
+            <p class="text-xs text-white/55">Sign in inside Izumi to post and reply.</p>
+            <button onclick={signInToDisqus} disabled={disqusSigningIn}
+              class="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-black disabled:opacity-50">
+              <LogIn size={15} /> {disqusSigningIn ? 'Signing in…' : 'Sign in'}
+            </button>
+          </div>
+          {#if disqusLoginError}<p class="mb-2 text-xs text-red-400">{disqusLoginError}</p>{/if}
+          <iframe title="Episode comments" src={disqusFrameSrc} class="h-[65vh] min-h-[30rem] w-full rounded-xl border-0 bg-white"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
         {:else if discussion?.kind === 'reddit'}
           <article class="rounded-xl bg-white/[0.05] px-3 py-2">

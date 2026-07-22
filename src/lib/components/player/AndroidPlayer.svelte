@@ -728,15 +728,15 @@
       </div>
       <div bind:this={barEl} class="timeline-hitbox absolute inset-x-0 bottom-0 h-5 w-full cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
              role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
-        <div class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-white/25">
+        <div class="absolute inset-x-0 bottom-[5px] h-1 overflow-hidden bg-white/25">
           <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
           {#each segments as s (s.type + s.start)}
             <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
           {/each}
           <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
         </div>
-        {#each chapters as c (c)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
-        <div class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:{playedPct}%"></div>
+        {#each chapters as c (c)}<div class="absolute bottom-[5px] h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
+        <div class="absolute bottom-0 h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:{playedPct}%"></div>
         {#if scrubbing}
           <div class="pointer-events-none absolute bottom-8 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
             {#if thumbUrl}<img src={thumbUrl} alt="" class="h-20 w-36 rounded-md border border-white/20 object-cover shadow-lg" />{/if}
@@ -828,7 +828,7 @@
   @media (orientation: landscape) {
     .video-frame { width: 100%; height: 100%; margin-top: 0; aspect-ratio: auto; }
     .player-top-bar { padding-top: max(0.75rem, var(--player-safe-top)); padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
-    .player-timeline { height: calc(3.5rem + max(0.35rem, var(--player-safe-bottom))); padding-right: 0; padding-bottom: max(0.35rem, var(--player-safe-bottom)); padding-left: 0; }
+    .player-timeline { bottom: max(2.5rem, calc(var(--player-safe-bottom) + 1.25rem)); height: 3.5rem; padding: 0; }
     .timeline-controls { padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
     .settings-sheet { inset-block: 0; right: 0; left: auto; width: min(28rem, 48vw); max-height: none; border-radius: 1.25rem 0 0 1.25rem; transform: none !important; transition: none; }
     .settings-body { max-height: calc(100vh - 5.75rem); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }

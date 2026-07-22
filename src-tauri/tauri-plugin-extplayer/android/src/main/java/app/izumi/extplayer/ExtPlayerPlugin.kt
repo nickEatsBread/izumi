@@ -3,15 +3,20 @@ package app.izumi.extplayer
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.net.Uri
 import android.os.BatteryManager
+import android.view.Gravity
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.FrameLayout
 import androidx.core.content.FileProvider
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -60,6 +65,10 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         webView.settings.builtInZoomControls = false
         webView.settings.displayZoomControls = false
         webView.settings.textZoom = 100 // ignore the system font-scale
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(webView, true)
+        }
     }
 
     @Command
@@ -176,32 +185,80 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         val args = invoke.parseArgs(OAuthArgs::class.java)
         activity.runOnUiThread {
             val content = activity.findViewById<ViewGroup>(android.R.id.content)
+            val overlay = FrameLayout(activity).apply { setBackgroundColor(Color.rgb(10, 10, 11)) }
             val web = WebView(activity)
             web.settings.javaScriptEnabled = true
             web.settings.domStorageEnabled = true
+            CookieManager.getInstance().apply {
+                setAcceptCookie(true)
+                setAcceptThirdPartyCookies(web, true)
+            }
             var done = false
+            fun cleanUp() {
+                (overlay.parent as? ViewGroup)?.removeView(overlay)
+                web.stopLoading()
+                web.destroy()
+            }
             fun finish(url: String) {
                 if (done) return
                 done = true
-                (web.parent as? ViewGroup)?.removeView(web)
-                web.destroy()
+                CookieManager.getInstance().flush()
+                cleanUp()
                 invoke.resolve(JSObject().put("url", url))
+            }
+            fun cancel() {
+                if (done) return
+                done = true
+                cleanUp()
+                invoke.reject("Sign-in cancelled")
+            }
+            fun isSuccess(url: String): Boolean {
+                if (url.startsWith(args.redirectPrefix)) return true
+                val authHost = Uri.parse(args.authUrl).host.orEmpty()
+                if (authHost != "disqus.com" && !authHost.endsWith(".disqus.com")) return false
+                val parsed = Uri.parse(url)
+                val host = parsed.host.orEmpty()
+                return (host == "disqus.com" || host.endsWith(".disqus.com")) &&
+                    parsed.path.orEmpty().startsWith("/embed/comments")
             }
             web.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val u = request.url.toString()
-                    if (u.startsWith(args.redirectPrefix) && u.contains("=")) { finish(u); return true }
+                    if (isSuccess(u)) { finish(u); return true }
                     return false
                 }
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
-                    if (url.startsWith(args.redirectPrefix)) {
+                    if (isSuccess(url)) {
                         // location.href carries the fragment (AniList implicit token); evaluateJavascript
                         // returns it JSON-quoted, so strip the surrounding quotes.
                         view.evaluateJavascript("location.href") { href -> finish(href.trim('"')) }
                     }
                 }
             }
-            content.addView(web, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            overlay.addView(web, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            val close = Button(activity).apply {
+                text = "Close"
+                setTextColor(Color.WHITE)
+                setBackgroundColor(Color.argb(220, 24, 24, 27))
+                setOnClickListener { cancel() }
+                elevation = 12f
+            }
+            val density = activity.resources.displayMetrics.density
+            overlay.addView(close, FrameLayout.LayoutParams(
+                (92 * density).toInt(),
+                (48 * density).toInt(),
+                Gravity.TOP or Gravity.END,
+            ).apply {
+                topMargin = (16 * density).toInt()
+                marginEnd = (16 * density).toInt()
+            })
+            content.addView(overlay, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
             web.loadUrl(args.authUrl)
         }
     }
