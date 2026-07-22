@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { mobileEmbedSrc, preferredMobileDiscussion } from './mobile'
+import {
+  disqusForum,
+  disqusLoginUrl,
+  mobileEmbedSrc,
+  preferredMobileDiscussion,
+  reloadedEmbedSrc,
+} from './mobile'
 import type { DiscussionThread } from './types'
 
 const thread = (source: string, extra: Partial<DiscussionThread> = {}): DiscussionThread => ({
@@ -30,5 +36,22 @@ describe('mobileEmbedSrc', () => {
   it('routes a Disqus inner iframe through the local loader', () => {
     expect(mobileEmbedSrc('https://disqus.com/embed/comments/?f=anime&t_i=ep-1&t_t=Title'))
       .toBe('/disqus-embed.html?f=anime&t_i=ep-1&t_t=Title')
+  })
+})
+
+describe('mobile Disqus login', () => {
+  const embed = '/disqus-embed.html?f=anime-forum&t_i=ep-1'
+
+  it('builds the documented forum login URL', () => {
+    expect(disqusForum(embed)).toBe('anime-forum')
+    expect(disqusLoginUrl(embed)).toBe('https://disqus.com/next/login/?forum=anime-forum')
+  })
+
+  it('rejects invalid forum shortnames', () => {
+    expect(disqusLoginUrl('/disqus-embed.html?f=not%20valid')).toBeNull()
+  })
+
+  it('cache-busts the local iframe after authentication', () => {
+    expect(reloadedEmbedSrc(embed, 2)).toBe('/disqus-embed.html?f=anime-forum&t_i=ep-1&izumi_login=2')
   })
 })
