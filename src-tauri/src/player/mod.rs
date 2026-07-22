@@ -726,16 +726,39 @@ pub(crate) fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2:
 
     std::thread::spawn(move || {
         let mut duration = 0f64;
+        // Throttle the two high-frequency streams pushed to the webview. mpv fires `time-pos`
+        // once per presented frame (24–60Hz) but the seekbar/clock only need seconds-resolution,
+        // and `demuxer-cache-time` advances continuously while read-ahead fills but only feeds the
+        // coarse "loaded" bar. Each emit is a serialized WebView2 IPC message plus a full Svelte
+        // re-derive on the same box as mpv's render thread, so 80–90% of them were pure waste.
+        let mut last_pos_bucket: i64 = i64::MIN;
+        let mut last_buf = f64::MIN;
         loop {
             // Block up to 1s waiting for the next event on this client's queue.
             match client.wait_event(1.0) {
                 Some(Ok(Event::PropertyChange { name, change, .. })) => match (name, change) {
-                    ("duration", PropertyData::Double(d)) => duration = d,
+                    // A new file reports its duration on load → reset both throttle buckets so the
+                    // next episode's first frame + first buffer sample always emit immediately.
+                    ("duration", PropertyData::Double(d)) => {
+                        duration = d;
+                        last_pos_bucket = i64::MIN;
+                        last_buf = f64::MIN;
+                    }
                     ("time-pos", PropertyData::Double(pos)) => {
-                        let _ = app.emit("player-progress", (pos, duration));
+                        // ~4Hz bucket. The first tick (bucket != i64::MIN) and any seek (position
+                        // jumps to a new bucket) still emit at once; steady playback caps at 4/s.
+                        let bucket = (pos * 4.0).floor() as i64;
+                        if bucket != last_pos_bucket {
+                            last_pos_bucket = bucket;
+                            let _ = app.emit("player-progress", (pos, duration));
+                        }
                     }
                     ("demuxer-cache-time", PropertyData::Double(end)) => {
-                        let _ = app.emit("player-buffer", end);
+                        // Only emit on a ≥1s change — the loaded bar needs no finer resolution.
+                        if (end - last_buf).abs() >= 1.0 {
+                            last_buf = end;
+                            let _ = app.emit("player-buffer", end);
+                        }
                     }
                     ("pause", PropertyData::Flag(paused)) => {
                         let _ = app.emit("player-paused", paused);
@@ -850,7 +873,9 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         let _ = init.set_option("scale", "ewa_lanczossharp");
         let _ = init.set_option("scale-antiring", "0.6");
         let _ = init.set_option("dscale", "mitchell");
-        let _ = init.set_option("cscale", "ewa_lanczossharp");
+        // spline36 for chroma, not ewa_lanczossharp — see new_mpv_with_vo: same per-frame GPU
+        // saving on 4:2:0 chroma with no visible difference.
+        let _ = init.set_option("cscale", "spline36");
         let _ = init.set_option("deband", "yes");
         let _ = init.set_option("dither-depth", "auto");
         let _ = init.set_option("screenshot-format", "png");
@@ -861,6 +886,9 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // window, with a small fast-start probe.
         let _ = init.set_option("cache", "yes");
         let _ = init.set_option("force-seekable", "yes");
+        // Prebuffer a small cushion before the first unpause so a cold stream doesn't play a
+        // fraction of a second then stall — see new_mpv_with_vo.
+        let _ = init.set_option("cache-pause-initial", "yes");
         // Hold the last frame PAUSED at end-of-file instead of unloading — on a network
         // stream, unloading leaves mpv churning the demuxer trying to read past EOF (the
         // "infinite buffer" at the last episode). Auto-advance is unaffected: the end-file
@@ -1003,6 +1031,13 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
             init.set_option("gpu-context", "d3d11")?;
             init.set_option("d3d11-output-format", "auto")?;
             init.set_option("d3d11-output-csp", "auto")?;
+            // Time frames to the display refresh (resampling audio) instead of mpv's default
+            // video-sync=audio, which shows 23.976fps anime in an uneven 3:2 refresh cadence —
+            // the classic judder on pans/credit scrolls. d3d11 + gpu-next give accurate present
+            // timing, so display-resample is the standard smoothness lever; the biggest gain lands
+            // on 120/144Hz panels. Best-effort so an older libmpv keeps its default instead of
+            // aborting init. (Interpolation is deliberately NOT enabled — heavier + blurrier.)
+            let _ = init.set_option("video-sync", "display-resample");
         }
         let _ = init.set_option("target-colorspace-hint", "auto");
         let _ = init.set_option("tone-mapping", "bt.2390");
@@ -1019,7 +1054,10 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         let _ = init.set_option("scale", "ewa_lanczossharp");
         let _ = init.set_option("scale-antiring", "0.6");
         let _ = init.set_option("dscale", "mitchell");
-        let _ = init.set_option("cscale", "ewa_lanczossharp");
+        // spline36 for chroma, not ewa_lanczossharp: on 4:2:0 anime the EWA/polar kernel is
+        // visually indistinguishable on chroma but far heavier per frame, so this frees GPU
+        // headroom (fewer dropped frames) on weak iGPUs while keeping the sharp luma upscale.
+        let _ = init.set_option("cscale", "spline36");
         let _ = init.set_option("deband", "yes");
         let _ = init.set_option("dither-depth", "auto");
         // Never let mpv hide the OS cursor. When embedded, the WebView2 overlay
@@ -1042,6 +1080,11 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // a real "loaded" extent to show.
         let _ = init.set_option("cache", "yes");
         let _ = init.set_option("force-seekable", "yes");
+        // Accumulate a small cushion before the FIRST unpause. A cold debrid link whose
+        // throughput ramps over the first second otherwise "plays 0.5s then spins to buffer"
+        // because the demuxer cache underruns right after the first frame. Prebuffer trades a
+        // slightly later start for no immediate rebuffer.
+        let _ = init.set_option("cache-pause-initial", "yes");
         // Hold the last frame PAUSED at end-of-file instead of unloading — on a network
         // stream, unloading leaves mpv churning the demuxer trying to read past EOF (the
         // "infinite buffer" at the last episode). Auto-advance is unaffected: the end-file

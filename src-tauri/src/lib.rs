@@ -1276,16 +1276,22 @@ unsafe extern "system" fn move_mpv_child(
 ) -> windows::core::BOOL {
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, GetWindowLongPtrW, MoveWindow, PostMessageW, SetWindowLongPtrW, SetWindowPos,
-        GWL_EXSTYLE, GWL_STYLE, HWND_BOTTOM, SIZE_RESTORED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        WM_SIZE, WS_DISABLED, WS_EX_TRANSPARENT,
+        GetClassNameW, GetWindowLongPtrW, PostMessageW, SetWindowLongPtrW, SetWindowPos,
+        GWL_EXSTYLE, GWL_STYLE, HWND_BOTTOM, SIZE_RESTORED, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, WM_SIZE, WS_DISABLED, WS_EX_TRANSPARENT,
     };
     let (x, y, w, h) = *(lparam.0 as *const (i32, i32, i32, i32));
     let mut buf = [0u16; 32];
     let n = GetClassNameW(hwnd, &mut buf);
-    if String::from_utf16_lossy(&buf[..n.max(0) as usize]) == "mpv" {
-        // Fit mpv to the (possibly inset) content rect.
-        let _ = MoveWindow(hwnd, x, y, w, h, true);
+    // Compare the returned UTF-16 buffer directly against "mpv" — avoids a per-child heap String
+    // allocation on every resize tick. mpv's window class is exactly lowercase "mpv".
+    const MPV_CLASS: [u16; 3] = [b'm' as u16, b'p' as u16, b'v' as u16];
+    if buf[..n.max(0) as usize] == MPV_CLASS {
+        // Fit mpv to the (possibly inset) content rect. mpv owns this window on its own VO thread,
+        // so a synchronous cross-thread MoveWindow blocks our UI/message-pump thread until mpv
+        // pumps WM_WINDOWPOSCHANGING — janky if it's mid-4K-frame. SWP_ASYNCWINDOWPOS posts the
+        // request to mpv's queue instead, decoupling our resize from mpv's render thread.
+        let _ = SetWindowPos(hwnd, None, x, y, w, h, SWP_ASYNCWINDOWPOS | SWP_NOZORDER | SWP_NOACTIVATE);
         // Explicitly notify mpv of the new client size so its video output / D3D11
         // swapchain reconfigures to the inset child (an external MoveWindow can leave
         // mpv rendering at the initial full-parent size → the video looks zoomed/cropped).
