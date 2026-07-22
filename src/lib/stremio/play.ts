@@ -19,7 +19,7 @@ import type { TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
 import { dedupeStreams, dedupeBy } from './dedupe'
 import { markWatched } from '$lib/trackers'
-import { savePosition, getPosition, clearPosition, watched } from '$lib/player/progress'
+import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
 import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
@@ -140,6 +140,17 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
   const onFinalize = (ev: Event) => {
     const { pos, dur } = (ev as CustomEvent<{ pos: number; dur: number }>).detail ?? {}
     if (!dur || dur <= 0) return
+    // If EOF already tombstoned this episode (cleared), a near-end finalize must NOT resurrect a
+    // ~100% resume point — that would reopen the episode seeked to the very end AND destroy the
+    // cross-device completion tombstone. Still mark watched; just don't re-save the position.
+    const existing = get(positions)[progressKey(media.id, episode)]
+    if (existing?.cleared && watched(pos, dur)) {
+      if (!marked) {
+        marked = true
+        markWatched(media, episode)
+      }
+      return
+    }
     savePosition(media.id, episode, pos, dur)
     if (!marked && watched(pos, dur)) {
       marked = true
@@ -214,8 +225,15 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
 export function finalizeAndroidWatch(pos: number, dur: number) {
   const np = get(nowPlaying)
   if (np.id != null && np.episode != null && dur > 0) {
-    savePosition(np.id, np.episode, pos, dur)
-    if (currentMedia && watched(pos, dur)) markWatched(currentMedia, np.episode)
+    // Don't let a near-end close resurrect a resume point over an EOF completion tombstone
+    // (see onFinalize) — still mark watched, just skip the position write.
+    const existing = get(positions)[progressKey(np.id, np.episode)]
+    if (existing?.cleared && watched(pos, dur)) {
+      if (currentMedia) markWatched(currentMedia, np.episode)
+    } else {
+      savePosition(np.id, np.episode, pos, dur)
+      if (currentMedia && watched(pos, dur)) markWatched(currentMedia, np.episode)
+    }
   }
   stopAndroid?.()
   stopAndroid = null
@@ -1087,11 +1105,14 @@ export function playPrev(onState: (s: PlayState) => void = noticeState) {
   if (!currentMedia || ep == null || ep <= 1) return
   resolveAndPlayBest(currentMedia, ep - 1, onState)
 }
-/** Play the next episode (in-player button). Bounds are enforced by the button's
- *  visibility gate + resolveAndPlayBest's honest "no cached source" error. */
+/** Play the next episode (in-player button + keyboard `n`). No-op past the aired total, mirroring
+ *  the on-screen Next button's bounds gate — otherwise the keyboard path resolved a non-existent
+ *  episode and popped an empty "No streams found" picker. */
 export function playNext(onState: (s: PlayState) => void = noticeState) {
   const ep = get(nowPlaying).episode
   if (!currentMedia || ep == null) return
+  const airedTotal = airedTotalOf(currentMedia)
+  if (airedTotal > 0 && ep >= airedTotal) return
   resolveAndPlayBest(currentMedia, ep + 1, onState)
 }
 

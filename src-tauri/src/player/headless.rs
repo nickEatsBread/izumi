@@ -97,7 +97,10 @@ impl HeadlessMpv {
         let (rtx, rrx) = channel();
         tx.send(Msg::Shot { url: url.to_string(), time, resp: rtx })
             .map_err(|_| "headless thread gone".to_string())?;
-        rrx.recv_timeout(Duration::from_secs(20))
+        // Exceed grab()'s worst-case internal budget (~12s open + 6s seek + 3s render ≈ 21s) so a
+        // slow cold stream can't trip a spurious caller timeout that releases the concurrency-1
+        // guard while the worker is still busy (which would queue a second grab behind it).
+        rrx.recv_timeout(Duration::from_secs(25))
             .map_err(|_| "headless timeout".to_string())?
     }
 
@@ -214,14 +217,19 @@ fn grab(core: &mut Core, url: &str, time: f64) -> Result<Vec<u8>, String> {
             if sys::mpv_command(core.mpv, cmd.as_mut_ptr()) < 0 {
                 return Err("loadfile failed".into());
             }
-            core.cur_url = url.to_string();
             let start = Instant::now();
             while get_double(core.mpv, b"duration\0").map(|d| d > 0.0) != Some(true) {
                 if start.elapsed() > Duration::from_secs(12) {
+                    // Stream never opened. Leave cur_url UNCHANGED so the next request for the same
+                    // url re-issues loadfile and retries — if we'd already recorded it, that request
+                    // would skip the load and render a stale/blank frame of the PREVIOUS stream,
+                    // which then gets JPEG-encoded and disk-cached as a valid "ready" tile forever.
                     return Err("stream did not open".into());
                 }
                 std::thread::sleep(Duration::from_millis(30));
             }
+            // Only record the url once duration > 0 confirms the file actually opened.
+            core.cur_url = url.to_string();
         }
         // Seek to the target keyframe (one range fetch).
         let ts = CString::new(format!("{time}")).map_err(|_| "bad time")?;

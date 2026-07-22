@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
+  import { onMount } from 'svelte'
   import type { Segment } from '$lib/stremio/aniskip'
   import Seekbar from './Seekbar.svelte'
   import Play from 'lucide-svelte/icons/play'
@@ -161,15 +162,43 @@
 
   let volume = $state(100)
   let muted = $state(false)
+  // Dragging the range fires oninput per integer step (0–130), so pushing the IPC synchronously
+  // queued ~130 back-to-back player_command round-trips per drag; mpv only needs the final value.
+  // rAF-coalesce to one set/frame (mirrors scrub.ts). Visual state updates synchronously so the
+  // slider still tracks the cursor; the trailing oninput always schedules a flush of the last value.
+  let volPending = false
+  let volLatest = 100
+  function flushVolume() { volPending = false; cmd('set', ['volume', String(volLatest)]) }
   function setVolume(e: Event) {
     volume = Number((e.target as HTMLInputElement).value)
     muted = volume === 0
-    cmd('set', ['volume', String(volume)])
+    volLatest = volume
+    if (!volPending) { volPending = true; requestAnimationFrame(flushVolume) }
   }
   function toggleMute() {
     muted = !muted
     cmd('set', ['mute', muted ? 'yes' : 'no'])
   }
+
+  // Controls is conditionally mounted (it unmounts on the 3s auto-hide) but mpv's speed/volume/mute
+  // are global and persist across the session — so a fresh mount otherwise showed the $state defaults
+  // (1× / 100 / unmuted) while playback ran at the real values, and the next click snapped mpv to the
+  // wrong displayed value. Seed local state from mpv on (re)mount. `mute` is a yes/no flag, not a float.
+  onMount(() => {
+    void (async () => {
+      try {
+        const sp = parseFloat(await invoke<string>('player_get_property', { name: 'speed' }))
+        if (!Number.isNaN(sp)) speed = sp
+      } catch { /* no player yet — keep default */ }
+      try {
+        const vol = parseFloat(await invoke<string>('player_get_property', { name: 'volume' }))
+        if (!Number.isNaN(vol)) { volume = vol; volLatest = vol }
+      } catch { /* no player yet — keep default */ }
+      try {
+        muted = (await invoke<string>('player_get_property', { name: 'mute' })) === 'yes'
+      } catch { /* no player yet — keep default */ }
+    })()
+  })
 
   // Track menu (subtitle/audio) — populated lazily from mpv's track-list.
   type Track = {

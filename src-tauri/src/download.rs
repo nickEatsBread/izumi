@@ -21,9 +21,34 @@ use tokio::io::AsyncWriteExt;
 pub struct Downloads(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
 
 fn sanitize(name: &str) -> String {
-    name.chars()
+    #[allow(unused_mut)]
+    let mut s: String = name
+        .chars()
         .map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c })
-        .collect()
+        .collect();
+    // Windows: a name whose stem equals a reserved DEVICE (CON, PRN, AUX, NUL, COM1-9, LPT1-9,
+    // CONIN$/CONOUT$) maps to that device REGARDLESS of extension — opening "NUL.mkv" opens the
+    // null device, so every written byte is silently discarded yet the download reports success.
+    // The OS also strips trailing dots/spaces. Debrid/torrent filenames are attacker-influenceable,
+    // so harden them here. Gated to Windows so legitimate Linux/Android names are untouched.
+    #[cfg(windows)]
+    {
+        s = s.trim_end_matches(|c| c == ' ' || c == '.').to_string();
+        let stem = s.split('.').next().unwrap_or("").to_ascii_uppercase();
+        let reserved = matches!(
+            stem.as_str(),
+            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+                | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9"
+                | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9"
+        );
+        if reserved {
+            s.insert(0, '_');
+        }
+        if s.is_empty() || s == "." || s == ".." {
+            s = "_".to_string();
+        }
+    }
+    s
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -373,5 +398,27 @@ mod tests {
             .unwrap(),
             ResumeResponse::Restart { total: None },
         );
+    }
+
+    #[test]
+    fn sanitize_replaces_illegal_path_chars() {
+        assert_eq!(sanitize("a/b\\c:d*e?f\"g<h>i|j"), "a_b_c_d_e_f_g_h_i_j");
+        assert_eq!(sanitize("Fine Name [1080p].mkv"), "Fine Name [1080p].mkv");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sanitize_neutralizes_windows_reserved_device_names() {
+        // Reserved device stems map to the device regardless of extension → prefixed.
+        assert_eq!(sanitize("NUL.mkv"), "_NUL.mkv");
+        assert_eq!(sanitize("con"), "_con");
+        assert_eq!(sanitize("COM1.mp4"), "_COM1.mp4");
+        // A trailing dot/space (silently stripped by Windows) is removed.
+        assert_eq!(sanitize("episode.mkv. "), "episode.mkv");
+        // Non-reserved names that merely contain a device substring are left alone.
+        assert_eq!(sanitize("NULL.mkv"), "NULL.mkv");
+        assert_eq!(sanitize("console.log"), "console.log");
+        // Degenerate results collapse to a safe placeholder.
+        assert_eq!(sanitize(".."), "_");
     }
 }
