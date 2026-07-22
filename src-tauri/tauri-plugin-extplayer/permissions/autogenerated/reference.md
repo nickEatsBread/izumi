@@ -1,12 +1,13 @@
 ## Default Permission
 
-Allow Android playback, self-update, and power/network checks for responsible seeding.
+Allow Android playback, browser authentication, self-update, and power/network checks.
 
 #### This default permission set includes the following:
 
 - `allow-play-external`
 - `allow-install-apk`
 - `allow-device-status`
+- `allow-open-browser`
 
 ## Permission Table
 
@@ -65,6 +66,32 @@ Enables the install_apk command without any pre-configured scope.
 <td>
 
 Denies the install_apk command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-open-browser`
+
+</td>
+<td>
+
+Enables the open_browser command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-open-browser`
+
+</td>
+<td>
+
+Denies the open_browser command without any pre-configured scope.
 
 </td>
 </tr>

@@ -47,6 +47,11 @@ class InstallArgs {
 }
 
 @InvokeArg
+class BrowserArgs {
+    var url: String = ""
+}
+
+@InvokeArg
 class OAuthArgs {
     var authUrl: String = ""
     var redirectPrefix: String = ""
@@ -70,6 +75,10 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             pathAndQuery.contains("auth")
         if (!isDisqus || !isLogin) return
 
+        launchBrowser(uri)
+    }
+
+    private fun launchBrowser(uri: Uri) {
         activity.runOnUiThread {
             try {
                 CustomTabsIntent.Builder()
@@ -85,6 +94,18 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 }
             }
         }
+    }
+
+    @Command
+    fun openBrowser(invoke: Invoke) {
+        val args = invoke.parseArgs(BrowserArgs::class.java)
+        val uri = runCatching { Uri.parse(args.url) }.getOrNull()
+        if (uri == null || uri.scheme != "https" || uri.host.isNullOrBlank()) {
+            invoke.reject("Only HTTPS browser URLs are allowed")
+            return
+        }
+        launchBrowser(uri)
+        invoke.resolve()
     }
 
     // WRY's Android WebView keeps zoom enabled and ignores the viewport `user-scalable=no`, so the

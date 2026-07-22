@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { invoke } from '@tauri-apps/api/core'
   import type { Media } from '$lib/anilist/types'
   import type { DiscussionComment, DiscussionThread } from '$lib/comments'
   import type { EpMeta } from '$lib/anizip/types'
@@ -11,6 +12,7 @@
   import { preferredMobileDiscussion } from '$lib/comments/mobile'
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
+  import { getMalProgress } from '$lib/trackers'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import MessageSquare from 'lucide-svelte/icons/message-square'
   import ListVideo from 'lucide-svelte/icons/list-video'
@@ -45,16 +47,6 @@
   } = $props()
 
   let episodeMeta = $state<Record<number, EpMeta>>({})
-  $effect(() => {
-    const id = media.id
-    const wanted = episode ?? undefined
-    let cancelled = false
-    getEpisodeMeta(id, wanted).then((value) => {
-      if (!cancelled) episodeMeta = value
-    })
-    return () => { cancelled = true }
-  })
-
   const currentMeta = $derived(episode != null ? episodeMeta[episode] : undefined)
   const showEpisodeTitle = $derived(!$hideSpoilers && !!currentMeta?.title)
   const plannedTotal = $derived((total ?? totalEpisodes(media)) || null)
@@ -121,12 +113,33 @@
   let disqusFrame = $state<HTMLIFrameElement>()
   let disqusHeight = $state(480)
 
+  const postReactionResult = (ok: boolean) => disqusFrame?.contentWindow?.postMessage({
+    type: 'izumi-react-result', ok,
+  }, window.location.origin)
+
+  async function openReactionLogin(base: string) {
+    try {
+      const url = new URL('/auth/disqus/login', base)
+      if (url.protocol !== 'https:' || url.hostname !== 'discussanime.moe') {
+        throw new Error('Unexpected reaction login host')
+      }
+      await invoke('plugin:extplayer|open_browser', { payload: { url: url.toString() } })
+    } catch {
+      // The reaction remains unchanged; the iframe result below also releases its busy state.
+    } finally {
+      postReactionResult(false)
+    }
+  }
+
   onMount(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.source !== disqusFrame?.contentWindow) return
-      if (event.data?.type !== 'izumi-disqus-height') return
-      const height = Number(event.data.height)
-      if (Number.isFinite(height)) disqusHeight = Math.max(480, Math.min(20_000, Math.ceil(height)))
+      if (event.data?.type === 'izumi-disqus-height') {
+        const height = Number(event.data.height)
+        if (Number.isFinite(height)) disqusHeight = Math.max(480, Math.min(20_000, Math.ceil(height)))
+      } else if (event.data?.type === 'izumi-react' && typeof event.data.base === 'string') {
+        void openReactionLogin(event.data.base)
+      }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -143,11 +156,32 @@
     if (scroll) requestAnimationFrame(() => tabsEl?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
+  let malProgress = $state(0)
+  $effect(() => {
+    const idMal = media.idMal
+    malProgress = 0
+    if (!idMal) return
+    let cancelled = false
+    getMalProgress(idMal).then((entry) => {
+      if (!cancelled) malProgress = entry?.progress ?? 0
+    }).catch(() => {})
+    return () => { cancelled = true }
+  })
   const watchedThrough = $derived(Math.max(
     media.mediaListEntry?.progress ?? 0,
     $localHistory[media.id]?.progress ?? 0,
     $sessionProgress[media.id] ?? 0,
+    malProgress,
   ))
+  $effect(() => {
+    const id = media.id
+    const watched = watchedThrough
+    let cancelled = false
+    getEpisodeMeta(id, watched).then((value) => {
+      if (!cancelled) episodeMeta = value
+    })
+    return () => { cancelled = true }
+  })
   const knownTotal = $derived((total ?? totalEpisodes(media)) || 0)
   const aired = $derived.by(() => {
     const value = airedCount(media)

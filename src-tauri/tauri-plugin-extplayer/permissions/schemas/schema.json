@@ -319,6 +319,18 @@
           "markdownDescription": "Denies the install_apk command without any pre-configured scope."
         },
         {
+          "description": "Enables the open_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-open-browser",
+          "markdownDescription": "Enables the open_browser command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the open_browser command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-open-browser",
+          "markdownDescription": "Denies the open_browser command without any pre-configured scope."
+        },
+        {
           "description": "Enables the play_external command without any pre-configured scope.",
           "type": "string",
           "const": "allow-play-external",
@@ -331,10 +343,10 @@
           "markdownDescription": "Denies the play_external command without any pre-configured scope."
         },
         {
-          "description": "Allow Android playback, self-update, and power/network checks for responsible seeding.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`",
+          "description": "Allow Android playback, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-open-browser`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow Android playback, self-update, and power/network checks for responsible seeding.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`"
+          "markdownDescription": "Allow Android playback, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-open-browser`"
         }
       ]
     }
