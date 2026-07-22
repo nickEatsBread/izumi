@@ -43,6 +43,8 @@ export function mediaSnapshot(m: Media): Media {
     status: m.status,
     seasonYear: m.seasonYear,
     averageScore: m.averageScore,
+    popularity: m.popularity,
+    trending: m.trending,
     genres: m.genres,
     nextAiringEpisode: m.nextAiringEpisode,
     // Needed so Continue Watching can cap the aired/resume episode: many OVAs/ONAs and adult

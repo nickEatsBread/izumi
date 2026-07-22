@@ -18,6 +18,8 @@ export function parseEpisodes(res: AniZipResponse | undefined): Record<number, E
       title: cleanTitle(e.title?.en ?? e.title?.['x-jat']),
       rating: e.rating ? Number(e.rating) : undefined,
       overview: e.overview ?? e.summary,
+      airDate: e.airDate,
+      runtime: e.runtime ?? e.length,
       season: e.seasonNumber,
       abs: e.absoluteEpisodeNumber,
     }

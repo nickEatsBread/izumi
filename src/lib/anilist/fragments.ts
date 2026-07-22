@@ -5,7 +5,7 @@ export const MEDIA_FIELDS = gql`
     id idMal
     title { romaji english native userPreferred }
     description(asHtml: false)
-    season seasonYear format status episodes duration averageScore genres
+    season seasonYear format status episodes duration averageScore popularity trending genres
     synonyms
     startDate { year month day }
     studios(isMain: true) { nodes { id name } }
