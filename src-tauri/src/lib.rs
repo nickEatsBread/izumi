@@ -590,6 +590,15 @@ fn set_player_cache(bytes: u64) {
     player::PLAYER_CACHE_BYTES.store(bytes.max(8 * 1024 * 1024), std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Apply the frontend's resolved mpv render options (from the Video-quality preset / Custom raw
+/// options). Stores them for the next mpv init and live-applies to a running core. Returns the keys
+/// whose LIVE set_property failed (typo / init-only) so the frontend can flag them in Custom mode.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn player_set_render_opts(opts: Vec<(String, String)>, player: tauri::State<'_, player::PlayerHandle>) -> Vec<String> {
+    player.set_render_opts(opts)
+}
+
 /// Inhibit the OS idle / screen-blank while a video is actively playing — so the Steam Deck's
 /// screen doesn't dim mid-episode. Called with `on=false` when paused, at EOF, or when the
 /// player closes (and gated by the user's "Keep screen awake while playing" setting), so
@@ -2541,6 +2550,7 @@ pub fn run() {
             ext_fetch,
             set_doh,
             set_player_cache,
+            player_set_render_opts,
             set_idle_inhibit,
             write_text_file,
             updater_check,
