@@ -405,6 +405,28 @@ impl PlayerHandle {
         mpv.command(name, args).map_err(|e| e.to_string())
     }
 
+    /// Store the frontend's resolved render-option set and, if a core is live, apply each pair
+    /// immediately via `set_property` (no restart). The stored set is re-applied at the next mpv
+    /// init (see `new_mpv_with_vo` / `new_mpv_libmpv`). Returns the keys whose LIVE apply failed
+    /// (a typo, or an init-only option that only takes effect on the next file) so the frontend can
+    /// surface them in Custom mode. Best-effort per option so one bad key can't abort the rest.
+    pub fn set_render_opts(&self, opts: Vec<(String, String)>) -> Vec<String> {
+        if let Ok(mut g) = RENDER_OPTS.lock() {
+            *g = opts.clone();
+        }
+        let mut failed = Vec::new();
+        if let Ok(guard) = self.mpv.lock() {
+            if let Some(mpv) = guard.as_ref() {
+                for (k, v) in &opts {
+                    if mpv.set_property(k.as_str(), v.as_str()).is_err() {
+                        failed.push(k.clone());
+                    }
+                }
+            }
+        }
+        failed
+    }
+
     /// Add an external subtitle file to the LIVE core and select it. Mirrors the load-time
     /// `sub-add` loop in `load_file` but for a subtitle fetched mid-playback via the online-subtitle
     /// menu. mpv's arg order is `sub-add <url> <flags> <title> <lang>`, so `title` (the menu label)
@@ -633,6 +655,12 @@ impl PlayerHandle {
 /// writes it from the user's setting via `set_player_cache`; load_file applies it per file, so a
 /// change takes effect on the next video. Default 128 MiB.
 pub(crate) static PLAYER_CACHE_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(134_217_728);
+
+/// User-selected mpv render options (scale/dscale/cscale/deband/dither/glsl-shaders …), pushed from
+/// the frontend's Video-quality preset system. Applied at mpv init and live via set_property. Empty
+/// until the frontend pushes on startup (empty → mpv's own defaults, which are smooth). The FRONTEND
+/// is the single source of truth for the values (the preset table lives in TS), so Rust stays dumb.
+pub(crate) static RENDER_OPTS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
 
 fn load_file(
     mpv: &Mpv,
@@ -869,14 +897,14 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // HDR / tone-mapping (SDR panels) — same as the Windows path.
         let _ = init.set_option("target-colorspace-hint", "auto");
         let _ = init.set_option("tone-mapping", "bt.2390");
-        // Picture quality (libplacebo).
-        let _ = init.set_option("scale", "ewa_lanczossharp");
-        let _ = init.set_option("scale-antiring", "0.6");
-        let _ = init.set_option("dscale", "mitchell");
-        // spline36 for chroma, not ewa_lanczossharp — see new_mpv_with_vo: same per-frame GPU
-        // saving on 4:2:0 chroma with no visible difference.
-        let _ = init.set_option("cscale", "spline36");
-        let _ = init.set_option("deband", "yes");
+        // Picture quality is user-driven via the Video-quality preset system: apply the frontend's
+        // stored render options. Best-effort (`let _`) so an unknown option never aborts core init.
+        // Empty on a fresh launch before the frontend's startup push → mpv defaults (smooth).
+        if let Ok(opts) = RENDER_OPTS.lock() {
+            for (k, v) in opts.iter() {
+                let _ = init.set_option(k.as_str(), v.as_str());
+            }
+        }
         let _ = init.set_option("dither-depth", "auto");
         let _ = init.set_option("screenshot-format", "png");
         // Name saved screenshots "izumi-shot0001.png" etc. (mpv's default is "mpv-shot%n").
@@ -1031,34 +1059,23 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
             init.set_option("gpu-context", "d3d11")?;
             init.set_option("d3d11-output-format", "auto")?;
             init.set_option("d3d11-output-csp", "auto")?;
-            // Time frames to the display refresh (resampling audio) instead of mpv's default
-            // video-sync=audio, which shows 23.976fps anime in an uneven 3:2 refresh cadence —
-            // the classic judder on pans/credit scrolls. d3d11 + gpu-next give accurate present
-            // timing, so display-resample is the standard smoothness lever; the biggest gain lands
-            // on 120/144Hz panels. Best-effort so an older libmpv keeps its default instead of
-            // aborting init. (Interpolation is deliberately NOT enabled — heavier + blurrier.)
-            let _ = init.set_option("video-sync", "display-resample");
+            // NOTE: video-sync=display-resample was tried here for 24fps judder but caused severe
+            // playback lag on weak-iGPU laptops in the embedded d3d11 child window under the
+            // DWM-composited transparent WebView2 (no clean flip-model vsync → the display-clock
+            // timing + audio resampling thrash). Left at mpv's default video-sync=audio. If
+            // reintroduced, it must be an opt-in "motion smoothing" setting, off by default.
         }
         let _ = init.set_option("target-colorspace-hint", "auto");
         let _ = init.set_option("tone-mapping", "bt.2390");
 
-        // --- Picture quality (gpu-next / libplacebo) ---
-        // Best-effort (`let _`) so an older libmpv that lacks one of these just keeps
-        // its default instead of failing init. Cheap + safe on an iGPU / Steam Deck
-        // (the heavy GLSL upscalers like ArtCNN/FSRCNNX are intentionally NOT set).
-        // Video is never stretched: we don't touch `keepaspect` (defaults to yes), so
-        // mpv preserves aspect (letterbox) and high-quality-scales to the window.
-        // ewa_lanczossharp = sharp upscale (1080p→4K) with anti-ringing; mitchell =
-        // clean 4K→1080p downscale (no ringing); sharp chroma; deband kills banding in
-        // dark anime gradients; dither at the true panel depth.
-        let _ = init.set_option("scale", "ewa_lanczossharp");
-        let _ = init.set_option("scale-antiring", "0.6");
-        let _ = init.set_option("dscale", "mitchell");
-        // spline36 for chroma, not ewa_lanczossharp: on 4:2:0 anime the EWA/polar kernel is
-        // visually indistinguishable on chroma but far heavier per frame, so this frees GPU
-        // headroom (fewer dropped frames) on weak iGPUs while keeping the sharp luma upscale.
-        let _ = init.set_option("cscale", "spline36");
-        let _ = init.set_option("deband", "yes");
+        // Picture quality is user-driven via the Video-quality preset system: apply the frontend's
+        // stored render options. Best-effort (`let _`) so an unknown option never aborts core init.
+        // Empty on a fresh launch before the frontend's startup push → mpv defaults (smooth).
+        if let Ok(opts) = RENDER_OPTS.lock() {
+            for (k, v) in opts.iter() {
+                let _ = init.set_option(k.as_str(), v.as_str());
+            }
+        }
         let _ = init.set_option("dither-depth", "auto");
         // Never let mpv hide the OS cursor. When embedded, the WebView2 overlay
         // sits above mpv and grabs mouse-move events, so mpv's autohide timer
@@ -1143,5 +1160,20 @@ mod tests {
             h.add_subtitle("/tmp/x.srt", "en", "English"),
             Err("no player".to_string())
         );
+    }
+
+    #[test]
+    fn set_render_opts_without_core_stores_and_does_not_panic() {
+        let h = PlayerHandle::new();
+        let failed = h.set_render_opts(vec![
+            ("scale".to_string(), "spline36".to_string()),
+            ("deband".to_string(), "no".to_string()),
+        ]);
+        assert!(failed.is_empty()); // no live core → nothing to fail
+        let stored = RENDER_OPTS.lock().unwrap().clone();
+        assert_eq!(stored, vec![
+            ("scale".to_string(), "spline36".to_string()),
+            ("deband".to_string(), "no".to_string()),
+        ]);
     }
 }
