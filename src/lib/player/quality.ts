@@ -1,6 +1,9 @@
 // Type-only import (erased at runtime) so this module — and its unit test — stay pure and don't
 // pull in the settings stores. The runtime store imports are added in Task 5 (applyRenderOpts).
 import type { QualityPreset } from '$lib/settings/ui'
+import { invoke } from '@tauri-apps/api/core'
+import { get, writable } from 'svelte/store'
+import { videoQualityPreset, rawMpvOptions } from '$lib/settings/ui'
 
 /** Every mpv render key any preset can touch. A preset is COMPLETE over this set (unset → default),
  *  so downgrading a preset actively clears a heavier option instead of leaving it stuck on. */
@@ -64,4 +67,45 @@ export function resolvePreset(preset: QualityPreset, raw: string, shaderPath?: s
   if (preset === 'anime' && shaderPath) merged['glsl-shaders'] = shaderPath
   // only managed keys for built-in presets
   return MANAGED_KEYS.map((k) => [k, merged[k]] as [string, string])
+}
+
+/** Shader-download outcome message (Anime preset). */
+export const qualityNotice = writable<string>('')
+/** Managed-key names whose LIVE apply failed — only surfaced in Custom mode (typo, or init-only). */
+export const qualityFailedKeys = writable<string[]>([])
+
+/** Resolve the current preset (downloading the ArtCNN shader first for Anime) and push the option
+ *  set to the backend. Shader-download failure falls back to the shader-less High Quality chain. */
+export async function applyRenderOpts(): Promise<void> {
+  const preset = get(videoQualityPreset)
+  const raw = get(rawMpvOptions)
+  let shaderPath: string | undefined
+  if (preset === 'anime') {
+    try {
+      shaderPath = await invoke<string>('ensure_artcnn', { variant: ANIME_SHADER_VARIANT })
+      qualityNotice.set('')
+    } catch {
+      qualityNotice.set('Shader download failed — using High Quality.')
+      // no shaderPath → resolvePreset('anime') leaves glsl-shaders at its default ''
+    }
+  } else {
+    qualityNotice.set('')
+  }
+  const opts = resolvePreset(preset, raw, shaderPath)
+  const failed = await invoke<string[]>('player_set_render_opts', { opts }).catch(() => [] as string[])
+  // Built-in presets only use known-good keys, so failures there are init-only (ignore). In Custom,
+  // surface the keys that had no live effect so the user can spot a typo.
+  qualityFailedKeys.set(preset === 'custom' ? failed : [])
+}
+
+let started = false
+/** Push render opts once on startup, then on every preset/raw change. Idempotent. */
+export function startQualitySync(): void {
+  if (started) return
+  started = true
+  void applyRenderOpts()
+  let first = true
+  videoQualityPreset.subscribe(() => { if (!first) void applyRenderOpts() })
+  rawMpvOptions.subscribe(() => { if (!first) void applyRenderOpts() })
+  first = false
 }
