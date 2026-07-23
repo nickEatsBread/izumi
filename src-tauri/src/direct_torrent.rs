@@ -13,6 +13,7 @@ use librqbit::{
     api::TorrentIdOrHash,
     http_api::{HttpApi, HttpApiOptions},
     AddTorrent, AddTorrentOptions, AddTorrentResponse, Api, ManagedTorrent, Session,
+    SessionOptions,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -23,7 +24,7 @@ use tokio::{
     time::{sleep, timeout, Instant},
 };
 
-use crate::direct_torrent_select::{select_file, TorrentFile};
+use crate::direct_torrent_select::{select_file, select_subtitles, subtitle_language, TorrentFile};
 
 const METADATA_TIMEOUT: Duration = Duration::from_secs(60);
 const POST_PLAYBACK_SEED_TIME: Duration = Duration::from_secs(30 * 60);
@@ -49,6 +50,7 @@ struct ActivePlayback {
     playback_id: u64,
     torrent_id: usize,
     handle: Arc<ManagedTorrent>,
+    subtitle_indices: HashSet<usize>,
     selected_size: u64,
     uploaded_at_start: u64,
     upload_bps: NonZeroU32,
@@ -64,6 +66,49 @@ pub struct DirectTorrentPlayback {
     file_index: usize,
     size: u64,
     playback_id: u64,
+    subtitles: Vec<DirectTorrentSubtitle>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectTorrentSubtitle {
+    file_index: usize,
+    lang: String,
+    title: String,
+}
+
+fn file_stem(name: &str) -> &str {
+    let basename = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    basename
+        .rsplit_once('.')
+        .map(|(stem, _)| stem)
+        .unwrap_or(basename)
+}
+
+fn subtitle_title(video: &TorrentFile, subtitle: &TorrentFile) -> String {
+    let video_stem = file_stem(&video.name);
+    let subtitle_stem = file_stem(&subtitle.name);
+    let suffix = subtitle_stem
+        .strip_prefix(video_stem)
+        .unwrap_or(subtitle_stem)
+        .trim_matches(|c: char| matches!(c, '.' | '_' | '-' | ' ' | '[' | ']' | '(' | ')'));
+    let words = suffix
+        .split(|c: char| matches!(c, '.' | '_' | '-'))
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>();
+    let words = if words
+        .first()
+        .is_some_and(|word| subtitle_language(word) != "und")
+    {
+        &words[1..]
+    } else {
+        &words[..]
+    };
+    if words.is_empty() {
+        "Subtitle".to_string()
+    } else {
+        words.join(" ")
+    }
 }
 
 fn mbps_to_bps(value: f64) -> Option<NonZeroU32> {
@@ -114,9 +159,22 @@ impl DirectTorrentState {
                     .await
                     .map_err(|e| format!("Could not create the torrent cache: {e}"))?;
 
-                let session = Session::new(folder)
-                    .await
-                    .map_err(|e| format!("Could not start the torrent engine: {e:#}"))?;
+                // Direct playback is ephemeral (the folder above is wiped on init), so run with no
+                // session persistence — and, crucially, DISABLE DHT persistence. librqbit's default
+                // persistent DHT asks the `directories` crate for a project dir to store its routing
+                // table; on Android that returns nothing and aborts engine startup with
+                // "cannot determine project directory for com.rqbit.dht". DHT still runs for peer
+                // discovery — it just no longer tries to cache/reload its table from disk.
+                let session = Session::new_with_opts(
+                    folder,
+                    SessionOptions {
+                        disable_dht_persistence: true,
+                        persistence: None,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|e| format!("Could not start the torrent engine: {e:#}"))?;
                 let api = Api::new(session.clone(), None, None);
                 let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
                     .await
@@ -213,6 +271,25 @@ pub async fn torrent_playback_url(
         .collect::<Vec<_>>();
     let selected = select_file(&files, preferred_filename.as_deref())
         .ok_or_else(|| "This torrent does not contain a supported video file.".to_string())?;
+    // Direct sidecars are tiny and selected alongside the video, but nothing waits for their
+    // pieces here. The active video HTTP stream retains librqbit's priority; Windows attaches
+    // these tracks live once player_embed has returned.
+    let subtitle_files = if cfg!(target_os = "android") {
+        Vec::new()
+    } else {
+        select_subtitles(&files, &selected)
+    };
+    let subtitles = subtitle_files
+        .iter()
+        .map(|file| DirectTorrentSubtitle {
+            file_index: file.index,
+            lang: subtitle_language(&file.name).to_string(),
+            title: subtitle_title(&selected, file),
+        })
+        .collect::<Vec<_>>();
+    let selected_indices = std::iter::once(selected.index)
+        .chain(subtitle_files.iter().map(|file| file.index))
+        .collect::<HashSet<_>>();
 
     let upload_bps = upload_limit(upstream_capacity_mbps);
     engine.session.ratelimits.set_upload_bps(Some(upload_bps));
@@ -255,7 +332,7 @@ pub async fn torrent_playback_url(
             .add_torrent(
                 AddTorrent::from_bytes(listing.torrent_bytes),
                 Some(AddTorrentOptions {
-                    only_files: Some(vec![selected.index]),
+                    only_files: Some(selected_indices.iter().copied().collect()),
                     overwrite: true,
                     initial_peers: Some(listing.seen_peers),
                     ..Default::default()
@@ -268,12 +345,11 @@ pub async fn torrent_playback_url(
             .ok_or_else(|| "The torrent did not start.".to_string())?
     };
 
-    // A season pack may already be active from the previous episode. Update its selection so only
-    // the newly requested episode is fetched. Active HTTP streams still receive priority.
-    let only_files = HashSet::from([selected.index]);
+    // A season pack may already be active from the previous episode. Update its selection to the
+    // newly requested video plus its tiny sidecars. Active HTTP streams still receive priority.
     engine
         .session
-        .update_only_files(&handle, &only_files)
+        .update_only_files(&handle, &selected_indices)
         .await
         .map_err(|e| format!("Could not select the episode inside the torrent: {e:#}"))?;
 
@@ -284,6 +360,7 @@ pub async fn torrent_playback_url(
         playback_id,
         torrent_id,
         handle,
+        subtitle_indices: subtitle_files.iter().map(|file| file.index).collect(),
         selected_size: selected.length,
         uploaded_at_start,
         upload_bps,
@@ -301,7 +378,41 @@ pub async fn torrent_playback_url(
         file_index: selected.index,
         size: selected.length,
         playback_id,
+        subtitles,
     })
+}
+
+/// Attach a selected direct-torrent sidecar to the live desktop player. Playback-id and file-index
+/// checks prevent a slow subtitle request from a previous episode being inserted into the new one.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+pub async fn torrent_playback_add_subtitle(
+    state: tauri::State<'_, DirectTorrentState>,
+    player: tauri::State<'_, crate::player::PlayerHandle>,
+    playback_id: u64,
+    file_index: usize,
+    lang: String,
+    title: String,
+) -> Result<(), String> {
+    let Some(engine) = state.engine.get() else {
+        return Err("The direct torrent player is not running.".into());
+    };
+    let torrent_id = {
+        let active = state.active.lock().await;
+        let current = active
+            .as_ref()
+            .filter(|item| item.playback_id == playback_id)
+            .ok_or("This torrent playback is no longer active.")?;
+        if !current.subtitle_indices.contains(&file_index) {
+            return Err("This file is not a subtitle for the active video.".into());
+        }
+        current.torrent_id
+    };
+    let url = format!(
+        "http://127.0.0.1:{}/torrents/{}/stream/{}",
+        engine.port, torrent_id, file_index
+    );
+    player.add_subtitle_auto(&url, &lang, &title)
 }
 
 /// Protect playback from upload-induced buffer starvation. The player reports seconds buffered

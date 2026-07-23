@@ -45,6 +45,30 @@ export function shouldEnterFullscreen(progress: number, velocityY: number): bool
   return progress >= 0.45 || velocityY <= -0.5
 }
 
+/**
+ * Progress for the landscape swipe-DOWN gesture that exits fullscreen back to the portrait inline
+ * player — the mirror of `fullscreenPullProgress`. Only activates on a clearly downward drag where
+ * vertical travel wins over horizontal, and never from the very top edge (a swipe there just reveals
+ * the transient system bars). `viewportHeight` is the fullscreen height.
+ */
+export function landscapeExitProgress(
+  start: Sample,
+  cur: Sample,
+  viewportHeight: number,
+  topIgnore = 48,
+): number {
+  const dx = cur.x - start.x
+  const dy = cur.y - start.y
+  if (start.y < topIgnore || dy <= MOVE_PX || Math.abs(dy) <= Math.abs(dx)) return 0
+  const travel = Math.min(280, Math.max(140, viewportHeight * 0.4))
+  return Math.min(1, dy / travel)
+}
+
+/** Commit a deliberate downward pull or a downward fling; otherwise spring back to fullscreen. */
+export function shouldExitFullscreen(progress: number, velocityY: number): boolean {
+  return progress >= 0.4 || velocityY >= 0.5
+}
+
 export function zoneOf(x: number, width: number): Zone {
   if (x < width / 3) return 'l'
   if (x > (2 * width) / 3) return 'r'

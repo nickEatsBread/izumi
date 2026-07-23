@@ -10,6 +10,17 @@ export const LIST_QUERY = gql`
   }
   ${MEDIA_FIELDS}`
 
+// Id-only list projection for callers that just need the SET of ids on a list (e.g. the
+// schedule's "my shows" highlighting), not card data. LIST_QUERY drags full MediaFields —
+// incl. a 100-node airingSchedule + synopsis — per entry, which is pure waste when the result
+// is reduced to `new Set(ids)`. This keeps a heavy planning list to a tiny payload.
+export const LIST_IDS_QUERY = gql`
+  query ListIds($userName: String!, $status: MediaListStatus) {
+    MediaListCollection(userName: $userName, type: ANIME, status: $status) {
+      lists { entries { media { id idMal } } }
+    }
+  }`
+
 // `updatedAt` is AniList's list-entry edit time in EPOCH SECONDS (×1000 for ms); used to order the
 // Continue-Watching row across trackers + local history. Optional so older callers/mocks stay valid.
 export interface Entry { media: Media; progress: number; updatedAt?: number }

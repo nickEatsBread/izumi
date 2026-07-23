@@ -150,6 +150,15 @@ export async function setPlayerViewport(
 export const setPlayerFullscreen = (enabled: boolean) =>
   invoke('plugin:mpv|mpv_fullscreen', { payload: { enabled } })
 
+/**
+ * Live-scale/translate the native video surface for the portrait pull-to-fullscreen gesture — the
+ * video keeps playing and zooms as one unit (a view compositor transform, not a surface resize).
+ * `scale` is unitless (1 = resting 16:9); `translateY` is physical pixels (negative = up). Any
+ * `setPlayerViewport` call resets this back to identity.
+ */
+export const setPlayerTransform = (scale: number, translateY: number) =>
+  invoke('plugin:mpv|mpv_transform', { payload: { scale, translateY } })
+
 /** mpv chapter marker times (seconds), via sub-property paths. Empty when the file has no chapters. */
 export async function getChapters(): Promise<number[]> {
   const count = Number(await mpvGet('chapter-list/count')) || 0

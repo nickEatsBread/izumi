@@ -161,14 +161,14 @@ describe('reconcileContinueWatching', () => {
     const preset = [entry(77, 2, 100)]
     cwSnapshot.set(preset)
     mocks.malList.mockRejectedValue(new Error('offline'))
-    await reconcileContinueWatching(okClient([]) as never, undefined, true)
+    await reconcileContinueWatching(okClient([]) as never, undefined, true, true)
     expect(get(cwSnapshot)).toEqual(preset)
     expect(get(reconciling)).toBe(false)
   })
 
   it('writes the rebuilt snapshot from a successful MAL fetch', async () => {
     mocks.malList.mockResolvedValue([{ idMal: 202, progress: 5, updatedAt: 1234 }])
-    await reconcileContinueWatching(okClient([media(101, { idMal: 202 })]) as never, undefined, true)
+    await reconcileContinueWatching(okClient([media(101, { idMal: 202 })]) as never, undefined, true, true)
     const snap = get(cwSnapshot)
     expect(snap.length).toBe(1)
     expect(snap[0].media.id).toBe(101)

@@ -10,9 +10,12 @@ import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.net.Uri
 import android.os.BatteryManager
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -29,6 +32,8 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 
 // Uniquely-named FileProvider subclass so the merged app manifest never clashes with a
 // FileProvider another plugin registers (two <provider> nodes sharing android:name collide).
@@ -62,9 +67,30 @@ class LanDiscoveryArgs {
     var enabled: Boolean = false
 }
 
+@InvokeArg
+class DaReactionArgs {
+    var base: String = ""
+    var identifier: String = ""
+}
+
+@InvokeArg
+class DaReactArgs {
+    var base: String = ""
+    var identifier: String = ""
+    var key: String? = null
+}
+
+@InvokeArg
+class DaLoginArgs {
+    var base: String = ""
+}
+
 @TauriPlugin
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     private var multicastLock: WifiManager.MulticastLock? = null
+    // The app's main WebView, captured in load(); used to reload the in-app Disqus embed iframe after
+    // an in-overlay login so it re-boots with the freshly-set session cookie.
+    private var appWebView: WebView? = null
 
     private fun openDisqusLogin(rawUrl: String) {
         val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return
@@ -75,7 +101,9 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             pathAndQuery.contains("auth")
         if (!isDisqus || !isLogin) return
 
-        launchBrowser(uri)
+        // Run Disqus' own login inside the app (shared cookie jar) instead of an external Custom Tab —
+        // a Custom Tab can't complete Disqus' popup+postMessage handshake and strands the session cookie.
+        showDisqusLogin(uri)
     }
 
     private fun launchBrowser(uri: Uri) {
@@ -112,6 +140,7 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     // page pinch- / double-tap-zooms on mobile (content zooms while the fixed nav stays put). Kill
     // it at the WebView-settings level the moment the webview is created.
     override fun load(webView: WebView) {
+        appWebView = webView
         webView.settings.setSupportZoom(false)
         webView.settings.builtInZoomControls = false
         webView.settings.displayZoomControls = false
@@ -363,5 +392,198 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             ))
             web.loadUrl(args.authUrl)
         }
+    }
+
+    private fun hasAuthCookie(cookie: String): Boolean =
+        cookie.contains("session_token=") && !cookie.contains("session_token=;")
+
+    // Full-screen overlay WebView that shares the process-global CookieManager with the app WebView, so
+    // a login completed here is visible to the embed/native commands afterward. Returns the overlay +
+    // its WebView; the caller adds the overlay to the content view and drives navigation.
+    private fun makeOverlay(onClose: () -> Unit): Pair<FrameLayout, WebView> {
+        val overlay = FrameLayout(activity).apply { setBackgroundColor(Color.rgb(10, 10, 11)) }
+        val web = WebView(activity)
+        web.settings.javaScriptEnabled = true
+        web.settings.domStorageEnabled = true
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(web, true)
+        }
+        overlay.addView(web, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        val close = Button(activity).apply {
+            text = "Close"
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.argb(220, 24, 24, 27))
+            setOnClickListener { onClose() }
+            elevation = 12f
+        }
+        val density = activity.resources.displayMetrics.density
+        overlay.addView(close, FrameLayout.LayoutParams(
+            (92 * density).toInt(),
+            (48 * density).toInt(),
+            Gravity.TOP or Gravity.END,
+        ).apply {
+            topMargin = (16 * density).toInt()
+            marginEnd = (16 * density).toInt()
+        })
+        return overlay to web
+    }
+
+    // Disqus' own comment login (opened via the window.open hook in load()). A Custom Tab can't complete
+    // Disqus' popup+postMessage handshake and lands the session cookie in the wrong jar, so run it in an
+    // in-app overlay sharing the WebView cookie jar. Disqus calls window.close() when done
+    // (onCloseWindow); on finish reload the embed iframe so it re-boots with the new session cookie.
+    private fun showDisqusLogin(uri: Uri) {
+        activity.runOnUiThread {
+            val content = activity.findViewById<ViewGroup>(android.R.id.content)
+            var done = false
+            var overlayRef: FrameLayout? = null
+            var webRef: WebView? = null
+            fun finish() {
+                if (done) return
+                done = true
+                CookieManager.getInstance().flush()
+                (overlayRef?.parent as? ViewGroup)?.removeView(overlayRef)
+                webRef?.stopLoading()
+                webRef?.destroy()
+                appWebView?.evaluateJavascript(
+                    "document.querySelectorAll('iframe').forEach(function(f){try{if(f.src&&f.src.indexOf('disqus-embed')>-1){f.src=f.src;}}catch(e){}});",
+                    null,
+                )
+            }
+            val (overlay, web) = makeOverlay { finish() }
+            overlayRef = overlay
+            webRef = web
+            web.webViewClient = WebViewClient()
+            web.webChromeClient = object : WebChromeClient() {
+                override fun onCloseWindow(window: WebView) { finish() }
+            }
+            content.addView(overlay, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            web.loadUrl(uri.toString())
+        }
+    }
+
+    // Sign in to discussanime (the reactions backend) in the in-app overlay; resolve once its session
+    // cookie appears in the shared jar (mirrors the desktop da_login cookie-poll). The overlay stays in
+    // the Activity, so the pending react held by the frontend survives and can be replayed.
+    @Command
+    fun daLogin(invoke: Invoke) {
+        val a = invoke.parseArgs(DaLoginArgs::class.java)
+        val base = a.base.trimEnd('/')
+        if (hasAuthCookie(CookieManager.getInstance().getCookie("$base/") ?: "")) {
+            invoke.resolve(JSObject().put("ok", true))
+            return
+        }
+        activity.runOnUiThread {
+            val content = activity.findViewById<ViewGroup>(android.R.id.content)
+            val handler = Handler(Looper.getMainLooper())
+            var done = false
+            var overlayRef: FrameLayout? = null
+            var webRef: WebView? = null
+            fun finish(ok: Boolean) {
+                if (done) return
+                done = true
+                handler.removeCallbacksAndMessages(null)
+                CookieManager.getInstance().flush()
+                (overlayRef?.parent as? ViewGroup)?.removeView(overlayRef)
+                webRef?.stopLoading()
+                webRef?.destroy()
+                invoke.resolve(JSObject().put("ok", ok))
+            }
+            val (overlay, web) = makeOverlay { finish(false) }
+            overlayRef = overlay
+            webRef = web
+            web.webViewClient = WebViewClient()
+            content.addView(overlay, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            web.loadUrl("$base/auth/disqus/login")
+            var waited = 0
+            val poll = object : Runnable {
+                override fun run() {
+                    if (done) return
+                    if (hasAuthCookie(CookieManager.getInstance().getCookie("$base/") ?: "")) { finish(true); return }
+                    waited += 800
+                    if (waited > 300_000) { finish(false); return }
+                    handler.postDelayed(this, 800)
+                }
+            }
+            handler.postDelayed(poll, 800)
+        }
+    }
+
+    // Read reaction counts + the signed-in user's selected key, carrying the da_session cookie that the
+    // in-frame browser fetch cannot. Returns the raw JSON body for the frontend to parse. Runs off the
+    // UI thread (HttpURLConnection must not touch the main thread).
+    @Command
+    fun daReactionState(invoke: Invoke) {
+        val a = invoke.parseArgs(DaReactionArgs::class.java)
+        Thread {
+            try {
+                val base = a.base.trimEnd('/')
+                val cookie = CookieManager.getInstance().getCookie("$base/") ?: ""
+                val conn = URL("$base/api/threads/by-identifier/${Uri.encode(a.identifier)}/reaction")
+                    .openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                if (cookie.isNotEmpty()) conn.setRequestProperty("Cookie", cookie)
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                val code = conn.responseCode
+                val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() } ?: ""
+                conn.disconnect()
+                if (code !in 200..299) { invoke.reject("reaction state HTTP $code"); return@Thread }
+                invoke.resolve(JSObject().put("body", body))
+            } catch (e: Exception) {
+                invoke.reject(e.message ?: "reaction state failed")
+            }
+        }.start()
+    }
+
+    // Post (or clear, key=null) a discussanime reaction authenticated by the da_session cookie. Returns
+    // needsLogin when there is no live session, so the frontend can run daLogin then retry.
+    @Command
+    fun daReact(invoke: Invoke) {
+        val a = invoke.parseArgs(DaReactArgs::class.java)
+        Thread {
+            try {
+                val base = a.base.trimEnd('/')
+                val cookie = CookieManager.getInstance().getCookie("$base/") ?: ""
+                if (!hasAuthCookie(cookie)) {
+                    invoke.resolve(JSObject().put("ok", false).put("needsLogin", true))
+                    return@Thread
+                }
+                val conn = URL("$base/api/threads/by-identifier/${Uri.encode(a.identifier)}/reaction")
+                    .openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Cookie", cookie)
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.setRequestProperty("Origin", base)
+                conn.doOutput = true
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                val key = a.key
+                val payload = if (key == null) "{\"reaction\":null}" else "{\"reaction\":\"$key\"}"
+                conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+                val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() } ?: ""
+                conn.disconnect()
+                when {
+                    code == 401 -> invoke.resolve(JSObject().put("ok", false).put("needsLogin", true))
+                    code !in 200..299 -> invoke.resolve(JSObject().put("ok", false).put("needsLogin", false))
+                    else -> invoke.resolve(JSObject().put("ok", true).put("needsLogin", false).put("body", body))
+                }
+            } catch (e: Exception) {
+                invoke.reject(e.message ?: "react failed")
+            }
+        }.start()
     }
 }

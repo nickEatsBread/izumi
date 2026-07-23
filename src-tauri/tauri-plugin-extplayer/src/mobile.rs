@@ -5,8 +5,9 @@ use tauri::{
 };
 
 use crate::models::{
-    BrowserRequest, DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse,
-    PlayRequest,
+    BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
+    DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
+    ReactResponse, ReactionStateResponse,
 };
 
 #[cfg(target_os = "android")]
@@ -58,6 +59,27 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn oauth_capture(&self, payload: OAuthRequest) -> crate::Result<OAuthResponse> {
         self.0
             .run_mobile_plugin("oauthCapture", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn da_reaction_state(
+        &self,
+        payload: DaReactionStateRequest,
+    ) -> crate::Result<ReactionStateResponse> {
+        self.0
+            .run_mobile_plugin("daReactionState", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn da_react(&self, payload: DaReactRequest) -> crate::Result<ReactResponse> {
+        self.0
+            .run_mobile_plugin("daReact", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn da_login(&self, payload: DaLoginRequest) -> crate::Result<DaLoginResponse> {
+        self.0
+            .run_mobile_plugin("daLogin", payload)
             .map_err(Into::into)
     }
 }

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-transform"
+description = "Enables the mpv_transform command without any pre-configured scope."
+commands.allow = ["mpv_transform"]
+
+[[permission]]
+identifier = "deny-mpv-transform"
+description = "Denies the mpv_transform command without any pre-configured scope."
+commands.deny = ["mpv_transform"]

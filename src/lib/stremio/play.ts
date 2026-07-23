@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
+import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
 import { addonOriginId, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
@@ -22,7 +22,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
+import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState } from '$lib/player/session'
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -52,6 +52,53 @@ type DirectTorrentPlayback = {
   fileIndex: number
   size: number
   playbackId: number
+  subtitles: DirectTorrentSubtitle[]
+}
+
+type DirectTorrentSubtitle = {
+  fileIndex: number
+  lang: string
+  title: string
+}
+
+/** Attach bundled torrent sidecars after player_embed returns. Fire-and-forget from playStream:
+ *  video state reaches "playing" immediately while these tiny files finish in the background. */
+async function attachDirectTorrentSubtitles(playbackId: number, subtitles: DirectTorrentSubtitle[]) {
+  if (!subtitles.length) return
+  torrentSubtitleState.set({
+    playbackId,
+    status: 'loading',
+    loaded: 0,
+    total: subtitles.length,
+    revision: 0,
+  })
+  let loaded = 0
+  for (const subtitle of subtitles) {
+    try {
+      await invoke('torrent_playback_add_subtitle', {
+        playbackId,
+        fileIndex: subtitle.fileIndex,
+        lang: subtitle.lang,
+        title: subtitle.title,
+      })
+      loaded++
+      torrentSubtitleState.update((state) =>
+        state.playbackId === playbackId
+          ? { ...state, loaded, revision: state.revision + 1 }
+          : state,
+      )
+    } catch (error) {
+      // A playback switch intentionally invalidates the old request in Rust. Do not let that
+      // harmless race overwrite the new episode's loading state or interrupt its video.
+      if (get(torrentSubtitleState).playbackId !== playbackId) return
+      console.warn('direct torrent subtitle failed', error)
+    }
+  }
+  torrentSubtitleState.update((state) =>
+    state.playbackId === playbackId
+      ? { ...state, status: loaded ? 'ready' : 'error', loaded }
+      : state,
+  )
 }
 
 // Finite aired-episode count for player bounds (auto-advance / prefetch) + the in-player Next
@@ -89,6 +136,24 @@ export async function searchOnlineSubtitles(_query?: string): Promise<void> {
 // plain module, not a component — no runes/lifecycle to lean on).
 let stop: Array<() => void> = []
 
+// Monotonic play generation. Bumped on every attach() so a stale event handler that survives
+// teardown (Tauri delivers events async — one can already be in flight when we unlisten) can tell
+// it's been superseded and skip side effects like auto-advance. See attach().
+let playGen = 0
+
+// Register a Tauri event listener and store its unlisten SYNCHRONOUSLY. `listen()` is an async
+// IPC round-trip; awaiting it before pushing the handle to `stop` (as attach() used to) opened a
+// window where a second play's teardown ran before this play's handle existed, so the old
+// listeners were never removed — duplicate player-progress/player-ended → double save + double
+// auto-advance. Here the remover is in `stop` before any await, and if teardown fires before the
+// listen resolves, `cancelled` makes the handle unlisten the moment it arrives.
+function pushListen<T>(event: string, handler: EventCallback<T>) {
+  let unlisten: (() => void) | null = null
+  let cancelled = false
+  void listen<T>(event, handler).then((fn) => { if (cancelled) fn(); else unlisten = fn })
+  stop.push(() => { cancelled = true; unlisten?.(); unlisten = null })
+}
+
 // The in-flight source resolve (playEpisode). A new play or an explicit picker close aborts it
 // so a closed resolve settles to idle at once instead of leaving its caller stuck in `resolving`.
 // A superseded resolve stays silent because the newer request now owns caller state. The fetches
@@ -99,40 +164,42 @@ export function cancelResolve() { resolveAbort?.abort(); resolveAbort = null }
 
 // Wire the mpv event stream (emitted from Rust) to progress tracking, resume,
 // and auto next-episode. Called once per play, after playback has started.
-async function attach(media: Media, episode: number, onState: (s: PlayState) => void) {
-  // Tear down any listeners from the previous play first.
+function attach(media: Media, episode: number, onState: (s: PlayState) => void) {
+  // Tear down the previous play's listeners, then register the new set ATOMICALLY — this whole
+  // body runs with no `await`, so a second play cannot interleave between teardown and
+  // registration. `pushListen` stores each unlisten synchronously; `gen` guards the async
+  // auto-advance against a stale player-ended still in flight from a superseded play.
   stop.forEach((f) => f())
   stop = []
+  const gen = ++playGen
   let marked = false
   let lastSave = 0
   let warmed = false
-  stop.push(
-    await listen<[number, number]>('player-progress', (e) => {
-      const [pos, dur] = e.payload
-      // Throttle position writes to ~once every 5s to avoid store churn.
-      if (Date.now() - lastSave > 5000) {
-        savePosition(media.id, episode, pos, dur)
-        lastSave = Date.now()
+  pushListen<[number, number]>('player-progress', (e) => {
+    const [pos, dur] = e.payload
+    // Throttle position writes to ~once every 5s to avoid store churn.
+    if (Date.now() - lastSave > 5000) {
+      savePosition(media.id, episode, pos, dur)
+      lastSave = Date.now()
+    }
+    // Once we cross the watch threshold, mark this episode on the tracker(s)
+    // exactly once (guarded by `marked`). markWatched handles local history + the
+    // only-increase / complete-on-finish guards.
+    if (!marked && watched(pos, dur)) {
+      marked = true
+      markWatched(media, episode)
+    }
+    // Binge preload: pre-resolve the next episode in the last stretch so Next /
+    // auto-advance starts instantly, then warm the debrid/CDN edge in the final
+    // seconds (kept late + small so it can't starve the current episode's tail).
+    if (get(bingePreload) && dur > 0) {
+      if (pos / dur > 0.85) prefetchNext(media, episode)
+      if (!warmed && dur - pos < 20 && prefetched?.mediaId === media.id && prefetched.episode === episode + 1 && prefetched.stream.url) {
+        warmed = true
+        invoke('player_prefetch', { url: prefetched.stream.url }).catch(() => {})
       }
-      // Once we cross the watch threshold, mark this episode on the tracker(s)
-      // exactly once (guarded by `marked`). markWatched handles local history + the
-      // only-increase / complete-on-finish guards.
-      if (!marked && watched(pos, dur)) {
-        marked = true
-        markWatched(media, episode)
-      }
-      // Binge preload: pre-resolve the next episode in the last stretch so Next /
-      // auto-advance starts instantly, then warm the debrid/CDN edge in the final
-      // seconds (kept late + small so it can't starve the current episode's tail).
-      if (get(bingePreload) && dur > 0) {
-        if (pos / dur > 0.85) prefetchNext(media, episode)
-        if (!warmed && dur - pos < 20 && prefetched?.mediaId === media.id && prefetched.episode === episode + 1 && prefetched.stream.url) {
-          warmed = true
-          invoke('player_prefetch', { url: prefetched.stream.url }).catch(() => {})
-        }
-      }
-    }),
-  )
+    }
+  })
   // Finalize on close: the position write is throttled to 5s and the watch-mark only fires on a
   // live progress event ≥ threshold — so skimming to the end and immediately backing out could
   // save neither. The player dispatches `player-finalize` with its last pos/dur on close; persist
@@ -159,24 +226,25 @@ async function attach(media: Media, episode: number, onState: (s: PlayState) => 
   }
   window.addEventListener('player-finalize', onFinalize)
   stop.push(() => window.removeEventListener('player-finalize', onFinalize))
-  stop.push(
-    await listen('player-ended', async () => {
-      // Finished: forget the resume point, then auto-advance if there's a next episode (bounded by
-      // the known total). Fires when EITHER "Auto-play next" OR "Binge (preload)" is on — preload
-      // warms the next episode near the end precisely so it continues automatically, so having it on
-      // implies auto-advance. Advance continues the same release seamlessly, else opens the picker.
-      clearPosition(media.id, episode)
-      if (!get(autoplayNext) && !get(bingePreload)) return
-      const airedTotal = airedTotalOf(media)
-      let next = episode + 1
-      // Optionally skip past filler episodes (AnimeFillerList).
-      if (get(skipFiller)) {
-        const filler = await fillerEpisodes(media.id)
-        while (next <= airedTotal && filler.includes(next)) next++
-      }
-      if (next <= airedTotal) resolveAndPlayBest(media, next, onState)
-    }),
-  )
+  pushListen('player-ended', async () => {
+    // Finished: forget the resume point, then auto-advance if there's a next episode (bounded by
+    // the known total). Fires when EITHER "Auto-play next" OR "Binge (preload)" is on — preload
+    // warms the next episode near the end precisely so it continues automatically, so having it on
+    // implies auto-advance. Advance continues the same release seamlessly, else opens the picker.
+    clearPosition(media.id, episode)
+    if (!get(autoplayNext) && !get(bingePreload)) return
+    const airedTotal = airedTotalOf(media)
+    let next = episode + 1
+    // Optionally skip past filler episodes (AnimeFillerList).
+    if (get(skipFiller)) {
+      const filler = await fillerEpisodes(media.id)
+      while (next <= airedTotal && filler.includes(next)) next++
+    }
+    // Bail if a newer play has since taken over (this ended-event belongs to a superseded
+    // episode) — otherwise two overlapping plays both advance and skip an episode.
+    if (gen !== playGen) return
+    if (next <= airedTotal) resolveAndPlayBest(media, next, onState)
+  })
 }
 
 // Android embedded-player tracking: mirrors attach() but driven by the mpv plugin's observed-
@@ -806,6 +874,7 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 // resume / auto next-episode. Closes the picker.
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
   let directPlaybackId: number | null = null
+  let directTorrentSubtitles: DirectTorrentSubtitle[] = []
   // Torrentio's debrid `url` contains an account token and can resolve to RD's tiny copyright
   // placeholder while still looking like a valid video to mpv. Recover the public infohash and
   // deliberately discard that private URL: Izumi's resolver has provider-error + filesize guards,
@@ -820,6 +889,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
   lastSubFilename = stream.behaviorHints?.filename
   onlineSubCandidates.set({ status: 'idle', items: [] })
   subtitleNotice.set('')
+  torrentSubtitleState.set({ playbackId: null, status: 'idle', loaded: 0, total: 0, revision: 0 })
   // Fetch external subtitles from any subtitle-capable addon (OpenSubtitles etc) CONCURRENTLY with the
   // slow source resolve below, so they're ready by embed time without adding latency. Skipped for the
   // external/Android players (they own subtitle handling). Best-effort — [] on any failure.
@@ -849,6 +919,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
             : null,
         })
         directPlaybackId = playback.playbackId
+        directTorrentSubtitles = playback.subtitles
         activateDirectTorrentPlayback(playback.playbackId)
         stream = {
           ...stream,
@@ -1048,11 +1119,14 @@ export async function playStream(media: Media, episode: number | undefined, stre
       headers: stream.__stream ? stream.__headers : undefined,
       subtitles: subtitles.length ? subtitles : undefined,
     })
+    if (directPlaybackId != null && directTorrentSubtitles.length) {
+      void attachDirectTorrentSubtitles(directPlaybackId, directTorrentSubtitles)
+    }
     rememberSuccess()
     playing.set(true)
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
-    if (episode != null) await attach(media, episode, onState)
+    if (episode != null) attach(media, episode, onState)
   }
   catch (e) {
     if (directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)

@@ -109,6 +109,17 @@ export const onlineSubCandidates = writable<{ status: 'idle' | 'searching' | 're
 // kill video playback. '' = none.
 export const subtitleNotice = writable<string>('')
 
+// External subtitle files bundled beside the selected video in a direct torrent. Video playback
+// starts first; these tracks are attached live as their tiny files arrive in the background.
+// `revision` lets an already-open track menu refresh after each successful mpv sub-add.
+export const torrentSubtitleState = writable<{
+  playbackId: number | null
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  loaded: number
+  total: number
+  revision: number
+}>({ playbackId: null, status: 'idle', loaded: 0, total: 0, revision: 0 })
+
 // Cache key (infoHash, else `<mediaId>-<episode>`) of the stream now playing, used
 // by the seekbar to request/poll its scrub-preview sprite sheet. null = no sprite.
 export const spriteKey = writable<string | null>(null)

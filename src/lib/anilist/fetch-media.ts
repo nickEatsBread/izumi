@@ -1,4 +1,6 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { anilist } from './client'
+import { MEDIA_BY_IDS_QUERY } from './lists'
 import type { Media } from './types'
 
 // Source-complete fetch-by-id for cases where the caller may only have a trimmed/stale history
@@ -23,4 +25,26 @@ export async function fetchMediaById(id: number, fresh = false): Promise<Media> 
   if (!m) throw new Error('Could not fetch anime info.')
   cache.set(id, m)
   return m
+}
+
+/** Batch-fetch many media by id in one request per 50 ids (AniList's page cap), through the
+ *  POOLED + rate-limited `anilist` client — NOT the N serial, unpooled, un-throttled fetch-by-id
+ *  calls that bypassed the Bottleneck limiter and the shared 429 cooldown. `fresh` forces a
+ *  network read (schedules change), otherwise the urql cache may answer. Warms the single-id
+ *  cache so a later fetchMediaById hits. Missing ids are simply absent from the map. */
+export async function fetchMediaByIds(ids: number[], fresh = false): Promise<Map<number, Media>> {
+  const out = new Map<number, Media>()
+  const unique = [...new Set(ids)]
+  for (let i = 0; i < unique.length; i += 50) {
+    const chunk = unique.slice(i, i + 50)
+    const r = await anilist
+      .query(MEDIA_BY_IDS_QUERY, { ids: chunk }, fresh ? { requestPolicy: 'network-only' } : undefined)
+      .toPromise()
+    if (r.error) continue
+    for (const m of ((r.data?.Page?.media ?? []) as Media[])) {
+      out.set(m.id, m)
+      cache.set(m.id, m)
+    }
+  }
+  return out
 }

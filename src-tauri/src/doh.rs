@@ -89,8 +89,17 @@ impl DohResolver {
         let (mut recs, aaaa) = tokio::join!(self.query(host, 1), self.query(host, 28));
         recs.extend(aaaa);
         if recs.is_empty() {
-            // DoH unreachable / empty → system resolver so the app keeps working.
-            return self.system(host).await;
+            // DoH unreachable / empty → system resolver so the app keeps working. Negative-cache
+            // the fallback for a short TTL: without this, a blackholed/blocked/mistyped DoH
+            // endpoint re-runs the full ~6s query (bootstrap timeout) on EVERY subsequent
+            // connection to the same host, so with DoH on, every uncached host stalls ~6s and it
+            // presents as "everything is slow". Short TTL so a transient DoH outage still recovers.
+            let addrs = self.system(host).await?;
+            let ips: Vec<IpAddr> = addrs.iter().map(|a| a.ip()).collect();
+            if !ips.is_empty() {
+                self.store(host, &ips, 30);
+            }
+            return Ok(addrs);
         }
         let ttl = recs.iter().map(|(_, t)| *t).min().unwrap_or(60).clamp(30, 3600);
         let ips: Vec<IpAddr> = recs.into_iter().map(|(ip, _)| ip).collect();
@@ -110,7 +119,11 @@ impl DohResolver {
 
     fn store(&self, host: &str, ips: &[IpAddr], ttl: u32) {
         if let Ok(mut g) = self.cache.lock() {
-            g.insert(host.to_string(), CacheEntry { ips: ips.to_vec(), expires: Instant::now() + Duration::from_secs(ttl as u64) });
+            // Opportunistic eviction: drop expired entries on write so the map stays bounded by
+            // currently-live hosts, not every distinct hostname resolved this session.
+            let now = Instant::now();
+            g.retain(|_, e| e.expires > now);
+            g.insert(host.to_string(), CacheEntry { ips: ips.to_vec(), expires: now + Duration::from_secs(ttl as u64) });
         }
     }
 }

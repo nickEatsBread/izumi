@@ -53,3 +53,50 @@ pub struct OAuthRequest {
 pub struct OAuthResponse {
     pub url: String,
 }
+
+/// Read reaction counts + the signed-in user's selected key for a discussanime thread, carrying the
+/// `da_session` cookie the in-frame browser fetch cannot.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaReactionStateRequest {
+    pub base: String,
+    pub identifier: String,
+}
+
+/// Post (or clear, `key = None`) a discussanime reaction authenticated by the `da_session` cookie.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaReactRequest {
+    pub base: String,
+    pub identifier: String,
+    pub key: Option<String>,
+}
+
+/// Sign in to discussanime in the in-app overlay WebView.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DaLoginRequest {
+    pub base: String,
+}
+
+/// The raw JSON body of a reaction-state response, for the frontend to parse.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ReactionStateResponse {
+    pub body: String,
+}
+
+/// Result of a reaction POST: `ok` on success, `needs_login` when there is no live session.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReactResponse {
+    pub ok: bool,
+    pub needs_login: bool,
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+/// Result of a discussanime login attempt.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DaLoginResponse {
+    pub ok: bool,
+}

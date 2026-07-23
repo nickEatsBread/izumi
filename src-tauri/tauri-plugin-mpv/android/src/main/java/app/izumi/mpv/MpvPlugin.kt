@@ -87,6 +87,14 @@ class FullscreenArgs {
     var enabled: Boolean = false
 }
 
+@InvokeArg
+class TransformArgs {
+    /** Unitless view scale (1.0 = resting 16:9). */
+    var scale: Double = 1.0
+    /** Vertical translate in physical pixels (negative = up). */
+    var translateY: Int = 0
+}
+
 /**
  * Embedded libmpv player. Renders into a [IzumiMpvView] (SurfaceView) inserted behind the
  * (made-transparent) Tauri WebView, and forwards observed properties to JS as plugin events.
@@ -279,6 +287,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 params.height = height
                 params.topMargin = a.top.coerceAtLeast(0) + if (a.immersive) 0 else safeTop
                 playerView.layoutParams = params
+                // A viewport settle always returns the surface to an untransformed identity, clearing
+                // any leftover pull-to-fullscreen scale/translate so a rotate never inherits a stale zoom.
+                playerView.scaleX = 1f
+                playerView.scaleY = 1f
+                playerView.translationX = 0f
+                playerView.translationY = 0f
                 playerView.requestLayout()
             }
             val ret = JSObject()
@@ -287,6 +301,28 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             ret.put("bottom", safeBottom)
             ret.put("left", safeLeft)
             invoke.resolve(ret)
+        }
+    }
+
+    /**
+     * Live scale + vertical translate of the video surface for the portrait pull-to-fullscreen
+     * gesture. Uses view compositor transforms (position-synced + artifact-free on API 24+), so the
+     * video keeps playing and zooms as one unit instead of the surface being re-laid-out every frame.
+     * Identity (scale 1, translateY 0) is restored by [viewport] on the next settle.
+     */
+    @Command
+    fun transform(invoke: Invoke) {
+        val a = invoke.parseArgs(TransformArgs::class.java)
+        activity.runOnUiThread {
+            view?.let { v ->
+                v.pivotX = v.width / 2f
+                v.pivotY = v.height / 2f
+                val s = a.scale.toFloat().coerceIn(1f, 4f)
+                v.scaleX = s
+                v.scaleY = s
+                v.translationY = a.translateY.toFloat()
+            }
+            invoke.resolve()
         }
     }
 

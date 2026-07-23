@@ -113,22 +113,54 @@
   let disqusFrame = $state<HTMLIFrameElement>()
   let disqusHeight = $state(480)
 
-  const postReactionResult = (ok: boolean) => disqusFrame?.contentWindow?.postMessage({
-    type: 'izumi-react-result', ok,
-  }, window.location.origin)
+  const postToFrame = (msg: unknown) => disqusFrame?.contentWindow?.postMessage(msg, window.location.origin)
+  const postReactionResult = (ok: boolean) => postToFrame({ type: 'izumi-react-result', ok })
 
-  async function openReactionLogin(base: string) {
+  const REACTION_KEYS = ['upvote', 'funny', 'love', 'surprised', 'angry', 'sad']
+  // The reaction backend is discussanime; only carry the native da_session cookie / POST there.
+  function reactionBase(base: unknown): string | null {
+    if (typeof base !== 'string') return null
     try {
-      const url = new URL('/auth/disqus/login', base)
-      if (url.protocol !== 'https:' || url.hostname !== 'discussanime.moe') {
-        throw new Error('Unexpected reaction login host')
+      const u = new URL(base)
+      const ok = u.protocol === 'https:' && (u.hostname === 'discussanime.moe' || u.hostname.endsWith('.discussanime.moe'))
+      return ok ? u.origin : null
+    } catch { return null }
+  }
+
+  // Reactions on Android: the same-origin loader can only read PUBLIC counts (its cross-site fetch can't
+  // carry discussanime's session cookie). It asks us to do the authenticated work natively — read the
+  // signed-in reaction state, and post a react (signing in via the in-app overlay first when needed,
+  // then replaying the pending react). The overlay stays in-app, so the panel + iframe survive.
+  async function loadReactionState(rawBase: unknown, identifier: unknown) {
+    const base = reactionBase(rawBase)
+    if (!base || typeof identifier !== 'string') return
+    try {
+      const res = await invoke<{ body: string }>('plugin:extplayer|da_reaction_state', { payload: { base, identifier } })
+      const data = JSON.parse(res.body)
+      postToFrame({ type: 'izumi-reaction-state-result', counts: data.counts, reaction: data.selectedKey ?? null })
+    } catch { /* leave the loader's public counts as-is */ }
+  }
+
+  async function sendReaction(rawBase: unknown, identifier: unknown, key: unknown) {
+    const base = reactionBase(rawBase)
+    // key is a known reaction, or null to clear the current one; reject anything else.
+    const react = key == null ? null : (typeof key === 'string' && REACTION_KEYS.includes(key) ? key : undefined)
+    if (!base || typeof identifier !== 'string' || react === undefined) { postReactionResult(false); return }
+    try {
+      let res = await invoke<{ ok: boolean; needsLogin: boolean; body?: string }>(
+        'plugin:extplayer|da_react', { payload: { base, identifier, key: react } })
+      if (res.needsLogin) {
+        const login = await invoke<{ ok: boolean }>('plugin:extplayer|da_login', { payload: { base } })
+        if (!login.ok) { postReactionResult(false); return }
+        res = await invoke('plugin:extplayer|da_react', { payload: { base, identifier, key: react } })
       }
-      await invoke('plugin:extplayer|open_browser', { payload: { url: url.toString() } })
-    } catch {
-      // The reaction remains unchanged; the iframe result below also releases its busy state.
-    } finally {
-      postReactionResult(false)
-    }
+      if (res.ok) {
+        const counts = res.body ? JSON.parse(res.body).counts : undefined
+        postToFrame({ type: 'izumi-react-result', ok: true, counts, reaction: react })
+      } else {
+        postReactionResult(false)
+      }
+    } catch { postReactionResult(false) }
   }
 
   onMount(() => {
@@ -137,8 +169,10 @@
       if (event.data?.type === 'izumi-disqus-height') {
         const height = Number(event.data.height)
         if (Number.isFinite(height)) disqusHeight = Math.max(480, Math.min(20_000, Math.ceil(height)))
-      } else if (event.data?.type === 'izumi-react' && typeof event.data.base === 'string') {
-        void openReactionLogin(event.data.base)
+      } else if (event.data?.type === 'izumi-react') {
+        void sendReaction(event.data.base, event.data.identifier, event.data.key)
+      } else if (event.data?.type === 'izumi-reaction-state') {
+        void loadReactionState(event.data.base, event.data.identifier)
       }
     }
     window.addEventListener('message', onMessage)

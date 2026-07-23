@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
-import { fetchMediaById } from '$lib/anilist/fetch-media'
+import { fetchMediaByIds } from '$lib/anilist/fetch-media'
 import type { Media } from '$lib/anilist/types'
 import { downloads, keyFor, type DownloadPreferences } from './state'
 import { enqueue } from './store'
@@ -91,11 +91,18 @@ export async function runAutoDownloadRules(now = Date.now()): Promise<number> {
   autoDownloadRunning.set(true)
   let queued = 0
   try {
-    for (const rule of get(autoDownloadRules).filter((item) => item.enabled)) {
+    const enabled = get(autoDownloadRules).filter((item) => item.enabled)
+    // Airing schedules change over time, so scheduler checks must read CURRENT AniList state
+    // (fresh). Fetch every subscribed title in ONE batched request (per 50) through the pooled +
+    // rate-limited client, instead of N serial unpooled fetch-by-id calls that each opened a fresh
+    // TLS handshake and bypassed the Bottleneck limiter + shared 429 cooldown.
+    const mediaById = enabled.length
+      ? await fetchMediaByIds(enabled.map((r) => r.mediaId), true)
+      : new Map<number, Media>()
+    for (const rule of enabled) {
       try {
-        // Airing schedules change over time, so scheduler checks must bypass the
-        // playback-oriented session cache and read current AniList state.
-        const media = await fetchMediaById(rule.mediaId, true)
+        const media = mediaById.get(rule.mediaId)
+        if (!media) throw new Error('Could not fetch anime info.')
         const due = dueAutoDownloadEpisodes(media, rule.nextEpisode, now, get(autoDownloadDelayMinutes))
         let nextEpisode = rule.nextEpisode
         for (const episode of due) {

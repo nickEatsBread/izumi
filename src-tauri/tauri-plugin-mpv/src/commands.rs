@@ -3,7 +3,7 @@ use tauri::{command, AppHandle, Runtime};
 use crate::{
     models::{
         BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest,
-        LoadRequest, SetRequest, ThumbRequest, ViewportRequest,
+        LoadRequest, SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -58,6 +58,14 @@ pub(crate) async fn mpv_fullscreen<R: Runtime>(
     payload: FullscreenRequest,
 ) -> Result<()> {
     app.mpv().fullscreen(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_transform<R: Runtime>(
+    app: AppHandle<R>,
+    payload: TransformRequest,
+) -> Result<()> {
+    app.mpv().transform(payload)
 }
 
 #[command]

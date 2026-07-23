@@ -415,6 +415,18 @@
           "markdownDescription": "Denies the mpv_thumb command without any pre-configured scope."
         },
         {
+          "description": "Enables the mpv_transform command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-transform",
+          "markdownDescription": "Enables the mpv_transform command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_transform command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-transform",
+          "markdownDescription": "Denies the mpv_transform command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_viewport command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-viewport",
@@ -451,10 +463,10 @@
           "markdownDescription": "Denies the removeListener command without any pre-configured scope."
         },
         {
-          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-registerListener`\n- `allow-removeListener`",
+          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-registerListener`\n- `allow-removeListener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-registerListener`\n- `allow-removeListener`"
+          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-registerListener`\n- `allow-removeListener`"
         }
       ]
     }

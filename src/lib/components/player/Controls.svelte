@@ -23,7 +23,7 @@
   import Search from 'lucide-svelte/icons/search'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState } from '$lib/player/session'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { commentsEnabled, discussionExpanded } from '$lib/comments'
@@ -225,11 +225,7 @@
   }
   const devTools: { label: string; run: () => void }[] = [{ label: 'Copy URL', run: copyUrl }]
   let rootH = $state(0), detailH = $state(0)
-  async function loadTracks() {
-    showOptions = false // only one popover open at a time
-    showTracks = !showTracks
-    menuLevel = 'root'
-    if (!showTracks) return
+  async function refreshTracks() {
     try {
       const raw = await invoke<string>('player_tracks')
       tracks = JSON.parse(raw) as Track[]
@@ -239,6 +235,18 @@
       tracks = []
     }
   }
+  async function loadTracks() {
+    showOptions = false // only one popover open at a time
+    showTracks = !showTracks
+    menuLevel = 'root'
+    if (showTracks) await refreshTracks()
+  }
+  // A sidecar can finish while this menu is already open. Refresh its live mpv snapshot after
+  // every successful sub-add so "Loading subtitles…" turns into selectable tracks in place.
+  $effect(() => {
+    const revision = $torrentSubtitleState.revision
+    if (showTracks && revision > 0) void refreshTracks()
+  })
   const subs = $derived(tracks.filter((t) => t.type === 'sub'))
   const audios = $derived(tracks.filter((t) => t.type === 'audio'))
 
@@ -265,7 +273,11 @@
     return on ? label(on, group) : 'Off'
   }
   const curAudioLabel = $derived(curLabel(audios))
-  const curSubLabel = $derived(curLabel(subs))
+  const curSubLabel = $derived(
+    !subs.length && $torrentSubtitleState.status === 'loading'
+      ? 'Loading…'
+      : curLabel(subs),
+  )
   function openDetail(cat: 'audio' | 'subs' | 'dev' | 'online') {
     detailCat = cat
     menuLevel = 'detail'
@@ -608,7 +620,15 @@
                                   {#if t.selected}<Check size={18} class="shrink-0 text-primary" />{/if}
                                 </button>
                               {/each}
-                            {:else}
+                            {/if}
+                            {#if detailCat === 'subs' && $torrentSubtitleState.status === 'loading'}
+                              <div class="flex items-center gap-2 px-3 py-2 text-white/55">
+                                <span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>
+                                <span>Loading subtitles…</span>
+                              </div>
+                            {:else if detailCat === 'subs' && $torrentSubtitleState.status === 'error' && !detailItems.length}
+                              <p class="px-3 py-2 text-white/40">Bundled subtitles failed to load</p>
+                            {:else if !detailItems.length}
                               <p class="px-3 py-2 text-white/40">No {detailTitle.toLowerCase()} tracks</p>
                             {/if}
                           {/if}

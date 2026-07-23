@@ -29,6 +29,7 @@
     setSubTrack,
     setPlayerViewport,
     setPlayerFullscreen,
+    setPlayerTransform,
     type MpvTrack,
   } from '$lib/player/android-mpv'
   import {
@@ -36,6 +37,8 @@
     fullscreenPullProgress,
     shouldEnterFullscreen,
     shouldDismissSheet,
+    landscapeExitProgress,
+    shouldExitFullscreen,
     MOVE_PX,
     HOLD_MS,
     DOUBLE_TAP_MS,
@@ -83,6 +86,8 @@
   let portraitVideoHeight: number | null = $state(null)
   let fullscreenPull = $state(0)
   let fullscreenPullDragging = $state(false)
+  let pullDim = $state(0) // 0..1 page-dim/scale progress, drives the enlarge + details fade
+  let exitDrag = $state(0) // 0..1 landscape swipe-down-to-exit progress → dims the video
   let orientationForced = false
 
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
@@ -208,6 +213,7 @@
       if (!landscape && dy < -MOVE_PX && Math.abs(dy) > Math.abs(dx)) {
         barGesture = 'fullscreen'
         fullscreenPullDragging = true
+        controlsShown = false // clean video while it zooms toward fullscreen
         startSample = barStartSample
         updateFullscreenPull(e)
         return
@@ -332,7 +338,7 @@
   }
 
   // --- Whole-surface gesture layer: tap / double-tap / swipe brightness+volume / hold-2× / scrub ---
-  type GestureKind = 'scrub' | 'fullscreen' | 'brightness' | 'volume' | 'hold' | 'none' | null
+  type GestureKind = 'scrub' | 'fullscreen' | 'exit' | 'brightness' | 'volume' | 'hold' | 'none' | null
   let gesture = $state<GestureKind>(null)
   let startSample = { x: 0, y: 0, t: 0 }
   let scrubStartPos = 0
@@ -344,26 +350,57 @@
   let pullLastY = 0
   let pullLastTime = 0
   let pullVelocityY = 0
-  let pullViewportBusy = false
-  let pendingPullViewportHeight: number | null = null
+  let pullTransformBusy = false
+  let pendingPullTransform: { scale: number; ty: number } | null = null
+  let pullAnimFrame = 0
+  let exitAnimFrame = 0
   const VIDEO_SCRUB_SPAN = 90 // seconds spanned by a full-width horizontal drag over the video
+  const PULL_SCALE_GAIN = 0.6 // extra surface scale at a full pull (1 → 1.6), YouTube-style zoom
+  const PULL_LIFT_FRACTION = 0.18 // upward translate at a full pull, as a fraction of video height
 
-  function queuePullViewport(heightCssPx: number) {
-    pendingPullViewportHeight = heightCssPx
-    if (pullViewportBusy) return
-    pullViewportBusy = true
+  // Coalesced native-surface transform: only the latest (scale, translate) is ever in flight, so a
+  // fast drag never floods the IPC bridge. Unlike a viewport resize this is a cheap compositor op.
+  function queuePullTransform(scale: number, tyCssPx: number) {
+    const dpr = window.devicePixelRatio || 1
+    pendingPullTransform = { scale, ty: Math.round(tyCssPx * dpr) }
+    if (pullTransformBusy) return
+    pullTransformBusy = true
     void (async () => {
-      while (pendingPullViewportHeight != null) {
-        const height = pendingPullViewportHeight
-        pendingPullViewportHeight = null
-        const dpr = window.devicePixelRatio || 1
-        await setPlayerViewport(0, height * dpr, false).catch(() => {})
+      while (pendingPullTransform != null) {
+        const t = pendingPullTransform
+        pendingPullTransform = null
+        await setPlayerTransform(t.scale, t.ty).catch(() => {})
       }
-      pullViewportBusy = false
+      pullTransformBusy = false
     })()
   }
 
+  // Map a 0..1 pull progress to the live surface zoom + upward lift + page dim. The 16:9 box itself
+  // stays put — the video scales as one unit over the (fading) details pane, like YouTube.
+  function applyPull(progress: number) {
+    pullDim = progress
+    const scale = 1 + PULL_SCALE_GAIN * progress
+    const lift = -PULL_LIFT_FRACTION * pullPlayerHeight * progress
+    queuePullTransform(scale, lift)
+  }
+
+  // Ease the pull to a target progress (used for the spring-back on cancel).
+  function animatePullTo(from: number, to: number) {
+    cancelAnimationFrame(pullAnimFrame)
+    let startTs = 0
+    const DUR = 200
+    const step = (ts: number) => {
+      if (!startTs) startTs = ts
+      const k = Math.min(1, (ts - startTs) / DUR)
+      const eased = 1 - Math.pow(1 - k, 3) // easeOutCubic
+      applyPull(from + (to - from) * eased)
+      if (k < 1) pullAnimFrame = requestAnimationFrame(step)
+    }
+    pullAnimFrame = requestAnimationFrame(step)
+  }
+
   function updateFullscreenPull(e: PointerEvent) {
+    cancelAnimationFrame(pullAnimFrame)
     const dt = Math.max(1, e.timeStamp - pullLastTime)
     const velocity = (e.clientY - pullLastY) / dt
     pullVelocityY = pullVelocityY * 0.65 + velocity * 0.35
@@ -375,22 +412,58 @@
       pullPlayerTop,
       pullPlayerHeight,
     )
-    const available = Math.max(pullPlayerHeight, window.innerHeight - safeTop)
-    portraitVideoHeight = pullPlayerHeight + (available - pullPlayerHeight) * fullscreenPull
-    queuePullViewport(portraitVideoHeight)
+    applyPull(fullscreenPull)
   }
 
   function resetFullscreenPull() {
     fullscreenPullDragging = false
+    const from = fullscreenPull
     fullscreenPull = 0
-    const restingHeight = Math.round(window.innerWidth * 9 / 16)
-    portraitVideoHeight = restingHeight
-    queuePullViewport(restingHeight)
+    animatePullTo(from, 0) // eases scale/lift/dim back to the resting 16:9 box
+  }
+
+  // Landscape swipe-DOWN to exit fullscreen — mirror of the pull-up. Dims the video as the finger
+  // drags, commits to portrait past a threshold/fling, springs back otherwise. A pure DOM dim (no
+  // native surface transform) so it can't interact badly with the landscape→portrait rotation.
+  function updateExitDrag(e: PointerEvent) {
+    cancelAnimationFrame(exitAnimFrame)
+    const dt = Math.max(1, e.timeStamp - pullLastTime)
+    const velocity = (e.clientY - pullLastY) / dt
+    pullVelocityY = pullVelocityY * 0.65 + velocity * 0.35
+    pullLastY = e.clientY
+    pullLastTime = e.timeStamp
+    exitDrag = landscapeExitProgress(
+      startSample,
+      { x: e.clientX, y: e.clientY, t: e.timeStamp },
+      window.innerHeight,
+    )
+  }
+
+  function animateExitTo(from: number, to: number) {
+    cancelAnimationFrame(exitAnimFrame)
+    let startTs = 0
+    const DUR = 200
+    const step = (ts: number) => {
+      if (!startTs) startTs = ts
+      const k = Math.min(1, (ts - startTs) / DUR)
+      const eased = 1 - Math.pow(1 - k, 3)
+      exitDrag = from + (to - from) * eased
+      if (k < 1) exitAnimFrame = requestAnimationFrame(step)
+    }
+    exitAnimFrame = requestAnimationFrame(step)
+  }
+
+  function resetExitDrag() {
+    animateExitTo(exitDrag, 0)
   }
 
   async function enterFullscreen() {
+    cancelAnimationFrame(pullAnimFrame)
     orientationForced = true
     controlsShown = false
+    // Let the pull zoom ride the rotation into fullscreen instead of un-zooming first (that reads as
+    // a hiccup). The orientation change runs syncViewport → viewport(), which resets the surface to
+    // identity as it fills the screen; pullDim is likewise zeroed there once landscape settles.
     try {
       await setPlayerFullscreen(true)
     } catch {
@@ -443,8 +516,20 @@
         clearTimeout(holdTimer)
         gesture = 'fullscreen'
         fullscreenPullDragging = true
+        controlsShown = false // clean video while it zooms toward fullscreen
         resetTapSequence()
         updateFullscreenPull(e)
+        return
+      }
+      const exit = landscape
+        ? landscapeExitProgress(startSample, cur, window.innerHeight)
+        : 0
+      if (exit > 0) {
+        clearTimeout(holdTimer)
+        gesture = 'exit'
+        controlsShown = false // clean video while it slides toward the inline player
+        resetTapSequence()
+        updateExitDrag(e)
         return
       }
       const g = classifyDrag(startSample, cur, window.innerWidth, window.innerHeight)
@@ -460,18 +545,24 @@
       schedulePreview(scrubStartPos + ((cur.x - startSample.x) / window.innerWidth) * VIDEO_SCRUB_SPAN)
     } else if (gesture === 'fullscreen') {
       updateFullscreenPull(e)
+    } else if (gesture === 'exit') {
+      updateExitDrag(e)
     }
   }
   function onRootUp(e: PointerEvent) {
     if (rootPointerId !== e.pointerId) return
     rootPointerId = null
     clearTimeout(holdTimer)
-    if (heldSpeed) { heldSpeed = false; mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
+    if (heldSpeed) { heldSpeed = false; mpvCommand(['set', 'speed', String(speed)]) }
     if (gesture === 'scrub') { endScrub('surface', e.pointerId); armHide() }
     else if (gesture === 'fullscreen') {
       fullscreenPullDragging = false
       if (shouldEnterFullscreen(fullscreenPull, pullVelocityY)) void enterFullscreen()
       else { resetFullscreenPull(); armHide() }
+    }
+    else if (gesture === 'exit') {
+      if (shouldExitFullscreen(exitDrag, pullVelocityY)) void exitAndroidFullscreen()
+      else { resetExitDrag(); armHide() }
     }
     else if (gesture === null) onTap(e) // no drag happened → treat as a tap
     gesture = null
@@ -481,9 +572,10 @@
     if (rootPointerId !== e.pointerId) return
     rootPointerId = null
     clearTimeout(holdTimer)
-    if (heldSpeed) { heldSpeed = false; void mpvCommand(['set', 'speed', String(speed)]); flashToast(`${speed}×`) }
+    if (heldSpeed) { heldSpeed = false; void mpvCommand(['set', 'speed', String(speed)]) }
     if (scrubOwner === 'surface' && scrubPointerId === e.pointerId) cancelScrub()
     if (gesture === 'fullscreen') resetFullscreenPull()
+    if (gesture === 'exit') resetExitDrag()
     gesture = null
     armHide()
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
@@ -652,8 +744,12 @@
     const dpr = window.devicePixelRatio || 1
     const insets = await setPlayerViewport(0, nextLandscape ? 0 : ratioHeight * dpr, nextLandscape)
     if (generation !== viewportGeneration) return
+    cancelAnimationFrame(pullAnimFrame)
+    cancelAnimationFrame(exitAnimFrame)
     fullscreenPullDragging = false
     fullscreenPull = 0
+    pullDim = 0 // the viewport call above already reset the native surface transform to identity
+    exitDrag = 0
     portraitVideoHeight = nextLandscape ? null : ratioHeight
     safeTop = insets.top / dpr
     safeRight = insets.right / dpr
@@ -677,7 +773,9 @@
       clearTimeout(lockToggleTimer); clearTimeout(toastTimer)
       clearTimeout(holdTimer); clearTimeout(thumbDebounce); clearTimeout(sheetCloseTimer)
       cancelAnimationFrame(sheetOpenFrame)
-      pendingPullViewportHeight = null
+      cancelAnimationFrame(pullAnimFrame)
+      cancelAnimationFrame(exitAnimFrame)
+      pendingPullTransform = null
       cancelScrub()
       cancelAnimationFrame(viewportFrame)
       orientation.removeEventListener('change', scheduleViewportSync)
@@ -694,6 +792,11 @@
        paused, keep the play button so you can resume. -->
   {#if loading && !paused}
     <div class="pointer-events-none absolute inset-0 grid place-items-center"><Loader size={52} class="animate-spin text-white/90" /></div>
+  {/if}
+
+  {#if exitDrag > 0}
+    <!-- Landscape swipe-down-to-exit: dim the video as the finger pulls it toward the inline player. -->
+    <div class="pointer-events-none absolute inset-0 z-10 bg-black" style:opacity={exitDrag * 0.6}></div>
   {/if}
 
   {#if seekFlash}
@@ -751,7 +854,7 @@
     <!-- Center transport (morphing play/pause). Hidden while buffering-and-playing (spinner shows);
          always shown when paused so you can resume. -->
     {#if !loading || paused}
-      <div transition:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
+      <div transition:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
         <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
         <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={paused ? 'Play' : 'Pause'}>
           {#key paused}
@@ -802,7 +905,9 @@
   </section>
 
   {#if !landscape}
-    <section class="watch-details overflow-y-auto">
+    <!-- Fades out as the video zooms so the enlarging native surface shows through it (the video is
+         behind the WebView — an opaque details pane would otherwise clip the lower half of the zoom). -->
+    <section class="watch-details overflow-y-auto" style:opacity={1 - pullDim} style:pointer-events={pullDim > 0 ? 'none' : null}>
       {#if $nowPlayingMedia}
         <AndroidWatchDetails
           media={$nowPlayingMedia.media}

@@ -28,6 +28,10 @@ izumi.flatpak
 flatpak/_repo/
 flatpak/_build/
 flatpak/.flatpak-builder/
+/.flatpak-builder/
 flatpak/izumi-key.gpg
 .claude/
 /src-tauri/.idea
+
+# Local build output (packaged bundles, not committed)
+/output/

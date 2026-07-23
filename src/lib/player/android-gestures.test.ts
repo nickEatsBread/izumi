@@ -6,6 +6,8 @@ import {
   fullscreenPullProgress,
   shouldEnterFullscreen,
   shouldDismissSheet,
+  landscapeExitProgress,
+  shouldExitFullscreen,
 } from './android-gestures'
 
 describe('zoneOf', () => {
@@ -105,5 +107,29 @@ describe('portrait fullscreen pull', () => {
     expect(shouldEnterFullscreen(0.5, -0.1)).toBe(true)
     expect(shouldEnterFullscreen(0.2, -0.7)).toBe(true)
     expect(shouldEnterFullscreen(0.2, -0.1)).toBe(false)
+  })
+})
+
+describe('landscape swipe-down exit', () => {
+  const VH = 400
+
+  it('tracks a downward drag through the fullscreen video', () => {
+    const progress = landscapeExitProgress({ x: 400, y: 200, t: 0 }, { x: 404, y: 340, t: 100 }, VH)
+    expect(progress).toBeGreaterThan(0.4)
+  })
+
+  it('ignores upward drags, horizontal scrubs, and top-edge starts', () => {
+    // upward
+    expect(landscapeExitProgress({ x: 400, y: 300, t: 0 }, { x: 400, y: 200, t: 100 }, VH)).toBe(0)
+    // dominant-horizontal (a scrub)
+    expect(landscapeExitProgress({ x: 200, y: 200, t: 0 }, { x: 320, y: 230, t: 100 }, VH)).toBe(0)
+    // starts in the top safe band (system-bar swipe)
+    expect(landscapeExitProgress({ x: 400, y: 10, t: 0 }, { x: 400, y: 200, t: 100 }, VH)).toBe(0)
+  })
+
+  it('commits a substantial pull or a fast downward fling', () => {
+    expect(shouldExitFullscreen(0.5, 0.1)).toBe(true)
+    expect(shouldExitFullscreen(0.1, 0.7)).toBe(true)
+    expect(shouldExitFullscreen(0.1, 0.1)).toBe(false)
   })
 })
