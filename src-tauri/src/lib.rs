@@ -599,6 +599,14 @@ fn player_set_render_opts(opts: Vec<(String, String)>, player: tauri::State<'_, 
     player.set_render_opts(opts)
 }
 
+/// Download (if needed) and return the local path of the ArtCNN shader `variant`, for the Anime
+/// preset. Repo is hardcoded upstream. On any failure the frontend falls back to High Quality.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn ensure_artcnn(app: tauri::AppHandle, variant: String) -> Result<String, String> {
+    player::shaders::ensure(&app, &variant).await
+}
+
 /// Inhibit the OS idle / screen-blank while a video is actively playing — so the Steam Deck's
 /// screen doesn't dim mid-episode. Called with `on=false` when paused, at EOF, or when the
 /// player closes (and gated by the user's "Keep screen awake while playing" setting), so
@@ -2551,6 +2559,7 @@ pub fn run() {
             set_doh,
             set_player_cache,
             player_set_render_opts,
+            ensure_artcnn,
             set_idle_inhibit,
             write_text_file,
             updater_check,
