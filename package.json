@@ -1,6 +1,6 @@
 {
   "name": "izumi",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "izumi — a native desktop anime client",
   "license": "AGPL-3.0-or-later",
   "type": "module",
