@@ -110,6 +110,14 @@ export function playerCacheBytes(cacheMb: number, videoSize?: number, durationSe
  *  crop to fill the frame (mpv panscan). */
 export type VideoFit = 'best' | 'fill'
 export const videoFit = persisted<VideoFit>('video-fit', 'best')
+
+/** Video-quality preset: a bundle of mpv render options (scalers, debanding, dithering, …)
+ *  applied together. 'custom' hands control to the raw-options textarea below. See
+ *  `resolvePreset` in $lib/player/quality for the actual option table. */
+export type QualityPreset = 'performance' | 'standard' | 'high' | 'anime' | 'custom'
+export const videoQualityPreset = persisted<QualityPreset>('video-quality-preset', 'standard')
+/** Raw mpv render options (one `key=value` per line) for the Custom preset. */
+export const rawMpvOptions = persisted<string>('video-raw-mpv-options', '')
 /** Play in an external player (mpv/VLC/…) instead of the embedded one. No progress
  *  tracking/resume while external (we get no playback events back). */
 export const enableExternalPlayer = persisted<boolean>('external-player-enabled', false)
