@@ -42,7 +42,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::play_external,
             commands::install_apk,
             commands::device_status,
-            commands::open_browser
+            commands::open_browser,
+            commands::da_reaction_state,
+            commands::da_react,
+            commands::da_login
         ])
         .setup(|app, api| {
             #[cfg(mobile)]

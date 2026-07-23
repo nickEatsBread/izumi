@@ -64,6 +64,15 @@ pub struct FullscreenRequest {
     pub enabled: bool,
 }
 
+/// Live scale + vertical translate for the portrait pull-to-fullscreen gesture. `scale` is a unitless
+/// view scale (1.0 = resting 16:9); `translate_y` is physical pixels (negative = up).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransformRequest {
+    pub scale: f64,
+    pub translate_y: i32,
+}
+
 /// Grab a preview frame from a stream at `time_sec`, scaled to `width` px wide.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

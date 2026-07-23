@@ -2,8 +2,9 @@ use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
-    BrowserRequest, DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse,
-    PlayRequest,
+    BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
+    DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
+    ReactResponse, ReactionStateResponse,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -44,5 +45,25 @@ impl<R: Runtime> ExtPlayer<R> {
     // Desktop uses the native second-window `oauth_capture` in the app crate, not this.
     pub fn oauth_capture(&self, _payload: OAuthRequest) -> crate::Result<OAuthResponse> {
         Ok(OAuthResponse { url: String::new() })
+    }
+
+    // Desktop reactions go through the app crate's `da_*` commands (WebView2 cookie jar), not this.
+    pub fn da_reaction_state(
+        &self,
+        _payload: DaReactionStateRequest,
+    ) -> crate::Result<ReactionStateResponse> {
+        Ok(ReactionStateResponse { body: String::new() })
+    }
+
+    pub fn da_react(&self, _payload: DaReactRequest) -> crate::Result<ReactResponse> {
+        Ok(ReactResponse {
+            ok: false,
+            needs_login: true,
+            body: None,
+        })
+    }
+
+    pub fn da_login(&self, _payload: DaLoginRequest) -> crate::Result<DaLoginResponse> {
+        Ok(DaLoginResponse { ok: false })
     }
 }

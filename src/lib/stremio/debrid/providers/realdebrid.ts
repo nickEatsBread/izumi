@@ -63,6 +63,25 @@ export function rdFile(f: { id: number; path: string; bytes: number }): DebridFi
   return { id: String(f.id), name, size: f.bytes, playable: VIDEO.test(name) && !JUNK.test(name) }
 }
 
+// Find an already-DOWNLOADED torrent id for `hash` in the account's list. RD has no
+// get-by-hash endpoint, so we scan the newest-first list. A single `limit=100` page missed the
+// hash for accounts with >100 torrents — the entry had scrolled past the newest 100 — so the
+// resolve fell through to addMagnet and RD re-cached a torrent that was already downloaded. Page
+// through until found or the list is exhausted, bounded to keep the common (small-account) case
+// at exactly one request: page 1 returning <100 entries (or a hit) stops immediately.
+async function findDownloadedId(key: string, hash: string): Promise<string | undefined> {
+  const LIMIT = 100
+  const MAX_PAGES = 5 // ≤500 torrents scanned; beyond that, fall through to addMagnet
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as Array<{ id: string; hash?: string; status: string }>
+    if (!Array.isArray(list) || list.length === 0) break
+    const hit = list.find((t) => t.hash?.toLowerCase() === hash && t.status === 'downloaded')
+    if (hit) return hit.id
+    if (list.length < LIMIT) break // last page reached
+  }
+  return undefined
+}
+
 export const realdebrid: DebridProvider = {
   id: 'realdebrid',
   name: 'Real-Debrid',
@@ -77,8 +96,7 @@ export const realdebrid: DebridProvider = {
     const hash = hashOf(hashOrMagnet)
     let id: string | undefined
     try {
-      const list = await rd('GET', '/torrents?limit=100', key) as Array<{ id: string; hash?: string; status: string }>
-      id = list.find((t) => t.hash?.toLowerCase() === hash && t.status === 'downloaded')?.id
+      id = await findDownloadedId(key, hash)
     } catch { /* list unavailable — fall through to addMagnet */ }
     if (!id) {
       id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id

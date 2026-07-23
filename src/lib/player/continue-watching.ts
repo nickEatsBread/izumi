@@ -195,33 +195,52 @@ async function refreshLocalMedia(client: QueryClient): Promise<{ media: Record<n
   catch { return { media: {}, failed: true } }
 }
 
+// Throttle + de-dupe the background reconcile. ContinueRow runs it on every mount, so bouncing
+// home↔detail refired the full 3-call tracker sync each time — needless load against AniList's
+// tight rate budget when the local-first snapshot already painted. Skip if one finished within the
+// TTL, and fold concurrent callers onto the in-flight run. `force` (used by tests + any caller that
+// genuinely needs fresh data) bypasses both guards.
+const RECONCILE_TTL_MS = 45_000
+let lastReconciledAt = 0
+let reconcileInFlight: Promise<void> | null = null
+
 /**
  * Background sync: fetch the trackers + refresh local media, then rebuild `cwSnapshot`. Best-effort —
  * never throws. If an ENABLED tracker fetch failed (offline), the write is skipped so a good snapshot
  * isn't clobbered to empty. Local-only users (no linked tracker) need no network and return early.
  */
-export async function reconcileContinueWatching(client: QueryClient, userName: string | undefined, malActive: boolean): Promise<void> {
+export async function reconcileContinueWatching(client: QueryClient, userName: string | undefined, malActive: boolean, force = false): Promise<void> {
   if (!userName && !malActive) { reconciledOnce.set(true); return }
-  reconciling.set(true)
-  try {
-    const [ani, mal, refreshed] = await Promise.all([
-      fetchAni(client, userName),
-      fetchMal(client, malActive),
-      refreshLocalMedia(client),
-    ])
-    const enabledTrackerFailed = (!!userName && ani.failed) || (malActive && mal.failed)
-    if (enabledTrackerFailed) return // keep the snapshot; can't tell "removed" from "unreachable"
-    cwSnapshot.set(buildSnapshot({
-      ani: ani.items,
-      mal: mal.items,
-      refreshedMedia: refreshed.media,
-      history: get(localHistory),
-      session: get(sessionProgress),
-      prior: get(cwSnapshot),
-    }))
+  if (!force) {
+    if (reconcileInFlight) return reconcileInFlight
+    if (Date.now() - lastReconciledAt < RECONCILE_TTL_MS) return
   }
-  finally {
-    reconciledOnce.set(true)
-    reconciling.set(false)
-  }
+  const run = (async () => {
+    reconciling.set(true)
+    try {
+      const [ani, mal, refreshed] = await Promise.all([
+        fetchAni(client, userName),
+        fetchMal(client, malActive),
+        refreshLocalMedia(client),
+      ])
+      const enabledTrackerFailed = (!!userName && ani.failed) || (malActive && mal.failed)
+      if (enabledTrackerFailed) return // keep the snapshot; can't tell "removed" from "unreachable"
+      cwSnapshot.set(buildSnapshot({
+        ani: ani.items,
+        mal: mal.items,
+        refreshedMedia: refreshed.media,
+        history: get(localHistory),
+        session: get(sessionProgress),
+        prior: get(cwSnapshot),
+      }))
+    }
+    finally {
+      lastReconciledAt = Date.now()
+      reconciledOnce.set(true)
+      reconciling.set(false)
+      reconcileInFlight = null
+    }
+  })()
+  reconcileInFlight = run
+  return run
 }

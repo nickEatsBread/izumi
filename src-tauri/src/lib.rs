@@ -2588,6 +2588,7 @@ pub fn run() {
             download::download_dir_default,
             download::reveal_in_folder,
             direct_torrent::torrent_playback_url,
+            direct_torrent::torrent_playback_add_subtitle,
             direct_torrent::torrent_playback_buffer,
             direct_torrent::torrent_playback_stop,
             sync::sync_status,

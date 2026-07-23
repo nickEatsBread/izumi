@@ -14,6 +14,27 @@ export interface Pos {
 /** Persisted map of `${mediaId}:${episode}` -> `{ pos, dur }`. */
 export const positions = persisted<Record<string, Pos>>('player-positions', {})
 
+// The map is rewritten whole to localStorage on every save, so its size is a per-save cost that
+// otherwise only ever grows: `clearPosition` leaves a `cleared` tombstone (never deletes) and
+// each played episode adds an entry for the life of the install. Bound it on write — drop
+// long-expired tombstones (their completion is long since synced) and cap total entries to the
+// most-recently-touched, so an ancient resume point can't pin unbounded storage. 500 covers far
+// more in-flight episodes than any real watch session; continue-watching rebuilds from trackers.
+const MAX_POSITIONS = 500
+const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
+
+function prune(p: Record<string, Pos>): Record<string, Pos> {
+  const now = Date.now()
+  let entries = Object.entries(p).filter(
+    ([, v]) => !(v.cleared && v.updatedAt != null && now - v.updatedAt > TOMBSTONE_TTL_MS),
+  )
+  if (entries.length > MAX_POSITIONS) {
+    entries.sort((a, b) => (b[1].updatedAt ?? 0) - (a[1].updatedAt ?? 0))
+    entries = entries.slice(0, MAX_POSITIONS)
+  }
+  return Object.fromEntries(entries)
+}
+
 /** Storage key for a given media + episode. */
 export const progressKey = (mediaId: number, episode: number) => `${mediaId}:${episode}`
 
@@ -30,7 +51,7 @@ export function positionPercent(position?: Pos): number {
 export function savePosition(mediaId: number, episode: number, pos: number, dur = 0) {
   positions.update((p) => {
     const k = progressKey(mediaId, episode)
-    return { ...p, [k]: { pos, dur: dur || p[k]?.dur || 0, updatedAt: Date.now() } }
+    return prune({ ...p, [k]: { pos, dur: dur || p[k]?.dur || 0, updatedAt: Date.now() } })
   })
 }
 
@@ -61,6 +82,6 @@ export function episodeBarPercent(position: Pos | undefined, watchedThrough: boo
 export function clearPosition(mediaId: number, episode: number) {
   positions.update((p) => {
     const k = progressKey(mediaId, episode)
-    return { ...p, [k]: { pos: 0, dur: p[k]?.dur ?? 0, updatedAt: Date.now(), cleared: true } }
+    return prune({ ...p, [k]: { pos: 0, dur: p[k]?.dur ?? 0, updatedAt: Date.now(), cleared: true } })
   })
 }

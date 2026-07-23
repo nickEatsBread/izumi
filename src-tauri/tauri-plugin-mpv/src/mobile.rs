@@ -6,7 +6,7 @@ use tauri::{
 
 use crate::models::{
     BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest, LoadRequest,
-    SetRequest, ThumbRequest, ViewportRequest,
+    SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -63,6 +63,12 @@ impl<R: Runtime> Mpv<R> {
     pub fn fullscreen(&self, payload: FullscreenRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("fullscreen", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn transform(&self, payload: TransformRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("transform", payload)
             .map_err(Into::into)
     }
 

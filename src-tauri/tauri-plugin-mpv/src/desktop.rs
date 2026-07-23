@@ -3,7 +3,7 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
     BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest, LoadRequest,
-    SetRequest, ThumbRequest, ViewportRequest,
+    SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -48,6 +48,10 @@ impl<R: Runtime> Mpv<R> {
     }
 
     pub fn fullscreen(&self, _payload: FullscreenRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn transform(&self, _payload: TransformRequest) -> crate::Result<()> {
         Ok(())
     }
 

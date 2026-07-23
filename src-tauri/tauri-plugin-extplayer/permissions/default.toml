@@ -2,4 +2,4 @@
 
 [default]
 description = "Allow Android playback, browser authentication, self-update, and power/network checks."
-permissions = ["allow-play-external", "allow-install-apk", "allow-device-status", "allow-open-browser"]
+permissions = ["allow-play-external", "allow-install-apk", "allow-device-status", "allow-open-browser", "allow-da-reaction-state", "allow-da-react", "allow-da-login"]

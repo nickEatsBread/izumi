@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { anilist } from './client'
-import { LIST_QUERY, flattenEntries } from './lists'
+import { LIST_IDS_QUERY } from './lists'
 import { getMalAnimeIds } from '$lib/trackers'
 import { localHistory } from '$lib/player/history'
 import type { Media } from './types'
@@ -42,12 +42,14 @@ export function hasMySources(s: MySets): boolean {
   return s.aniWatching.size + s.aniPlanning.size + s.malWatching.size + s.malPlanning.size + s.local.size > 0
 }
 
+type IdColl = { MediaListCollection?: { lists?: { entries?: { media: { id: number } }[] }[] } }
 async function aniIds(userName: string | undefined, status: string): Promise<Set<number>> {
   if (!userName) return new Set()
   try {
-    const r = await anilist.query(LIST_QUERY, { userName, status }).toPromise()
+    const r = await anilist.query(LIST_IDS_QUERY, { userName, status }).toPromise()
     if (r.error) return new Set()
-    return new Set(flattenEntries(r.data).map((e) => e.media.id))
+    const lists = (r.data as IdColl)?.MediaListCollection?.lists ?? []
+    return new Set(lists.flatMap((l) => l.entries ?? []).map((e) => e.media.id))
   } catch { return new Set() }
 }
 

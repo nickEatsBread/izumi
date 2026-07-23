@@ -1,7 +1,10 @@
 use tauri::{command, AppHandle, Runtime};
 
 use crate::{
-    models::{BrowserRequest, DeviceStatus, InstallRequest, PlayRequest},
+    models::{
+        BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
+        DeviceStatus, InstallRequest, PlayRequest, ReactResponse, ReactionStateResponse,
+    },
     ExtPlayerExt, Result,
 };
 
@@ -36,4 +39,31 @@ pub(crate) async fn open_browser<R: Runtime>(
     payload: BrowserRequest,
 ) -> Result<()> {
     app.extplayer().open_browser(payload)
+}
+
+/// Read reaction counts + the signed-in user's selected key (carries the native `da_session` cookie).
+#[command]
+pub(crate) async fn da_reaction_state<R: Runtime>(
+    app: AppHandle<R>,
+    payload: DaReactionStateRequest,
+) -> Result<ReactionStateResponse> {
+    app.extplayer().da_reaction_state(payload)
+}
+
+/// Post (or clear) a discussanime reaction authenticated by the native `da_session` cookie.
+#[command]
+pub(crate) async fn da_react<R: Runtime>(
+    app: AppHandle<R>,
+    payload: DaReactRequest,
+) -> Result<ReactResponse> {
+    app.extplayer().da_react(payload)
+}
+
+/// Sign in to discussanime in the in-app overlay WebView (shared cookie jar).
+#[command]
+pub(crate) async fn da_login<R: Runtime>(
+    app: AppHandle<R>,
+    payload: DaLoginRequest,
+) -> Result<DaLoginResponse> {
+    app.extplayer().da_login(payload)
 }

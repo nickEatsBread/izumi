@@ -34,15 +34,30 @@ async function nativeFetch(input: RequestInfo | URL, init?: RequestInit): Promis
   return new Response(r.body, { status: r.status, headers: r.headers })
 }
 
-// AniList's limit is ~90 requests/minute per IP (login does NOT raise it — it's per-IP;
-// auth is only for progress-sync). Pre-throttle with Bottleneck to stay under it.
+// AniList runs in a DEGRADED state capped at 30 requests/minute per IP (verified live via
+// `X-RateLimit-Limit: 30`; the pre-2023 limit was 90). Login does NOT raise it — it's per-IP;
+// auth is only for progress-sync. Pre-throttle with Bottleneck to stay under the real cap so
+// bursts degrade to a queue instead of tripping the 429 backoff below. `seedReservoirFromLimit`
+// re-reads the header on each response and auto-corrects if AniList ever restores 90.
+const RATE_LIMIT = 30
 const limiter = new Bottleneck({
-  reservoir: 90,
-  reservoirRefreshAmount: 90,
+  reservoir: RATE_LIMIT,
+  reservoirRefreshAmount: RATE_LIMIT,
   reservoirRefreshInterval: 60_000,
   maxConcurrent: 2,
   minTime: 220,
 })
+
+// AniList's `X-RateLimit-Limit` is authoritative and accurate again since 2025-08. If it ever
+// reports a higher ceiling than we seeded, raise the refresh amount so we stop over-throttling.
+let knownLimit = RATE_LIMIT
+function seedReservoirFromLimit(res: Response) {
+  const lim = Number(res.headers.get('x-ratelimit-limit'))
+  if (Number.isFinite(lim) && lim > 0 && lim !== knownLimit) {
+    knownLimit = lim
+    limiter.updateSettings({ reservoirRefreshAmount: lim })
+  }
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)))
 
@@ -56,6 +71,7 @@ async function fetchWithBackoff(input: RequestInfo | URL, init?: RequestInit, at
   const wait = cooldownUntil - Date.now()
   if (wait > 0) await sleep(wait)
   const res = await nativeFetch(input, init)
+  seedReservoirFromLimit(res)
   if (res.status !== 429 || attempt >= 5) return res
   const retryAfter = res.headers.get('retry-after')
   const reset = res.headers.get('x-ratelimit-reset')

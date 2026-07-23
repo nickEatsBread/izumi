@@ -8,6 +8,9 @@ Allow Android playback, browser authentication, self-update, and power/network c
 - `allow-install-apk`
 - `allow-device-status`
 - `allow-open-browser`
+- `allow-da-reaction-state`
+- `allow-da-react`
+- `allow-da-login`
 
 ## Permission Table
 
@@ -17,6 +20,84 @@ Allow Android playback, browser authentication, self-update, and power/network c
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`extplayer:allow-da-login`
+
+</td>
+<td>
+
+Enables the da_login command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-da-login`
+
+</td>
+<td>
+
+Denies the da_login command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-da-react`
+
+</td>
+<td>
+
+Enables the da_react command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-da-react`
+
+</td>
+<td>
+
+Denies the da_react command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-da-reaction-state`
+
+</td>
+<td>
+
+Enables the da_reaction_state command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-da-reaction-state`
+
+</td>
+<td>
+
+Denies the da_reaction_state command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

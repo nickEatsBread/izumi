@@ -3,6 +3,9 @@ const COMMANDS: &[&str] = &[
     "install_apk",
     "device_status",
     "open_browser",
+    "da_reaction_state",
+    "da_react",
+    "da_login",
 ];
 
 fn main() {

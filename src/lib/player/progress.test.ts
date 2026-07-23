@@ -36,6 +36,35 @@ describe('progress helpers', () => {
     positions.set({})
   })
 
+  describe('bounded growth (prune on write)', () => {
+    it('drops cleared tombstones older than the TTL on the next save', () => {
+      // A completed episode leaves a `cleared` tombstone; long-expired ones (completion long since
+      // synced) must not pin storage forever. `updatedAt: 1` is ~1970 → far past the 30-day TTL.
+      positions.set({
+        '1:1': { pos: 0, dur: 1200, updatedAt: 1, cleared: true }, // ancient tombstone → evicted
+        '2:2': { pos: 300, dur: 1200, updatedAt: Date.now() },      // fresh active entry → kept
+      })
+      savePosition(3, 3, 100, 1200) // triggers prune
+      const p = get(positions)
+      expect(p['1:1']).toBeUndefined()
+      expect(p['2:2']).toBeDefined()
+      expect(p['3:3']).toBeDefined()
+      positions.set({})
+    })
+    it('caps the map to the most-recently-touched entries', () => {
+      const seed: Record<string, { pos: number; dur: number; updatedAt: number }> = {}
+      for (let i = 1; i <= 600; i++) seed[`${i}:1`] = { pos: 10, dur: 100, updatedAt: i }
+      positions.set(seed)
+      savePosition(9999, 1, 50, 100) // newest → must survive; oldest must be evicted
+      const p = get(positions)
+      expect(Object.keys(p).length).toBe(500)
+      expect(p['9999:1']).toBeDefined() // newest kept
+      expect(p['1:1']).toBeUndefined()  // oldest (updatedAt 1) evicted
+      expect(p['600:1']).toBeDefined()  // recent kept
+      positions.set({})
+    })
+  })
+
   describe('episodeBarPercent (per-episode progress bar)', () => {
     it('shows the ACTUAL saved position for a partly-watched episode, even once the tracker counts it', () => {
       // The 85% watch-threshold bumps the whole-episode count (trackedDone=true) while the player

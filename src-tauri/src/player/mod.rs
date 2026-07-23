@@ -436,9 +436,25 @@ impl PlayerHandle {
     /// goes in the title slot and `lang` (iso code) in the lang slot. Errors if no player is running.
     /// `player_tracks` then re-reads the live `track-list` to show the new track.
     pub fn add_subtitle(&self, path: &str, lang: &str, title: &str) -> Result<(), String> {
+        self.add_subtitle_with_flag(path, lang, title, "select")
+    }
+
+    /// Add a subtitle to the live core without forcing it over the user's current selection.
+    /// Used by direct-torrent sidecars that arrive after video playback has already started.
+    pub fn add_subtitle_auto(&self, path: &str, lang: &str, title: &str) -> Result<(), String> {
+        self.add_subtitle_with_flag(path, lang, title, "auto")
+    }
+
+    fn add_subtitle_with_flag(
+        &self,
+        path: &str,
+        lang: &str,
+        title: &str,
+        flag: &str,
+    ) -> Result<(), String> {
         let guard = self.mpv.lock().map_err(|e| e.to_string())?;
         let mpv = guard.as_ref().ok_or("no player")?;
-        mpv.command("sub-add", &[path, "select", title, lang])
+        mpv.command("sub-add", &[path, flag, title, lang])
             .map_err(|e| e.to_string())
     }
 
@@ -887,6 +903,9 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // Decode on the GPU but copy frames to system memory for GL upload (auto-copy) —
         // avoids VAAPI GL interop that color-corrupts on some drivers.
         let _ = init.set_option("hwdec", "auto-copy");
+        // Direct rendering for the software-decode fallback (unsupported 10-bit HEVC/AV1);
+        // inert on the hardware path, so it's a free win. See new_mpv_with_vo.
+        let _ = init.set_option("vd-lavc-dr", "yes");
         // Pure render surface — never handle input; the overlay drives mpv.
         let _ = init.set_option("input-cursor", "no");
         let _ = init.set_option("input-vo-keyboard", "no");
@@ -1032,6 +1051,10 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // (which would clash with webkit's renderer on Linux). `auto-copy` still HW-decodes.
         let hwdec = if vo.starts_with("gpu") { "auto" } else { "auto-copy" };
         let _ = init.set_option("hwdec", hwdec);
+        // Direct rendering for the SOFTWARE-decode fallback (a codec/profile the GPU can't do,
+        // e.g. some 10-bit HEVC/AV1): lets the decoder write straight into renderer-owned frames,
+        // avoiding a copy. Inert on the hardware path (the common case), so it's a free win.
+        let _ = init.set_option("vd-lavc-dr", "yes");
         // Linux X11 embed (gamescope Game mode / XWayland): force EGL-on-X11. mpv's default
         // gpu-context auto-selection tries GLX first, which fails to create a context on an
         // embedded window under XWayland → audio plays but NO video. x11egl is the reliable
@@ -1062,6 +1085,11 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
             init.set_option("gpu-context", "d3d11")?;
             init.set_option("d3d11-output-format", "auto")?;
             init.set_option("d3d11-output-csp", "auto")?;
+            // Shorten the presentation queue from mpv's historical default of 3 to 2. In this
+            // DWM-composited child-HWND embed there is no independent flip, so a depth-3 queue
+            // only adds a frame of present latency with no throughput benefit. mpv 0.41 lowered
+            // the default to 2 for the same reason; set it explicitly for older libmpv. Best-effort.
+            let _ = init.set_option("swapchain-depth", "2");
             // NOTE: video-sync=display-resample was tried here for 24fps judder but caused severe
             // playback lag on weak-iGPU laptops in the embedded d3d11 child window under the
             // DWM-composited transparent WebView2 (no clean flip-model vsync → the display-clock

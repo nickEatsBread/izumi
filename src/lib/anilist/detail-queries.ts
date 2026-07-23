@@ -1,6 +1,6 @@
 import { gql } from '@urql/core'
 import { get } from 'svelte/store'
-import { MEDIA_FIELDS } from './fragments'
+import { MEDIA_FIELDS, SCHEDULE_MEDIA_FIELDS } from './fragments'
 import { showAdult } from '$lib/settings/ui'
 
 // Detail page only: pull the viewer's list entry (progress/status) + favourite
@@ -94,11 +94,11 @@ export const SCHEDULE_QUERY = gql`
       pageInfo { hasNextPage }
       airingSchedules(airingAt_greater: $start, airingAt_lesser: $end, sort: TIME) {
         airingAt episode
-        media { ...MediaFields }
+        media { ...ScheduleMediaFields }
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${SCHEDULE_MEDIA_FIELDS}`
 
 export interface SearchFilters {
   // Quick bar:
