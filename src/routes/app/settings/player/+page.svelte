@@ -3,11 +3,15 @@
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
+    videoQualityPreset, rawMpvOptions,
   } from '$lib/settings/ui'
+  import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
   import { invoke } from '@tauri-apps/api/core'
   import { isAndroid } from '$lib/platform'
+
+  let pendingAnime = $state(false) // shows the one-time shader consent
 
   // Player cache-size presets (MiB). "Custom" reveals a free-entry field; "Uncapped" removes the
   // ceiling. Every preset is a baseline that auto-scales up with the file's bitrate at play time.
@@ -67,6 +71,59 @@
         <option value="none">Off</option>
       </select>
     </label>
+
+    <!-- Video-quality / render-option controls drive the in-app mpv player, whose Rust commands
+         are #[cfg(not(target_os = "android"))]. On Android playback hands off to an external app,
+         so the whole block would be a dead setting there — hide it. -->
+    {#if !$isAndroid}
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-bold">Video quality</span>
+      <select
+        data-focusable
+        class="rounded-md bg-input px-3 py-2 text-sm"
+        value={$videoQualityPreset}
+        onchange={(e) => {
+          const v = (e.currentTarget as HTMLSelectElement).value as typeof $videoQualityPreset
+          if (v === 'anime') { pendingAnime = true; return } // confirm download first
+          $videoQualityPreset = v
+        }}
+      >
+        <option value="performance">Performance</option>
+        <option value="standard">Standard</option>
+        <option value="high">High Quality</option>
+        <option value="anime">Anime (ArtCNN)</option>
+        <option value="custom">Custom…</option>
+      </select>
+    </label>
+
+    {#if pendingAnime}
+      <div class="col-span-full rounded-md bg-input p-3 text-sm">
+        <p class="mb-2">Anime mode downloads the ArtCNN shader (~40 KB) from github.com/Artoriuz/ArtCNN. Download it now?</p>
+        <button class="mr-2 rounded bg-primary px-3 py-1 font-bold" onclick={() => { pendingAnime = false; $videoQualityPreset = 'anime' }}>Download</button>
+        <button class="rounded bg-muted px-3 py-1" onclick={() => { pendingAnime = false }}>Cancel</button>
+      </div>
+    {/if}
+
+    {#if $qualityNotice}
+      <p class="col-span-full text-sm text-yellow-500">{$qualityNotice}</p>
+    {/if}
+
+    {#if $videoQualityPreset === 'custom'}
+      <label class="col-span-full flex flex-col gap-1">
+        <span class="text-sm font-bold">Custom mpv options</span>
+        <textarea
+          data-focusable
+          class="min-h-32 rounded-md bg-input px-3 py-2 font-mono text-xs"
+          placeholder="scale=ewa_lanczossharp&#10;deband=yes&#10;glsl-shaders=C:/path/to/shader.glsl"
+          bind:value={$rawMpvOptions}
+        ></textarea>
+        <span class="text-xs text-muted-foreground">One <code>key=value</code> per line. Applies live; some options only take effect on the next video.</span>
+        {#if $qualityFailedKeys.length}
+          <span class="text-xs text-yellow-500">No live effect (check spelling, or applies next video): {$qualityFailedKeys.join(', ')}</span>
+        {/if}
+      </label>
+    {/if}
+    {/if}
   </div>
 
   <!-- The in-app player is desktop-only. On Android playback hands off to an external video
