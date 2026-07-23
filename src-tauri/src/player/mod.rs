@@ -24,6 +24,9 @@
 //! [`spawn_event_loop`].
 
 mod headless;
+// On-demand ArtCNN anime-upscaler shader fetch (Anime video-quality preset). Pinned upstream repo,
+// cached under the app config dir; never a user-supplied URL. See shaders.rs.
+pub mod shaders;
 // Playback wakelock: inhibit OS idle/screen-blank while a video plays (per-OS backends). See wakelock.rs.
 #[cfg(not(target_os = "android"))]
 pub mod wakelock;
