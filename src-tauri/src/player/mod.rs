@@ -351,6 +351,18 @@ impl PlayerHandle {
                 None => return Ok(ThumbTile { status: "none".into(), data_url: None, index: 0 }),
             }
         };
+        // `start_sprite` snapshots `current_url` at registration time, but the frontend sets
+        // `spriteKey` BEFORE `player_embed` swaps the url in. On a same-episode source change the
+        // job therefore points at the PREVIOUS release, and every tile we grab (and write to disk
+        // under the new key) is a frame from the wrong file — poisoning the cache permanently.
+        // Serve nothing until the job's url matches what's actually loaded.
+        {
+            let live = self.current_url.lock().ok().and_then(|g| g.clone());
+            if live.as_deref() != Some(url.as_str()) {
+                return Ok(ThumbTile { status: "none".into(), data_url: None, index: 0 });
+            }
+        }
+
         let i = ((time / interval as f64).round() as i64).clamp(0, frames as i64 - 1) as u32;
         let path = dir.join(format!("t_{i}.jpg"));
 
@@ -730,6 +742,11 @@ fn set_langs(mpv: &Mpv, alang: &Option<String>, slang: &Option<String>) {
         if s == "none" {
             let _ = mpv.set_property("sid", "no");
         } else {
+            // `sid` survives `loadfile`, so a previous "none" would keep subs off for the rest of
+            // the session no matter what `slang` says. Restore auto-selection before setting the
+            // language, otherwise switching back to English (or any track menu pick of "Off",
+            // which routes here) silently never takes effect until an app restart.
+            let _ = mpv.set_property("sid", "auto");
             let _ = mpv.set_property("slang", s.as_str());
         }
     }
