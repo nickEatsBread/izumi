@@ -2,7 +2,17 @@
   "$schema": "https://schema.tauri.app/config/2",
   "app": {
     "security": {
-      "capabilities": ["default", "haptics", "android-mpv"]
+      "capabilities": [
+        "default",
+        "haptics",
+        {
+          "identifier": "android-mpv",
+          "description": "Grant the embedded libmpv player commands on the Android 'full' flavor. Defined inline here — NOT as a file in capabilities/ — because Tauri auto-discovers and activates every capability file in that directory regardless of the `capabilities` list. A standalone android-mpv.json would therefore load on the lite flavor too, where it references mpv:default, a permission that only exists when the android-mpv feature compiles the mpv plugin (build fails at the capability step). Inlining scopes it to this config, which is passed via --config only for the full build.",
+          "platforms": ["android"],
+          "windows": ["main"],
+          "permissions": ["mpv:default"]
+        }
+      ]
     }
   }
 }
