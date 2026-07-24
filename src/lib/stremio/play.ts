@@ -897,8 +897,8 @@ export async function playStream(media: Media, episode: number | undefined, stre
   if (resolverHash) stream = { ...stream, url: undefined, infoHash: resolverHash }
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
-  // Capture the original source before a torrent is exchanged for an account-bound
-  // debrid CDN URL. The latter must never cross a Watch Together room.
+  // Provisional room source, so a guest joining mid-resolve still sees what is starting. It is
+  // re-captured from the FINAL stream below, once any debrid resolution has happened.
   nowPlayingPartySource.set(shareableSource(stream))
   lastSubFilename = stream.behaviorHints?.filename
   onlineSubCandidates.set({ status: 'idle', items: [] })
@@ -994,6 +994,12 @@ export async function playStream(media: Media, episode: number | undefined, stre
     }
   }
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
+  // Re-capture the room source from the FINAL stream. For a debrid play this is the resolved,
+  // account-bound CDN link, and it is shared as-is: guests play the host's exact URL rather than
+  // needing a debrid account each. The host is warned about what that means for their account
+  // before the room opens (DebridRoomNotice). Direct-P2P resolves to a loopback address, which
+  // shareableSource skips in favour of the infohash, so those rooms are unaffected.
+  nowPlayingPartySource.set(shareableSource(stream))
   // A newly resolved direct torrent replaces the old one in the native engine. Any other source
   // ends the previous torrent's watch phase before the new player load begins.
   if (directPlaybackId == null && currentDirectTorrentPlaybackId() != null) {

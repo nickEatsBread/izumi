@@ -118,7 +118,7 @@ async function commandRemote(position: number, paused: boolean) {
 async function applyHostPlayback(playback: PartyPlayback) {
   const session = get(watchParty)
   if (!session || session.role !== 'guest' || applyingRemote) return
-  if (!playback.source) throw new Error(playback.sourceError || 'The host source cannot be shared safely. Ask the host to choose a torrent or credential-free HTTP source.')
+  if (!playback.source) throw new Error(playback.sourceError || 'The host source has no shareable address. Ask the host to pick another source.')
   const sourceKey = sharedSourceKey(playback.source)
   const key = `${playback.media.id}:${playback.episode ?? 0}:${sourceKey}`
   const current = get(nowPlayingMedia)
