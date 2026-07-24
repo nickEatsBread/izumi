@@ -6,6 +6,9 @@
   import Heart from 'lucide-svelte/icons/heart'
   import * as h from '$lib/haptics'
   import { isAndroid, isMobile } from '$lib/platform'
+  import { get } from 'svelte/store'
+  import { playing } from '$lib/player/session'
+  import { androidMpvActive } from '$lib/player/android-mpv'
 
   // Bottom-left content column + clean linear scrims, polished with:
   // coverImage.color accent, rating-tinted score, blur-in image, rich badge row,
@@ -69,13 +72,29 @@
     const n = medias.length
     if (!n || !showOverlay) return
     let raf = 0
+    // The home route is HIDDEN, not unmounted, while the player is up (see app/+layout.svelte's
+    // `class:hidden={$playing || $androidMpvActive}`). Without this gate the carousel kept running a
+    // 60Hz Svelte flush + inline style writes underneath mpv for the whole episode — worst exactly
+    // where webview/mpv GPU contention hurts most, and resume-from-home is the common play path.
+    // Stop re-arming while hidden or playing, and restart when that changes.
+    const stalled = () => document.hidden || get(playing) || get(androidMpvActive)
     const tick = (t: number) => {
+      if (stalled()) { raf = 0; return }
       if (start == null) start = t
       progress = Math.min(1, (t - start) / DURATION)
       if (progress >= 1) { i = (i + 1) % n; start = t; progress = 0 }
       raf = requestAnimationFrame(tick)
     }
-    raf = requestAnimationFrame(tick)
+    const arm = () => {
+      if (raf || stalled()) return
+      start = null // don't count paused time against the current slide
+      raf = requestAnimationFrame(tick)
+    }
+    arm()
+    const onWake = () => arm()
+    document.addEventListener('visibilitychange', onWake)
+    const stopPlaying = playing.subscribe(onWake)
+    const stopAndroidMpv = androidMpvActive.subscribe(onWake)
     const onScroll = () => (scrolled = (window.scrollY ?? 0) > 100)
     window.addEventListener('scroll', onScroll)
     // Steam Deck: L1/R1 step through the featured banners (dispatched by the gamepad translator
@@ -85,6 +104,9 @@
     return () => {
       cancelAnimationFrame(raf)
       cancelAnimationFrame(swipeResetFrame)
+      document.removeEventListener('visibilitychange', onWake)
+      stopPlaying()
+      stopAndroidMpv()
       window.removeEventListener('scroll', onScroll)
       window.removeEventListener('hero-nav', onHeroNav)
     }

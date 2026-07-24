@@ -126,11 +126,14 @@ export async function fetchExtensionMeta(spec: string): Promise<ExtensionConfig[
 }
 
 async function loadConfigs(): Promise<ExtensionConfig[]> {
-  const all: ExtensionConfig[] = []
-  for (const spec of get(enabledExtensionUrls)) {
-    try { all.push(...await expandManifest(spec)) } catch { /* skip bad manifest */ }
-  }
-  return all
+  // Each spec is an independent network fetch, so awaiting them one at a time made warm-up cost the
+  // SUM of every manifest round-trip. Order is preserved by Promise.all, and a bad manifest still
+  // degrades to [] on its own without taking the others down.
+  const results = await Promise.all(
+    get(enabledExtensionUrls).map((spec) =>
+      expandManifest(spec).catch(() => [] as ExtensionConfig[])),
+  )
+  return results.flat()
 }
 
 // Fetch an extension's module source. esm.sh often returns a tiny re-export STUB

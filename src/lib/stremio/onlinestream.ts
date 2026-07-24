@@ -103,10 +103,24 @@ export async function resolveOnlineStreams(media: Media, episode: number | undef
       const epName = ep.title?.trim()
       const hasRealTitle = !!epName && epName !== `Episode ${episode}` && epName !== String(episode)
       const epLabel = `${title(media)} — Episode ${episode}${hasRealTitle ? ` · ${epName}` : ''}`
-      for (const server of servers) {
-        const es = (await ext.call('findEpisodeServer', ep, server).catch(() => null)) as SnEpisodeServer | null
+      // Servers were scraped one at a time, so this wave cost the SUM of every server's round-trip
+      // — and it gates `resolving`, which gates the picker's auto-select countdown, so it delays
+      // first frame for anyone with autoplay on. Run them with a small concurrency cap: bounded
+      // because some embed hosts throttle parallel requests from one IP, and an unbounded fan-out
+      // is a plausible rate-limit trigger. Results are collected in the original server order.
+      const CONCURRENCY = 3
+      const found: (SnEpisodeServer | null)[] = new Array(servers.length).fill(null)
+      let cursor = 0
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, servers.length) }, async () => {
+        for (;;) {
+          const idx = cursor++
+          if (idx >= servers.length) return
+          found[idx] = (await ext.call('findEpisodeServer', ep, servers[idx]).catch(() => null)) as SnEpisodeServer | null
+        }
+      }))
+      for (const [idx, es] of found.entries()) {
         if (es?.videoSources?.length) {
-          for (const vs of es.videoSources) out.push(videoSourceToStream(vs, es.server ?? server, es.headers ?? {}, ext.name, epLabel, audio, ext.id))
+          for (const vs of es.videoSources) out.push(videoSourceToStream(vs, es.server ?? servers[idx], es.headers ?? {}, ext.name, epLabel, audio, ext.id))
         }
       }
       const seen = new Set<string>()

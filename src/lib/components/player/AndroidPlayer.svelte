@@ -143,9 +143,26 @@
   $effect(() => { if (paused) { clearTimeout(hideTimer); controlsShown = true } else if (controlsShown) armHide() })
 
   // --- Seek preview: move the UI thumb while dragging, then issue one exact seek on release ---
+  // Bar geometry, measured once per scrub gesture. Reading getBoundingClientRect() on every
+  // pointermove was a textbook read→write→read thrash: the move writes `scrubPos`, which drives the
+  // thumb and bubble, and the NEXT move's measurement then forces a synchronous layout flush to
+  // resolve it — 60-120 forced layouts a second mid-drag on the weakest devices we ship to.
+  // Deliberately NOT populated on pointerdown: while `barGesture` is still 'pending' the move
+  // handler can promote to the fullscreen-pull gesture, which itself mutates layout. Only cached
+  // once the gesture is committed to 'scrub', where the bar is guaranteed to hold still.
+  let barRect: { left: number; width: number } | null = null
+  function measureBar() {
+    const r = barEl?.getBoundingClientRect()
+    barRect = r ? { left: r.left, width: r.width } : null
+  }
   function fracFromX(clientX: number) {
-    if (!barEl) return 0
-    const r = barEl.getBoundingClientRect()
+    let r = barRect
+    if (!r) {
+      const b = barEl?.getBoundingClientRect()
+      if (!b) return 0
+      r = { left: b.left, width: b.width }
+    }
+    if (!r.width) return 0
     return Math.max(0, Math.min(1, (clientX - r.left) / r.width))
   }
   function schedulePreview(sec: number) {
@@ -219,6 +236,7 @@
         return
       }
       barGesture = 'scrub'
+      measureBar() // committed to scrubbing — the bar can't move from here, so cache its geometry
       beginScrub('bar', e.pointerId, fracFromX(barStartSample.x) * dur)
     }
     if (barGesture === 'scrub') {
@@ -243,6 +261,7 @@
       else { resetFullscreenPull(); armHide() }
     }
     barGesture = null
+    barRect = null // next gesture re-measures; the bar moves with rotation and fullscreen changes
     try { if (barEl?.hasPointerCapture(e.pointerId)) barEl.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
   }
   function onBarCancel(e: PointerEvent) {

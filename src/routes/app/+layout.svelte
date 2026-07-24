@@ -22,6 +22,7 @@
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
+  import { idle } from '$lib/util/idle'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { enabledAddonUrls } from '$lib/stremio/sources'
   import { warmExtensions } from '$lib/extensions/manager'
@@ -72,7 +73,12 @@
     // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
     // (persisted to idb after), so a fresh install's FIRST play doesn't eat it on the
     // click-to-play path. Fire-and-forget; getIndex is cached/idempotent.
-    getIndex().catch(() => {})
+    //
+    // Deferred to idle: even on the warm path this deserialises a ~30-40k-entry array out of idb
+    // and walks it all to build the index, which is enough to push out first paint on the Deck.
+    // Nothing on the home render path touches it, and both real consumers await getIndex()
+    // themselves, so this only moves WHEN the warm happens, never whether.
+    idle(() => { getIndex().catch(() => {}) }, 3000)
     // Warm each addon's connection on the shared pooled HTTP client (and cache its
     // manifest) so the FIRST play skips the ~200ms TLS handshake and the picker has
     // logos ready. Only effective now that http_get pools connections.
@@ -80,7 +86,12 @@
     // Same idea for source extensions: pre-boot the whole runtime (manifest + esm.sh modules +
     // workers) now, off the click-to-play path — the reference client does this at startup too,
     // which is why its first picker open is instant while ours paid the full build.
-    warmExtensions()
+    //
+    // Also deferred: each configured extension spins up its own module Worker, and that worker
+    // bundle carries cheerio + crypto-js + sucrase and cannot be code-split. Starting N of those
+    // while the shell is still painting is the single most contended moment on the Deck. Idle is
+    // still far earlier than any realistic first Play click, so the warm contract is unchanged.
+    idle(() => warmExtensions(), 5000)
     // Refresh the signed-in profile (name + avatar) for an already-connected session,
     // so the sidebar shows the real picture without needing a re-login. No-op if not
     // connected. Fire-and-forget.
