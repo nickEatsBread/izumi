@@ -21,5 +21,11 @@ export async function getIndex(): Promise<Index> {
     try { data = await (await phttp(URL)).json() as MapEntry[]; await set(KEY, data); await set(TS, Date.now()) }
     catch { data = data ?? [] }
   }
-  cached = buildIndex(data!); return cached
+  // Only memoize a NON-EMPTY index. The catch above falls back to `[]` on a cold cache, and
+  // caching that pinned an empty map for the rest of the session: every resolveKitsu then took two
+  // extra round-trips per play click, and titles that only Fribb maps hard-failed with "No addon
+  // mapping for this title" until restart. Leaving `cached` null lets the next call retry.
+  const idx = buildIndex(data!)
+  if (idx.size) cached = idx
+  return idx
 }
