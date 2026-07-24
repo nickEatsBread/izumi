@@ -55,10 +55,20 @@
   // (AniList's mediaListEntry is null/0 then). Take whichever tracker is further
   // along. `media` is what the whole page renders — badge, resume, episode marks.
   let malEntry = $state<{ progress: number; status: string; score: number } | null>(null)
+  let malEntryFor = $state<number | null>(null)
   $effect(() => {
-    const base = $store.data?.Media
+    // Key on `idMal` ONLY. Depending on the whole `$store.data` re-ran this on every store
+    // emission, and the unconditional `malEntry = null` meant a MAL-only user watched the header
+    // badge fall back to "0/12" and the CTA revert from "Continue · Ep 8" to "Play" for one MAL
+    // round-trip each time — plus a redundant request and an out-of-order-response window.
+    const idMal = $store.data?.Media?.idMal
+    if (idMal === malEntryFor) return
+    malEntryFor = idMal ?? null
     malEntry = null
-    if (base?.idMal) getMalProgress(base.idMal).then((e) => (malEntry = e))
+    if (!idMal) return
+    let cancelled = false
+    getMalProgress(idMal).then((e) => { if (!cancelled) malEntry = e })
+    return () => { cancelled = true }
   })
   // Offline: build the page's media from the local snapshot (downloadedMedia → localHistory →
   // synthesized from the DownloadItems) with progress folded from local history, so the header

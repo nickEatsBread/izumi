@@ -50,7 +50,26 @@ function hasEpisodeTitlesThrough(res: AniZipResponse, episode: number): boolean 
  *  cache first; on a miss, fetches + caches. Best-effort: returns `undefined` on
  *  any error. Shared by both `getEpisodeMeta` and `getKitsuId` so they hit the
  *  same cache. */
-export async function fetchAniZip(
+// In-flight dedupe. Concurrent cold-cache callers (play.ts resolves the season map and the
+// extension ids at the same time) each issued their own GET + idb write for the same id. Same
+// shape as the manifest cache. Cleared on settle so errors and staleness still refetch.
+const inflight = new Map<string, Promise<AniZipResponse | undefined>>()
+
+export function fetchAniZip(
+  anilistId: number,
+  wantEpisode?: number,
+  requireTitlesThrough?: number,
+): Promise<AniZipResponse | undefined> {
+  const k = `${anilistId}|${wantEpisode ?? ''}|${requireTitlesThrough ?? ''}`
+  const running = inflight.get(k)
+  if (running) return running
+  const p = fetchAniZipUncached(anilistId, wantEpisode, requireTitlesThrough)
+    .finally(() => inflight.delete(k))
+  inflight.set(k, p)
+  return p
+}
+
+async function fetchAniZipUncached(
   anilistId: number,
   wantEpisode?: number,
   requireTitlesThrough?: number,
