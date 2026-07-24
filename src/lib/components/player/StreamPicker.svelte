@@ -36,8 +36,14 @@
       ? visible.filter((i) => (i.filename ?? i.label).toLowerCase().includes(filter.trim().toLowerCase()))
       : visible,
   )
-  // The best cached source == the auto pick; pin + ring it.
-  const best = $derived(visible.find((i) => i.cached === 'instant'))
+  // The best cached source == the auto pick; pin + ring it. This MUST go through the same
+  // `pickBest` the non-interactive paths use (play.ts), or the pill labelled "Auto" ignores the
+  // Quality setting entirely and just takes the first cached row in the current sort order —
+  // picking a 2160p remux for someone who asked for 720p. `pickBest` already filters to
+  // `cached === 'instant'`, so the cached-only constraint is preserved. Season correctness is
+  // enforced upstream (verifySeason), so no `want` is needed here.
+  const bestStream = $derived(pickBest(visible.map((i) => i.stream), $preferredQuality))
+  const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
   const keyOf = (i: StreamInfo) => i.stream.url ?? i.stream.infoHash ?? i.label
 
   // Skeleton while sources resolve; cap the rendered node count (One Piece can

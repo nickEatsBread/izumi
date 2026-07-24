@@ -168,7 +168,15 @@
   // slider still tracks the cursor; the trailing oninput always schedules a flush of the last value.
   let volPending = false
   let volLatest = 100
-  function flushVolume() { volPending = false; cmd('set', ['volume', String(volLatest)]) }
+  function flushVolume() {
+    volPending = false
+    cmd('set', ['volume', String(volLatest)])
+    // `toggleMute` used to be the only writer of mpv's `mute`, while the slider inferred `muted`
+    // locally — so dragging up from a muted player showed an unmuted speaker at the new volume
+    // with the audio still fully silent (and dragging to 0 showed a muted icon on an unmuted core).
+    // The slider owns both properties now, so what you see is what mpv is doing.
+    cmd('set', ['mute', volLatest === 0 ? 'yes' : 'no'])
+  }
   function setVolume(e: Event) {
     volume = Number((e.target as HTMLInputElement).value)
     muted = volume === 0
