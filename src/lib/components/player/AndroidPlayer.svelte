@@ -487,7 +487,11 @@
   }
 
   function onRootDown(e: PointerEvent) {
-    if (locked || !e.isPrimary || rootPointerId != null) return
+    // NOTE: deliberately does not bail on `locked`. Bailing here meant onRootUp never ran, so
+    // onTap never ran, so onTap's `if (locked) showLockToggle()` branch was dead code — and in
+    // landscape immersive there is no top bar, no chevron and no other way back, making the lock a
+    // one-way trap that could only be escaped by force-quitting (losing the unfinalized position).
+    if (!e.isPrimary || rootPointerId != null) return
     cancelScrub()
     rootPointerId = e.pointerId
     rootEl?.setPointerCapture?.(e.pointerId)
@@ -499,6 +503,9 @@
     pullLastTime = e.timeStamp
     pullVelocityY = 0
     gesture = null
+    // Locked = taps only (to reveal the unlock button). onRootMove already early-returns on
+    // `locked`, so this is the one gesture that still needs suppressing.
+    if (locked) return
     holdTimer = setTimeout(() => { // press-and-hold anywhere on unobstructed video → temporary 2×
       if (gesture === null) {
         gesture = 'hold'; heldSpeed = true; mpvCommand(['set', 'speed', '2']); haptic(15)
@@ -588,7 +595,8 @@
   let lockToggleShown = $state(false)
   let lockToggleTimer: ReturnType<typeof setTimeout> | undefined
   function showLockToggle() { lockToggleShown = true; clearTimeout(lockToggleTimer); lockToggleTimer = setTimeout(() => (lockToggleShown = false), 2500) }
-  function toggleLock() { locked = !locked; lockToggleShown = false; if (!locked) showControls() }
+  // Surface the unlock affordance immediately on locking, so the way back is never a secret.
+  function toggleLock() { locked = !locked; lockToggleShown = false; if (locked) showLockToggle(); else showControls() }
 
   // --- Resize (video fit) ---
   const FITS = ['Fit', 'Crop', 'Stretch']
