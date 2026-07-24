@@ -166,7 +166,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         m.setOptionString("gpu-context", "android")
         m.setOptionString("hwdec", "mediacodec-copy")
         m.setOptionString("force-window", "no")
-        m.setOptionString("idle", "once")
+        // MUST be "yes", not "once": the core is cached across episodes (see `ensure`), and with
+        // "once" mpv shuts itself down the moment the first file reaches EOF. Auto-advance and
+        // "Change source" then issued `loadfile` against a dead core — the command silently
+        // succeeded, no properties ever updated, and the UI sat on `buffering: true` over a black
+        // screen forever. `force-window=no` already keeps an idle core from showing a window.
+        m.setOptionString("idle", "yes")
         m.setOptionString("cache", "yes")
         m.setOptionString("sub-auto", "fuzzy")
         m.init()
@@ -387,21 +392,27 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         Thread {
             val ret = JSObject()
             try {
+                // release() must be in a finally: it used to sit on the happy path, so any throw
+                // from setDataSource/getFrameAtTime (a dead link, a timeout) left the retriever's
+                // native decoder to the finalizer. Under scrub pressure that stacks up.
                 val mmr = MediaMetadataRetriever()
-                if (a.headers.isEmpty()) mmr.setDataSource(a.url, HashMap())
-                else mmr.setDataSource(a.url, HashMap(a.headers))
-                val us = (a.timeSec * 1_000_000L).toLong()
-                val bmp = if (Build.VERSION.SDK_INT >= 27) {
-                    mmr.getScaledFrameAtTime(
-                        us,
-                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                        a.width,
-                        a.width * 9 / 16,
-                    )
-                } else {
-                    mmr.getFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                val bmp = try {
+                    if (a.headers.isEmpty()) mmr.setDataSource(a.url, HashMap())
+                    else mmr.setDataSource(a.url, HashMap(a.headers))
+                    val us = (a.timeSec * 1_000_000L).toLong()
+                    if (Build.VERSION.SDK_INT >= 27) {
+                        mmr.getScaledFrameAtTime(
+                            us,
+                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                            a.width,
+                            a.width * 9 / 16,
+                        )
+                    } else {
+                        mmr.getFrameAtTime(us, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    }
+                } finally {
+                    mmr.release()
                 }
-                mmr.release()
                 if (bmp != null) {
                     val bos = ByteArrayOutputStream()
                     bmp.compress(Bitmap.CompressFormat.JPEG, 70, bos)
