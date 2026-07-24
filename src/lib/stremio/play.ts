@@ -141,6 +141,21 @@ let stop: Array<() => void> = []
 // it's been superseded and skip side effects like auto-advance. See attach().
 let playGen = 0
 
+// Drop the current episode's listeners WITHOUT registering a replacement set. `attach()` is the
+// only other place teardown happens, so any playback path that doesn't call it used to inherit the
+// previous episode's handlers — which still close over that episode's `media`/`episode`. Playing an
+// untracked file (debrid Cloud library, raw URL) after watching Anime X ep5 therefore wrote
+// `savePosition(X, 5, ...)` from the cloud file's clock every 5s, pushed a bogus `markWatched(X, 5)`
+// to AniList/MAL at the ~85% mark, and on EOF auto-advanced into X ep6 on top of the cloud video.
+// Deliberately NOT called at the top of `playStream`: that would drop the previous episode's
+// `player-finalize` listener before the new file is confirmed loaded, so a failed play would lose
+// the old resume point. `attach()` handles that case atomically once the new file is live.
+function detach() {
+  stop.forEach((f) => f())
+  stop = []
+  playGen++
+}
+
 // Register a Tauri event listener and store its unlisten SYNCHRONOUSLY. `listen()` is an async
 // IPC round-trip; awaiting it before pushing the handle to `stop` (as attach() used to) opened a
 // window where a second play's teardown ran before this play's handle existed, so the old
@@ -169,9 +184,8 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
   // body runs with no `await`, so a second play cannot interleave between teardown and
   // registration. `pushListen` stores each unlisten synchronously; `gen` guards the async
   // auto-advance against a stale player-ended still in flight from a superseded play.
-  stop.forEach((f) => f())
-  stop = []
-  const gen = ++playGen
+  detach()
+  const gen = playGen
   let marked = false
   let lastSave = 0
   let warmed = false
@@ -1059,6 +1073,9 @@ export async function playStream(media: Media, episode: number | undefined, stre
     if (get(enableExternalPlayer)) {
       const path = get(externalPlayerPath)
       if (!path) return onState({ status: 'error', message: 'No external player selected — set its path in Settings.' })
+      // No embedded playback follows, so `attach()` never runs to replace the previous episode's
+      // listeners. Drop them here or they keep tracking against the old episode. See detach().
+      detach()
       let unlistenExit: (() => void) | undefined
       if (directPlaybackId != null) {
         const id = directPlaybackId
@@ -1155,10 +1172,14 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
     if (get(enableExternalPlayer)) {
       const path = get(externalPlayerPath)
       if (!path) return onState({ status: 'error', message: 'No external player selected — set its path in Settings.' })
+      detach()
       await invoke('spawn_external_player', { path, url })
       return onState({ status: 'playing' })
     }
-    // These items carry no Media, so Prev/Next must not act on a stale one.
+    // These items carry no Media, so Prev/Next must not act on a stale one — and neither must the
+    // previous episode's progress/auto-advance listeners, which `attach()` is never called to
+    // replace on this path. See detach().
+    detach()
     currentMedia = null
     nowPlayingMedia.set(null)
     nowPlayingPartySource.set({ source: null, error: 'Cloud-library links are private to this device.' })
