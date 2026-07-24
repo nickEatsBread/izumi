@@ -193,6 +193,9 @@ export const debridKey = persisted<string>('debrid-key', '')
 /** How infoHash/magnet sources are made playable. Direct uses Izumi's local
  * BitTorrent engine; debrid keeps the existing account-backed CDN path. */
 export const torrentPlaybackMode = persisted<'debrid' | 'direct'>('torrent-playback-mode', 'debrid')
+/** Dismisses the "hosting a room streams your debrid link from every guest's IP" warning shown
+ *  before a room is created. Off by default so the warning is seen at least once. */
+export const debridRoomNoticeAck = persisted<boolean>('debrid-room-notice-ack', false)
 /** Installed source-extension manifest URLs (JSON manifests or gh:/npm: shorthand). */
 export const extensionUrls = persisted<string[]>('extension-urls', [])
 export const disabledExtensions = persisted<string[]>('disabled-extensions', [])
