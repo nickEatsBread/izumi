@@ -1987,28 +1987,48 @@ async fn flatpak_update_install(app: tauri::AppHandle) -> Result<(), String> {
         use ashpd::flatpak::update_monitor::UpdateStatus;
         use ashpd::flatpak::Flatpak;
         use futures_util::StreamExt;
-        let proxy = Flatpak::new().await.map_err(|e| e.to_string())?;
+        // Each step is labelled: this command's only failure surface is a single string shown in a
+        // toast, and "connect to the portal" / "create a monitor" / "ask for the update" fail for
+        // completely different reasons (no portal backend vs. no update origin on a bundle
+        // install). Without the label an on-device report is undiagnosable.
+        let proxy = Flatpak::new()
+            .await
+            .map_err(|e| format!("Flatpak portal unavailable: {e}"))?;
         let monitor = proxy
             .create_update_monitor(Default::default())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("could not create the update monitor: {e}"))?;
         // Subscribe to `Progress` BEFORE asking for the update so no early signal is missed.
         let mut progress = monitor
             .receive_progress()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("could not subscribe to update progress: {e}"))?;
         // No parent window (Game mode has none) and default options.
+        // NOTE: this is where a sideloaded/bundle install fails — a deploy with no OSTree origin
+        // has no remote for the portal to pull from.
         monitor
             .update(None, Default::default())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("the portal refused the update (installed without an update origin?): {e}"))?;
         // Forward the portal's progress to the toast and stop on a terminal status.
         while let Some(p) = progress.next().await {
             if let Some(pct) = p.progress() {
                 let _ = app.emit("flatpak-update-progress", pct);
             }
             match p.status() {
-                Some(UpdateStatus::Done) | Some(UpdateStatus::Empty) => break,
+                Some(UpdateStatus::Done) => break,
+                // `Empty` is "the portal had nothing to pull". Treating it as success told the user
+                // to quit and relaunch for an update that was never staged — they'd come back on
+                // the same version. It happens when the GitHub version check (which is what the
+                // frontend actually checks) is ahead of the OSTree remote, so say so honestly.
+                Some(UpdateStatus::Empty) => {
+                    let _ = monitor.close().await;
+                    return Err(
+                        "the Flatpak remote has no newer build yet — it may not have published this \
+                         version. Try again later."
+                            .into(),
+                    );
+                }
                 Some(UpdateStatus::Failed) => {
                     let _ = monitor.close().await;
                     return Err(p

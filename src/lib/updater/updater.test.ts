@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock the Tauri + Android layers so the facade logic is tested in isolation.
-const h = vi.hoisted(() => ({ isAndroid: false, isPackaged: true, flatpak: false }))
+const h = vi.hoisted(() => ({ isAndroid: false, isPackaged: true, flatpak: false, gameMode: false }))
 vi.mock('$lib/platform', () => ({ isAndroid: { subscribe: (f: any) => (f(h.isAndroid), () => {}) } }))
+// Only `gameMode` is used from the session module; stub it so the Game-mode branch is drivable.
+vi.mock('$lib/player/session', () => ({ gameMode: { subscribe: (f: any) => (f(h.gameMode), () => {}) } }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async (cmd: string) => {
   if (cmd === 'is_flatpak') return h.flatpak
   if (cmd === 'updater_check') return { version: '0.2.0', current: '0.1.3', notes: 'x', date: null }
@@ -18,7 +20,7 @@ import { pickTarget, type UpdateTarget } from './index'
 
 // Reset shared mock state before EVERY test in the file — the later top-level it() blocks live
 // outside the describe, so a describe-scoped beforeEach wouldn't isolate them (order-independence).
-beforeEach(() => { h.isAndroid = false; h.flatpak = false })
+beforeEach(() => { h.isAndroid = false; h.flatpak = false; h.gameMode = false })
 
 describe('updater facade', () => {
   it('routes desktop to the tauri updater', async () => {
@@ -74,6 +76,37 @@ it('applyUpdate on flatpak uses the portal + ends in ready (no relaunch)', async
   expect(invoke).toHaveBeenCalledWith('flatpak_update_install')
   expect(get(updatePhase)).toBe('ready')
   expect(get(updateError)).toBe('')
+})
+
+// The portal refusing is the common Steam Deck case (bundle install with no update origin, or no
+// portal backend). In Game mode there is no browser to send the user to — opening one is exactly
+// the reported bug — so the failure has to stay in-app.
+it('applyUpdate on flatpak surfaces the reason in Game mode instead of opening a browser', async () => {
+  const { invoke } = await import('@tauri-apps/api/core')
+  const { openUrl } = await import('@tauri-apps/plugin-opener')
+  ;(openUrl as any).mockClear()
+  ;(invoke as any).mockImplementationOnce(async () => { throw new Error('the portal refused the update') })
+  h.gameMode = true
+  availableUpdate.set({ version: '0.2.0', notes: '', target: 'flatpak' })
+  updatePhase.set('idle'); updateError.set('')
+  await applyUpdate()
+  expect(openUrl).not.toHaveBeenCalled()
+  expect(get(updatePhase)).toBe('error')
+  expect(get(updateError)).toContain('the portal refused the update')
+  expect(get(updateError)).toContain('flatpak update com.nicho.izumi')
+})
+
+it('applyUpdate on flatpak still falls back to the release page outside Game mode', async () => {
+  const { invoke } = await import('@tauri-apps/api/core')
+  const { openUrl } = await import('@tauri-apps/plugin-opener')
+  ;(openUrl as any).mockClear()
+  ;(invoke as any).mockImplementationOnce(async () => { throw new Error('nope') })
+  h.gameMode = false
+  availableUpdate.set({ version: '0.2.0', notes: '', target: 'flatpak' })
+  updatePhase.set('idle'); updateError.set('')
+  await applyUpdate()
+  expect(openUrl).toHaveBeenCalled()
+  expect(get(updatePhase)).toBe('idle')
 })
 
 // append to updater.test.ts — fake timers drive the schedule

@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { isAndroid } from '$lib/platform'
+import { gameMode } from '$lib/player/session'
 import { updateChannel } from '$lib/settings/ui'
 import { listenSafe } from '$lib/util/listen'
 import { checkAndroidUpdate, downloadAndInstall, type UpdateInfo as AndroidUpdate } from './android'
@@ -42,6 +43,7 @@ export async function checkForUpdate(): Promise<void> {
 }
 
 const RELEASES = 'https://github.com/nickEatsBread/izumi/releases/latest'
+const FLATPAK_ID = 'com.nicho.izumi'
 
 /** Apply the pending update for the current target. Desktop/Android install in place; flatpak is
  *  handled in Phase 2 (portal) — until then it routes to the release page (current behavior). */
@@ -70,12 +72,24 @@ export async function applyUpdate(): Promise<void> {
         await invoke('flatpak_update_install')
         updateProgress.set(1)
         updatePhase.set('ready') // toast: quit + relaunch from Steam
-      } catch {
-        // No update origin (offline-bundle install) or the portal is unavailable — send the user to
-        // the release page to reinstall from the .flatpakref.
-        await openUrl(RELEASES)
-        updateDismissed.set(true)
-        updatePhase.set('idle')
+      } catch (e) {
+        // The portal refused (no update origin on a bundle install, or no portal backend). Do NOT
+        // open a browser in Game mode: gamescope has no sensible browser target, so this either did
+        // nothing or threw an unusable window over the game — which is what the user actually saw.
+        // Show the reason plus the manual route instead, and keep the browser hop for Desktop mode
+        // where there IS a browser.
+        const reason = (e instanceof Error ? e.message : String(e)).trim()
+        if (get(gameMode)) {
+          updateError.set(
+            `${reason || 'the Flatpak portal refused the update'}. `
+            + `Switch to Desktop Mode and update izumi from Discover, or run: flatpak update ${FLATPAK_ID}`,
+          )
+          updatePhase.set('error')
+        } else {
+          await openUrl(RELEASES)
+          updateDismissed.set(true)
+          updatePhase.set('idle')
+        }
       } finally {
         unlisten()
       }
