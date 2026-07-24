@@ -314,13 +314,20 @@ fn dir_size(p: &std::path::Path) -> u64 {
 /// the number of bytes freed.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
+async fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
+    // `async` matters: tauri-macros only picks `ExecutionContext::Async` when the fn is async, so
+    // the sync version ran the recursive stat walk + `remove_dir_all` inline on the event-loop
+    // thread and froze the UI for the duration. Do the blocking FS work on the blocking pool.
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("thumbs");
-    let freed = dir_size(&dir);
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-    }
-    Ok(freed)
+    tauri::async_runtime::spawn_blocking(move || {
+        let freed = dir_size(&dir);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+        }
+        Ok(freed)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Set the WebKit page zoom (Linux). Used in Game mode instead of CSS `zoom` on the scroll
