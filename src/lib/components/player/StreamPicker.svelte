@@ -176,8 +176,13 @@
 </script>
 
 {#if pick}
+  <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
+       Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
+       instead of letting WebKit cache one snapshot — at the exact moment the app is busiest
+       resolving sources. Same call DebridCaching.svelte:22 already documents. -->
   <div
-    class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
+    class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-4"
+    class:backdrop-blur-sm={!$gameMode}
     onclick={close}
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"

@@ -106,10 +106,17 @@ export const realdebrid: DebridProvider = {
       await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: 'all' }))
       info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
     }
-    await poll(async () => {
-      info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
-      return rdStatus(info)
-    }, opts)
+    // `poll` probes once before its first sleep, so entering it with an already-`downloaded` info
+    // spent a whole extra round-trip (fresh TLS handshake — the plugin pools nothing) re-fetching
+    // the file list we are holding, then parsing it again. That is pure latency on the CACHED path,
+    // which is the common one. Every other provider polls straight after add; RD was the only one
+    // paying for it. Routed through `rdStatus` so error-status mapping stays in one place.
+    if (rdStatus(info).stage !== 'ready') {
+      await poll(async () => {
+        info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+        return rdStatus(info)
+      }, opts)
+    }
     const selected = (info.files ?? []).filter((f) => f.selected)
     const videos = selected.filter((f) => VIDEO.test(f.path) && !JUNK.test(f.path))
     // Episode-aware pick first (batch/season packs: play the file the user asked for,

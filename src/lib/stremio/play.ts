@@ -154,6 +154,8 @@ function detach() {
   stop.forEach((f) => f())
   stop = []
   playGen++
+  // New episode → the prefetch target changes, so a cooldown recorded for the old one is stale.
+  resetPrefetchMiss()
 }
 
 // Register a Tauri event listener and store its unlisten SYNCHRONOUSLY. `listen()` is an async
@@ -267,6 +269,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
 let stopAndroid: (() => void) | null = null
 function attachAndroid(media: Media, episode: number, onState: (s: PlayState) => void) {
   stopAndroid?.()
+  resetPrefetchMiss()
   let marked = false
   let lastSave = 0
   let ended = false
@@ -560,6 +563,20 @@ async function episodeWant(media: Media, episode: number | undefined, stream?: S
 // auto-advance starts instantly — no addon query or debrid round-trip at the cut.
 let prefetched: { mediaId: number; episode: number; stream: Stream } | null = null
 let prefetching = false
+// Negative cache for prefetchNext. `prefetched` is only ever assigned on SUCCESS, so a miss (no
+// cached same-release, or a throw) left every guard below false — and the progress handler calls
+// this at 4Hz for the whole last 15% of an episode. A miss therefore re-ran the complete multi-addon
+// fan-out plus refineStreams over every returned row, hundreds of times per episode, on the same
+// core that is decoding video. That is guaranteed for anyone without debrid, since pickSameRelease
+// only ever matches a debrid-cached release.
+// A cooldown rather than a permanent tombstone: an uncached release CAN become cached mid-episode
+// (another client, or the debrid service finishing), and a tombstone would silently kill the
+// feature for the rest of the episode.
+const PREFETCH_MISS_MS = 60_000
+let prefetchMiss: { key: string; at: number } | null = null
+const prefetchKey = (mediaId: number, episode: number) => `${mediaId}:${episode}`
+/** Forget the miss cooldown — the episode changed, so the next target is different. */
+function resetPrefetchMiss() { prefetchMiss = null }
 
 /** Resolve the next episode's (cached, same-release-preferred) stream in the
  *  background so the transition is instant. Best-effort; cached-only (never
@@ -570,7 +587,11 @@ async function prefetchNext(media: Media, episode: number) {
   const next = episode + 1
   if (next > airedTotal || prefetching) return
   if (prefetched?.mediaId === media.id && prefetched.episode === next) return
+  // Guard BEFORE resolveStreams — the whole point is to skip the fan-out, not just the pick.
+  const key = prefetchKey(media.id, next)
+  if (prefetchMiss?.key === key && Date.now() - prefetchMiss.at < PREFETCH_MISS_MS) return
   prefetching = true
+  let hit = false
   try {
     const { streams, want } = await resolveStreams(media, next)
     const best = pickSameRelease(media, streams, want)
@@ -581,10 +602,13 @@ async function prefetchNext(media: Media, episode: number) {
         want: { episode: next, abs: want?.abs, season: want?.season, filename: s.behaviorHints?.filename },
       }) }
     }
-    if (s.url) prefetched = { mediaId: media.id, episode: next, stream: s }
+    if (s.url) { prefetched = { mediaId: media.id, episode: next, stream: s }; hit = true }
   }
   catch { /* best-effort — the normal resolve runs at play time */ }
-  finally { prefetching = false }
+  finally {
+    prefetching = false
+    prefetchMiss = hit ? null : { key, at: Date.now() }
+  }
 }
 
 /** Consume a matching prefetched stream, if one is ready for this exact episode. */
