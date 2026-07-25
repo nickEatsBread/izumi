@@ -67,15 +67,19 @@ export function rdFile(f: { id: number; path: string; bytes: number }): DebridFi
  *  addons use — it keeps 2 MB "trailerclip.mkv" junk out of the selection. */
 const MIN_VIDEO_BYTES = 5 * 1024 * 1024
 
-/** Which file ids to hand RD's selectFiles. Never send 'all': asking RD for every file is
- *  what makes it repackage the torrent into one archive instead of per-file links. Falls back
- *  to every file when nothing looks like a video, and to the literal 'all' keyword only when
- *  there are no files to name. */
+/** Which file ids to hand RD's selectFiles. Avoid RD's `all` keyword whenever files can be
+ *  named individually: asking RD for every file is what makes it repackage the torrent into
+ *  one archive instead of per-file links. Falls back tier by tier — real (non-junk, over-floor)
+ *  videos, then any non-junk video-extension file regardless of size, then every file — so a
+ *  torrent whose only video is junk-named or undersized still doesn't drag sidecar files (subs,
+ *  etc.) into a multi-file selection. Returns the literal 'all' keyword only when there is
+ *  nothing left to name. */
 export function rdSelectFileIds(files: Array<{ id: number; path: string; bytes: number }>): string {
   const videos = files.filter(
-    (f) => VIDEO.test(f.path) && !JUNK.test(f.path) && f.bytes > MIN_VIDEO_BYTES,
+    (f) => VIDEO.test(f.path) && !JUNK.test(f.path) && f.bytes >= MIN_VIDEO_BYTES,
   )
-  const pool = videos.length ? videos : files
+  const anyVideoExt = files.filter((f) => VIDEO.test(f.path) && !JUNK.test(f.path))
+  const pool = videos.length ? videos : anyVideoExt.length ? anyVideoExt : files
   const ids = pool.map((f) => f.id)
   return ids.length ? ids.join(',') : 'all'
 }
