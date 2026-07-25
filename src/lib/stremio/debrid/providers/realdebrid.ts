@@ -304,6 +304,7 @@ export const realdebrid: DebridProvider = {
   name: 'Real-Debrid',
   keyHint: 'real-debrid.com/apitoken',
   credential: 'apikey',
+  cacheCheck: 'library',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Extensions.')
     // Reuse an already-DOWNLOADED torrent for this hash instead of re-adding. A fresh addMagnet

@@ -72,6 +72,7 @@ export const torbox: DebridProvider = {
   name: 'TorBox',
   keyHint: 'torbox.app/settings',
   credential: 'apikey',
+  cacheCheck: 'native',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No TorBox API key set — add it in Settings → Extensions.')
     let id: string | number

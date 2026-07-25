@@ -30,7 +30,8 @@ export const providers = new Map(PROVIDERS.map((p) => [p.id, p]))
 
 /** Metadata for the settings <select>. */
 export const providerList: DebridProviderMeta[] = PROVIDERS.map(
-  ({ id, name, keyHint, credential, experimental }) => ({ id, name, keyHint, credential, experimental }),
+  ({ id, name, keyHint, credential, experimental, cacheCheck }) =>
+    ({ id, name, keyHint, credential, experimental, cacheCheck }),
 )
 
 export const providerName = (id: string) => providers.get(id)?.name ?? 'debrid'
@@ -85,4 +86,23 @@ export function deleteItem(providerId: string, key: string, item: DebridItem): P
   const p = providers.get(providerId)
   if (!p?.deleteItem) throw new Error(`${p?.name ?? 'This provider'} doesn't support deleting.`)
   return p.deleteItem(key, item)
+}
+
+/** How the given provider can answer a cache question. Unknown ids answer 'none'. */
+export function cacheCheckMode(providerId: string): 'native' | 'library' | 'none' {
+  return providers.get(providerId)?.cacheCheck ?? 'none'
+}
+
+/** Bulk cache lookup. NEVER throws and never rejects — a cache badge is a nicety, and a failure
+ *  here must not disturb the picker or playback. An absent hash means unknown. */
+export async function checkCached(
+  providerId: string, key: string, hashes: string[],
+): Promise<Map<string, 'cached' | 'uncached'>> {
+  const p = providers.get(providerId)
+  if (!p?.checkCached || !key || !hashes.length) return new Map()
+  try {
+    return await p.checkCached(key, hashes)
+  } catch {
+    return new Map()
+  }
 }
