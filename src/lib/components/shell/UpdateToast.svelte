@@ -1,7 +1,11 @@
 <script lang="ts">
-  import { availableUpdate, updatePhase, updateProgress, updateError, updateDismissed, applyUpdate } from '$lib/updater'
+  import { availableUpdate, updatePhase, updateProgress, updateBytes, updateError, updateDismissed, applyUpdate } from '$lib/updater'
   import { isMobile } from '$lib/platform'
   const pct = $derived(Math.round($updateProgress * 100))
+  // No Content-Length (or nothing downloaded yet) → no honest percentage. Show the byte count
+  // and a sliding bar instead of a dead 0%, which is what a stalled updater looks like.
+  const known = $derived($updateProgress > 0)
+  const mb = $derived(($updateBytes / 1_048_576).toFixed(1))
 </script>
 
 {#if $availableUpdate && !$updateDismissed}
@@ -18,8 +22,14 @@
         <button data-focusable onclick={() => updateDismissed.set(true)} class="rounded px-3 py-1.5 text-sm text-muted-foreground">Later</button>
       </div>
     {:else if $updatePhase === 'downloading'}
-      <p class="mb-2 text-sm font-bold">Downloading… {pct}%</p>
-      <div class="h-1.5 w-full overflow-hidden rounded bg-background"><div class="h-full bg-primary transition-[width]" style="width:{pct}%"></div></div>
+      <p class="mb-2 text-sm font-bold">Downloading… {known ? `${pct}%` : $updateBytes > 0 ? `${mb} MB` : ''}</p>
+      <div class="h-1.5 w-full overflow-hidden rounded bg-background">
+        {#if known}
+          <div class="h-full bg-primary transition-[width]" style="width:{pct}%"></div>
+        {:else}
+          <div class="indeterminate h-full w-1/3 bg-primary"></div>
+        {/if}
+      </div>
     {:else if $updatePhase === 'ready'}
       <p class="mb-2 text-sm font-bold">Update ready.</p>
       <p class="text-xs text-muted-foreground">Quit izumi to apply {$availableUpdate.version}, then relaunch from Steam.</p>

@@ -635,12 +635,55 @@ fn write_text_file(path: String, contents: String) -> Result<(), String> {
     std::fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
+/// Byte counter streamed to the update toast as `update-download-progress` while an update
+/// downloads. `total` is `None` when the server sent no Content-Length — the toast then shows an
+/// indeterminate bar instead of inventing a percentage.
+#[derive(Clone, serde::Serialize)]
+pub struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// Emit a progress tick, rate-limited: once per whole percent when the length is known, else
+/// every 250ms. Returns the updated (last_pct, last_emit) throttle state. Without a limit a
+/// multi-MB download fires thousands of IPC messages a second.
+fn emit_update_progress(
+    app: &AppHandle,
+    downloaded: u64,
+    total: Option<u64>,
+    last_pct: &mut i64,
+    last_emit: &mut std::time::Instant,
+) {
+    let pct = total
+        .filter(|t| *t > 0)
+        .map(|t| (downloaded.min(t) * 100 / t) as i64);
+    let due = match pct {
+        Some(p) => p != *last_pct,
+        None => last_emit.elapsed() >= std::time::Duration::from_millis(250),
+    };
+    if !due {
+        return;
+    }
+    if let Some(p) = pct {
+        *last_pct = p;
+    }
+    *last_emit = std::time::Instant::now();
+    let _ = app.emit("update-download-progress", UpdateProgress { downloaded, total });
+}
+
 /// Android self-update: download a release APK to the app cache dir and return its path
 /// (the frontend then hands it to the package installer via the extplayer plugin). Uses the
 /// download client (no total timeout). Overwrites any previous update file.
+///
+/// Streams to disk chunk-by-chunk rather than buffering the whole APK, so the toast can show
+/// real download progress (`update-download-progress`) — and so a ~100MB full-flavor APK isn't
+/// held in memory in one allocation.
 #[cfg(target_os = "android")]
 #[tauri::command]
 async fn updater_download_apk(app: AppHandle, url: String) -> Result<String, String> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join("izumi-update.apk");
@@ -648,8 +691,25 @@ async fn updater_download_apk(app: AppHandle, url: String) -> Result<String, Str
     if !resp.status().is_success() {
         return Err(format!("Update download failed (HTTP {})", resp.status().as_u16()));
     }
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    let total = resp.content_length();
+    let mut file = tokio::fs::File::create(&dest).await.map_err(|e| e.to_string())?;
+    let mut stream = resp.bytes_stream();
+    let mut downloaded: u64 = 0;
+    let mut last_pct: i64 = -1;
+    let mut last_emit = std::time::Instant::now();
+    emit_update_progress(&app, 0, total, &mut last_pct, &mut last_emit);
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        downloaded += chunk.len() as u64;
+        emit_update_progress(&app, downloaded, total, &mut last_pct, &mut last_emit);
+    }
+    file.flush().await.map_err(|e| e.to_string())?;
+    // Final tick with a known total, so the bar lands on 100% even for a length-less response.
+    let _ = app.emit(
+        "update-download-progress",
+        UpdateProgress { downloaded, total: Some(downloaded) },
+    );
     Ok(dest.to_string_lossy().into_owned())
 }
 
@@ -1913,8 +1973,31 @@ async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), S
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no update available".to_string())?;
+    // Stream the download to the toast as `update-download-progress`. This callback used to be a
+    // no-op, which is why the progress bar sat at 0% for the whole download even though the update
+    // itself applied fine. `on_chunk` gets the chunk SIZE (not a running total), so accumulate.
+    let seen = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let (chunk_app, chunk_seen) = (app.clone(), seen.clone());
+    let (done_app, done_seen) = (app.clone(), seen.clone());
+    let mut last_pct: i64 = -1;
+    let mut last_emit = std::time::Instant::now();
     update
-        .download_and_install(|_chunk, _total| {}, || {})
+        .download_and_install(
+            move |chunk: usize, total: Option<u64>| {
+                let downloaded =
+                    chunk_seen.fetch_add(chunk as u64, std::sync::atomic::Ordering::Relaxed) + chunk as u64;
+                emit_update_progress(&chunk_app, downloaded, total, &mut last_pct, &mut last_emit);
+            },
+            move || {
+                // Download finished; the (silent) install runs next. Pin the bar at 100% so it
+                // doesn't sit one tick short while the installer swaps the binary.
+                let downloaded = done_seen.load(std::sync::atomic::Ordering::Relaxed);
+                let _ = done_app.emit(
+                    "update-download-progress",
+                    UpdateProgress { downloaded, total: Some(downloaded) },
+                );
+            },
+        )
         .await
         .map_err(|e| e.to_string())?;
     app.restart();

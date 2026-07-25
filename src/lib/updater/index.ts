@@ -13,9 +13,28 @@ export type Available = { version: string; notes: string; target: UpdateTarget; 
 
 export const availableUpdate = writable<Available | null>(null)
 export const updatePhase = writable<Phase>('idle')
-export const updateProgress = writable(0) // 0..1, download %
+/** 0..1 download fraction. Stays 0 while the download length is unknown (no Content-Length) —
+ *  the toast shows an indeterminate bar in that case rather than a fake 0%. */
+export const updateProgress = writable(0)
+/** Bytes downloaded so far. The only honest readout when the total is unknown. */
+export const updateBytes = writable(0)
 export const updateError = writable('')
 export const updateDismissed = writable(false)
+
+/** Byte-counter payload emitted by the Rust download loops (desktop + Android). */
+type ProgressPayload = { downloaded: number; total: number | null }
+
+/** Map `update-download-progress` onto the progress stores for the duration of a download.
+ *  Returns an unlisten fn. Desktop + Android both emit it; flatpak has its own portal event. */
+function trackDownloadProgress(): () => void {
+  return listenSafe<ProgressPayload>('update-download-progress', (e) => {
+    const p = e.payload
+    if (!p) return
+    const downloaded = p.downloaded ?? 0
+    updateBytes.set(downloaded)
+    updateProgress.set(p.total && p.total > 0 ? Math.min(1, downloaded / p.total) : 0)
+  })
+}
 
 /** Which install mechanism applies to THIS build. */
 export async function pickTarget(): Promise<UpdateTarget> {
@@ -50,16 +69,27 @@ const FLATPAK_ID = 'com.nicho.izumi'
 export async function applyUpdate(): Promise<void> {
   const u = get(availableUpdate); if (!u) return
   updateError.set('')
+  updateProgress.set(0); updateBytes.set(0) // never carry a prior attempt's bar into this one
   try {
     if (u.target === 'android' && u.android) {
       updatePhase.set('downloading')
-      await downloadAndInstall(u.android) // launches the system installer
+      const unlisten = trackDownloadProgress()
+      try {
+        await downloadAndInstall(u.android) // launches the system installer
+        updateProgress.set(1)
+      } finally { unlisten() }
       return
     }
     if (u.target === 'desktop') {
       updatePhase.set('downloading')
-      await invoke('updater_install', { channel: get(updateChannel) }) // downloads + restarts
-      updatePhase.set('ready')
+      // The install relaunches the app from Rust, so this invoke usually never resolves — the
+      // listener dies with the process. Progress arrives on `update-download-progress` until then.
+      const unlisten = trackDownloadProgress()
+      try {
+        await invoke('updater_install', { channel: get(updateChannel) }) // downloads + restarts
+        updateProgress.set(1)
+        updatePhase.set('ready')
+      } finally { unlisten() }
       return
     }
     // flatpak (Steam Deck) — apply via the org.freedesktop.portal.Flatpak UpdateMonitor. It swaps
@@ -100,13 +130,14 @@ export async function applyUpdate(): Promise<void> {
 const FIRST_DELAY = 5_000       // let first paint / boot settle
 const INTERVAL = 6 * 60 * 60_000 // 6h
 
-/** Kick off the initial (delayed) check + a 6h interval. Returns a stop fn. `autoEnabled` is read
- *  each tick so toggling the setting takes effect without a restart. Callers gate to packaged builds. */
-export function startUpdateChecks(autoEnabled: () => boolean): () => void {
+/** Kick off the initial (delayed) check + a 6h interval. Returns a stop fn. Checking is
+ *  unconditional — there's no user opt-out — but applying an update stays opt-in via the toast.
+ *  Callers gate this to packaged builds so dev never nags. */
+export function startUpdateChecks(): () => void {
   let interval: ReturnType<typeof setInterval> | null = null
   const first = setTimeout(() => {
-    if (autoEnabled()) void checkForUpdate()
-    interval = setInterval(() => { if (autoEnabled()) void checkForUpdate() }, INTERVAL)
+    void checkForUpdate()
+    interval = setInterval(() => { void checkForUpdate() }, INTERVAL)
   }, FIRST_DELAY)
   return () => { clearTimeout(first); if (interval) clearInterval(interval) }
 }
