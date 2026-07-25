@@ -1,0 +1,10 @@
+{
+  "id": "anizone",
+  "name": "AniZone",
+  "version": "1.0.0",
+  "language": "typescript",
+  "type": "onlinestream-provider",
+  "description": "Direct HLS streams with sidecar subtitle tracks.",
+  "lang": "en",
+  "payloadURI": "https://example.invalid/providers/anizone/provider.ts"
+}

@@ -1,0 +1,321 @@
+<html><head><script src="/livewire/livewire.min.js?id=42cd7fd5"   data-csrf="ACJDFeu0gVCTUulXgIFaDCEKVcIbDnPXOPmxFMlI" data-update-uri="/livewire/update" data-navigate-once="true"></script></head><body><main class="flex flex-col items-center">
+            
+            <div wire:snapshot="{&quot;data&quot;:{&quot;slug&quot;:&quot;qtskwpje&quot;,&quot;search&quot;:&quot;&quot;,&quot;sort&quot;:&quot;default-asc&quot;,&quot;type&quot;:0,&quot;typeOptions&quot;:[[&quot;All&quot;,&quot;Regular Episode&quot;,&quot;Special&quot;,&quot;Opening\/Ending&quot;,&quot;Trailer\/Promo\/Ads&quot;,&quot;Parody\/Fandub&quot;,&quot;Other&quot;],{&quot;s&quot;:&quot;arr&quot;}],&quot;sortOptions&quot;:[{&quot;default-asc&quot;:&quot;Default&quot;,&quot;default-desc&quot;:&quot;Inverse&quot;,&quot;release-asc&quot;:&quot;First Aired&quot;,&quot;release-desc&quot;:&quot;Last Aired&quot;},{&quot;s&quot;:&quot;arr&quot;}],&quot;view&quot;:&quot;list&quot;,&quot;viewCookie&quot;:&quot;anime-episode-view&quot;,&quot;paginators&quot;:[{&quot;page&quot;:1},{&quot;s&quot;:&quot;arr&quot;}]},&quot;memo&quot;:{&quot;id&quot;:&quot;nGZ9RzDKjgUkZkG8VhDA&quot;,&quot;name&quot;:&quot;pages.anime-detail&quot;,&quot;path&quot;:&quot;anime\/qtskwpje&quot;,&quot;method&quot;:&quot;GET&quot;,&quot;release&quot;:&quot;a-a-a&quot;,&quot;children&quot;:[],&quot;scripts&quot;:[],&quot;assets&quot;:[],&quot;errors&quot;:[],&quot;locale&quot;:&quot;en&quot;},&quot;checksum&quot;:&quot;fd45532eb62e558c0d1d6e3a18b265623ea5b9e559faa418285382c86786c8d5&quot;}" wire:effects="[]" wire:id="nGZ9RzDKjgUkZkG8VhDA"
+    x-data="{
+        isUnsafe: false,
+        anmTitles: JSON.parse('{\u00225\u0022:\u0022\\u0022Eiji\\u0022\u0022,\u00228\u0022:\u0022\\u300c\\u30a8\\u30a4\\u30b8\\u300d\u0022}'),
+        get displayAnimeTitle() {
+            return window.getTitle(this.anmTitles, '&quot;Eiji&quot;');
+        }
+    }"
+    class="flex flex-col items-center w-full pb-[109px] md:pb-12 relative"
+>
+
+    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+    <div class="space-y-12 w-full lg:container px-4 pt-12  ">
+        <div class="w-full flex justify-center select-none overflow-hidden" 
+     x-data="{ 
+        blocked: false,
+        checkAd() {
+            setTimeout(() => {
+                const slot = this.$refs.slot;
+                if (!slot) return;
+
+                const hasNoChildren = slot.children.length === 0;
+                let elementsHidden = false;
+
+                if (!hasNoChildren) {
+                    elementsHidden = Array.from(slot.children).every(child => {
+                        const style = window.getComputedStyle(child);
+                        return style.display === 'none' || 
+                               style.visibility === 'hidden' || 
+                               child.offsetHeight < 10;
+                    });
+                }
+
+                if (hasNoChildren || elementsHidden) {
+                    this.blocked = true;
+                }
+            }, 2500);
+        }
+     }" 
+     x-init="checkAd()">
+    
+    <div class="relative max-w-[728px] min-h-[90px] w-full">
+        <div x-show="blocked" 
+            x-transition.opacity.duration.500ms
+            x-cloak
+            class="absolute inset-0 flex items-center justify-center bg-gray-700 text-center text-balance text-gray-500 font-semibold border-4 border-dashed border-gray-600 rounded-xl overflow-hidden">
+            <p class="px-4 xs:text-lg sm:text-xl md:text-2xl">
+                We don't use intrusive ads and hope you disable your adblock.
+            </p>
+        </div>
+
+        <div x-ref="slot" class="w-full h-full flex justify-center">
+            <div id="frame" style="width: 728px;margin: auto;z-index: 99998;height: auto">
+          <iframe data-aa='2419912' src='//ad.a-ads.com/2419912/?size=728x90'
+                            style='border:0; padding:0; width:728px; height:90px; overflow:hidden;display: block;margin: auto'></iframe>
+        </div>
+        </div>
+    </div>
+</div>
+
+        <div class="flex items-start flex-wrap lg:flex-nowrap gap-6">
+            <div class="mx-auto lg:mx-0">
+                <img
+                    src="https://anizone.to/images/anime/d09332f2-7e1b-48c3-a0c6-7cff51a12c17.jpg"
+                    :alt="displayAnimeTitle"
+                    class="bg-gray-700 hover:cursor-zoom-in max-w-auto xs:max-w-[400px] max-h-[400px] rounded-md drop-shadow-lg"
+                    @click="$dispatch('lightbox', 'https://anizone.to/images/anime/d09332f2-7e1b-48c3-a0c6-7cff51a12c17.jpg')"
+                />
+
+                <!--[if BLOCK]><![endif]-->                <div class="flex mt-8">
+                    <a href="https://anizone.to/anime/qtskwpje/1" class="
+                            w-full items-center justify-center p-0.5 overflow-hidden text-lg font-semibold text-white rounded-lg
+                            focus:ring-4 focus:outline-none focus:ring-cyan-800
+                            group bg-gradient-to-br from-cyan-500 to-blue-500 group-hocus:from-cyan-500 group-hocus:to-blue-500
+                        ">
+                    
+                        <span class="flex justify-center items-center gap-2 pl-3.5 pr-5 py-3 transition-colors duration-300 ease-in-out bg-gray-900 rounded-md group-hocus:bg-opacity-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" class="h-4 w-auto fill-current">
+    <path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/>
+</svg> Start Watching
+                        </span>
+                    </a>
+                </div>
+                <!--[if ENDBLOCK]><![endif]-->            </div>
+
+            <div class="w-full grid grid-cols-1 gap-6">
+                <div class="flex flex-col items-center lg:items-start">
+                    <h1 class="text-center lg:text-start text-slate-100 text-xl sm:text-2xl lg:text-3xl mb-5" x-text="displayAnimeTitle"></h1>
+
+                    <div class="text-slate-100 text-xs lg:text-base flex flex-wrap justify-center gap-2 sm:gap-6">
+                        <span class="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="inline-block h-4 w-auto fill-current">
+    <path d="M64 480H448c35.3 0 64-28.7 64-64V160c0-35.3-28.7-64-64-64H288c-10.1 0-19.6-4.7-25.6-12.8L243.2 57.6C231.1 41.5 212.1 32 192 32H64C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64z"/>
+</svg>                            <span class="inline-block">Movie</span>
+                        </span>
+
+                        <span class="flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="inline-block h-4 w-auto fill-current">
+    <path d="M352 256c0 22.2-1.2 43.6-3.3 64H163.3c-2.2-20.4-3.3-41.8-3.3-64s1.2-43.6 3.3-64H348.7c2.2 20.4 3.3 41.8 3.3 64zm28.8-64H503.9c5.3 20.5 8.1 41.9 8.1 64s-2.8 43.5-8.1 64H380.8c2.1-20.6 3.2-42 3.2-64s-1.1-43.4-3.2-64zm112.6-32H376.7c-10-63.9-29.8-117.4-55.3-151.6c78.3 20.7 142 77.5 171.9 151.6zm-149.1 0H167.7c6.1-36.4 15.5-68.6 27-94.7c10.5-23.6 22.2-40.7 33.5-51.5C239.4 3.2 248.7 0 256 0s16.6 3.2 27.8 13.8c11.3 10.8 23 27.9 33.5 51.5c11.6 26 20.9 58.2 27 94.7zm-209 0H18.6C48.6 85.9 112.2 29.1 190.6 8.4C165.1 42.6 145.3 96.1 135.3 160zM8.1 192H131.2c-2.1 20.6-3.2 42-3.2 64s1.1 43.4 3.2 64H8.1C2.8 299.5 0 278.1 0 256s2.8-43.5 8.1-64zM194.7 446.6c-11.6-26-20.9-58.2-27-94.6H344.3c-6.1 36.4-15.5 68.6-27 94.6c-10.5 23.6-22.2 40.7-33.5 51.5C272.6 508.8 263.3 512 256 512s-16.6-3.2-27.8-13.8c-11.3-10.8-23-27.9-33.5-51.5zM135.3 352c10 63.9 29.8 117.4 55.3 151.6C112.2 482.9 48.6 426.1 18.6 352H135.3zm358.1 0c-30 74.1-93.6 130.9-171.9 151.6c25.5-34.2 45.2-87.7 55.3-151.6H493.4z"/>
+</svg>                            <span class="inline-block">Completed</span>
+                        </span>
+
+                        <span class="flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="inline-block h-4 w-auto fill-current">
+    <path d="M0 96C0 60.7 28.7 32 64 32H448c35.3 0 64 28.7 64 64V416c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V96zM48 368v32c0 8.8 7.2 16 16 16H96c8.8 0 16-7.2 16-16V368c0-8.8-7.2-16-16-16H64c-8.8 0-16 7.2-16 16zm368-16c-8.8 0-16 7.2-16 16v32c0 8.8 7.2 16 16 16h32c8.8 0 16-7.2 16-16V368c0-8.8-7.2-16-16-16H416zM48 240v32c0 8.8 7.2 16 16 16H96c8.8 0 16-7.2 16-16V240c0-8.8-7.2-16-16-16H64c-8.8 0-16 7.2-16 16zm368-16c-8.8 0-16 7.2-16 16v32c0 8.8 7.2 16 16 16h32c8.8 0 16-7.2 16-16V240c0-8.8-7.2-16-16-16H416zM48 112v32c0 8.8 7.2 16 16 16H96c8.8 0 16-7.2 16-16V112c0-8.8-7.2-16-16-16H64c-8.8 0-16 7.2-16 16zM416 96c-8.8 0-16 7.2-16 16v32c0 8.8 7.2 16 16 16h32c8.8 0 16-7.2 16-16V112c0-8.8-7.2-16-16-16H416zM160 128v64c0 17.7 14.3 32 32 32H320c17.7 0 32-14.3 32-32V128c0-17.7-14.3-32-32-32H192c-17.7 0-32 14.3-32 32zm32 160c-17.7 0-32 14.3-32 32v64c0 17.7 14.3 32 32 32H320c17.7 0 32-14.3 32-32V320c0-17.7-14.3-32-32-32H192z"/>
+</svg>                            <span class="inline-block">1 Episodes</span>
+                        </span>
+
+                        <span class="flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" class="inline-block h-4 w-auto fill-current">
+    <path d="M96 32V64H48C21.5 64 0 85.5 0 112v48H448V112c0-26.5-21.5-48-48-48H352V32c0-17.7-14.3-32-32-32s-32 14.3-32 32V64H160V32c0-17.7-14.3-32-32-32S96 14.3 96 32zM448 192H0V464c0 26.5 21.5 48 48 48H400c26.5 0 48-21.5 48-48V192z"/>
+</svg>                            <span class="inline-block">1990</span>
+                        </span>
+
+                        <span class="flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" class="inline-block h-4 w-auto fill-current">
+    <path d="M579.8 267.7c56.5-56.5 56.5-148 0-204.5c-50-50-128.8-56.5-186.3-15.4l-1.6 1.1c-14.4 10.3-17.7 30.3-7.4 44.6s30.3 17.7 44.6 7.4l1.6-1.1c32.1-22.9 76-19.3 103.8 8.6c31.5 31.5 31.5 82.5 0 114L422.3 334.8c-31.5 31.5-82.5 31.5-114 0c-27.9-27.9-31.5-71.8-8.6-103.8l1.1-1.6c10.3-14.4 6.9-34.4-7.4-44.6s-34.4-6.9-44.6 7.4l-1.1 1.6C206.5 251.2 213 330 263 380c56.5 56.5 148 56.5 204.5 0L579.8 267.7zM60.2 244.3c-56.5 56.5-56.5 148 0 204.5c50 50 128.8 56.5 186.3 15.4l1.6-1.1c14.4-10.3 17.7-30.3 7.4-44.6s-30.3-17.7-44.6-7.4l-1.6 1.1c-32.1 22.9-76 19.3-103.8-8.6C74 372 74 321 105.5 289.5L217.7 177.2c31.5-31.5 82.5-31.5 114 0c27.9 27.9 31.5 71.8 8.6 103.9l-1.1 1.6c-10.3 14.4-6.9 34.4 7.4 44.6s34.4 6.9 44.6-7.4l1.1-1.6C433.5 260.8 427 182 377 132c-56.5-56.5-148-56.5-204.5 0L60.2 244.3z"/>
+</svg>                            <a
+                                href="http://www.production-ig.co.jp/contents/works_sp/0080_/index.html"
+                                title="http://www.production-ig.co.jp/contents/works_sp/0080_/index.html"
+                                target="_blank"
+                                rel="nofollow noopener noreferrer"
+                                aria-label="Official Site"
+                                class="inline-block hocus:text-amber-300 focus:outline-none transition-colors duration-300 ease-in-out"
+                            >Official Site</a>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="text-slate-100 text-center lg:text-start text-sm md:text-base xl:text-lg">
+                    <h3 class="sr-only">Synopsis</h3>
+
+                    <div>* Based on a shounen manga in Jump.<br />
+<br />
+Eiji is the son of Japan`s greatest boxer, but unfortunately, he happens to be a total high school loser. However, an old man is determined to make Eiji into a great boxer.</div>
+                </div>
+
+                <!--[if BLOCK]><![endif]-->                    <div class="flex flex-wrap gap-2 justify-center lg:justify-start">
+                        <!--[if BLOCK]><![endif]-->                            <a wire:navigate wire:key="t-hmi0gccz" href="https://anizone.to/tag/hmi0gccz" title="Manga" class="px-5 py-2 rounded-full text-xs md:text-sm text-white bg-gray-600 hocus:bg-sky-600 focus:outline-none transition-colors duration-300 ease-in-out">Manga</a>
+                                                    <a wire:navigate wire:key="t-fxndqllf" href="https://anizone.to/tag/fxndqllf" title="Shounen" class="px-5 py-2 rounded-full text-xs md:text-sm text-white bg-gray-600 hocus:bg-sky-600 focus:outline-none transition-colors duration-300 ease-in-out">Shounen</a>
+                                                    <a wire:navigate wire:key="t-bio3ygrp" href="https://anizone.to/tag/bio3ygrp" title="Comedy" class="px-5 py-2 rounded-full text-xs md:text-sm text-white bg-gray-600 hocus:bg-sky-600 focus:outline-none transition-colors duration-300 ease-in-out">Comedy</a>
+                                                    <a wire:navigate wire:key="t-3h9jwqbj" href="https://anizone.to/tag/3h9jwqbj" title="Sports" class="px-5 py-2 rounded-full text-xs md:text-sm text-white bg-gray-600 hocus:bg-sky-600 focus:outline-none transition-colors duration-300 ease-in-out">Sports</a>
+                                                    <a wire:navigate wire:key="t-gsytk31g" href="https://anizone.to/tag/gsytk31g" title="Boxing" class="px-5 py-2 rounded-full text-xs md:text-sm text-white bg-gray-600 hocus:bg-sky-600 focus:outline-none transition-colors duration-300 ease-in-out">Boxing</a>
+                        <!--[if ENDBLOCK]><![endif]-->                    </div>
+                <!--[if ENDBLOCK]><![endif]-->            </div>
+        </div>
+
+        <div class="space-y-4">
+            <h2 class="text-center lg:text-start text-slate-100 text-xl lg:text-2xl mb-4">Episodes</h2>
+
+            <div class="flex flex-col md:flex-row items-stretch mb-4 gap-2 sm:gap-4">
+
+    <div class="grow">
+        <input
+            wire:model.live.debounce.300="search"
+            class="w-full lg:w-96 rounded-lg bg-slate-900 border border-slate-700 placeholder:text-slate-200/50 focus:outline-none focus:ring-0 px-4 py-2.5"
+            placeholder="Ep#, Title, Summary"
+        />
+    </div>
+
+    <div class="flex flex-col xs:flex-row gap-2 sm:gap-4" role="group">
+        <div class="flex  space-x-2 sm:space-x-4 grow md:grow-0">
+        <!--[if BLOCK]><![endif]-->            <select wire:model.live="type" class="w-1/2 xs:w-auto rounded-lg bg-slate-900 border border-slate-700 focus:outline-none focus:ring-0 pl-4 pr-9 py-2.5">
+<!--[if BLOCK]><![endif]-->    <option value="0">All</option>
+    <option value="1">Regular Episode</option>
+    <option value="2">Special</option>
+    <option value="3">Opening/Ending</option>
+    <option value="4">Trailer/Promo/Ads</option>
+    <option value="5">Parody/Fandub</option>
+    <option value="6">Other</option>
+<!--[if ENDBLOCK]><![endif]-->
+</select>
+        <!--[if ENDBLOCK]><![endif]-->
+
+        <!--[if BLOCK]><![endif]-->            <select wire:model.live="sort" class="w-1/2 xs:w-auto rounded-lg bg-slate-900 border border-slate-700 focus:outline-none focus:ring-0 pl-4 pr-9 py-2.5">
+<!--[if BLOCK]><![endif]-->    <option value="default-asc">Default</option>
+    <option value="default-desc">Inverse</option>
+    <option value="release-asc">First Aired</option>
+    <option value="release-desc">Last Aired</option>
+<!--[if ENDBLOCK]><![endif]-->
+</select>
+        <!--[if ENDBLOCK]><![endif]-->
+        </div>
+
+    <!--[if BLOCK]><![endif]-->        <div class="ml-auto xs:ml-0 inline-flex">
+            <button
+                wire:click="setView('list')"
+                type="button"
+                class="flex items-center justify-center px-4 py-2.5
+                rounded-s-lg focus:z-10 bg-gray-700 border border-gray-600 text-slate-200 hocus:text-white hocus:bg-gray-600 focus:outline-none
+                disabled:pointer-events-none disabled:bg-emerald-600 disabled:hocus:bg-emerald-600 disabled:border-emerald-500 disabled:text-white transition-colors duration-300 ease-in-out"
+                title="List"
+                disabled
+            ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="inline-block h-6 w-auto fill-current">
+    <path d="M40 48C26.7 48 16 58.7 16 72v48c0 13.3 10.7 24 24 24H88c13.3 0 24-10.7 24-24V72c0-13.3-10.7-24-24-24H40zM192 64c-17.7 0-32 14.3-32 32s14.3 32 32 32H480c17.7 0 32-14.3 32-32s-14.3-32-32-32H192zm0 160c-17.7 0-32 14.3-32 32s14.3 32 32 32H480c17.7 0 32-14.3 32-32s-14.3-32-32-32H192zm0 160c-17.7 0-32 14.3-32 32s14.3 32 32 32H480c17.7 0 32-14.3 32-32s-14.3-32-32-32H192zM16 232v48c0 13.3 10.7 24 24 24H88c13.3 0 24-10.7 24-24V232c0-13.3-10.7-24-24-24H40c-13.3 0-24 10.7-24 24zM40 368c-13.3 0-24 10.7-24 24v48c0 13.3 10.7 24 24 24H88c13.3 0 24-10.7 24-24V392c0-13.3-10.7-24-24-24H40z"/>
+</svg></button>
+
+            <button
+                wire:click="setView('grid')"
+                type="button"
+                class="flex items-center justify-center px-4 py-2.5
+                rounded-e-lg focus:z-10 bg-gray-700 border border-gray-600 text-slate-200 hocus:text-white hocus:bg-gray-600 focus:outline-none
+                disabled:pointer-events-none disabled:bg-emerald-600 disabled:hocus:bg-emerald-600 disabled:border-emerald-500 disabled:text-white transition-colors duration-300 ease-in-out"
+                title="Grid"
+                
+            ><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="inline-block h-6 w-auto fill-current">
+    <path fill-rule="evenodd" d="M3 6a3 3 0 0 1 3-3h2.25a3 3 0 0 1 3 3v2.25a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6Zm9.75 0a3 3 0 0 1 3-3H18a3 3 0 0 1 3 3v2.25a3 3 0 0 1-3 3h-2.25a3 3 0 0 1-3-3V6ZM3 15.75a3 3 0 0 1 3-3h2.25a3 3 0 0 1 3 3V18a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2.25Zm9.75 0a3 3 0 0 1 3-3H18a3 3 0 0 1 3 3V18a3 3 0 0 1-3 3h-2.25a3 3 0 0 1-3-3v-2.25Z" clip-rule="evenodd" />
+</svg>
+  </button>
+        </div>
+    <!--[if ENDBLOCK]><![endif]-->
+    </div>
+
+</div>
+            <div 
+                x-show="isUnsafe && window.getUnsafeState(isUnsafe).blur"
+                x-cloak
+                class="max-w-xl flex justify-center mx-auto"
+            >
+                <div class="w-full text-white text-center bg-rose-600/90 p-4 py-3 border border-rose-500/90 rounded-md">
+                    Safesearch filter is active. You can disable it in the 
+                    <a href="https://anizone.to/settings" wire:navigate class="text-white font-bold underline">Settings</a> page.
+                </div>
+            </div>
+
+            <!--[if BLOCK]><![endif]-->                <ul
+        class="grid grid-cols-1 2xl:grid-cols-2 gap-4"
+>
+    <!--[if BLOCK]><![endif]-->
+    <li x-data="{
+        hvr: false,
+        fcs: false,
+        isUnsafe: false,
+        epsTitles: JSON.parse('{\u00221\u0022:\u0022Complete Movie\u0022}'),
+        anmSlug: 'qtskwpje',
+        get displayEpisodeTitle() {
+            return window.getTitle(this.epsTitles);
+        },
+            }" wire:key="qtskwpje-1">
+        <a wire:navigate href="https://anizone.to/anime/qtskwpje/1" x-on:mouseover="hvr = true" x-on:mouseover.away="hvr = false" x-on:focus="fcs = true" x-on:blur="fcs = false" class="group block relative drop-shadow-lg overflow-hidden h-[101px] px-5 py-4 bg-slate-900 rounded-lg focus:outline-none">
+            <div 
+                x-show="!window.getUnsafeState(isUnsafe).blur" 
+                x-cloak
+                class="absolute -inset-y-0 -left-0 w-60"
+            >
+                <img
+                    src="https://seiryuu.vid-cdn.xyz/4cfb51bf-1136-45ff-bf2d-fd16d78e4534/snapshot.webp"
+                    :src="hvr || fcs ? 'https://seiryuu.vid-cdn.xyz/4cfb51bf-1136-45ff-bf2d-fd16d78e4534/teaser.webp' : 'https://seiryuu.vid-cdn.xyz/4cfb51bf-1136-45ff-bf2d-fd16d78e4534/snapshot.webp'"
+                    :alt="displayAnimeTitle + ' - Episode 1' + (displayEpisodeTitle ? ' : ' + displayEpisodeTitle : '')"
+                    class="absolute w-full h-full object-cover bg-slate-900 opacity-25 sm:group-hocus:opacity-100 transition-opacity duration-300 ease-in-out"
+                />
+                <div class="absolute left-0 w-full h-full bg-gradient-to-r from-transparent to-slate-900"></div>
+            </div>
+
+            <div 
+                class="relative flex flex-col gap-1.5"
+                :class="{ 'sm:group-hocus:ml-52 transition-all duration-300 ease-in-out': !window.getUnsafeState(isUnsafe).blur && true }"
+            >
+                <div class="flex flex-col">
+                    <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+                    <div class="line-clamp-1">
+                        <h3 class="group-hocus:text-amber-300 transition-colors duration-300 ease-in-out">Episode 1<span x-text="displayEpisodeTitle ? ' : ' + displayEpisodeTitle : ''"></span></h3>
+                    </div>
+
+                </div>
+
+                <div class="text-sm line-clamp-1 h-[17px]">
+                <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->                </div>
+
+                <div class="flex flex-row gap-2 text-xs">
+                    <span class="flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="inline h-3 w-auto fill-current">
+    <path d="M64 480H448c35.3 0 64-28.7 64-64V160c0-35.3-28.7-64-64-64H288c-10.1 0-19.6-4.7-25.6-12.8L243.2 57.6C231.1 41.5 212.1 32 192 32H64C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64z"/>
+</svg>                        <span class="line-clamp-1">Regular Episode</span>
+                    </span>
+
+                <!--[if BLOCK]><![endif]-->                    <span
+                        title="35 years ago"
+                        class="flex items-center gap-1"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="inline h-3 w-auto fill-current">
+    <path d="M256 0a256 256 0 1 1 0 512A256 256 0 1 1 256 0zM232 120V256c0 8 4 15.5 10.7 20l96 64c11 7.4 25.9 4.4 33.3-6.7s4.4-25.9-6.7-33.3L280 243.2V120c0-13.3-10.7-24-24-24s-24 10.7-24 24z"/>
+</svg>                        <span class="line-clamp-1">1990-08-25</span>
+                    </span>
+                <!--[if ENDBLOCK]><![endif]-->
+                <!--[if BLOCK]><![endif]-->                    <span class="flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" class="inline h-3 w-auto fill-current">
+    <path d="M64 64V352H576V64H64zM0 64C0 28.7 28.7 0 64 0H576c35.3 0 64 28.7 64 64V352c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V64zM128 448H512c17.7 0 32 14.3 32 32s-14.3 32-32 32H128c-17.7 0-32-14.3-32-32s14.3-32 32-32z"/>
+</svg>                        <span class="line-clamp-1">1</span>
+                    </span>
+                <!--[if ENDBLOCK]><![endif]-->                </div>
+            </div>
+        </a>
+    </li>
+
+    <!--[if ENDBLOCK]><![endif]--></ul>
+
+            <!--[if ENDBLOCK]><![endif]-->
+            <!--[if BLOCK]><![endif]--><!--[if ENDBLOCK]><![endif]-->
+        </div>
+    </div>
+
+    <div
+        class="fixed z-50 h-full w-full inset-0 bg-black/80 backdrop-blur-lg"
+        x-data="{lightboxOpen: false, imgSrc: ''}"
+        x-show="lightboxOpen"
+        x-transition
+        @lightbox.window="lightboxOpen = true; imgSrc = $event.detail"
+        @keydown.escape.window="lightboxOpen = false"
+    >
+
+
+        <div class="flex max-w-full justify-center items-center h-screen w-screen">
+            <img class="max-w-full max-h-full p-4" :src="imgSrc" @click.away="lightboxOpen = false">
+        </div>
+    </div>
+</div>
+        </div>
+    </main></body></html>
