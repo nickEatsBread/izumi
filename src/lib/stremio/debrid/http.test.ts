@@ -24,13 +24,13 @@ describe('classifyAuth', () => {
   it('Premiumize "Invalid API key." -> token', () => expect(classifyAuth({ message: 'Invalid API key.' })).toBe('token'))
   it('Premiumize "Not logged in" -> token', () => expect(classifyAuth({ message: 'Not logged in' })).toBe('token'))
   it('Premiumize "Not premium." -> subscription', () => expect(classifyAuth({ message: 'Not premium.' })).toBe('subscription'))
-  // Offcloud
+  // Offcloud — live probe (2026-07-25) answers HTTP 401 {"error":"NOAUTH"}
   it('Offcloud "Bad API key" -> token', () => expect(classifyAuth({ message: 'Bad API key' })).toBe('token'))
-  // Deepbrid
+  it('Offcloud NOAUTH (unspaced) -> token even without the status', () => expect(classifyAuth({ message: 'NOAUTH' })).toBe('token'))
+  // Deepbrid — errors arrive as HTTP 200 bodies, so the message has to carry the signal
   it('Deepbrid 402 -> subscription', () => expect(classifyAuth({ status: 402 })).toBe('subscription'))
-  // LinkSnappy
-  it('LinkSnappy "Invalid API Key" -> token', () => expect(classifyAuth({ message: 'Invalid API Key' })).toBe('token'))
-  it('LinkSnappy "Account not active" -> subscription', () => expect(classifyAuth({ message: 'Account not active' })).toBe('subscription'))
+  it('Deepbrid "You aren\'t a premium user" -> subscription', () =>
+    expect(classifyAuth({ status: 200, message: "You aren't a premium user" })).toBe('subscription'))
   // Mega-Debrid
   it('Mega-Debrid "Token error, please log-in" -> token', () => expect(classifyAuth({ message: 'Token error, please log-in' })).toBe('token'))
   // OpenSubtitles — HTTP 401 is returned for BOTH a spent quota AND a bad key; the body decides.
