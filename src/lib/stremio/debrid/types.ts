@@ -76,6 +76,12 @@ export interface DebridProviderMeta {
   keyHint: string // where to get the credential
   credential: 'apikey' | 'userpass'
   experimental?: boolean // true → tag "(experimental)" in the UI
+  /** How (and whether) this provider can answer "is this hash cached?".
+   *  'native'  — a real bulk cache endpoint. May return a definitive 'uncached'.
+   *  'library' — no cache endpoint; we can only scan the user's OWN account. Positive-only:
+   *              proves "you already have this", never "the provider is holding this".
+   *  'none'    — cannot answer at all. Every hash stays 'unknown'. */
+  cacheCheck: 'native' | 'library' | 'none'
 }
 
 export interface DebridProvider extends DebridProviderMeta {
@@ -94,4 +100,9 @@ export interface DebridProvider extends DebridProviderMeta {
   resolveSidecars?(key: string, hashOrMagnet: string, opts?: ResolveOpts): Promise<DebridSidecar[]>
   /** Remove a torrent from the account. */
   deleteItem?(key: string, item: DebridItem): Promise<void>
+  /** Bulk cache lookup. A hash ABSENT from the returned map means UNKNOWN, never uncached —
+   *  that distinction is what stops a failed lookup from demoting good releases.
+   *  MUST NOT THROW: an auth failure is classified for its message and reported, but the caller
+   *  receives an empty map. A bad key degrades badges; it must not break the picker. */
+  checkCached?(key: string, hashes: string[]): Promise<Map<string, 'cached' | 'uncached'>>
 }

@@ -69,6 +69,7 @@ export const megadebrid: DebridProvider = {
   name: 'Mega-Debrid',
   keyHint: 'mega-debrid.eu — enter as "username:password"',
   credential: 'userpass',
+  cacheCheck: 'none',
   experimental: true,
   async resolveHash(cred, hashOrMagnet, opts) {
     // uploadTorrent creates an entry on the account, and there is no route back from a hash to an

@@ -80,6 +80,7 @@ export const alldebrid: DebridProvider = {
   name: 'AllDebrid',
   keyHint: 'alldebrid.com/apikeys',
   credential: 'apikey',
+  cacheCheck: 'library',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No AllDebrid API key set — add it in Settings → Extensions.')
     let id: string

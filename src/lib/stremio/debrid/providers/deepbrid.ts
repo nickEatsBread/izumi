@@ -91,6 +91,7 @@ export const deepbrid: DebridProvider = {
   name: 'Deepbrid',
   keyHint: 'deepbrid.com/api-docs',
   credential: 'apikey',
+  cacheCheck: 'none',
   experimental: true,
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Deepbrid API key set — add it in Settings → Extensions.')

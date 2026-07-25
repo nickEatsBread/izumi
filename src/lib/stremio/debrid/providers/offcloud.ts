@@ -83,6 +83,11 @@ export const offcloud: DebridProvider = {
   name: 'Offcloud',
   keyHint: 'offcloud.com/#/account',
   credential: 'apikey',
+  // Offcloud does have a /api/cache/info endpoint, but izumi's client here authenticates with a
+  // ?key= query param while Offcloud's early-2026 API rewrite requires an Authorization: Bearer
+  // header. The client must be fixed and verified against a live key before a cache check is
+  // layered on top of it — shipping it now would just relabel a request that's already broken.
+  cacheCheck: 'none',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Offcloud API key set — add it in Settings → Extensions.')
     // POST /cloud creates a cloud download on the account. /cloud/history does list past

@@ -63,6 +63,7 @@ export const premiumize: DebridProvider = {
   name: 'Premiumize',
   keyHint: 'premiumize.me/account',
   credential: 'apikey',
+  cacheCheck: 'native',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Premiumize API key set — add it in Settings → Extensions.')
     const magnet = magnetOf(hashOrMagnet)
