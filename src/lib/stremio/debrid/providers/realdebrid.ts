@@ -84,6 +84,18 @@ export function rdSelectFileIds(files: Array<{ id: number; path: string; bytes: 
   return ids.length ? ids.join(',') : 'all'
 }
 
+/** Map a chosen file to its RD link. RD documents `links` only as "Host URL" — the positional
+ *  coupling to the SELECTED files is a convention, not a contract, and it breaks outright when
+ *  RD packs a torrent (one archive link for many selected files). The old
+ *  `links[idx] ?? links[0]` fallback served that archive as if it were the episode. Returning
+ *  undefined lets the caller retry with a single-file selection instead of guessing.
+ *  Matching by filename is impossible here: RD's links are opaque /d/<id> URLs. */
+export function rdLinkFor(selectedCount: number, index: number, links: string[]): string | undefined {
+  if (index < 0 || selectedCount <= 0) return undefined
+  if (links.length !== selectedCount) return undefined
+  return links[index]
+}
+
 // Find an already-DOWNLOADED torrent id for `hash` in the account's list. RD has no
 // get-by-hash endpoint, so we scan the newest-first list. A single `limit=100` page missed the
 // hash for accounts with >100 torrents — the entry had scrolled past the newest 100 — so the

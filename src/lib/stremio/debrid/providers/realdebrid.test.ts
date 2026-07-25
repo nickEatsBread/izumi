@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rdStatus, rdListItem, rdFile, rdSelectFileIds } from './realdebrid'
+import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor } from './realdebrid'
 
 describe('rdStatus', () => {
   it('maps a finished torrent to ready', () => {
@@ -87,5 +87,29 @@ describe('rdSelectFileIds', () => {
 
   it('falls back to the all keyword when there is nothing to name', () => {
     expect(rdSelectFileIds([])).toBe('all')
+  })
+})
+
+describe('rdLinkFor', () => {
+  it('returns the positionally matching link when counts agree', () => {
+    const links = ['https://real-debrid.com/d/AAA', 'https://real-debrid.com/d/BBB']
+    expect(rdLinkFor(2, 1, links)).toBe('https://real-debrid.com/d/BBB')
+  })
+
+  it('returns the only link for a single-file selection', () => {
+    expect(rdLinkFor(1, 0, ['https://real-debrid.com/d/ONE'])).toBe('https://real-debrid.com/d/ONE')
+  })
+
+  it('refuses to guess when RD packed many files into one link', () => {
+    // The reported bug: 7 files selected, RD returned a single archive link.
+    expect(rdLinkFor(7, 6, ['https://real-debrid.com/d/PACKED'])).toBeUndefined()
+  })
+
+  it('refuses when the chosen file was not in the selection', () => {
+    expect(rdLinkFor(2, -1, ['a', 'b'])).toBeUndefined()
+  })
+
+  it('refuses when there are no links at all', () => {
+    expect(rdLinkFor(1, 0, [])).toBeUndefined()
   })
 })
