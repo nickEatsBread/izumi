@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { streamId, rankStreams, isUncached, parseSeasonEp, isWrongSeason, describe as parseStream } from './addon'
+import { streamId, rankStreams, isUncached, parseSeasonEp, isWrongSeason, describe as parseStream, rankInfos, pickBest } from './addon'
+
+const s = (name: string, extra: Record<string, unknown> = {}) => ({ name, infoHash: 'h' + name, ...extra })
 
 describe('addon', () => {
   it('builds a kitsu series stream id with episode', () => expect(streamId(11, 3)).toBe('kitsu:11:3'))
@@ -150,6 +152,34 @@ describe('parseSeasonEp (wrong-season guard)', () => {
     expect(parseSeasonEp({ behaviorHints: { filename: 'Re Zero 1080p WEB x264' } } as any)).toEqual({}))
   it('reads a season-only batch (no episode)', () =>
     expect(parseSeasonEp({ behaviorHints: { filename: 'Tensei Slime S01 1080p BluRay' } } as any)).toEqual({ season: 1 }))
+})
+
+describe('cacheRank ordering', () => {
+  it('orders instant < unknown < uncached < down', () => {
+    const out = rankInfos([
+      s('[RD download] A 👤 0'),   // down
+      s('B'),                      // unknown
+      s('[RD+] C'),                // instant
+      s('[RD download] D 👤 5'),   // uncached
+    ])
+    expect(out.map((i) => i.cached)).toEqual(['instant', 'unknown', 'uncached', 'down'])
+  })
+})
+
+describe('pickBest cache gating', () => {
+  it('auto-plays a confirmed cached stream', () => {
+    expect(pickBest([s('[RD+] A')], 'any', undefined, 'native')).toBeDefined()
+  })
+  it('auto-plays unknown when the provider cannot answer', () => {
+    expect(pickBest([s('A')], 'any', undefined, 'none')).toBeDefined()
+    expect(pickBest([s('A')], 'any', undefined, 'library')).toBeDefined()
+  })
+  it('refuses unknown when the provider CAN answer', () => {
+    expect(pickBest([s('A')], 'any', undefined, 'native')).toBeUndefined()
+  })
+  it('never auto-plays a confirmed uncached stream', () => {
+    expect(pickBest([s('[RD download] A 👤 5')], 'any', undefined, 'none')).toBeUndefined()
+  })
 })
 
 describe('isWrongSeason (S4E1 must not play S1E1)', () => {

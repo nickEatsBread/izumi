@@ -79,9 +79,23 @@ export interface Stream {
   // the same infoHash with disagreeing counts (one live, one 0/unknown). Display still flows
   // through the 👤 title round-trip; this is ranking-only.
   __seeders?: number
+  // Debrid cache answer, stamped by the cache-check pass in play.ts. Lives on the Stream rather
+  // than on the parsed StreamInfo because StreamPicker.svelte re-derives its rows by calling
+  // rankInfos(pick.streams) itself — a patch applied to a StreamInfo[] would be discarded on the
+  // next re-derive. An addon's own ⚡/⬇ glyph still wins over this: the glyph is that addon's
+  // first-hand statement about the stream it is offering.
+  __cache?: 'cached' | 'uncached'
+  __cacheSource?: 'native' | 'library'
 }
 
-export type CacheState = 'instant' | 'uncached' | 'down'
+export type CacheState = 'instant' | 'unknown' | 'uncached' | 'down'
+
+/** Where a StreamInfo's `cached` value came from, so the UI can label it honestly.
+ *  'glyph'   — parsed from the addon's own ⚡/⬇ marker
+ *  'native'  — a provider cache endpoint answered definitively
+ *  'library' — found in the user's own debrid account (a positive only; never proves
+ *              the provider is holding it for everyone) */
+export type CacheSource = 'glyph' | 'native' | 'library'
 export type StreamSort = 'quality' | 'seeders' | 'size'
 
 export interface StreamInfo {
@@ -110,6 +124,7 @@ export interface StreamInfo {
   logo?: string // addon manifest logo (URL) or extension icon (base64/url/data:)
   subtitleLabel?: string // explicit soft/hard subtitle availability for the chooser tooltip
   cached: CacheState
+  cacheSource?: CacheSource
   badges: string[] // ordered, deduped pill labels (badges[0] is the quality)
   // True when this source serves a language the user did not ask for. Ranking de-prioritizes it so
   // a foreign source can never be auto-selected as "best" — which is exactly what happened when an
@@ -336,19 +351,25 @@ function parseStream(s: Stream): StreamInfo {
     || (tail && !NOISE.test(tail) ? tail : undefined)
     || s.description?.match(/🏷️\s*([^\n|]+)/)?.[1]?.trim()
 
-  // 'down' only when an UNCACHED torrent has an explicit 0 seeders (nothing to
-  // fetch to debrid → effectively dead). Missing seeders stays 'uncached'.
-  //
-  // With NO marker either way, the deciding fact is whether the addon handed us something
-  // playable: a resolved url is instant, but a bare infoHash still has to go through debrid
-  // and is therefore uncached — it was previously called 'instant', which let a torrent that
-  // nothing had ever cached win the auto-pick and then stall on resolve. This branch must NOT
-  // route through the 0-seeder test above: extension indexers hardcode 0, and calling those
-  // rows 'down' would strike out the entire extension torrent path.
-  const cached: CacheState = isCached(s) ? 'instant'
-    : isUncached(s) ? (seeders === 0 ? 'down' : 'uncached')
-    : (s.infoHash && !s.url) ? 'uncached'
+  // Cache state, most-authoritative first:
+  //   1. an explicit addon glyph — first-hand, always wins
+  //   2. a __cache hint from the provider cache-check pass
+  //   3. a row with a resolved URL and no infoHash is a direct HTTP stream that genuinely plays
+  //      now, so 'instant' is honest
+  //   4. an infoHash with no glyph and no hint (every source-extension torrent) is genuinely
+  //      UNKNOWN — it is not evidence of caching, and calling it 'instant' is what let pickBest
+  //      auto-commit to a stalling debrid download
+  const glyphCached = isCached(s)
+  const glyphUncached = isUncached(s)
+  const cached: CacheState = glyphCached ? 'instant'
+    : glyphUncached ? (seeders === 0 ? 'down' : 'uncached')
+    : s.__cache === 'cached' ? 'instant'
+    : s.__cache === 'uncached' ? (seeders === 0 ? 'down' : 'uncached')
+    : s.infoHash ? 'unknown'
     : 'instant'
+  const cacheSource: CacheSource | undefined = (glyphCached || glyphUncached) ? 'glyph'
+    : s.__cache ? (s.__cacheSource ?? 'native')
+    : undefined
 
   const badges: string[] = []
   const push = (b?: string | false) => { if (b && !badges.includes(b)) badges.push(b) }
@@ -386,7 +407,7 @@ function parseStream(s: Stream): StreamInfo {
     stream: s, quality, label, filename, group, codec, bitDepth, hdr,
     dualAudio, audio, audioLanguages, source, batch, seeders, sizeBytes, sizeLabel,
     provider, addon, server: s.__server, logo: s.__logo, subtitleLabel,
-    cached, badges, langMismatch: s.__langMismatch,
+    cached, cacheSource, badges, langMismatch: s.__langMismatch,
   }
 }
 

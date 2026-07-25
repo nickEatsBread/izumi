@@ -15,9 +15,11 @@ export type { Stream, StreamInfo, CacheState, StreamSort } from './parse'
 export const streamId = (kitsuId: number, episode?: number) =>
   episode != null ? `kitsu:${kitsuId}:${episode}` : `kitsu:${kitsuId}`
 
-// Cached always outranks uncached outranks dead — no uncached/dead source ever
-// sits above a playable one regardless of quality/seeders.
-const cacheRank = (c: CacheState) => (c === 'instant' ? 0 : c === 'uncached' ? 1 : 2)
+// Cached always outranks unknown outranks uncached outranks dead — no uncached or dead source
+// ever sits above a playable one regardless of quality/seeders. 'unknown' sits between: it is not
+// evidence of caching, but it is not evidence against it either.
+const cacheRank = (c: CacheState) =>
+  c === 'instant' ? 0 : c === 'unknown' ? 1 : c === 'uncached' ? 2 : 3
 
 // A source in a language the user didn't ask for sorts below one that is (or one whose language is
 // unknown — never drop or demote on silence). This has to be a RANKING term, not just presentation:
@@ -38,6 +40,9 @@ export interface RankOptions extends ScoreOptions {
   /** Lowercased infoHashes of the releases a curated database recommends for this title. Empty or
    *  absent whenever the annotation is off, uncached or simply unknown, which is the common case. */
   seadexHashes?: ReadonlySet<string>
+  /** Cache knowledge exposed by the selected debrid provider. Native checks may treat an
+   * unanswered hash as unavailable; library-only and unsupported providers keep it unknown. */
+  cacheCheck?: 'native' | 'library' | 'none'
 }
 
 // A human compared these releases frame by frame, which is better evidence than anything scoreInfo
@@ -107,7 +112,10 @@ export function pickCandidates(
 ): Stream[] {
   const pool = want ? streams.filter((s) => !isWrongSeason(s, want)) : streams
   // 'down' stays excluded either way — that is a source with nothing to fetch FROM.
-  const all = pool.map(describe).filter((i) => i.cached === 'instant' || (opts.allowUncached && i.cached === 'uncached'))
+  const all = pool.map(describe).filter((i) =>
+    i.cached === 'instant'
+    || (i.cached === 'unknown' && opts.cacheCheck !== 'native')
+    || (opts.allowUncached && (i.cached === 'unknown' || i.cached === 'uncached')))
   if (!all.length) return []
   // Auto-select must never silently commit to a foreign-language source. Applied as a hard filter
   // rather than a sort key: sorting alone still let a foreign source win when it was the only one
@@ -119,7 +127,7 @@ export function pickCandidates(
   // it: with Quality on 4K, one uncached 2160p release was picked ahead of eleven cached 1080p
   // copies, committing to a multi-gigabyte download when the episode could have started at once.
   // Asking for 4K expresses which copy you would rather have, not a willingness to wait for it.
-  const cacheFirst = (i: StreamInfo) => (i.cached === 'instant' ? 0 : 1)
+  const cacheFirst = (i: StreamInfo) => cacheRank(i.cached)
   const tierRank = (i: StreamInfo) =>
     !Number.isFinite(target) ? 0 : i.quality === target ? 0 : i.quality < target ? 1 : 2
   const ordered = (preferred.length ? preferred : all).sort((a, b) =>
@@ -138,8 +146,14 @@ export function pickCandidates(
 }
 
 /** The single best auto-pick — the head of the candidate list. Undefined when nothing is cached. */
-export function pickBest(streams: Stream[], quality: string, want?: { season?: number; abs?: number }, opts: RankOptions = {}): Stream | undefined {
-  return pickCandidates(streams, quality, want, undefined, opts)[0]
+export function pickBest(
+  streams: Stream[],
+  quality: string,
+  want?: { season?: number; abs?: number },
+  opts: RankOptions | 'native' | 'library' | 'none' = {},
+): Stream | undefined {
+  const options = typeof opts === 'string' ? { cacheCheck: opts } : opts
+  return pickCandidates(streams, quality, want, undefined, options)[0]
 }
 
 // Query all configured addons for an episode. Keeps every USABLE stream (has a

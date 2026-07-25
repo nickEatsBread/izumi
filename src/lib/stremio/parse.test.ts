@@ -68,8 +68,8 @@ suite('describe() memoisation', () => {
 })
 
 suite('describe() cache classification', () => {
-  it('treats a bare infoHash with no url and no marker as uncached, not instant', () => {
-    expect(describe({ infoHash: 'abc123', title: '[Group] Show - 01 (1080p)' }).cached).toBe('uncached')
+  it('treats a bare infoHash with no url and no marker as unknown', () => {
+    expect(describe({ infoHash: 'abc123', title: '[Group] Show - 01 (1080p)' }).cached).toBe('unknown')
   })
 
   it('keeps a resolved url with no marker instant', () => {
@@ -78,10 +78,57 @@ suite('describe() cache classification', () => {
 
   it('never marks a bare infoHash down just because seeders are 0', () => {
     // Extension indexers hardcode 0 seeders; a 'down' row reads as unplayable.
-    expect(describe({ infoHash: 'abc123', title: '[Group] Show - 01 👤 0' }).cached).toBe('uncached')
+    expect(describe({ infoHash: 'abc123', title: '[Group] Show - 01 👤 0' }).cached).toBe('unknown')
   })
 
   it('still marks an explicitly-uncached zero-seeder torrent down', () => {
     expect(describe({ infoHash: 'abc', name: '[RD download]', title: 'Show - 01 👤 0' }).cached).toBe('down')
+  })
+})
+
+suite('cache state tri-state', () => {
+  it('a direct url with no infoHash stays instant', () => {
+    expect(describe({ name: 'Server 1', url: 'https://x/ep.mp4' }).cached).toBe('instant')
+  })
+  it('an infoHash with no cache glyph is unknown, not instant', () => {
+    expect(describe({ name: '[SubsPlease] Show - 01', infoHash: 'abc123' }).cached).toBe('unknown')
+  })
+  it('an explicit cached glyph still wins', () => {
+    expect(describe({ name: '[RD+] Show', infoHash: 'abc123' }).cached).toBe('instant')
+  })
+  it('an explicit uncached glyph still wins', () => {
+    expect(describe({ name: '[RD download] Show', infoHash: 'abc123' }).cached).toBe('uncached')
+  })
+  it('uncached with zero seeders is still down', () => {
+    expect(describe({ name: '[RD download] Show 👤 0', infoHash: 'abc123' }).cached).toBe('down')
+  })
+  it('glyph-derived state is marked as coming from the glyph', () => {
+    expect(describe({ name: '[RD+] Show', infoHash: 'abc' }).cacheSource).toBe('glyph')
+  })
+  it('a __cache hint resolves an otherwise-unknown row', () => {
+    const r = describe({ name: 'Show', infoHash: 'abc', __cache: 'cached', __cacheSource: 'native' })
+    expect(r.cached).toBe('instant')
+    expect(r.cacheSource).toBe('native')
+  })
+  it('a __cache uncached hint demotes the row', () => {
+    expect(describe({ name: 'Show', infoHash: 'abc', __cache: 'uncached' }).cached).toBe('uncached')
+  })
+  it('a __cache uncached hint with zero seeders is still down', () => {
+    // Same "nothing for the debrid service to fetch" logic as the glyph branch — a
+    // provider-confirmed uncached torrent with 0 seeders is exactly as dead as a glyph-confirmed one.
+    expect(describe({ name: 'Show 👤 0', infoHash: 'abc', __cache: 'uncached' }).cached).toBe('down')
+  })
+  it('an addon glyph beats a __cache hint', () => {
+    const r = describe({ name: '[RD download] Show 👤 5', infoHash: 'abc', __cache: 'cached' })
+    expect(r.cached).toBe('uncached')
+    expect(r.cacheSource).toBe('glyph')
+  })
+  it('a __cache hint carries a library source through, not just native', () => {
+    const r = describe({ name: 'Show', infoHash: 'abc', __cache: 'cached', __cacheSource: 'library' })
+    expect(r.cacheSource).toBe('library')
+  })
+  it('a __cache hint with no explicit source defaults to native', () => {
+    const r = describe({ name: 'Show', infoHash: 'abc', __cache: 'cached' })
+    expect(r.cacheSource).toBe('native')
   })
 })
