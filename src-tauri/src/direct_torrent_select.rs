@@ -41,6 +41,15 @@ fn basename_stem(name: &str) -> String {
 /// `Episode 01.mkv` -> `Episode 01.eng.ass`, including when the subtitles live in `ENG/` or
 /// `Subs/`. Requiring a separator after the complete stem keeps episode 1 from matching episode 10.
 pub(crate) fn select_subtitles(files: &[TorrentFile], video: &TorrentFile) -> Vec<TorrentFile> {
+    // A single-video torrent names its sidecars freely (`Subs/eng.ass`), so a stem match would
+    // drop them. With only one video there is nothing to mis-assign them to.
+    if files.iter().filter(|file| is_video(&file.name)).count() == 1 {
+        return files
+            .iter()
+            .filter(|file| is_subtitle(&file.name))
+            .cloned()
+            .collect();
+    }
     let video_stem = basename_stem(&video.name);
     files
         .iter()
@@ -181,5 +190,40 @@ mod tests {
         assert_eq!(subtitle_language("ENG/Show_01.ass"), "eng");
         assert_eq!(subtitle_language("Subs/Show_01.chi_Maho.ass"), "chi");
         assert_eq!(subtitle_language("Subs/Show_01.ass"), "und");
+    }
+
+    #[derive(serde::Deserialize)]
+    struct FixtureCase {
+        name: String,
+        files: Vec<String>,
+        video: usize,
+        expected: Vec<usize>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Fixture {
+        cases: Vec<FixtureCase>,
+    }
+
+    /// The TypeScript twin in src/lib/stremio/debrid/sidecar-subs.ts runs this exact fixture. If
+    /// the two matchers ever disagree, debrid and direct playback would show different subtitle
+    /// tracks for the same torrent — this test makes that a build failure instead.
+    #[test]
+    fn matches_the_shared_sidecar_fixture() {
+        let raw = include_str!("../../src/lib/stremio/debrid/__fixtures__/sidecar-cases.json");
+        let fixture: Fixture = serde_json::from_str(raw).expect("fixture parses");
+        for case in fixture.cases {
+            let files = case
+                .files
+                .iter()
+                .enumerate()
+                .map(|(index, name)| file(index, name, 100))
+                .collect::<Vec<_>>();
+            let got = select_subtitles(&files, &files[case.video])
+                .iter()
+                .map(|f| f.index)
+                .collect::<Vec<_>>();
+            assert_eq!(got, case.expected, "case: {}", case.name);
+        }
     }
 }
