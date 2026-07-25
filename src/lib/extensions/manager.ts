@@ -1,8 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { phttp } from '$lib/net/http'
-import { enabledExtensionUrls } from '$lib/settings/ui'
+import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
+import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem } from './catalog'
+import { clearProviderCache } from '$lib/stremio/online-cache'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -22,84 +24,6 @@ interface RunningExt {
 let running: RunningExt[] | null = null
 let builtFrom = ''
 
-// Turn a stored spec into a fetchable manifest URL. Accepts these forms:
-//   gh:owner/repo[/sub]      → https://esm.sh/gh/owner/repo[/sub]/index.json
-//   owner/repo[/sub]         → same (GitHub shorthand, matches the settings display)
-//   npm:pkg[/sub]            → https://esm.sh/pkg[/sub]/index.json
-//   https://…                → as given (existing full-URL manifests)
-function resolveManifestUrl(spec: string): string {
-  const s = spec.trim()
-  if (/^https?:\/\//i.test(s)) return s
-  if (s.startsWith('gh:')) return withIndexJson(`https://esm.sh/gh/${s.slice(3).replace(/\/+$/, '')}`)
-  if (s.startsWith('npm:')) return withIndexJson(`https://esm.sh/${s.slice(4).replace(/\/+$/, '')}`)
-  // Bare GitHub shorthand: owner (no dots) / repo[/sub].
-  if (/^[A-Za-z0-9][A-Za-z0-9-]*\/[^\s:]+$/.test(s)) return withIndexJson(`https://esm.sh/gh/${s.replace(/\/+$/, '')}`)
-  return withIndexJson(`https://${s}`)
-}
-const withIndexJson = (base: string) => (/\.json(\?|$)/i.test(base) ? base : `${base.replace(/\/+$/, '')}/index.json`)
-
-// gh:/npm: → esm.sh; http(s) passthrough; relative (`main`) → resolve against
-// the manifest URL, append .js when it has no extension.
-function resolveSpecUrl(spec: string, manifestUrl: string): string {
-  if (spec.startsWith('gh:')) return `https://esm.sh/gh/${spec.slice(3)}`
-  if (spec.startsWith('npm:')) return `https://esm.sh/${spec.slice(4)}`
-  if (/^https?:\/\//i.test(spec)) return spec
-  const base = manifestUrl.replace(/\/[^/]*$/, '/')
-  const u = new URL(spec, base).toString()
-  return /\.(m?js)$/i.test(u) ? u : `${u}.js`
-}
-
-// Resolve an entry's module URL. Some SourceConfigs carry an `update` gh-pointer to
-// their folder; the code lives at esm.sh/gh/<owner>/<repo>/es2022/<sub>/<main>.mjs
-// (esm.sh's transpiled form). Flat configs carry a `code` spec we resolve
-// directly. Falls back to resolving `main` relative to the manifest URL.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function resolveCodeUrl(e: any, manifestUrl: string): string {
-  if (e.code) return resolveSpecUrl(String(e.code), manifestUrl)
-  const main = String(e.main).replace(/\.(m?js)$/i, '')
-  const update = Array.isArray(e.update) ? e.update[0] : e.update
-  if (typeof update === 'string' && update.startsWith('gh:')) {
-    const [owner, repo, ...rest] = update.slice(3).replace(/\/+$/, '').split('/')
-    if (owner && repo) return `https://esm.sh/gh/${owner}/${repo}/es2022/${[...rest, main].join('/')}.mjs`
-  }
-  return resolveSpecUrl(String(e.main), manifestUrl)
-}
-
-// A repository-index entry is a bare pointer (only `main`/`url`, none of the
-// SourceConfig identity fields) — a catalog form. Such a manifest expands into
-// its referenced per-folder manifests.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function isRepoPointer(e: any): boolean {
-  return !!e && typeof e === 'object' && (e.main || e.url)
-    && e.id == null && e.name == null && e.code == null && e.update == null && e.type == null && e.version == null
-}
-
-// Normalize both flat configs (with `code`) and manifest arrays (with
-// `main` + `update`) into ExtensionConfig[].
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeManifest(raw: any, manifestUrl: string): ExtensionConfig[] {
-  const entries = Array.isArray(raw) ? raw : [raw]
-  const out: ExtensionConfig[] = []
-  for (const e of entries) {
-    if (!e || typeof e !== 'object') continue
-    // Seanime manifests carry the module URL in `payloadURI` (a full https URL), not `code`/`main`.
-    const codeSpec = e.code ?? e.main ?? e.payloadURI
-    if (!codeSpec) continue
-    if (e.type && e.type !== 'torrent' && e.type !== 'onlinestream-provider' && e.type !== 'anime-torrent-provider') continue
-    out.push({
-      id: String(e.id ?? e.name ?? codeSpec),
-      name: String(e.name ?? e.id ?? 'Extension'),
-      version: e.version,
-      type: e.type,
-      code: e.payloadURI ? String(e.payloadURI) : resolveCodeUrl(e, manifestUrl),
-      icon: e.icon,
-      description: e.description,
-      settings: e.settings,
-    })
-  }
-  return out
-}
-
 // Fetch a manifest by spec and expand it into ExtensionConfig[]. A top-level GitHub
 // repo index (array of {main} pointers) is expanded one level into its per-folder
 // manifests; a normal manifest is normalized directly. Best-effort: [] on failure.
@@ -112,9 +36,16 @@ async function expandManifest(spec: string, depth = 0): Promise<ExtensionConfig[
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw: any = await r.json()
   const entries = Array.isArray(raw) ? raw : [raw]
-  if (depth === 0 && entries.length > 0 && entries.every(isRepoPointer)) {
-    const nested = await Promise.all(entries.map((e) => expandManifest(String(e.main ?? e.url), depth + 1).catch(() => [])))
-    return nested.flat()
+  // Partition rather than all-or-nothing: a marketplace may mix pointer entries with inline
+  // configs, and `every(isPointer)` silently dropped the whole catalog when even one differed.
+  // Pointers carrying an unrunnable `type` are dropped WITHOUT a fetch.
+  const pointers = depth === 0
+    ? entries.filter((e) => pointerUrl(e) && isRunnableType(e))
+    : []
+  if (pointers.length) {
+    const nested = await Promise.all(pointers.map((e) => expandManifest(pointerUrl(e)!, depth + 1).catch(() => [])))
+    const inline = entries.filter((e) => !pointerUrl(e))
+    return [...nested.flat(), ...normalizeManifest(inline, url)]
   }
   return normalizeManifest(raw, url)
 }
@@ -125,6 +56,21 @@ export async function fetchExtensionMeta(spec: string): Promise<ExtensionConfig[
   try { return await expandManifest(spec) } catch { return [] }
 }
 
+/** Like `fetchExtensionMeta`, plus an explanation when nothing runnable came back — so a source
+ *  that can never work (a compiled Android plugin repo, say) says so instead of silently showing
+ *  an empty list. The diagnostic re-fetches the manifest, but only on the failure path. */
+export async function fetchExtensionInfo(spec: string): Promise<{ configs: ExtensionConfig[]; problem?: string }> {
+  const configs = await fetchExtensionMeta(spec)
+  if (configs.length) return { configs }
+  try {
+    const r = await phttp(resolveManifestUrl(spec))
+    if (!r.ok) return { configs, problem: `That URL returned HTTP ${r.status}.` }
+    return { configs, problem: manifestProblem(await r.json()) }
+  } catch {
+    return { configs, problem: 'That URL could not be fetched.' }
+  }
+}
+
 async function loadConfigs(): Promise<ExtensionConfig[]> {
   // Each spec is an independent network fetch, so awaiting them one at a time made warm-up cost the
   // SUM of every manifest round-trip. Order is preserved by Promise.all, and a bad manifest still
@@ -133,7 +79,10 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
     get(enabledExtensionUrls).map((spec) =>
       expandManifest(spec).catch(() => [] as ExtensionConfig[])),
   )
-  return results.flat()
+  // A source URL expands to many plugins; drop the ones switched off individually. Filtered HERE
+  // rather than at query time so a disabled plugin never has its module fetched or a worker spawned.
+  const off = get(disabledPlugins)
+  return results.flat().filter((c) => !off.includes(c.id))
 }
 
 // Fetch an extension's module source. esm.sh often returns a tiny re-export STUB
@@ -166,13 +115,13 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
       // header the extension set. See ext_fetch in lib.rs.
       try {
         const init = m.init ?? {}
-        const r = await invoke<{ status: number; headers: Record<string, string>; body: string }>('ext_fetch', {
+        const r = await invoke<{ status: number; url: string; headers: Record<string, string>; setCookie: string[]; body: string }>('ext_fetch', {
           url: m.url,
           method: init.method,
           headers: init.headers,
           body: typeof init.body === 'string' ? init.body : undefined,
         })
-        worker.postMessage({ type: 'fetch-result', reqId: m.reqId, res: { ok: r.status >= 200 && r.status < 300, status: r.status, headers: r.headers, body: r.body } })
+        worker.postMessage({ type: 'fetch-result', reqId: m.reqId, res: { ok: r.status >= 200 && r.status < 300, status: r.status, url: r.url, headers: r.headers, setCookie: r.setCookie, body: r.body } })
       } catch (err) {
         worker.postMessage({ type: 'fetch-result', reqId: m.reqId, error: String(err) })
       }
@@ -190,7 +139,10 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ext.waits.set(id, (m: any) => { clearTimeout(t); resolve(!m.error) })
     worker.onerror = () => { clearTimeout(t); ext.waits.delete(id); resolve(false) }
-    worker.postMessage({ type: 'load', id, code, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : cfg.type === 'anime-torrent-provider' ? 'atp' : undefined })
+    // `name` rides along so host-side helpers running inside the worker (the embed extractors) can
+    // attribute what they resolve back to the extension that asked, instead of returning anonymous
+    // links the picker then has to label generically.
+    worker.postMessage({ type: 'load', id, code, name: cfg.name, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : cfg.type === 'anime-torrent-provider' ? 'atp' : undefined })
   })
   return ext
 }
@@ -200,11 +152,17 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
 // published only AFTER the build completes.
 let buildPromise: Promise<RunningExt[]> | null = null
 async function ensureRunning(): Promise<RunningExt[]> {
-  const key = JSON.stringify(get(enabledExtensionUrls))
+  // The key must cover the per-plugin switches too: keyed on the URL list alone, toggling a plugin
+  // left the previous worker set live and the change did nothing until a URL was added or removed.
+  const key = JSON.stringify([get(enabledExtensionUrls), get(disabledPlugins)])
   if (running && builtFrom === key) return running
   if (buildPromise) return buildPromise
   buildPromise = (async () => {
     running?.forEach((e) => e.worker.terminate())
+    // The resolver memoizes each provider's search/episode/settings answers. Those belong to the
+    // PREVIOUS set of workers, so a provider that was just enabled, disabled or updated must not
+    // keep serving results from its old incarnation.
+    clearProviderCache()
     // Fetch every module in parallel — sequentially this was N × (esm.sh latency), the bulk of the
     // first-resolve stall for multi-source repos.
     const cfgs = await loadConfigs()
@@ -219,6 +177,13 @@ async function ensureRunning(): Promise<RunningExt[]> {
   })()
   try { return await buildPromise }
   finally { buildPromise = null }
+}
+
+/** How many extensions will actually be queried. NOT the URL count — one source URL expands to many
+ *  plugins (a marketplace index yields ~18), so only this can answer "is there exactly one source?". */
+export async function runningExtensionCount(): Promise<number> {
+  if (!get(enabledExtensionUrls).length) return 0
+  return (await ensureRunning()).length
 }
 
 /** Pre-boot the extension runtime (manifest + modules + workers) off the click-to-play path.
@@ -293,7 +258,7 @@ function callRaw(ext: RunningExt, method: string, args: unknown[]): Promise<any>
  *  orchestrator (stremio/onlinestream) drives search/findEpisodes/findEpisodeServer through it. */
 export async function runningStreamExtensions(onlyId?: string): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  { id: string; name: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
+  { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
   if (!get(enabledExtensionUrls).length) return []
   const exts = await ensureRunning()
@@ -301,7 +266,7 @@ export async function runningStreamExtensions(onlyId?: string): Promise<
     exts.filter((e) => !onlyId || e.cfg.id === onlyId)
       .map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
   )).filter(Boolean) as RunningExt[]
-  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
+  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, lang: e.cfg.lang, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
 }
 
 /** The live anime-torrent-provider extensions, each with a bound multi-arg `call`.
