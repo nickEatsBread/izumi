@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor, rdShouldRetrySingleFile } from './realdebrid'
+import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor, rdShouldRetrySingleFile, rdPickBestDownloaded, rdMatchesSingleFile } from './realdebrid'
 
 describe('rdStatus', () => {
   it('maps a finished torrent to ready', () => {
@@ -147,5 +147,57 @@ describe('rdShouldRetrySingleFile', () => {
 
   it('falls back to the download URL when filename is an empty string', () => {
     expect(rdShouldRetrySingleFile({ download: 'https://real-debrid.com/d/PACKED.rar', filename: '' }, 7, false)).toBe(true)
+  })
+})
+
+describe('rdPickBestDownloaded', () => {
+  it('picks the fullest entry, not the newest (first in newest-first list order)', () => {
+    const entries = [
+      { id: 'newest-single-file', hash: 'h', status: 'downloaded', bytes: 100 },
+      { id: 'older-all-files', hash: 'h', status: 'downloaded', bytes: 900 },
+    ]
+    expect(rdPickBestDownloaded(entries, 'h')).toEqual({ id: 'older-all-files', bytes: 900 })
+  })
+
+  it('ignores entries that are not downloaded', () => {
+    const entries = [
+      { id: 'still-downloading', hash: 'h', status: 'downloading', bytes: 900 },
+      { id: 'ready', hash: 'h', status: 'downloaded', bytes: 100 },
+    ]
+    expect(rdPickBestDownloaded(entries, 'h')).toEqual({ id: 'ready', bytes: 100 })
+  })
+
+  it('ignores entries whose hash does not match', () => {
+    const entries = [
+      { id: 'other-release', hash: 'other', status: 'downloaded', bytes: 900 },
+      { id: 'wanted', hash: 'h', status: 'downloaded', bytes: 100 },
+    ]
+    expect(rdPickBestDownloaded(entries, 'h')).toEqual({ id: 'wanted', bytes: 100 })
+  })
+
+  it('treats a missing bytes field as 0 rather than throwing', () => {
+    const entries = [
+      { id: 'no-bytes', hash: 'h', status: 'downloaded' },
+      { id: 'has-bytes', hash: 'h', status: 'downloaded', bytes: 1 },
+    ]
+    expect(rdPickBestDownloaded(entries, 'h')).toEqual({ id: 'has-bytes', bytes: 1 })
+  })
+})
+
+describe('rdMatchesSingleFile', () => {
+  it('matches when exactly one file is selected and it is the wanted id', () => {
+    expect(rdMatchesSingleFile([{ id: 3, selected: 1 }, { id: 4, selected: 0 }], 3)).toBe(true)
+  })
+
+  it('does not match when the one selected file has a different id', () => {
+    expect(rdMatchesSingleFile([{ id: 3, selected: 1 }, { id: 4, selected: 0 }], 4)).toBe(false)
+  })
+
+  it('does not match when more than one file is selected', () => {
+    expect(rdMatchesSingleFile([{ id: 3, selected: 1 }, { id: 4, selected: 1 }], 3)).toBe(false)
+  })
+
+  it('does not match when nothing is selected', () => {
+    expect(rdMatchesSingleFile([{ id: 3, selected: 0 }, { id: 4, selected: 0 }], 3)).toBe(false)
   })
 })

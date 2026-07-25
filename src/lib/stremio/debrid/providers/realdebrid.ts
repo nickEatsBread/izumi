@@ -97,6 +97,21 @@ export function rdLinkFor(selectedCount: number, index: number, links: string[])
   return links[index]
 }
 
+type RdListRow = { id: string; hash?: string; status: string; bytes?: number }
+
+/** Pure: the max-`bytes` 'downloaded' entry matching `hash` among `entries`, or undefined. RD
+ *  reports the selected-files size as `bytes`, so the fullest entry is the one with every video
+ *  selected — picking the newest (or first) match instead is what let a single-file retry entry
+ *  (see rdResolveSingleFile) starve pickEpisodeVideo of every other episode in the release. */
+export function rdPickBestDownloaded(entries: RdListRow[], hash: string): { id: string; bytes: number } | undefined {
+  let best: { id: string; bytes: number } | undefined
+  for (const t of entries) {
+    if (t.hash?.toLowerCase() !== hash || t.status !== 'downloaded') continue
+    if (!best || (t.bytes ?? 0) > best.bytes) best = { id: t.id, bytes: t.bytes ?? 0 }
+  }
+  return best
+}
+
 // Find an already-DOWNLOADED torrent id for `hash` in the account's list. RD has no
 // get-by-hash endpoint, so we scan the newest-first list. A single `limit=100` page missed the
 // hash for accounts with >100 torrents — the entry had scrolled past the newest 100 — so the
@@ -104,22 +119,25 @@ export function rdLinkFor(selectedCount: number, index: number, links: string[])
 // through until found or the list is exhausted, bounded to keep the common (small-account) case
 // at exactly one request: page 1 returning <100 entries stops immediately.
 //
-// Prefers the FULLEST matching entry (greatest `bytes` — RD reports the selected-files size, not
-// the whole torrent), not just the first/newest hit. rdResolveSingleFile's retry creates its own
-// 'downloaded' entry with only ONE file selected; landing on that instead of the entry with every
-// video selected starves pickEpisodeVideo of every other episode in the release and silently
-// serves the wrong one (see the poisoning bug this guards against).
+// Prefers the FULLEST matching entry (rdPickBestDownloaded), not just the first/newest hit —
+// that's what gives pickEpisodeVideo the complete file list instead of whatever a single-file
+// retry entry happened to have selected (see the poisoning bug this guards against). A page
+// request failing mid-scan breaks and keeps whatever `best` earlier pages already found, rather
+// than losing it — a transient blip on page 3 must not discard a valid page-1 hit and fall all
+// the way through to addMagnet.
 async function findDownloadedId(key: string, hash: string): Promise<string | undefined> {
   const LIMIT = 100
   const MAX_PAGES = 5 // ≤500 torrents scanned; beyond that, fall through to addMagnet
   let best: { id: string; bytes: number } | undefined
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as Array<{ id: string; hash?: string; status: string; bytes?: number }>
-    if (!Array.isArray(list) || list.length === 0) break
-    for (const t of list) {
-      if (t.hash?.toLowerCase() !== hash || t.status !== 'downloaded') continue
-      if (!best || (t.bytes ?? 0) > best.bytes) best = { id: t.id, bytes: t.bytes ?? 0 }
+    let list: RdListRow[]
+    try {
+      list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as RdListRow[]
     }
+    catch { break }
+    if (!Array.isArray(list) || list.length === 0) break
+    const pageBest = rdPickBestDownloaded(list, hash)
+    if (pageBest && (!best || pageBest.bytes > best.bytes)) best = pageBest
     if (list.length < LIMIT) break // last page reached
   }
   return best?.id
@@ -145,6 +163,15 @@ export function rdShouldRetrySingleFile(un: RdUnrestricted | undefined, selected
   return isArchiveName(servedName(un)) && selectedCount > 1
 }
 
+/** Pure: true when `files` has EXACTLY one file selected and it is `fileId`. The reliable signal
+ *  that a torrent entry's selection really is one specific file — needed both to trust a reuse
+ *  candidate's `links[0]` and to confirm a fresh single-file selection actually stuck rather than
+ *  RD having silently deduped the addMagnet onto an existing, differently-selected entry. */
+export function rdMatchesSingleFile(files: Array<{ id: number; selected: number }>, fileId: number): boolean {
+  const selected = files.filter((f) => f.selected)
+  return selected.length === 1 && selected[0].id === fileId
+}
+
 /** Re-add the magnet selecting exactly ONE file, then unrestrict it. Selecting a single file
  *  is the reliable way to make RD serve a real file rather than a packed archive, and
  *  selectFiles cannot change an existing downloaded torrent's selection (the API answers
@@ -162,9 +189,64 @@ async function rdResolveSingleFile(
       return rdStatus(info)
     }, opts)
   }
+  // RD can dedupe addMagnet onto an existing entry, and selectFiles then answers "202 Action
+  // already done" — a 2xx, so jfetch never surfaces it as a failure — without changing that
+  // entry's selection. Trusting links[0] blind in that case would serve whatever the entry
+  // already had selected: a different episode, or a packed archive. Confirm the selection really
+  // is exactly `fileId` before ever looking at a link.
+  if (!rdMatchesSingleFile(info.files ?? [], fileId))
+    throw new Error("Real-Debrid didn't select the right file for this torrent — try again or pick a different source.")
   const link = info.links?.[0]
   if (!link) throw new Error('Real-Debrid returned no link for that file.')
   return await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
+}
+
+// Look for an existing 'downloaded' entry for `hash` whose selection is EXACTLY the file we want
+// (`fileId`), and return its info so the caller can reuse `links[0]` — sparing an addMagnet, and
+// therefore a new permanent account entry, on every replay of an episode a previous
+// rdResolveSingleFile call already resolved. Only ever a LINK source for an already-decided file
+// id, never a source of the file list — that separation is what keeps findDownloadedId's episode
+// pick correct. RD's /torrents list doesn't expose per-file selection, so each bytes-matching
+// candidate costs one /torrents/info lookup; pre-filtering by `bytes === chosenBytes` keeps that
+// to roughly zero or one extra GET per page. Mirrors findDownloadedId's pagination and
+// per-page error handling. Never throws: any failure just means "no reusable entry found".
+async function findSingleFileEntry(key: string, hash: string, fileId: number, chosenBytes: number): Promise<RdInfo | undefined> {
+  const LIMIT = 100
+  const MAX_PAGES = 5
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    let list: RdListRow[]
+    try {
+      list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as RdListRow[]
+    }
+    catch { break }
+    if (!Array.isArray(list) || list.length === 0) break
+    const candidates = list.filter((t) => t.hash?.toLowerCase() === hash && t.status === 'downloaded' && t.bytes === chosenBytes)
+    for (const c of candidates) {
+      let info: RdInfo
+      try {
+        info = await rd('GET', `/torrents/info/${c.id}`, key) as RdInfo
+      }
+      catch { continue }
+      if (rdMatchesSingleFile(info.files ?? [], fileId)) return info
+    }
+    if (list.length < LIMIT) break
+  }
+  return undefined
+}
+
+/** Recover a real link for `chosenId` when the current selection didn't produce one — either RD
+ *  packed the selection, or `chosenId` wasn't part of it at all. Tries findSingleFileEntry first
+ *  (reuse an existing single-file entry, no new torrent added) and only falls back to a fresh
+ *  rdResolveSingleFile (a new addMagnet) when no such entry exists. `hashOrMagnet` is passed
+ *  through to rdResolveSingleFile as-is (preserving any trackers a full magnet carries); the
+ *  reuse lookup normalizes to a bare hash itself since that's all the account list exposes. */
+async function resolveViaSingleFile(
+  key: string, hashOrMagnet: string, chosenId: number, chosenBytes: number, opts?: ResolveOpts,
+): Promise<RdUnrestricted> {
+  const reuse = await findSingleFileEntry(key, hashOf(hashOrMagnet), chosenId, chosenBytes).catch(() => undefined)
+  const reuseLink = reuse?.links?.[0]
+  if (reuseLink) return await rd('POST', '/unrestrict/link', key, form({ link: reuseLink })) as RdUnrestricted
+  return await rdResolveSingleFile(key, hashOrMagnet, chosenId, opts)
 }
 
 export const realdebrid: DebridProvider = {
@@ -184,6 +266,11 @@ export const realdebrid: DebridProvider = {
       id = await findDownloadedId(key, hash)
     } catch { /* list unavailable — fall through to addMagnet */ }
     if (!id) {
+      // No entry on this account yet. `pickSameRelease`'s cached-only gate reads an addon glyph
+      // for the debrid SERVICE's cache, not this account — a next-episode hash that's cached on
+      // RD generally can still be brand new to this account, so this addMagnet is exactly the
+      // "torrent entries the user didn't ask for" noAdd promises never to create.
+      if (opts?.noAdd) throw new Error("Real-Debrid needs to add this release, which background prefetch isn't allowed to do.")
       id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
     }
     let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
@@ -219,12 +306,13 @@ export const realdebrid: DebridProvider = {
     let un = link
       ? await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
       : undefined
-    // Retry with a fresh single-file selection when needed (no usable link — including `chosen`
-    // not being selected at all — or RD packed the selection into an archive); see
-    // rdShouldRetrySingleFile for exactly when. Skipped for noAdd callers (background prefetch),
-    // which may only serve what's already resolvable.
+    // Recover with a single-file selection when needed (no usable link — including `chosen` not
+    // being selected at all — or RD packed the selection into an archive); see
+    // rdShouldRetrySingleFile for exactly when. resolveViaSingleFile reuses an existing
+    // single-file entry when one exists before ever adding a new one. Skipped for noAdd callers
+    // (background prefetch), which may only serve what's already resolvable.
     if (rdShouldRetrySingleFile(un, selected.length, !!opts?.noAdd)) {
-      un = await rdResolveSingleFile(key, hashOrMagnet, chosen.id, opts)
+      un = await resolveViaSingleFile(key, hashOrMagnet, chosen.id, chosen.bytes, opts)
     }
     if (!un || isArchiveName(servedName(un))) {
       throw new Error(opts?.noAdd
@@ -264,7 +352,7 @@ export const realdebrid: DebridProvider = {
       : undefined
     if (rdShouldRetrySingleFile(un, selected.length, !!opts?.noAdd)) {
       if (!item.hash) throw new Error("Real-Debrid can't re-add this torrent — it has no infohash.")
-      un = await rdResolveSingleFile(key, item.hash, chosen.id, opts)
+      un = await resolveViaSingleFile(key, item.hash, chosen.id, chosen.bytes, opts)
     }
     if (!un || isArchiveName(servedName(un))) {
       throw new Error(opts?.noAdd
