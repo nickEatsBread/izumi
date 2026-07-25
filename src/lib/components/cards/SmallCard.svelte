@@ -20,6 +20,7 @@
   import * as h from '$lib/haptics'
   import PreviewCard from './PreviewCard.svelte'
   import { previewPos, rootZoom } from './preview-pos'
+  import { portal } from '$lib/util/portal'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
   let { media, fill = false }: { media: Media; fill?: boolean } = $props()
@@ -88,7 +89,10 @@
 </div>
 
 {#if hovered}
-  <div class="pointer-events-auto fixed z-50 will-change-[transform,opacity]" style={`left:${pos.left}px;top:${pos.top}px`}
+  <!-- use:portal — re-parent to <body>. In place, the row's `.load-in` transform animation makes
+       the card wrapper the containing block for this `fixed` popup (offset by the card's origin,
+       clipped by the carousel, painted under sibling posters). From <body>, fixed = viewport. -->
+  <div use:portal class="pointer-events-auto fixed z-50 will-change-[transform,opacity]" style={`left:${pos.left}px;top:${pos.top}px`}
        in:fade={{ duration: 140, easing: cubicOut }} out:fade={{ duration: 120, easing: cubicOut }}
        onpointerenter={keepOpen} onpointerleave={scheduleClose} role="presentation">
     <PreviewCard {media} />
