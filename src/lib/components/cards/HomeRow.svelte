@@ -44,7 +44,13 @@
     check() // above-the-fold rows load immediately
     window.addEventListener('scroll', check, { passive: true })
     window.addEventListener('resize', check)
-    return () => { window.removeEventListener('scroll', check); window.removeEventListener('resize', check) }
+    // Rows above this one can COLLAPSE after mount (Continue Watching and the tracker list rows
+    // render nothing when empty, dropping ~850px), which slides this row into view without firing
+    // scroll or resize — so it stayed paused and rendered skeletons until the user scrolled. Watch
+    // the container for that height change too.
+    const ro = new ResizeObserver(check)
+    if (el?.parentElement) ro.observe(el.parentElement)
+    return () => { window.removeEventListener('scroll', check); window.removeEventListener('resize', check); ro.disconnect() }
   })
 
   // "View more" → the search page seeded with this row's filters (sort/genre/season).

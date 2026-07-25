@@ -143,9 +143,26 @@
   $effect(() => { if (paused) { clearTimeout(hideTimer); controlsShown = true } else if (controlsShown) armHide() })
 
   // --- Seek preview: move the UI thumb while dragging, then issue one exact seek on release ---
+  // Bar geometry, measured once per scrub gesture. Reading getBoundingClientRect() on every
+  // pointermove was a textbook read→write→read thrash: the move writes `scrubPos`, which drives the
+  // thumb and bubble, and the NEXT move's measurement then forces a synchronous layout flush to
+  // resolve it — 60-120 forced layouts a second mid-drag on the weakest devices we ship to.
+  // Deliberately NOT populated on pointerdown: while `barGesture` is still 'pending' the move
+  // handler can promote to the fullscreen-pull gesture, which itself mutates layout. Only cached
+  // once the gesture is committed to 'scrub', where the bar is guaranteed to hold still.
+  let barRect: { left: number; width: number } | null = null
+  function measureBar() {
+    const r = barEl?.getBoundingClientRect()
+    barRect = r ? { left: r.left, width: r.width } : null
+  }
   function fracFromX(clientX: number) {
-    if (!barEl) return 0
-    const r = barEl.getBoundingClientRect()
+    let r = barRect
+    if (!r) {
+      const b = barEl?.getBoundingClientRect()
+      if (!b) return 0
+      r = { left: b.left, width: b.width }
+    }
+    if (!r.width) return 0
     return Math.max(0, Math.min(1, (clientX - r.left) / r.width))
   }
   function schedulePreview(sec: number) {
@@ -219,6 +236,7 @@
         return
       }
       barGesture = 'scrub'
+      measureBar() // committed to scrubbing — the bar can't move from here, so cache its geometry
       beginScrub('bar', e.pointerId, fracFromX(barStartSample.x) * dur)
     }
     if (barGesture === 'scrub') {
@@ -243,6 +261,7 @@
       else { resetFullscreenPull(); armHide() }
     }
     barGesture = null
+    barRect = null // next gesture re-measures; the bar moves with rotation and fullscreen changes
     try { if (barEl?.hasPointerCapture(e.pointerId)) barEl.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
   }
   function onBarCancel(e: PointerEvent) {
@@ -487,7 +506,11 @@
   }
 
   function onRootDown(e: PointerEvent) {
-    if (locked || !e.isPrimary || rootPointerId != null) return
+    // NOTE: deliberately does not bail on `locked`. Bailing here meant onRootUp never ran, so
+    // onTap never ran, so onTap's `if (locked) showLockToggle()` branch was dead code — and in
+    // landscape immersive there is no top bar, no chevron and no other way back, making the lock a
+    // one-way trap that could only be escaped by force-quitting (losing the unfinalized position).
+    if (!e.isPrimary || rootPointerId != null) return
     cancelScrub()
     rootPointerId = e.pointerId
     rootEl?.setPointerCapture?.(e.pointerId)
@@ -499,6 +522,9 @@
     pullLastTime = e.timeStamp
     pullVelocityY = 0
     gesture = null
+    // Locked = taps only (to reveal the unlock button). onRootMove already early-returns on
+    // `locked`, so this is the one gesture that still needs suppressing.
+    if (locked) return
     holdTimer = setTimeout(() => { // press-and-hold anywhere on unobstructed video → temporary 2×
       if (gesture === null) {
         gesture = 'hold'; heldSpeed = true; mpvCommand(['set', 'speed', '2']); haptic(15)
@@ -588,7 +614,8 @@
   let lockToggleShown = $state(false)
   let lockToggleTimer: ReturnType<typeof setTimeout> | undefined
   function showLockToggle() { lockToggleShown = true; clearTimeout(lockToggleTimer); lockToggleTimer = setTimeout(() => (lockToggleShown = false), 2500) }
-  function toggleLock() { locked = !locked; lockToggleShown = false; if (!locked) showControls() }
+  // Surface the unlock affordance immediately on locking, so the way back is never a secret.
+  function toggleLock() { locked = !locked; lockToggleShown = false; if (locked) showLockToggle(); else showControls() }
 
   // --- Resize (video fit) ---
   const FITS = ['Fit', 'Crop', 'Stretch']

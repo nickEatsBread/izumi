@@ -9,6 +9,9 @@
   import LogOut from 'lucide-svelte/icons/log-out'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
   import { copyToClipboard } from '$lib/util/clipboard'
+  import { torrentPlaybackMode, debridKey, debridRoomNoticeAck } from '$lib/settings/ui'
+  import DebridRoomNotice from '$lib/components/watch/DebridRoomNotice.svelte'
+  import { isEffectiveDebridMode, shouldWarnBeforeHosting } from '$lib/watch-together/debrid-warning'
 
   heroMedia.set(null)
   let code = $state('')
@@ -21,6 +24,20 @@
     finally { busy = false }
   }
 
+  // Hosting on debrid sends the host's own resolved link to every guest. Warn before the room
+  // exists, not after. Gated on debrid being the EFFECTIVE mode: with no key set, playback falls
+  // back to the direct engine (see play.ts), so the warning would be wrong.
+  const debridHost = $derived(isEffectiveDebridMode($torrentPlaybackMode, $debridKey))
+  let noticeOpen = $state(false)
+
+  function hostRoom() {
+    if (shouldWarnBeforeHosting($torrentPlaybackMode, $debridKey, $debridRoomNoticeAck)) {
+      noticeOpen = true
+      return
+    }
+    run(createWatchParty)
+  }
+
   function copyCode() {
     if (!$watchParty) return
     copyToClipboard($watchParty.roomCode)
@@ -28,19 +45,22 @@
 </script>
 
 <div class="mx-auto max-w-3xl p-4 pb-24 sm:p-8">
-  <div class="mb-6"><h1 class="text-2xl font-black">Watch Together</h1><p class="mt-1 text-sm text-muted-foreground">Keep playback synchronized across Izumi devices using the host's exact torrent or direct HTTP source. Debrid credentials stay on each device.</p></div>
+  <div class="mb-6"><h1 class="text-2xl font-black">Watch Together</h1><p class="mt-1 text-sm text-muted-foreground">Keep playback synchronized across Izumi devices using the host's exact source.</p></div>
   {#if localError || $partyError}<div class="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{localError || $partyError}</div>{/if}
   {#if !$watchParty}
     <div class="grid gap-4 sm:grid-cols-2">
-      <section class="rounded-2xl border border-border bg-secondary/30 p-5"><Users size={28} class="mb-3 text-theme" /><h2 class="text-lg font-black">Host a room</h2><p class="mb-5 mt-1 text-sm text-muted-foreground">Create a code, start an episode normally, and your controls become the room controls.</p><button disabled={busy} onclick={() => run(createWatchParty)} class="w-full rounded-lg bg-theme py-2.5 font-black text-white">Create room</button></section>
+      <section class="rounded-2xl border border-border bg-secondary/30 p-5"><Users size={28} class="mb-3 text-theme" /><h2 class="text-lg font-black">Host a room</h2><p class="mb-5 mt-1 text-sm text-muted-foreground">Create a code, start an episode normally, and your controls become the room controls.</p><button disabled={busy} onclick={hostRoom} class="w-full rounded-lg bg-theme py-2.5 font-black text-white">Create room</button></section>
       <section class="rounded-2xl border border-border bg-secondary/30 p-5"><h2 class="text-lg font-black">Join a room</h2><p class="mb-4 mt-1 text-sm text-muted-foreground">Enter the code shown on the host device. Izumi verifies the room before joining.</p><input bind:value={code} maxlength="6" placeholder="ABC234" class="mb-3 w-full rounded-lg bg-input px-4 py-3 text-center font-mono text-xl font-black uppercase tracking-[0.3em]" /><button disabled={busy} onclick={() => run(() => joinWatchParty(code))} class="w-full rounded-lg bg-secondary py-2.5 font-black hover:bg-accent">{busy ? 'Checking room…' : 'Join room'}</button></section>
     </div>
-    <p class="mt-5 rounded-lg bg-secondary/30 p-3 text-xs text-muted-foreground">Watch Together rooms are separate from Device Sync. Joining shares only room presence, the safe source identity, and playback controls for the current room; it never shares history, settings, extensions, or account keys.</p>
+    <p class="mt-5 rounded-lg bg-secondary/30 p-3 text-xs text-muted-foreground">Watch Together rooms are separate from Device Sync. Joining shares room presence, the host's current source, and playback controls for the current room; it does not share your history, settings or extensions.</p>
+    {#if debridHost}
+      <p class="mt-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 text-xs text-yellow-500/90">You're on debrid. Hosting sends your own resolved debrid link to the room, so guests stream it from their IP addresses — which providers treat as account sharing. <button onclick={() => (noticeOpen = true)} class="underline underline-offset-2">What this means</button></p>
+    {/if}
   {:else}
     <section class="rounded-2xl border border-theme/30 bg-theme/5 p-6 text-center">
       <div class="text-xs font-black uppercase tracking-widest text-theme">{$watchParty.role === 'host' ? 'Hosting' : 'Joined'} room</div>
       <button onclick={copyCode} class="mx-auto mt-2 flex items-center gap-3 rounded-xl px-4 py-2 font-mono text-4xl font-black tracking-[0.2em] hover:bg-secondary"><span>{$watchParty.roomCode}</span><Copy size={19} /></button>
-      <p class="mt-3 text-sm text-muted-foreground">{$watchParty.role === 'host' ? 'Start any episode. Its source and your play, pause and seek controls will be sent to the room.' : 'The host’s exact source will open using your own local debrid account when needed.'}</p>
+      <p class="mt-3 text-sm text-muted-foreground">{$watchParty.role === 'host' ? 'Start any episode. Its source and your play, pause and seek controls will be sent to the room.' : 'The host’s exact source will open on this device.'}</p>
       {#if $partySyncing}<div class="mt-3 text-sm font-bold text-theme">Resolving the host’s episode…</div>{/if}
     </section>
     <div class="mt-5 flex items-center justify-between"><h2 class="font-black">Participants ({$partyParticipants.length})</h2><button onclick={refreshWatchParty} class="grid size-9 place-items-center rounded-lg bg-secondary"><RefreshCw size={16} /></button></div>
@@ -48,3 +68,9 @@
     <button onclick={leaveWatchParty} class="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-destructive/40 py-2.5 font-bold text-destructive"><LogOut size={17} /> Leave room</button>
   {/if}
 </div>
+
+{#if noticeOpen}
+  <DebridRoomNotice
+    onConfirm={() => { noticeOpen = false; run(createWatchParty) }}
+    onCancel={() => (noticeOpen = false)} />
+{/if}

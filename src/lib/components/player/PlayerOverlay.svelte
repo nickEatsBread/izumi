@@ -140,18 +140,32 @@
 
   async function loadMeta() {
     metaLoaded = true
-    segments = await getSkipSegments(np.malId, np.episode, dur)
-    firstOcc = await firstOccurrences(np.id, np.episode)
+    // Every await below can outlive the episode/source it was started for. Snapshot the key and
+    // drop the result if the reset effect has moved on, otherwise a slow AniSkip response lands on
+    // the next episode and auto-skip jumps mid-scene to a timestamp from the previous file.
+    const key = loadedKey
+    const segs = await getSkipSegments(np.malId, np.episode, dur)
+    if (key !== loadedKey) return
+    segments = segs
+    const occ = await firstOccurrences(np.id, np.episode)
+    if (key !== loadedKey) return
+    firstOcc = occ
     try {
-      chapters = JSON.parse(await invoke<string>('player_chapters')) as { time: number; title: string }[]
+      const ch = JSON.parse(await invoke<string>('player_chapters')) as { time: number; title: string }[]
+      if (key !== loadedKey) return
+      chapters = ch
     }
-    catch { chapters = [] }
+    catch { if (key === loadedKey) chapters = [] }
   }
 
   // Reset per-episode state whenever the now-playing target changes (new episode
   // via auto-advance), so nothing leaks and the next duration reloads AniSkip.
+  // `$spriteKey` is part of the key because "Change source" re-plays the SAME title+episode from a
+  // different release: without it the reset is skipped and the new file inherits the old release's
+  // chapters, AniSkip windows and `dur` — so auto-skip seeks to a timestamp that belongs to a file
+  // that is no longer loaded. Seekbar already keys its thumbnails on the same store.
   $effect(() => {
-    const key = `${np.title}|${np.episode}`
+    const key = `${np.title}|${np.episode}|${$spriteKey ?? ''}`
     if (key === loadedKey) return
     loadedKey = key
     pos = 0; dur = 0; buffer = 0; segments = []; chapters = []; metaLoaded = false

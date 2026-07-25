@@ -168,7 +168,15 @@
   // slider still tracks the cursor; the trailing oninput always schedules a flush of the last value.
   let volPending = false
   let volLatest = 100
-  function flushVolume() { volPending = false; cmd('set', ['volume', String(volLatest)]) }
+  function flushVolume() {
+    volPending = false
+    cmd('set', ['volume', String(volLatest)])
+    // `toggleMute` used to be the only writer of mpv's `mute`, while the slider inferred `muted`
+    // locally — so dragging up from a muted player showed an unmuted speaker at the new volume
+    // with the audio still fully silent (and dragging to 0 showed a muted icon on an unmuted core).
+    // The slider owns both properties now, so what you see is what mpv is doing.
+    cmd('set', ['mute', volLatest === 0 ? 'yes' : 'no'])
+  }
   function setVolume(e: Event) {
     volume = Number((e.target as HTMLInputElement).value)
     muted = volume === 0
@@ -359,10 +367,13 @@
          the Back button, so a click on the (vertically-centred) label hit the window-drag region,
          not the button. Push the bar below the titlebar when windowed so the whole button clears it.
          Fullscreen / Game mode hide the titlebar, so no offset there. -->
-    <div class="pointer-events-auto absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : $fullscreen ? 'px-4 py-3' : 'px-4 pb-3 pt-11'}">
+    <!-- Same reasoning as the bottom bar: this strip spans the full width for the sake of one Back
+         button, so leaving it pointer-events-auto made the entire top of the video a click-to-pause
+         dead zone. The button opts back in; the gradient and title fall through. -->
+    <div class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-4 bg-gradient-to-b from-black/70 to-transparent {gm ? 'px-8 py-6' : $fullscreen ? 'px-4 py-3' : 'px-4 pb-3 pt-11'}">
       {#if !gm}
         <button data-focusable onclick={onclose} aria-label="Back"
-                class="flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
+                class="pointer-events-auto flex shrink-0 select-none items-center gap-1.5 rounded-full bg-black/60 py-2 pl-2.5 pr-3.5 text-sm font-bold text-white transition hover:bg-black/80">
           <ArrowLeft size={icSize} /><span>Back</span>
         </button>
       {/if}
@@ -373,7 +384,14 @@
   <!-- Bottom control bar: a gradient that floats over the video. Works identically on Desktop
        (subsurface below the webview) and Game mode (gamescope layer-shell surface below the
        webview) — the compositor blends the transparent webview over the video either way. -->
-  <div class="pointer-events-auto absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20">
+  <!-- The CONTAINER is pointer-events-none on purpose. It is `inset-x-0 bottom-0` with `pt-20`, so
+       it reaches ~80px above the seek bar plus the side gutters and the title — and while it was
+       pointer-events-auto, every click in that band was swallowed by the root's stopPropagation
+       and did nothing at all. Click-to-pause only worked once you got clear of the whole gradient.
+       Only the rows that actually ARE controls opt back in below; the gradient, the padding and the
+       title now fall through to the overlay's click-to-pause. The Seekbar keeps its own `py-3` grab
+       padding, so there is still a forgiving band that seeks rather than pausing. -->
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20">
     <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
          in Game mode to match the enlarged controls. -->
     {#if !titleTop}
@@ -383,16 +401,16 @@
     <!-- Game mode: flank the bar with current + total time (Crunchy-Deck style) so the bar itself
          is narrower; Desktop keeps the full-width bar with the time in the button row. -->
     {#if gm}
-      <div class="flex items-center gap-3">
+      <div class="pointer-events-auto flex items-center gap-3">
         <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums text-white/85">{fmt(pos)}</span>
         <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} /></div>
         <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums text-white/60">{fmt(dur)}</span>
       </div>
     {:else}
-      <Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} />
+      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} /></div>
     {/if}
 
-    <div class="mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
+    <div class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
       {#if hasPrev}
         <button data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(-1) : playPrev())} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
       {/if}

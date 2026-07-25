@@ -314,13 +314,20 @@ fn dir_size(p: &std::path::Path) -> u64 {
 /// the number of bytes freed.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
+async fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
+    // `async` matters: tauri-macros only picks `ExecutionContext::Async` when the fn is async, so
+    // the sync version ran the recursive stat walk + `remove_dir_all` inline on the event-loop
+    // thread and froze the UI for the duration. Do the blocking FS work on the blocking pool.
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("thumbs");
-    let freed = dir_size(&dir);
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-    }
-    Ok(freed)
+    tauri::async_runtime::spawn_blocking(move || {
+        let freed = dir_size(&dir);
+        if dir.exists() {
+            std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+        }
+        Ok(freed)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Set the WebKit page zoom (Linux). Used in Game mode instead of CSS `zoom` on the scroll
@@ -628,12 +635,55 @@ fn write_text_file(path: String, contents: String) -> Result<(), String> {
     std::fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
+/// Byte counter streamed to the update toast as `update-download-progress` while an update
+/// downloads. `total` is `None` when the server sent no Content-Length — the toast then shows an
+/// indeterminate bar instead of inventing a percentage.
+#[derive(Clone, serde::Serialize)]
+pub struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// Emit a progress tick, rate-limited: once per whole percent when the length is known, else
+/// every 250ms. Returns the updated (last_pct, last_emit) throttle state. Without a limit a
+/// multi-MB download fires thousands of IPC messages a second.
+fn emit_update_progress(
+    app: &AppHandle,
+    downloaded: u64,
+    total: Option<u64>,
+    last_pct: &mut i64,
+    last_emit: &mut std::time::Instant,
+) {
+    let pct = total
+        .filter(|t| *t > 0)
+        .map(|t| (downloaded.min(t) * 100 / t) as i64);
+    let due = match pct {
+        Some(p) => p != *last_pct,
+        None => last_emit.elapsed() >= std::time::Duration::from_millis(250),
+    };
+    if !due {
+        return;
+    }
+    if let Some(p) = pct {
+        *last_pct = p;
+    }
+    *last_emit = std::time::Instant::now();
+    let _ = app.emit("update-download-progress", UpdateProgress { downloaded, total });
+}
+
 /// Android self-update: download a release APK to the app cache dir and return its path
 /// (the frontend then hands it to the package installer via the extplayer plugin). Uses the
 /// download client (no total timeout). Overwrites any previous update file.
+///
+/// Streams to disk chunk-by-chunk rather than buffering the whole APK, so the toast can show
+/// real download progress (`update-download-progress`) — and so a ~100MB full-flavor APK isn't
+/// held in memory in one allocation.
 #[cfg(target_os = "android")]
 #[tauri::command]
 async fn updater_download_apk(app: AppHandle, url: String) -> Result<String, String> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join("izumi-update.apk");
@@ -641,8 +691,25 @@ async fn updater_download_apk(app: AppHandle, url: String) -> Result<String, Str
     if !resp.status().is_success() {
         return Err(format!("Update download failed (HTTP {})", resp.status().as_u16()));
     }
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?;
-    std::fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    let total = resp.content_length();
+    let mut file = tokio::fs::File::create(&dest).await.map_err(|e| e.to_string())?;
+    let mut stream = resp.bytes_stream();
+    let mut downloaded: u64 = 0;
+    let mut last_pct: i64 = -1;
+    let mut last_emit = std::time::Instant::now();
+    emit_update_progress(&app, 0, total, &mut last_pct, &mut last_emit);
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        downloaded += chunk.len() as u64;
+        emit_update_progress(&app, downloaded, total, &mut last_pct, &mut last_emit);
+    }
+    file.flush().await.map_err(|e| e.to_string())?;
+    // Final tick with a known total, so the bar lands on 100% even for a length-less response.
+    let _ = app.emit(
+        "update-download-progress",
+        UpdateProgress { downloaded, total: Some(downloaded) },
+    );
     Ok(dest.to_string_lossy().into_owned())
 }
 
@@ -1048,6 +1115,22 @@ async fn player_add_subtitle(
     )
     .await?;
     player.add_subtitle(&path, &lang, &title)
+}
+
+/// Attach an already-resolved external subtitle URL to the LIVE player. Unlike
+/// `player_add_subtitle`, this does no provider-specific fetching or unzipping — the caller has
+/// already turned the sidecar into a plain HTTP link (debrid sidecars). Mirrors what
+/// `torrent_playback_add_subtitle` does for direct-P2P sidecars, minus the torrent-state checks.
+/// Uses the `auto` flag so a late-arriving track never steals the user's current selection.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn player_attach_subtitle_url(
+    url: String,
+    lang: String,
+    title: String,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<(), String> {
+    player.add_subtitle_auto(&url, &lang, &title)
 }
 
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
@@ -1906,8 +1989,31 @@ async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), S
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no update available".to_string())?;
+    // Stream the download to the toast as `update-download-progress`. This callback used to be a
+    // no-op, which is why the progress bar sat at 0% for the whole download even though the update
+    // itself applied fine. `on_chunk` gets the chunk SIZE (not a running total), so accumulate.
+    let seen = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let (chunk_app, chunk_seen) = (app.clone(), seen.clone());
+    let (done_app, done_seen) = (app.clone(), seen.clone());
+    let mut last_pct: i64 = -1;
+    let mut last_emit = std::time::Instant::now();
     update
-        .download_and_install(|_chunk, _total| {}, || {})
+        .download_and_install(
+            move |chunk: usize, total: Option<u64>| {
+                let downloaded =
+                    chunk_seen.fetch_add(chunk as u64, std::sync::atomic::Ordering::Relaxed) + chunk as u64;
+                emit_update_progress(&chunk_app, downloaded, total, &mut last_pct, &mut last_emit);
+            },
+            move || {
+                // Download finished; the (silent) install runs next. Pin the bar at 100% so it
+                // doesn't sit one tick short while the installer swaps the binary.
+                let downloaded = done_seen.load(std::sync::atomic::Ordering::Relaxed);
+                let _ = done_app.emit(
+                    "update-download-progress",
+                    UpdateProgress { downloaded, total: Some(downloaded) },
+                );
+            },
+        )
         .await
         .map_err(|e| e.to_string())?;
     app.restart();
@@ -1980,28 +2086,48 @@ async fn flatpak_update_install(app: tauri::AppHandle) -> Result<(), String> {
         use ashpd::flatpak::update_monitor::UpdateStatus;
         use ashpd::flatpak::Flatpak;
         use futures_util::StreamExt;
-        let proxy = Flatpak::new().await.map_err(|e| e.to_string())?;
+        // Each step is labelled: this command's only failure surface is a single string shown in a
+        // toast, and "connect to the portal" / "create a monitor" / "ask for the update" fail for
+        // completely different reasons (no portal backend vs. no update origin on a bundle
+        // install). Without the label an on-device report is undiagnosable.
+        let proxy = Flatpak::new()
+            .await
+            .map_err(|e| format!("Flatpak portal unavailable: {e}"))?;
         let monitor = proxy
             .create_update_monitor(Default::default())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("could not create the update monitor: {e}"))?;
         // Subscribe to `Progress` BEFORE asking for the update so no early signal is missed.
         let mut progress = monitor
             .receive_progress()
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("could not subscribe to update progress: {e}"))?;
         // No parent window (Game mode has none) and default options.
+        // NOTE: this is where a sideloaded/bundle install fails — a deploy with no OSTree origin
+        // has no remote for the portal to pull from.
         monitor
             .update(None, Default::default())
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("the portal refused the update (installed without an update origin?): {e}"))?;
         // Forward the portal's progress to the toast and stop on a terminal status.
         while let Some(p) = progress.next().await {
             if let Some(pct) = p.progress() {
                 let _ = app.emit("flatpak-update-progress", pct);
             }
             match p.status() {
-                Some(UpdateStatus::Done) | Some(UpdateStatus::Empty) => break,
+                Some(UpdateStatus::Done) => break,
+                // `Empty` is "the portal had nothing to pull". Treating it as success told the user
+                // to quit and relaunch for an update that was never staged — they'd come back on
+                // the same version. It happens when the GitHub version check (which is what the
+                // frontend actually checks) is ahead of the OSTree remote, so say so honestly.
+                Some(UpdateStatus::Empty) => {
+                    let _ = monitor.close().await;
+                    return Err(
+                        "the Flatpak remote has no newer build yet — it may not have published this \
+                         version. Try again later."
+                            .into(),
+                    );
+                }
                 Some(UpdateStatus::Failed) => {
                     let _ = monitor.close().await;
                     return Err(p
@@ -2577,6 +2703,7 @@ pub fn run() {
             mpv_version,
             player_command,
             player_add_subtitle,
+            player_attach_subtitle_url,
             opensubtitles_login,
             oauth_capture,
             da_reaction_state,

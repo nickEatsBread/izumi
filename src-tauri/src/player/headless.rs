@@ -180,7 +180,15 @@ fn create_core() -> Result<Core, String> {
         set_opt(mpv, b"video-timing-offset\0", b"0\0"); // don't pace to display rate
         set_opt(mpv, b"cache\0", b"yes\0");
         set_opt(mpv, b"force-seekable\0", b"yes\0");
-        set_opt(mpv, b"demuxer-max-bytes\0", b"67108864\0");
+        // `grab()` seeks to one keyframe and renders a single 240px-wide frame; it never plays
+        // forward, so every byte of read-ahead is fetched and thrown away. mpv bounds read-ahead by
+        // `cache-secs` (default 10), NOT by `demuxer-max-bytes` — so the byte cap alone was doing
+        // almost nothing and each tile pulled seconds of stream. That bandwidth is contended with
+        // the MAIN player streaming the same debrid link, which is what makes skimming rebuffer
+        // playback on Deck WiFi. Keep force-seekable; seeks are the whole job here.
+        set_opt(mpv, b"cache-secs\0", b"1\0");
+        set_opt(mpv, b"demuxer-max-back-bytes\0", b"0\0");
+        set_opt(mpv, b"demuxer-max-bytes\0", b"16777216\0");
         set_opt(mpv, b"demuxer-lavf-probesize\0", b"2097152\0");
         set_opt(mpv, b"demuxer-lavf-analyzeduration\0", b"1\0");
         set_opt(mpv, b"network-timeout\0", b"30\0");

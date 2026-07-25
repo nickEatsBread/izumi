@@ -162,8 +162,8 @@ export const scheduleStickyHeader = persisted<boolean>('schedule-sticky-header',
 /** Auto-updater release channel: 'stable' (normal GitHub releases) or 'beta'
  *  (GitHub pre-releases). Drives which endpoint the updater checks. */
 export const updateChannel = persisted<'stable' | 'beta'>('update-channel', 'stable')
-/** Auto-check for updates at launch + every 6h. On by default; the toast is still opt-in to APPLY. */
-export const autoUpdateCheck = persisted<boolean>('auto-update-check', true)
+// There is deliberately no "auto-check" toggle: checking is always on (launch + every 6h) so
+// nobody sits on a stale client. Applying an update is still opt-in — the toast asks first.
 
 // --- Network ---
 // NOTE: these are best-effort for our debrid + libmpv model (see settings copy).
@@ -193,6 +193,9 @@ export const debridKey = persisted<string>('debrid-key', '')
 /** How infoHash/magnet sources are made playable. Direct uses Izumi's local
  * BitTorrent engine; debrid keeps the existing account-backed CDN path. */
 export const torrentPlaybackMode = persisted<'debrid' | 'direct'>('torrent-playback-mode', 'debrid')
+/** Dismisses the "hosting a room streams your debrid link from every guest's IP" warning shown
+ *  before a room is created. Off by default so the warning is seen at least once. */
+export const debridRoomNoticeAck = persisted<boolean>('debrid-room-notice-ack', false)
 /** Installed source-extension manifest URLs (JSON manifests or gh:/npm: shorthand). */
 export const extensionUrls = persisted<string[]>('extension-urls', [])
 export const disabledExtensions = persisted<string[]>('disabled-extensions', [])

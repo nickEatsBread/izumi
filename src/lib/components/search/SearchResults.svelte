@@ -53,6 +53,17 @@
     }
   }
 
+  // A mid-scroll page failure latches `hasNext = false`, which permanently stops the infinite
+  // scroll. Before this, that happened with no message and no spinner (the error banner was gated
+  // on an EMPTY grid), so the list just silently refused to grow and only a filter change — which
+  // re-keys the component — recovered. `page` is not advanced on the error path, so retrying
+  // re-requests the page that failed.
+  function retry() {
+    error = ''
+    hasNext = true
+    loadMore()
+  }
+
   function nearBottom(): boolean {
     const doc = document.documentElement
     return window.scrollY + window.innerHeight >= doc.scrollHeight - 1000
@@ -111,8 +122,12 @@
   </div>
 {/if}
 
-{#if error && !media.length}
-  <p class="mt-4 text-muted-foreground">Search failed: {error}</p>
+{#if error}
+  <div class="mt-4 flex flex-wrap items-center gap-3">
+    <p class="text-muted-foreground">{media.length ? "Couldn't load more results" : 'Search failed'}: {error}</p>
+    <button onclick={retry} data-focusable
+            class="rounded-md bg-muted px-3 py-1.5 text-sm font-black hover:bg-muted/70">Try again</button>
+  </div>
 {:else if !loading && !media.length}
   <p class="mt-4 text-muted-foreground">No results.</p>
 {/if}

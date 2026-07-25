@@ -104,8 +104,11 @@
   {#if showThumb && img}
     <div class="relative aspect-video w-full overflow-hidden bg-muted">
       {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
+      <!-- No `transform-gpu`/`will-change-transform` — same reason as SmallCard: they permanently
+           promote every one of the (up to 48) thumbnails to its own retained GPU layer. The
+           browser promotes the hovered card on demand. -->
       <img src={img} alt="" loading="lazy" decoding="async" onload={() => (imgReady = true)}
-           class="h-full w-full object-cover transform-gpu will-change-transform transition-[opacity,transform] duration-500 {imgReady ? 'opacity-100' : 'opacity-0'} {released ? 'group-hover:scale-105' : 'grayscale'}" />
+           class="h-full w-full object-cover transition-[opacity,transform] duration-500 {imgReady ? 'opacity-100' : 'opacity-0'} {released ? 'group-hover:scale-105' : 'grayscale'}" />
       <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
 
       <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{ep}</span>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyAuth, authError } from './http'
+import { classifyAuth, authError, isArchiveName } from './http'
 
 describe('classifyAuth', () => {
   // Real-Debrid — HTTP status only
@@ -82,5 +82,35 @@ describe('authError', () => {
   it('returns undefined for a non-auth failure so the caller keeps its own message', () => {
     expect(authError('Real-Debrid', { status: 451 })).toBeUndefined()
     expect(authError('Premiumize', { status: 200, message: 'not cached' })).toBeUndefined()
+  })
+})
+
+describe('isArchiveName', () => {
+  it('flags the packed archive from the reported bug by URL', () => {
+    expect(isArchiveName('https://43-4.download.real-debrid.com/d/PAW7XOH3ON5H6/Show%20Anime%20Edition%20%28ep.%201-2%20of%202%29.rar')).toBe(true)
+  })
+
+  it('flags a bare filename as returned by unrestrict', () => {
+    expect(isArchiveName('Show Anime Edition (ep. 1-2 of 2).rar')).toBe(true)
+    expect(isArchiveName('pack.zip')).toBe(true)
+  })
+
+  it('flags multipart and other archive extensions', () => {
+    expect(isArchiveName('file.7z')).toBe(true)
+    expect(isArchiveName('file.part1.rar')).toBe(true)
+    expect(isArchiveName('file.r00')).toBe(true)
+  })
+
+  it('does not flag ordinary video names or a zip-ish query string', () => {
+    expect(isArchiveName('Show_01_[rerip][85EDD0D6].mkv')).toBe(false)
+    expect(isArchiveName('https://host/d/ABC/Show_01.mp4?token=zip')).toBe(false)
+  })
+
+  it('handles a literal percent sign that is not a URL escape', () => {
+    expect(isArchiveName('100% Anime Pack.rar')).toBe(true)
+  })
+
+  it('is suffix-anchored, not a substring match', () => {
+    expect(isArchiveName('movie.rar.mkv')).toBe(false)
   })
 })

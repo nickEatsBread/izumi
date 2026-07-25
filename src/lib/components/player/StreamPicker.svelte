@@ -36,8 +36,14 @@
       ? visible.filter((i) => (i.filename ?? i.label).toLowerCase().includes(filter.trim().toLowerCase()))
       : visible,
   )
-  // The best cached source == the auto pick; pin + ring it.
-  const best = $derived(visible.find((i) => i.cached === 'instant'))
+  // The best cached source == the auto pick; pin + ring it. This MUST go through the same
+  // `pickBest` the non-interactive paths use (play.ts), or the pill labelled "Auto" ignores the
+  // Quality setting entirely and just takes the first cached row in the current sort order —
+  // picking a 2160p remux for someone who asked for 720p. `pickBest` already filters to
+  // `cached === 'instant'`, so the cached-only constraint is preserved. Season correctness is
+  // enforced upstream (verifySeason), so no `want` is needed here.
+  const bestStream = $derived(pickBest(visible.map((i) => i.stream), $preferredQuality))
+  const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
   const keyOf = (i: StreamInfo) => i.stream.url ?? i.stream.infoHash ?? i.label
 
   // Skeleton while sources resolve; cap the rendered node count (One Piece can
@@ -170,8 +176,13 @@
 </script>
 
 {#if pick}
+  <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
+       Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
+       instead of letting WebKit cache one snapshot — at the exact moment the app is busiest
+       resolving sources. Same call DebridCaching.svelte:22 already documents. -->
   <div
-    class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-4 backdrop-blur-sm"
+    class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-4"
+    class:backdrop-blur-sm={!$gameMode}
     onclick={close}
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"

@@ -314,6 +314,13 @@ unsafe impl Sync for Inner {}
 /// The single active embed session. `None` when nothing is playing embedded.
 static EMBED: Mutex<Option<Arc<Inner>>> = Mutex::new(None);
 
+/// The GTK toplevel outlives every player session, but `attach` runs once per player open —
+/// so connecting `draw`/`size_allocate` there accumulated a fresh handler on every open and
+/// `detach` never disconnected them. Both handlers are session-agnostic (draw is stateless;
+/// size_allocate reads the live `EMBED`), so connect each exactly once for the process.
+static DRAW_CONNECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static ALLOC_CONNECTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// True while an embed session is live (mpv core + subsurface attached).
 pub fn is_active() -> bool {
     EMBED.lock().map(|g| g.is_some()).unwrap_or(false)
@@ -359,13 +366,15 @@ pub fn attach(mpv: &Mpv, window: &tauri::WebviewWindow) -> Result<(), String> {
         // runtime here so we never change the Windows window. The clip is the damage
         // region, and children (the webview) draw AFTER (Propagation::Proceed), so only
         // changed areas are cleared+redrawn (no flicker for static UI).
-        gtk_win.connect_draw(|_w, cr| {
-            cr.set_operator(gtk::cairo::Operator::Source);
-            cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
-            let _ = cr.paint();
-            cr.set_operator(gtk::cairo::Operator::Over);
-            glib::Propagation::Proceed
-        });
+        if !DRAW_CONNECTED.swap(true, Ordering::SeqCst) {
+            gtk_win.connect_draw(|_w, cr| {
+                cr.set_operator(gtk::cairo::Operator::Source);
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+                let _ = cr.paint();
+                cr.set_operator(gtk::cairo::Operator::Over);
+                glib::Propagation::Proceed
+            });
+        }
         if let Some(gdk_win) = gtk_win.window() {
             use glib::translate::ToGlibPtr;
             // Clear the toplevel's opaque region (region = NULL) so the compositor
@@ -484,30 +493,33 @@ pub fn attach(mpv: &Mpv, window: &tauri::WebviewWindow) -> Result<(), String> {
             *g = Some(inner.clone());
         }
 
-        // Keep the video sized to the window on resize/maximize.
-        let weak_resize = Arc::downgrade(&inner);
-        gtk_win.connect_size_allocate(move |_w, rect| {
-            let Some(inner) = weak_resize.upgrade() else { return };
-            let nw = rect.width().max(1);
-            let nh = rect.height().max(1);
-            if let Ok(mut st) = inner.state.lock() {
-                st.pending_resize = Some((nw, nh));
-                let (cx, cy) = st.csd_offset;
-                if let Some(sub) = &inner.wayland.subsurface {
-                    sub.set_position(cx, cy);
-                }
-                inner.wayland.child_surface.commit();
-                let _ = inner.wayland.conn.flush();
-            }
-            let weak = Arc::downgrade(&inner);
-            glib::idle_add_once(move || {
-                if let Some(alive) = weak.upgrade() {
-                    if alive.valid.load(Ordering::Acquire) {
-                        render_frame(&alive);
+        // Keep the video sized to the window on resize/maximize. Connected once for the process
+        // (see DRAW_CONNECTED); it resolves the live session off `EMBED` on each call rather than
+        // capturing this attach's `inner`, so it follows re-attaches and no-ops after `detach`.
+        if !ALLOC_CONNECTED.swap(true, Ordering::SeqCst) {
+            gtk_win.connect_size_allocate(move |_w, rect| {
+                let Some(inner) = EMBED.lock().ok().and_then(|g| g.clone()) else { return };
+                let nw = rect.width().max(1);
+                let nh = rect.height().max(1);
+                if let Ok(mut st) = inner.state.lock() {
+                    st.pending_resize = Some((nw, nh));
+                    let (cx, cy) = st.csd_offset;
+                    if let Some(sub) = &inner.wayland.subsurface {
+                        sub.set_position(cx, cy);
                     }
+                    inner.wayland.child_surface.commit();
+                    let _ = inner.wayland.conn.flush();
                 }
+                let weak = Arc::downgrade(&inner);
+                glib::idle_add_once(move || {
+                    if let Some(alive) = weak.upgrade() {
+                        if alive.valid.load(Ordering::Acquire) {
+                            render_frame(&alive);
+                        }
+                    }
+                });
             });
-        });
+        }
 
         // Kick the first render so the surface sizes to the window immediately.
         let weak_first = Arc::downgrade(&inner);

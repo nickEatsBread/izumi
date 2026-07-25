@@ -1,0 +1,50 @@
+{
+  "cases": [
+    {
+      "name": "two-episode pack with ENG and CHI sidecar folders",
+      "files": [
+        "ENG/Show_Anime_edition_01_[rerip][Group_raw][85EDD0D6].eng_HH.ass",
+        "ENG/Show_Anime_edition_02_[rerip][Group_raw][0460306D].eng_HH.ass",
+        "CHI/Show_Anime_edition_02_[rerip][Group_raw][0460306D].chi_Maho.sub.ass",
+        "CHI/Show_Anime_edition_01_[rerip][Group_raw][85EDD0D6].chi_Maho.sub.ass",
+        "CHI/Show_Anime_edition_01_[rerip][Group_raw][85EDD0D6].chi_Maho.sub_karaoke.ass",
+        "Show_Anime_edition_01_[rerip][Group_raw][85EDD0D6].mkv",
+        "Show_Anime_edition_02_[rerip][Group_raw][0460306D].mkv"
+      ],
+      "video": 5,
+      "expected": [0, 3, 4]
+    },
+    {
+      "name": "same pack, second episode",
+      "files": [
+        "ENG/Show_Anime_edition_01_[rerip][Group_raw][85EDD0D6].eng_HH.ass",
+        "ENG/Show_Anime_edition_02_[rerip][Group_raw][0460306D].eng_HH.ass",
+        "CHI/Show_Anime_edition_02_[rerip][Group_raw][0460306D].chi_Maho.sub.ass",
+        "CHI/Show_Anime_edition_01_[rerip][Group_raw][85EDD0D6].chi_Maho.sub.ass",
+        "CHI/Show_Anime_edition_01_[rerip][Group_raw][85EDD0D6].chi_Maho.sub_karaoke.ass",
+        "Show_Anime_edition_01_[rerip][Group_raw][85EDD0D6].mkv",
+        "Show_Anime_edition_02_[rerip][Group_raw][0460306D].mkv"
+      ],
+      "video": 6,
+      "expected": [1, 2]
+    },
+    {
+      "name": "episode 1 must not match episode 10",
+      "files": ["Show 01.mkv", "Show 10.mkv", "Show 01.eng.ass", "Show 010.eng.ass"],
+      "video": 0,
+      "expected": [2]
+    },
+    {
+      "name": "single video takes every subtitle regardless of name",
+      "files": ["Show_01.mkv", "Subs/eng.ass", "Subs/chi.srt"],
+      "video": 0,
+      "expected": [1, 2]
+    },
+    {
+      "name": "backslash separators are normalised",
+      "files": ["ENG\\Show_01.eng.ass", "Show_01.mkv", "Show_02.mkv"],
+      "video": 1,
+      "expected": [0]
+    }
+  ]
+}

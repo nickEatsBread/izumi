@@ -2,7 +2,12 @@ import { Client, fetchExchange } from '@urql/core'
 import { authExchange } from '@urql/exchange-auth'
 import { cacheExchange } from '@urql/exchange-graphcache'
 import { invoke } from '@tauri-apps/api/core'
-import Bottleneck from 'bottleneck'
+// `bottleneck/light`, NOT `bottleneck`: the package declares only `main` (no browser/module/exports
+// field), so the bundler resolves the full Node build and drags RedisConnection, IORedisConnection,
+// RedisDatastore and an 18KB lua.json into a chunk that is modulepreloaded before first paint.
+// We only use the local datastore (reservoir / maxConcurrent / minTime / updateSettings), all of
+// which light.js has.
+import Bottleneck from 'bottleneck/light'
 import { getToken } from './auth'
 import { ANILIST_CACHE_KEYS } from './cache'
 

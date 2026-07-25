@@ -9,7 +9,7 @@ import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf, type DownloadPreferences } from '$lib/downloads/state'
-import { resolveHash, providerName, type EpisodeWant } from './debrid'
+import { resolveHash, resolveSidecars, providerName, type EpisodeWant } from './debrid'
 import { resolveOnlineStreams } from './onlinestream'
 import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
@@ -111,6 +111,21 @@ const airedTotalOf = (media: Media): number => {
   return Number.isFinite(a) ? a : (media.episodes ?? 0)
 }
 
+/** Resolve debrid sidecar subtitles AFTER playback has started and attach each to the live
+ *  player. Deliberately not awaited by the caller: each sidecar costs at least one debrid round
+ *  trip, and the episode must start immediately. Every failure is swallowed — a missing subtitle
+ *  must never disturb playback. */
+async function attachDebridSidecars(provider: string, key: string, torrent: string, want?: EpisodeWant) {
+  const sidecars = await resolveSidecars(provider, key, torrent, want ? { want } : undefined)
+  for (const s of sidecars) {
+    try {
+      await invoke('player_attach_subtitle_url', { url: s.url, lang: s.lang, title: s.title })
+    } catch (error) {
+      console.warn('debrid sidecar subtitle failed', error)
+    }
+  }
+}
+
 // Filename of the currently-playing stream, captured for on-demand subtitle re-search.
 let lastSubFilename: string | undefined
 
@@ -141,6 +156,23 @@ let stop: Array<() => void> = []
 // it's been superseded and skip side effects like auto-advance. See attach().
 let playGen = 0
 
+// Drop the current episode's listeners WITHOUT registering a replacement set. `attach()` is the
+// only other place teardown happens, so any playback path that doesn't call it used to inherit the
+// previous episode's handlers — which still close over that episode's `media`/`episode`. Playing an
+// untracked file (debrid Cloud library, raw URL) after watching Anime X ep5 therefore wrote
+// `savePosition(X, 5, ...)` from the cloud file's clock every 5s, pushed a bogus `markWatched(X, 5)`
+// to AniList/MAL at the ~85% mark, and on EOF auto-advanced into X ep6 on top of the cloud video.
+// Deliberately NOT called at the top of `playStream`: that would drop the previous episode's
+// `player-finalize` listener before the new file is confirmed loaded, so a failed play would lose
+// the old resume point. `attach()` handles that case atomically once the new file is live.
+function detach() {
+  stop.forEach((f) => f())
+  stop = []
+  playGen++
+  // New episode → the prefetch target changes, so a cooldown recorded for the old one is stale.
+  resetPrefetchMiss()
+}
+
 // Register a Tauri event listener and store its unlisten SYNCHRONOUSLY. `listen()` is an async
 // IPC round-trip; awaiting it before pushing the handle to `stop` (as attach() used to) opened a
 // window where a second play's teardown ran before this play's handle existed, so the old
@@ -169,9 +201,8 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
   // body runs with no `await`, so a second play cannot interleave between teardown and
   // registration. `pushListen` stores each unlisten synchronously; `gen` guards the async
   // auto-advance against a stale player-ended still in flight from a superseded play.
-  stop.forEach((f) => f())
-  stop = []
-  const gen = ++playGen
+  detach()
+  const gen = playGen
   let marked = false
   let lastSave = 0
   let warmed = false
@@ -253,6 +284,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
 let stopAndroid: (() => void) | null = null
 function attachAndroid(media: Media, episode: number, onState: (s: PlayState) => void) {
   stopAndroid?.()
+  resetPrefetchMiss()
   let marked = false
   let lastSave = 0
   let ended = false
@@ -546,6 +578,20 @@ async function episodeWant(media: Media, episode: number | undefined, stream?: S
 // auto-advance starts instantly — no addon query or debrid round-trip at the cut.
 let prefetched: { mediaId: number; episode: number; stream: Stream } | null = null
 let prefetching = false
+// Negative cache for prefetchNext. `prefetched` is only ever assigned on SUCCESS, so a miss (no
+// cached same-release, or a throw) left every guard below false — and the progress handler calls
+// this at 4Hz for the whole last 15% of an episode. A miss therefore re-ran the complete multi-addon
+// fan-out plus refineStreams over every returned row, hundreds of times per episode, on the same
+// core that is decoding video. That is guaranteed for anyone without debrid, since pickSameRelease
+// only ever matches a debrid-cached release.
+// A cooldown rather than a permanent tombstone: an uncached release CAN become cached mid-episode
+// (another client, or the debrid service finishing), and a tombstone would silently kill the
+// feature for the rest of the episode.
+const PREFETCH_MISS_MS = 60_000
+let prefetchMiss: { key: string; at: number } | null = null
+const prefetchKey = (mediaId: number, episode: number) => `${mediaId}:${episode}`
+/** Forget the miss cooldown — the episode changed, so the next target is different. */
+function resetPrefetchMiss() { prefetchMiss = null }
 
 /** Resolve the next episode's (cached, same-release-preferred) stream in the
  *  background so the transition is instant. Best-effort; cached-only (never
@@ -556,7 +602,11 @@ async function prefetchNext(media: Media, episode: number) {
   const next = episode + 1
   if (next > airedTotal || prefetching) return
   if (prefetched?.mediaId === media.id && prefetched.episode === next) return
+  // Guard BEFORE resolveStreams — the whole point is to skip the fan-out, not just the pick.
+  const key = prefetchKey(media.id, next)
+  if (prefetchMiss?.key === key && Date.now() - prefetchMiss.at < PREFETCH_MISS_MS) return
   prefetching = true
+  let hit = false
   try {
     const { streams, want } = await resolveStreams(media, next)
     const best = pickSameRelease(media, streams, want)
@@ -565,12 +615,16 @@ async function prefetchNext(media: Media, episode: number) {
     if (!s.url && s.infoHash) {
       s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash, {
         want: { episode: next, abs: want?.abs, season: want?.season, filename: s.behaviorHints?.filename },
+        noAdd: true,
       }) }
     }
-    if (s.url) prefetched = { mediaId: media.id, episode: next, stream: s }
+    if (s.url) { prefetched = { mediaId: media.id, episode: next, stream: s }; hit = true }
   }
   catch { /* best-effort — the normal resolve runs at play time */ }
-  finally { prefetching = false }
+  finally {
+    prefetching = false
+    prefetchMiss = hit ? null : { key, at: Date.now() }
+  }
 }
 
 /** Consume a matching prefetched stream, if one is ready for this exact episode. */
@@ -875,6 +929,8 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
   let directPlaybackId: number | null = null
   let directTorrentSubtitles: DirectTorrentSubtitle[] = []
+  // Set only on the debrid path, so sidecar subtitles can be resolved after playback starts.
+  let debridSidecarSource: { provider: string; key: string; torrent: string; want?: EpisodeWant } | null = null
   // Torrentio's debrid `url` contains an account token and can resolve to RD's tiny copyright
   // placeholder while still looking like a valid video to mpv. Recover the public infohash and
   // deliberately discard that private URL: Izumi's resolver has provider-error + filesize guards,
@@ -883,8 +939,8 @@ export async function playStream(media: Media, episode: number | undefined, stre
   if (resolverHash) stream = { ...stream, url: undefined, infoHash: resolverHash }
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
-  // Capture the original source before a torrent is exchanged for an account-bound
-  // debrid CDN URL. The latter must never cross a Watch Together room.
+  // Provisional room source, so a guest joining mid-resolve still sees what is starting. It is
+  // re-captured from the FINAL stream below, once any debrid resolution has happened.
   nowPlayingPartySource.set(shareableSource(stream))
   lastSubFilename = stream.behaviorHints?.filename
   onlineSubCandidates.set({ status: 'idle', items: [] })
@@ -960,14 +1016,16 @@ export async function playStream(media: Media, episode: number | undefined, stre
       if (isUncached(stream)) showCaching()
       else overlayTimer = setTimeout(showCaching, 1500)
       try {
+        const want = await episodeWant(media, episode, stream)
         const url = await resolveHash(provider, key, torrent, {
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
           onStatus: (i) => { if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c)) },
-          want: await episodeWant(media, episode, stream),
+          want,
         })
         clearTimeout(overlayTimer)
         stream = { ...stream, url }
+        debridSidecarSource = { provider, key, torrent, want }
         debridCaching.set(null)
       }
       catch (e) {
@@ -980,6 +1038,12 @@ export async function playStream(media: Media, episode: number | undefined, stre
     }
   }
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
+  // Re-capture the room source from the FINAL stream. For a debrid play this is the resolved,
+  // account-bound CDN link, and it is shared as-is: guests play the host's exact URL rather than
+  // needing a debrid account each. The host is warned about what that means for their account
+  // before the room opens (DebridRoomNotice). Direct-P2P resolves to a loopback address, which
+  // shareableSource skips in favour of the infohash, so those rooms are unaffected.
+  nowPlayingPartySource.set(shareableSource(stream))
   // A newly resolved direct torrent replaces the old one in the native engine. Any other source
   // ends the previous torrent's watch phase before the new player load begins.
   if (directPlaybackId == null && currentDirectTorrentPlaybackId() != null) {
@@ -1059,6 +1123,9 @@ export async function playStream(media: Media, episode: number | undefined, stre
     if (get(enableExternalPlayer)) {
       const path = get(externalPlayerPath)
       if (!path) return onState({ status: 'error', message: 'No external player selected — set its path in Settings.' })
+      // No embedded playback follows, so `attach()` never runs to replace the previous episode's
+      // listeners. Drop them here or they keep tracking against the old episode. See detach().
+      detach()
       let unlistenExit: (() => void) | undefined
       if (directPlaybackId != null) {
         const id = directPlaybackId
@@ -1122,6 +1189,10 @@ export async function playStream(media: Media, episode: number | undefined, stre
     if (directPlaybackId != null && directTorrentSubtitles.length) {
       void attachDirectTorrentSubtitles(directPlaybackId, directTorrentSubtitles)
     }
+    if (debridSidecarSource) {
+      const s = debridSidecarSource
+      void attachDebridSidecars(s.provider, s.key, s.torrent, s.want)
+    }
     rememberSuccess()
     playing.set(true)
     onState({ status: 'playing' })
@@ -1155,10 +1226,14 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
     if (get(enableExternalPlayer)) {
       const path = get(externalPlayerPath)
       if (!path) return onState({ status: 'error', message: 'No external player selected — set its path in Settings.' })
+      detach()
       await invoke('spawn_external_player', { path, url })
       return onState({ status: 'playing' })
     }
-    // These items carry no Media, so Prev/Next must not act on a stale one.
+    // These items carry no Media, so Prev/Next must not act on a stale one — and neither must the
+    // previous episode's progress/auto-advance listeners, which `attach()` is never called to
+    // replace on this path. See detach().
+    detach()
     currentMedia = null
     nowPlayingMedia.set(null)
     nowPlayingPartySource.set({ source: null, error: 'Cloud-library links are private to this device.' })
