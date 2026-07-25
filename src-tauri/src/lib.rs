@@ -1117,6 +1117,22 @@ async fn player_add_subtitle(
     player.add_subtitle(&path, &lang, &title)
 }
 
+/// Attach an already-resolved external subtitle URL to the LIVE player. Unlike
+/// `player_add_subtitle`, this does no provider-specific fetching or unzipping — the caller has
+/// already turned the sidecar into a plain HTTP link (debrid sidecars). Mirrors what
+/// `torrent_playback_add_subtitle` does for direct-P2P sidecars, minus the torrent-state checks.
+/// Uses the `auto` flag so a late-arriving track never steals the user's current selection.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn player_attach_subtitle_url(
+    url: String,
+    lang: String,
+    title: String,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<(), String> {
+    player.add_subtitle_auto(&url, &lang, &title)
+}
+
 /// Warm the debrid/CDN edge for a resolved next-episode URL by pulling its first few
 /// MB and discarding them, so mpv's first read at the episode cut is a cache hit.
 /// Fire-and-forget (returns immediately); NEVER logs the url (debrid secret).
@@ -2687,6 +2703,7 @@ pub fn run() {
             mpv_version,
             player_command,
             player_add_subtitle,
+            player_attach_subtitle_url,
             opensubtitles_login,
             oauth_capture,
             da_reaction_state,
