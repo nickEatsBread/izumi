@@ -68,6 +68,15 @@ describe('rdSelectFileIds', () => {
     expect(rdSelectFileIds(files)).toBe('2')
   })
 
+  it('does not bulk-select sidecars when every video is junk or undersized', () => {
+    const files = [
+      { id: 1, path: 'sample.mkv', bytes: 20 * MB },
+      { id: 2, path: 'Show_01.mkv', bytes: 2 * MB },
+      { id: 3, path: 'ENG/Show_01.eng.ass', bytes: 10 * 1024 },
+    ]
+    expect(rdSelectFileIds(files)).toBe('2')
+  })
+
   it('selects every file when the torrent carries no usable video', () => {
     const files = [
       { id: 7, path: 'readme.txt', bytes: 10 },
