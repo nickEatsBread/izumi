@@ -1,6 +1,7 @@
 import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError, isArchiveName } from '../http'
 import { pickEpisodeVideo } from '../episode-file'
-import type { DebridProvider, DebridInfo, DebridItem, DebridFile, ResolveOpts } from '../types'
+import { selectSidecars, sidecarLanguage, sidecarTitle } from '../sidecar-subs'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridSidecar, ResolveOpts } from '../types'
 
 // Real-Debrid. Flow: addMagnet → selectFiles(video ids, never `all`) [RD is the only one that
 // requires this] → poll info until 'downloaded' → pick the wanted episode (or largest video) →
@@ -67,6 +68,10 @@ export function rdFile(f: { id: number; path: string; bytes: number }): DebridFi
 /** Minimum size for a file to count as a real video. Mirrors the floor production debrid
  *  addons use — it keeps 2 MB "trailerclip.mkv" junk out of the selection. */
 const MIN_VIDEO_BYTES = 5 * 1024 * 1024
+
+/** Each sidecar is resolved through its own single-file selection, which can cost one torrent
+ *  entry on the user's account, so cap how many a single episode may create. */
+const MAX_SIDECARS = 3
 
 /** Which file ids to hand RD's selectFiles. Avoid RD's `all` keyword whenever files can be
  *  named individually: asking RD for every file is what makes it repackage the torrent into
@@ -326,6 +331,39 @@ export const realdebrid: DebridProvider = {
     if (chosen.bytes > 0 && un.filesize && un.filesize < chosen.bytes * 0.5)
       throw new Error('Real-Debrid served a copyright-removed placeholder for this release — pick a different source.')
     return un.download
+  },
+  /** External `.ass`/`.srt` sidecars belonging to the episode `resolveHash` just picked. Each is
+   *  resolved through its OWN single-file selection: RD packs a torrent into one archive when
+   *  several files are selected at once, so asking for video+subtitles together would defeat the
+   *  very fix that makes playback work. `resolveViaSingleFile` reuses an existing single-file
+   *  entry when one is already on the account, so a rewatch costs no new entries. Never throws —
+   *  a missing subtitle must not disturb playback. */
+  async resolveSidecars(key, hashOrMagnet, opts): Promise<DebridSidecar[]> {
+    // Background prefetch must not touch the account, and only a torrent already on it can have
+    // sidecars resolved — resolveHash runs first, so a missing entry means nothing to attach.
+    if (!key || opts?.noAdd) return []
+    const id = await findDownloadedId(key, hashOf(hashOrMagnet)).catch(() => undefined)
+    if (!id) return []
+    const info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+    const all = (info.files ?? []).map((f) => ({ id: f.id, name: f.path, bytes: f.bytes }))
+    const chosen = pickEpisodeVideo(all, opts?.want)
+      ?? [...all.filter((f) => VIDEO.test(f.name) && !JUNK.test(f.name))].sort((a, b) => b.bytes - a.bytes)[0]
+    if (!chosen) return []
+
+    const out: DebridSidecar[] = []
+    for (const sub of selectSidecars(all, chosen).slice(0, MAX_SIDECARS)) {
+      try {
+        const un = await resolveViaSingleFile(key, hashOrMagnet, sub.id, sub.bytes, opts)
+        if (isArchiveName(servedName(un))) continue
+        out.push({
+          url: un.download,
+          name: sub.name,
+          lang: sidecarLanguage(sub.name),
+          title: sidecarTitle(chosen.name, sub.name),
+        })
+      } catch { /* one bad sidecar must not drop the rest */ }
+    }
+    return out
   },
   async listItems(key) {
     if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Extensions.')
