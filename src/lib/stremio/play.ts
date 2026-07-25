@@ -9,7 +9,7 @@ import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf, type DownloadPreferences } from '$lib/downloads/state'
-import { resolveHash, providerName, type EpisodeWant } from './debrid'
+import { resolveHash, resolveSidecars, providerName, type EpisodeWant } from './debrid'
 import { resolveOnlineStreams } from './onlinestream'
 import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
@@ -109,6 +109,21 @@ async function attachDirectTorrentSubtitles(playbackId: number, subtitles: Direc
 const airedTotalOf = (media: Media): number => {
   const a = airedCount(media)
   return Number.isFinite(a) ? a : (media.episodes ?? 0)
+}
+
+/** Resolve debrid sidecar subtitles AFTER playback has started and attach each to the live
+ *  player. Deliberately not awaited by the caller: each sidecar costs at least one debrid round
+ *  trip, and the episode must start immediately. Every failure is swallowed — a missing subtitle
+ *  must never disturb playback. */
+async function attachDebridSidecars(provider: string, key: string, torrent: string, want?: EpisodeWant) {
+  const sidecars = await resolveSidecars(provider, key, torrent, want ? { want } : undefined)
+  for (const s of sidecars) {
+    try {
+      await invoke('player_attach_subtitle_url', { url: s.url, lang: s.lang, title: s.title })
+    } catch (error) {
+      console.warn('debrid sidecar subtitle failed', error)
+    }
+  }
 }
 
 // Filename of the currently-playing stream, captured for on-demand subtitle re-search.
@@ -914,6 +929,8 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
   let directPlaybackId: number | null = null
   let directTorrentSubtitles: DirectTorrentSubtitle[] = []
+  // Set only on the debrid path, so sidecar subtitles can be resolved after playback starts.
+  let debridSidecarSource: { provider: string; key: string; torrent: string; want?: EpisodeWant } | null = null
   // Torrentio's debrid `url` contains an account token and can resolve to RD's tiny copyright
   // placeholder while still looking like a valid video to mpv. Recover the public infohash and
   // deliberately discard that private URL: Izumi's resolver has provider-error + filesize guards,
@@ -999,14 +1016,16 @@ export async function playStream(media: Media, episode: number | undefined, stre
       if (isUncached(stream)) showCaching()
       else overlayTimer = setTimeout(showCaching, 1500)
       try {
+        const want = await episodeWant(media, episode, stream)
         const url = await resolveHash(provider, key, torrent, {
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
           onStatus: (i) => { if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c)) },
-          want: await episodeWant(media, episode, stream),
+          want,
         })
         clearTimeout(overlayTimer)
         stream = { ...stream, url }
+        debridSidecarSource = { provider, key, torrent, want }
         debridCaching.set(null)
       }
       catch (e) {
@@ -1169,6 +1188,10 @@ export async function playStream(media: Media, episode: number | undefined, stre
     })
     if (directPlaybackId != null && directTorrentSubtitles.length) {
       void attachDirectTorrentSubtitles(directPlaybackId, directTorrentSubtitles)
+    }
+    if (debridSidecarSource) {
+      const s = debridSidecarSource
+      void attachDebridSidecars(s.provider, s.key, s.torrent, s.want)
     }
     rememberSuccess()
     playing.set(true)
