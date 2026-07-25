@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor } from './realdebrid'
+import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor, rdShouldRetrySingleFile } from './realdebrid'
 
 describe('rdStatus', () => {
   it('maps a finished torrent to ready', () => {
@@ -119,5 +119,33 @@ describe('rdLinkFor', () => {
 
   it('refuses when the index is beyond links.length even though counts agree', () => {
     expect(rdLinkFor(3, 5, ['a', 'b', 'c'])).toBeUndefined()
+  })
+})
+
+describe('rdShouldRetrySingleFile', () => {
+  it('retries when there is no usable link at all', () => {
+    expect(rdShouldRetrySingleFile(undefined, 7, false)).toBe(true)
+  })
+
+  it('retries when RD packed more than one selected file into an archive', () => {
+    expect(rdShouldRetrySingleFile({ download: 'https://real-debrid.com/d/PACKED', filename: 'Show.rar' }, 7, false)).toBe(true)
+  })
+
+  it('does not retry an archive that was already a single-file selection — a retry would just reproduce it', () => {
+    expect(rdShouldRetrySingleFile({ download: 'https://real-debrid.com/d/ONE', filename: 'Show.rar' }, 1, false)).toBe(false)
+  })
+
+  it('does not retry a clean video link', () => {
+    expect(rdShouldRetrySingleFile({ download: 'https://real-debrid.com/d/VID', filename: 'Show_01.mkv' }, 7, false)).toBe(false)
+  })
+
+  it('never retries for a noAdd (background prefetch) caller, in every other case', () => {
+    expect(rdShouldRetrySingleFile(undefined, 7, true)).toBe(false)
+    expect(rdShouldRetrySingleFile({ download: 'https://real-debrid.com/d/PACKED', filename: 'Show.rar' }, 7, true)).toBe(false)
+    expect(rdShouldRetrySingleFile({ download: 'https://real-debrid.com/d/VID', filename: 'Show_01.mkv' }, 1, true)).toBe(false)
+  })
+
+  it('falls back to the download URL when filename is an empty string', () => {
+    expect(rdShouldRetrySingleFile({ download: 'https://real-debrid.com/d/PACKED.rar', filename: '' }, 7, false)).toBe(true)
   })
 })

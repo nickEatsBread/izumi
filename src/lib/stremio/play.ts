@@ -600,6 +600,7 @@ async function prefetchNext(media: Media, episode: number) {
     if (!s.url && s.infoHash) {
       s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash, {
         want: { episode: next, abs: want?.abs, season: want?.season, filename: s.behaviorHints?.filename },
+        noAdd: true,
       }) }
     }
     if (s.url) { prefetched = { mediaId: media.id, episode: next, stream: s }; hit = true }

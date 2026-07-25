@@ -55,6 +55,9 @@ export interface ResolveOpts {
   timeoutMs?: number // default 10 min
   signal?: AbortSignal
   want?: EpisodeWant // episode-aware file selection inside multi-file torrents
+  /** Never add anything to the user's debrid account. Set by background/prefetch callers so a
+   *  speculative resolve can't create torrent entries the user didn't ask for. */
+  noAdd?: boolean
 }
 
 export interface DebridProviderMeta {
