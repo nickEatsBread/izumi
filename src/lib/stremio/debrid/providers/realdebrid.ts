@@ -1,6 +1,6 @@
-import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError } from '../http'
+import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError, isArchiveName } from '../http'
 import { pickEpisodeVideo } from '../episode-file'
-import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile, ResolveOpts } from '../types'
 
 // Real-Debrid. Flow: addMagnet → selectFiles(all) [RD is the only one that requires
 // this] → poll info until 'downloaded' → pick largest video → unrestrict/link. RD
@@ -115,6 +115,30 @@ async function findDownloadedId(key: string, hash: string): Promise<string | und
   return undefined
 }
 
+interface RdUnrestricted { download: string; filename?: string; filesize?: number }
+
+/** Re-add the magnet selecting exactly ONE file, then unrestrict it. Selecting a single file
+ *  is the reliable way to make RD serve a real file rather than a packed archive, and
+ *  selectFiles cannot change an existing downloaded torrent's selection (the API answers
+ *  "202 Action already done"), so a fresh add is required. The previous entry is deliberately
+ *  left alone — izumi never deletes torrents from the user's account. */
+async function rdResolveSingleFile(
+  key: string, hashOrMagnet: string, fileId: number, opts?: ResolveOpts,
+): Promise<RdUnrestricted> {
+  const id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
+  await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: String(fileId) }))
+  let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+  if (rdStatus(info).stage !== 'ready') {
+    await poll(async () => {
+      info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+      return rdStatus(info)
+    }, opts)
+  }
+  const link = info.links?.[0]
+  if (!link) throw new Error('Real-Debrid returned no link for that file.')
+  return await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
+}
+
 export const realdebrid: DebridProvider = {
   id: 'realdebrid',
   name: 'Real-Debrid',
@@ -136,7 +160,7 @@ export const realdebrid: DebridProvider = {
     }
     let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
     if (info.status === 'waiting_files_selection' || !(info.files ?? []).some((f) => f.selected)) {
-      await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: 'all' }))
+      await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: rdSelectFileIds(info.files ?? []) }))
       info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
     }
     // `poll` probes once before its first sleep, so entering it with an already-`downloaded` info
@@ -154,16 +178,24 @@ export const realdebrid: DebridProvider = {
     const videos = selected.filter((f) => VIDEO.test(f.path) && !JUNK.test(f.path))
     // Episode-aware pick first (batch/season packs: play the file the user asked for,
     // not the biggest); legacy largest-video fallback otherwise. Matched on the full
-    // in-torrent path — links[] stays index-coupled to the SELECTED subset, so the
-    // chosen object must be one of `selected`'s own elements (it is: `f` is a ref).
+    // in-torrent path, so the chosen object must be one of `selected`'s own elements
+    // (it is: `f` is a ref).
     const chosen =
       pickEpisodeVideo(selected.map((f) => ({ name: f.path, bytes: f.bytes, f })), opts?.want)?.f
       ?? [...(videos.length ? videos : selected)].sort((a, b) => b.bytes - a.bytes)[0]
     if (!chosen) throw new Error('No playable file in that torrent.')
     const idx = selected.indexOf(chosen)
-    const link = info.links?.[idx] ?? info.links?.[0]
-    if (!link) throw new Error('Debrid returned no link.')
-    const un = await rd('POST', '/unrestrict/link', key, form({ link })) as { download: string; filesize?: number }
+    const link = rdLinkFor(selected.length, idx, info.links ?? [])
+    let un = link
+      ? await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
+      : undefined
+    // Either the link mapping was unusable, or RD packed the selection into an archive.
+    // Both recover the same way: re-add selecting only the file we actually want.
+    if (!un || isArchiveName(un.filename ?? un.download)) {
+      un = await rdResolveSingleFile(key, hashOrMagnet, chosen.id, opts)
+    }
+    if (isArchiveName(un.filename ?? un.download))
+      throw new Error('Real-Debrid only offers this release as an archive, so the episode cannot be streamed. Play it with Direct P2P (Settings → torrent playback mode).')
     // Copyright decoy guard: when a release is taken down, RD serves a tiny placeholder clip
     // ("removed by copyright holder") in place of the real file — which otherwise just PLAYS.
     // The torrent still advertises the real size, so a served file far smaller than that (here
@@ -184,16 +216,22 @@ export const realdebrid: DebridProvider = {
   async resolveFile(key, item, file, opts) {
     let info = await rd('GET', `/torrents/info/${item.id}`, key) as RdInfo
     if (!(info.files ?? []).some((f) => f.selected)) {
-      await rd('POST', `/torrents/selectFiles/${item.id}`, key, form({ files: 'all' }))
+      await rd('POST', `/torrents/selectFiles/${item.id}`, key, form({ files: rdSelectFileIds(info.files ?? []) }))
       info = await rd('GET', `/torrents/info/${item.id}`, key) as RdInfo
     }
     const selected = (info.files ?? []).filter((f) => f.selected)
     const idx = selected.findIndex((f) => String(f.id) === file.id)
     const chosen = selected[idx]
     if (!chosen) throw new Error("That file isn't available in this torrent.")
-    const link = info.links?.[idx] ?? info.links?.[0]
-    if (!link) throw new Error('Debrid returned no link.')
-    const un = await rd('POST', '/unrestrict/link', key, form({ link })) as { download: string; filesize?: number }
+    const link = rdLinkFor(selected.length, idx, info.links ?? [])
+    let un = link
+      ? await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
+      : undefined
+    if (!un || isArchiveName(un.filename ?? un.download)) {
+      un = await rdResolveSingleFile(key, item.hash ?? item.id, chosen.id, opts)
+    }
+    if (isArchiveName(un.filename ?? un.download))
+      throw new Error('Real-Debrid only offers this file inside an archive.')
     // Same copyright-decoy guard as resolveHash: a served file far smaller than the torrent's is a placeholder.
     if (chosen.bytes > 0 && un.filesize && un.filesize < chosen.bytes * 0.5)
       throw new Error('Real-Debrid served a copyright-removed placeholder for this file — pick another source.')
