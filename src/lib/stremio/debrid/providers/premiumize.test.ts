@@ -4,7 +4,7 @@ const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
 
 import { serveJson, called } from '../../../../test/debrid-http'
-import { pmStatus, pmListItem, pmFile, premiumize } from './premiumize'
+import { pmStatus, pmListItem, pmFile, pmCacheMap, pmCacheBody, premiumize } from './premiumize'
 
 const HASH = '1'.repeat(40)
 
@@ -70,5 +70,50 @@ describe('premiumize.resolveHash noAdd', () => {
     ])
     await expect(premiumize.resolveHash('key', HASH)).resolves.toBe('https://cdn.premiumize/Show_01.mkv')
     expect(called(httpFetch, '/transfer/create')).toBe(true)
+  })
+})
+
+describe('pmCacheMap', () => {
+  const asked = ['aaa', 'bbb', 'ccc']
+
+  it('zips the positional response array against the asked order', () => {
+    const m = pmCacheMap({ status: 'success', response: [true, false, true] }, asked)
+    expect(m.get('aaa')).toBe('cached')
+    expect(m.get('bbb')).toBe('uncached')
+    expect(m.get('ccc')).toBe('cached')
+  })
+  it('returns an empty map when status is not success', () => {
+    expect(pmCacheMap({ status: 'error', message: 'bad' }, asked).size).toBe(0)
+  })
+  it('returns an empty map when response is not an array', () => {
+    expect(pmCacheMap({ status: 'success', response: 'yes' }, asked).size).toBe(0)
+    expect(pmCacheMap({ status: 'success' }, asked).size).toBe(0)
+  })
+  it('maps only the overlap when the response is SHORTER than the request', () => {
+    const m = pmCacheMap({ status: 'success', response: [true] }, asked)
+    expect(m.get('aaa')).toBe('cached')
+    expect(m.has('bbb')).toBe(false)
+    expect(m.has('ccc')).toBe(false)
+  })
+  it('lower-cases the hash keys', () => {
+    expect(pmCacheMap({ status: 'success', response: [true] }, ['AAA']).get('aaa')).toBe('cached')
+  })
+})
+
+// REGRESSION GUARD. FormData.set collapses duplicate keys; FormData.append does not.
+// Using `set` here would silently reduce a 100-hash batch to ONE item, and because the response is
+// positional every other row would come back as uncached — a silent, plausible-looking wrong answer.
+describe('pmCacheBody', () => {
+  it('appends one items[] entry PER hash', () => {
+    const fd = pmCacheBody(['aaa', 'bbb', 'ccc'])
+    expect(fd.getAll('items[]')).toHaveLength(3)
+  })
+  it('sends magnets, not bare hashes', () => {
+    expect(String(pmCacheBody(['aaa']).getAll('items[]')[0])).toMatch(/^magnet:\?xt=urn:btih:aaa/)
+  })
+  it('preserves order so the positional response zips correctly', () => {
+    const got = pmCacheBody(['aaa', 'bbb']).getAll('items[]').map(String)
+    expect(got[0]).toContain('aaa')
+    expect(got[1]).toContain('bbb')
   })
 })

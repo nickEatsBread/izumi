@@ -58,6 +58,28 @@ export function pmFile(f: PmFile): DebridFile {
   return { id: link, name: f.name, size: f.bytes, playable: VIDEO.test(f.name) && !JUNK.test(f.name) }
 }
 
+/** Pure: Premiumize /cache/check response -> cache map. The response is FOUR PARALLEL ARRAYS
+ *  indexed by request order (response[]/filename[]/filesize[]), NOT keyed by hash — so this zips
+ *  positionally against the asked order. A short response maps only the overlap; the remaining
+ *  hashes stay absent (= unknown) rather than being guessed at. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function pmCacheMap(json: any, asked: string[]): Map<string, 'cached' | 'uncached'> {
+  const out = new Map<string, 'cached' | 'uncached'>()
+  if (json?.status !== 'success' || !Array.isArray(json?.response)) return out
+  const n = Math.min(asked.length, json.response.length)
+  for (let i = 0; i < n; i++) out.set(asked[i].toLowerCase(), json.response[i] ? 'cached' : 'uncached')
+  return out
+}
+
+/** Pure: build the /cache/check form body. CRITICAL: append, never set — `set` collapses duplicate
+ *  keys, which would silently reduce a 100-hash batch to a single item, and because the response is
+ *  POSITIONAL every other row would then read as uncached. */
+export function pmCacheBody(hashes: string[]): FormData {
+  const fd = new FormData()
+  for (const h of hashes) fd.append('items[]', magnetOf(h.toLowerCase()))
+  return fd
+}
+
 export const premiumize: DebridProvider = {
   id: 'premiumize',
   name: 'Premiumize',
@@ -96,6 +118,18 @@ export const premiumize: DebridProvider = {
     const best = pickVideoFile(files, opts?.want)
     if (!best?.link && !best?.stream_link) throw new Error('No playable file in that torrent.')
     return (best.link ?? best.stream_link)!
+  },
+  async checkCached(key, hashes) {
+    if (!key || !hashes.length) return new Map()
+    const fd = pmCacheBody(hashes)
+    try {
+      // pm() throws ONLY on an auth/subscription failure; a plain status:'error' falls through,
+      // which is exactly what pmCacheMap wants to see.
+      return pmCacheMap(await pm('POST', '/cache/check', key, fd), hashes)
+    } catch (e) {
+      console.warn(e instanceof Error ? e.message : e)
+      return new Map()
+    }
   },
   async listItems(key) {
     if (!key) throw new Error('No Premiumize API key set — add it in Settings → Extensions.')
