@@ -19,6 +19,7 @@
   import { isAndroid, isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import PreviewCard from './PreviewCard.svelte'
+  import { previewPos, rootZoom } from './preview-pos'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
   let { media, fill = false }: { media: Media; fill?: boolean } = $props()
@@ -32,14 +33,12 @@
   let closeT: ReturnType<typeof setTimeout>
   const dot = (m: Media) => m.status === 'RELEASING' ? '#3db4f2' : m.status === 'NOT_YET_RELEASED' ? '#f79a63' : '#7bd555'
 
-  // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and
-  // clamped to the viewport so it never gets cut off by the sidebar or edges.
-  const PW = 280, PH = 340, SIDEBAR = 64
+  // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and clamped to the
+  // viewport so it never gets cut off by the sidebar or edges. The math is zoom-aware — see
+  // preview-pos.ts for why the UI-scale setting otherwise throws the popup off by that factor.
   function place() {
     const r = el.getBoundingClientRect()
-    const left = Math.max(SIDEBAR, Math.min(r.left + r.width / 2 - PW / 2, window.innerWidth - PW - 8))
-    const top = Math.max(8, Math.min(r.top - 16, window.innerHeight - PH - 8))
-    pos = { left, top }
+    pos = previewPos(r, { width: window.innerWidth, height: window.innerHeight }, rootZoom())
   }
   // Hovercard bridge: opening cancels any pending close; leaving the card (or the
   // preview) schedules a short delayed close so the pointer can travel card→preview
