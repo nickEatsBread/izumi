@@ -481,8 +481,17 @@ jobs:
             # rather than silently shipping light-mode embeds if the template shape changes.
             grep -q 'android:isLightTheme' "$t" || { echo "themes.xml patch missed: $t"; exit 1; }
           done
+          # Kotlin toolchain — BOTH flavors. tauri-plugin-extplayer is built for lite and full alike,
+          # and its dependencies resolve kotlin-stdlib 2.1.20; the scaffolded Kotlin Gradle plugin is
+          # older, so compiling the plugin against that stdlib fails with "Class 'kotlin.Unit' was
+          # compiled with an incompatible version of Kotlin" plus a cascade of unresolved references
+          # to stdlib members (it, use, toByteArray, bufferedReader). This bump used to be inside the
+          # full-only branch, which is exactly why full built and lite did not.
+          sed -i -E 's/kotlin-gradle-plugin:[0-9.]+/kotlin-gradle-plugin:2.2.0/' src-tauri/gen/android/build.gradle.kts
+          grep -q 'kotlin-gradle-plugin:2.2.0' src-tauri/gen/android/build.gradle.kts \
+            || { echo "kotlin-gradle-plugin bump missed — scaffold shape changed"; exit 1; }
           if [ "${{ matrix.flavor }}" = "full" ]; then
-            sed -i -E 's/kotlin-gradle-plugin:[0-9.]+/kotlin-gradle-plugin:2.2.0/' src-tauri/gen/android/build.gradle.kts
+            # Picture-in-picture is a full-flavor feature: it needs the embedded player.
             sed -i 's#android:name=".MainActivity"#android:name=".MainActivity"\n            android:supportsPictureInPicture="true"#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
           fi
 
