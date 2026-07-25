@@ -15,7 +15,7 @@
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
   import { playing, fullscreen, gameMode, initGameMode, debridCaching } from '$lib/player/session'
-  import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, autoUpdateCheck } from '$lib/settings/ui'
+  import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
@@ -56,12 +56,11 @@
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
     initOffline() // latch offline mode from launch connectivity + the persisted force toggle
     if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
-    // Cross-platform update check: a delayed launch check + a 6h interval. Gated to packaged
-    // builds so dev never nags. The facade dispatches per platform (desktop/android/flatpak);
-    // the toast is still opt-in to APPLY. `autoUpdateCheck` is read each tick, so toggling it
-    // in settings takes effect without a restart.
+    // Cross-platform update check: a delayed launch check + a 6h interval, always on (there's no
+    // opt-out — a stale client is a support problem). Gated to packaged builds so dev never nags.
+    // The facade dispatches per platform (desktop/android/flatpak); the toast is still opt-in to APPLY.
     let stopUpdates: (() => void) | null = null
-    if (!import.meta.env.DEV) stopUpdates = startUpdateChecks(() => get(autoUpdateCheck))
+    if (!import.meta.env.DEV) stopUpdates = startUpdateChecks()
     initInput()
     initDpadNav()
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)

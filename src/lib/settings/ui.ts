@@ -162,8 +162,8 @@ export const scheduleStickyHeader = persisted<boolean>('schedule-sticky-header',
 /** Auto-updater release channel: 'stable' (normal GitHub releases) or 'beta'
  *  (GitHub pre-releases). Drives which endpoint the updater checks. */
 export const updateChannel = persisted<'stable' | 'beta'>('update-channel', 'stable')
-/** Auto-check for updates at launch + every 6h. On by default; the toast is still opt-in to APPLY. */
-export const autoUpdateCheck = persisted<boolean>('auto-update-check', true)
+// There is deliberately no "auto-check" toggle: checking is always on (launch + every 6h) so
+// nobody sits on a stale client. Applying an update is still opt-in — the toast asks first.
 
 // --- Network ---
 // NOTE: these are best-effort for our debrid + libmpv model (see settings copy).
