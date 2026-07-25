@@ -15,7 +15,7 @@
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { startNativeGamepadSeek } from '$lib/player/gamepad'
-  import { commentsEnabled, discussionExpanded } from '$lib/comments'
+  import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import { reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
@@ -434,10 +434,8 @@
         // L1/R1 change episode but only on a DOUBLE press (two quick taps of the same bumper) so a
         // stray press can't jump episodes. The first press arms + shows a hint.
         case 'select':
-          if (get(commentsEnabled)) {
-            discussionExpanded.set(true)
-            commentsOpen.set(true)
-          }
+          discussionExpanded.set(true)
+          commentsOpen.set(true)
           break
         case 'l1': padEpisode(-1); break
         case 'r1': padEpisode(1); break
