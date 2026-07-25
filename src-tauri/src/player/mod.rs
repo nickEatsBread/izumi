@@ -81,7 +81,13 @@ pub fn libmpv_version() -> String {
 #[derive(serde::Deserialize, Clone)]
 pub struct Subtitle {
     pub url: String,
+    /// Normalized ISO code, or None when the provider's label carried no language. mpv matches
+    /// `slang` against this, so it must be a code — never the raw provider label.
     pub lang: Option<String>,
+    /// The provider's own label, shown in the track menu. Without it the menu listed the bare
+    /// language code, and an unlabelled track showed as "und".
+    #[serde(default)]
+    pub title: Option<String>,
     // Provider-marked default track (Seanime VideoSubtitle.isDefault) → `sub-add … select`.
     #[serde(rename = "isDefault", default)]
     pub is_default: bool,
@@ -721,10 +727,14 @@ fn load_file(
     mpv.command("loadfile", &[url]).map_err(|e| e.to_string())?;
     // External subtitle tracks (VTT/ASS URLs the source provided). `select` the provider's
     // default track so a sub shows without the user hunting for it; the rest are `auto`.
+    // mpv's arg order is `sub-add <url> <flags> <title> <lang>`. Passing the code as BOTH left the
+    // menu showing "eng" (or "und") instead of the provider's label, so title and lang are now
+    // distinct: the label reads well, and the code is what `slang` matches on.
     for sub in subtitles {
         let lang = sub.lang.as_deref().unwrap_or("und");
+        let title = sub.title.as_deref().filter(|t| !t.is_empty()).unwrap_or(lang);
         let flag = if sub.is_default { "select" } else { "auto" };
-        let _ = mpv.command("sub-add", &[sub.url.as_str(), flag, lang, lang]);
+        let _ = mpv.command("sub-add", &[sub.url.as_str(), flag, title, lang]);
     }
     Ok(())
 }
