@@ -4,7 +4,7 @@ const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
 
 import { serveJson, called, urlsOf } from '../../../../test/debrid-http'
-import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor, rdShouldRetrySingleFile, rdPickBestDownloaded, rdMatchesSingleFile, rdForgetLists, realdebrid } from './realdebrid'
+import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor, rdShouldRetrySingleFile, rdPickBestDownloaded, rdMatchesSingleFile, rdOwnedHashes, rdForgetLists, realdebrid } from './realdebrid'
 
 const HASH = '8'.repeat(40)
 
@@ -345,5 +345,29 @@ describe('real-debrid magnet conversion window', () => {
     // any select has to come after a LATER info.
     const firstSelect = order.indexOf('select')
     if (firstSelect >= 0) expect(order.slice(0, firstSelect)).toContain('info:2')
+  })
+})
+
+describe('rdOwnedHashes', () => {
+  const asked = ['aaa', 'bbb', 'ccc']
+
+  it('marks only DOWNLOADED entries as cached', () => {
+    const m = rdOwnedHashes([
+      { id: '1', hash: 'AAA', status: 'downloaded' },
+      { id: '2', hash: 'bbb', status: 'downloading' },
+    ], asked)
+    expect(m.get('aaa')).toBe('cached')
+    expect(m.has('bbb')).toBe(false)
+  })
+  it('NEVER emits uncached — absence means unknown, not "not cached"', () => {
+    const m = rdOwnedHashes([{ id: '1', hash: 'aaa', status: 'downloaded' }], asked)
+    expect([...m.values()].every((v) => v === 'cached')).toBe(true)
+    expect(m.has('ccc')).toBe(false)
+  })
+  it('ignores account entries that were not asked about', () => {
+    expect(rdOwnedHashes([{ id: '9', hash: 'zzz', status: 'downloaded' }], asked).size).toBe(0)
+  })
+  it('tolerates a non-array payload', () => {
+    expect(rdOwnedHashes(null as never, asked).size).toBe(0)
   })
 })

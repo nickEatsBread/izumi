@@ -75,6 +75,32 @@ export function adFindReady(magnets: any, hash: string): string | undefined {
   return hit ? String(hit.id) : undefined
 }
 
+/** Pure: AllDebrid magnet/status entries -> POSITIVE-ONLY cache map. statusCode 4 === Ready.
+ *  Like the RD equivalent this answers "already on MY account", so it emits 'cached' and never
+ *  'uncached'. AllDebrid returns `magnets` as EITHER an array OR an object map keyed by id
+ *  depending on the call, so both shapes are normalised here. */
+export function adOwnedHashes(
+  magnets: Array<{ hash?: string; statusCode?: number }> | Record<string, { hash?: string; statusCode?: number }> | null,
+  asked: string[],
+): Map<string, 'cached' | 'uncached'> {
+  // Full union for the same variance reason as rdOwnedHashes; only 'cached' is ever emitted.
+  const out = new Map<string, 'cached' | 'uncached'>()
+  if (!magnets || typeof magnets !== 'object') return out
+  const list = Array.isArray(magnets) ? magnets : Object.values(magnets)
+  const want = new Set(asked.map((h) => h.toLowerCase()))
+  for (const m of list) {
+    if (m?.statusCode !== 4) continue
+    const h = m.hash?.toLowerCase()
+    if (h && want.has(h)) out.set(h, 'cached')
+  }
+  return out
+}
+
+// Memoised ready-magnet snapshot for checkCached, same rationale as RD's rdOwnedCache: the scan
+// is O(account size), so unmemoised checks would re-fetch the whole account on every hash batch.
+let adOwnedCache: { at: number; key: string; magnets: unknown } | undefined
+const AD_OWNED_TTL = 5 * 60_000
+
 export const alldebrid: DebridProvider = {
   id: 'alldebrid',
   name: 'AllDebrid',
@@ -131,5 +157,17 @@ export const alldebrid: DebridProvider = {
   },
   async deleteItem(key, item) {
     await ad('/v4/magnet/delete', key, form({ id: String(item.id) }))
+  },
+  async checkCached(key, hashes) {
+    if (!key || !hashes.length) return new Map()
+    try {
+      const fresh = adOwnedCache && adOwnedCache.key === key
+        && Date.now() - adOwnedCache.at < AD_OWNED_TTL
+      if (!fresh) {
+        const data = await ad('/v4.1/magnet/status', key, form({ status: 'ready' }))
+        adOwnedCache = { at: Date.now(), key, magnets: data?.magnets ?? null }
+      }
+      return adOwnedHashes(adOwnedCache!.magnets as never, hashes)
+    } catch { return new Map() }
   },
 }
