@@ -112,4 +112,12 @@ describe('rdLinkFor', () => {
   it('refuses when there are no links at all', () => {
     expect(rdLinkFor(1, 0, [])).toBeUndefined()
   })
+
+  it('refuses when selectedCount is zero or negative', () => {
+    expect(rdLinkFor(0, 0, [])).toBeUndefined()
+  })
+
+  it('refuses when the index is beyond links.length even though counts agree', () => {
+    expect(rdLinkFor(3, 5, ['a', 'b', 'c'])).toBeUndefined()
+  })
 })
