@@ -63,6 +63,23 @@ export function rdFile(f: { id: number; path: string; bytes: number }): DebridFi
   return { id: String(f.id), name, size: f.bytes, playable: VIDEO.test(name) && !JUNK.test(name) }
 }
 
+/** Minimum size for a file to count as a real video. Mirrors the floor production debrid
+ *  addons use — it keeps 2 MB "trailerclip.mkv" junk out of the selection. */
+const MIN_VIDEO_BYTES = 5 * 1024 * 1024
+
+/** Which file ids to hand RD's selectFiles. Never send 'all': asking RD for every file is
+ *  what makes it repackage the torrent into one archive instead of per-file links. Falls back
+ *  to every file when nothing looks like a video, and to the literal 'all' keyword only when
+ *  there are no files to name. */
+export function rdSelectFileIds(files: Array<{ id: number; path: string; bytes: number }>): string {
+  const videos = files.filter(
+    (f) => VIDEO.test(f.path) && !JUNK.test(f.path) && f.bytes > MIN_VIDEO_BYTES,
+  )
+  const pool = videos.length ? videos : files
+  const ids = pool.map((f) => f.id)
+  return ids.length ? ids.join(',') : 'all'
+}
+
 // Find an already-DOWNLOADED torrent id for `hash` in the account's list. RD has no
 // get-by-hash endpoint, so we scan the newest-first list. A single `limit=100` page missed the
 // hash for accounts with >100 torrents — the entry had scrolled past the newest 100 — so the
