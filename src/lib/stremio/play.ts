@@ -20,12 +20,14 @@ const rankOpts = (anilistId?: number): RankOptions => ({
   // previous lookup already learned rather than starting one. A cold title simply ranks without the
   // preference, the same way it did before the annotation existed.
   seadexHashes: get(seadexAnnotations) ? knownBestHashes(anilistId) : undefined,
+  cacheCheck: get(debridKey) ? cacheCheckMode(get(debridProvider)) : 'none',
 })
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf, type DownloadPreferences } from '$lib/downloads/state'
-import { resolveHash, resolveSidecars, providerName, type EpisodeWant } from './debrid'
+import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, type EpisodeWant } from './debrid'
+import { annotateCache } from './cache-state'
 import { resolveOnlineStreams } from './onlinestream'
 import { knownBestHashes } from './seadex'
 import { fetchExternalSubtitles } from './subtitles'
@@ -164,6 +166,12 @@ const airedTotalOf = (media: Media): number => {
   const a = airedCount(media)
   return Number.isFinite(a) ? a : (media.episodes ?? 0)
 }
+
+/** The ACTIVE provider's cache-check capability, for pickBest. Collapses to 'none' when there is
+ *  no key to ask with: a capability we cannot exercise would make pickBest refuse every 'unknown'
+ *  row on the grounds that "a confirmed answer was available", when in fact we never asked. */
+const activeCacheCheck = (): 'native' | 'library' | 'none' =>
+  get(debridKey) ? cacheCheckMode(get(debridProvider)) : 'none'
 
 /** Resolve debrid sidecar subtitles AFTER playback has started and attach each to the live
  *  player. Deliberately not awaited by the caller: each sidecar costs at least one debrid round
@@ -840,6 +848,7 @@ export async function playEpisode(
   }
   const showPickerError = (message: string) => {
     if (!stillCurrent()) return
+    cacheSettled = true
     streamPicker.update((current) => current ? {
       ...current,
       resolving: false,
@@ -849,6 +858,62 @@ export async function playEpisode(
       hidden: false,
     } : current)
     onState({ status: 'error', message })
+  }
+
+  // --- debrid cache state ----------------------------------------------------
+  // Ask the active provider which of these torrents it can play instantly, and stamp the replies
+  // onto the streams so describe() can badge them honestly.
+  //
+  // Answers accumulate in a MAP rather than being patched into one Stream[] because refresh()
+  // rebuilds the row list from `acc` every time a source lands — a one-shot patch would be thrown
+  // away by the next fold. Re-applying the map on every refresh also covers a hash that arrives
+  // late from a slower addon after we already have its answer.
+  //
+  // Timing is load-bearing: annotation is applied ONLY while the picker is still resolving, when
+  // rows are already appearing and animated-resorting. Once the list settles the user is reading
+  // and clicking it, and a late promotion to 'instant' would re-sort a row to the top of its tier
+  // out from under their cursor mid-click.
+  const cacheAnswers = new Map<string, 'cached' | 'uncached'>()
+  const cacheAsked = new Set<string>()
+  const cacheChecks: Promise<unknown>[] = []
+  const cacheProvider = get(debridProvider)
+  const cacheKey = get(debridKey)
+  const cacheMode = activeCacheCheck()
+  let cacheSettled = false
+  /** Ask the provider about every not-yet-asked infoHash in ONE batched call, then hand the new
+   *  answers back via `onAnswers`. Deliberately fire-and-forget — a cache badge is a nicety and
+   *  must never delay the picker or block playback (checkCached itself never throws). */
+  const askCache = (streams: Stream[], onAnswers: () => void) => {
+    if (cacheMode === 'none' || cacheSettled) return
+    const hashes: string[] = []
+    for (const s of streams) {
+      // Skip rows the addon already spoke for (its own ⚡/⬇ glyph outranks us in describe() anyway)
+      // and rows an earlier wave already asked about.
+      if (!s.infoHash || s.__cache || isCached(s) || isUncached(s)) continue
+      const h = s.infoHash.toLowerCase()
+      if (cacheAsked.has(h)) continue
+      cacheAsked.add(h)
+      hashes.push(h)
+    }
+    if (!hashes.length) return
+    cacheChecks.push(checkCached(cacheProvider, cacheKey, hashes).then((map) => {
+      // Dropped on purpose once the list has settled or the picker moved on: see the timing note.
+      if (!map.size || cacheSettled || !stillCurrent()) return
+      for (const [h, v] of map) cacheAnswers.set(h, v)
+      onAnswers()
+    }))
+  }
+  /** Give checks that are ALREADY in flight a bounded chance to land before the list settles.
+   *  Without it a fast single-source resolve finishes before its own check answers and the badges
+   *  are discarded by the settle gate — the picker is still visibly resolving here, so this costs
+   *  no perceived latency. Hard-capped so a slow provider can never pin the picker open. */
+  const CACHE_GRACE_MS = 2000
+  const settleCacheChecks = async () => {
+    if (!cacheChecks.length) return
+    await Promise.race([
+      Promise.allSettled(cacheChecks),
+      new Promise((resolve) => setTimeout(resolve, CACHE_GRACE_MS)),
+    ])
   }
   // Closing the picker aborts and clears the controller, so its caller still needs to leave the
   // resolving state. A newer request replaces the controller; the superseded caller must not emit
@@ -959,15 +1024,16 @@ export async function playEpisode(
       const refined = refineStreams(media, acc)
       let s = refined.kept
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
+      s = annotateCache(s, cacheAnswers, cacheMode === 'library' ? 'library' : 'native')
       retainRecoveryCandidates(media, episode, s)
       if (resolving) scheduleReady(s)
-      else { clearReadyTimer(); autoReady = true; resolveSettled = true }
+      else { clearReadyTimer(); autoReady = true; resolveSettled = true; cacheSettled = true }
       streamPicker.set({
         media,
         episode,
         streams: s,
         rejected: refined.rejected,
-        cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length,
+        cachedCount: s.filter((x) => describe(x).cached === 'instant').length,
         resolving,
         autoReady,
         hidden: hideForContinuation,
@@ -984,6 +1050,9 @@ export async function playEpisode(
         const hit = s.find((x) => matchesRelease(x, cont) && playableNow(x) && !isUncached(x) && !(want && isWrongSeason(x, want)))
         if (hit) tryContinuation(hit)
       }
+      // Kick off the next batched cache lookup for whatever just folded in. Only while resolving:
+      // its answer re-sorts the list, which is only safe while the rows are still moving anyway.
+      if (resolving) askCache(s, () => refresh(true))
     }
 
     // Every addon, extension batch and online provider calls refresh as it lands, so a ~20-source
@@ -1091,6 +1160,9 @@ export async function playEpisode(
     // A ready-to-play same-release source may have been tried while results streamed in. Wait for
     // its real outcome: success closes the picker; failure finishes populating it for manual choice.
     if (continuationAttempt && await continuationAttempt) return
+    // Last chance for an in-flight cache answer to reach the rows while they are still animating.
+    await settleCacheChecks()
+    if (signal.aborted) return settleCancellation()
     refresh(false)
     if (continuationError && stillCurrent()) {
       // A failed continuation must be visible, not swallowed behind the hidden picker.

@@ -63,6 +63,20 @@ export function edCached(lookup: any): boolean {
   return Array.isArray(lookup?.cached) && lookup.cached[0] === true
 }
 
+/** Map the positional lookup response back to the requested hashes. A malformed or short response
+ * leaves missing positions unknown instead of claiming they are uncached. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function edCacheMap(lookup: any, hashes: string[]): Map<string, 'cached' | 'uncached'> {
+  const out = new Map<string, 'cached' | 'uncached'>()
+  if (!Array.isArray(lookup?.cached)) return out
+  for (let i = 0; i < Math.min(hashes.length, lookup.cached.length); i++) {
+    if (typeof lookup.cached[i] === 'boolean') {
+      out.set(hashes[i].toLowerCase(), lookup.cached[i] ? 'cached' : 'uncached')
+    }
+  }
+  return out
+}
+
 /** Only the video files. pickVideoFile falls back to the largest entry of ANY kind when nothing
  *  matches the video regex, and an EasyDebrid response always carries posters and subtitles
  *  alongside the episode — without this the fallback could hand libmpv a .jpg. */
@@ -96,6 +110,12 @@ export const easydebrid: DebridProvider = {
   name: 'EasyDebrid',
   keyHint: 'easydebrid.com dashboard — the "API Key" card',
   credential: 'apikey',
+  cacheCheck: 'native',
+  async checkCached(key, hashes) {
+    if (!key || !hashes.length) return new Map()
+    const urls = hashes.map((hash) => magnetOf(hash))
+    return edCacheMap(await ed('POST', '/link/lookup', key, { urls }), hashes)
+  },
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No EasyDebrid API key set — add it in Settings → Extensions.')
     const magnet = magnetOf(hashOrMagnet)

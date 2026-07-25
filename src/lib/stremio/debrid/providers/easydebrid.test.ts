@@ -5,7 +5,7 @@ vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
 
 import { serveJson, called, urlsOf } from '../../../../test/debrid-http'
 import fixture from '../__fixtures__/easydebrid-responses.json'
-import { edFiles, edCached, easydebrid } from './easydebrid'
+import { edFiles, edCached, edCacheMap, easydebrid } from './easydebrid'
 
 const HASH = 'e'.repeat(40)
 const EP2 = 'https://cdn.easydebrid.example/f/show-02.mkv'
@@ -43,6 +43,33 @@ describe('edCached', () => {
     expect(edCached({})).toBe(false)
     expect(edCached({ cached: [] })).toBe(false)
     expect(edCached({ cached: [1] })).toBe(false)
+  })
+})
+
+describe('edCacheMap', () => {
+  it('maps the positional cache response to normalized hashes', () => {
+    expect([...edCacheMap({ cached: [true, false] }, ['AAA', 'bbb'])]).toEqual([
+      ['aaa', 'cached'],
+      ['bbb', 'uncached'],
+    ])
+  })
+
+  it('leaves malformed and missing positions unknown', () => {
+    expect(edCacheMap({}, ['aaa']).size).toBe(0)
+    expect([...edCacheMap({ cached: [true] }, ['aaa', 'bbb'])]).toEqual([['aaa', 'cached']])
+  })
+})
+
+describe('easydebrid.checkCached', () => {
+  beforeEach(() => httpFetch.mockReset())
+
+  it('checks every hash in one non-adding lookup', async () => {
+    serveJson(httpFetch, [['/link/lookup', { cached: [true, false] }]])
+    const result = await easydebrid.checkCached!('key', ['a'.repeat(40), 'b'.repeat(40)])
+    expect([...result.values()]).toEqual(['cached', 'uncached'])
+    expect(called(httpFetch, '/link/generate')).toBe(false)
+    const body = JSON.parse(httpFetch.mock.calls[0][1].body)
+    expect(body.urls).toHaveLength(2)
   })
 })
 

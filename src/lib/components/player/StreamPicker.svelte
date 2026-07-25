@@ -16,6 +16,8 @@
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations } from '$lib/settings/ui'
+  import { debridProvider } from '$lib/settings/ui'
+  import { cacheCheckMode } from '$lib/stremio/debrid'
   import { getSeadexEntry, bestHashes, matchSeadexStreams, type SeadexEntry } from '$lib/stremio/seadex'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { providerProblems } from '$lib/stremio/onlinestream'
@@ -34,6 +36,7 @@
 
   const pick = $derived($streamPicker)
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
+  const cacheCheck = $derived($debridKey ? cacheCheckMode($debridProvider) : 'none')
 
   // Curated best-release annotation. Loaded AFTER first paint and never awaited by anything: the
   // list, the ranking and the countdown all run on `seadex === null`, and a matched entry simply
@@ -82,10 +85,15 @@
     previousGroup: $bingeSource?.mediaId === pick?.media.id ? $bingeSource?.group : undefined,
     directP2p,
     seadexHashes,
+    cacheCheck,
   })
   const all = $derived(pick ? rankInfos(pick.streams, $preferredStreamSort, rankOpts) : ([] as StreamInfo[]))
+  // Only DEAD rows are hidden behind the toggle. 'unknown' must stay visible: it is the default
+  // state of every source-extension torrent, so filtering it would empty the picker outright for
+  // anyone sourcing from extensions alone.
   const visible = $derived($showDeadSources ? all : all.filter((i) => i.cached !== 'down'))
   const uncachedCount = $derived(all.filter((i) => i.cached === 'uncached').length)
+  const unknownCount = $derived(all.filter((i) => i.cached === 'unknown').length)
   const deadCount = $derived(all.filter((i) => i.cached === 'down').length)
   // What the addon itself wrote about this source. Torrentio-style addons put the release name and
   // metadata in `title`; Comet-style ones put it in `description` and emit no title at all. Falls
@@ -345,9 +353,18 @@
     : 'bg-secondary text-muted-foreground'
   const seedClass = (n?: number) =>
     n == null ? 'text-muted-foreground' : n >= 20 ? 'text-green-400' : n < 5 ? 'text-red-400' : 'text-yellow-400'
-  const cacheGlyph = (c: StreamInfo['cached']) =>
-    c === 'instant' ? { i: '⚡', cls: 'text-green-400', t: 'Cached — instant play' }
-    : c === 'uncached' ? { i: '⬇', cls: 'text-amber-400', t: directP2p ? 'Direct P2P — streams from peers' : 'Not cached — will download to debrid' }
+  // Four honest states. A LIBRARY hit gets its own glyph and wording on purpose: it only proves
+  // the torrent is already in THIS user's debrid account, not that the provider is holding it
+  // cached for everyone — calling that "Cached" would overstate what we actually know.
+  const cacheGlyph = (info: StreamInfo) =>
+    info.cached === 'instant'
+      ? (info.cacheSource === 'library'
+          ? { i: '📁', cls: 'text-green-400', t: 'Already in your debrid library — instant play' }
+          : { i: '⚡', cls: 'text-green-400', t: 'Cached — instant play' })
+    : info.cached === 'unknown'
+      ? { i: '?', cls: 'text-muted-foreground', t: directP2p ? 'Cache state unknown — streams from peers' : "Cache state unknown — this provider can't be checked" }
+    : info.cached === 'uncached'
+      ? { i: '⬇', cls: 'text-amber-400', t: directP2p ? 'Direct P2P — streams from peers' : 'Not cached — will download to debrid' }
     : { i: '✖', cls: 'text-red-400', t: directP2p ? 'No reported seeders — direct playback may stall' : 'Dead — no seeders on debrid' }
 </script>
 
@@ -380,7 +397,7 @@
           <div class="min-w-0 flex-1">
             <h2 class="line-clamp-2 text-xl font-black leading-tight drop-shadow">{title(pick.media)}</h2>
             <p class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              {#if resolving}<span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
+              {#if resolving}<span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
           <button data-focusable onclick={close} disabled={busy} class="grid size-10 shrink-0 place-items-center rounded-lg bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white disabled:opacity-40 sm:size-8" aria-label="Close">✕</button>
@@ -494,7 +511,7 @@
           {/each}
         {:else}
         {#each rendered as info (keyOf(info))}
-          {@const g = cacheGlyph(info.cached)}
+          {@const g = cacheGlyph(info)}
           {@const isBest = info === best}
           {@const disabled = busy}
           {@const filteredAs = reasonOf.get(info)}
