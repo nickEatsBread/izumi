@@ -105,4 +105,12 @@ describe('isArchiveName', () => {
     expect(isArchiveName('Show_01_[rerip][85EDD0D6].mkv')).toBe(false)
     expect(isArchiveName('https://host/d/ABC/Show_01.mp4?token=zip')).toBe(false)
   })
+
+  it('handles a literal percent sign that is not a URL escape', () => {
+    expect(isArchiveName('100% Anime Pack.rar')).toBe(true)
+  })
+
+  it('is suffix-anchored, not a substring match', () => {
+    expect(isArchiveName('movie.rar.mkv')).toBe(false)
+  })
 })

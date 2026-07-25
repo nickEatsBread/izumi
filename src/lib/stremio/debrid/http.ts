@@ -7,7 +7,7 @@ import type { DebridInfo, ResolveOpts } from './types'
 export const VIDEO = /\.(?:mkv|mp4|avi|mov|webm|flv|wmv|m4v|ts)$/i
 export const JUNK = /\b(?:sample|trailer|extras?|ncop|nced|preview|pv)\b/i
 
-const ARCHIVE_RE = /\.(?:rar|zip|7z|tar|gz|bz2|r\d{2}|part\d+)$/i
+const ARCHIVE_RE = /\.(?:rar|zip|7z|tar|gz|bz2|r\d{2,}|part\d+)$/i
 
 /** True when a name or URL points at an archive rather than a playable video. Debrid services
  *  repackage some torrents into a single archive; handing one to libmpv looks like a corrupt
