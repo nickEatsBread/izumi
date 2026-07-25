@@ -48,9 +48,18 @@ export interface Stream {
   // with no debrid. __headers → mpv http-header-fields; __subtitles → external sub tracks.
   __stream?: boolean
   __headers?: Record<string, string>
-  __subtitles?: { url: string; lang?: string; isDefault?: boolean }[]
+  // `lang` is a normalized ISO code (mpv matches `slang` on codes); `title` is the provider's own
+  // label for the track menu; `headers` covers Referer-gated sidecar URLs.
+  __subtitles?: { url: string; lang?: string; title?: string; isDefault?: boolean; headers?: Record<string, string> }[]
   // Resolved audio track for a direct stream: 'dub' or 'sub' (from the provider search pass).
   __audio?: 'sub' | 'dub'
+  // Content language of the provider that produced this row (ISO 639-1, e.g. 'it'), and whether it
+  // differs from the user's preferred subtitle language. "SUB" alone says nothing about WHICH
+  // language, so an Italian provider's row was indistinguishable from an English one until playback.
+  // Resolved where the preference store is available (onlinestream), not here, so `describe` and
+  // the ranking stay pure.
+  __lang?: string
+  __langMismatch?: boolean
   // Raw source-reported seeder count for extension torrents, kept STRUCTURALLY (not parsed back
   // out of the title) so dedupeStreams can keep the best-seeded copy when several indexers return
   // the same infoHash with disagreeing counts (one live, one 0/unknown). Display still flows
@@ -82,6 +91,10 @@ export interface StreamInfo {
   logo?: string // addon manifest logo (URL) or extension icon (base64/url/data:)
   cached: CacheState
   badges: string[] // ordered, deduped pill labels (badges[0] is the quality)
+  // True when this source serves a language the user did not ask for. Ranking de-prioritizes it so
+  // a foreign source can never be auto-selected as "best" — which is exactly what happened when an
+  // Italian provider won the pick and the episode played with Italian subtitles.
+  langMismatch?: boolean
 }
 
 const hayOf = (s: Stream) =>
@@ -214,6 +227,9 @@ export function describe(s: Stream): StreamInfo {
   // only flag DUB (sub is the unmarked default) so the list stays quiet. Dual Audio is separate.
   if (s.__audio) push(s.__audio === 'dub' ? 'DUB' : 'SUB')
   else if (dubOnly) push('DUB')
+  // Which language that SUB/DUB actually is. Without it the row said "SUB" and nothing else, so an
+  // Italian or French source read identically to an English one right up until playback started.
+  if (s.__lang) push(s.__lang.toUpperCase())
   // Direct streaming sources carry no release metadata (codec/size/group) — an adaptive HLS ladder
   // often reports quality "auto", leaving the row barren. Always give it a delivery-type badge so
   // it reads as a real, deliberate source.
@@ -222,7 +238,7 @@ export function describe(s: Stream): StreamInfo {
   return {
     stream: s, quality, label, filename, group, codec, bitDepth, hdr,
     dualAudio, audio, source, batch, seeders, sizeBytes, sizeLabel,
-    provider, addon, logo: s.__logo, cached, badges,
+    provider, addon, logo: s.__logo, cached, badges, langMismatch: s.__langMismatch,
   }
 }
 
