@@ -74,7 +74,7 @@ export type AuthFailure = 'token' | 'subscription' | 'access' | 'quota'
 // deliberately absent (an expired *token* must stay a token failure, not subscription).
 const SUBSCRIPTION_RE = /must_be_premium|free_trial|not[\s_-]?premium|premium[\s_-]?(?:required|only|member|account|subscription)|\bpremium\b|subscription|renew|\bvip\b|not[\s_-]?active|inactive|plan[\s_-]?(?:restrict|required)/i
 // Bad / missing / expired key, token, or login.
-const TOKEN_RE = /api[\s_-]?key|bad[\s_-]?token|badtoken|no_auth|auth_error|auth_bad|auth_missing|auth_blocked|auth_user_banned|invalid[\s_-]?(?:api|token|client|key|sign)|unauthor|expired[\s_-]?token|hided[\s_-]?token|token[\s_-]?error|not[\s_-]?logged|bad[\s_-]?login|login[\s_-]?fail|access[\s_-]?denied/i
+const TOKEN_RE = /api[\s_-]?key|bad[\s_-]?token|badtoken|no[\s_-]?auth|auth_error|auth_bad|auth_missing|auth_blocked|auth_user_banned|invalid[\s_-]?(?:api|token|client|key|sign)|unauthor|expired[\s_-]?token|hided[\s_-]?token|token[\s_-]?error|not[\s_-]?logged|bad[\s_-]?login|login[\s_-]?fail|access[\s_-]?denied/i
 // Download-quota exhaustion. OpenSubtitles returns HTTP 401 for BOTH a spent daily
 // quota AND a bad key, so the body must decide — this pre-empts the 401→token fallback
 // in classifyAuth. The caller must thread the response body into `message` for it to fire.
