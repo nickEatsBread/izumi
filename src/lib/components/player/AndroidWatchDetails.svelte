@@ -8,7 +8,7 @@
   import { getEpisodeMeta } from '$lib/anizip'
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
-  import { commentsEnabled, fetchDiscussion } from '$lib/comments'
+  import { fetchDiscussion } from '$lib/comments'
   import { preferredMobileDiscussion } from '$lib/comments/mobile'
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
@@ -90,10 +90,8 @@
   let threads = $state<DiscussionThread[]>([])
   $effect(() => {
     const ep = episode
-    const enabled = $commentsEnabled
     tabTouched = false
     threads = []
-    if (!enabled) { commentsLoading = false; active = 'episodes'; return }
     commentsLoading = true
     active = 'comments'
     let cancelled = false

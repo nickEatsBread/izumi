@@ -1,10 +1,18 @@
 <script lang="ts">
   import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
-  import { autoSelectSource, autoSelectAnimate, preferredQuality } from '$lib/settings/ui'
+  import { autoSelectSource, autoSelectCountdown, preferredQuality } from '$lib/settings/ui'
   import { fetchManifest } from '$lib/stremio/manifest'
-  import { commentsEnabled, defaultDiscussionPlatform } from '$lib/comments'
-  import Toggle from '$lib/components/settings/Toggle.svelte'
+  import { defaultDiscussionPlatform } from '$lib/comments'
   import Globe from 'lucide-svelte/icons/globe'
+
+  // One control over two stores: whether to auto-pick at all, and whether to wait first. They were
+  // separate toggles, which read as unrelated settings even though the second only means anything
+  // when the first is on.
+  const autoMode = $derived(!$autoSelectSource ? 'off' : $autoSelectCountdown ? 'countdown' : 'instant')
+  function setAutoMode(mode: string) {
+    $autoSelectSource = mode !== 'off'
+    if (mode !== 'off') $autoSelectCountdown = mode === 'countdown'
+  }
 
   let input = $state('')
   function add() { const b = normalizeBase(input); if (b) { $addonUrls = [...$addonUrls, b]; input = '' } }
@@ -18,9 +26,21 @@
   <p class="mb-4 text-sm text-muted-foreground">Stremio addons backed by your debrid, and how sources are chosen.</p>
 
   <div class="mb-6 max-w-2xl space-y-3">
-    <Toggle label="Auto-play the best source" desc="When the source list loads, count down ~5 seconds — the Auto button fills left→right — then play the best cached match for your preferred quality. Cancel any time by picking another source or interacting. Off = always choose manually." value={$autoSelectSource} onToggle={() => ($autoSelectSource = !$autoSelectSource)} />
+    <label data-setting-key="auto-play-the-best-source" class="flex flex-col gap-1">
+      <span class="text-sm font-bold">Auto-play the best source</span>
+      <select data-focusable value={autoMode} onchange={(e) => setAutoMode(e.currentTarget.value)} class="rounded-md bg-input px-3 py-2 text-sm">
+        <option value="countdown">After a ~5s countdown</option>
+        <option value="instant">Immediately</option>
+        <option value="off">Off — always choose manually</option>
+      </select>
+      <span class="text-xs text-muted-foreground">
+        {#if autoMode === 'off'}The source list stays open until you pick one yourself.
+        {:else if autoMode === 'instant'}The best cached match for your preferred quality plays the moment the source list settles — no wait, no chance to cancel.
+        {:else}Once the source list settles, the Auto button fills left→right for ~5 seconds, then the best cached match for your preferred quality plays. Cancel any time by picking another source or interacting.{/if}
+      </span>
+    </label>
+
     {#if $autoSelectSource}
-      <Toggle label="Animate the countdown" desc="Show the filling Auto-button bar during the countdown. Off = pick instantly with no wait (also disabled when your system requests reduced motion)." value={$autoSelectAnimate} onToggle={() => ($autoSelectAnimate = !$autoSelectAnimate)} />
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Preferred quality</span>
         <select data-focusable bind:value={$preferredQuality} class="rounded-md bg-input px-3 py-2 text-sm">
@@ -75,17 +95,16 @@
   <div class="mt-8 max-w-2xl">
     <h3 class="mb-1 text-sm font-black">Discussion</h3>
     <p class="mb-3 text-xs text-muted-foreground">A comment button in the player shows episode discussions from the available community sources.</p>
-    <Toggle label="In-player discussion panel" desc="Show the comment button + discussion panel during playback." value={$commentsEnabled} onToggle={() => ($commentsEnabled = !$commentsEnabled)} />
-    <label class="mt-3 flex flex-col gap-1">
+    <label data-setting-key="default-discussion-source" class="flex flex-col gap-1">
       <span class="text-sm font-bold">Default source</span>
       <span class="text-xs text-muted-foreground">Which source the discussion panel opens on. An embeddable source (Disqus/forum) renders its embed inline.</span>
       <select data-focusable bind:value={$defaultDiscussionPlatform} class="mt-1 rounded-md bg-input px-3 py-2 text-sm">
+        <option value="disqus">Disqus</option>
         <option value="auto">Auto — all sources</option>
         <option value="reddit">Reddit</option>
         <option value="anilist">AniList</option>
         <option value="mal">MyAnimeList</option>
         <option value="youtube">YouTube</option>
-        <option value="disqus">Disqus</option>
         <option value="animecommunity">Anime Community</option>
       </select>
     </label>
