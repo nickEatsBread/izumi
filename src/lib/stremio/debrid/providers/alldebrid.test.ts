@@ -4,7 +4,7 @@ const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
 
 import { serveJson, called } from '../../../../test/debrid-http'
-import { adStatus, adListItem, adFiles, adFindReady, alldebrid } from './alldebrid'
+import { adStatus, adListItem, adFiles, adFindReady, adOwnedHashes, alldebrid } from './alldebrid'
 
 const HASH = 'a'.repeat(40)
 
@@ -101,5 +101,28 @@ describe('alldebrid.resolveHash noAdd', () => {
     ])
     await expect(alldebrid.resolveHash('key', HASH)).resolves.toBe('https://cdn.alldebrid/Show_01.mkv')
     expect(called(httpFetch, '/v4/magnet/upload')).toBe(true)
+  })
+})
+
+describe('adOwnedHashes', () => {
+  const asked = ['aaa', 'bbb']
+
+  it('marks statusCode 4 (Ready) entries as cached', () => {
+    const m = adOwnedHashes([
+      { hash: 'AAA', statusCode: 4 },
+      { hash: 'bbb', statusCode: 1 },
+    ], asked)
+    expect(m.get('aaa')).toBe('cached')
+    expect(m.has('bbb')).toBe(false)
+  })
+  it('accepts the object-map shape as well as an array', () => {
+    expect(adOwnedHashes({ '1': { hash: 'aaa', statusCode: 4 } } as never, asked).get('aaa')).toBe('cached')
+  })
+  it('never emits uncached', () => {
+    const m = adOwnedHashes([{ hash: 'aaa', statusCode: 4 }], asked)
+    expect([...m.values()].every((v) => v === 'cached')).toBe(true)
+  })
+  it('tolerates a null payload', () => {
+    expect(adOwnedHashes(null as never, asked).size).toBe(0)
   })
 })

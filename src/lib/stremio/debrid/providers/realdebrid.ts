@@ -192,6 +192,36 @@ async function findDownloadedId(key: string, hash: string): Promise<string | und
   return rdPickBestDownloaded(await loadTorrentList(key), hash)?.id
 }
 
+/** Pure: RD account torrent list -> POSITIVE-ONLY cache map, restricted to hashes we asked about.
+ *
+ *  This answers "is this already on MY account", NOT "is RD holding this for everyone" — a
+ *  globally-cached hash the user never added is invisible here. It therefore emits 'cached' and
+ *  NEVER 'uncached': an absent hash means unknown. Surface it as "In your library", never as
+ *  "Cached". */
+export function rdOwnedHashes(
+  entries: Array<{ id?: string; hash?: string; status?: string }>, asked: string[],
+): Map<string, 'cached' | 'uncached'> {
+  // Declared with the full union (never narrowed to Map<string,'cached'>) so it satisfies the
+  // checkCached signature directly — TypeScript's Map value type is not reliably covariant.
+  const out = new Map<string, 'cached' | 'uncached'>()
+  if (!Array.isArray(entries)) return out
+  const want = new Set(asked.map((h) => h.toLowerCase()))
+  for (const t of entries) {
+    if (t.status !== 'downloaded') continue
+    const h = t.hash?.toLowerCase()
+    if (h && want.has(h)) out.set(h, 'cached')
+  }
+  return out
+}
+
+// Memoised account-torrent-list snapshot for checkCached: the scan is O(account size), not
+// O(hashes asked), so re-fetching on every hash batch would re-page the whole account every
+// time a season list scrolls. RD's rate budget (250 req/min) is shared with every other resolve
+// in the app, and rejected requests still count against it — a season of unmemoised checks would
+// burn through it fast. Keyed on the API key so switching accounts can't serve stale results.
+let rdOwnedCache: { at: number; key: string; entries: Array<{ id?: string; hash?: string; status?: string }> } | undefined
+const RD_OWNED_TTL = 5 * 60_000
+
 interface RdUnrestricted { download: string; filename?: string; filesize?: number }
 
 /** RD's unrestrict response can carry `filename: ''` — `||`, not `??`, so an empty string still
@@ -468,5 +498,25 @@ export const realdebrid: DebridProvider = {
   async deleteItem(key, item) {
     await rd('DELETE', `/torrents/delete/${item.id}`, key)
     rdForgetLists(key)
+  },
+  async checkCached(key, hashes) {
+    if (!key || !hashes.length) return new Map()
+    try {
+      const fresh = rdOwnedCache && rdOwnedCache.key === key
+        && Date.now() - rdOwnedCache.at < RD_OWNED_TTL
+      if (!fresh) {
+        // limit=5000 is the documented maximum — one request covers essentially any account.
+        const { status, json } = await jfetch(`${BASE}/torrents?limit=5000`, {
+          headers: { Authorization: `Bearer ${key}` },
+        })
+        if (!Array.isArray(json)) {
+          const auth = authError('Real-Debrid', { status })
+          if (auth) console.warn(auth)
+          return new Map()
+        }
+        rdOwnedCache = { at: Date.now(), key, entries: json }
+      }
+      return rdOwnedHashes(rdOwnedCache!.entries, hashes)
+    } catch { return new Map() }
   },
 }
