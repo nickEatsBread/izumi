@@ -37,8 +37,7 @@ export const SYNCED_SETTING_KEYS = [
   "schedule-layout",
   "doh-enabled",
   "doh-url",
-  "comments-enabled",
-  "comments-default-platform",
+  "comments-default-source",
 ] as const;
 
 function readSettings(): Record<string, unknown> {

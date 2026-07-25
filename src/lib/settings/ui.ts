@@ -58,9 +58,11 @@ export const providerAudio = persisted<ProviderAudio>('provider-audio', 'both')
  *  by picking another source or interacting. Default ON — turn off to always choose manually.
  *  (Fresh `autoplay-best` key so the new default reliably reaches existing installs.) */
 export const autoSelectSource = persisted<boolean>('autoplay-best', true)
-/** Animate the auto-select countdown (the filling Auto-button bar + pulse). Off = pick instantly
- *  with no animation. Also auto-disabled when the OS requests reduced motion. */
-export const autoSelectAnimate = persisted<boolean>('auto-select-animate', true)
+/** Grace period before the auto-pick fires: true = count down ~5s so you can cancel, false = play
+ *  the best match immediately. Storage key kept from when this toggle was animation-only, so an
+ *  existing preference carries over. The filling bar is motion and is suppressed under reduced
+ *  motion; the wait itself still applies (the numeric readout keeps counting). */
+export const autoSelectCountdown = persisted<boolean>('auto-select-animate', true)
 export type Quality = '2160' | '1080' | '720' | '480' | 'any'
 export const preferredQuality = persisted<Quality>('preferred-quality', '1080')
 
