@@ -1,5 +1,165 @@
 import { describe, it, expect } from 'vitest'
-import { pickSearchResult, pickEpisode, videoSourceToStream } from './onlinestream'
+import { pickSearchResult, pickEpisode, videoSourceToStream, matchesPreferredLang, langRank, allowedByLanguage, passesForAudio } from './onlinestream'
+import { describe as describeStream } from './parse'
+import { rankStreams, pickBest } from './addon'
+
+// Provider content language. A catalog is typically half non-English, and the picker auto-selects
+// the first row — so an unlabelled foreign provider plays with foreign subtitles unannounced.
+describe('provider language', () => {
+  it('matches the ISO 639-1 manifest code against the ISO 639-2 setting', () => {
+    expect(matchesPreferredLang('en', 'eng')).toBe(true)
+    expect(matchesPreferredLang('EN', 'eng')).toBe(true)
+    expect(matchesPreferredLang('ja', 'jpn')).toBe(true)
+    expect(matchesPreferredLang('fr', 'eng')).toBe(false)
+  })
+
+  it('treats an undeclared language as unknown, not as a mismatch', () => {
+    expect(matchesPreferredLang(undefined, 'eng')).toBe(false)
+    // Ranked between "preferred" and "wrong language" so it stays ahead of a known-foreign source.
+    expect(langRank(undefined, 'eng')).toBe(1)
+    expect(langRank('en', 'eng')).toBe(0)
+    expect(langRank('fr', 'eng')).toBe(2)
+  })
+
+  it('renders the language as a real badge, not inside the row name', () => {
+    // The row name is never displayed — the picker builds its pills from describe(). A language
+    // baked into `name` was therefore invisible, which is how an Italian source read as just "SUB".
+    const s = videoSourceToStream({ url: 'https://s/v.m3u8', type: 'm3u8', quality: '1080p' },
+      'vidmoly', {}, 'AnimeUnity', 'Ep 3', 'sub', 'animeunity', 'it', true)
+    expect(s.__lang).toBe('it')
+    expect(s.__langMismatch).toBe(true)
+    const info = describeStream(s)
+    expect(info.badges).toContain('IT')
+    expect(info.badges).toContain('SUB')
+    expect(info.langMismatch).toBe(true)
+  })
+
+  it('marks a preferred-language source as no mismatch but still badges it', () => {
+    const s = videoSourceToStream({ url: 'https://s/v.m3u8', type: 'm3u8', quality: '1080p' },
+      'srv', {}, 'AnimePahe', 'Ep 3', 'sub', 'animepahe', 'en', false)
+    expect(describeStream(s).badges).toContain('EN')
+    expect(describeStream(s).langMismatch).toBe(false)
+  })
+
+  it('orders preferred first, unknown next, foreign last — without dropping any', () => {
+    const provs = [{ lang: 'it' }, { lang: undefined }, { lang: 'fr' }, { lang: 'en' }]
+    const sorted = [...provs].sort((a, b) => langRank(a.lang, 'eng') - langRank(b.lang, 'eng'))
+    expect(sorted.map((p) => p.lang)).toEqual(['en', undefined, 'it', 'fr'])
+    expect(sorted).toHaveLength(provs.length)
+  })
+
+  it('keeps the server in the row name', () => {
+    const s = videoSourceToStream({ url: 'https://s/v.m3u8', type: 'm3u8', quality: '1080p' },
+      'vidmoly', {}, 'AnimeSama', 'Ep 1', 'sub', 'animesamaanime', 'fr', true)
+    expect(s.name).toBe('⚡ AnimeSama · vidmoly · 1080p')
+  })
+
+  it('carries Referer-gated subtitle headers instead of dropping them', () => {
+    const s = videoSourceToStream(
+      { url: 'https://cdn/z.m3u8', type: 'm3u8', quality: '720p', subtitles: [{ url: 'https://s/f.ass', label: 'Français', headers: { Referer: 'https://site/' } }] },
+      'srv', {}, 'ProviderZ', undefined, 'sub', 'provider-z',
+    )
+    expect(s.__subtitles).toEqual([
+      { url: 'https://s/f.ass', lang: 'fre', title: 'Français', isDefault: false, headers: { Referer: 'https://site/' } },
+    ])
+  })
+
+  it('keeps an unrecognizable label as the title and leaves lang unset', () => {
+    // Real label from a live provider. Auto-select must NOT fire on a guess.
+    const s = videoSourceToStream(
+      { url: 'https://cdn/a.m3u8', type: 'm3u8', quality: 'auto', subtitles: [{ url: 'https://s/a.ass', label: 'wowmdildo {+Eternal Blizzard}', isDefault: true }] },
+      'srv', {}, 'AniZone', undefined, 'sub', 'anizone',
+    )
+    expect(s.__subtitles?.[0].lang).toBeUndefined()
+    expect(s.__subtitles?.[0].title).toBe('wowmdildo {+Eternal Blizzard}')
+    expect(s.__subtitles?.[0].isDefault).toBe(true)
+  })
+
+  it('drops an unnamed "default" server rather than printing it', () => {
+    const s = videoSourceToStream({ url: 'https://s/v.m3u8', type: 'm3u8', quality: '1080p' },
+      'default', {}, 'AniZone', 'Ep 1', 'sub', 'anizone', '')
+    expect(s.name).toBe('⚡ AniZone · 1080p')
+  })
+
+  it('leaves the row name unchanged when there is no badge', () => {
+    const s = videoSourceToStream({ url: 'https://s/v.m3u8', type: 'm3u8', quality: '1080p' },
+      'vidmoly', {}, 'AnimePahe', 'Ep 1', 'sub', 'animepahe', '')
+    expect(s.name).toBe('⚡ AnimePahe · vidmoly · 1080p')
+  })
+})
+
+describe('language allowlist', () => {
+  it('treats an empty allowlist as "all"', () => {
+    expect(allowedByLanguage('it', [])).toBe(true)
+    expect(allowedByLanguage(undefined, [])).toBe(true)
+  })
+
+  it('keeps only the chosen languages', () => {
+    expect(allowedByLanguage('en', ['en', 'ja'])).toBe(true)
+    expect(allowedByLanguage('it', ['en', 'ja'])).toBe(false)
+  })
+
+  it('is case insensitive on both sides', () => {
+    expect(allowedByLanguage('EN', ['en'])).toBe(true)
+    expect(allowedByLanguage('en', ['EN'])).toBe(true)
+  })
+
+  it('never drops a provider that declares no language', () => {
+    // Missing metadata is not a mismatch — dropping it would lose working sources silently.
+    expect(allowedByLanguage(undefined, ['en'])).toBe(true)
+  })
+})
+
+describe('audio filter', () => {
+  it('leaves the provider-driven choice alone on "both"', () => {
+    expect(passesForAudio([false, true], 'both')).toEqual([false, true])
+    expect(passesForAudio([false], 'both')).toEqual([false])
+  })
+
+  it('narrows to the requested flavour', () => {
+    expect(passesForAudio([false, true], 'sub')).toEqual([false])
+    expect(passesForAudio([false, true], 'dub')).toEqual([true])
+  })
+
+  it('yields nothing when the provider cannot serve the requested flavour', () => {
+    // A sub-only provider under "Dubbed only" is skipped rather than queried for discarded results.
+    expect(passesForAudio([false], 'dub')).toEqual([])
+    expect(passesForAudio([true], 'sub')).toEqual([])
+  })
+})
+
+// The reported failure: an Italian provider was auto-selected as BEST and the episode played with
+// Italian subtitles. Every direct-stream row is `instant` with quality "auto", so cache tier and
+// quality tie and the language has to break it.
+describe('foreign-language sources cannot win the pick', () => {
+  const row = (name: string, lang: string | undefined, mismatch: boolean, quality = '1080p') =>
+    videoSourceToStream({ url: `https://cdn/${name}.m3u8`, type: 'm3u8', quality }, 'srv', {}, name, 'Ep 3', 'sub', name, lang, mismatch)
+
+  it('ranks a preferred-language source above a foreign one', () => {
+    const italian = row('AnimeUnity', 'it', true)
+    const english = row('AnimeHeaven', 'en', false)
+    expect(rankStreams([italian, english]).map((s) => s.__addonName)).toEqual(['AnimeHeaven', 'AnimeUnity'])
+  })
+
+  it('never auto-picks a foreign source when a preferred one exists, even at lower quality', () => {
+    const italian = row('AnimeUnity', 'it', true, '1080p')
+    const english = row('AnimeHeaven', 'en', false, '720p')
+    expect(pickBest([italian, english], 'any')?.__addonName).toBe('AnimeHeaven')
+    // Asking for 1080p must still not drag in the Italian one.
+    expect(pickBest([italian, english], '1080')?.__addonName).toBe('AnimeHeaven')
+  })
+
+  it('still picks a foreign source when it is the only one', () => {
+    const italian = row('AnimeUnity', 'it', true)
+    expect(pickBest([italian], 'any')?.__addonName).toBe('AnimeUnity')
+  })
+
+  it('leaves language-less rows (torrents) unreordered', () => {
+    const a = { url: 'https://t/a', name: 'A', __addonName: 'A' } as never
+    const b = { url: 'https://t/b', name: 'B', __addonName: 'B' } as never
+    expect(rankStreams([a, b]).map((s) => s.__addonName)).toEqual(['A', 'B'])
+  })
+})
 
 describe('pickSearchResult', () => {
   const results = [
@@ -38,7 +198,8 @@ describe('videoSourceToStream', () => {
     expect(s.url).toBe('https://cdn/x.m3u8')
     expect(s.__stream).toBe(true)
     expect(s.__headers).toEqual({ Referer: 'https://site' })
-    expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'en', isDefault: false }])
+    // `lang` is normalized to an ISO code so mpv's `slang` can match it; `title` keeps the label.
+    expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'eng', title: 'en', isDefault: false, headers: undefined }])
     expect(s.__audio).toBe('sub')
     expect(s.__addonName).toBe('ProviderX')
     expect(s.__origin).toEqual({ kind: 'online-extension', id: 'provider-x', name: 'ProviderX' })
@@ -52,7 +213,7 @@ describe('videoSourceToStream', () => {
       { url: 'https://cdn/y.m3u8', type: 'm3u8', quality: 'auto', subtitles: [{ url: 'https://s/e.vtt', language: 'en', isDefault: true }] },
       'srv', {}, 'ProviderY', undefined, 'dub',
     )
-    expect(s.__subtitles).toEqual([{ url: 'https://s/e.vtt', lang: 'en', isDefault: true }])
+    expect(s.__subtitles).toEqual([{ url: 'https://s/e.vtt', lang: 'eng', title: 'en', isDefault: true, headers: undefined }])
     expect(s.__audio).toBe('dub')
     // no episode title → a sensible direct-stream filename
     expect(s.behaviorHints?.filename).toContain('Direct')

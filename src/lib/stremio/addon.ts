@@ -16,6 +16,13 @@ export const streamId = (kitsuId: number, episode?: number) =>
 // sits above a playable one regardless of quality/seeders.
 const cacheRank = (c: CacheState) => (c === 'instant' ? 0 : c === 'uncached' ? 1 : 2)
 
+// A source in a language the user didn't ask for sorts below one that is (or one whose language is
+// unknown, which is every torrent row — so this never reshuffles the addon/torrent list). This has
+// to be a RANKING term, not just presentation: every direct-stream row is `instant` with quality
+// "auto", so cache tier and quality tie and whatever arrived first won — which is how an Italian
+// provider ended up auto-selected as "best".
+const langRank = (i: { langMismatch?: boolean }) => (i.langMismatch ? 1 : 0)
+
 // Rank into StreamInfo: cache tier first, then the user's preferred within-tier
 // key (quality desc default; seeders desc; size desc), with sensible tie-breaks.
 export function rankInfos(streams: Stream[], sort: StreamSort = 'quality'): StreamInfo[] {
@@ -26,7 +33,10 @@ export function rankInfos(streams: Stream[], sort: StreamSort = 'quality'): Stre
   }
   return streams
     .map(describe)
-    .sort((a, b) => cacheRank(a.cached) - cacheRank(b.cached) || within(a, b) || (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0))
+    .sort((a, b) => cacheRank(a.cached) - cacheRank(b.cached)
+      || langRank(a) - langRank(b)
+      || within(a, b)
+      || (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0))
 }
 
 export function rankStreams(streams: Stream[], sort: StreamSort = 'quality'): Stream[] {
@@ -41,8 +51,13 @@ export function rankStreams(streams: Stream[], sort: StreamSort = 'quality'): St
 // cached, so callers fall back to the picker.
 export function pickBest(streams: Stream[], quality: string, want?: { season?: number; abs?: number }): Stream | undefined {
   const pool = want ? streams.filter((s) => !isWrongSeason(s, want)) : streams
-  const infos = pool.map(describe).filter((i) => i.cached === 'instant')
-  if (!infos.length) return undefined
+  const all = pool.map(describe).filter((i) => i.cached === 'instant')
+  if (!all.length) return undefined
+  // Auto-select must never silently commit to a foreign-language source. Applied as a hard filter
+  // rather than a sort key: sorting alone still let a foreign source win when it was the only one
+  // matching the requested quality tier.
+  const preferred = all.filter((i) => !i.langMismatch)
+  const infos = preferred.length ? preferred : all
   const byRank = infos.sort((a, b) => b.quality - a.quality || (b.seeders ?? -1) - (a.seeders ?? -1))
   if (quality === 'any') return byRank[0].stream
   const target = Number(quality)

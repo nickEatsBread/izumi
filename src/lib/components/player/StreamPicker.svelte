@@ -175,7 +175,10 @@
     : { i: '✖', cls: 'text-red-400', t: directP2p ? 'No reported seeders — direct playback may stall' : 'Dead — no seeders on debrid' }
 </script>
 
-{#if pick}
+<!-- `hidden` renders nothing while the entry stays live: with a single configured source there is
+     nothing to choose, but the resolve flow still needs the picker to exist to recognise its own
+     request. Errors clear the flag, so a failure is never silent. -->
+{#if pick && !pick.hidden}
   <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
        Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
        instead of letting WebKit cache one snapshot — at the exact moment the app is busiest

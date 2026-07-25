@@ -56,5 +56,10 @@ export interface ExtensionConfig {
   code: string // resolved https:// URL of the extension module
   icon?: string // base64 PNG or URL — shown in the settings card
   description?: string
+  // Human language of the content the provider serves (ISO 639-1, e.g. 'fr'). NOT the manifest's
+  // `language` field, which is the SOURCE-CODE language (javascript/typescript). Half the providers
+  // in a typical catalog are non-English, and without this a French source is indistinguishable
+  // from an English one until its subtitles show up on screen.
+  lang?: string
   settings?: Record<string, unknown>
 }
