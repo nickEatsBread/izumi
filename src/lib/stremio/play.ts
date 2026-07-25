@@ -13,7 +13,7 @@ import { resolveHash, resolveSidecars, providerName, type EpisodeWant } from './
 import { resolveOnlineStreams } from './onlinestream'
 import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
-import { queryExtensions } from '$lib/extensions/manager'
+import { queryExtensions, runningExtensionCount } from '$lib/extensions/manager'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
@@ -533,12 +533,16 @@ async function extToStreams(
 // shares the Stremio bingeGroup, the exact pack infoHash, OR the parsed release group
 // (fansub author) — the group match is what continues extension/fansub content, which
 // carries no bingeGroup. `describe(s).group` is the same parse the picker heading uses.
-export interface ContinueHint { bingeGroup?: string; infoHash?: string; group?: string }
-function matchesRelease(s: Stream, c: ContinueHint): boolean {
+export interface ContinueHint { bingeGroup?: string; infoHash?: string; group?: string; originId?: string }
+export function matchesRelease(s: Stream, c: ContinueHint): boolean {
   return !!(
     (c.bingeGroup && s.behaviorHints?.bingeGroup === c.bingeGroup)
     || (c.infoHash && s.infoHash === c.infoHash)
     || (c.group && describe(s).group?.toLowerCase() === c.group.toLowerCase())
+    // Direct online sources: the provider IS the release identity. They carry no bingeGroup,
+    // no infoHash and no parseable release group, so without this nothing ever matched and the
+    // picker reopened for every episode of a binge.
+    || (c.originId && s.__origin?.id === c.originId)
   )
 }
 // The continuity hint for the NEXT episode of `media`: the release identity of what's
@@ -547,8 +551,8 @@ function matchesRelease(s: Stream, c: ContinueHint): boolean {
 function continueHint(media: Media): ContinueHint | undefined {
   if (!get(bingePreload)) return undefined
   const b = get(bingeSource)
-  if (!b || b.mediaId !== media.id || !(b.bingeGroup || b.infoHash || b.group)) return undefined
-  return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group }
+  if (!b || b.mediaId !== media.id || !(b.bingeGroup || b.infoHash || b.group || b.originId)) return undefined
+  return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group, originId: b.originId }
 }
 // A stream mpv can start without a multi-minute debrid cache: a direct online stream, an
 // already-resolved url, or a debrid-cached torrent (⚡ — resolves in ~1s).
@@ -653,9 +657,17 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     return await playStream(media, episode, { url: local.path, name: '📥 Downloaded' } as Stream, onState)
   }
   onState({ status: 'resolving' })
+  // Continuing a binge: keep the picker HIDDEN while we look for the same source. It used to open
+  // in its skeleton state for the whole lookup and then close itself the moment continuity landed,
+  // so every episode flashed a selector the user never needed to see. Revealed only if the
+  // continuation actually fails — see the reveal after the post-settle fallback.
+  let hideForContinuation = !!cont
+  // Declared alongside hideForContinuation so revealPicker (defined below) can read it; assigned
+  // once the configured source count is known.
+  let suppressPicker = false
   // Open the picker immediately in a skeleton (resolving) state — no "Resolving
   // stream…" text; it fills in with real sources as EACH addon responds.
-  streamPicker.set({ media, episode, streams: [], cachedCount: 0, resolving: true })
+  streamPicker.set({ media, episode, streams: [], cachedCount: 0, resolving: true, hidden: hideForContinuation })
   const stillCurrent = () => {
     const current = get(streamPicker)
     // Media + episode are not a unique request identity: a closed picker can be reopened for the
@@ -664,12 +676,28 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     return resolveAbort === abort && !signal.aborted
       && !!current && current.media.id === media.id && current.episode === episode
   }
+  // Hide the picker WITHOUT closing it — see the `hidden` note on streamPicker. Clearing it would
+  // make stillCurrent() false and abandon the in-flight resolve.
+  const hidePicker = () => {
+    if (!stillCurrent()) return
+    streamPicker.update((c) => c ? { ...c, hidden: true } : c)
+  }
+  // Make a picker hidden for a binge continuation visible again: the continuation is off the table,
+  // so the user has to choose (or at least see why nothing played).
+  const revealPicker = () => {
+    hideForContinuation = false
+    if (!stillCurrent()) return
+    streamPicker.update((c) => c ? { ...c, hidden: suppressPicker } : c)
+  }
   const showPickerError = (message: string) => {
     if (!stillCurrent()) return
     streamPicker.update((current) => current ? {
       ...current,
       resolving: false,
       playbackError: message,
+      // An error is always shown, even for a single source that was otherwise hidden — a silent
+      // failure would look exactly like nothing happening.
+      hidden: false,
     } : current)
     onState({ status: 'error', message })
   }
@@ -690,6 +718,19 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     const bases = get(enabledAddonUrls)
     const hasExt = get(enabledExtensionUrls).length > 0
     if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL in Settings.')
+    // Exactly ONE source configured — a single enabled plugin and no addons — means the picker has
+    // no choice to offer, so it is hidden and the best result plays directly. Counted in PLUGINS,
+    // not URLs, because one URL can expand to many.
+    //
+    // Resolved WITHOUT blocking: awaiting the count here gated every play on the full extension
+    // build (manifest + module fetches for every plugin), so a single slow fetch made Next hang
+    // forever. Warm-up has usually already run, so this settles almost immediately; if it settles
+    // late the picker is simply visible until then.
+    if (!bases.length && hasExt) {
+      void runningExtensionCount()
+        .then((n) => { if (n === 1) { suppressPicker = true; hidePicker() } })
+        .catch(() => {})
+    }
     const kitsu = await resolveKitsu(media)
     // Addons index by Kitsu id; extensions search by title/MAL/AniDB. A title with no Kitsu id
     // (e.g. an OVA that isn't in Kitsu) can still be sourced by extensions, so only hard-fail when
@@ -730,7 +771,9 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       if (!stillCurrent()) return
       let s = refineStreams(media, acc)
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
-      streamPicker.set({ media, episode, streams: s, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving })
+      // `hidden` (not null) for a sole configured source: showing a one-row list to "choose" from
+      // is noise, but the entry must remain so `stillCurrent()` still recognises this request.
+      streamPicker.set({ media, episode, streams: s, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving, hidden: suppressPicker || hideForContinuation })
       // Binge continuity: the instant a same-release, ready-to-play source appears, continue on it
       // automatically (close the picker, no interaction). An uncached same-release is handled once
       // the list settles (below), so a late-arriving cached one still wins here. Gated on
@@ -778,8 +821,9 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
           .finally(done)
       }
       if (hasExt) {
-        resolveOnlineStreams(media, episode)
-          .then((s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })
+        // Fold each provider in as it settles, exactly like the torrent wave above — otherwise one
+        // slow (or wedged, 20s-capped) provider hides every fast one's results until it gives up.
+        resolveOnlineStreams(media, episode, undefined, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })
           .catch(() => {})
           .finally(done)
       }
@@ -791,8 +835,26 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // A ready-to-play same-release source may have been tried while results streamed in. Wait for
     // its real outcome: success closes the picker; failure finishes populating it for manual choice.
     if (continuationAttempt && await continuationAttempt) return
+    // Sole configured source: play its best result outright rather than presenting a list of one.
+    // Not gated on the auto-select setting — that setting is about choosing FOR the user among
+    // alternatives, and here there are none. Not attempted while a debrid cache is in flight, which
+    // means the user already committed to something.
+    if (suppressPicker && stillCurrent() && !get(debridCaching)) {
+      let s = refineStreams(media, acc)
+      if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
+      const best = pickBest(s, get(preferredQuality), want) ?? rankStreams(s).find(playableNow)
+      if (best) {
+        streamPicker.set(null)
+        return await playStream(media, episode, best, onState)
+      }
+      // Nothing playable from it — reveal the picker so the error is visible like normal.
+      suppressPicker = false
+      streamPicker.update((c) => c ? { ...c, hidden: false } : c)
+    }
     refresh(false)
     if (continuationError && stillCurrent()) {
+      // A failed continuation must be visible, not swallowed behind the hidden picker.
+      revealPicker()
       streamPicker.update((current) => current ? { ...current, playbackError: continuationError } : current)
     }
 
@@ -812,10 +874,16 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
         tryContinuation(hit)
         if (continuationAttempt && await continuationAttempt) return
         if (continuationError && stillCurrent()) {
+          revealPicker()
           streamPicker.update((current) => current ? { ...current, playbackError: continuationError } : current)
         }
       }
     }
+
+    // Every continuation route is exhausted (none matched, or the attempt failed), so the user has
+    // to choose after all — reveal the picker. Up to this point it stayed hidden so a successful
+    // binge continuation never flashes a selector on its way to the next episode.
+    if (hideForContinuation) revealPicker()
 
     // The user already acted on this picker (picked a source / navigated away) → it's no longer
     // current; settle this resolve neutrally instead of firing a spurious "no streams" error.
@@ -1153,7 +1221,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
     // Remember this stream's release identity so the next episode can continue from
     // the SAME release without re-picking — by pack infoHash / Stremio bingeGroup, or the
     // parsed release group (fansub author) for extension content that has neither.
-    bingeSource.set({ mediaId: media.id, bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group })
+    bingeSource.set({ mediaId: media.id, bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group, originId: stream.__origin?.id })
 
     // Embed mpv FIRST — it renders behind the still-opaque webview — THEN reveal the
     // overlay + punch the transparent hole. Otherwise the window is briefly
@@ -1177,13 +1245,19 @@ export async function playStream(media: Media, episode: number | undefined, stre
       ...(stream.__stream ? stream.__subtitles ?? [] : []),
       ...candidates.filter((s) => !!s.url).map((s) => ({ url: s.url!, lang: s.lang })),
     ]
+    // mpv applies `http-header-fields` GLOBALLY — there is no per-URL header option — so a
+    // Referer-gated sidecar subtitle can only be fetched by folding its headers into the same set
+    // the stream uses. Stream headers win on a key clash: breaking the video to fetch a subtitle
+    // would be the wrong trade.
+    const subHeaders = Object.assign({}, ...subtitles.map((s) => ('headers' in s && s.headers) || {}))
+    const mergedHeaders = stream.__stream ? { ...subHeaders, ...(stream.__headers ?? {}) } : undefined
     // alang/slang drive mpv's preferred-language track auto-selection.
     await invoke('player_embed', {
       url: stream.url,
       startSeconds: startSeconds || undefined,
       alang: get(preferredAudioLang),
       slang: get(preferredSubLang),
-      headers: stream.__stream ? stream.__headers : undefined,
+      headers: mergedHeaders && Object.keys(mergedHeaders).length ? mergedHeaders : undefined,
       subtitles: subtitles.length ? subtitles : undefined,
     })
     if (directPlaybackId != null && directTorrentSubtitles.length) {
@@ -1261,7 +1335,11 @@ export function playNext(onState: (s: PlayState) => void = noticeState) {
   const ep = get(nowPlaying).episode
   if (!currentMedia || ep == null) return
   const airedTotal = airedTotalOf(currentMedia)
-  if (airedTotal > 0 && ep >= airedTotal) return
+  // At the newest aired episode there is genuinely nowhere to go — but returning silently is
+  // indistinguishable from the button being broken, so say so.
+  if (airedTotal > 0 && ep >= airedTotal) {
+    return onState({ status: 'error', message: 'No later episode has aired yet.' })
+  }
   resolveAndPlayBest(currentMedia, ep + 1, onState)
 }
 

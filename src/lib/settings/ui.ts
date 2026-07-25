@@ -41,6 +41,17 @@ export type SubLang = 'eng' | 'jpn' | 'none'
 export const preferredAudioLang = persisted<AudioLang>('preferred-audio-lang', 'jpn')
 export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'eng')
 
+// --- Source extension filtering ---
+/** Content languages (ISO 639-1, as declared by each provider's manifest) worth querying.
+ *  EMPTY MEANS ALL — the reference app models the same idea with a "universal" sentinel. Filtering
+ *  here is both a relevance and a speed control: a skipped provider is never queried at all, and a
+ *  typical catalog is half non-English. */
+export const providerLanguages = persisted<string[]>('provider-languages', [])
+/** Which audio flavours to resolve from source extensions. 'both' offers each title's dub and sub
+ *  side by side; the others halve the work as well as the noise. */
+export type ProviderAudio = 'both' | 'sub' | 'dub'
+export const providerAudio = persisted<ProviderAudio>('provider-audio', 'both')
+
 // --- Source selection ---
 /** Auto-play the best cached source: when the source list settles, count down ~5s (the Auto
  *  button fills left→right) then play the best match at (or near) the preferred quality. Cancel
@@ -200,6 +211,15 @@ export const debridRoomNoticeAck = persisted<boolean>('debrid-room-notice-ack', 
 export const extensionUrls = persisted<string[]>('extension-urls', [])
 export const disabledExtensions = persisted<string[]>('disabled-extensions', [])
 export const enabledExtensionUrls = derived([extensionUrls, disabledExtensions], ([$urls, $off]) => $urls.filter((u) => !$off.includes(u)))
+/** Individually switched-off plugins WITHIN an enabled source, by extension id.
+ *
+ *  One URL expands to many plugins — a marketplace index is a single entry that yields ~18 — so a
+ *  per-URL toggle is all-or-nothing. This is the per-plugin switch, matching how the reference app
+ *  separates "add a repository" from "enable the plugins in it".
+ *
+ *  Stored as an OPT-OUT list so an existing setup keeps working and a newly published plugin
+ *  appears by default; an opt-in list would silently switch off everything already configured. */
+export const disabledPlugins = persisted<string[]>('disabled-plugins', [])
 
 // --- Subtitle providers ---
 // Direct-REST subtitle sources (OpenSubtitles / SubDL), folded into the same aggregator as the

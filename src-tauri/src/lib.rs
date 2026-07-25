@@ -540,6 +540,17 @@ fn player_thumb_info(
 // a cheap clone (reqwest::Client is Arc-backed) rather than a borrow.
 static HTTP: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> = std::sync::OnceLock::new();
 static HTTP_DL: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> = std::sync::OnceLock::new();
+// Source extensions get their OWN client + cookie jar. Separate from `HTTP` on purpose: many
+// sites hand out a session cookie on the first GET and reject the follow-up POST without it
+// (CSRF/session flows), so extension traffic needs a jar — but that jar must never mingle with
+// the app's own AniList/AniZip/addon requests. The jar is a standalone Arc so `set_doh`'s client
+// rebuild swaps the transport WITHOUT dropping live sessions.
+static HTTP_EXT: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> = std::sync::OnceLock::new();
+static HTTP_EXT_JAR: std::sync::OnceLock<std::sync::Arc<reqwest::cookie::Jar>> = std::sync::OnceLock::new();
+
+fn ext_cookie_jar() -> std::sync::Arc<reqwest::cookie::Jar> {
+    HTTP_EXT_JAR.get_or_init(|| std::sync::Arc::new(reqwest::cookie::Jar::default())).clone()
+}
 
 fn build_http_client(doh: Option<String>, download: bool) -> reqwest::Client {
     let mut b = reqwest::Client::builder()
@@ -562,15 +573,37 @@ fn build_http_client(doh: Option<String>, download: bool) -> reqwest::Client {
     b.build().unwrap_or_else(|_| reqwest::Client::new())
 }
 
+/// The extension client: same tuning as the shared pool, plus the persistent extension cookie jar.
+fn build_ext_client(doh: Option<String>) -> reqwest::Client {
+    let mut b = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .pool_max_idle_per_host(8)
+        .tcp_keepalive(std::time::Duration::from_secs(90))
+        .timeout(std::time::Duration::from_secs(30))
+        .cookie_provider(ext_cookie_jar());
+    if let Some(url) = doh {
+        b = b.dns_resolver(std::sync::Arc::new(doh::DohResolver::new(url)));
+    }
+    b.build().unwrap_or_else(|_| reqwest::Client::new())
+}
+
 fn http_lock() -> &'static std::sync::RwLock<reqwest::Client> {
     HTTP.get_or_init(|| std::sync::RwLock::new(build_http_client(None, false)))
 }
 fn http_dl_lock() -> &'static std::sync::RwLock<reqwest::Client> {
     HTTP_DL.get_or_init(|| std::sync::RwLock::new(build_http_client(None, true)))
 }
+fn http_ext_lock() -> &'static std::sync::RwLock<reqwest::Client> {
+    HTTP_EXT.get_or_init(|| std::sync::RwLock::new(build_ext_client(None)))
+}
 
 pub(crate) fn http_client() -> reqwest::Client {
     http_lock().read().unwrap().clone()
+}
+/// Cookie-jar-backed client for source-extension HTTP only.
+pub(crate) fn ext_http_client() -> reqwest::Client {
+    http_ext_lock().read().unwrap().clone()
 }
 /// A client tuned for large file downloads: no total timeout (only a per-read idle timeout).
 pub(crate) fn download_http_client() -> reqwest::Client {
@@ -586,7 +619,8 @@ pub(crate) fn download_http_client() -> reqwest::Client {
 fn set_doh(enabled: bool, url: String) {
     let doh = if enabled && url.trim().starts_with("http") { Some(url.trim().to_string()) } else { None };
     *http_lock().write().unwrap() = build_http_client(doh.clone(), false);
-    *http_dl_lock().write().unwrap() = build_http_client(doh, true);
+    *http_dl_lock().write().unwrap() = build_http_client(doh.clone(), true);
+    *http_ext_lock().write().unwrap() = build_ext_client(doh);
 }
 
 /// Set the player's demuxer cache ceiling (bytes) from the user's setting; applied on the next
@@ -744,6 +778,18 @@ pub struct HttpFullReply {
     body: String,
 }
 
+/// `ext_fetch`'s reply. Adds the post-redirect `url` (scrapers resolve relative links against it)
+/// and the full ordered `set_cookie` list on top of the flat header map.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtFetchReply {
+    status: u16,
+    url: String,
+    headers: std::collections::HashMap<String, String>,
+    set_cookie: Vec<String>,
+    body: String,
+}
+
 /// Pooled HTTP POST that returns status + headers + body as PLAIN data (no streamed
 /// resource). Used by the AniList GraphQL client: the webview `fetch` is CORS-bound
 /// (breaks when AniList drops `Access-Control-Allow-Origin`), and `@tauri-apps/plugin-http`'s
@@ -781,16 +827,17 @@ async fn http_post(
 /// `Referer`, so those extensions resolved nothing. reqwest imposes no such filter,
 /// so routing extension requests here delivers every header the extension set.
 /// Follows redirects. NEVER logs the url or headers (may embed provider secrets).
+/// Runs on the extension client so session cookies persist across an extension's requests.
 #[tauri::command]
 async fn ext_fetch(
     url: String,
     method: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
     body: Option<String>,
-) -> Result<HttpFullReply, String> {
+) -> Result<ExtFetchReply, String> {
     let verb = method.unwrap_or_else(|| "GET".into()).to_ascii_uppercase();
     let verb = reqwest::Method::from_bytes(verb.as_bytes()).map_err(|_| "bad method".to_string())?;
-    let mut req = http_client().request(verb, &url);
+    let mut req = ext_http_client().request(verb, &url);
     if let Some(h) = headers {
         for (k, v) in h {
             req = req.header(k, v);
@@ -801,14 +848,22 @@ async fn ext_fetch(
     }
     let resp = req.send().await.map_err(|_| "request failed".to_string())?;
     let status = resp.status().as_u16();
+    let final_url = resp.url().to_string();
     let mut hdrs = std::collections::HashMap::new();
+    // A response carries one `Set-Cookie` line PER cookie, and a HashMap keeps only the last —
+    // which silently dropped every cookie but one for session/CSRF flows. Collect them in order
+    // alongside the flat map (which stays for the single-valued headers extensions read).
+    let mut set_cookie = Vec::new();
     for (k, v) in resp.headers() {
         if let Ok(vs) = v.to_str() {
+            if k.as_str().eq_ignore_ascii_case("set-cookie") {
+                set_cookie.push(vs.to_string());
+            }
             hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
         }
     }
     let body = resp.text().await.map_err(|_| "read failed".to_string())?;
-    Ok(HttpFullReply { status, headers: hdrs, body })
+    Ok(ExtFetchReply { status, url: final_url, headers: hdrs, set_cookie, body })
 }
 
 /// izumi's embedded OpenSubtitles consumer Api-Key — makes *search* keyless for users (download
