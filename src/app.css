@@ -65,6 +65,10 @@ body { overflow-x: clip; }
 @keyframes skeleton-swipe { 100% { transform: translateX(100%); } }
 .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); }
 .skeloader::before { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent); animation: skeleton-swipe 1.5s infinite; }
+/* Indeterminate progress bar (update download with no Content-Length): a short segment sweeps
+   the track. Transform-only so WebKitGTK/gamescope composite it without repainting the track. */
+@keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
+.indeterminate { animation: indeterminate 1.2s ease-in-out infinite; }
 /* Hover-preview card fade/scale-in (smooth crossfade between adjacent cards). */
 @keyframes preview-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 .preview-in { animation: preview-in 0.14s ease-out both; }
