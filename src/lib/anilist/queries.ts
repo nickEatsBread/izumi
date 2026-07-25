@@ -37,6 +37,39 @@ const PAGE_QUERY_ALL = gql`
  *  the isAdult filter so AniList returns both. Evaluated at store-creation time. */
 export const pageQuery = () => (get(showAdult) ? PAGE_QUERY_ALL : PAGE_QUERY)
 
+// The homepage hero is SEASONAL + QUALITY-RANKED, not globally trending: top-scored titles of the
+// season that have actually started airing. Global TRENDING_DESC kept dragging in decade-old
+// long-runners (ONE PIECE, BLEACH) and unscored hype, which is not what a "featured" slot means.
+// MUSIC is excluded because a music video has no episodes to feature, and NOT_YET_RELEASED because
+// the hero's primary action is Watch. Same two-variant adult split as PAGE_QUERY (see above).
+const HERO_QUERY = gql`
+  query Hero($page: Int = 1, $perPage: Int = 15, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int) {
+    Page(page: $page, perPage: $perPage) {
+      media(type: ANIME, isAdult: false, format_not: MUSIC, status_not_in: [NOT_YET_RELEASED], sort: $sort, season: $season, seasonYear: $seasonYear) {
+        ...MediaFields
+      }
+    }
+  }
+  ${MEDIA_FIELDS}`
+
+const HERO_QUERY_ALL = gql`
+  query HeroAll($page: Int = 1, $perPage: Int = 15, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int) {
+    Page(page: $page, perPage: $perPage) {
+      media(type: ANIME, format_not: MUSIC, status_not_in: [NOT_YET_RELEASED], sort: $sort, season: $season, seasonYear: $seasonYear) {
+        ...MediaFields
+      }
+    }
+  }
+  ${MEDIA_FIELDS}`
+
+export const heroQuery = () => (get(showAdult) ? HERO_QUERY_ALL : HERO_QUERY)
+
+/** Variables for the hero pool: this season's highest-scored, already-airing titles. */
+export function heroVars(now: Date) {
+  const { season, seasonYear } = currentSeason(now)
+  return { perPage: 15, sort: ['SCORE_DESC'], season, seasonYear }
+}
+
 // Public home sections (personalized ones deferred to Plan 2b). The adult filter
 // is baked into the query variant (pageQuery()), not the vars.
 export function homeSections(now: Date) {

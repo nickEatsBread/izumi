@@ -26,7 +26,7 @@
   import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState } from '$lib/player/session'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
-  import { commentsEnabled, discussionExpanded } from '$lib/comments'
+  import { discussionExpanded } from '$lib/comments'
   import { videoFit, playerTitleTop, subDlApiKey, openSubtitlesToken } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
   import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
@@ -489,12 +489,10 @@
         </div>
 
         <!-- Discussion / comments panel toggle (keyed on the playing episode). -->
-        {#if $commentsEnabled}
-          <button data-focusable class={iconBtn} onclick={toggleComments}
-                  aria-label="Discussion" aria-pressed={$commentsOpen}>
-            <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
-          </button>
-        {/if}
+        <button data-focusable class={iconBtn} onclick={toggleComments}
+                aria-label="Discussion" aria-pressed={$commentsOpen}>
+          <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
+        </button>
 
         <!-- Subtitle / audio track menu -->
         <div class="relative">

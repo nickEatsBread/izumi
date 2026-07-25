@@ -11,7 +11,7 @@
   import { streamPicker, gameMode } from '$lib/player/session'
   import { rankInfos, pickBest, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
-  import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectAnimate, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
+  import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
   import { title, banner, cover } from '$lib/anilist/media'
   import Search from 'lucide-svelte/icons/search'
   import Zap from 'lucide-svelte/icons/zap'
@@ -96,12 +96,14 @@
     }
   })
 
-  // Animate the countdown, unless the user turned it off or the OS asks for reduced motion.
+  // The countdown *wait* is the user's setting; the filling bar is motion, so it alone is dropped
+  // when the OS asks for reduced motion (the numeric "Auto 3s" readout still counts down, and the
+  // cancel window is preserved — previously reduced motion silently skipped straight to playback).
   const prefersReduce = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const animate = $derived($autoSelectAnimate && !prefersReduce)
+  const animate = $derived(!prefersReduce)
 
-  // Start the countdown once resolving finishes with a best cached pick + auto-select on. With the
-  // animation off, skip the fill entirely and pick immediately.
+  // Start the countdown once resolving finishes with a best cached pick + auto-select on. In
+  // "immediately" mode, skip the wait entirely and pick right away.
   $effect(() => {
     if (playbackError) {
       cancelAuto()
@@ -109,7 +111,7 @@
       return
     }
     if (autoState === 'idle' && !resolving && !!best && !busy && $autoSelectSource) {
-      if (!animate) { autoState = 'off'; autoBest(); return }
+      if (!$autoSelectCountdown) { autoState = 'off'; autoBest(); return }
       autoState = 'counting'
       autoStart = performance.now()
       autoTimer = setInterval(() => {
@@ -220,7 +222,7 @@
         <button data-focusable onclick={autoBest} disabled={busy || !best}
                 onmouseenter={cancelAuto} onfocus={cancelAuto}
                 class="relative flex items-center gap-1 overflow-hidden rounded-lg bg-theme/20 px-3 py-1.5 text-xs font-bold text-theme transition-colors hover:bg-theme/30 disabled:opacity-40 {autoState === 'counting' ? 'ring-1 ring-theme' : ''}">
-          {#if autoState === 'counting'}
+          {#if autoState === 'counting' && animate}
             <span class="absolute inset-y-0 left-0 bg-theme/40" style="width:{autoProgress * 100}%"></span>
           {/if}
           <span class="relative z-10 flex items-center gap-1">
@@ -288,7 +290,7 @@
             class:opacity-40={info.cached === 'down'}
             class:!border-theme={isBest}
             class:!border-red-400={isBest && autoState === 'counting' && autoProgress > 0.4}
-            class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4}
+            class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4 && animate}
             animate:flip={{ duration: 220 }}
             in:fade={{ duration: 150 }}
           >
