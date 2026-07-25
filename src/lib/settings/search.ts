@@ -35,12 +35,10 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Stay signed in', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'remember login' },
   { title: 'SubDL API key', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'token provider' },
 
-  { title: 'Auto-play the best source', category: 'Sources', href: '/app/settings/sources', keywords: 'automatic stream cached', anchored: true },
-  { title: 'Animate the countdown', category: 'Sources', href: '/app/settings/sources', keywords: 'auto play timer', anchored: true },
+  { title: 'Auto-play the best source', category: 'Sources', href: '/app/settings/sources', keywords: 'automatic stream cached countdown timer instant', anchored: true },
   { title: 'Preferred quality', category: 'Sources', href: '/app/settings/sources', keywords: '4k 1080p 720p resolution' },
   { title: 'Stremio addon sources', category: 'Sources', href: '/app/settings/sources', keywords: 'manifest url torrent debrid' },
-  { title: 'In-player discussion panel', category: 'Sources', href: '/app/settings/sources', keywords: 'comments reddit anilist mal youtube disqus', anchored: true },
-  { title: 'Default discussion source', category: 'Sources', href: '/app/settings/sources', keywords: 'comments reddit forum' },
+  { title: 'Default discussion source', category: 'Sources', href: '/app/settings/sources', keywords: 'comments reddit anilist mal youtube disqus forum', anchored: true },
 
   { title: 'Debrid provider', category: 'Extensions', href: '/app/settings/extensions', keywords: 'Real-Debrid AllDebrid Premiumize TorBox' },
   { title: 'Debrid token', category: 'Extensions', href: '/app/settings/extensions', keywords: 'api key credential password' },
