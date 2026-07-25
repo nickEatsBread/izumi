@@ -67,6 +67,22 @@ export function tbFindReady(list: any, hash: string): string | undefined {
   return hit ? String(hit.id) : undefined
 }
 
+/** Pure: TorBox checkcached `data` (format=object, keyed by hash) -> cache map.
+ *  A hash we asked about that is ABSENT from a well-formed response is genuinely uncached —
+ *  TorBox answered, it just said no. A malformed response yields an EMPTY map so every hash
+ *  falls back to 'unknown' rather than being wrongly demoted. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function tbCacheMap(data: any, asked: string[]): Map<string, 'cached' | 'uncached'> {
+  const out = new Map<string, 'cached' | 'uncached'>()
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return out
+  const hit = new Set(Object.keys(data).map((h) => h.toLowerCase()))
+  for (const h of asked) {
+    const k = h.toLowerCase()
+    out.set(k, hit.has(k) ? 'cached' : 'uncached')
+  }
+  return out
+}
+
 export const torbox: DebridProvider = {
   id: 'torbox',
   name: 'TorBox',
@@ -107,6 +123,28 @@ export const torbox: DebridProvider = {
     const dl = await tb('GET', `/torrents/requestdl?token=${encodeURIComponent(key)}&torrent_id=${id}&file_id=${best.id}`, key)
     if (typeof dl !== 'string') throw new Error('TorBox returned no link.')
     return dl
+  },
+  async checkCached(key, hashes) {
+    if (!key || !hashes.length) return new Map()
+    // POST with a JSON body: the GET variant takes repeatable ?hash= params and blows the URL
+    // length limit on a full season of results. tb() only accepts FormData, so call jfetch
+    // directly and keep tb()'s auth-classification behaviour inline.
+    const { status, json } = await jfetch(
+      `${BASE}/torrents/checkcached?format=object&list_files=false`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hashes: hashes.map((h) => h.toLowerCase()) }),
+      },
+    )
+    if (json?.success === false) {
+      // Surface an expired key the same way the rest of the app does, but DO NOT throw:
+      // a cache badge is a nicety and must not break the picker.
+      const auth = authError('TorBox', { status, code: json?.error, message: json?.detail })
+      if (auth) console.warn(auth)
+      return new Map()
+    }
+    return tbCacheMap(json?.data, hashes)
   },
   async listItems(key) {
     if (!key) throw new Error('No TorBox API key set — add it in Settings → Extensions.')

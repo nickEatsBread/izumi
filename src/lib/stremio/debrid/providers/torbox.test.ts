@@ -4,7 +4,7 @@ const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
 
 import { serveJson, called } from '../../../../test/debrid-http'
-import { tbStatus, tbListItem, tbFile, tbFindReady, torbox } from './torbox'
+import { tbStatus, tbListItem, tbFile, tbFindReady, tbCacheMap, torbox } from './torbox'
 
 const HASH = 'c'.repeat(40)
 
@@ -92,5 +92,30 @@ describe('torbox.resolveHash noAdd', () => {
     ])
     await expect(torbox.resolveHash('key', HASH)).resolves.toBe('https://cdn.torbox/Show_01.mkv')
     expect(called(httpFetch, '/torrents/createtorrent')).toBe(true)
+  })
+})
+
+describe('tbCacheMap', () => {
+  const asked = ['aaa', 'bbb', 'ccc']
+
+  it('marks returned hashes cached and asked-but-absent hashes uncached', () => {
+    const m = tbCacheMap({ aaa: { name: 'x' } }, asked)
+    expect(m.get('aaa')).toBe('cached')
+    expect(m.get('bbb')).toBe('uncached')
+    expect(m.get('ccc')).toBe('uncached')
+  })
+  it('lower-cases hashes on both sides', () => {
+    const m = tbCacheMap({ AAA: { name: 'x' } }, ['AAA'])
+    expect(m.get('aaa')).toBe('cached')
+  })
+  it('returns an empty map when data is not an object', () => {
+    expect(tbCacheMap(null, asked).size).toBe(0)
+    expect(tbCacheMap([], asked).size).toBe(0)
+    expect(tbCacheMap('nope', asked).size).toBe(0)
+  })
+  it('ignores hashes that were never asked about', () => {
+    const m = tbCacheMap({ zzz: { name: 'x' } }, asked)
+    expect(m.has('zzz')).toBe(false)
+    expect(m.get('aaa')).toBe('uncached')
   })
 })
