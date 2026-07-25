@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { queryStore, getContextClient } from '@urql/svelte'
-  import { pageQuery, homeSections } from '$lib/anilist/queries'
+  import { heroQuery, heroVars, homeSections } from '$lib/anilist/queries'
   import HomeRow from '$lib/components/cards/HomeRow.svelte'
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import MalListRow from '$lib/components/cards/MalListRow.svelte'
@@ -42,8 +42,8 @@
   function makeHeroStore() {
     return queryStore<{ Page: { media: Media[] } }>({
       client,
-      query: pageQuery(),
-      variables: { perPage: 15, sort: ['TRENDING_DESC'] },
+      query: heroQuery(),
+      variables: heroVars(new Date()),
     })
   }
 
@@ -55,10 +55,20 @@
     return heroStore.subscribe((v) => (hero = v as HeroResult))
   })
 
+  // Only titles that have real landscape art: a bannerImage, or a YouTube trailer whose maxres
+  // thumbnail banner() falls back to. Everything else would paint a stretched portrait cover.
+  //
+  // The 15 fetched titles are then ordered by a Knuth multiplicative hash of the id, NOT by score.
+  // Taking the top 7 by score meant ranks 8-15 could never be featured, so the hero was the same
+  // handful of titles all season; hashing spreads the pick across the whole pool while staying
+  // STABLE per title (no reshuffle on every load, no Math.random in a $derived).
   const heroMedias = $derived.by(() => {
     const all = hero.data?.Page.media ?? []
-    const withBanner = all.filter((m) => m.bannerImage)
-    return (withBanner.length ? withBanner : all).slice(0, 7)
+    const withArt = all.filter((m) => m.bannerImage ?? m.trailer?.id)
+    return (withArt.length ? withArt : all)
+      .slice()
+      .sort((a, b) => ((a.id * 2654435761) >>> 0) - ((b.id * 2654435761) >>> 0))
+      .slice(0, 7)
   })
 
   // Hard failure = errored with nothing cached to show.
