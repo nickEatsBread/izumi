@@ -15,6 +15,11 @@ export const streamPicker = writable<{
   cachedCount: number
   resolving?: boolean
   playbackError?: string
+  // Rendered as nothing, while STAYING the current request. Used when a single source is
+  // configured and there is no choice to present. It must not be `null` for that: the resolve
+  // flow treats a null picker as "superseded/closed" and abandons the request, which silently
+  // turned Next into a no-op.
+  hidden?: boolean
 } | null>(null)
 
 // Single-window player session. `playing` toggles the in-app player overlay (and
@@ -128,7 +133,11 @@ export const spriteKey = writable<string | null>(null)
 // the SAME release without re-picking — the "folder" behaviour. `group` is the parsed
 // fansub/release author (e.g. "SakuraCircle"), which continues extension/fansub content
 // that carries no Stremio bingeGroup. null when not playing / source unknown.
-export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; infoHash?: string; group?: string } | null>(null)
+// `originId` is what continues a DIRECT source across episodes. A torrent row is identified by its
+// bingeGroup / infoHash / release group, but an online-stream row has none of those — no infoHash,
+// no bingeGroup, and a filename that carries no release group — so continuity never matched for
+// them and the picker reopened on every episode.
+export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; infoHash?: string; group?: string; originId?: string } | null>(null)
 
 // Fullscreen state of the MAIN window while playing. Drives hiding the
 // sidebar/titlebar chrome for edge-to-edge video. Kept in sync with the actual
