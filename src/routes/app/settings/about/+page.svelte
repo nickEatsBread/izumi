@@ -1,10 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
-  import { updateChannel, autoUpdateCheck } from '$lib/settings/ui'
+  import { updateChannel } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
-  import { checkForUpdate, applyUpdate, availableUpdate, updatePhase, updateError } from '$lib/updater'
-  import Toggle from '$lib/components/settings/Toggle.svelte'
+  import { checkForUpdate, applyUpdate, availableUpdate, updatePhase, updateProgress, updateError } from '$lib/updater'
 
   let appVersion = $state('')
   let tauriVersion = $state('')
@@ -44,6 +43,9 @@
   let checking = $state(false)
   let checked = $state(false)
   const installing = $derived($updatePhase === 'downloading')
+  // Percentage is only shown once it's real (>0); before that the label stays a bare "Downloading…"
+  // instead of a stuck "0%".
+  const pct = $derived(Math.round($updateProgress * 100))
   const upToDate = $derived(checked && !$availableUpdate && !$updateError)
 
   async function checkUpdates() {
@@ -79,14 +81,9 @@
   <div class="mt-6 max-w-md">
     <h3 class="mb-2 text-sm font-black">Updates</h3>
 
-    <div class="mb-3">
-      <Toggle
-        label="Auto-check for updates"
-        desc="Check at launch and every 6 hours. Updates never install without your OK."
-        value={$autoUpdateCheck}
-        onToggle={() => ($autoUpdateCheck = !$autoUpdateCheck)}
-      />
-    </div>
+    <p class="mb-3 text-xs text-muted-foreground">
+      izumi checks for updates at launch and every 6 hours. Nothing installs without your OK.
+    </p>
 
     <!-- Release channel is a desktop-updater concept; the Android flow always tracks the
          latest GitHub release. -->
@@ -112,7 +109,9 @@
         {/if}
         <button data-focusable onclick={applyUpdate} disabled={installing}
                 class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition disabled:opacity-60">
-          {installing ? (flatpak ? 'Installing…' : 'Downloading…') : flatpak ? 'Install update' : $isAndroid ? 'Download & install' : 'Restart & install'}
+          {installing
+            ? (flatpak ? 'Installing…' : pct > 0 ? `Downloading… ${pct}%` : 'Downloading…')
+            : flatpak ? 'Install update' : $isAndroid ? 'Download & install' : 'Restart & install'}
         </button>
       </div>
     {:else}

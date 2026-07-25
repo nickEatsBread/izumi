@@ -7,6 +7,22 @@ import type { DebridInfo, ResolveOpts } from './types'
 export const VIDEO = /\.(?:mkv|mp4|avi|mov|webm|flv|wmv|m4v|ts)$/i
 export const JUNK = /\b(?:sample|trailer|extras?|ncop|nced|preview|pv)\b/i
 
+const ARCHIVE_RE = /\.(?:rar|zip|7z|tar|gz|bz2|r\d{2,}|part\d+)$/i
+
+/** True when a name or URL points at an archive rather than a playable video. Debrid services
+ *  repackage some torrents into a single archive; handing one to libmpv looks like a corrupt
+ *  video instead of an actionable error. Accepts either a bare filename (unrestrict's
+ *  `filename` field, the more reliable signal) or a full URL — for a URL only the PATH is
+ *  tested, so a query string like ?token=zip cannot produce a false positive. */
+export function isArchiveName(nameOrUrl: string): boolean {
+  let name = nameOrUrl.trim()
+  if (/^https?:\/\//i.test(name)) {
+    try { name = new URL(name).pathname } catch { /* malformed — test as-is */ }
+  }
+  try { name = decodeURIComponent(name) } catch { /* malformed escape — test as-is */ }
+  return ARCHIVE_RE.test(name.trim())
+}
+
 /** Build a magnet from a bare btih hash, or pass an existing magnet through. */
 export const magnetOf = (h: string) => (h.startsWith('magnet:') ? h : `magnet:?xt=urn:btih:${h}`)
 /** Extract the infoHash from a magnet, or return the bare hash (lower-cased). */

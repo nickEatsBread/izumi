@@ -2,35 +2,50 @@ import { describe, expect, it } from 'vitest'
 import { parseSharedSource, shareableSource, sharedSourceKey, streamFromSharedSource } from './source'
 
 describe('Watch Together source sharing', () => {
-  it('shares a torrent identity instead of its resolved debrid URL', () => {
+  // Izumi deliberately does NOT redact the host's source: guests play the host's exact link so they
+  // do not each need a debrid account. The host is warned about the account-sharing implications
+  // before the room is created (DebridRoomNotice) — that warning is the mitigation, not this module.
+  it('shares a resolved debrid URL as-is rather than falling back to the infohash', () => {
     const result = shareableSource({
       infoHash: '0123456789ABCDEF0123456789ABCDEF01234567',
-      url: 'https://debrid.example/private-file',
+      url: 'https://debrid.example/dl/private-token/release.mkv',
       behaviorHints: { filename: 'Series.S01E02.mkv', videoSize: 1234 },
     })
     expect(result.error).toBe('')
-    expect(result.source).toEqual({
-      version: 1,
-      kind: 'torrent',
-      infoHash: '0123456789abcdef0123456789abcdef01234567',
+    expect(result.source).toMatchObject({
+      kind: 'http',
+      url: 'https://debrid.example/dl/private-token/release.mkv',
       filename: 'Series.S01E02.mkv',
       videoSize: 1234,
-      bingeGroup: undefined,
-      name: undefined,
-      title: undefined,
     })
-    expect(JSON.stringify(result)).not.toContain('debrid.example')
   })
 
-  it('recovers Torrentio resolver hashes without sharing the path token', () => {
+  it('shares a Torrentio resolver URL including its path token', () => {
     const hash = '161c22aecdc3ed95fb629c275ee23f77ca601f3c'
+    const url = `https://torrentio.strem.fun/resolve/realdebrid/private-token/${hash}/null/undefined/release.mkv`
+    const result = shareableSource({ url, name: '[RD+] Torrentio', behaviorHints: { filename: 'release.mkv' } })
+    expect(result.source).toMatchObject({ kind: 'http', url })
+  })
+
+  it('forwards request headers so a gated source still plays for guests', () => {
     const result = shareableSource({
-      url: `https://torrentio.strem.fun/resolve/realdebrid/private-token/${hash}/null/undefined/release.mkv`,
-      name: '[RD+] Torrentio',
-      behaviorHints: { filename: 'release.mkv' },
+      url: 'https://media.example/episode.mkv',
+      __headers: { Referer: 'https://media.example/', Authorization: 'Bearer private' },
     })
-    expect(result.source).toMatchObject({ kind: 'torrent', infoHash: hash, filename: 'release.mkv' })
-    expect(JSON.stringify(result)).not.toContain('private-token')
+    expect(result.source).toMatchObject({
+      kind: 'http',
+      headers: { Referer: 'https://media.example/', Authorization: 'Bearer private' },
+    })
+  })
+
+  it('shares the infohash when the resolved URL is the local P2P engine', () => {
+    // Direct-torrent playback resolves to loopback, which is meaningless on another device.
+    const result = shareableSource({
+      infoHash: '0123456789abcdef0123456789abcdef01234567',
+      url: 'http://127.0.0.1:8145/stream/0/file.mkv',
+      behaviorHints: { filename: 'Episode 08.mkv' },
+    })
+    expect(result.source).toMatchObject({ kind: 'torrent', infoHash: '0123456789abcdef0123456789abcdef01234567' })
   })
 
   it('round-trips an exact torrent and file hint for local resolution', () => {
@@ -45,17 +60,23 @@ describe('Watch Together source sharing', () => {
     expect(sharedSourceKey(source)).toContain('Episode 08.mkv')
   })
 
-  it('accepts a credential-free direct HTTP source', () => {
-    expect(shareableSource({ url: 'https://media.example/episode.mkv?quality=1080#fragment' }).source)
-      .toEqual({ version: 1, kind: 'http', url: 'https://media.example/episode.mkv?quality=1080', filename: undefined, videoSize: undefined, name: undefined, title: undefined })
+  it('round-trips an http source with its headers', () => {
+    const source = shareableSource({
+      url: 'https://media.example/e1.mkv',
+      __headers: { Referer: 'https://media.example/' },
+    }).source!
+    expect(streamFromSharedSource(source)).toMatchObject({
+      url: 'https://media.example/e1.mkv',
+      __headers: { Referer: 'https://media.example/' },
+    })
   })
 
   it.each([
-    { url: 'https://user:pass@media.example/video' },
-    { url: 'https://media.example/video?access_token=private' },
-    { url: 'file:///home/user/video.mkv' },
-    { url: 'https://media.example/video', __headers: { Authorization: 'Bearer private' } },
-  ])('does not share credential-bearing or host-local sources', (stream) => {
+    { stream: { url: 'file:///home/user/video.mkv' }, why: 'non-http scheme' },
+    { stream: { url: 'not a url' }, why: 'unparseable' },
+    { stream: {}, why: 'neither url nor infohash' },
+    { stream: { infoHash: 'nothex' }, why: 'malformed infohash' },
+  ])('reports an error for an unusable source ($why)', ({ stream }) => {
     const result = shareableSource(stream)
     expect(result.source).toBeNull()
     expect(result.error).not.toBe('')
@@ -64,7 +85,16 @@ describe('Watch Together source sharing', () => {
   it('validates sources received from a peer', () => {
     expect(parseSharedSource({ version: 1, kind: 'http', url: 'https://media.example/e1.mkv' }))
       .toMatchObject({ kind: 'http', url: 'https://media.example/e1.mkv' })
-    expect(parseSharedSource({ version: 1, kind: 'http', url: 'https://media.example/e1?token=private' })).toBeNull()
     expect(parseSharedSource({ version: 99, kind: 'torrent', infoHash: '0123456789abcdef0123456789abcdef01234567' })).toBeNull()
+    expect(parseSharedSource({ version: 1, kind: 'http', url: 'file:///etc/passwd' })).toBeNull()
+  })
+
+  it('keeps only string header values from an untrusted peer', () => {
+    const source = parseSharedSource({
+      version: 1, kind: 'http', url: 'https://media.example/e1.mkv',
+      headers: { Referer: 'https://media.example/', evil: { nested: true }, n: 5 },
+    })
+    expect(source).toMatchObject({ headers: { Referer: 'https://media.example/' } })
+    expect(Object.keys((source as { headers: Record<string, string> }).headers)).toEqual(['Referer'])
   })
 })

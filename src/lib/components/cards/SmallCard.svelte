@@ -19,6 +19,8 @@
   import { isAndroid, isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import PreviewCard from './PreviewCard.svelte'
+  import { previewPos, rootZoom } from './preview-pos'
+  import { portal } from '$lib/util/portal'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
   let { media, fill = false }: { media: Media; fill?: boolean } = $props()
@@ -32,14 +34,12 @@
   let closeT: ReturnType<typeof setTimeout>
   const dot = (m: Media) => m.status === 'RELEASING' ? '#3db4f2' : m.status === 'NOT_YET_RELEASED' ? '#f79a63' : '#7bd555'
 
-  // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and
-  // clamped to the viewport so it never gets cut off by the sidebar or edges.
-  const PW = 280, PH = 340, SIDEBAR = 64
+  // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and clamped to the
+  // viewport so it never gets cut off by the sidebar or edges. The math is zoom-aware — see
+  // preview-pos.ts for why the UI-scale setting otherwise throws the popup off by that factor.
   function place() {
     const r = el.getBoundingClientRect()
-    const left = Math.max(SIDEBAR, Math.min(r.left + r.width / 2 - PW / 2, window.innerWidth - PW - 8))
-    const top = Math.max(8, Math.min(r.top - 16, window.innerHeight - PH - 8))
-    pos = { left, top }
+    pos = previewPos(r, { width: window.innerWidth, height: window.innerHeight }, rootZoom())
   }
   // Hovercard bridge: opening cancels any pending close; leaving the card (or the
   // preview) schedules a short delayed close so the pointer can travel card→preview
@@ -73,7 +73,10 @@
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
            browser promotes the one card being hovered on demand; that's all this needs. -->
       {#if !coverReady}<div class="absolute inset-0 skeloader"></div>{/if}
-      <img src={coverSrc} alt={title(media)} decoding="async" onload={() => (coverReady = true)}
+      <!-- `loading="lazy"` is load-bearing, not a nicety: ListRow renders EVERY entry of a tracker
+           list with no cap, so a large account mounted ~1100 of these and fired ~1100 concurrent
+           extraLarge cover fetches at mount. -->
+      <img src={coverSrc} alt={title(media)} loading="lazy" decoding="async" onload={() => (coverReady = true)}
            class="relative h-full w-full object-cover transition-[opacity,transform] duration-150 ease-out {coverReady ? 'opacity-100' : 'opacity-0'} group-hover:scale-105" />
     </div>
     <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
@@ -86,7 +89,10 @@
 </div>
 
 {#if hovered}
-  <div class="pointer-events-auto fixed z-50 will-change-[transform,opacity]" style={`left:${pos.left}px;top:${pos.top}px`}
+  <!-- use:portal — re-parent to <body>. In place, the row's `.load-in` transform animation makes
+       the card wrapper the containing block for this `fixed` popup (offset by the card's origin,
+       clipped by the carousel, painted under sibling posters). From <body>, fixed = viewport. -->
+  <div use:portal class="pointer-events-auto fixed z-50 will-change-[transform,opacity]" style={`left:${pos.left}px;top:${pos.top}px`}
        in:fade={{ duration: 140, easing: cubicOut }} out:fade={{ duration: 120, easing: cubicOut }}
        onpointerenter={keepOpen} onpointerleave={scheduleClose} role="presentation">
     <PreviewCard {media} />

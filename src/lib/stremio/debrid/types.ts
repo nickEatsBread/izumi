@@ -55,6 +55,17 @@ export interface ResolveOpts {
   timeoutMs?: number // default 10 min
   signal?: AbortSignal
   want?: EpisodeWant // episode-aware file selection inside multi-file torrents
+  /** Never add anything to the user's debrid account. Set by background/prefetch callers so a
+   *  speculative resolve can't create torrent entries the user didn't ask for. */
+  noAdd?: boolean
+}
+
+/** One external subtitle file resolved alongside the chosen video. */
+export interface DebridSidecar {
+  url: string   // direct, playable subtitle URL
+  name: string  // in-torrent filename, for debugging and fallback labels
+  lang: string  // ISO 639-2, or 'und'
+  title: string // human label for the track menu
 }
 
 export interface DebridProviderMeta {
@@ -75,6 +86,10 @@ export interface DebridProvider extends DebridProviderMeta {
   listFiles?(key: string, item: DebridItem): Promise<DebridFile[]>
   /** Resolve ONE chosen file to a direct playable URL. Drives debridCaching via opts.onStatus. */
   resolveFile?(key: string, item: DebridItem, file: DebridFile, opts?: ResolveOpts): Promise<string>
+  /** External subtitle files belonging to the video `resolveHash` picked. Optional: a provider
+   *  that cannot expose per-file links simply omits it and playback is unaffected.
+   *  MUST NOT throw — return [] when sidecars cannot be resolved. */
+  resolveSidecars?(key: string, hashOrMagnet: string, opts?: ResolveOpts): Promise<DebridSidecar[]>
   /** Remove a torrent from the account. */
   deleteItem?(key: string, item: DebridItem): Promise<void>
 }

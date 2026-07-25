@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store'
 import { markWatched } from '$lib/trackers'
-import { localHistory } from '$lib/player/history'
+import { localHistory, sessionProgress } from '$lib/player/history'
 import { title } from '$lib/anilist/media'
 import type { Media } from '$lib/anilist/types'
 
@@ -42,6 +42,17 @@ export function initReturnTracking() {
       localHistory.update((h) => {
         const e = h[p.media.id]
         return e ? { ...h, [p.media.id]: { ...e, progress: prev } } : h
+      })
+      // markWatched also writes sessionProgress, which Continue Watching folds in unconditionally
+      // and bakes into the persisted snapshot floor — so reverting localHistory alone left Undo
+      // looking like it did nothing (the card still pointed at the next episode) and the next
+      // reconcile made the un-done count permanent.
+      sessionProgress.update((s) => {
+        if (!(p.media.id in s)) return s
+        const next = { ...s }
+        if (prev > 0) next[p.media.id] = prev
+        else delete next[p.media.id]
+        return next
       })
       watchToast.set(null)
     }

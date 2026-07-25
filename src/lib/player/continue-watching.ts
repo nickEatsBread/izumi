@@ -169,9 +169,17 @@ async function fetchMal(client: QueryClient, malActive: boolean): Promise<{ item
   try {
     const list = await getMalListProgressOrThrow('watching', CAP)
     if (!list.length) return { items: [], failed: false }
-    const res = await client.query(MEDIA_BY_MAL_QUERY, { ids: list.map((e) => e.idMal) }).toPromise()
-    if (res.error) return { items: [], failed: true }
-    const byMal = new Map(((res.data as { Page?: { media?: Media[] } })?.Page?.media ?? []).map((m) => [m.idMal, m]))
+    // MEDIA_BY_MAL_QUERY is `Page(perPage: 50)`, but CAP is 60 — asking for 60 ids silently
+    // returned only 50 and the unmatched entries were dropped by the `.filter` below, so a
+    // MAL user with >50 watching entries lost actively-watched shows from Continue Watching
+    // (and from the persisted snapshot). Chunk by the page size, as refreshLocalMedia does.
+    const malIds = list.map((e) => e.idMal)
+    const byMal = new Map<number | undefined, Media>()
+    for (let i = 0; i < malIds.length; i += 50) {
+      const res = await client.query(MEDIA_BY_MAL_QUERY, { ids: malIds.slice(i, i + 50) }).toPromise()
+      if (res.error) return { items: [], failed: true }
+      for (const m of ((res.data as { Page?: { media?: Media[] } })?.Page?.media ?? [])) byMal.set(m.idMal, m)
+    }
     const items = list
       .map((e) => { const media = byMal.get(e.idMal); return media ? { media, progress: e.progress, updatedAt: e.updatedAt } : null })
       .filter((x): x is Item => !!x)
