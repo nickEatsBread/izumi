@@ -7,12 +7,16 @@
   import { isMobile } from '$lib/platform'
 
   let {
-    label, options, selected = [], onchange,
+    label, options, selected = [], onchange, labelOf,
   }: {
     label: string
     options: string[]
     selected?: string[]
     onchange: (v: string[]) => void
+    // Optional display mapper, for option lists whose VALUE is not meant to be read — e.g. language
+    // codes, where the stored value must stay 'fr' but the row should read "French". Without it the
+    // default title-casing applies, so existing callers are unaffected.
+    labelOf?: (value: string) => string
   } = $props()
 
   let open = $state(false)
@@ -51,7 +55,7 @@
       <span class="grid size-4 shrink-0 place-items-center rounded border {on ? 'border-theme bg-theme text-white' : 'border-muted-foreground/40'}">
         {#if on}<Check size={11} strokeWidth={3} />{/if}
       </span>
-      <span class="truncate">{pretty(o)}</span>
+      <span class="truncate">{labelOf ? labelOf(o) : pretty(o)}</span>
     </button>
   {/each}
 {/snippet}

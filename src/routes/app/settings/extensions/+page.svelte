@@ -1,6 +1,9 @@
 <script lang="ts">
-  import { debridKey, debridProvider, extensionUrls, disabledExtensions, torrentPlaybackMode } from '$lib/settings/ui'
-  import { fetchExtensionMeta } from '$lib/extensions/manager'
+  import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
+  import { fetchExtensionInfo } from '$lib/extensions/manager'
+  import { langName } from '$lib/player/track-label'
+  import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
+  import MultiSelect from '$lib/components/search/MultiSelect.svelte'
   import { providerList, providerMeta } from '$lib/stremio/debrid'
   import Puzzle from 'lucide-svelte/icons/puzzle'
   import Trash2 from 'lucide-svelte/icons/trash-2'
@@ -17,6 +20,51 @@
   // the repo path as the title.
   const isGh = (u: string) => u.startsWith('gh:') || (/^[A-Za-z0-9][A-Za-z0-9-]*\/[^\s:]+$/.test(u) && !/^https?:/.test(u))
   const cleanSpec = (u: string) => u.replace(/^gh:/, '')
+
+  // One promise per manifest, SHARED between the list below and the language chips — calling
+  // fetchExtensionMeta separately for each would refetch every manifest a second time.
+  const metaByUrl = $derived(new Map($extensionUrls.map((u) => [u, fetchExtensionInfo(u).catch(() => ({ configs: [], problem: 'That URL could not be fetched.' }))])))
+  const langLabel = (l: string) => langName(l) ?? l.toUpperCase()
+  // Which languages the installed sources actually declare — used only to sort those to the top of
+  // the list, NOT to limit it: a source may declare no language at all, and a language can be
+  // chosen before adding a source that serves it.
+  let installedLangs = $state<string[]>([])
+  $effect(() => {
+    let stale = false
+    void Promise.all([...metaByUrl.values()]).then((groups) => {
+      if (stale) return
+      installedLangs = [...new Set(groups.flatMap((g) => g.configs).map((m) => m.lang).filter((l): l is string => !!l))]
+    })
+    return () => { stale = true }
+  })
+  // Installed languages first (alphabetically within each group), then the rest.
+  const langOptions = $derived(
+    [...SOURCE_LANGUAGES].sort((a, b) => {
+      const ia = installedLangs.includes(a) ? 0 : 1
+      const ib = installedLangs.includes(b) ? 0 : 1
+      return ia - ib || langLabel(a).localeCompare(langLabel(b))
+    }),
+  )
+  // Empty = every language, matching the resolver's "no allowlist means all" rule.
+  const allLangs = $derived($providerLanguages.length === 0)
+
+  // Per-plugin switches. One source URL expands to many plugins (a marketplace index yields ~18),
+  // so the URL toggle above is all-or-nothing and this is the finer control.
+  let expanded = $state<string[]>([])
+  const isExpanded = (url: string) => expanded.includes(url)
+  function toggleExpanded(url: string) {
+    expanded = isExpanded(url) ? expanded.filter((u) => u !== url) : [...expanded, url]
+  }
+  const pluginOff = (id: string) => $disabledPlugins.includes(id)
+  function togglePlugin(id: string) {
+    $disabledPlugins = pluginOff(id) ? $disabledPlugins.filter((x) => x !== id) : [...$disabledPlugins, id]
+  }
+  function setAllPlugins(ids: string[], on: boolean) {
+    $disabledPlugins = on
+      ? $disabledPlugins.filter((x) => !ids.includes(x))
+      : [...new Set([...$disabledPlugins, ...ids])]
+  }
+  const enabledCount = (ids: string[]) => ids.filter((id) => !pluginOff(id)).length
 </script>
 
 <div class="p-4 sm:p-8">
@@ -27,31 +75,72 @@
   </p>
 
   <div class="max-w-2xl">
-    <label class="mb-4 flex flex-col gap-1">
-      <span class="text-sm font-bold">Torrent playback</span>
-      <select data-focusable bind:value={$torrentPlaybackMode} class="rounded-md bg-input px-3 py-2 text-sm">
-        <option value="debrid">Prefer debrid</option>
-        <option value="direct">Direct P2P</option>
-      </select>
-      <span class="text-xs text-muted-foreground">
+    <div class="mb-4 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">Torrent playback</span>
+        <select data-focusable bind:value={$torrentPlaybackMode} class="rounded-md bg-input px-3 py-2 text-sm">
+          <option value="debrid">Prefer debrid</option>
+          <option value="direct">Direct P2P</option>
+        </select>
+      </label>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">Debrid service</span>
+        <select data-focusable bind:value={$debridProvider} class="rounded-md bg-input px-3 py-2 text-sm">
+          {#each providerList as p (p.id)}
+            <option value={p.id}>{p.name}{p.experimental ? ' (experimental)' : ''}</option>
+          {/each}
+        </select>
+      </label>
+
+      <span class="text-xs text-muted-foreground sm:col-span-2">
         {#if $torrentPlaybackMode === 'direct'}Streams the selected episode from peers and seeds with a protected upload limit. Playback data is temporary and your IP address is visible to torrent peers.{:else}Uses your configured debrid service. If no credential is configured, Izumi falls back to direct P2P playback.{/if}
       </span>
-    </label>
-
-    <label class="mb-4 flex flex-col gap-1">
-      <span class="text-sm font-bold">Debrid service</span>
-      <select data-focusable bind:value={$debridProvider} class="rounded-md bg-input px-3 py-2 text-sm">
-        {#each providerList as p (p.id)}
-          <option value={p.id}>{p.name}{p.experimental ? ' (experimental)' : ''}</option>
-        {/each}
-      </select>
-    </label>
+    </div>
 
     <label class="mb-6 flex flex-col gap-1">
       <span class="text-sm font-bold">{current?.name ?? 'Debrid'} {current?.credential === 'userpass' ? 'login' : 'API key'}</span>
       <input type="password" bind:value={$debridKey} data-focusable placeholder={current?.credential === 'userpass' ? 'username:password' : `Your ${current?.name ?? 'debrid'} token`} class="rounded-md bg-input px-3 py-2 text-sm" />
       <span class="text-xs text-muted-foreground">From {current?.keyHint ?? 'your debrid account'}. Turns extension torrent results into cached streams.</span>
     </label>
+
+    <div class="mb-6 grid items-start gap-x-4 gap-y-4 sm:grid-cols-2">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">Audio</span>
+        <select data-focusable bind:value={$providerAudio} class="rounded-md bg-input px-3 py-2 text-sm">
+          <option value="both">Subbed and dubbed</option>
+          <option value="sub">Subbed only</option>
+          <option value="dub">Dubbed only</option>
+        </select>
+        <span class="text-xs text-muted-foreground">
+          {#if $providerAudio === 'both'}Both are offered when a source carries them, each labelled SUB or DUB.{:else}Only {$providerAudio === 'dub' ? 'dubbed' : 'subbed'} results are requested — sources that carry nothing else are skipped entirely, which also makes the search faster.{/if}
+        </span>
+      </label>
+
+      <div class="flex flex-col gap-1">
+        <span class="text-sm font-bold">Source languages</span>
+        <div class="mt-1 flex flex-wrap items-center gap-2">
+          <MultiSelect
+            label="Languages"
+            options={langOptions}
+            selected={$providerLanguages}
+            labelOf={langLabel}
+            onchange={(v) => ($providerLanguages = v)}
+          />
+          {#if !allLangs}
+            <button data-focusable onclick={() => ($providerLanguages = [])}
+              class="rounded-md px-2 py-1 text-xs font-bold text-muted-foreground hover:bg-accent">Clear (all languages)</button>
+          {/if}
+        </div>
+        <span class="mt-1 text-xs text-muted-foreground">
+          {#if allLangs}
+            Every language is searched. Pick one or more to narrow it — sources serving other languages are then not queried at all, which also speeds up the source list.
+          {:else}
+            Only {$providerLanguages.map(langLabel).join(', ')} {$providerLanguages.length === 1 ? 'is' : 'are'} searched. Sources that don't declare a language are always included.
+          {/if}
+        </span>
+      </div>
+    </div>
 
     <p class="mb-2 text-sm text-muted-foreground">Extension sources — a GitHub repo (<code class="rounded bg-secondary px-1 text-xs">gh:owner/repo</code> or <code class="rounded bg-secondary px-1 text-xs">owner/repo/folder</code>) or a manifest URL.</p>
     <div class="flex gap-2">
@@ -60,14 +149,16 @@
     </div>
     <ul class="mt-3 space-y-2">
       {#each $extensionUrls as url, i (url)}
-        {@const ext = fetchExtensionMeta(url)}
+        {@const ext = metaByUrl.get(url)!}
         {@const gh = isGh(url)}
         {@const off = $disabledExtensions.includes(url)}
-        <li class="flex items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
+        <li class="rounded-lg border border-border p-3" class:opacity-50={off}>
+          <div class="flex items-center gap-3">
           {#await ext}
             <div class="skeloader size-10 shrink-0 rounded-md"></div>
             <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
-          {:then metas}
+          {:then info}
+            {@const metas = info.configs}
             {@const m = metas[0]}
             {#if gh}
               <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-foreground">
@@ -85,17 +176,62 @@
                 {#if m?.version && metas.length === 1}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{m.version}</span>{/if}
               </div>
               {#if metas.length > 1}
-                <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{metas.map((x) => x.name).join(' · ')}</p>
+                {@const on = enabledCount(metas.map((x) => x.id))}
+                <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{on} of {metas.length} plugins on · {metas.filter((x) => !pluginOff(x.id)).map((x) => x.name).join(' · ') || 'none'}</p>
+              {:else if info.problem}
+                <!-- Loudly, rather than an empty list that reads as "izumi is broken". -->
+                <p class="mt-0.5 text-xs text-amber-400">{info.problem}</p>
               {:else}
                 <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{m?.description ?? (gh ? url : host(url))}</p>
               {/if}
             </div>
+            {#if metas.length > 1}
+              <button data-focusable onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
+                class="shrink-0 rounded-md px-2 py-1 text-xs font-bold text-muted-foreground hover:bg-accent">
+                {isExpanded(url) ? 'Hide' : 'Plugins'}
+              </button>
+            {/if}
           {/await}
           <button data-focusable onclick={() => toggleExt(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
             class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
             <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
           </button>
           <button onclick={() => removeExt(i)} data-focusable title="Remove" class="grid size-8 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent"><Trash2 size={16} /></button>
+          </div>
+
+          {#if isExpanded(url)}
+            {#await ext then info}
+              {@const metas = info.configs}
+              {@const ids = metas.map((x) => x.id)}
+              <div class="mt-3 border-t border-border pt-3">
+                <div class="mb-2 flex items-center justify-between">
+                  <span class="text-xs font-bold text-muted-foreground">Plugins in this source</span>
+                  <span class="flex gap-1">
+                    <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded px-2 py-0.5 text-xs font-bold text-muted-foreground hover:bg-accent">All on</button>
+                    <button data-focusable onclick={() => setAllPlugins(ids, false)} class="rounded px-2 py-0.5 text-xs font-bold text-muted-foreground hover:bg-accent">All off</button>
+                  </span>
+                </div>
+                <ul class="space-y-1">
+                  {#each metas as p (p.id)}
+                    {@const pOff = pluginOff(p.id)}
+                    <li class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50" class:opacity-50={pOff}>
+                      {#if p.icon}
+                        <img src={iconSrc(p.icon)} alt="" class="size-6 shrink-0 rounded bg-neutral-900 object-contain" />
+                      {:else}
+                        <div class="grid size-6 shrink-0 place-items-center rounded bg-secondary text-muted-foreground"><Puzzle size={12} /></div>
+                      {/if}
+                      <span class="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+                      {#if p.lang}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}
+                      <button data-focusable onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
+                        class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+                        <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+                      </button>
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/await}
+          {/if}
         </li>
       {/each}
       {#if !$extensionUrls.length}<li class="text-sm text-muted-foreground">No extensions added.</li>{/if}
