@@ -2,9 +2,10 @@ import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError, isArchive
 import { pickEpisodeVideo } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile, ResolveOpts } from '../types'
 
-// Real-Debrid. Flow: addMagnet → selectFiles(all) [RD is the only one that requires
-// this] → poll info until 'downloaded' → pick largest video → unrestrict/link. RD
-// deprecated /instantAvailability, so cache = reaches 'downloaded' fast.
+// Real-Debrid. Flow: addMagnet → selectFiles(video ids, never `all`) [RD is the only one that
+// requires this] → poll info until 'downloaded' → pick the wanted episode (or largest video) →
+// unrestrict/link, retrying with a single-file selection if RD packed the result into an
+// archive. RD deprecated /instantAvailability, so cache = reaches 'downloaded' fast.
 
 const BASE = 'https://api.real-debrid.com/rest/1.0'
 interface RdFile { id: number; path: string; bytes: number; selected: number }
@@ -101,21 +102,48 @@ export function rdLinkFor(selectedCount: number, index: number, links: string[])
 // hash for accounts with >100 torrents — the entry had scrolled past the newest 100 — so the
 // resolve fell through to addMagnet and RD re-cached a torrent that was already downloaded. Page
 // through until found or the list is exhausted, bounded to keep the common (small-account) case
-// at exactly one request: page 1 returning <100 entries (or a hit) stops immediately.
+// at exactly one request: page 1 returning <100 entries stops immediately.
+//
+// Prefers the FULLEST matching entry (greatest `bytes` — RD reports the selected-files size, not
+// the whole torrent), not just the first/newest hit. rdResolveSingleFile's retry creates its own
+// 'downloaded' entry with only ONE file selected; landing on that instead of the entry with every
+// video selected starves pickEpisodeVideo of every other episode in the release and silently
+// serves the wrong one (see the poisoning bug this guards against).
 async function findDownloadedId(key: string, hash: string): Promise<string | undefined> {
   const LIMIT = 100
   const MAX_PAGES = 5 // ≤500 torrents scanned; beyond that, fall through to addMagnet
+  let best: { id: string; bytes: number } | undefined
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as Array<{ id: string; hash?: string; status: string }>
+    const list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as Array<{ id: string; hash?: string; status: string; bytes?: number }>
     if (!Array.isArray(list) || list.length === 0) break
-    const hit = list.find((t) => t.hash?.toLowerCase() === hash && t.status === 'downloaded')
-    if (hit) return hit.id
+    for (const t of list) {
+      if (t.hash?.toLowerCase() !== hash || t.status !== 'downloaded') continue
+      if (!best || (t.bytes ?? 0) > best.bytes) best = { id: t.id, bytes: t.bytes ?? 0 }
+    }
     if (list.length < LIMIT) break // last page reached
   }
-  return undefined
+  return best?.id
 }
 
 interface RdUnrestricted { download: string; filename?: string; filesize?: number }
+
+/** RD's unrestrict response can carry `filename: ''` — `||`, not `??`, so an empty string still
+ *  falls back to the (always-present) download URL for archive detection. */
+const servedName = (u: RdUnrestricted) => u.filename || u.download
+
+/** Should the caller retry with a fresh single-file selection? Unconditionally yes when there is
+ *  no usable link at all (`un` undefined — covers both an unusable positional link mapping and
+ *  `chosen` not being part of the current selection at all). Yes when RD served an archive, but
+ *  ONLY if more than one file was selected: packing correlates with selecting more than one
+ *  file, so a selection that was already exactly one file and still came back as an archive
+ *  would just reproduce the identical archive on retry — that must throw instead of adding
+ *  another torrent for nothing. Always no for `noAdd` callers (background prefetch): they may
+ *  only serve what's already resolvable, never create a new entry on the user's account. */
+export function rdShouldRetrySingleFile(un: RdUnrestricted | undefined, selectedCount: number, noAdd: boolean): boolean {
+  if (noAdd) return false
+  if (!un) return true
+  return isArchiveName(servedName(un)) && selectedCount > 1
+}
 
 /** Re-add the magnet selecting exactly ONE file, then unrestrict it. Selecting a single file
  *  is the reliable way to make RD serve a real file rather than a packed archive, and
@@ -174,28 +202,35 @@ export const realdebrid: DebridProvider = {
         return rdStatus(info)
       }, opts)
     }
-    const selected = (info.files ?? []).filter((f) => f.selected)
-    const videos = selected.filter((f) => VIDEO.test(f.path) && !JUNK.test(f.path))
-    // Episode-aware pick first (batch/season packs: play the file the user asked for,
-    // not the biggest); legacy largest-video fallback otherwise. Matched on the full
-    // in-torrent path, so the chosen object must be one of `selected`'s own elements
-    // (it is: `f` is a ref).
+    const files = info.files ?? []
+    const selected = files.filter((f) => f.selected)
+    const videos = files.filter((f) => VIDEO.test(f.path) && !JUNK.test(f.path))
+    // Episode-aware pick first (batch/season packs: play the file the user asked for, not the
+    // biggest); legacy largest-video fallback otherwise. Picked from the FULL file list, not
+    // `selected` — a reused entry (findDownloadedId) can have only a DIFFERENT episode
+    // selected, so `selected` alone can't tell us which episodes this torrent even has. `chosen`
+    // may therefore not be in `selected` at all; `idx` below handles that.
     const chosen =
-      pickEpisodeVideo(selected.map((f) => ({ name: f.path, bytes: f.bytes, f })), opts?.want)?.f
-      ?? [...(videos.length ? videos : selected)].sort((a, b) => b.bytes - a.bytes)[0]
+      pickEpisodeVideo(files.map((f) => ({ name: f.path, bytes: f.bytes, f })), opts?.want)?.f
+      ?? [...(videos.length ? videos : files)].sort((a, b) => b.bytes - a.bytes)[0]
     if (!chosen) throw new Error('No playable file in that torrent.')
     const idx = selected.indexOf(chosen)
-    const link = rdLinkFor(selected.length, idx, info.links ?? [])
+    const link = idx >= 0 ? rdLinkFor(selected.length, idx, info.links ?? []) : undefined
     let un = link
       ? await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
       : undefined
-    // Either the link mapping was unusable, or RD packed the selection into an archive.
-    // Both recover the same way: re-add selecting only the file we actually want.
-    if (!un || isArchiveName(un.filename ?? un.download)) {
+    // Retry with a fresh single-file selection when needed (no usable link — including `chosen`
+    // not being selected at all — or RD packed the selection into an archive); see
+    // rdShouldRetrySingleFile for exactly when. Skipped for noAdd callers (background prefetch),
+    // which may only serve what's already resolvable.
+    if (rdShouldRetrySingleFile(un, selected.length, !!opts?.noAdd)) {
       un = await rdResolveSingleFile(key, hashOrMagnet, chosen.id, opts)
     }
-    if (isArchiveName(un.filename ?? un.download))
-      throw new Error('Real-Debrid only offers this release as an archive, so the episode cannot be streamed. Play it with Direct P2P (Settings → torrent playback mode).')
+    if (!un || isArchiveName(servedName(un))) {
+      throw new Error(opts?.noAdd
+        ? "Real-Debrid needs to re-select this release, which background prefetch isn't allowed to do."
+        : 'Real-Debrid only offers this release as an archive, so the episode cannot be streamed. Play it with Direct P2P (Settings → Extensions → Torrent playback).')
+    }
     // Copyright decoy guard: when a release is taken down, RD serves a tiny placeholder clip
     // ("removed by copyright holder") in place of the real file — which otherwise just PLAYS.
     // The torrent still advertises the real size, so a served file far smaller than that (here
@@ -227,11 +262,15 @@ export const realdebrid: DebridProvider = {
     let un = link
       ? await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
       : undefined
-    if (!un || isArchiveName(un.filename ?? un.download)) {
-      un = await rdResolveSingleFile(key, item.hash ?? item.id, chosen.id, opts)
+    if (rdShouldRetrySingleFile(un, selected.length, !!opts?.noAdd)) {
+      if (!item.hash) throw new Error("Real-Debrid can't re-add this torrent — it has no infohash.")
+      un = await rdResolveSingleFile(key, item.hash, chosen.id, opts)
     }
-    if (isArchiveName(un.filename ?? un.download))
-      throw new Error('Real-Debrid only offers this file inside an archive.')
+    if (!un || isArchiveName(servedName(un))) {
+      throw new Error(opts?.noAdd
+        ? "Real-Debrid needs to re-select this file, which background prefetch isn't allowed to do."
+        : 'Real-Debrid only offers this file inside an archive.')
+    }
     // Same copyright-decoy guard as resolveHash: a served file far smaller than the torrent's is a placeholder.
     if (chosen.bytes > 0 && un.filesize && un.filesize < chosen.bytes * 0.5)
       throw new Error('Real-Debrid served a copyright-removed placeholder for this file — pick another source.')
