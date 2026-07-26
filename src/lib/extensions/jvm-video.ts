@@ -14,6 +14,18 @@ export function dedupeJvmSources<T extends { id: string }>(sources: T[]): T[] {
   return [...new Map(sources.map((source) => [source.id, source])).values()]
 }
 
+/** Some JVM extractors decrypt sidecars into a process-lifetime temporary file. Keep those local
+ * file URLs alongside HTTP(S) tracks; the desktop mpv process can read them while the shared JVM
+ * runtime remains alive. URL parsing also repairs Java's `file://C:\...` Windows spelling. */
+export function normalizeJvmSidecarUrl(value: unknown): string | undefined {
+  try {
+    const parsed = new URL(String(value ?? ''))
+    return ['http:', 'https:', 'file:'].includes(parsed.protocol) ? parsed.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Aniyomi extractors commonly put the information we need in `Video.title`, for example
  * "HD-1 - Sub - 1080p". Keep the parser deliberately conservative so an unrelated title remains

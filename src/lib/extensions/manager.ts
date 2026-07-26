@@ -6,7 +6,7 @@ import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem } from './catalog'
 import { extensionSourceConfigured, jvmSourceOwners } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
-import { dedupeJvmSources, parseJvmVideoTitle } from './jvm-video'
+import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -522,13 +522,15 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
         const url = String(video.url)
         const identity = parseJvmVideoTitle(video.title)
         const subtitles = ((video.subtitles ?? []) as Record<string, unknown>[])
-          .map((track) => ({
-            url: String(track.file ?? track.url ?? ''),
-            language: String(track.label ?? track.language ?? ''),
-            isDefault: Boolean(track.isDefault ?? track.default ?? false),
-            headers: (track.headers ?? undefined) as Record<string, string> | undefined,
-          }))
-          .filter((track) => /^https?:\/\//i.test(track.url))
+          .flatMap((track) => {
+            const url = normalizeJvmSidecarUrl(track.file ?? track.url)
+            return url ? [{
+              url,
+              language: String(track.label ?? track.language ?? ''),
+              isDefault: Boolean(track.isDefault ?? track.default ?? false),
+              headers: (track.headers ?? undefined) as Record<string, string> | undefined,
+            }] : []
+          })
         return {
           url,
           type: mediaType(url),
@@ -541,13 +543,15 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
           headers: (video.headers ?? {}) as Record<string, string>,
           subtitles,
           audioTracks: ((video.audios ?? []) as Record<string, unknown>[])
-            .map((track) => ({
-              url: String(track.file ?? track.url ?? ''),
-              language: String(track.label ?? track.language ?? ''),
-              title: String(track.title ?? track.label ?? ''),
-              headers: (track.headers ?? undefined) as Record<string, string> | undefined,
-            }))
-            .filter((track) => /^https?:\/\//i.test(track.url)),
+            .flatMap((track) => {
+              const url = normalizeJvmSidecarUrl(track.file ?? track.url)
+              return url ? [{
+                url,
+                language: String(track.label ?? track.language ?? ''),
+                title: String(track.title ?? track.label ?? ''),
+                headers: (track.headers ?? undefined) as Record<string, string> | undefined,
+              }] : []
+            }),
         }
       })
     return {
