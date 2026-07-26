@@ -15,10 +15,9 @@ export const streamPicker = writable<{
   cachedCount: number
   resolving?: boolean
   playbackError?: string
-  // Rendered as nothing, while STAYING the current request. Used when a single source is
-  // configured and there is no choice to present. It must not be `null` for that: the resolve
-  // flow treats a null picker as "superseded/closed" and abandons the request, which silently
-  // turned Next into a no-op.
+  // Rendered as nothing while STAYING the current request. Automatic binge continuation uses
+  // this while it searches for the previous episode's release; clearing the store would make the
+  // resolve flow treat that search as superseded and abandon it.
   hidden?: boolean
 } | null>(null)
 

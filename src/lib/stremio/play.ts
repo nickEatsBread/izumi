@@ -13,7 +13,7 @@ import { resolveHash, resolveSidecars, providerName, type EpisodeWant } from './
 import { resolveOnlineStreams } from './onlinestream'
 import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
-import { hasConfiguredExtensions, queryExtensions, runningExtensionCount } from '$lib/extensions/manager'
+import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
@@ -665,9 +665,6 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   // so every episode flashed a selector the user never needed to see. Revealed only if the
   // continuation actually fails — see the reveal after the post-settle fallback.
   let hideForContinuation = !!cont
-  // Declared alongside hideForContinuation so revealPicker (defined below) can read it; assigned
-  // once the configured source count is known.
-  let suppressPicker = false
   // Open the picker immediately in a skeleton (resolving) state — no "Resolving
   // stream…" text; it fills in with real sources as EACH addon responds.
   streamPicker.set({ media, episode, streams: [], cachedCount: 0, resolving: true, hidden: hideForContinuation })
@@ -679,18 +676,12 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     return resolveAbort === abort && !signal.aborted
       && !!current && current.media.id === media.id && current.episode === episode
   }
-  // Hide the picker WITHOUT closing it — see the `hidden` note on streamPicker. Clearing it would
-  // make stillCurrent() false and abandon the in-flight resolve.
-  const hidePicker = () => {
-    if (!stillCurrent()) return
-    streamPicker.update((c) => c ? { ...c, hidden: true } : c)
-  }
   // Make a picker hidden for a binge continuation visible again: the continuation is off the table,
   // so the user has to choose (or at least see why nothing played).
   const revealPicker = () => {
     hideForContinuation = false
     if (!stillCurrent()) return
-    streamPicker.update((c) => c ? { ...c, hidden: suppressPicker } : c)
+    streamPicker.update((c) => c ? { ...c, hidden: false } : c)
   }
   const showPickerError = (message: string) => {
     if (!stillCurrent()) return
@@ -721,19 +712,9 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     const bases = get(enabledAddonUrls)
     const hasExt = await hasConfiguredExtensions()
     if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL or install an anime package in Settings.')
-    // Exactly ONE source configured — a single enabled plugin and no addons — means the picker has
-    // no choice to offer, so it is hidden and the best result plays directly. Counted in PLUGINS,
-    // not URLs, because one URL can expand to many.
-    //
-    // Resolved WITHOUT blocking: awaiting the count here gated every play on the full extension
-    // build (manifest + module fetches for every plugin), so a single slow fetch made Next hang
-    // forever. Warm-up has usually already run, so this settles almost immediately; if it settles
-    // late the picker is simply visible until then.
-    if (!bases.length && hasExt) {
-      void runningExtensionCount()
-        .then((n) => { if (n === 1) { suppressPicker = true; hidePicker() } })
-        .catch(() => {})
-    }
+    // One provider is not one source: AllAnime and similar providers can expose several hosts,
+    // qualities, subtitle sets, or audio variants. A manual episode click therefore keeps the
+    // chooser visible regardless of provider count; the normal Auto preference may choose later.
     const kitsu = await resolveKitsu(media)
     // Addons index by Kitsu id; extensions search by title/MAL/AniDB. A title with no Kitsu id
     // (e.g. an OVA that isn't in Kitsu) can still be sourced by extensions, so only hard-fail when
@@ -774,9 +755,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       if (!stillCurrent()) return
       let s = refineStreams(media, acc)
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
-      // `hidden` (not null) for a sole configured source: showing a one-row list to "choose" from
-      // is noise, but the entry must remain so `stillCurrent()` still recognises this request.
-      streamPicker.set({ media, episode, streams: s, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving, hidden: suppressPicker || hideForContinuation })
+      streamPicker.set({ media, episode, streams: s, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving, hidden: hideForContinuation })
       // Binge continuity: the instant a same-release, ready-to-play source appears, continue on it
       // automatically (close the picker, no interaction). An uncached same-release is handled once
       // the list settles (below), so a late-arriving cached one still wins here. Gated on
@@ -838,22 +817,6 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // A ready-to-play same-release source may have been tried while results streamed in. Wait for
     // its real outcome: success closes the picker; failure finishes populating it for manual choice.
     if (continuationAttempt && await continuationAttempt) return
-    // Sole configured source: play its best result outright rather than presenting a list of one.
-    // Not gated on the auto-select setting — that setting is about choosing FOR the user among
-    // alternatives, and here there are none. Not attempted while a debrid cache is in flight, which
-    // means the user already committed to something.
-    if (suppressPicker && stillCurrent() && !get(debridCaching)) {
-      let s = refineStreams(media, acc)
-      if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
-      const best = pickBest(s, get(preferredQuality), want) ?? rankStreams(s).find(playableNow)
-      if (best) {
-        streamPicker.set(null)
-        return await playStream(media, episode, best, onState)
-      }
-      // Nothing playable from it — reveal the picker so the error is visible like normal.
-      suppressPicker = false
-      streamPicker.update((c) => c ? { ...c, hidden: false } : c)
-    }
     refresh(false)
     if (continuationError && stillCurrent()) {
       // A failed continuation must be visible, not swallowed behind the hidden picker.
