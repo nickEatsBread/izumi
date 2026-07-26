@@ -112,6 +112,54 @@ describe('normalizeManifest', () => {
   })
 })
 
+// A catalog whose entries name a package and a payload file relative to the index.
+describe('package-style catalog', () => {
+  const base = 'https://repo.test/index.json'
+  // A real entry, trimmed to the fields that are read.
+  const video = {
+    name: 'Animepahe', package: 'animepahe.ru', type: 'bangumi', lang: 'en',
+    url: 'animepahe.ru.js', version: 'v0.0.3', icon: 'https://site.test/i.png',
+    author: 'someone', webSite: 'https://animepahe.ru',
+  }
+
+  it('resolves the payload against the repo/ folder beside the index', () => {
+    const [cfg] = normalizeManifest([video], base)
+    expect(cfg).toMatchObject({
+      id: 'animepahe.ru',
+      name: 'Animepahe',
+      type: 'onlinestream-provider',
+      code: 'https://repo.test/repo/animepahe.ru.js',
+      lang: 'en',
+      version: 'v0.0.3',
+    })
+  })
+
+  it('skips content kinds with no runtime here', () => {
+    expect(normalizeManifest([{ ...video, type: 'manga' }], base)).toEqual([])
+    expect(normalizeManifest([{ ...video, type: 'fikushon' }], base)).toEqual([])
+  })
+
+  it('treats the catch-all language as "unknown" rather than a real one', () => {
+    // 'all' would otherwise be badged as a language and rank against the user's preference.
+    expect(normalizeManifest([{ ...video, lang: 'all' }], base)[0].lang).toBeUndefined()
+  })
+
+  it('narrows a regional tag to its base language', () => {
+    expect(normalizeManifest([{ ...video, lang: 'zh-cn' }], base)[0].lang).toBe('zh')
+  })
+
+  it('passes an absolute payload URL through untouched', () => {
+    expect(normalizeManifest([{ ...video, url: 'https://cdn.test/x.js' }], base)[0].code)
+      .toBe('https://cdn.test/x.js')
+  })
+
+  it('does not hijack entries that already carry their own code reference', () => {
+    // A manifest with both `package` and a payload pointer is not this format.
+    const [cfg] = normalizeManifest([{ ...video, payloadURI: 'https://x/p.ts', type: 'onlinestream-provider' }], base)
+    expect(cfg.code).toBe('https://x/p.ts')
+  })
+})
+
 // A source that can NEVER work must say so. Silently expanding to an empty list is the behaviour
 // that made a compiled-plugin repo look like an izumi bug.
 describe('manifestProblem', () => {
