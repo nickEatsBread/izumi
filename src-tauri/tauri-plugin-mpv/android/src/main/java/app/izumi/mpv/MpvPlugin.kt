@@ -182,6 +182,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         m.observeProperty("eof-reached", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
         m.observeProperty("paused-for-cache", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
         m.observeProperty("demuxer-cache-time", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
+        // `paused-for-cache` alone only covers a stall during *playback*. Seeking into a region the
+        // demuxer hasn't fetched never sets it — mpv reports `seeking` (a seek is resolving) and
+        // `core-idle` (no frame is being shown) instead, so without these two a fast-forward into
+        // unbuffered data froze on the last frame with no indication anything was happening.
+        m.observeProperty("seeking", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
+        m.observeProperty("core-idle", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
 
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
         // Make WRY's WebView transparent so the SurfaceView (added behind it) shows through.

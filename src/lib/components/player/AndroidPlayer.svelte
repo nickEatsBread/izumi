@@ -55,7 +55,6 @@
   import Pause from 'lucide-svelte/icons/pause'
   import RotateCcw from 'lucide-svelte/icons/rotate-ccw'
   import RotateCw from 'lucide-svelte/icons/rotate-cw'
-  import Loader from 'lucide-svelte/icons/loader-circle'
   import Lock from 'lucide-svelte/icons/lock'
   import Ratio from 'lucide-svelte/icons/ratio'
   import Layers from 'lucide-svelte/icons/layers'
@@ -93,7 +92,29 @@
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
   const paused = $derived($mpvState.paused)
-  const loading = $derived($mpvState.buffering || dur === 0)
+  // One loading signal, mirroring the desktop overlay. `paused-for-cache` alone only catches a stall
+  // during playback — seeking into unfetched data reports `seeking`/`core-idle` instead, plus our own
+  // `seekBusy` for the window before the native command is even picked up. `core-idle` is ALSO true
+  // whenever playback is merely paused, so it must never be read without the `!paused` guard.
+  const stalled = $derived(
+    !$mpvState.eof &&
+      (dur === 0 ||
+        $mpvState.seekBusy ||
+        $mpvState.seeking ||
+        $mpvState.buffering ||
+        (!paused && $mpvState.coreIdle)),
+  )
+  // Anti-flash: a seek that lands inside the cache resolves in a few frames, and blinking a spinner
+  // for it looks broken. Pre-first-frame (no duration yet) there is nothing to flash over, so that
+  // case shows immediately.
+  const SPINNER_DELAY_MS = 280
+  let loading = $state(false)
+  $effect(() => {
+    if (!stalled) { loading = false; return }
+    if (dur === 0) { loading = true; return }
+    const t = setTimeout(() => (loading = true), SPINNER_DELAY_MS)
+    return () => clearTimeout(t)
+  })
   $effect(() => { reportWatchPlayback($mpvState.pos, $mpvState.dur, $mpvState.paused) })
   const playedPct = $derived(dur > 0 ? Math.min(100, (pos / dur) * 100) : 0)
   const cachePct = $derived(dur > 0 ? Math.min(100, ($mpvState.cacheEnd / dur) * 100) : 0)
@@ -815,10 +836,13 @@
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
   <section bind:this={rootEl} class="video-frame relative touch-none overflow-visible bg-transparent"
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture} role="presentation">
-  <!-- Buffering shows a spinner INSTEAD of the play/pause transport, but only while playing — when
-       paused, keep the play button so you can resume. -->
-  {#if loading && !paused}
-    <div class="pointer-events-none absolute inset-0 grid place-items-center"><Loader size={52} class="animate-spin text-white/90" /></div>
+  <!-- Loading with the controls hidden (or locked): the spinner is the only thing on screen, so it
+       still reads as "working on it" without a tap. With controls up it moves into the transport
+       button below instead, so the play/pause target is never taken away. -->
+  {#if loading && (!controlsShown || locked)}
+    <div transition:fade={{ duration: 150 }} class="pointer-events-none absolute inset-0 grid place-items-center">
+      <div class="size-12 animate-spin rounded-full border-4 border-white/25 border-t-white"></div>
+    </div>
   {/if}
 
   {#if exitDrag > 0}
@@ -878,21 +902,26 @@
       <button onclick={openSettings} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label="Video settings"><Settings size={24} /></button>
     </div>
 
-    <!-- Center transport (morphing play/pause). Hidden while buffering-and-playing (spinner shows);
-         always shown when paused so you can resume. -->
-    {#if !loading || paused}
-      <div transition:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
-        <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
-        <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={paused ? 'Play' : 'Pause'}>
+    <!-- Center transport (morphing play/pause). While loading the centre glyph becomes a spinner in
+         place — the row itself never disappears, so rewind/forward stay usable and the button keeps
+         its hit target (you can still pause a stream that is still buffering). -->
+    <div transition:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
+      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
+      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={loading ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading}>
+        {#if loading}
+          <span in:fade={{ duration: 120 }} class="grid place-items-center">
+            <span class="size-10 animate-spin rounded-full border-4 border-white/25 border-t-white"></span>
+          </span>
+        {:else}
           {#key paused}
             <span in:scale={{ duration: 160, start: 0.5 }} class="grid place-items-center">
               {#if paused}<Play size={38} class="ml-1" fill="currentColor" />{:else}<Pause size={38} fill="currentColor" />{/if}
             </span>
           {/key}
-        </button>
-        <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip($seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Forward"><RotateCw size={30} /></button>
-      </div>
-    {/if}
+        {/if}
+      </button>
+      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip($seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Forward"><RotateCw size={30} /></button>
+    </div>
 
     <!-- Timeline sits on the actual bottom edge of the video, matching native mobile players. -->
     <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 h-14" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
