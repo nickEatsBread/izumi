@@ -1,5 +1,16 @@
 import { describe, it, expect } from 'vitest'
-import { pickSearchResult, pickEpisode, videoSourceToStream, matchesPreferredLang, langRank, allowedByLanguage, passesForAudio } from './onlinestream'
+import {
+  allowedByLanguage,
+  langRank,
+  matchesPreferredLang,
+  passesForAudio,
+  pickEpisode,
+  pickSearchResult,
+  providerEpisodeLabel,
+  searchQueries,
+  searchTitleScore,
+  videoSourceToStream,
+} from './onlinestream'
 import { describe as describeStream } from './parse'
 import { rankStreams, pickBest } from './addon'
 
@@ -177,6 +188,45 @@ describe('pickSearchResult', () => {
   it('returns undefined for empty results', () => {
     expect(pickSearchResult([], ['Frieren'])).toBeUndefined()
   })
+
+  it('rejects the real weak AniDB results returned for Lovely Day', () => {
+    const anidb = [
+      { id: 'a', title: 'Zettai Karen Children: Oobanburumai! Natsuko to Hotaru no B.A.B.E.L. Tsuushin' },
+      { id: 'b', title: 'Jubei-chan the Ninja Girl: Secret of the Lovely Eyepatch' },
+      { id: 'c', title: 'Lovely★Complex' },
+      { id: 'd', title: 'Zettai Karen Children OVA: Aitazousei! Ubawareta Mirai?' },
+    ]
+    expect(pickSearchResult(anidb, ['Lovely Day: Boku to Kanojo no Nanoka Kan'])).toBeUndefined()
+  })
+
+  it('does not combine unrelated words from separate aliases into a fake match', () => {
+    const results = [{ id: 'wrong', title: 'Alpha Gamma Show' }]
+    expect(pickSearchResult(results, ['Alpha Beta', 'Gamma Delta'])).toBeUndefined()
+  })
+
+  it('rejects a different production even when the base title matches', () => {
+    expect(searchTitleScore('One Piece Film Red', ['One Piece'])).toBe(0)
+    expect(searchTitleScore('Jujutsu Kaisen 2nd Season', ['Jujutsu Kaisen'])).toBe(0)
+  })
+
+  it('accepts exact aliases and harmless provider presentation suffixes', () => {
+    expect(searchTitleScore('Sousou no Frieren', ['Frieren: Beyond Journey’s End', 'Sousou no Frieren'])).toBeGreaterThan(0)
+    expect(searchTitleScore('Bleach (Dub)', ['Bleach'])).toBeGreaterThan(0)
+  })
+
+  it('queries unique aliases in primary-to-fallback order', () => {
+    expect(searchQueries(['Frieren', 'frieren', 'Sousou no Frieren', ''])).toEqual([
+      'Frieren',
+      'Sousou no Frieren',
+    ])
+  })
+
+  it('labels rows with the provider match rather than the requested media title', () => {
+    expect(providerEpisodeLabel('Sousou no Frieren', 2, 'Episode 2')).toBe('Sousou no Frieren — Episode 2')
+    expect(providerEpisodeLabel('Sousou no Frieren', 2, 'The Journey')).toBe(
+      'Sousou no Frieren — Episode 2 · The Journey',
+    )
+  })
 })
 
 describe('pickEpisode', () => {
@@ -219,6 +269,7 @@ describe('videoSourceToStream', () => {
     const s = videoSourceToStream(
       { url: 'https://cdn/x.m3u8', type: 'm3u8', quality: '1080p', subtitles: [{ url: 'https://s/en.vtt', lang: 'en' }] },
       'server-1', { Referer: 'https://site' }, 'ProviderX', 'The Journey', 'sub', 'provider-x',
+      undefined, undefined, undefined, 'Sousou no Frieren',
     )
     expect(s.url).toBe('https://cdn/x.m3u8')
     expect(s.__stream).toBe(true)
@@ -227,6 +278,7 @@ describe('videoSourceToStream', () => {
     expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'eng', title: 'en', isDefault: false, headers: undefined }])
     expect(s.__audio).toBe('sub')
     expect(s.__addonName).toBe('ProviderX')
+    expect(s.__sourceTitle).toBe('Sousou no Frieren')
     expect(s.__origin).toEqual({ kind: 'online-extension', id: 'provider-x', name: 'ProviderX' })
     expect(s.name).toContain('ProviderX')
     expect(s.name).toContain('1080p')

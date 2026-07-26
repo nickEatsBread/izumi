@@ -481,7 +481,7 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
   }
   if (method === 'findEpisodes') {
     const identity = JSON.parse(String(callArgs[0] ?? '{}')) as { url?: string; title?: string; cover?: string }
-    const detail = await invoke<{ episodes?: Record<string, unknown>[] }>('jvm_extension_call', {
+    const detail = await invoke<{ title?: unknown; episodes?: Record<string, unknown>[] }>('jvm_extension_call', {
       method: 'getDetail',
       args: {
         sourceId: source.id,
@@ -499,6 +499,9 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
         number: episodeNumber(episode),
         title: String(episode.name ?? ''),
         url: String(episode.url ?? ''),
+        // Keep the detail page's canonical identity attached through episode resolution. Search
+        // pages can be fuzzy or redirect; the online resolver revalidates this before fetching video.
+        sourceTitle: String(detail.title ?? identity.title ?? ''),
       }))
       .filter((episode) => Number.isFinite(episode.number))
   }
