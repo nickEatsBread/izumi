@@ -1,7 +1,7 @@
 <script lang="ts">
   import { heroMedia } from '$lib/stores/hero'
   import {
-    watchParty, partyParticipants, partyError, partySyncing,
+    watchParty, partyParticipants, partyError, partySyncing, partyNotice,
     createWatchParty, joinWatchParty, leaveWatchParty, refreshWatchParty,
   } from '$lib/watch-together/client'
   import Copy from 'lucide-svelte/icons/copy'
@@ -62,6 +62,7 @@
       <button onclick={copyCode} class="mx-auto mt-2 flex items-center gap-3 rounded-xl px-4 py-2 font-mono text-4xl font-black tracking-[0.2em] hover:bg-secondary"><span>{$watchParty.roomCode}</span><Copy size={19} /></button>
       <p class="mt-3 text-sm text-muted-foreground">{$watchParty.role === 'host' ? 'Start any episode. Its source and your play, pause and seek controls will be sent to the room.' : 'The host’s exact source will open on this device.'}</p>
       {#if $partySyncing}<div class="mt-3 text-sm font-bold text-theme">Resolving the host’s episode…</div>{/if}
+      {#if $partyNotice}<div class="mt-3 text-sm font-bold text-muted-foreground">{$partyNotice}</div>{/if}
     </section>
     <div class="mt-5 flex items-center justify-between"><h2 class="font-black">Participants ({$partyParticipants.length})</h2><button onclick={refreshWatchParty} class="grid size-9 place-items-center rounded-lg bg-secondary"><RefreshCw size={16} /></button></div>
     <div class="mt-2 space-y-2">{#each $partyParticipants as participant (participant.deviceId)}<div class="flex items-center gap-3 rounded-lg bg-secondary/40 px-4 py-3"><span class="grid size-8 place-items-center rounded-full bg-theme/15 font-black text-theme">{participant.name.slice(0, 1).toUpperCase()}</span><span class="flex-1 font-bold">{participant.name}</span><span class="rounded-full bg-background px-2 py-1 text-[0.65rem] font-black uppercase text-muted-foreground">{participant.role}</span></div>{/each}</div>
