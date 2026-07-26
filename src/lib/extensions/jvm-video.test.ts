@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseJvmVideoTitle } from './jvm-video'
+import { dedupeJvmSources, parseJvmVideoTitle } from './jvm-video'
 
 describe('JVM video metadata', () => {
   it('splits Aniyomi server, audio flavour, subtitle mode, and quality', () => {
@@ -20,5 +20,16 @@ describe('JVM video metadata', () => {
 
   it('does not invent structure for an unrelated title', () => {
     expect(parseJvmVideoTitle('1080p')).toEqual({ quality: '1080p' })
+  })
+
+  it('deduplicates factory sources by their stable runtime ID', () => {
+    expect(dedupeJvmSources([
+      { id: '1', name: 'TioAnime factory' },
+      { id: '2', name: 'Other' },
+      { id: '1', name: 'TioAnime concrete' },
+    ])).toEqual([
+      { id: '1', name: 'TioAnime concrete' },
+      { id: '2', name: 'Other' },
+    ])
   })
 })

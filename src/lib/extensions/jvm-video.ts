@@ -8,6 +8,12 @@ export interface JvmVideoIdentity {
   subtitleMode?: JvmSubtitleMode
 }
 
+/** The desktop runtime can discover the same factory source through both its generated entry
+ * point and its concrete class. Stable source IDs identify those duplicate registrations. */
+export function dedupeJvmSources<T extends { id: string }>(sources: T[]): T[] {
+  return [...new Map(sources.map((source) => [source.id, source])).values()]
+}
+
 /**
  * Aniyomi extractors commonly put the information we need in `Video.title`, for example
  * "HD-1 - Sub - 1080p". Keep the parser deliberately conservative so an unrelated title remains
