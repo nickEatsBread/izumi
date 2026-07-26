@@ -6,7 +6,7 @@ import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem } from './catalog'
 import { extensionSourceConfigured, jvmSourceOwners } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
-import { parseJvmVideoTitle } from './jvm-video'
+import { dedupeJvmSources, parseJvmVideoTitle } from './jvm-video'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -569,7 +569,7 @@ async function runningJvmExtensions(onlyId?: string): Promise<
   const off = new Set(get(disabledPlugins))
   try {
     const sources = await invoke<JvmSource[]>('jvm_extension_sources')
-    return sources
+    return dedupeJvmSources(sources)
       .filter((source) =>
         source.type === 'anime'
         && packageBySource.has(source.id)
