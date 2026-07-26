@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dedupeJvmSources, parseJvmVideoTitle } from './jvm-video'
+import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
 
 describe('JVM video metadata', () => {
   it('splits Aniyomi server, audio flavour, subtitle mode, and quality', () => {
@@ -31,5 +31,13 @@ describe('JVM video metadata', () => {
       { id: '1', name: 'TioAnime concrete' },
       { id: '2', name: 'Other' },
     ])
+  })
+
+  it('keeps HTTP and temporary file sidecars but rejects other transports', () => {
+    expect(normalizeJvmSidecarUrl('https://cdn.test/en.vtt')).toBe('https://cdn.test/en.vtt')
+    expect(normalizeJvmSidecarUrl('file://C:\\Temp\\decrypted.srt')).toBe('file:///C:/Temp/decrypted.srt')
+    expect(normalizeJvmSidecarUrl('file:/tmp/decrypted.srt')).toBe('file:///tmp/decrypted.srt')
+    expect(normalizeJvmSidecarUrl('magnet:?xt=urn:btih:test')).toBeUndefined()
+    expect(normalizeJvmSidecarUrl('kind:')).toBeUndefined()
   })
 })
