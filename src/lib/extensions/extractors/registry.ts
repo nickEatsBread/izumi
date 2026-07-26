@@ -33,7 +33,10 @@ function packedPlayer(name: string, hosts: string[]): Extractor {
     async extract(url, ctx) {
       const page = await getPage(url, ctx)
       if (!page) return emptyResult()
-      const headers = refererHeaders(url, ctx.referer)
+      // The embed page is fetched with the provider page as its Referer, but
+      // extracted media is gated on the embed URL itself. Reusing the provider
+      // Referer here makes MP4Upload's CDN return 403 after a valid extraction.
+      const headers = { ...refererHeaders(url), Referer: url }
       return { links: findSources(page, name, headers), subtitles: findSubtitles(page, headers) }
     },
   }

@@ -55,7 +55,7 @@ describe('loadExtractor', () => {
     expect(res.links).toHaveLength(1)
     expect(res.links[0]).toMatchObject({ url: 'https://cdn.wish/hls/master.m3u8', type: 'm3u8', quality: '1080p', source: 'StreamWish' })
     expect(res.subtitles).toEqual([
-      { url: 'https://cdn.wish/sub/en.vtt', label: 'English', headers: { Referer: 'https://provider.site/ep/1', Origin: 'https://streamwish.to' } },
+      { url: 'https://cdn.wish/sub/en.vtt', label: 'English', headers: { Referer: embed, Origin: 'https://streamwish.to' } },
     ])
   })
 
@@ -64,6 +64,16 @@ describe('loadExtractor', () => {
     const { fetch, calls } = stubFetch({ [embed]: 'sources:[{file:"https://cdn.moly/v.mp4"}]' })
     await loadExtractor(embed, { fetch, referer: 'https://anime.site/ep/3' })
     expect(calls[0].headers?.Referer).toBe('https://anime.site/ep/3')
+  })
+
+  it('uses the embed URL as Referer for extracted media', async () => {
+    const embed = 'https://www.mp4upload.com/embed-x.html'
+    const { fetch } = stubFetch({ [embed]: 'player.src({src:"https://cdn.mp4upload.com/video.mp4"})' })
+    const res = await loadExtractor(embed, { fetch, referer: 'https://allanime.day/' })
+    expect(res.links[0].headers).toEqual({
+      Referer: embed,
+      Origin: 'https://www.mp4upload.com',
+    })
   })
 
   it('falls back to the generic parser for an unknown host', async () => {
@@ -97,7 +107,7 @@ describe('loadEpisodeServer', () => {
     const res = await loadEpisodeServer(embed, { fetch, referer: 'https://anime.site/ep/3', extension: 'AnimeSama' })
     // This is the name that reaches the picker: "⚡ AnimeSama · FR · Vidmoly · 1080p".
     expect(res.server).toBe('Vidmoly')
-    expect(res.headers).toMatchObject({ Referer: 'https://anime.site/ep/3' })
+    expect(res.headers).toMatchObject({ Referer: embed })
     expect(res.videoSources).toEqual([
       { url: 'https://cdn.moly/v/index.m3u8', type: 'm3u8', quality: '1080p', subtitles: [] },
     ])
