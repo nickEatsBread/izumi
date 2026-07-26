@@ -6,7 +6,7 @@ import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem } from './catalog'
 import { extensionSourceConfigured, jvmSourceOwners } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
-import { isKnownBrokenJvmVideo, parseJvmVideoTitle } from './jvm-video'
+import { parseJvmVideoTitle } from './jvm-video'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -550,7 +550,6 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
             .filter((track) => /^https?:\/\//i.test(track.url)),
         }
       })
-      .filter((video) => !isKnownBrokenJvmVideo(video.url, video.server))
     return {
       server: source.name,
       headers: {},

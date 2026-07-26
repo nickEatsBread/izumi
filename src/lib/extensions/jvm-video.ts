@@ -25,27 +25,3 @@ export function parseJvmVideoTitle(value: unknown): JvmVideoIdentity {
     subtitleMode: flavor === 'hsub' ? 'hard' : 'soft',
   }
 }
-
-function nestedLoopbackUrl(value: string): URL | undefined {
-  try {
-    const outer = new URL(value)
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(outer.hostname)) return undefined
-    const nested = outer.searchParams.get('url')
-    return nested ? new URL(nested) : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * legacy provider's VidPlay transport disguises MPEG-TS segments as images and decodes them in a JVM
- * localhost server. Its current junk-block detector removes valid H.264 payload bytes: the output
- * contains corrupt TS packets, visible macroblocks, skipped frames, and nonsensical duration in
- * libmpv. Other Aniyomi localhost helpers are left alone; this targets only the proven-bad
- * VidPlay + kotocdn combination while the provider's healthy HD/Vidstream alternatives remain.
- */
-export function isKnownBrokenJvmVideo(url: string, server?: string): boolean {
-  if (!/^VidPlay(?:-\d+)?$/i.test(server ?? '')) return false
-  const upstream = nestedLoopbackUrl(url)
-  return !!upstream && /(?:^|\.)kotocdn\.site$/i.test(upstream.hostname)
-}
