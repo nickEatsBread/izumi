@@ -23,6 +23,48 @@ interface RunningExt {
 
 let running: RunningExt[] | null = null
 let builtFrom = ''
+let installedRevision = 0
+let buildGeneration = 0
+
+export interface InstalledExtensionPackage {
+  id: string
+  name: string
+  version: string
+  lang?: string
+  description?: string
+  code: string
+  signed: boolean
+}
+
+function resetRunning(): void {
+  running?.forEach((extension) => extension.worker.terminate())
+  running = null
+  builtFrom = ''
+  buildPromise = null
+  buildGeneration += 1
+  clearProviderCache()
+}
+
+export async function installedExtensionPackages(): Promise<InstalledExtensionPackage[]> {
+  try {
+    return await invoke<InstalledExtensionPackage[]>('extension_list')
+  } catch {
+    return []
+  }
+}
+
+export async function installExtensionPackage(path: string): Promise<InstalledExtensionPackage> {
+  const installed = await invoke<InstalledExtensionPackage>('extension_install', { path })
+  installedRevision += 1
+  resetRunning()
+  return installed
+}
+
+export async function removeInstalledExtension(id: string): Promise<void> {
+  await invoke('extension_remove', { id })
+  installedRevision += 1
+  resetRunning()
+}
 
 // Fetch a manifest by spec and expand it into ExtensionConfig[]. A top-level GitHub
 // repo index (array of {main} pointers) is expanded one level into its per-folder
@@ -75,14 +117,29 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
   // Each spec is an independent network fetch, so awaiting them one at a time made warm-up cost the
   // SUM of every manifest round-trip. Order is preserved by Promise.all, and a bad manifest still
   // degrades to [] on its own without taking the others down.
-  const results = await Promise.all(
+  const [results, installed] = await Promise.all([
+    Promise.all(
     get(enabledExtensionUrls).map((spec) =>
       expandManifest(spec).catch(() => [] as ExtensionConfig[])),
-  )
+    ),
+    installedExtensionPackages(),
+  ])
   // A source URL expands to many plugins; drop the ones switched off individually. Filtered HERE
   // rather than at query time so a disabled plugin never has its module fetched or a worker spawned.
   const off = get(disabledPlugins)
-  return results.flat().filter((c) => !off.includes(c.id))
+  const local = installed.map((extension): ExtensionConfig => ({
+    id: extension.id,
+    name: extension.name,
+    version: extension.version,
+    type: 'onlinestream-provider',
+    code: `installed:${extension.id}`,
+    description: extension.description,
+    lang: extension.lang,
+    runtime: 'izumi-js',
+    moduleCode: extension.code,
+    signed: extension.signed,
+  }))
+  return [...results.flat(), ...local].filter((c) => !off.includes(c.id))
 }
 
 // Fetch an extension's module source. esm.sh often returns a tiny re-export STUB
@@ -142,7 +199,20 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
     // `name` rides along so host-side helpers running inside the worker (the embed extractors) can
     // attribute what they resolve back to the extension that asked, instead of returning anonymous
     // links the picker then has to label generically.
-    worker.postMessage({ type: 'load', id, code, name: cfg.name, settings: cfg.settings, kind: cfg.type === 'onlinestream-provider' ? 'seanime' : cfg.type === 'anime-torrent-provider' ? 'atp' : undefined })
+    worker.postMessage({
+      type: 'load',
+      id,
+      code,
+      name: cfg.name,
+      settings: cfg.settings,
+      kind: cfg.runtime === 'izumi-js'
+        ? 'izumi'
+        : cfg.type === 'onlinestream-provider'
+          ? 'seanime'
+          : cfg.type === 'anime-torrent-provider'
+            ? 'atp'
+            : undefined,
+    })
   })
   return ext
 }
@@ -154,10 +224,11 @@ let buildPromise: Promise<RunningExt[]> | null = null
 async function ensureRunning(): Promise<RunningExt[]> {
   // The key must cover the per-plugin switches too: keyed on the URL list alone, toggling a plugin
   // left the previous worker set live and the change did nothing until a URL was added or removed.
-  const key = JSON.stringify([get(enabledExtensionUrls), get(disabledPlugins)])
+  const key = JSON.stringify([get(enabledExtensionUrls), get(disabledPlugins), installedRevision])
   if (running && builtFrom === key) return running
   if (buildPromise) return buildPromise
-  buildPromise = (async () => {
+  const generation = buildGeneration
+  const promise = (async () => {
     running?.forEach((e) => e.worker.terminate())
     // The resolver memoizes each provider's search/episode/settings answers. Those belong to the
     // PREVIOUS set of workers, so a provider that was just enabled, disabled or updated must not
@@ -167,29 +238,37 @@ async function ensureRunning(): Promise<RunningExt[]> {
     // first-resolve stall for multi-source repos.
     const cfgs = await loadConfigs()
     const codes = await Promise.all(cfgs.map(async (cfg) => {
-      try { return { cfg, code: await fetchModuleCode(cfg.code) } } catch { return { cfg, code: null } }
+      try {
+        return { cfg, code: cfg.moduleCode ?? await fetchModuleCode(cfg.code) }
+      } catch {
+        return { cfg, code: null }
+      }
     }))
     const next: RunningExt[] = []
     for (const { cfg, code } of codes) if (code) next.push(spawn(cfg, code))
+    if (generation !== buildGeneration) {
+      next.forEach((extension) => extension.worker.terminate())
+      return []
+    }
     running = next
     builtFrom = key
     return next
   })()
-  try { return await buildPromise }
-  finally { buildPromise = null }
+  buildPromise = promise
+  try { return await promise }
+  finally { if (buildPromise === promise) buildPromise = null }
 }
 
 /** How many extensions will actually be queried. NOT the URL count — one source URL expands to many
  *  plugins (a marketplace index yields ~18), so only this can answer "is there exactly one source?". */
 export async function runningExtensionCount(): Promise<number> {
-  if (!get(enabledExtensionUrls).length) return 0
   return (await ensureRunning()).length
 }
 
 /** Pre-boot the extension runtime (manifest + modules + workers) off the click-to-play path.
  *  Called once at app start; the first picker open then only pays the actual search. */
 export function warmExtensions(): void {
-  if (get(enabledExtensionUrls).length) void ensureRunning().catch(() => {})
+  void ensureRunning().catch(() => {})
 }
 
 function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<TorrentResult[]> {
@@ -208,7 +287,6 @@ function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<Tor
  *  fold sources in live instead of waiting on the slowest (or a wedged one's 20s timeout). */
 export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string): Promise<TorrentResult[]> {
   try {
-    if (!get(enabledExtensionUrls).length) return []
     const exts = await ensureRunning()
     const candidates = exts.filter((e) => !onlyId || e.cfg.id === onlyId)
     const live = (await Promise.all(candidates.map(async (e) => ((await e.ready) ? e : null))))
@@ -260,7 +338,6 @@ export async function runningStreamExtensions(onlyId?: string): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
-  if (!get(enabledExtensionUrls).length) return []
   const exts = await ensureRunning()
   const live = (await Promise.all(
     exts.filter((e) => !onlyId || e.cfg.id === onlyId)
@@ -275,7 +352,6 @@ export async function runningTorrentProviderExtensions(onlyId?: string): Promise
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; icon?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
-  if (!get(enabledExtensionUrls).length) return []
   const exts = await ensureRunning()
   const live = (await Promise.all(
     exts.filter((e) => !onlyId || e.cfg.id === onlyId)

@@ -16,7 +16,17 @@ export interface SnEpisode { id: string; number: number; url?: string; title?: s
 // `headers` mirrors the reference's SubtitleFile.headers: some sidecar subtitle URLs are gated on
 // Referer exactly like the video is, and a subtitle fetched without them silently 403s.
 export interface SnVideoSubtitle { url: string; language?: string; lang?: string; label?: string; isDefault?: boolean; default?: boolean; headers?: Record<string, string> }
-export interface SnVideoSource { url: string; type?: string; quality?: string; subtitles?: SnVideoSubtitle[] }
+export interface SnAudioTrack { url: string; language?: string; lang?: string; label?: string; title?: string; headers?: Record<string, string> }
+export interface SnVideoSource {
+  url: string
+  type?: string
+  quality?: string
+  subtitles?: SnVideoSubtitle[]
+  audioTracks?: SnAudioTrack[]
+  /** A source can override its server's headers. An explicit empty object is meaningful:
+   * some CDNs reject the embed Referer even though the sibling HLS source requires it. */
+  headers?: Record<string, string>
+}
 export interface SnEpisodeServer { server?: string; headers?: Record<string, string>; videoSources?: SnVideoSource[] }
 export interface SnSettings { episodeServers?: string[]; supportsDub?: boolean }
 
@@ -118,7 +128,7 @@ export function videoSourceToStream(
     // and never shows `name`, which is why a language baked into this string was invisible.
     name: `⚡ ${provider}${server && server !== 'default' ? ` · ${server}` : ''} · ${quality}`,
     __stream: true,
-    __headers: headers,
+    __headers: vs.headers ?? headers,
     __audio: audio,
     // Normalize the provider's subtitle shape: `language`/`lang`/`label` → lang, and carry
     // `isDefault` so the player auto-selects the intended track (both were being dropped).
@@ -133,6 +143,15 @@ export function videoSourceToStream(
         title: subtitleTitle(raw),
         isDefault: s.isDefault ?? s.default ?? false,
         headers: s.headers,
+      }
+    }),
+    __audioTracks: (vs.audioTracks ?? []).map((track) => {
+      const raw = track.language ?? track.lang ?? track.label
+      return {
+        url: track.url,
+        lang: normalizeLang(raw),
+        title: track.title ?? track.label ?? subtitleTitle(raw),
+        headers: track.headers,
       }
     }),
     __lang: lang,

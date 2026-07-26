@@ -190,6 +190,31 @@ describe('pickEpisode', () => {
 })
 
 describe('videoSourceToStream', () => {
+  it('preserves per-source headers and split audio tracks', () => {
+    const stream = videoSourceToStream(
+      {
+        url: 'https://cdn.example/video.m4s',
+        quality: '1080p',
+        headers: {},
+        audioTracks: [{
+          url: 'https://cdn.example/audio.m4s',
+          language: 'ja',
+          title: 'Japanese',
+        }],
+      },
+      'default',
+      { Referer: 'https://embed.example/' },
+      'AllAnime',
+    )
+    expect(stream.__headers).toEqual({})
+    expect(stream.__audioTracks).toEqual([{
+      url: 'https://cdn.example/audio.m4s',
+      lang: 'jpn',
+      title: 'Japanese',
+      headers: undefined,
+    }])
+  })
+
   it('maps a VideoSource to a direct streaming Stream', () => {
     const s = videoSourceToStream(
       { url: 'https://cdn/x.m3u8', type: 'm3u8', quality: '1080p', subtitles: [{ url: 'https://s/en.vtt', lang: 'en' }] },

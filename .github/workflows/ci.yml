@@ -53,3 +53,7 @@ jobs:
       - name: cargo check
         working-directory: src-tauri
         run: cargo check
+
+      - name: Extension package validator tests
+        working-directory: src-tauri
+        run: cargo test --test extension_package

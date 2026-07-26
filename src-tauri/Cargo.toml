@@ -90,6 +90,9 @@ tauri-plugin-updater = "2"
 zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 encoding_rs = "0.8"
 chardetng = "0.1"
+sha2 = "0.10"
+base64 = "0.22"
+ed25519-dalek = { version = "3.0.0-rc.0", features = ["pkcs8"] }
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 # Embedded libmpv player for the Android "full" flavor (optional; see the `android-mpv` feature).

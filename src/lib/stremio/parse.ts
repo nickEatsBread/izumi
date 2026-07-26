@@ -51,6 +51,9 @@ export interface Stream {
   // `lang` is a normalized ISO code (mpv matches `slang` on codes); `title` is the provider's own
   // label for the track menu; `headers` covers Referer-gated sidecar URLs.
   __subtitles?: { url: string; lang?: string; title?: string; isDefault?: boolean; headers?: Record<string, string> }[]
+  /** Separate audio fragments/tracks supplied with a direct video source (for
+   * example AllAnime's split DASH output). Loaded with mpv's `audio-add`. */
+  __audioTracks?: { url: string; lang?: string; title?: string; headers?: Record<string, string> }[]
   // Resolved audio track for a direct stream: 'dub' or 'sub' (from the provider search pass).
   __audio?: 'sub' | 'dub'
   // Content language of the provider that produced this row (ISO 639-1, e.g. 'it'), and whether it

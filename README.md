@@ -30,9 +30,9 @@ izumi is a **personal media library manager** for organizing, tracking, and play
 - **Browse** — weekly schedule, search with filters, rich detail pages (banner, description, trailer, relations, per-episode cards).
 - **Tracking** — connect **AniList** or **MyAnimeList**, or set a
   read-only AniList username. Progress syncs back on playback.
-- **Streaming** — add any Stremio stream addon and/or source extensions.
-  Results resolve through debrid services and appear live in a source picker as each
-  provider responds.
+- **Streaming** — add any Stremio stream addon or source extension, and on desktop
+  import verified `.izumi-ext` anime-provider packages. Results resolve through debrid
+  services or direct HTTP streams and appear live in the source picker.
 - **Native player** — libmpv embedded in the main window (single window, transparent overlay
   controls): custom seekbar with **on-demand scrub thumbnails**, chapter popouts, AniSkip
   OP/ED/recap skipping, AnimeThemes-aware first-play, audio/subtitle menus, video-fit toggle,
