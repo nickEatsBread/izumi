@@ -5,6 +5,7 @@
 import { LoadDoc as ShimLoadDoc, Buffer as ShimBuffer, CryptoJS as ShimCryptoJS, transpileSeanime, habari as ShimHabari, getUserPreference as ShimGetUserPreference } from './seanime-shim'
 import { loadExtractor as runExtractor, loadEpisodeServer as runEpisodeServer } from './extractors/registry'
 import { unpack as unpackJs } from './extractors/jsunpacker'
+import { parseMiruHeader, createExtensionBase, adaptMiru } from './miru-shim'
 // One source-extension per module Worker. Untrusted extension code is loaded via a
 // Blob-URL dynamic import. Isolation: a Worker has NO
 // access to @tauri-apps/api / invoke, so the extension can't touch the OS or the
@@ -68,6 +69,14 @@ let extensionName: string | undefined
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ;(globalThis as any).$unpack = unpackJs
 
+/** Evaluate untrusted extension source as a module via a Blob URL, revoking it either way. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function importModule(code: string): Promise<any> {
+  const blobUrl = URL.createObjectURL(new Blob([code], { type: 'application/javascript' }))
+  try { return await import(/* @vite-ignore */ blobUrl) }
+  finally { URL.revokeObjectURL(blobUrl) }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 self.onmessage = async (e: MessageEvent<any>) => {
   const msg = e.data
@@ -75,6 +84,27 @@ self.onmessage = async (e: MessageEvent<any>) => {
     if (msg.type === 'load') {
       let code: string = msg.code
       extensionName = typeof msg.name === 'string' && msg.name ? msg.name : undefined
+      // A second community format, detected from the payload's own banner rather than from catalog
+      // metadata — the same file is valid whether it arrived via a catalog or a direct URL, and the
+      // banner is the only thing guaranteed to travel with it. Its `export default class extends
+      // Extension` needs that base class present as a global BEFORE the module is evaluated.
+      const miruMeta = parseMiruHeader(code)
+      if (miruMeta) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const g = globalThis as any
+        g.Extension = createExtensionBase(miruMeta, bridgedFetch as never)
+        const mod = await importModule(code)
+        const Ext = mod.default
+        if (typeof Ext !== 'function') throw new Error('extension has no default export')
+        const instance = new Ext()
+        // Extensions may register settings / warm state in load(); best-effort, never fatal.
+        // Wrapped rather than chained: an extension may override load() synchronously, and calling
+        // .catch on its undefined return would throw before the guard applied.
+        await Promise.resolve(instance.load?.()).catch(() => {})
+        source = adaptMiru(instance)
+        postMessage({ type: 'loaded', id: msg.id })
+        return
+      }
       // Seanime providers are a bare `class Provider {}` (no export) using a global `fetch`
       // (already overridden above) + occasionally `$sleep`. Instantiate it + provide $sleep.
       if (msg.kind === 'seanime' || msg.kind === 'atp') {
@@ -91,10 +121,7 @@ self.onmessage = async (e: MessageEvent<any>) => {
         code = transpileSeanime(code) // strip TS types so raw-TS payloads load
         code = `${code}\n;export default (typeof Provider !== 'undefined' ? new Provider() : {});`
       }
-      const blob = new Blob([code], { type: 'application/javascript' })
-      const blobUrl = URL.createObjectURL(blob)
-      const mod = await import(/* @vite-ignore */ blobUrl)
-      URL.revokeObjectURL(blobUrl)
+      const mod = await importModule(code)
       source = mod.default ?? mod
       if (source && msg.settings) source.settings = msg.settings
       postMessage({ type: 'loaded', id: msg.id })

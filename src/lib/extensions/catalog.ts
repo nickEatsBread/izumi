@@ -101,6 +101,24 @@ export function manifestProblem(raw: any): string | undefined {
   return 'No runnable extensions were found in this source.'
 }
 
+// A catalog whose entries are `{package, url, type}` with the payloads in a `repo/` folder beside
+// the index. `type` is that format's content kind, NOT one of ours: only its video kind maps to a
+// runnable extension; its manga and novel kinds have no runtime here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const isPackageEntry = (e: any): boolean =>
+  !!e && typeof e === 'object' && typeof e.package === 'string' && typeof e.url === 'string'
+  && typeof e.type === 'string' && !e.code && !e.main && !e.payloadURI
+
+/** Video kind → izumi's direct-streaming type. Everything else is skipped. */
+const PACKAGE_VIDEO_TYPE = 'bangumi'
+
+/** `url` is relative to a `repo/` folder beside the index, per that format's layout. */
+function packageCodeUrl(url: string, manifestUrl: string): string {
+  if (/^https?:\/\//i.test(url)) return url
+  const base = manifestUrl.replace(/\/[^/]*$/, '/')
+  return new URL(`repo/${url.replace(/^\/+/, '')}`, base).toString()
+}
+
 // Normalize both flat configs (with `code`) and manifest arrays (with
 // `main` + `update`) into ExtensionConfig[].
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -109,6 +127,20 @@ export function normalizeManifest(raw: any, manifestUrl: string): ExtensionConfi
   const out: ExtensionConfig[] = []
   for (const e of entries) {
     if (!e || typeof e !== 'object') continue
+    if (isPackageEntry(e)) {
+      if (e.type !== PACKAGE_VIDEO_TYPE) continue
+      out.push({
+        id: String(e.package),
+        name: String(e.name ?? e.package),
+        version: e.version ? String(e.version) : undefined,
+        type: 'onlinestream-provider',
+        code: packageCodeUrl(String(e.url), manifestUrl),
+        icon: e.icon,
+        description: e.description,
+        lang: e.lang && e.lang !== 'all' ? String(e.lang).toLowerCase().split('-')[0] : undefined,
+      })
+      continue
+    }
     // Seanime manifests carry the module URL in `payloadURI` (a full https URL), not `code`/`main`.
     const codeSpec = e.code ?? e.main ?? e.payloadURI
     if (!codeSpec) continue
