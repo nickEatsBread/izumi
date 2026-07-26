@@ -8,6 +8,7 @@
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
+  import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
@@ -144,18 +145,23 @@
     // drop the result if the reset effect has moved on, otherwise a slow AniSkip response lands on
     // the next episode and auto-skip jumps mid-scene to a timestamp from the previous file.
     const key = loadedKey
-    const segs = await getSkipSegments(np.malId, np.episode, dur)
-    if (key !== loadedKey) return
-    segments = segs
-    const occ = await firstOccurrences(np.id, np.episode)
+    // AniSkip and AnimeThemes run in parallel, and the debut guard is assigned BEFORE the segments
+    // it guards: the auto-skip effect fires the instant `segments` lands, so assigning firstOcc
+    // second leaves a window in which a debut opening gets skipped anyway.
+    const [segs, occ] = await Promise.all([
+      getSkipSegments(np.malId, np.episode, dur),
+      firstOccurrences(np.id, np.episode),
+    ])
     if (key !== loadedKey) return
     firstOcc = occ
-    try {
-      const ch = JSON.parse(await invoke<string>('player_chapters')) as { time: number; title: string }[]
-      if (key !== loadedKey) return
-      chapters = ch
-    }
-    catch { if (key === loadedKey) chapters = [] }
+    let ch: { time: number; title: string }[] = []
+    try { ch = JSON.parse(await invoke<string>('player_chapters')) as { time: number; title: string }[] }
+    catch { ch = [] }
+    if (key !== loadedKey) return
+    chapters = ch
+    // AniSkip coverage is thin outside popular titles; well-tagged releases name their own chapters.
+    // Chapter-derived segments carry the same op/ed type, so the debut guard covers them too.
+    segments = mergeSkipSegments(segs, segmentsFromChapters(ch, dur))
   }
 
   // Reset per-episode state whenever the now-playing target changes (new episode
@@ -471,17 +477,21 @@
         pos = e.payload[0]
         dur = e.payload[1]
         reportDirectTorrentBuffer(pos, buffer)
-        reportWatchPlayback(pos, dur, paused)
+        reportWatchPlayback(pos, dur, paused, buffering)
         // First real frame shown → stop treating core-idle as "still loading".
         if (dur > 0 && !coreIdle) firstFrame = true
-        if (!metaLoaded && dur > 0 && np.malId && np.episode) loadMeta()
+        // No MAL id gate: AniSkip/AnimeThemes bail out on their own, and chapter-derived skip
+        // segments (plus the seekbar's chapter ticks) work on any file that carries chapters.
+        if (!metaLoaded && dur > 0) loadMeta()
       }),
       listen<number>('player-buffer', (e) => {
         buffer = e.payload
         reportDirectTorrentBuffer(pos, buffer)
       }),
-      listen<boolean>('player-paused', (e) => { paused = e.payload; reportWatchPlayback(pos, dur, paused) }),
-      listen<boolean>('player-buffering', (e) => (buffering = e.payload)),
+      listen<boolean>('player-paused', (e) => { paused = e.payload; reportWatchPlayback(pos, dur, paused, buffering) }),
+      // Report the stall immediately rather than on the next progress tick — a cache stall stops
+      // progress events, so waiting for one would delay the room's buffer gate by the whole stall.
+      listen<boolean>('player-buffering', (e) => { buffering = e.payload; reportWatchPlayback(pos, dur, paused, buffering) }),
       listen<boolean>('player-core-idle', (e) => (coreIdle = e.payload)),
       listen<boolean>('player-seeking', (e) => (seeking = e.payload)),
       listen<boolean>('player-eof', (e) => (eof = e.payload)),
