@@ -21,6 +21,84 @@ export function resolveManifestUrl(spec: string): string {
 }
 const withIndexJson = (base: string) => (/\.json(\?|$)/i.test(base) ? base : `${base.replace(/\/+$/, '')}/index.json`)
 
+/**
+ * A readable name for a source spec.
+ *
+ * Manifest documents almost never carry a title of their own (the two biggest marketplaces are
+ * bare arrays), so a source added as a full URL had nothing to show but the URL itself, truncated
+ * mid-path to unreadability. Collapse GitHub-hosted URLs to `owner/repo` — the same shape a `gh:`
+ * spec already displays — and everything else to its hostname.
+ */
+export function sourceLabel(spec: string): string {
+  const s = spec.trim()
+  if (!/^https?:\/\//i.test(s)) return s.replace(/^gh:/, '').replace(/\/+$/, '')
+  let url: URL
+  try { url = new URL(s) } catch { return s }
+  const host = url.hostname.replace(/^www\./i, '').toLowerCase()
+  const seg = url.pathname.split('/').filter(Boolean)
+  if ((host === 'raw.githubusercontent.com' || host === 'github.com' || host === 'gist.githubusercontent.com') && seg.length >= 2) {
+    return `${seg[0]}/${seg[1]}`
+  }
+  // esm.sh/gh/owner/repo/… and jsdelivr's gh/owner/repo@ref/… both keep the repo one level in.
+  if ((host === 'esm.sh' || host === 'cdn.jsdelivr.net') && seg[0] === 'gh' && seg.length >= 3) {
+    return `${seg[1]}/${seg[2].split('@')[0]}`
+  }
+  return host
+}
+
+/** One `.izumi-ext` package in a maintained catalog: a downloadable, hash-pinned payload rather
+ *  than a module izumi runs straight off the network. */
+export interface ExtensionCatalogPackage {
+  id: string
+  name: string
+  version: string
+  language?: string
+  nsfw: boolean
+  sources: Array<{
+    id: string
+    name: string
+    language?: string
+    baseUrl?: string
+  }>
+  backend: 'izumi-js' | 'aniyomi-jvm'
+  package: string
+  packageSha256: string
+  packageBytes: number
+}
+
+export interface ExtensionCatalog {
+  formatVersion: 1
+  generatedAt: string
+  scope: {
+    content: 'anime'
+    transport: 'http'
+    manga: false
+  }
+  packages: ExtensionCatalogPackage[]
+}
+
+/**
+ * The packages a document declares when it IS an izumi package catalog, otherwise null.
+ *
+ * A catalog is recognized wherever a source URL is accepted, so adding one is the same gesture as
+ * adding a manifest — the settings list decides which row to draw from this answer. `null` and `[]`
+ * are different answers on purpose: an empty catalog is still a catalog, and must not fall through
+ * to manifest expansion and be reported as a broken manifest.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function catalogPackages(raw: any): ExtensionCatalogPackage[] | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  if (raw.formatVersion !== 1) return null
+  if (raw.scope?.content !== 'anime' || raw.scope?.transport !== 'http' || raw.scope?.manga !== false) return null
+  if (!Array.isArray(raw.packages)) return null
+  // Entries missing an id or a payload can't be installed or tracked; drop them rather than
+  // rendering a row whose Install button throws.
+  return raw.packages.filter((p: unknown): p is ExtensionCatalogPackage =>
+    !!p && typeof p === 'object'
+    && typeof (p as ExtensionCatalogPackage).id === 'string'
+    && typeof (p as ExtensionCatalogPackage).package === 'string')
+}
+
 // gh:/npm: → esm.sh; http(s) passthrough; relative (`main`) → resolve against
 // the manifest URL, append .js when it has no extension.
 function resolveSpecUrl(spec: string, manifestUrl: string): string {
@@ -93,6 +171,11 @@ export function manifestProblem(raw: any): string | undefined {
   if (entries.some((e) => e && typeof e === 'object'
     && (/\.(?:cs3|jar)(?:\?|$)/i.test(String(e.url ?? '')) || e.jarUrl || (e.internalName && e.apiVersion != null)))) {
     return compiled
+  }
+  // A package catalog that `catalogPackages` refused — a newer formatVersion, or a scope with
+  // content izumi has no runtime for. Say which, so it doesn't read as an unreachable URL.
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.packages)) {
+    return 'This package catalog uses a format version or scope izumi can\'t read. Update izumi, or use a different catalog.'
   }
   if (!entries.some((e) => e && typeof e === 'object')) return 'That URL did not return a valid manifest.'
   if (entries.every((e) => e?.type && !SUPPORTED_TYPES.includes(e.type))) {

@@ -3,7 +3,8 @@ import { get } from 'svelte/store'
 import { phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
-import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem } from './catalog'
+import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem, catalogPackages } from './catalog'
+import type { ExtensionCatalogPackage } from './catalog'
 import { extensionSourceConfigured, jvmSourceOwners } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
 import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
@@ -41,35 +42,11 @@ export interface InstalledExtensionPackage {
   signed: boolean
 }
 
-export interface ExtensionCatalogPackage {
-  id: string
-  name: string
-  version: string
-  language?: string
-  nsfw: boolean
-  sources: Array<{
-    id: string
-    name: string
-    language?: string
-    baseUrl?: string
-  }>
-  backend: 'izumi-js' | 'aniyomi-jvm'
-  package: string
-  packageSha256: string
-  packageBytes: number
-}
+export type { ExtensionCatalogPackage, ExtensionCatalog } from './catalog'
 
-export interface ExtensionCatalog {
-  formatVersion: 1
-  generatedAt: string
-  scope: {
-    content: 'anime'
-    transport: 'http'
-    manga: false
-  }
-  packages: ExtensionCatalogPackage[]
-}
-
+/** The maintained anime/HTTP package catalog. Not installed by default and not offered in the UI —
+ *  a catalog is added the same way any other source is, by pasting its URL. Kept here as the
+ *  canonical address of the repo the packages are published to. */
 export const OFFICIAL_ANIME_CATALOG =
   'https://raw.githubusercontent.com/nickEatsBread/izumi-extension-repo/refs/heads/main/index.json'
 
@@ -100,11 +77,6 @@ export async function installedExtensionPackages(): Promise<InstalledExtensionPa
   }
 }
 
-export async function installExtensionPackage(path: string): Promise<InstalledExtensionPackage> {
-  const installed = await invoke<InstalledExtensionPackage>('extension_install', { path })
-  return finishPackageInstall(installed)
-}
-
 export async function installCatalogPackage(
   extension: Pick<ExtensionCatalogPackage, 'package' | 'packageSha256'>,
 ): Promise<InstalledExtensionPackage> {
@@ -122,24 +94,6 @@ async function finishPackageInstall(installed: InstalledExtensionPackage): Promi
   installedRevision += 1
   resetRunning()
   return installed
-}
-
-export async function fetchAnimeExtensionCatalog(
-  url = OFFICIAL_ANIME_CATALOG,
-): Promise<ExtensionCatalog> {
-  const response = await phttp(url)
-  if (!response.ok) throw new Error(`Extension catalog returned HTTP ${response.status}`)
-  const catalog = await response.json() as ExtensionCatalog
-  if (
-    catalog?.formatVersion !== 1
-    || catalog.scope?.content !== 'anime'
-    || catalog.scope?.transport !== 'http'
-    || catalog.scope?.manga !== false
-    || !Array.isArray(catalog.packages)
-  ) {
-    throw new Error('Extension catalog has an unsupported format or scope')
-  }
-  return catalog
 }
 
 export async function removeInstalledExtension(id: string): Promise<void> {
@@ -170,8 +124,17 @@ async function expandManifest(spec: string, depth = 0): Promise<ExtensionConfig[
   // which multiplied across a repo's manifests + modules made the first resolve crawl.
   const r = await phttp(url)
   if (!r.ok) return []
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const raw: any = await r.json()
+  return expandRaw(await r.json(), url, depth)
+}
+
+// Split from the fetch above so the settings list can classify a document (package catalog vs
+// manifest) and still expand it without paying a SECOND round-trip for the same URL.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function expandRaw(raw: any, url: string, depth = 0): Promise<ExtensionConfig[]> {
+  // A package catalog runs nothing itself: its entries are `.izumi-ext` downloads, and the
+  // INSTALLED copies are what loadConfigs picks up. Stop here so a catalog URL sitting in the
+  // source list can't be mistaken for a manifest that produced no extensions.
+  if (catalogPackages(raw)) return []
   const entries = Array.isArray(raw) ? raw : [raw]
   // Partition rather than all-or-nothing: a marketplace may mix pointer entries with inline
   // configs, and `every(isPointer)` silently dropped the whole catalog when even one differed.
@@ -193,19 +156,35 @@ export async function fetchExtensionMeta(spec: string): Promise<ExtensionConfig[
   try { return await expandManifest(spec) } catch { return [] }
 }
 
-/** Like `fetchExtensionMeta`, plus an explanation when nothing runnable came back — so a source
- *  that can never work (a compiled Android plugin repo, say) says so instead of silently showing
- *  an empty list. The diagnostic re-fetches the manifest, but only on the failure path. */
-export async function fetchExtensionInfo(spec: string): Promise<{ configs: ExtensionConfig[]; problem?: string }> {
-  const configs = await fetchExtensionMeta(spec)
-  if (configs.length) return { configs }
+export interface ExtensionSourceInfo {
+  /** Extensions izumi runs straight from the network. Empty for a package catalog. */
+  configs: ExtensionConfig[]
+  /** Present when the URL is a package catalog — the installable `.izumi-ext` payloads it lists. */
+  packages?: ExtensionCatalogPackage[]
+  /** Why neither of the above came back, in words a user can act on. */
+  problem?: string
+}
+
+/** What a stored source spec actually is, for the settings list: a manifest of runnable
+ *  extensions, a catalog of installable packages, or a reason it is neither. One fetch answers
+ *  all three — the old two-pass version re-fetched the same URL to explain a failure. */
+export async function fetchExtensionInfo(spec: string): Promise<ExtensionSourceInfo> {
+  const url = resolveManifestUrl(spec)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let raw: any
   try {
-    const r = await phttp(resolveManifestUrl(spec))
-    if (!r.ok) return { configs, problem: `That URL returned HTTP ${r.status}.` }
-    return { configs, problem: manifestProblem(await r.json()) }
+    const r = await phttp(url)
+    if (!r.ok) return { configs: [], problem: `That URL returned HTTP ${r.status}.` }
+    raw = await r.json()
   } catch {
-    return { configs, problem: 'That URL could not be fetched.' }
+    return { configs: [], problem: 'That URL could not be fetched.' }
   }
+  const packages = catalogPackages(raw)
+  if (packages) return { configs: [], packages }
+  const configs = await expandRaw(raw, url).catch(() => [] as ExtensionConfig[])
+  // Say so out loud when a source can never work (a compiled Android plugin repo, say), rather
+  // than showing an empty list that reads as izumi being broken.
+  return configs.length ? { configs } : { configs, problem: manifestProblem(raw) }
 }
 
 async function loadConfigs(): Promise<ExtensionConfig[]> {

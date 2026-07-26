@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pointerUrl, normalizeManifest, isRunnableType, resolveManifestUrl, manifestProblem } from './catalog'
+import { pointerUrl, normalizeManifest, isRunnableType, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages } from './catalog'
 
 // Shapes below are the real ones served by the catalogs we support, trimmed to the fields we read.
 
@@ -217,5 +217,68 @@ describe('resolveManifestUrl', () => {
 
   it('appends index.json to a bare GitHub shorthand', () => {
     expect(resolveManifestUrl('owner/repo')).toBe('https://esm.sh/gh/owner/repo/index.json')
+  })
+})
+
+describe('sourceLabel', () => {
+  // The regression: both of these are bare arrays with no document-level name, so the settings row
+  // showed the raw URL — truncated mid-path, which reads as no title at all.
+  it('names a raw GitHub manifest after its repo', () => {
+    expect(sourceLabel('https://raw.githubusercontent.com/Seanime-contributions/Seanime-Providers/main/marketplace/main.json'))
+      .toBe('Seanime-contributions/Seanime-Providers')
+    expect(sourceLabel('https://raw.githubusercontent.com/ReWelp/HayasexShiru-Extensions/main/hayase/index.json'))
+      .toBe('ReWelp/HayasexShiru-Extensions')
+  })
+
+  it('names esm.sh and jsDelivr gh paths after the repo too, version suffix dropped', () => {
+    expect(sourceLabel('https://esm.sh/gh/owner/repo/index.json')).toBe('owner/repo')
+    expect(sourceLabel('https://cdn.jsdelivr.net/gh/owner/repo@1.2.3/index.json')).toBe('owner/repo')
+  })
+
+  it('falls back to the hostname for any other URL', () => {
+    expect(sourceLabel('https://example.test/some/deep/path/manifest.json')).toBe('example.test')
+    expect(sourceLabel('https://www.example.test/manifest.json')).toBe('example.test')
+  })
+
+  it('keeps a gh: / shorthand spec as its repo path', () => {
+    expect(sourceLabel('gh:owner/repo')).toBe('owner/repo')
+    expect(sourceLabel('owner/repo/folder/')).toBe('owner/repo/folder')
+  })
+})
+
+describe('catalogPackages', () => {
+  const catalog = {
+    formatVersion: 1,
+    generatedAt: '2026-07-26T20:14:38.418Z',
+    scope: { content: 'anime', transport: 'http', manga: false },
+    packages: [
+      { id: 'a', name: 'A', version: '1', nsfw: false, sources: [], backend: 'izumi-js', package: 'https://x/a.izumi-ext', packageSha256: 'aa', packageBytes: 1 },
+    ],
+  }
+
+  it('recognizes a package catalog and returns its entries', () => {
+    expect(catalogPackages(catalog)?.map((p) => p.id)).toEqual(['a'])
+  })
+
+  it('distinguishes an EMPTY catalog from a document that is not one', () => {
+    // [] and null are different answers: an empty catalog must still render as a catalog row
+    // rather than falling through to manifest expansion and being called broken.
+    expect(catalogPackages({ ...catalog, packages: [] })).toEqual([])
+    expect(catalogPackages([{ id: 'x', name: 'X', payloadURI: 'https://x/x.js' }])).toBeNull()
+    expect(catalogPackages(null)).toBeNull()
+  })
+
+  it('refuses a newer format version or a scope izumi has no runtime for', () => {
+    expect(catalogPackages({ ...catalog, formatVersion: 2 })).toBeNull()
+    expect(catalogPackages({ ...catalog, scope: { content: 'manga', transport: 'http', manga: true } })).toBeNull()
+  })
+
+  it('drops entries with no id or no payload rather than rendering an uninstallable row', () => {
+    expect(catalogPackages({ ...catalog, packages: [...catalog.packages, { name: 'no id' }, { id: 'b' }] })?.map((p) => p.id))
+      .toEqual(['a'])
+  })
+
+  it('explains a catalog it refused instead of calling the URL unreachable', () => {
+    expect(manifestProblem({ ...catalog, formatVersion: 2 })).toMatch(/catalog/i)
   })
 })
