@@ -1169,7 +1169,11 @@ export async function playStream(media: Media, episode: number | undefined, stre
         })
       }
       try {
-        await invoke('spawn_external_player', { path, url: stream.url })
+        await invoke('spawn_external_player', {
+          path,
+          url: stream.url,
+          headers: stream.__stream ? stream.__headers : undefined,
+        })
       } catch (error) {
         unlistenExit?.()
         throw error

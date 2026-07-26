@@ -5,6 +5,8 @@ mod direct_torrent;
 mod direct_torrent_select;
 mod extension_package;
 #[cfg(not(target_os = "android"))]
+mod hls_proxy;
+#[cfg(not(target_os = "android"))]
 mod jvm_extensions;
 mod sync;
 mod watch_room;
@@ -96,6 +98,7 @@ async fn player_embed(
     audio_tracks: Option<Vec<player::AudioTrack>>,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
+    let url = hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?;
     let main = app.get_webview_window("main").ok_or("no main window")?;
     #[cfg(windows)]
     let (main_raw, wid) = {
@@ -254,13 +257,19 @@ fn gamepad_trigger_state() -> GamepadTriggerState {
 /// in that app's own window (we get no progress events back).
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn spawn_external_player(app: AppHandle, path: String, url: String) -> Result<(), String> {
+async fn spawn_external_player(
+    app: AppHandle,
+    path: String,
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<(), String> {
     if url.is_empty() {
         return Err("no stream url".into());
     }
     if path.is_empty() {
         return Err("No external player selected — set its path in Settings.".into());
     }
+    let url = hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?;
     let mut child = std::process::Command::new(&path)
         .arg(&url)
         .spawn()
