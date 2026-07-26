@@ -13,7 +13,7 @@ import { resolveHash, resolveSidecars, providerName, type EpisodeWant } from './
 import { resolveOnlineStreams } from './onlinestream'
 import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
-import { queryExtensions, runningExtensionCount } from '$lib/extensions/manager'
+import { hasConfiguredExtensions, queryExtensions, runningExtensionCount } from '$lib/extensions/manager'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
@@ -26,7 +26,7 @@ import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteK
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
-  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, enabledExtensionUrls, bingePreload,
+  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   torrentDownloadLimitMbps, torrentUploadLimitMode, torrentUpstreamCapacityMbps,
 } from '$lib/settings/ui'
@@ -423,7 +423,10 @@ async function resolveKitsu(media: Media): Promise<number | undefined> {
 
 async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: { season?: number; abs?: number }; kitsu?: number }> {
   const bases = get(enabledAddonUrls)
-  if (!bases.length) throw new Error('No sources configured — add an addon URL in Settings.')
+  if (!bases.length) {
+    if (await hasConfiguredExtensions()) return { streams: [], cachedCount: 0 }
+    throw new Error('No sources configured — add an addon URL or install an anime package in Settings.')
+  }
   const kitsu = await resolveKitsu(media)
   // No Kitsu id ⇒ addons (which index by it) can't be queried. Auto-advance is cached-addon-only,
   // so return nothing and let the caller fall back to the manual picker (its title/id extension
@@ -447,7 +450,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
 
   // Only hard-fail when there's nothing playable AND no extensions to fall back on;
   // otherwise let the picker fill from extensions asynchronously.
-  if (!streams.length && !get(enabledExtensionUrls).length) {
+  if (!streams.length && !await hasConfiguredExtensions()) {
     throw new Error(total > 0
       ? `Found ${total} torrents but none are usable (all dead or notice entries). Try another source.`
       : 'No streams found for this title/episode yet.')
@@ -716,8 +719,8 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     }
 
     const bases = get(enabledAddonUrls)
-    const hasExt = get(enabledExtensionUrls).length > 0
-    if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL in Settings.')
+    const hasExt = await hasConfiguredExtensions()
+    if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL or install an anime package in Settings.')
     // Exactly ONE source configured — a single enabled plugin and no addons — means the picker has
     // no choice to offer, so it is hidden and the best result plays directly. Counted in PLUGINS,
     // not URLs, because one URL can expand to many.

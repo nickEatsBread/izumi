@@ -4,6 +4,7 @@ import { phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem } from './catalog'
+import { extensionSourceConfigured } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
@@ -64,6 +65,18 @@ export async function removeInstalledExtension(id: string): Promise<void> {
   await invoke('extension_remove', { id })
   installedRevision += 1
   resetRunning()
+}
+
+/** Fast configuration guard for playback. Unlike checking extension URLs, this
+ * also sees enabled `.izumi-ext` packages stored by the desktop installer. */
+export async function hasConfiguredExtensions(): Promise<boolean> {
+  const manifests = get(enabledExtensionUrls)
+  if (manifests.length) return true
+  return extensionSourceConfigured(
+    manifests,
+    await installedExtensionPackages(),
+    get(disabledPlugins),
+  )
 }
 
 // Fetch a manifest by spec and expand it into ExtensionConfig[]. A top-level GitHub
