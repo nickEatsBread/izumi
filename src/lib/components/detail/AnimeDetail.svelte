@@ -55,20 +55,26 @@
   // (AniList's mediaListEntry is null/0 then). Take whichever tracker is further
   // along. `media` is what the whole page renders — badge, resume, episode marks.
   let malEntry = $state<{ progress: number; status: string; score: number } | null>(null)
-  let malEntryFor = $state<number | null>(null)
+  // NOT $state, and it must stay that way. This is a bookkeeping latch, not UI state: the effect
+  // both READS it (the guard) and WRITES it, so as $state the write re-triggered the effect, and
+  // Svelte runs an effect's teardown before re-running it — the teardown cancelled the MAL request
+  // the same pass had just started, so `malEntry` never landed. Symptom: MAL read-back was dead on
+  // every detail page (no status pill, no MAL progress), which reads as "Add to List" on a title
+  // that is already on the user's list.
+  let malEntryFor: number | null = null
   $effect(() => {
-    // Key on `idMal` ONLY. Depending on the whole `$store.data` re-ran this on every store
-    // emission, and the unconditional `malEntry = null` meant a MAL-only user watched the header
-    // badge fall back to "0/12" and the CTA revert from "Continue · Ep 8" to "Play" for one MAL
-    // round-trip each time — plus a redundant request and an out-of-order-response window.
+    // Guard on `idMal` so an unrelated store emission doesn't refetch: without it a MAL-only user
+    // watched the header badge fall back to "0/12" and the CTA revert from "Continue · Ep 8" to
+    // "Play" for one MAL round-trip on every emission.
     const idMal = $store.data?.Media?.idMal
     if (idMal === malEntryFor) return
     malEntryFor = idMal ?? null
     malEntry = null
     if (!idMal) return
-    let cancelled = false
-    getMalProgress(idMal).then((e) => { if (!cancelled) malEntry = e })
-    return () => { cancelled = true }
+    // Accept the response only if it is still the title we asked about. Snapshotting the key beats
+    // an effect-scoped `cancelled` flag here, because ANY re-run of this effect (urql emits several
+    // times per query) would fire that flag's teardown and drop an in-flight request.
+    getMalProgress(idMal).then((e) => { if (malEntryFor === idMal) malEntry = e })
   })
   // Offline: build the page's media from the local snapshot (downloadedMedia → localHistory →
   // synthesized from the DownloadItems) with progress folded from local history, so the header
