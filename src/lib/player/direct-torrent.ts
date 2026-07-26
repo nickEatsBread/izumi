@@ -27,7 +27,11 @@ export function reportDirectTorrentBuffer(position: number, bufferedEnd: number)
   const low = bufferedSeconds < 60
   if (low === lastBufferLow) return
   lastBufferLow = low
-  invoke('torrent_playback_buffer', { playbackId, bufferedSeconds }).catch(() => {})
+  invoke('torrent_playback_buffer', { playbackId, bufferedSeconds }).catch(() => {
+    // A rejected bridge call did not update the native governor. Allow the next progress event to
+    // retry this threshold, but do not roll back a newer threshold or a newer playback session.
+    if (activePlaybackId === playbackId && lastBufferLow === low) lastBufferLow = null
+  })
 }
 
 async function androidAllowsPostPlaybackSeed(): Promise<boolean> {
