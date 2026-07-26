@@ -68,6 +68,9 @@ export interface Stream {
   // the ranking stay pure.
   __lang?: string
   __langMismatch?: boolean
+  // Canonical media title actually matched by an online provider. Kept separately from the modal's
+  // requested AniList title so diagnostics and UI can never conceal a mismatched provider result.
+  __sourceTitle?: string
   // Raw source-reported seeder count for extension torrents, kept STRUCTURALLY (not parsed back
   // out of the title) so dedupeStreams can keep the best-seeded copy when several indexers return
   // the same infoHash with disagreeing counts (one live, one 0/unknown). Display still flows

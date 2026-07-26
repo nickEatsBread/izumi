@@ -108,6 +108,76 @@ describe('resolveOnlineStreams incremental delivery', () => {
   })
 })
 
+describe('provider title identity', () => {
+  it('rejects a weak result before requesting episodes or video', async () => {
+    const calls: string[] = []
+    const wrong = {
+      id: 'anidb',
+      name: 'AniDB',
+      lang: 'en',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      call: async (method: string): Promise<any> => {
+        calls.push(method)
+        if (method === 'getSettings') return { episodeServers: ['default'] }
+        if (method === 'search') {
+          return [{ id: 'wrong', title: 'Jubei-chan the Ninja Girl: Secret of the Lovely Eyepatch' }]
+        }
+        throw new Error(`${method} must not run for an untrusted title`)
+      },
+    }
+    const lovelyDay = {
+      title: {
+        romaji: 'Lovely Day: Boku to Kanojo no Nanoka Kan',
+        english: 'Lovely Day: Boku to Kanojo no Nanoka Kan',
+      },
+      synonyms: [],
+      seasonYear: 2012,
+      format: 'OVA',
+    } as never
+    runningStreamExtensions.mockResolvedValue([wrong])
+
+    expect(await resolveOnlineStreams(lovelyDay, 1)).toEqual([])
+    expect(calls).toEqual(['getSettings', 'search'])
+  })
+
+  it('falls back to an alternate title and exposes the provider match on the row', async () => {
+    const queries: string[] = []
+    const alternate = {
+      id: 'alt',
+      name: 'AlternateProvider',
+      lang: 'en',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      call: async (method: string, ...args: unknown[]): Promise<any> => {
+        if (method === 'getSettings') return { episodeServers: ['default'] }
+        if (method === 'search') {
+          const query = String((args[0] as { query?: string }).query)
+          queries.push(query)
+          return query === 'Sousou no Frieren'
+            ? [{ id: 'frieren', title: 'Sousou no Frieren' }]
+            : [{ id: 'wrong', title: 'Beyond the Boundary' }]
+        }
+        if (method === 'findEpisodes') return [{ id: 'ep-1', number: 1, title: 'Episode 1' }]
+        if (method === 'findEpisodeServer') {
+          return { server: 'default', videoSources: [{ url: 'https://cdn/frieren.m3u8', type: 'm3u8' }] }
+        }
+        return null
+      },
+    }
+    const aliases = {
+      title: { romaji: 'Frieren: Beyond Journey’s End', english: 'Frieren: Beyond Journey’s End' },
+      synonyms: ['Sousou no Frieren'],
+      seasonYear: 2023,
+    } as never
+    runningStreamExtensions.mockResolvedValue([alternate])
+
+    const rows = await resolveOnlineStreams(aliases, 1)
+    expect(queries).toEqual(['Frieren: Beyond Journey’s End', 'Sousou no Frieren'])
+    expect(rows).toHaveLength(1)
+    expect(rows[0].__sourceTitle).toBe('Sousou no Frieren')
+    expect(rows[0].behaviorHints?.filename).toBe('Sousou no Frieren — Episode 1')
+  })
+})
+
 describe('resolve cost', () => {
   /** Counts every worker call so the number of round trips per episode is directly observable. */
   function counting(id: string, supportsDub?: boolean) {

@@ -1,5 +1,4 @@
 import type { Stream } from './parse'
-import { titleTokens } from './relevance'
 import { get } from 'svelte/store'
 import type { Media } from '$lib/anilist/types'
 import { title } from '$lib/anilist/media'
@@ -10,7 +9,15 @@ import { memo, cacheableList } from './online-cache'
 
 // onlinestream-provider extension SDK shapes. Fields we consume.
 export interface SnSearchResult { id: string; title: string; url?: string; subOrDub?: string }
-export interface SnEpisode { id: string; number: number; url?: string; title?: string }
+export interface SnEpisode {
+  id: string
+  number: number
+  url?: string
+  title?: string
+  /** Canonical title returned by the provider's detail page. JVM sources can expose this, which
+   * lets us catch a search result that redirects to a different anime before resolving video. */
+  sourceTitle?: string
+}
 // Seanime VideoSubtitle is {url, language, isDefault}; providers vary (some emit `lang`/`label`/
 // `default`), so accept them all and normalize in videoSourceToStream.
 // `headers` mirrors the reference's SubtitleFile.headers: some sidecar subtitle URLs are gated on
@@ -94,19 +101,112 @@ export function allowedByLanguage(providerLang: string | undefined, allowed: str
   return allowed.map((l) => l.toLowerCase()).includes(providerLang.toLowerCase())
 }
 
-/** Pick the search result whose title best overlaps the media's known titles (token
- *  intersection). Returns undefined if nothing overlaps (never guess a wrong show). */
+const SEARCH_TITLE_NOISE = new Set([
+  'a', 'an', 'and', 'at', 'dub', 'dubbed', 'eng', 'english', 'for', 'in', 'jpn', 'japanese',
+  'no', 'of', 'on', 'or', 'sub', 'subbed', 'the', 'to', 'tv', 'wa',
+])
+const IDENTITY_MARKERS = new Set([
+  'cour', 'film', 'movie', 'ona', 'ova', 'part', 'recap', 'season', 'special',
+])
+
+/** Stable title form for exact comparisons and search-query dedupe. */
+export function normalizeSearchTitle(value: string): string {
+  return value
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function searchTitleWords(value: string): string[] {
+  return normalizeSearchTitle(value)
+    .split(' ')
+    .filter((word) => word && !SEARCH_TITLE_NOISE.has(word) && word.length > 1)
+}
+
+function sameWords(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((word, index) => word === b[index])
+}
+
+/**
+ * Confidence that one provider title identifies one of the media's known titles.
+ *
+ * Search providers often return fuzzy results. A single shared word is not identity: AniDB returned
+ * "Jubei-chan ... Lovely Eyepatch" for "Lovely Day ..." and the previous matcher accepted it solely
+ * because both contained "Lovely". Compare each alias independently, require substantial coverage
+ * on BOTH sides, and reject asymmetric production markers/numbers (movie, season 2, OVA, etc.).
+ */
+export function searchTitleScore(candidate: string, titles: string[]): number {
+  const candidateNormalized = normalizeSearchTitle(candidate)
+  const candidateWords = searchTitleWords(candidate)
+  if (!candidateNormalized || !candidateWords.length) return 0
+
+  let best = 0
+  for (const wanted of titles) {
+    const wantedNormalized = normalizeSearchTitle(wanted)
+    const wantedWords = searchTitleWords(wanted)
+    if (!wantedNormalized || !wantedWords.length) continue
+
+    // Exact provider title (or exact meaningful words with harmless "(Dub)"/"(TV)" noise) wins.
+    if (candidateNormalized === wantedNormalized || sameWords(candidateWords, wantedWords)) {
+      best = Math.max(best, 1000)
+      continue
+    }
+
+    const candidateSet = new Set(candidateWords)
+    const wantedSet = new Set(wantedWords)
+    const shared = [...candidateSet].filter((word) => wantedSet.has(word)).length
+    if (shared < 2) continue
+
+    // A marker or number on only one side usually denotes a different AniList production.
+    const asymmetricMarker = [...new Set([...candidateSet, ...wantedSet])]
+      .some((word) =>
+        (IDENTITY_MARKERS.has(word) || /^\d+$/.test(word))
+        && candidateSet.has(word) !== wantedSet.has(word),
+      )
+    if (asymmetricMarker) continue
+
+    const wantedCoverage = shared / wantedSet.size
+    const candidateCoverage = shared / candidateSet.size
+    if (wantedCoverage < 0.6 || candidateCoverage < 2 / 3) continue
+    const dice = (2 * shared) / (wantedSet.size + candidateSet.size)
+    best = Math.max(best, Math.round(dice * 100) + shared)
+  }
+  return best
+}
+
+/** Pick the strongest CONFIDENT result. Results with only a vague overlap are rejected. */
 export function pickSearchResult(results: SnSearchResult[], titles: string[]): SnSearchResult | undefined {
-  const wanted = new Set(titles.flatMap((t) => titleTokens(t)))
-  if (!wanted.size) return undefined
   let best: SnSearchResult | undefined
   let bestScore = 0
   for (const r of results) {
-    const toks = titleTokens(r.title ?? '')
-    const score = toks.filter((t) => wanted.has(t)).length
+    const score = searchTitleScore(r.title ?? '', titles)
     if (score > bestScore) { bestScore = score; best = r }
   }
   return bestScore > 0 ? best : undefined
+}
+
+/** Provider-facing query order: primary title first, then unique aliases only when it misses. */
+export function searchQueries(titles: string[]): string[] {
+  const seen = new Set<string>()
+  return titles.filter((candidate) => {
+    const key = normalizeSearchTitle(candidate)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/** The picker header is the requested AniList media; each row must name the provider match instead
+ * of laundering it through the requested title. */
+export function providerEpisodeLabel(matchedTitle: string, episode: number, episodeTitle?: string): string {
+  const epName = episodeTitle?.trim()
+  const hasRealTitle = !!epName
+    && normalizeSearchTitle(epName) !== `episode ${episode}`
+    && epName !== String(episode)
+  return `${matchedTitle.trim()} — Episode ${episode}${hasRealTitle ? ` · ${epName}` : ''}`
 }
 
 /** Find the episode entry whose number equals the requested episode. */
@@ -118,7 +218,7 @@ export function pickEpisode(eps: SnEpisode[], episode: number): SnEpisode | unde
 export function videoSourceToStream(
   vs: SnVideoSource, server: string, headers: Record<string, string>, provider: string,
   epTitle?: string, audio?: 'sub' | 'dub', originId?: string, lang?: string, langMismatch?: boolean,
-  preferredSubtitle?: string,
+  preferredSubtitle?: string, sourceTitle?: string,
 ): Stream {
   const quality = vs.quality || 'auto'
   const kind = /m3u8|hls/i.test(vs.type ?? '') ? 'HLS' : 'MP4'
@@ -177,6 +277,7 @@ export function videoSourceToStream(
     __lang: lang,
     __langMismatch: langMismatch,
     __addonName: provider,
+    __sourceTitle: sourceTitle?.trim() || undefined,
     __origin: originId ? { kind: 'online-extension', id: originId, name: provider } : undefined,
     behaviorHints: { filename: epTitle?.trim() || `Direct ${kind}${sourceServer ? ` · ${sourceServer}` : ''}` },
   }
@@ -212,25 +313,53 @@ export async function resolveOnlineStreams(
   if (!exts.length) return []
   const titles = [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
     .filter((t): t is string => !!t && t.length > 1)
+  const queries = searchQueries(titles)
+  // Providers commonly disambiguate remakes with a year and append the production type even when
+  // AniList's title does not ("Fruits Basket (2019)", "Title OVA"). Treat those as known aliases,
+  // while still rejecting a DIFFERENT year/type through searchTitleScore's asymmetric markers.
+  const formatMarker = ({ MOVIE: 'Movie', OVA: 'OVA', ONA: 'ONA', SPECIAL: 'Special' } as Record<string, string>)[media.format ?? '']
+  const identityTitles = titles.flatMap((knownTitle) => {
+    const variants = [knownTitle]
+    if (media.seasonYear) variants.push(`${knownTitle} ${media.seasonYear}`)
+    if (formatMarker) variants.push(`${knownTitle} ${formatMarker}`)
+    if (media.seasonYear && formatMarker) variants.push(`${knownTitle} ${formatMarker} ${media.seasonYear}`)
+    return variants
+  })
   const preferDub = get(preferredAudioLang) === 'eng'
   // Search + resolve the requested episode for one sub/dub pass. null = no match this pass.
   // Both hops are memoized: neither the search nor the episode list depends on WHICH episode was
   // asked for, so re-running them per episode was pure waste — the dominant cost of opening the
   // picker on episode 2 of a binge.
-  const findEp = async (ext: (typeof exts)[number], dub: boolean): Promise<SnEpisode | null> => {
-    const results = await memo(
-      `search|${ext.id}|${dub}|${titles[0]}|${media.seasonYear ?? ''}`,
-      () => ext.call('search', { query: titles[0], dub, year: media.seasonYear ?? undefined }).catch(() => null),
-      cacheableList,
-    ) as SnSearchResult[] | null
-    const best = pickSearchResult(results ?? [], titles)
+  const findEp = async (
+    ext: (typeof exts)[number],
+    dub: boolean,
+  ): Promise<{ episode: SnEpisode; matchedTitle: string } | null> => {
+    let best: SnSearchResult | undefined
+    // Most providers match the primary title, so this is still one request in the normal case.
+    // Only a failed/weak match falls back through the media's romaji, English and synonym titles.
+    for (const query of queries) {
+      const results = await memo(
+        `search|${ext.id}|${dub}|${JSON.stringify(query)}|${media.seasonYear ?? ''}`,
+        () => ext.call('search', { query, dub, year: media.seasonYear ?? undefined }).catch(() => null),
+        cacheableList,
+      ) as SnSearchResult[] | null
+      best = pickSearchResult(results ?? [], identityTitles)
+      if (best) break
+    }
     if (!best) return null
     const eps = await memo(
       `episodes|${ext.id}|${best.id}`,
       () => ext.call('findEpisodes', best.id).catch(() => null),
       cacheableList,
     ) as SnEpisode[] | null
-    return pickEpisode(eps ?? [], episode) ?? null
+    const matchedEpisode = pickEpisode(eps ?? [], episode)
+    if (!matchedEpisode) return null
+    // JVM detail pages expose their canonical title. Validate that too: a fuzzy search result can
+    // redirect, and resolving video after that redirect would bind the right episode NUMBER to the
+    // wrong production.
+    const matchedTitle = matchedEpisode.sourceTitle?.trim() || best.title?.trim()
+    if (!matchedTitle || searchTitleScore(matchedTitle, identityTitles) === 0) return null
+    return { episode: matchedEpisode, matchedTitle }
   }
   const per = await Promise.all(exts.map(async (ext): Promise<Stream[]> => {
     try {
@@ -245,18 +374,16 @@ export async function resolveOnlineStreams(
       const servers = settings?.episodeServers?.length ? settings.episodeServers : ['default']
       // One audio flavour: search with the dub flag, resolve the episode, fan out over servers.
       const resolvePass = async (dub: boolean): Promise<Stream[]> => {
-      const ep = await findEp(ext, dub)
-      if (!ep) return []
+      const match = await findEp(ext, dub)
+      if (!match) return []
+      const { episode: ep, matchedTitle } = match
       const audio: 'sub' | 'dub' = dub ? 'dub' : 'sub'
       // Aggregate EVERY server that returns sources (not first-server-wins) so the picker shows
       // all alternatives + a working fallback when one server's stream is dead. Dedupe by url.
       const out: Stream[] = []
-      // Give the row a real label — anime title + episode (+ the provider's episode title when it's
-      // more than a bare "Episode N") — instead of the provider's generic "Episode 01", so the
-      // onlinestream row reads like the torrent rows do.
-      const epName = ep.title?.trim()
-      const hasRealTitle = !!epName && epName !== `Episode ${episode}` && epName !== String(episode)
-      const epLabel = `${title(media)} — Episode ${episode}${hasRealTitle ? ` · ${epName}` : ''}`
+      // The modal header names the requested anime. The row names the title the provider actually
+      // matched, so a bad source can never masquerade as the requested show.
+      const epLabel = providerEpisodeLabel(matchedTitle, episode, ep.title)
       // Servers were scraped one at a time, so this wave cost the SUM of every server's round-trip
       // — and it gates `resolving`, which gates the picker's auto-select countdown, so it delays
       // first frame for anyone with autoplay on. Run them with a small concurrency cap: bounded
@@ -285,6 +412,7 @@ export async function resolveOnlineStreams(
             ext.lang,
             !matchesPreferredLang(ext.lang, prefLang) && !!ext.lang,
             subLang,
+            matchedTitle,
           ))
         }
       }
