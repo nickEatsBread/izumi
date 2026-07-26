@@ -70,7 +70,7 @@ export interface ExtensionCatalog {
 }
 
 export const OFFICIAL_ANIME_CATALOG =
-  'https://raw.githubusercontent.com/nickEatsBread/izumi-extension-bridge/repo/index.json'
+  'https://raw.githubusercontent.com/nickEatsBread/izumi-extension-bridge/refs/heads/repo/index.json'
 
 interface JvmSource {
   id: string
