@@ -29,13 +29,19 @@ export function fetchManifest(base: string): Promise<AddonManifest | null> {
   if (!/^https?:\/\//i.test(b)) b = 'https://' + b
   b = b.replace(/\/manifest\.json\/?$/i, '').replace(/\/$/, '')
   if (!cache.has(b)) {
-    cache.set(b, (async () => {
+    const request = (async () => {
       try {
         const r = await phttp(`${b}/manifest.json`)
         if (!r.ok) return null
         return (await r.json()) as AddonManifest
       } catch { return null }
-    })())
+    })()
+    cache.set(b, request)
+    // Coalesce concurrent requests, but do not turn a transient network/parse failure into a
+    // session-long miss. Successful manifests remain cached for the session as before.
+    void request.then((manifest) => {
+      if (manifest === null && cache.get(b) === request) cache.delete(b)
+    })
   }
   return cache.get(b)!
 }
