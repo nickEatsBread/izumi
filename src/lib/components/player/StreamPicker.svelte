@@ -33,7 +33,12 @@
   let filter = $state('')
   const shown = $derived(
     filter.trim()
-      ? visible.filter((i) => (i.filename ?? i.label).toLowerCase().includes(filter.trim().toLowerCase()))
+      ? visible.filter((i) => [
+          i.filename ?? i.label,
+          i.server,
+          i.addon,
+          ...i.badges,
+        ].filter(Boolean).join(' ').toLowerCase().includes(filter.trim().toLowerCase()))
       : visible,
   )
   // The best cached source == the auto pick; pin + ring it. This MUST go through the same
@@ -165,7 +170,7 @@
     : /Audio|Multi/.test(b) ? 'bg-amber-500/15 text-amber-300'
     : b === 'Batch' ? 'bg-indigo-500/15 text-indigo-300'
     : /^(?:BluRay|WEB|WEB-DL|WEBRip|HDTV|DVD)$/.test(b) ? 'bg-rose-500/15 text-rose-300'
-    : /^(?:HLS|MP4)$/.test(b) ? 'bg-teal-500/15 text-teal-300'
+    : /^(?:HLS|MP4|CC \d+|HARDSUB)$/.test(b) ? 'bg-teal-500/15 text-teal-300'
     : b === 'DUB' ? 'bg-orange-500/15 text-orange-300'
     : b === 'SUB' ? 'bg-slate-500/20 text-slate-300'
     : 'bg-secondary text-muted-foreground'
@@ -302,7 +307,7 @@
                 {#if info.logo}
                   <img src={logoSrc(info.logo)} alt={info.addon ?? ''} title={info.addon ?? ''} class="size-5 shrink-0 rounded object-contain" loading="lazy" decoding="async" />
                 {/if}
-                <span class="truncate text-base font-bold">{info.group ?? info.addon ?? info.provider ?? 'Source'}</span>
+                <span class="truncate text-base font-bold">{info.server ?? info.group ?? info.addon ?? info.provider ?? 'Source'}</span>
                 {#if isBest}
                   <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white">Best</span>
                   {#if autoState === 'counting'}<span class="shrink-0 font-black tabular-nums text-theme" class:text-red-400={autoProgress > 0.4}>[{Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}]</span>{/if}
@@ -325,7 +330,10 @@
                 {#if info.seeders != null}<span class={seedClass(info.seeders)}>👤 {info.seeders}</span>{/if}
                 {#if info.sizeLabel}<span class="text-muted-foreground">💾 {info.sizeLabel}</span>{/if}
                 {#each info.badges as b}
-                  <span class="rounded px-1.5 py-0.5 font-medium {badgeClass(b)}">{b}</span>
+                  <span
+                    class="rounded px-1.5 py-0.5 font-medium {badgeClass(b)}"
+                    title={/^(?:CC \d+|HARDSUB)$/.test(b) ? info.subtitleLabel : undefined}
+                  >{b}</span>
                 {/each}
               </span>
             </span>

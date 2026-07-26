@@ -233,6 +233,84 @@ describe('videoSourceToStream', () => {
     expect(s.behaviorHints?.filename).toContain('The Journey')
   })
 
+  it('uses the individual JVM server and audio flavour instead of the provider wrapper', () => {
+    const s = videoSourceToStream(
+      {
+        url: 'https://cdn/hd.m3u8',
+        type: 'm3u8',
+        quality: '1080p',
+        server: 'HD-1',
+        audio: 'dub',
+        subtitleMode: 'soft',
+      },
+      'Anikoto',
+      {},
+      'Anikoto',
+      'Episode 3',
+      'sub',
+    )
+    expect(s.__server).toBe('HD-1')
+    expect(s.__audio).toBe('dub')
+    expect(s.__subtitleMode).toBe('soft')
+    expect(s.name).toContain('HD-1')
+    expect(describeStream(s).server).toBe('HD-1')
+  })
+
+  it('selects a matching preferred soft subtitle when the provider omitted a default', () => {
+    const s = videoSourceToStream(
+      {
+        url: 'https://cdn/hd.m3u8',
+        type: 'm3u8',
+        quality: '1080p',
+        subtitleMode: 'soft',
+        subtitles: [
+          { url: 'https://s/es.vtt', label: 'Spanish' },
+          { url: 'https://s/en.vtt', label: 'English' },
+        ],
+      },
+      'HD-1',
+      {},
+      'Anikoto',
+      undefined,
+      'sub',
+      undefined,
+      'en',
+      false,
+      'eng',
+    )
+    expect(s.__subtitles?.map((track) => track.isDefault)).toEqual([false, true])
+    expect(describeStream(s).badges).toContain('CC 2')
+    expect(describeStream(s).subtitleLabel).toContain('2 selectable subtitles')
+  })
+
+  it('does not select an external subtitle when subtitles are disabled', () => {
+    const s = videoSourceToStream(
+      { url: 'https://cdn/hd.m3u8', subtitles: [{ url: 'https://s/en.vtt', label: 'English' }] },
+      'HD-1',
+      {},
+      'Anikoto',
+      undefined,
+      'sub',
+      undefined,
+      'en',
+      false,
+      'none',
+    )
+    expect(s.__subtitles?.[0].isDefault).toBe(false)
+  })
+
+  it('labels hard subtitles explicitly rather than implying a missing soft track', () => {
+    const s = videoSourceToStream(
+      { url: 'https://cdn/hard.m3u8', subtitleMode: 'hard' },
+      'HD-1',
+      {},
+      'Anikoto',
+    )
+    const info = describeStream(s)
+    expect(info.badges).toContain('HARDSUB')
+    expect(info.subtitleLabel).toBe('Hard subtitles (burned into video)')
+  })
+
   it('normalizes the SDK subtitle shape (language + isDefault) and dub audio', () => {
     const s = videoSourceToStream(
       { url: 'https://cdn/y.m3u8', type: 'm3u8', quality: 'auto', subtitles: [{ url: 'https://s/e.vtt', language: 'en', isDefault: true }] },

@@ -21,6 +21,12 @@ export interface SnVideoSource {
   url: string
   type?: string
   quality?: string
+  /** Extractor/server identity for this individual source. JVM providers return every server in
+   * one getVideoList call, so the enclosing EpisodeServer name is only the provider name. */
+  server?: string
+  /** Actual flavour reported by this individual source; overrides the search pass when present. */
+  audio?: 'sub' | 'dub'
+  subtitleMode?: 'soft' | 'hard'
   subtitles?: SnVideoSubtitle[]
   audioTracks?: SnAudioTrack[]
   /** A source can override its server's headers. An explicit empty object is meaningful:
@@ -28,7 +34,7 @@ export interface SnVideoSource {
   headers?: Record<string, string>
 }
 export interface SnEpisodeServer { server?: string; headers?: Record<string, string>; videoSources?: SnVideoSource[] }
-export interface SnSettings { episodeServers?: string[]; supportsDub?: boolean }
+export interface SnSettings { episodeServers?: string[]; supportsDub?: boolean; returnsMixedAudio?: boolean }
 
 // Provider content languages are ISO 639-1 in the manifests ('fr'); the user's setting is ISO 639-2
 // ('eng'). Map the handful we care about so the two can be compared.
@@ -112,9 +118,30 @@ export function pickEpisode(eps: SnEpisode[], episode: number): SnEpisode | unde
 export function videoSourceToStream(
   vs: SnVideoSource, server: string, headers: Record<string, string>, provider: string,
   epTitle?: string, audio?: 'sub' | 'dub', originId?: string, lang?: string, langMismatch?: boolean,
+  preferredSubtitle?: string,
 ): Stream {
   const quality = vs.quality || 'auto'
   const kind = /m3u8|hls/i.test(vs.type ?? '') ? 'HLS' : 'MP4'
+  const sourceServer = vs.server ?? server
+  const mappedSubtitles = (vs.subtitles ?? []).map((s) => {
+    const raw = s.language ?? s.lang ?? s.label
+    return {
+      url: s.url,
+      lang: normalizeLang(raw),
+      title: subtitleTitle(raw),
+      isDefault: s.isDefault ?? s.default ?? false,
+      headers: s.headers,
+    }
+  })
+  // Providers frequently return English.vtt without marking it default. `sub-add auto` happens
+  // after loadfile and mpv does not revisit slang selection for that new external track, so it
+  // appears in the menu but stays off. Select the preferred matching sidecar when the provider did
+  // not choose one itself; "none" remains an explicit request for no subtitles.
+  if (preferredSubtitle && preferredSubtitle !== 'none' && !mappedSubtitles.some((s) => s.isDefault)) {
+    const preferred = normalizeLang(preferredSubtitle)
+    const match = mappedSubtitles.find((s) => s.lang === preferred)
+    if (match) match.isDefault = true
+  }
   return {
     url: vs.url,
     // `⚡` marks it instant-cached (isCached) and the `· quality` token feeds resolutionOf's
@@ -126,25 +153,18 @@ export function videoSourceToStream(
     // that identifies nothing, so it is dropped and the row reads "⚡ Provider · 1080p".
     // The LANGUAGE is not encoded here: the picker renders `describe()`'s badges plus __addonName
     // and never shows `name`, which is why a language baked into this string was invisible.
-    name: `⚡ ${provider}${server && server !== 'default' ? ` · ${server}` : ''} · ${quality}`,
+    name: `⚡ ${provider}${sourceServer && sourceServer !== 'default' ? ` · ${sourceServer}` : ''} · ${quality}`,
     __stream: true,
     __headers: vs.headers ?? headers,
-    __audio: audio,
+    __audio: vs.audio ?? audio,
+    __server: sourceServer && sourceServer !== 'default' ? sourceServer : undefined,
+    __subtitleMode: vs.subtitleMode,
     // Normalize the provider's subtitle shape: `language`/`lang`/`label` → lang, and carry
     // `isDefault` so the player auto-selects the intended track (both were being dropped).
     // `lang` is normalized to an ISO code because mpv's `slang` matches on codes — a raw provider
     // label like "wowmdildo {+Eternal Blizzard}" can never match, so the track loads but is never
     // auto-selected. The original label is kept as `title` for the track menu.
-    __subtitles: (vs.subtitles ?? []).map((s) => {
-      const raw = s.language ?? s.lang ?? s.label
-      return {
-        url: s.url,
-        lang: normalizeLang(raw),
-        title: subtitleTitle(raw),
-        isDefault: s.isDefault ?? s.default ?? false,
-        headers: s.headers,
-      }
-    }),
+    __subtitles: mappedSubtitles,
     __audioTracks: (vs.audioTracks ?? []).map((track) => {
       const raw = track.language ?? track.lang ?? track.label
       return {
@@ -158,7 +178,7 @@ export function videoSourceToStream(
     __langMismatch: langMismatch,
     __addonName: provider,
     __origin: originId ? { kind: 'online-extension', id: originId, name: provider } : undefined,
-    behaviorHints: { filename: epTitle?.trim() || `Direct ${kind}${server ? ` · ${server}` : ''}` },
+    behaviorHints: { filename: epTitle?.trim() || `Direct ${kind}${sourceServer ? ` · ${sourceServer}` : ''}` },
   }
 }
 
@@ -254,14 +274,31 @@ export async function resolveOnlineStreams(
       }))
       for (const [idx, es] of found.entries()) {
         if (es?.videoSources?.length) {
-          for (const vs of es.videoSources) out.push(videoSourceToStream(vs, es.server ?? servers[idx], es.headers ?? {}, ext.name, epLabel, audio, ext.id, ext.lang, !matchesPreferredLang(ext.lang, prefLang) && !!ext.lang))
+          for (const vs of es.videoSources) out.push(videoSourceToStream(
+            vs,
+            es.server ?? servers[idx],
+            es.headers ?? {},
+            ext.name,
+            epLabel,
+            audio,
+            ext.id,
+            ext.lang,
+            !matchesPreferredLang(ext.lang, prefLang) && !!ext.lang,
+            subLang,
+          ))
         }
       }
         return out
       }
       // Run the audio flavours concurrently rather than dub-then-fallback, so a title that has BOTH
       // offers both instead of hiding one behind a global setting.
-      const passes = passesForAudio(dubPasses(settings?.supportsDub, preferDub), get(providerAudio))
+      const audioFilter = get(providerAudio)
+      // Aniyomi getVideoList is already a mixed server/sub/dub response. One pass is enough; the
+      // per-video title supplies the real audio flavour below, avoiding two identical expensive
+      // extractor calls and two localhost proxy instances racing each other.
+      const passes = settings?.returnsMixedAudio
+        ? [false]
+        : passesForAudio(dubPasses(settings?.supportsDub, preferDub), audioFilter)
       if (!passes.length) return []
       const results = await Promise.all(passes.map(resolvePass))
       // Dedupe across passes in pass order (preferred audio first). A provider that ignores the dub
@@ -272,6 +309,7 @@ export async function resolveOnlineStreams(
       for (const set of results) {
         for (const s of set) {
           if (!s.url || seen.has(s.url)) continue
+          if (settings?.returnsMixedAudio && audioFilter !== 'both' && s.__audio !== audioFilter) continue
           seen.add(s.url)
           rows.push(s)
         }
