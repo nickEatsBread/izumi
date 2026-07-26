@@ -25,6 +25,48 @@ async function getPage(url: string, ctx: ExtractorContext): Promise<string | nul
   } catch { return null }
 }
 
+function mediaHeaders(url: string): Record<string, string> {
+  return { ...refererHeaders(url), Referer: url }
+}
+
+/** Expand a master HLS playlist. A media playlist is returned as one auto-quality source. */
+async function hlsLinks(
+  playlistUrl: string,
+  source: string,
+  ctx: ExtractorContext,
+  referer: string,
+): Promise<ExtractorResult['links']> {
+  const headers = mediaHeaders(referer)
+  let body = ''
+  try {
+    const response = await ctx.fetch(playlistUrl, { headers })
+    if (!response.ok) return []
+    body = await response.text()
+  } catch {
+    return []
+  }
+
+  const lines = body.split(/\r?\n/)
+  const links: ExtractorResult['links'] = []
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index].startsWith('#EXT-X-STREAM-INF:')) continue
+    const target = lines.slice(index + 1).find((line) => line.trim() && !line.startsWith('#'))?.trim()
+    if (!target) continue
+    const full = new URL(target, playlistUrl).toString()
+    const resolution = lines[index].match(/\bRESOLUTION=\d+x(\d+)/i)?.[1]
+    links.push({
+      url: full,
+      type: 'm3u8',
+      quality: resolution ? `${resolution}p` : qualityOf(undefined, full),
+      headers,
+      source,
+    })
+  }
+  return links.length
+    ? links
+    : [{ url: playlistUrl, type: 'm3u8', quality: qualityOf(undefined, playlistUrl), headers, source }]
+}
+
 /** The JWPlayer/Playerjs family: fetch, unpack, read `sources`/`tracks`. Covers most hosts. */
 function packedPlayer(name: string, hosts: string[]): Extractor {
   return {
@@ -93,6 +135,177 @@ const doodStream: Extractor = {
   },
 }
 
+/** StreamLare resolves an embed id through its JSON API, then returns HLS or redirect links. */
+const streamLare: Extractor = {
+  name: 'StreamLare',
+  hosts: ['streamlare.com', 'streamlare.net', 'slwatch.co'],
+  async extract(url, ctx) {
+    const id = new URL(url).pathname.split('/').filter(Boolean).pop()
+    if (!id) return emptyResult()
+    let payload: unknown
+    try {
+      const response = await ctx.fetch('https://slwatch.co/api/video/stream/get', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...refererHeaders(url, ctx.referer) },
+        body: JSON.stringify({ id }),
+      })
+      if (!response.ok) return emptyResult()
+      payload = await response.json()
+    } catch {
+      return emptyResult()
+    }
+
+    const text = JSON.stringify(payload).replace(/\\\//g, '/')
+    const type = text.match(/"type"\s*:\s*"([^"]+)"/i)?.[1]?.toLowerCase()
+    const firstFile = text.match(/"file"\s*:\s*"([^"]+)"/i)?.[1]
+    if (type === 'hls' && firstFile) {
+      return { links: await hlsLinks(firstFile, 'StreamLare', ctx, url), subtitles: [] }
+    }
+
+    const links: ExtractorResult['links'] = []
+    for (const match of text.matchAll(/"label"\s*:\s*"([^"]+)"[\s\S]*?"file"\s*:\s*"([^"]+)"/g)) {
+      try {
+        const response = await ctx.fetch(match[2], { method: 'POST', headers: mediaHeaders(url) })
+        if (!response.ok || !response.url) continue
+        links.push({
+          url: response.url,
+          type: linkType(response.url),
+          quality: qualityOf(match[1], response.url),
+          headers: mediaHeaders(url),
+          source: 'StreamLare',
+        })
+      } catch {
+        // Try the next advertised quality.
+      }
+    }
+    return { links, subtitles: [] }
+  },
+}
+
+function decodeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/\\u0026/g, '&')
+    .replace(/\\"/g, '"')
+    .replace(/\\\//g, '/')
+}
+
+/** OK.ru exposes either an HLS/DASH manifest or a quality-labelled video array in data-options. */
+const okRu: Extractor = {
+  name: 'OK.ru',
+  hosts: ['ok.ru', 'odnoklassniki.ru'],
+  async extract(url, ctx) {
+    const page = await getPage(url, ctx)
+    if (!page) return emptyResult()
+    const raw = page.match(/\bdata-options\s*=\s*(["'])([\s\S]*?)\1/i)?.[2]
+    if (!raw) return emptyResult()
+    const options = decodeHtmlAttribute(raw)
+    const hls = options.match(/"ondemandHls"\s*:\s*"([^"]+)"/i)?.[1]
+    if (hls) return { links: await hlsLinks(hls, 'OK.ru', ctx, url), subtitles: [] }
+    const dash = options.match(/"ondemandDash"\s*:\s*"([^"]+)"/i)?.[1]
+    if (dash) {
+      return {
+        links: [{ url: dash, type: 'dash', quality: qualityOf(undefined, dash), headers: mediaHeaders(url), source: 'OK.ru' }],
+        subtitles: [],
+      }
+    }
+
+    const qualityMap: Record<string, string> = {
+      ultra: '2160p', quad: '1440p', full: '1080p', hd: '720p',
+      sd: '480p', low: '360p', lowest: '240p', mobile: '144p',
+    }
+    const links: ExtractorResult['links'] = []
+    for (const item of options.matchAll(/\{[^{}]*"name"\s*:\s*"([^"]+)"[^{}]*"url"\s*:\s*"([^"]+)"[^{}]*\}/g)) {
+      if (!item[2].startsWith('https://')) continue
+      links.push({
+        url: item[2],
+        type: linkType(item[2]),
+        quality: qualityMap[item[1]] ?? qualityOf(item[1], item[2]),
+        headers: mediaHeaders(url),
+        source: 'OK.ru',
+      })
+    }
+    return { links: links.reverse(), subtitles: [] }
+  },
+}
+
+function base64Bytes(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
+}
+
+function bytesBase64(value: ArrayBuffer): string {
+  let binary = ''
+  for (const byte of new Uint8Array(value)) binary += String.fromCharCode(byte)
+  return btoa(binary)
+}
+
+async function aesCbc(value: string, key: Uint8Array, iv: Uint8Array, encrypt: boolean): Promise<string> {
+  const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, [encrypt ? 'encrypt' : 'decrypt'])
+  if (encrypt) {
+    return bytesBase64(await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, cryptoKey, new TextEncoder().encode(value)))
+  }
+  const clear = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, cryptoKey, base64Bytes(value))
+  return new TextDecoder().decode(clear)
+}
+
+/** Gogo/Vidstreaming uses page-derived AES keys to decrypt its encrypt-ajax response. */
+const gogoStream: Extractor = {
+  name: 'GogoStream',
+  hosts: [
+    'gogoplay4.com', 'gogo-stream.com', 'gogostream.com', 'gogostream.co',
+    'gogoanime.cm', 'goload.pro', 'goone.pro', 'playtaku.net', 'embtaku.pro',
+  ],
+  async extract(url, ctx) {
+    const page = await getPage(url, ctx)
+    if (!page) return emptyResult()
+    const digits = (pattern: RegExp) => page.match(pattern)?.[1]?.replace(/\D/g, '')
+    const ivText = digits(/<div\b[^>]*class=["'][^"']*\bwrapper\b[^"']*\bcontainer-(\d+)[^"']*["']/i)
+    const keyText = digits(/<body\b[^>]*class=["'][^"']*\bcontainer-(\d+)[^"']*["']/i)
+    const decryptText = digits(/<div\b[^>]*class=["'][^"']*\bvideocontent-(\d+)[^"']*["']/i)
+    const dataValue = page.match(/<script\b[^>]*\bdata-value=["']([^"']+)["']/i)?.[1]
+    if (!ivText || !keyText || !decryptText || !dataValue) return emptyResult()
+
+    try {
+      const parsed = new URL(url)
+      const id = parsed.searchParams.get('id')
+      if (!id) return emptyResult()
+      const iv = new TextEncoder().encode(ivText)
+      const key = new TextEncoder().encode(keyText)
+      const decryptKey = new TextEncoder().encode(decryptText)
+      const params = (await aesCbc(dataValue, key, iv, false)).split('&').slice(1).join('&')
+      const encryptedId = encodeURIComponent(await aesCbc(id, key, iv, true))
+      const response = await ctx.fetch(
+        `${parsed.origin}/encrypt-ajax.php?id=${encryptedId}&${params}&alias=${encodeURIComponent(id)}`,
+        { headers: { 'X-Requested-With': 'XMLHttpRequest', ...refererHeaders(url, url) } },
+      )
+      if (!response.ok) return emptyResult()
+      const wrapped = await response.json() as { data?: string }
+      if (!wrapped?.data) return emptyResult()
+      const decoded = JSON.parse(await aesCbc(wrapped.data, decryptKey, iv, false)) as {
+        source?: { file: string; label?: string; type?: string }[]
+      }
+      const sources = decoded.source ?? []
+      if (sources.length === 1 && (sources[0].type === 'hls' || linkType(sources[0].file) === 'm3u8')) {
+        return { links: await hlsLinks(sources[0].file, 'GogoStream', ctx, url), subtitles: [] }
+      }
+      return {
+        links: sources.map((item) => ({
+          url: item.file,
+          type: linkType(item.file),
+          quality: qualityOf(item.label, item.file),
+          headers: mediaHeaders(url),
+          source: 'GogoStream',
+        })),
+        subtitles: [],
+      }
+    } catch {
+      return emptyResult()
+    }
+  },
+}
+
 // Host families that all serve the same packed JWPlayer config. Grouped rather than duplicated
 // because these domains rotate constantly and the parsing never changes.
 const PACKED_HOSTS: [string, string[]][] = [
@@ -115,6 +328,9 @@ export const extractors: Extractor[] = [
   ...PACKED_HOSTS.filter(([, hosts]) => hosts.length).map(([name, hosts]) => packedPlayer(name, hosts)),
   streamTape,
   doodStream,
+  streamLare,
+  okRu,
+  gogoStream,
 ]
 
 /** Host of a URL, lowercased and without a leading `www.`. */

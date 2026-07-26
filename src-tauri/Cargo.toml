@@ -48,7 +48,7 @@ serde_json = "1"
 # rustls (not native-tls) so the whole HTTP stack cross-compiles for Android — native-tls needs
 # OpenSSL, which has no Android target here.
 tauri-plugin-http = { version = "2.5.9", default-features = false, features = ["rustls-tls"] }
-tokio = { version = "1", features = ["time", "fs", "io-util", "net", "sync"] }
+tokio = { version = "1", features = ["time", "fs", "io-util", "net", "sync", "process"] }
 anyhow = "1"
 blake3 = "1"
 # Account-free device sync. Keep only the runtime features Izumi uses: relay-capable
@@ -88,6 +88,8 @@ tauri-plugin-updater = "2"
 # decode to UTF-8 before mpv can load it. All pure-Rust: `zip` with the zlib-rs deflate backend
 # (no C toolchain), `chardetng` guesses the legacy encoding, `encoding_rs` decodes it.
 zip = { version = "4", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+tar = "0.4"
 encoding_rs = "0.8"
 chardetng = "0.1"
 sha2 = "0.10"

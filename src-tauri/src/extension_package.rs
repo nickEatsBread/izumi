@@ -8,7 +8,10 @@ pub struct InstalledExtension {
     pub version: String,
     pub lang: Option<String>,
     pub description: Option<String>,
-    pub code: String,
+    pub code: Option<String>,
+    pub backend: String,
+    pub source_id: String,
+    pub source_ids: Vec<String>,
     pub signed: bool,
 }
 
@@ -18,6 +21,7 @@ mod desktop {
     use base64::Engine;
     use ed25519_dalek::pkcs8::DecodePublicKey;
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+    use futures_util::StreamExt;
     use serde_json::Value;
     use sha2::{Digest, Sha256};
     use std::collections::{BTreeMap, BTreeSet};
@@ -26,15 +30,8 @@ mod desktop {
     use tauri::{AppHandle, Manager};
     use zip::ZipArchive;
 
-    const MAX_PACKAGE_BYTES: usize = 4 * 1024 * 1024;
-    const MAX_ENTRY_BYTES: usize = 1024 * 1024;
-    const REQUIRED_FILES: [&str; 5] = [
-        "compatibility.json",
-        "extension.js",
-        "integrity.json",
-        "manifest.json",
-        "signature.json",
-    ];
+    const MAX_PACKAGE_BYTES: usize = 8 * 1024 * 1024;
+    const MAX_ENTRY_BYTES: usize = 6 * 1024 * 1024;
 
     fn read_entry<R: std::io::Read + std::io::Seek>(
         archive: &mut ZipArchive<R>,
@@ -154,16 +151,34 @@ mod desktop {
         Ok(true)
     }
 
-    fn parse_package(bytes: &[u8]) -> Result<InstalledExtension, String> {
+    fn parse_package(bytes: &[u8]) -> Result<(InstalledExtension, Option<Vec<u8>>), String> {
         if bytes.is_empty() || bytes.len() > MAX_PACKAGE_BYTES {
             return Err("Extension package is empty or too large".into());
         }
         let mut archive =
             ZipArchive::new(Cursor::new(bytes)).map_err(|_| "Extension package is not a ZIP")?;
-        if archive.len() != REQUIRED_FILES.len() {
+        let manifest_bytes = read_entry(&mut archive, "manifest.json")?;
+        let manifest = json(&manifest_bytes, "manifest.json")?;
+        let backend = manifest
+            .pointer("/execution/backend")
+            .and_then(Value::as_str)
+            .ok_or("Extension package has no execution backend")?;
+        let entry = match backend {
+            "izumi-js" => "extension.js",
+            "aniyomi-jvm" => "extension.jar",
+            _ => return Err("Extension package uses an unsupported backend".into()),
+        };
+        let required = [
+            "compatibility.json",
+            entry,
+            "integrity.json",
+            "manifest.json",
+            "signature.json",
+        ];
+        if archive.len() != required.len() {
             return Err("Extension package contains unexpected files".into());
         }
-        let expected = REQUIRED_FILES.into_iter().collect::<BTreeSet<_>>();
+        let expected = required.into_iter().collect::<BTreeSet<_>>();
         let actual = (0..archive.len())
             .map(|index| {
                 archive
@@ -176,12 +191,10 @@ mod desktop {
             return Err("Extension package contains unexpected files".into());
         }
 
-        let manifest_bytes = read_entry(&mut archive, "manifest.json")?;
         let integrity_bytes = read_entry(&mut archive, "integrity.json")?;
         let signature_bytes = read_entry(&mut archive, "signature.json")?;
-        let code_bytes = read_entry(&mut archive, "extension.js")?;
+        let entry_bytes = read_entry(&mut archive, entry)?;
         let compatibility_bytes = read_entry(&mut archive, "compatibility.json")?;
-        let manifest = json(&manifest_bytes, "manifest.json")?;
         let integrity = json(&integrity_bytes, "integrity.json")?;
         let signature = json(&signature_bytes, "signature.json")?;
         let compatibility = json(&compatibility_bytes, "compatibility.json")?;
@@ -192,24 +205,22 @@ mod desktop {
             return Err("Extension package requires an unsupported ABI".into());
         }
         if manifest
-            .pointer("/execution/backend")
-            .and_then(Value::as_str)
-            != Some("izumi-js")
-        {
-            return Err("Extension package does not contain an Izumi JS module".into());
-        }
-        if manifest
             .pointer("/execution/status")
             .and_then(Value::as_str)
             != Some("compatible")
         {
             return Err("Extension package is not marked compatible".into());
         }
-        if string(&manifest, "entry")? != "extension.js" {
-            return Err("Extension package entry must be extension.js".into());
+        if string(&manifest, "entry")? != entry {
+            return Err(format!("Extension package entry must be {entry}"));
         }
-        if compatibility.get("runtime").and_then(Value::as_str) != Some("izumi-anime-extension-v1")
-        {
+        let compatibility_runtime = compatibility.get("runtime").and_then(Value::as_str);
+        let expected_runtime = if backend == "aniyomi-jvm" {
+            "izumi-aniyomi-jvm-v1"
+        } else {
+            "izumi-anime-extension-v1"
+        };
+        if compatibility_runtime != Some(expected_runtime) {
             return Err("Extension compatibility runtime is unsupported".into());
         }
         let id = string(&manifest, "id")?.to_string();
@@ -224,7 +235,7 @@ mod desktop {
         let expected_hashes = [
             ("manifest.json", &manifest_bytes),
             ("compatibility.json", &compatibility_bytes),
-            ("extension.js", &code_bytes),
+            (entry, &entry_bytes),
         ];
         if integrity.get("algorithm").and_then(Value::as_str) != Some("SHA-256")
             || integrity_files.len() != expected_hashes.len()
@@ -241,17 +252,37 @@ mod desktop {
             }
         }
         let signed = verify_signature(&signature, &integrity)?;
-        let code = String::from_utf8(code_bytes).map_err(|_| "Extension module is not UTF-8")?;
-        if code.len() > MAX_ENTRY_BYTES {
-            return Err("Extension module is too large".into());
-        }
-        let source = manifest
+        let code = if backend == "izumi-js" {
+            Some(
+                String::from_utf8(entry_bytes.clone())
+                    .map_err(|_| "Extension module is not UTF-8")?,
+            )
+        } else {
+            if !entry_bytes.starts_with(b"PK") {
+                return Err("Aniyomi extension entry is not a JAR".into());
+            }
+            None
+        };
+        let sources = manifest
             .get("sources")
             .and_then(Value::as_array)
-            .and_then(|sources| sources.first())
+            .ok_or("Extension manifest has no anime sources")?;
+        let source = sources
+            .first()
             .ok_or("Extension manifest has no anime source")?;
+        let source_ids = sources
+            .iter()
+            .map(|source| {
+                source
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                    .map(ToOwned::to_owned)
+                    .ok_or_else(|| "Extension manifest source has no id".to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(InstalledExtension {
+        let installed = InstalledExtension {
             id,
             name: source
                 .get("name")
@@ -271,8 +302,16 @@ mod desktop {
                     .unwrap_or("its upstream extension")
             )),
             code,
+            backend: backend.to_string(),
+            source_id: source
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("Extension manifest source has no id")?
+                .to_string(),
+            source_ids,
             signed,
-        })
+        };
+        Ok((installed, (backend == "aniyomi-jvm").then_some(entry_bytes)))
     }
 
     fn extension_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -289,12 +328,40 @@ mod desktop {
         Ok(extension_dir(app)?.join(format!("{id}.izumi-ext")))
     }
 
-    pub fn install(app: &AppHandle, path: &Path) -> Result<InstalledExtension, String> {
-        if path.extension().and_then(|value| value.to_str()) != Some("izumi-ext") {
-            return Err("Choose an .izumi-ext package".into());
+    fn jvm_dir(app: &AppHandle) -> Result<PathBuf, String> {
+        Ok(extension_dir(app)?.join("jvm"))
+    }
+
+    fn jvm_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+        if !safe_id(id) {
+            return Err("Extension id is unsafe".into());
         }
-        let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-        let extension = parse_package(&bytes)?;
+        Ok(jvm_dir(app)?.join(format!("{id}.jar")))
+    }
+
+    fn store_jvm_entry(app: &AppHandle, id: &str, jar: Option<&[u8]>) -> Result<(), String> {
+        let Some(jar) = jar else {
+            return Ok(());
+        };
+        let dir = jvm_dir(app)?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let destination = jvm_path(app, id)?;
+        if std::fs::read(&destination)
+            .map(|existing| sha256(&existing) == sha256(jar))
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+        let temporary = destination.with_extension("jar.part");
+        std::fs::write(&temporary, jar).map_err(|e| e.to_string())?;
+        if destination.exists() {
+            std::fs::remove_file(&destination).map_err(|e| e.to_string())?;
+        }
+        std::fs::rename(temporary, destination).map_err(|e| e.to_string())
+    }
+
+    fn install_bytes(app: &AppHandle, bytes: Vec<u8>) -> Result<InstalledExtension, String> {
+        let (extension, jar) = parse_package(&bytes)?;
         let dir = extension_dir(app)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let destination = package_path(app, &extension.id)?;
@@ -304,7 +371,56 @@ mod desktop {
             std::fs::remove_file(&destination).map_err(|e| e.to_string())?;
         }
         std::fs::rename(&temporary, &destination).map_err(|e| e.to_string())?;
+        store_jvm_entry(app, &extension.id, jar.as_deref())?;
         Ok(extension)
+    }
+
+    pub fn install(app: &AppHandle, path: &Path) -> Result<InstalledExtension, String> {
+        if path.extension().and_then(|value| value.to_str()) != Some("izumi-ext") {
+            return Err("Choose an .izumi-ext package".into());
+        }
+        install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?)
+    }
+
+    pub async fn install_url(
+        app: &AppHandle,
+        url: &str,
+        expected_sha256: &str,
+    ) -> Result<InstalledExtension, String> {
+        let parsed = reqwest::Url::parse(url).map_err(|_| "Extension package URL is invalid")?;
+        if parsed.scheme() != "https" {
+            return Err("Extension packages must use HTTPS".into());
+        }
+        if expected_sha256.len() != 64
+            || !expected_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err("Extension package SHA-256 is invalid".into());
+        }
+        let response = reqwest::get(parsed)
+            .await
+            .map_err(|error| format!("Could not download extension package: {error}"))?
+            .error_for_status()
+            .map_err(|error| format!("Could not download extension package: {error}"))?;
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_PACKAGE_BYTES as u64)
+        {
+            return Err("Extension package is too large".into());
+        }
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk =
+                chunk.map_err(|error| format!("Could not read extension package: {error}"))?;
+            if bytes.len().saturating_add(chunk.len()) > MAX_PACKAGE_BYTES {
+                return Err("Extension package is too large".into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if sha256(&bytes) != expected_sha256.to_ascii_lowercase() {
+            return Err("Downloaded extension package failed its SHA-256 check".into());
+        }
+        install_bytes(app, bytes)
     }
 
     pub fn list(app: &AppHandle) -> Result<Vec<InstalledExtension>, String> {
@@ -321,7 +437,8 @@ mod desktop {
                 continue;
             }
             if let Ok(bytes) = std::fs::read(path) {
-                if let Ok(extension) = parse_package(&bytes) {
+                if let Ok((extension, jar)) = parse_package(&bytes) {
+                    let _ = store_jvm_entry(app, &extension.id, jar.as_deref());
                     extensions.push(extension);
                 }
             }
@@ -332,11 +449,17 @@ mod desktop {
 
     pub fn remove(app: &AppHandle, id: &str) -> Result<(), String> {
         let path = package_path(app, id)?;
-        match std::fs::remove_file(path) {
+        let package_result = match std::fs::remove_file(path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error.to_string()),
-        }
+        };
+        let jar_result = match std::fs::remove_file(jvm_path(app, id)?) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        };
+        package_result.and(jar_result)
     }
 
     #[cfg(test)]
@@ -357,7 +480,10 @@ mod desktop {
               "version":"1.0.0",
               "entry":"extension.js",
               "execution":{"backend":"izumi-js","status":"compatible"},
-              "sources":[{"id":"1","name":"AllAnime","language":"en","baseUrl":"https://example.test"}]
+              "sources":[
+                {"id":"1","name":"AllAnime","language":"en","baseUrl":"https://example.test"},
+                {"id":"2","name":"AllAnime Alt","language":"en","baseUrl":"https://alt.example.test"}
+              ]
             }"#;
             let compatibility = br#"{"runtime":"izumi-anime-extension-v1"}"#;
             let code = b"export default { search() {}, findEpisodes() {}, findEpisodeServer() {}, getSettings() {} };";
@@ -415,15 +541,17 @@ mod desktop {
 
         #[test]
         fn accepts_a_valid_native_package() {
-            let parsed = parse_package(&fixture(false, false)).unwrap();
+            let (parsed, jar) = parse_package(&fixture(false, false)).unwrap();
             assert_eq!(parsed.id, "example.allanime");
             assert_eq!(parsed.name, "AllAnime");
+            assert_eq!(parsed.source_ids, ["1", "2"]);
             assert!(!parsed.signed);
+            assert!(jar.is_none());
         }
 
         #[test]
         fn accepts_a_valid_signed_package() {
-            assert!(parse_package(&fixture(false, true)).unwrap().signed);
+            assert!(parse_package(&fixture(false, true)).unwrap().0.signed);
         }
 
         #[test]
@@ -439,7 +567,7 @@ mod desktop {
                 return;
             };
             let bytes = std::fs::read(path).unwrap();
-            let parsed = parse_package(&bytes).unwrap();
+            let (parsed, _) = parse_package(&bytes).unwrap();
             assert_eq!(parsed.id, "eu.kanade.tachiyomi.animeextension.en.allanime");
             assert_eq!(parsed.name, "AllAnime");
         }
@@ -453,6 +581,21 @@ pub fn extension_install(app: AppHandle, path: String) -> Result<InstalledExtens
     #[cfg(target_os = "android")]
     {
         let _ = (app, path);
+        Err("Local extension packages are currently desktop-only".into())
+    }
+}
+
+#[tauri::command]
+pub async fn extension_install_url(
+    app: AppHandle,
+    url: String,
+    expected_sha256: String,
+) -> Result<InstalledExtension, String> {
+    #[cfg(not(target_os = "android"))]
+    return desktop::install_url(&app, &url, &expected_sha256).await;
+    #[cfg(target_os = "android")]
+    {
+        let _ = (app, url, expected_sha256);
         Err("Local extension packages are currently desktop-only".into())
     }
 }

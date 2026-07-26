@@ -1,6 +1,15 @@
 <script lang="ts">
   import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
-  import { fetchExtensionInfo, installExtensionPackage, installedExtensionPackages, removeInstalledExtension, type InstalledExtensionPackage } from '$lib/extensions/manager'
+  import {
+    fetchAnimeExtensionCatalog,
+    fetchExtensionInfo,
+    installCatalogPackage,
+    installExtensionPackage,
+    installedExtensionPackages,
+    removeInstalledExtension,
+    type ExtensionCatalogPackage,
+    type InstalledExtensionPackage,
+  } from '$lib/extensions/manager'
   import { open } from '@tauri-apps/plugin-dialog'
   import { isAndroid } from '$lib/platform'
   import { langName } from '$lib/player/track-label'
@@ -8,6 +17,7 @@
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
   import { providerList, providerMeta } from '$lib/stremio/debrid'
   import Puzzle from 'lucide-svelte/icons/puzzle'
+  import Search from 'lucide-svelte/icons/search'
   import Trash2 from 'lucide-svelte/icons/trash-2'
 
   const current = $derived(providerMeta($debridProvider))
@@ -16,9 +26,39 @@
   let localPackages = $state<InstalledExtensionPackage[]>([])
   let packageStatus = $state('')
   let packageBusy = $state(false)
+  let catalogPackages = $state<ExtensionCatalogPackage[]>([])
+  let catalogLoading = $state(false)
+  let catalogProblem = $state('')
+  let catalogQuery = $state('')
+  let showNsfw = $state(false)
+  const installedPackageIds = $derived(new Set(localPackages.map((extension) => extension.id)))
+  const visibleCatalogPackages = $derived.by(() => {
+    const query = catalogQuery.trim().toLocaleLowerCase()
+    return catalogPackages.filter((extension) => {
+      if (extension.nsfw && !showNsfw) return false
+      if (!query) return true
+      return [
+        extension.name,
+        extension.id,
+        extension.language,
+        ...extension.sources.flatMap((source) => [source.name, source.language]),
+      ].some((value) => value?.toLocaleLowerCase().includes(query))
+    })
+  })
 
   async function refreshPackages() {
     localPackages = await installedExtensionPackages()
+  }
+  async function refreshCatalog() {
+    catalogLoading = true
+    catalogProblem = ''
+    try {
+      catalogPackages = (await fetchAnimeExtensionCatalog()).packages
+    } catch (error) {
+      catalogProblem = String(error)
+    } finally {
+      catalogLoading = false
+    }
   }
   async function installPackage() {
     packageStatus = ''
@@ -50,8 +90,24 @@
       packageBusy = false
     }
   }
+  async function installFromCatalog(extension: ExtensionCatalogPackage) {
+    packageBusy = true
+    packageStatus = ''
+    try {
+      const installed = await installCatalogPackage(extension)
+      await refreshPackages()
+      packageStatus = `${installed.name} ${installed.version} installed.`
+    } catch (error) {
+      packageStatus = String(error)
+    } finally {
+      packageBusy = false
+    }
+  }
   $effect(() => {
-    if (!$isAndroid) void refreshPackages()
+    if (!$isAndroid) {
+      void refreshPackages()
+      void refreshCatalog()
+    }
   })
   function addExt() { const u = extInput.trim(); if (u) { $extensionUrls = [...$extensionUrls, u]; extInput = '' } }
   function toggleExt(url: string) { $disabledExtensions = $disabledExtensions.includes(url) ? $disabledExtensions.filter((u) => u !== url) : [...$disabledExtensions, url] }
@@ -192,7 +248,7 @@
         <div class="flex items-center justify-between gap-3">
           <div>
             <h3 class="text-sm font-bold">Installed anime packages</h3>
-            <p class="text-xs text-muted-foreground">Import a verified <code class="rounded bg-secondary px-1">.izumi-ext</code> file. Its code runs in the same isolated worker as community extensions.</p>
+            <p class="text-xs text-muted-foreground">Browse the maintained anime/HTTP catalog, or import a verified <code class="rounded bg-secondary px-1">.izumi-ext</code> file.</p>
           </div>
           <button data-focusable disabled={packageBusy} onclick={installPackage}
             class="shrink-0 rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
@@ -202,6 +258,65 @@
         {#if packageStatus}
           <p class="mt-2 text-xs {packageStatus.includes('installed.') ? 'text-emerald-400' : 'text-amber-400'}">{packageStatus}</p>
         {/if}
+        <div class="mt-3 rounded-md bg-secondary/35 p-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="relative min-w-48 flex-1">
+              <Search size={14} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                bind:value={catalogQuery}
+                data-focusable
+                placeholder="Search anime providers"
+                class="w-full rounded-md bg-input py-1.5 pl-8 pr-3 text-sm"
+              />
+            </label>
+            <label class="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+              <input type="checkbox" bind:checked={showNsfw} />
+              Adult sources
+            </label>
+          </div>
+          {#if catalogLoading}
+            <p class="p-3 text-xs text-muted-foreground">Loading the anime/HTTP catalog…</p>
+          {:else if catalogProblem}
+            <div class="flex items-center justify-between gap-3 p-3 text-xs text-amber-400">
+              <span>{catalogProblem}</span>
+              <button data-focusable onclick={refreshCatalog} class="rounded px-2 py-1 font-bold hover:bg-accent">Retry</button>
+            </div>
+          {:else}
+            <p class="px-1 pb-1 pt-2 text-[0.68rem] text-muted-foreground">
+              {visibleCatalogPackages.length} of {catalogPackages.length} maintained anime/HTTP packages. JVM support and its shared runtime download only when needed.
+            </p>
+            <ul class="max-h-72 space-y-1 overflow-y-auto pr-1">
+              {#each visibleCatalogPackages as extension (extension.id)}
+                {@const installed = installedPackageIds.has(extension.id)}
+                <li class="flex items-center gap-2 rounded-md bg-background/45 px-2 py-1.5">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                      <span class="truncate text-xs font-bold">{extension.name}</span>
+                      <span class="rounded bg-secondary px-1 py-0.5 text-[0.55rem] font-bold text-muted-foreground">{extension.language?.toUpperCase() ?? 'MULTI'}</span>
+                      {#if extension.backend === 'izumi-js'}
+                        <span class="rounded bg-emerald-500/15 px-1 py-0.5 text-[0.55rem] font-bold text-emerald-400">NATIVE</span>
+                      {/if}
+                      {#if extension.nsfw}
+                        <span class="rounded bg-rose-500/15 px-1 py-0.5 text-[0.55rem] font-bold text-rose-400">18+</span>
+                      {/if}
+                    </div>
+                    <p class="truncate text-[0.65rem] text-muted-foreground">{extension.sources.map((source) => source.name).join(' · ')}</p>
+                  </div>
+                  <button
+                    data-focusable
+                    disabled={packageBusy}
+                    onclick={() => installFromCatalog(extension)}
+                    class="shrink-0 rounded-md px-2 py-1 text-xs font-bold {installed ? 'text-muted-foreground hover:bg-accent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
+                  >{installed ? 'Update' : 'Install'}</button>
+                </li>
+              {/each}
+              {#if !visibleCatalogPackages.length}
+                <li class="p-3 text-xs text-muted-foreground">No providers match that search.</li>
+              {/if}
+            </ul>
+          {/if}
+        </div>
+        <h4 class="mt-3 text-xs font-bold text-muted-foreground">Installed</h4>
         <ul class="mt-3 space-y-2">
           {#each localPackages as extension (extension.id)}
             <li class="flex items-center gap-3 rounded-md bg-secondary/50 px-3 py-2">
@@ -223,7 +338,7 @@
                 class="grid size-8 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50"><Trash2 size={16} /></button>
             </li>
           {/each}
-          {#if !localPackages.length}<li class="text-xs text-muted-foreground">No local anime packages installed.</li>{/if}
+          {#if !localPackages.length}<li class="text-xs text-muted-foreground">No anime packages installed.</li>{/if}
         </ul>
       </div>
     {/if}

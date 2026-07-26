@@ -64,7 +64,7 @@ export interface ExtensionConfig {
   settings?: Record<string, unknown>
   /** Native `.izumi-ext` modules are already in Izumi's worker ABI and need no
    * Seanime/Miru compatibility transform before evaluation. */
-  runtime?: 'izumi-js'
+  runtime?: 'izumi-js' | 'aniyomi-jvm'
   /** Validated package code returned by the native installer. Remote configs
    * leave this empty and fetch `code` as a URL. */
   moduleCode?: string

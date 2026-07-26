@@ -4,7 +4,7 @@ import { phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem } from './catalog'
-import { extensionSourceConfigured } from './availability'
+import { extensionSourceConfigured, jvmSourceOwners } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
@@ -33,8 +33,53 @@ export interface InstalledExtensionPackage {
   version: string
   lang?: string
   description?: string
-  code: string
+  code?: string
+  backend: 'izumi-js' | 'aniyomi-jvm'
+  sourceId: string
+  sourceIds: string[]
   signed: boolean
+}
+
+export interface ExtensionCatalogPackage {
+  id: string
+  name: string
+  version: string
+  language?: string
+  nsfw: boolean
+  sources: Array<{
+    id: string
+    name: string
+    language?: string
+    baseUrl?: string
+  }>
+  backend: 'izumi-js' | 'aniyomi-jvm'
+  package: string
+  packageSha256: string
+  packageBytes: number
+}
+
+export interface ExtensionCatalog {
+  formatVersion: 1
+  generatedAt: string
+  scope: {
+    content: 'anime'
+    transport: 'http'
+    manga: false
+  }
+  packages: ExtensionCatalogPackage[]
+}
+
+export const OFFICIAL_ANIME_CATALOG =
+  'https://raw.githubusercontent.com/nickEatsBread/izumi-extension-bridge/repo/index.json'
+
+interface JvmSource {
+  id: string
+  name: string
+  lang?: string
+  type: 'anime' | 'manga'
+  baseUrl?: string
+  pkgName: string
+  className?: string
 }
 
 function resetRunning(): void {
@@ -56,13 +101,49 @@ export async function installedExtensionPackages(): Promise<InstalledExtensionPa
 
 export async function installExtensionPackage(path: string): Promise<InstalledExtensionPackage> {
   const installed = await invoke<InstalledExtensionPackage>('extension_install', { path })
+  return finishPackageInstall(installed)
+}
+
+export async function installCatalogPackage(
+  extension: Pick<ExtensionCatalogPackage, 'package' | 'packageSha256'>,
+): Promise<InstalledExtensionPackage> {
+  const installed = await invoke<InstalledExtensionPackage>('extension_install_url', {
+    url: extension.package,
+    expectedSha256: extension.packageSha256,
+  })
+  return finishPackageInstall(installed)
+}
+
+async function finishPackageInstall(installed: InstalledExtensionPackage): Promise<InstalledExtensionPackage> {
+  if (installed.backend === 'aniyomi-jvm') {
+    await invoke('jvm_extension_reload').catch(() => {})
+  }
   installedRevision += 1
   resetRunning()
   return installed
 }
 
+export async function fetchAnimeExtensionCatalog(
+  url = OFFICIAL_ANIME_CATALOG,
+): Promise<ExtensionCatalog> {
+  const response = await phttp(url)
+  if (!response.ok) throw new Error(`Extension catalog returned HTTP ${response.status}`)
+  const catalog = await response.json() as ExtensionCatalog
+  if (
+    catalog?.formatVersion !== 1
+    || catalog.scope?.content !== 'anime'
+    || catalog.scope?.transport !== 'http'
+    || catalog.scope?.manga !== false
+    || !Array.isArray(catalog.packages)
+  ) {
+    throw new Error('Extension catalog has an unsupported format or scope')
+  }
+  return catalog
+}
+
 export async function removeInstalledExtension(id: string): Promise<void> {
   await invoke('extension_remove', { id })
+  await invoke('jvm_extension_reload').catch(() => {})
   installedRevision += 1
   resetRunning()
 }
@@ -140,7 +221,9 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
   // A source URL expands to many plugins; drop the ones switched off individually. Filtered HERE
   // rather than at query time so a disabled plugin never has its module fetched or a worker spawned.
   const off = get(disabledPlugins)
-  const local = installed.map((extension): ExtensionConfig => ({
+  const local = installed
+    .filter((extension) => extension.backend === 'izumi-js' && !!extension.code)
+    .map((extension): ExtensionConfig => ({
     id: extension.id,
     name: extension.name,
     version: extension.version,
@@ -149,7 +232,7 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
     description: extension.description,
     lang: extension.lang,
     runtime: 'izumi-js',
-    moduleCode: extension.code,
+    moduleCode: extension.code!,
     signed: extension.signed,
   }))
   return [...results.flat(), ...local].filter((c) => !off.includes(c.id))
@@ -351,12 +434,132 @@ export async function runningStreamExtensions(onlyId?: string): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
-  const exts = await ensureRunning()
+  const [exts, jvm] = await Promise.all([ensureRunning(), runningJvmExtensions(onlyId)])
   const live = (await Promise.all(
     exts.filter((e) => !onlyId || e.cfg.id === onlyId)
       .map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
   )).filter(Boolean) as RunningExt[]
-  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, lang: e.cfg.lang, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
+  return [
+    ...live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, lang: e.cfg.lang, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) })),
+    ...jvm,
+  ]
+}
+
+function episodeNumber(value: { episode_number?: unknown; name?: unknown }): number {
+  const direct = Number(value.episode_number)
+  if (Number.isFinite(direct) && direct >= 0) return direct
+  const parsed = String(value.name ?? '').match(/(?:episode|ep\.?|e)\s*(\d+(?:\.\d+)?)/i)?.[1]
+    ?? String(value.name ?? '').match(/(\d+(?:\.\d+)?)/)?.[1]
+  return Number.parseFloat(parsed ?? '')
+}
+
+function mediaType(url: string): 'm3u8' | 'dash' | 'mp4' {
+  if (/\.m3u8(?:[?#]|$)/i.test(url)) return 'm3u8'
+  if (/\.mpd(?:[?#]|$)/i.test(url)) return 'dash'
+  return 'mp4'
+}
+
+async function jvmProviderCall(source: JvmSource, method: string, callArgs: unknown[]): Promise<unknown> {
+  if (method === 'getSettings') {
+    return { episodeServers: ['default'] }
+  }
+  if (method === 'search') {
+    const input = (callArgs[0] ?? {}) as { query?: unknown }
+    const response = await invoke<{ list?: Record<string, unknown>[] }>('jvm_extension_call', {
+      method: 'search',
+      args: { sourceId: source.id, query: String(input.query ?? ''), page: 1, isAnime: true },
+    })
+    return (response.list ?? []).map((item) => ({
+      id: JSON.stringify({ url: item.url, title: item.title, cover: item.cover }),
+      title: String(item.title ?? ''),
+      url: String(item.url ?? ''),
+    }))
+  }
+  if (method === 'findEpisodes') {
+    const identity = JSON.parse(String(callArgs[0] ?? '{}')) as { url?: string; title?: string; cover?: string }
+    const detail = await invoke<{ episodes?: Record<string, unknown>[] }>('jvm_extension_call', {
+      method: 'getDetail',
+      args: {
+        sourceId: source.id,
+        media: {
+          url: identity.url ?? '',
+          title: identity.title ?? '',
+          thumbnail_url: identity.cover ?? '',
+        },
+        isAnime: true,
+      },
+    })
+    return (detail.episodes ?? [])
+      .map((episode) => ({
+        id: JSON.stringify({ url: episode.url, name: episode.name }),
+        number: episodeNumber(episode),
+        title: String(episode.name ?? ''),
+        url: String(episode.url ?? ''),
+      }))
+      .filter((episode) => Number.isFinite(episode.number))
+  }
+  if (method === 'findEpisodeServer') {
+    const raw = callArgs[0] as { id?: unknown } | string
+    const encoded = typeof raw === 'string' ? raw : raw?.id
+    const episode = JSON.parse(String(encoded ?? '{}')) as { url?: string; name?: string }
+    const videos = await invoke<Record<string, unknown>[]>('jvm_extension_call', {
+      method: 'getVideoList',
+      args: {
+        sourceId: source.id,
+        episode: { url: episode.url ?? '', name: episode.name ?? '' },
+      },
+    })
+    return {
+      server: source.name,
+      headers: {},
+      videoSources: videos
+        .filter((video) => /^https?:\/\//i.test(String(video.url ?? '')))
+        .map((video) => ({
+          url: String(video.url),
+          type: mediaType(String(video.url)),
+          quality: String(video.quality ?? video.title ?? 'auto'),
+          headers: (video.headers ?? {}) as Record<string, string>,
+          subtitles: ((video.subtitles ?? []) as Record<string, unknown>[]).map((track) => ({
+            url: String(track.file ?? ''),
+            language: String(track.label ?? ''),
+          })),
+          audioTracks: ((video.audios ?? []) as Record<string, unknown>[]).map((track) => ({
+            url: String(track.file ?? ''),
+            language: String(track.label ?? ''),
+          })),
+        })),
+    }
+  }
+  return null
+}
+
+async function runningJvmExtensions(onlyId?: string): Promise<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
+> {
+  const installed = await installedExtensionPackages()
+  const packageBySource = jvmSourceOwners(installed)
+  if (!packageBySource.size) return []
+  const off = new Set(get(disabledPlugins))
+  try {
+    const sources = await invoke<JvmSource[]>('jvm_extension_sources')
+    return sources
+      .filter((source) =>
+        source.type === 'anime'
+        && packageBySource.has(source.id)
+        && !off.has(packageBySource.get(source.id)!)
+        && !off.has(source.id)
+        && (!onlyId || source.id === onlyId),
+      )
+      .map((source) => ({
+        id: source.id,
+        name: source.name,
+        lang: source.lang,
+        call: (method: string, ...args: unknown[]) => jvmProviderCall(source, method, args),
+      }))
+  } catch {
+    return []
+  }
 }
 
 /** The live anime-torrent-provider extensions, each with a bound multi-arg `call`.

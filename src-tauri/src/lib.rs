@@ -4,6 +4,8 @@ mod download;
 mod direct_torrent;
 mod direct_torrent_select;
 mod extension_package;
+#[cfg(not(target_os = "android"))]
+mod jvm_extensions;
 mod sync;
 mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
@@ -2285,8 +2287,10 @@ pub fn run() {
         .manage(sync::SyncState::default())
         .manage(watch_room::WatchRoomState::default())
         .manage(TacVerificationConfig::default())
-        .manage(FsWasMax::default())
-        .setup(|app| {
+        .manage(FsWasMax::default());
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.manage(jvm_extensions::Runtime::default());
+    let builder = builder.setup(|app| {
             // Restore iroh only for devices that already opted into a sync group. Fresh
             // installs remain fully offline until the user enables Device Sync explicitly.
             let sync_app = app.handle().clone();
@@ -2740,8 +2744,12 @@ pub fn run() {
             http_post,
             ext_fetch,
             extension_package::extension_install,
+            extension_package::extension_install_url,
             extension_package::extension_list,
             extension_package::extension_remove,
+            jvm_extensions::jvm_extension_sources,
+            jvm_extensions::jvm_extension_call,
+            jvm_extensions::jvm_extension_reload,
             set_doh,
             set_player_cache,
             player_set_render_opts,
@@ -2805,6 +2813,7 @@ pub fn run() {
         http_post,
         ext_fetch,
         extension_package::extension_install,
+        extension_package::extension_install_url,
         extension_package::extension_list,
         extension_package::extension_remove,
         set_doh,
