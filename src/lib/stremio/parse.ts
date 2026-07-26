@@ -56,6 +56,11 @@ export interface Stream {
   __audioTracks?: { url: string; lang?: string; title?: string; headers?: Record<string, string> }[]
   // Resolved audio track for a direct stream: 'dub' or 'sub' (from the provider search pass).
   __audio?: 'sub' | 'dub'
+  // Individual extractor/server identity. Some JVM providers return every server in one response,
+  // making the enclosing provider name useless for distinguishing rows in the chooser.
+  __server?: string
+  // "hard" means subtitles are burned into the video; "soft" means selectable sidecar tracks.
+  __subtitleMode?: 'soft' | 'hard'
   // Content language of the provider that produced this row (ISO 639-1, e.g. 'it'), and whether it
   // differs from the user's preferred subtitle language. "SUB" alone says nothing about WHICH
   // language, so an Italian provider's row was indistinguishable from an English one until playback.
@@ -91,7 +96,9 @@ export interface StreamInfo {
   sizeLabel?: string // "1.4 GB"
   provider?: string // RD | AD | PM | TB | OC | DL ...
   addon?: string // "Torrentio" | "Comet"
+  server?: string // individual direct-stream server/extractor (e.g. HD-1)
   logo?: string // addon manifest logo (URL) or extension icon (base64/url/data:)
+  subtitleLabel?: string // explicit soft/hard subtitle availability for the chooser tooltip
   cached: CacheState
   badges: string[] // ordered, deduped pill labels (badges[0] is the quality)
   // True when this source serves a language the user did not ask for. Ranking de-prioritizes it so
@@ -233,6 +240,17 @@ export function describe(s: Stream): StreamInfo {
   // Which language that SUB/DUB actually is. Without it the row said "SUB" and nothing else, so an
   // Italian or French source read identically to an English one right up until playback started.
   if (s.__lang) push(s.__lang.toUpperCase())
+  const subtitleCount = s.__subtitles?.length ?? 0
+  const subtitleNames = [...new Set((s.__subtitles ?? [])
+    .map((track) => track.title ?? track.lang?.toUpperCase())
+    .filter((value): value is string => !!value))]
+  const subtitleLabel = s.__subtitleMode === 'hard'
+    ? 'Hard subtitles (burned into video)'
+    : subtitleCount
+      ? `${subtitleCount} selectable subtitle${subtitleCount === 1 ? '' : 's'}${subtitleNames.length ? `: ${subtitleNames.join(', ')}` : ''}`
+      : undefined
+  if (s.__subtitleMode === 'hard') push('HARDSUB')
+  else if (subtitleCount) push(`CC ${subtitleCount}`)
   // Direct streaming sources carry no release metadata (codec/size/group) — an adaptive HLS ladder
   // often reports quality "auto", leaving the row barren. Always give it a delivery-type badge so
   // it reads as a real, deliberate source.
@@ -241,7 +259,8 @@ export function describe(s: Stream): StreamInfo {
   return {
     stream: s, quality, label, filename, group, codec, bitDepth, hdr,
     dualAudio, audio, source, batch, seeders, sizeBytes, sizeLabel,
-    provider, addon, logo: s.__logo, cached, badges, langMismatch: s.__langMismatch,
+    provider, addon, server: s.__server, logo: s.__logo, subtitleLabel,
+    cached, badges, langMismatch: s.__langMismatch,
   }
 }
 

@@ -6,6 +6,7 @@ import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem } from './catalog'
 import { extensionSourceConfigured, jvmSourceOwners } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
+import { isKnownBrokenJvmVideo, parseJvmVideoTitle } from './jvm-video'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -461,7 +462,10 @@ function mediaType(url: string): 'm3u8' | 'dash' | 'mp4' {
 
 async function jvmProviderCall(source: JvmSource, method: string, callArgs: unknown[]): Promise<unknown> {
   if (method === 'getSettings') {
-    return { episodeServers: ['default'] }
+    // JVM getVideoList already returns every server and audio flavour in one response. Marking this
+    // prevents the online layer from issuing identical sub + dub calls (and starting two competing
+    // provider localhost servers) while still allowing its per-video title to carry SUB/DUB.
+    return { episodeServers: ['default'], returnsMixedAudio: true }
   }
   if (method === 'search') {
     const input = (callArgs[0] ?? {}) as { query?: unknown }
@@ -509,25 +513,45 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
         episode: { url: episode.url ?? '', name: episode.name ?? '' },
       },
     })
+    const mapped = videos
+      .filter((video) => /^https?:\/\//i.test(String(video.url ?? '')))
+      .map((video) => {
+        const url = String(video.url)
+        const identity = parseJvmVideoTitle(video.title)
+        const subtitles = ((video.subtitles ?? []) as Record<string, unknown>[])
+          .map((track) => ({
+            url: String(track.file ?? track.url ?? ''),
+            language: String(track.label ?? track.language ?? ''),
+            isDefault: Boolean(track.isDefault ?? track.default ?? false),
+            headers: (track.headers ?? undefined) as Record<string, string> | undefined,
+          }))
+          .filter((track) => /^https?:\/\//i.test(track.url))
+        return {
+          url,
+          type: mediaType(url),
+          quality: String(video.quality ?? identity.quality ?? video.title ?? 'auto'),
+          server: identity.server,
+          audio: identity.audio,
+          subtitleMode: identity.subtitleMode === 'hard'
+            ? 'hard'
+            : subtitles.length ? 'soft' : undefined,
+          headers: (video.headers ?? {}) as Record<string, string>,
+          subtitles,
+          audioTracks: ((video.audios ?? []) as Record<string, unknown>[])
+            .map((track) => ({
+              url: String(track.file ?? track.url ?? ''),
+              language: String(track.label ?? track.language ?? ''),
+              title: String(track.title ?? track.label ?? ''),
+              headers: (track.headers ?? undefined) as Record<string, string> | undefined,
+            }))
+            .filter((track) => /^https?:\/\//i.test(track.url)),
+        }
+      })
+      .filter((video) => !isKnownBrokenJvmVideo(video.url, video.server))
     return {
       server: source.name,
       headers: {},
-      videoSources: videos
-        .filter((video) => /^https?:\/\//i.test(String(video.url ?? '')))
-        .map((video) => ({
-          url: String(video.url),
-          type: mediaType(String(video.url)),
-          quality: String(video.quality ?? video.title ?? 'auto'),
-          headers: (video.headers ?? {}) as Record<string, string>,
-          subtitles: ((video.subtitles ?? []) as Record<string, unknown>[]).map((track) => ({
-            url: String(track.file ?? ''),
-            language: String(track.label ?? ''),
-          })),
-          audioTracks: ((video.audios ?? []) as Record<string, unknown>[]).map((track) => ({
-            url: String(track.file ?? ''),
-            language: String(track.label ?? ''),
-          })),
-        })),
+      videoSources: mapped,
     }
   }
   return null
