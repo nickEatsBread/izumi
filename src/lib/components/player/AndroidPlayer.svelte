@@ -24,7 +24,7 @@
     grabThumb,
     mpvPip,
     getTracks,
-    getChapters,
+    getChapterList,
     setAudioTrack,
     setSubTrack,
     setPlayerViewport,
@@ -47,6 +47,8 @@
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import { autoSkip, seekDuration, scrubThumbnails } from '$lib/settings/ui'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
+  import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
+  import { firstOccurrences } from '$lib/anime/animethemes'
   import { playNext, playPrev, playEpisode, finalizeAndroidWatch } from '$lib/stremio/play'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
@@ -115,7 +117,7 @@
     const t = setTimeout(() => (loading = true), SPINNER_DELAY_MS)
     return () => clearTimeout(t)
   })
-  $effect(() => { reportWatchPlayback($mpvState.pos, $mpvState.dur, $mpvState.paused) })
+  $effect(() => { reportWatchPlayback($mpvState.pos, $mpvState.dur, $mpvState.paused, $mpvState.buffering) })
   const playedPct = $derived(dur > 0 ? Math.min(100, (pos / dur) * 100) : 0)
   const cachePct = $derived(dur > 0 ? Math.min(100, ($mpvState.cacheEnd / dur) * 100) : 0)
 
@@ -128,20 +130,38 @@
   let chapters = $state<number[]>([])
   let segKey = ''
   let autoSkipped = $state(new Set<number>())
+  // AnimeThemes: don't auto-skip the episode where an OP/ED first debuts, so each new theme is
+  // heard once. Matches the desktop overlay — and it matters more now that chapter-derived
+  // segments mean more titles have OP/ED bands at all.
+  let firstOcc = $state({ op: false, ed: false })
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end) ?? null)
+  const willSkip = (s: Segment) =>
+    $autoSkip && !((s.type === 'op' && firstOcc.op) || (s.type === 'ed' && firstOcc.ed))
   $effect(() => {
     const key = `${np.malId}:${np.episode}`
     if (dur > 0 && key !== segKey) {
       segKey = key
       autoSkipped = new Set()
+      firstOcc = { op: false, ed: false }
       thumbCache.clear() // new file → drop cached preview frames
-      getSkipSegments(np.malId, np.episode, dur).then((s) => (segments = s))
-      getChapters().then((c) => (chapters = c))
+      void (async () => {
+        // Assign the debut guard before the segments it guards — the auto-skip effect fires as soon
+        // as `segments` lands.
+        const [segs, occ, chapterList] = await Promise.all([
+          getSkipSegments(np.malId, np.episode, dur),
+          firstOccurrences(np.id, np.episode),
+          getChapterList().catch(() => []),
+        ])
+        if (key !== segKey) return
+        firstOcc = occ
+        chapters = chapterList.map((c) => c.time)
+        segments = mergeSkipSegments(segs, segmentsFromChapters(chapterList, dur))
+      })()
     }
   })
   $effect(() => {
     const seg = currentSeg
-    if (seg && $autoSkip && !autoSkipped.has(seg.start)) { autoSkipped.add(seg.start); seekAbsolute(seg.end) }
+    if (seg && willSkip(seg) && !autoSkipped.has(seg.start)) { autoSkipped.add(seg.start); seekAbsolute(seg.end) }
   })
   function skipSegment() { if (currentSeg) seekAbsolute(currentSeg.end) }
 
@@ -874,7 +894,7 @@
     </div>
   {/if}
 
-  {#if currentSeg && !($autoSkip && !autoSkipped.has(currentSeg.start))}
+  {#if currentSeg && !(willSkip(currentSeg) && !autoSkipped.has(currentSeg.start))}
     <button transition:fade={{ duration: 180 }} onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skipSegment() }} class="absolute bottom-14 right-3 z-10 rounded-lg bg-white/90 px-4 py-2 text-sm font-bold text-black shadow-lg">Skip {currentSeg.label}</button>
   {/if}
 

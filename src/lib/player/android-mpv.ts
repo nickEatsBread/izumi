@@ -186,15 +186,25 @@ export const setPlayerFullscreen = (enabled: boolean) =>
 export const setPlayerTransform = (scale: number, translateY: number) =>
   invoke('plugin:mpv|mpv_transform', { payload: { scale, translateY } })
 
-/** mpv chapter marker times (seconds), via sub-property paths. Empty when the file has no chapters. */
-export async function getChapters(): Promise<number[]> {
+/** mpv chapters (time in seconds + title), via sub-property paths. Empty when the file has none.
+ *  Titles are needed for chapter-derived skip segments — see player/chapter-skip.ts. */
+export async function getChapterList(): Promise<{ time: number; title: string }[]> {
   const count = Number(await mpvGet('chapter-list/count')) || 0
-  const out: number[] = []
+  const out: { time: number; title: string }[] = []
   for (let i = 0; i < count; i++) {
     const t = Number(await mpvGet(`chapter-list/${i}/time`))
-    if (isFinite(t) && t > 0) out.push(t)
+    if (!isFinite(t) || t <= 0) continue
+    // Untitled chapters read back as an empty string (or nothing at all); that's a non-match for
+    // the classifier, which is what we want.
+    const title = String((await mpvGet(`chapter-list/${i}/title`)) ?? '')
+    out.push({ time: t, title })
   }
   return out
+}
+
+/** Chapter marker times only, for the seekbar ticks. */
+export async function getChapters(): Promise<number[]> {
+  return (await getChapterList()).map((c) => c.time)
 }
 
 // --- Track selection (audio / subtitles) ---
