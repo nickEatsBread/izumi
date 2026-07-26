@@ -17,21 +17,35 @@ export interface MpvLoad {
 export const androidMpvActive = writable(false)
 
 /** Live playback state, fed by the single mpv event subscription. Read by AndroidPlayer + tracking. */
-export const mpvState = writable<{
+export interface MpvState {
   pos: number
   dur: number
   paused: boolean
   eof: boolean
+  /** `paused-for-cache` — playback stalled because the cache ran dry. */
   buffering: boolean
+  /** `seeking` — mpv is resolving a seek; the target frame isn't up yet. */
+  seeking: boolean
+  /** `core-idle` — no frame is being shown. Also true while merely paused, so never read alone. */
+  coreIdle: boolean
+  /** Our own optimistic flag: a seek has been issued but mpv hasn't reported the new position yet. */
+  seekBusy: boolean
   cacheEnd: number
-}>({
+}
+
+const IDLE_STATE: MpvState = {
   pos: 0,
   dur: 0,
   paused: false,
   eof: false,
   buffering: false,
+  seeking: false,
+  coreIdle: false,
+  seekBusy: false,
   cacheEnd: 0,
-})
+}
+
+export const mpvState = writable<MpvState>({ ...IDLE_STATE })
 
 // Android resolves mpv_command as soon as libmpv has QUEUED it, before the matching time-pos event.
 // Keep ignoring older observations until that acknowledgement arrives, otherwise a stale event can
@@ -40,11 +54,19 @@ let pendingSeekTarget: number | null = null
 let seekGeneration = 0
 let pendingSeekTimer: ReturnType<typeof setTimeout> | undefined
 
-function clearPendingSeek(generation?: number) {
-  if (generation != null && generation !== seekGeneration) return
+/** Drop the pending-seek bookkeeping WITHOUT writing the store — safe to call from inside an
+ *  `mpvState.update` callback, where a nested write would be clobbered by the outer one. */
+function clearPendingSeekTimers(generation?: number) {
+  if (generation != null && generation !== seekGeneration) return false
   pendingSeekTarget = null
   clearTimeout(pendingSeekTimer)
   pendingSeekTimer = undefined
+  return true
+}
+
+function clearPendingSeek(generation?: number) {
+  if (!clearPendingSeekTimers(generation)) return
+  mpvState.update((s) => (s.seekBusy ? { ...s, seekBusy: false } : s))
 }
 
 let embeddedChecked: boolean | undefined
@@ -70,8 +92,11 @@ export async function startMpvEvents(): Promise<void> {
     mpvState.update((s) => {
       if (property === 'time-pos' && typeof value === 'number') {
         if (pendingSeekTarget != null) {
-          if (Math.abs(value - pendingSeekTarget) <= 2.5) clearPendingSeek()
-          else return s
+          if (Math.abs(value - pendingSeekTarget) > 2.5) return s
+          // The position landed, but the frame at it may still be loading — `seeking`/`core-idle`
+          // carry the loading signal from here, so this only retires the optimistic flag.
+          clearPendingSeekTimers()
+          return { ...s, pos: value, seekBusy: false }
         }
         return { ...s, pos: value }
       }
@@ -79,6 +104,8 @@ export async function startMpvEvents(): Promise<void> {
       if (property === 'pause' && typeof value === 'boolean') return { ...s, paused: value }
       if (property === 'eof-reached') return { ...s, eof: value === true }
       if (property === 'paused-for-cache') return { ...s, buffering: value === true }
+      if (property === 'seeking') return { ...s, seeking: value === true }
+      if (property === 'core-idle') return { ...s, coreIdle: value === true }
       if (property === 'demuxer-cache-time' && typeof value === 'number') return { ...s, cacheEnd: value }
       return s
     })
@@ -87,10 +114,10 @@ export async function startMpvEvents(): Promise<void> {
 
 export async function mpvLoad(p: MpvLoad): Promise<void> {
   seekGeneration++
-  clearPendingSeek()
+  clearPendingSeekTimers()
   // Reset UI state for the new file (fresh time-pos/duration events will repopulate it).
   // buffering starts true — the spinner shows until the first frame's duration/time-pos lands.
-  mpvState.set({ pos: 0, dur: 0, paused: false, eof: false, buffering: true, cacheEnd: 0 })
+  mpvState.set({ ...IDLE_STATE, buffering: true })
   await invoke('plugin:mpv|mpv_load', {
     payload: {
       url: p.url,
@@ -117,8 +144,8 @@ export async function mpvGet(property: string): Promise<string | null> {
 export async function mpvStop(): Promise<void> {
   await invoke('plugin:mpv|mpv_stop')
   seekGeneration++
-  clearPendingSeek()
-  mpvState.set({ pos: 0, dur: 0, paused: false, eof: false, buffering: false, cacheEnd: 0 })
+  clearPendingSeekTimers()
+  mpvState.set({ ...IDLE_STATE })
   androidStreamInfo.set(null)
 }
 
@@ -210,7 +237,10 @@ function requestExactSeek(sec: number) {
   let target = Math.max(0, sec)
   mpvState.update((s) => {
     target = s.dur > 0 ? Math.min(s.dur, target) : target
-    return { ...s, pos: target }
+    // seekBusy from the instant the seek is requested: mpv only reports `seeking` once the command
+    // has crossed the JNI bridge and been picked up, and that gap is exactly where a fast-forward
+    // into unbuffered data used to look like a frozen player.
+    return { ...s, pos: target, seekBusy: true }
   })
   const generation = ++seekGeneration
   clearTimeout(pendingSeekTimer)
