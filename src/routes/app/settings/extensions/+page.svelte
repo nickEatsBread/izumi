@@ -1,6 +1,8 @@
 <script lang="ts">
   import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
-  import { fetchExtensionInfo } from '$lib/extensions/manager'
+  import { fetchExtensionInfo, installExtensionPackage, installedExtensionPackages, removeInstalledExtension, type InstalledExtensionPackage } from '$lib/extensions/manager'
+  import { open } from '@tauri-apps/plugin-dialog'
+  import { isAndroid } from '$lib/platform'
   import { langName } from '$lib/player/track-label'
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
@@ -11,6 +13,46 @@
   const current = $derived(providerMeta($debridProvider))
 
   let extInput = $state('')
+  let localPackages = $state<InstalledExtensionPackage[]>([])
+  let packageStatus = $state('')
+  let packageBusy = $state(false)
+
+  async function refreshPackages() {
+    localPackages = await installedExtensionPackages()
+  }
+  async function installPackage() {
+    packageStatus = ''
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Izumi extension', extensions: ['izumi-ext'] }],
+    })
+    if (typeof selected !== 'string') return
+    packageBusy = true
+    try {
+      const installed = await installExtensionPackage(selected)
+      await refreshPackages()
+      packageStatus = `${installed.name} ${installed.version} installed.`
+    } catch (error) {
+      packageStatus = String(error)
+    } finally {
+      packageBusy = false
+    }
+  }
+  async function removePackage(id: string) {
+    packageBusy = true
+    packageStatus = ''
+    try {
+      await removeInstalledExtension(id)
+      await refreshPackages()
+    } catch (error) {
+      packageStatus = String(error)
+    } finally {
+      packageBusy = false
+    }
+  }
+  $effect(() => {
+    if (!$isAndroid) void refreshPackages()
+  })
   function addExt() { const u = extInput.trim(); if (u) { $extensionUrls = [...$extensionUrls, u]; extInput = '' } }
   function toggleExt(url: string) { $disabledExtensions = $disabledExtensions.includes(url) ? $disabledExtensions.filter((u) => u !== url) : [...$disabledExtensions, url] }
   function removeExt(i: number) { const url = $extensionUrls[i]; $extensionUrls = $extensionUrls.filter((_, j) => j !== i); $disabledExtensions = $disabledExtensions.filter((u) => u !== url) }
@@ -33,7 +75,10 @@
     let stale = false
     void Promise.all([...metaByUrl.values()]).then((groups) => {
       if (stale) return
-      installedLangs = [...new Set(groups.flatMap((g) => g.configs).map((m) => m.lang).filter((l): l is string => !!l))]
+      installedLangs = [...new Set([
+        ...groups.flatMap((g) => g.configs).map((m) => m.lang).filter((l): l is string => !!l),
+        ...localPackages.map((extension) => extension.lang).filter((lang): lang is string => !!lang),
+      ])]
     })
     return () => { stale = true }
   })
@@ -141,6 +186,47 @@
         </span>
       </div>
     </div>
+
+    {#if !$isAndroid}
+      <div class="mb-6 rounded-lg border border-border p-3">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-bold">Installed anime packages</h3>
+            <p class="text-xs text-muted-foreground">Import a verified <code class="rounded bg-secondary px-1">.izumi-ext</code> file. Its code runs in the same isolated worker as community extensions.</p>
+          </div>
+          <button data-focusable disabled={packageBusy} onclick={installPackage}
+            class="shrink-0 rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+            {packageBusy ? 'Working…' : 'Install file'}
+          </button>
+        </div>
+        {#if packageStatus}
+          <p class="mt-2 text-xs {packageStatus.includes('installed.') ? 'text-emerald-400' : 'text-amber-400'}">{packageStatus}</p>
+        {/if}
+        <ul class="mt-3 space-y-2">
+          {#each localPackages as extension (extension.id)}
+            <li class="flex items-center gap-3 rounded-md bg-secondary/50 px-3 py-2">
+              <div class="grid size-9 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Puzzle size={17} /></div>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="truncate text-sm font-bold">{extension.name}</span>
+                  <span class="rounded bg-background/70 px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{extension.version}</span>
+                  <span class="rounded bg-background/70 px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{extension.signed ? 'SIGNED' : 'LOCAL'}</span>
+                </div>
+                <p class="truncate text-xs text-muted-foreground">{extension.description ?? extension.id}</p>
+              </div>
+              <button data-focusable onclick={() => togglePlugin(extension.id)} aria-pressed={!pluginOff(extension.id)}
+                title={pluginOff(extension.id) ? 'Enable' : 'Disable'}
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pluginOff(extension.id) ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+                <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pluginOff(extension.id) ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+              </button>
+              <button data-focusable disabled={packageBusy} onclick={() => removePackage(extension.id)} title="Uninstall"
+                class="grid size-8 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50"><Trash2 size={16} /></button>
+            </li>
+          {/each}
+          {#if !localPackages.length}<li class="text-xs text-muted-foreground">No local anime packages installed.</li>{/if}
+        </ul>
+      </div>
+    {/if}
 
     <p class="mb-2 text-sm text-muted-foreground">Extension sources — a GitHub repo (<code class="rounded bg-secondary px-1 text-xs">gh:owner/repo</code> or <code class="rounded bg-secondary px-1 text-xs">owner/repo/folder</code>) or a manifest URL.</p>
     <div class="flex gap-2">

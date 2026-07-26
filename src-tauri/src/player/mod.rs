@@ -93,6 +93,15 @@ pub struct Subtitle {
     pub is_default: bool,
 }
 
+/// An external audio fragment/track paired with a direct video-only source.
+#[derive(serde::Deserialize, Clone)]
+pub struct AudioTrack {
+    pub url: String,
+    pub lang: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+}
+
 /// Scrub-preview thumbnail state for one stream. Tiles are produced ON DEMAND — when
 /// the seekbar asks for the tile under the cursor, the warm headless libmpv decoder
 /// ([`HeadlessMpv`]) seeks + software-renders THAT position and we cache it as
@@ -179,7 +188,7 @@ impl PlayerHandle {
         // If we already have an mpv core, just queue the new file into its
         // existing window.
         if let Some(mpv) = guard.as_ref() {
-            load_file(mpv, url, start_seconds, &None, &[])?;
+            load_file(mpv, url, start_seconds, &None, &[], &[])?;
             return Ok(());
         }
 
@@ -189,7 +198,7 @@ impl PlayerHandle {
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
 
-        load_file(&mpv, url, start_seconds, &None, &[])?;
+        load_file(&mpv, url, start_seconds, &None, &[], &[])?;
 
         *guard = Some(mpv);
         Ok(())
@@ -216,18 +225,20 @@ impl PlayerHandle {
         slang: Option<String>,
         headers: Option<HashMap<String, String>>,
         subtitles: Option<Vec<Subtitle>>,
+        audio_tracks: Option<Vec<AudioTrack>>,
     ) -> Result<(), String> {
         // Remember the URL — the next hover renders fresh frames against the new file.
         *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
 
         let subs = subtitles.unwrap_or_default();
+        let audio = audio_tracks.unwrap_or_default();
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
 
         // If we already have an mpv core, just queue the new file into its
         // existing (embedded) window.
         if let Some(mpv) = guard.as_ref() {
             set_langs(mpv, &alang, &slang);
-            load_file(mpv, url, start_seconds, &headers, &subs)?;
+            load_file(mpv, url, start_seconds, &headers, &subs, &audio)?;
             return Ok(());
         }
 
@@ -243,7 +254,7 @@ impl PlayerHandle {
         spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
 
         set_langs(&mpv, &alang, &slang);
-        load_file(&mpv, url, start_seconds, &headers, &subs)?;
+        load_file(&mpv, url, start_seconds, &headers, &subs, &audio)?;
 
         *guard = Some(mpv);
         Ok(())
@@ -268,14 +279,16 @@ impl PlayerHandle {
         window: &tauri::WebviewWindow,
         headers: Option<HashMap<String, String>>,
         subtitles: Option<Vec<Subtitle>>,
+        audio_tracks: Option<Vec<AudioTrack>>,
     ) -> Result<(), String> {
         *self.current_url.lock().map_err(|e| e.to_string())? = Some(url.to_string());
 
         let subs = subtitles.unwrap_or_default();
+        let audio = audio_tracks.unwrap_or_default();
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
         if let Some(mpv) = guard.as_ref() {
             set_langs(mpv, &alang, &slang);
-            load_file(mpv, url, start_seconds, &headers, &subs)?;
+            load_file(mpv, url, start_seconds, &headers, &subs, &audio)?;
             return Ok(());
         }
 
@@ -285,7 +298,7 @@ impl PlayerHandle {
         // Bind the render context to this core BEFORE it moves into the mutex.
         // `attach` borrows `&mpv` only for the (blocking) duration of the call.
         linux_embed::attach(&mpv, window)?;
-        load_file(&mpv, url, start_seconds, &headers, &subs)?;
+        load_file(&mpv, url, start_seconds, &headers, &subs, &audio)?;
 
         *guard = Some(mpv);
         Ok(())
@@ -705,6 +718,7 @@ fn load_file(
     start_seconds: Option<f64>,
     headers: &Option<HashMap<String, String>>,
     subtitles: &[Subtitle],
+    audio_tracks: &[AudioTrack],
 ) -> Result<(), String> {
     // Apply the user's cache-size setting to this file's demuxer (overrides the init default).
     let cache = PLAYER_CACHE_BYTES.load(std::sync::atomic::Ordering::Relaxed);
@@ -725,6 +739,15 @@ fn load_file(
         .unwrap_or_default();
     let _ = mpv.set_property("http-header-fields", hdr.as_str());
     mpv.command("loadfile", &[url]).map_err(|e| e.to_string())?;
+    for track in audio_tracks {
+        let lang = track.lang.as_deref().unwrap_or("und");
+        let title = track
+            .title
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or(lang);
+        let _ = mpv.command("audio-add", &[track.url.as_str(), "auto", title, lang]);
+    }
     // External subtitle tracks (VTT/ASS URLs the source provided). `select` the provider's
     // default track so a sub shows without the user hunting for it; the rest are `auto`.
     // mpv's arg order is `sub-add <url> <flags> <title> <lang>`. Passing the code as BOTH left the

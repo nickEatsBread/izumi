@@ -3,6 +3,7 @@ mod doh;
 mod download;
 mod direct_torrent;
 mod direct_torrent_select;
+mod extension_package;
 mod sync;
 mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
@@ -90,6 +91,7 @@ async fn player_embed(
     slang: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
     subtitles: Option<Vec<player::Subtitle>>,
+    audio_tracks: Option<Vec<player::AudioTrack>>,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
     let main = app.get_webview_window("main").ok_or("no main window")?;
@@ -106,7 +108,7 @@ async fn player_embed(
     };
     #[cfg(windows)]
     {
-        player.play_embedded(&url, wid, app.clone(), start_seconds, alang, slang, headers.clone(), subtitles.clone())?;
+        player.play_embedded(&url, wid, app.clone(), start_seconds, alang, slang, headers.clone(), subtitles.clone(), audio_tracks.clone())?;
         resize_mpv_child(main_raw);
     }
     // Linux/Wayland: embed mpv into a wl_subsurface placed BELOW the (transparent)
@@ -120,19 +122,19 @@ async fn player_embed(
         if player::linux_embed::is_wayland(&main) {
             // Desktop / KWin (native Wayland): mpv in a wl_subsurface below the transparent
             // webview, HTML controls floating over it.
-            player.play_embedded_render(&url, app.clone(), start_seconds, alang, slang, &main, headers.clone(), subtitles.clone())?;
+            player.play_embedded_render(&url, app.clone(), start_seconds, alang, slang, &main, headers.clone(), subtitles.clone(), audio_tracks.clone())?;
         } else {
             // Game mode / gamescope (XWayland X11): no wl_subsurface — embed mpv via `--wid`
             // into a fullscreen X11 CONTAINER window we own (so it can be shown/hidden for the
             // touch-controls swap + made input-transparent). Fullscreen; no windowed layout.
             let size = main.inner_size().map_err(|e| e.to_string())?;
             let xid = player::linux_x11::ensure_container(&main, size.width, size.height)?;
-            player.play_embedded(&url, xid, app.clone(), start_seconds, alang, slang, headers.clone(), subtitles.clone())?;
+            player.play_embedded(&url, xid, app.clone(), start_seconds, alang, slang, headers.clone(), subtitles.clone(), audio_tracks.clone())?;
         }
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
-        let _ = (&player, &main, &app, &start_seconds, &alang, &slang, &url, &headers, &subtitles);
+        let _ = (&player, &main, &app, &start_seconds, &alang, &slang, &url, &headers, &subtitles, &audio_tracks);
     }
     Ok(())
 }
@@ -1680,7 +1682,7 @@ fn player_play_embedded(
     let wid: i64 = window.hwnd().map_err(|e| e.to_string())?.0 as isize as i64;
     #[cfg(not(windows))]
     let wid: i64 = { let _ = &window; 0 };
-    player.play_embedded(&url, wid, app, start_seconds, None, None, None, None)
+    player.play_embedded(&url, wid, app, start_seconds, None, None, None, None, None)
 }
 
 /// Open the provider's auth URL in a dedicated in-app webview window, then poll
@@ -2737,6 +2739,9 @@ pub fn run() {
             http_get,
             http_post,
             ext_fetch,
+            extension_package::extension_install,
+            extension_package::extension_list,
+            extension_package::extension_remove,
             set_doh,
             set_player_cache,
             player_set_render_opts,
@@ -2799,6 +2804,9 @@ pub fn run() {
         http_get,
         http_post,
         ext_fetch,
+        extension_package::extension_install,
+        extension_package::extension_list,
+        extension_package::extension_remove,
         set_doh,
         write_text_file,
         updater_download_apk,

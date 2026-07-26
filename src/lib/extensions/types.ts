@@ -62,4 +62,11 @@ export interface ExtensionConfig {
   // from an English one until its subtitles show up on screen.
   lang?: string
   settings?: Record<string, unknown>
+  /** Native `.izumi-ext` modules are already in Izumi's worker ABI and need no
+   * Seanime/Miru compatibility transform before evaluation. */
+  runtime?: 'izumi-js'
+  /** Validated package code returned by the native installer. Remote configs
+   * leave this empty and fetch `code` as a URL. */
+  moduleCode?: string
+  signed?: boolean
 }

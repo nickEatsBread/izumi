@@ -1245,12 +1245,17 @@ export async function playStream(media: Media, episode: number | undefined, stre
       ...(stream.__stream ? stream.__subtitles ?? [] : []),
       ...candidates.filter((s) => !!s.url).map((s) => ({ url: s.url!, lang: s.lang })),
     ]
+    const audioTracks = stream.__stream ? stream.__audioTracks ?? [] : []
     // mpv applies `http-header-fields` GLOBALLY — there is no per-URL header option — so a
     // Referer-gated sidecar subtitle can only be fetched by folding its headers into the same set
     // the stream uses. Stream headers win on a key clash: breaking the video to fetch a subtitle
     // would be the wrong trade.
-    const subHeaders = Object.assign({}, ...subtitles.map((s) => ('headers' in s && s.headers) || {}))
-    const mergedHeaders = stream.__stream ? { ...subHeaders, ...(stream.__headers ?? {}) } : undefined
+    const sidecarHeaders = Object.assign(
+      {},
+      ...subtitles.map((s) => ('headers' in s && s.headers) || {}),
+      ...audioTracks.map((track) => track.headers ?? {}),
+    )
+    const mergedHeaders = stream.__stream ? { ...sidecarHeaders, ...(stream.__headers ?? {}) } : undefined
     // alang/slang drive mpv's preferred-language track auto-selection.
     await invoke('player_embed', {
       url: stream.url,
@@ -1259,6 +1264,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
       slang: get(preferredSubLang),
       headers: mergedHeaders && Object.keys(mergedHeaders).length ? mergedHeaders : undefined,
       subtitles: subtitles.length ? subtitles : undefined,
+      audioTracks: audioTracks.length ? audioTracks : undefined,
     })
     if (directPlaybackId != null && directTorrentSubtitles.length) {
       void attachDirectTorrentSubtitles(directPlaybackId, directTorrentSubtitles)
