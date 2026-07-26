@@ -28,6 +28,9 @@ describe('host matching', () => {
     expect(extractorFor('https://vidmoly.to/embed-z.html')?.name).toBe('Vidmoly')
     expect(extractorFor('https://streamtape.com/e/q')?.name).toBe('StreamTape')
     expect(extractorFor('https://d0o0d.com/e/w')?.name).toBe('DoodStream')
+    expect(extractorFor('https://slwatch.co/e/r')?.name).toBe('StreamLare')
+    expect(extractorFor('https://ok.ru/videoembed/1')?.name).toBe('OK.ru')
+    expect(extractorFor('https://playtaku.net/streaming.php?id=x')?.name).toBe('GogoStream')
   })
 
   it('does not claim an unrelated host', () => {
@@ -92,6 +95,36 @@ describe('loadExtractor', () => {
     const res = await loadExtractor(embed, { fetch })
     expect(res.links).toHaveLength(1)
     expect(res.links[0].url).toBe('https://streamtape.com/get_video?id=abc&expires=99&stream=1')
+  })
+
+  it('resolves StreamLare HLS variants through its API', async () => {
+    const embed = 'https://slwatch.co/e/abc'
+    const api = 'https://slwatch.co/api/video/stream/get'
+    const master = 'https://cdn.streamlare.test/hls/master.m3u8'
+    const { fetch, calls } = stubFetch({
+      [api]: JSON.stringify({ type: 'hls', file: master }),
+      [master]: '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=1280x720\n720/index.m3u8',
+    })
+    const res = await loadExtractor(embed, { fetch })
+    expect(calls[0]).toMatchObject({ url: api })
+    expect(res.links[0]).toMatchObject({
+      url: 'https://cdn.streamlare.test/hls/720/index.m3u8',
+      type: 'm3u8',
+      quality: '720p',
+      source: 'StreamLare',
+    })
+  })
+
+  it('reads OK.ru direct qualities from data-options', async () => {
+    const embed = 'https://ok.ru/videoembed/1'
+    const options = '{&quot;videos&quot;:[{&quot;name&quot;:&quot;hd&quot;,&quot;url&quot;:&quot;https://cdn.ok.test/v.mp4&quot;}]}'
+    const { fetch } = stubFetch({ [embed]: `<div data-options="${options}"></div>` })
+    const res = await loadExtractor(embed, { fetch })
+    expect(res.links[0]).toMatchObject({
+      url: 'https://cdn.ok.test/v.mp4',
+      quality: '720p',
+      source: 'OK.ru',
+    })
   })
 
   it('returns nothing rather than throwing when the page is unreachable', async () => {
