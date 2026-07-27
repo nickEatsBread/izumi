@@ -57,3 +57,26 @@ describe('pickCandidates', () => {
     expect(candidates.map((s) => s.url)).toEqual(['good', 'bad'])
   })
 })
+
+describe('cached beats the requested quality tier', () => {
+  const cached = (url: string, q: string) =>
+    ({ url, name: '[RD+] Addon', title: `[Group] Show - 20 (${q})` }) as never
+  const uncached = (url: string, q: string) =>
+    ({ url, name: '[RD download] Addon', title: `[Group] Show - 20 (${q})` }) as never
+
+  it('prefers a cached 1080p over an uncached 4K when 4K was requested', () => {
+    // Real case: eleven cached 1080p rows and one uncached 2160p, Quality set to 4K. The tier
+    // preference was applied AFTER the cache ordering and overrode it, so the automatic pick
+    // committed to a multi-gigabyte download while instant copies sat right there.
+    const picked = pickCandidates(
+      [uncached('uhd', '2160p'), cached('fhd', '1080p')],
+      '2160', undefined, undefined, { allowUncached: true },
+    )
+    expect(picked.map((s) => s.url)).toEqual(['fhd', 'uhd'])
+  })
+
+  it('still honours the requested tier among sources that are all cached', () => {
+    const picked = pickCandidates([cached('fhd', '1080p'), cached('uhd', '2160p')], '2160')
+    expect(picked[0].url).toBe('uhd')
+  })
+})
