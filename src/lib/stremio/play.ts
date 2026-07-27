@@ -751,11 +751,58 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
         return played
       })()
     }
-    const refresh = (resolving: boolean) => {
-      if (!stillCurrent()) return
+    // Autoplay readiness. Three ways to become ready, earliest wins:
+    //   * the pick we would actually commit to is cached, in the user's language and past the
+    //     season gate, and has HELD that position for 350ms (so a better row arriving mid-hold
+    //     restarts it rather than being pre-empted),
+    //   * 1.5s after the first result when something instantly playable is on screen, 4s when
+    //     only uncached rows are (there is no rush to count down toward a debrid download),
+    //   * every source settled, which is the old behaviour and remains the backstop.
+    const READY_HELD_MS = 350
+    const READY_INSTANT_MS = 1500
+    const READY_COLD_MS = 4000
+    let autoReady = false
+    let resolveSettled = false
+    let firstResultAt = 0
+    let readyAt = 0
+    let readyTimer: ReturnType<typeof setTimeout> | undefined
+    let heldKey = ''
+    let heldSince = 0
+    const clearReadyTimer = () => { if (readyTimer) { clearTimeout(readyTimer); readyTimer = undefined } }
+    const scheduleReady = (s: Stream[]) => {
+      if (autoReady || !s.length) return
+      const now = Date.now()
+      if (!firstResultAt) firstResultAt = now
+      // Season correctness outranks speed: until AniZip has answered we cannot know that the top
+      // row is even the right episode, so the confident path stays shut (the same gate the
+      // same-release continuation uses).
+      const top = seasonSettled ? pickBest(s, get(preferredQuality), want) : undefined
+      let deadline: number
+      if (top) {
+        const key = top.url ?? top.infoHash ?? ''
+        if (key !== heldKey) { heldKey = key; heldSince = now }
+        deadline = heldSince + READY_HELD_MS
+      } else {
+        heldKey = ''; heldSince = 0
+        const instant = s.some((x) => !!x.url && !isUncached(x))
+        deadline = firstResultAt + (instant ? READY_INSTANT_MS : READY_COLD_MS)
+      }
+      if (readyTimer && deadline === readyAt) return
+      clearReadyTimer()
+      readyAt = deadline
+      readyTimer = setTimeout(() => {
+        readyTimer = undefined
+        autoReady = true
+        if (stillCurrent()) paint(true)
+      }, Math.max(0, deadline - now))
+    }
+
+    const paint = (resolving: boolean) => {
       let s = refineStreams(media, acc)
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
-      streamPicker.set({ media, episode, streams: s, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving, hidden: hideForContinuation })
+      if (resolving) scheduleReady(s)
+      else { clearReadyTimer(); autoReady = true; resolveSettled = true }
+      streamPicker.set({ media, episode, streams: s, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving, autoReady, hidden: hideForContinuation })
       // Binge continuity: the instant a same-release, ready-to-play source appears, continue on it
       // automatically (close the picker, no interaction). An uncached same-release is handled once
       // the list settles (below), so a late-arriving cached one still wins here. Gated on
@@ -767,6 +814,31 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
         if (hit) tryContinuation(hit)
       }
     }
+
+    // Every addon, extension batch and online provider calls refresh as it lands, so a ~20-source
+    // resolve fired ~20 full re-derive + re-render passes, several inside the same frame. Leading
+    // edge keeps the first source painting instantly; the trailing flush means the last arrival is
+    // never the one that gets dropped. The terminal refresh(false) always bypasses.
+    const PAINT_MS = 150
+    let lastPaint = 0
+    let queuedPaint: ReturnType<typeof setTimeout> | undefined
+    const refresh = (resolving: boolean) => {
+      if (!stillCurrent()) return
+      if (queuedPaint) { clearTimeout(queuedPaint); queuedPaint = undefined }
+      if (!resolving) { lastPaint = Date.now(); paint(false); return }
+      const waited = Date.now() - lastPaint
+      if (waited >= PAINT_MS) { lastPaint = Date.now(); paint(true); return }
+      queuedPaint = setTimeout(() => {
+        queuedPaint = undefined
+        lastPaint = Date.now()
+        if (stillCurrent()) paint(true)
+      }, PAINT_MS - waited)
+    }
+    // A superseded or closed picker must not keep timers alive behind it.
+    signal.addEventListener('abort', () => {
+      clearReadyTimer()
+      if (queuedPaint) { clearTimeout(queuedPaint); queuedPaint = undefined }
+    }, { once: true })
 
     // Resolve the season target, then unblock + re-run auto-continue. `.finally` so a title with
     // no AniZip season data still flips seasonSettled (nothing to wrong-season against).
@@ -791,7 +863,15 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       if (kitsu != null) {
         const id = streamId(kitsu, episode)
         for (const base of bases) {
-          fetchAddonStreams(base, id, type)
+          // An addon that blows its budget is slow, not wrong: its rows still fold into an open
+          // picker whenever they land, instead of being dropped on the floor as they used to be.
+          fetchAddonStreams(base, id, type, (late) => {
+            if (!stillCurrent()) return
+            acc = [...acc, ...late.streams]; totalRaw += late.total
+            // A response that outlived the whole resolve must not put a settled picker back into
+            // its loading state — the rows just appear.
+            refresh(!resolveSettled)
+          })
             .then((r) => { acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(true) })
             .catch(() => {})
             .finally(done)

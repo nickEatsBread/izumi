@@ -137,19 +137,34 @@ export const qualityLabel = (q: number) =>
   q >= 2160 ? '4K' : q >= 1440 ? '1440p' : q ? `${q}p` : 'SD'
 
 // --- cache state -----------------------------------------------------------
-// Uncached (download-to-debrid): Torrentio "[RD download]" (word) OR Comet "⬇️"
-// (match the BASE codepoint U+2B07 so the trailing VS16 U+FE0F is irrelevant;
-// also accept the plain arrow U+2193 just in case).
+// Uncached (download-to-debrid): "[RD download]" / a bare "TB download" / the word
+// "uncached", or a download glyph — ⬇ (match the BASE codepoint U+2B07 so the trailing
+// VS16 U+FE0F is irrelevant), the plain arrow U+2193, and the hourglass/tray/cloud
+// variants other addons use.
+//
+// Two things this deliberately does NOT do, both of which were bugs:
+//   * `/\bdownloading?\b/` — the optional `g` makes "downloadin"/"downloading" match but
+//     NOT the bare word "download", so the word form was dead and only the bracketed
+//     `[RD download]` spelling ever fired. Everything else fell through to `instant` and
+//     became eligible for the auto-pick.
+//   * testing only `s.name` — modern addons put the whole marker line in `description`
+//     (Comet emits no `name` marker at all), so a description-carried ⬇ read as cached.
+// Both predicates therefore run over the SAME haystack the rest of the parser uses.
+//
+// The `u` flag is load-bearing, not decoration: 🔽 (U+1F53D) and 📥 (U+1F4E5) are astral, so
+// WITHOUT it a character class holds their surrogate halves instead of the code points, and the
+// high surrogate \uD83D then matches 👤 (U+1F464) — i.e. every seeder-bearing row would read as
+// uncached, and any with 👤 0 as dead.
+const UNCACHED_MARKER = /\b(?:download|uncached)\b|[⬇↓⏳⌛⏬🔽📥]/iu
+// Cached / instantly playable: "[RD+]", ⚡ (U+26A1), or a ✅ tick.
+const CACHED_MARKER = /\[[A-Za-z]{2,4}\+\]|[⚡✅]/u
 export const isUncached = (s: Stream) => {
-  const n = s.name ?? ''
-  return /\bdownloading?\b/i.test(`${n} ${s.title ?? ''} ${s.description ?? ''}`)
-    || /\[[A-Za-z]{2,4}\s+download\]/i.test(n)
-    || /[⬇↓]/.test(n)
+  // A direct streaming source has no debrid step to be uncached FOR — its provider text may
+  // legitimately name a "download server", which must never be read as a cache marker.
+  if (s.__stream) return false
+  return UNCACHED_MARKER.test(hayOf(s))
 }
-// Cached / instantly playable: Torrentio "[RD+]" OR Comet "⚡" (U+26A1), and not
-// flagged uncached.
-export const isCached = (s: Stream) =>
-  !isUncached(s) && (/\[[A-Za-z]{2,4}\+\]/.test(s.name ?? '') || /⚡/.test(s.name ?? ''))
+export const isCached = (s: Stream) => !isUncached(s) && CACHED_MARKER.test(hayOf(s))
 
 // Addon notice/error sentinels carry no real media (expired key, no results,
 // rate-limit) — never show these.
@@ -159,7 +174,24 @@ export const isNotice = (s: Stream) =>
   || s.url === 'https://comet.feels.legal'
 
 // --- the parser ------------------------------------------------------------
+// Parse each stream once per identity. The picker re-derives the whole list on every source
+// arrival (a ~20-source resolve = ~20 full passes) and the store write then re-derives it again
+// to compute the best pick, so an unmemoised describe() ran the full regex battery roughly 2N
+// times per frame while results were still streaming in. Keyed on object identity, which is
+// sound because nothing mutates a Stream after the layer that built it hands it over — the
+// dedupe step swaps array slots, it never edits a row in place. A WeakMap so a superseded
+// picker's rows are collectable.
+const parsed = new WeakMap<Stream, StreamInfo>()
+
 export function describe(s: Stream): StreamInfo {
+  const hit = parsed.get(s)
+  if (hit) return hit
+  const info = parseStream(s)
+  parsed.set(s, info)
+  return info
+}
+
+function parseStream(s: Stream): StreamInfo {
   const name = s.name ?? ''
   const hay = hayOf(s)
   const low = hay.toLowerCase()
@@ -221,10 +253,17 @@ export function describe(s: Stream): StreamInfo {
     || s.description?.match(/🏷️\s*([^\n|]+)/)?.[1]?.trim()
 
   // 'down' only when an UNCACHED torrent has an explicit 0 seeders (nothing to
-  // fetch to debrid → effectively dead). Missing seeders stays 'uncached'. A
-  // stream with a url and no cache glyph (non-Torrentio/Comet addon) is instant.
+  // fetch to debrid → effectively dead). Missing seeders stays 'uncached'.
+  //
+  // With NO marker either way, the deciding fact is whether the addon handed us something
+  // playable: a resolved url is instant, but a bare infoHash still has to go through debrid
+  // and is therefore uncached — it was previously called 'instant', which let a torrent that
+  // nothing had ever cached win the auto-pick and then stall on resolve. This branch must NOT
+  // route through the 0-seeder test above: extension indexers hardcode 0, and calling those
+  // rows 'down' would strike out the entire extension torrent path.
   const cached: CacheState = isCached(s) ? 'instant'
     : isUncached(s) ? (seeders === 0 ? 'down' : 'uncached')
+    : (s.infoHash && !s.url) ? 'uncached'
     : 'instant'
 
   const badges: string[] = []
