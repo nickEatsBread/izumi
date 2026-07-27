@@ -505,7 +505,9 @@
        caching screen appeared. On a slow resolve that read as a freeze. -->
   <!-- Hidden once the debrid screen takes over: that screen is opaque, so leaving the animation
        running behind it would burn a Lottie render loop nobody can see. -->
-  {#if (busy || (autoImmediate && resolving)) && !$debridCaching && !playbackError}
+  <!-- Only the source-LIST phase: once a stream is chosen, playStream owns the connecting screen
+       app-wide (SourceConnecting), so rendering it here too would stack two of them. -->
+  {#if autoImmediate && resolving && !busy && !$debridCaching && !playbackError}
     <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black/85" transition:fade={{ duration: 160 }}>
       {#if backdrop}
         <!-- `filter` on a STATIC image, never `backdrop-filter`: the latter re-samples live content

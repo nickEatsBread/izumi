@@ -10,6 +10,7 @@
   import { androidMpvActive } from '$lib/player/android-mpv'
   import StreamPicker from '$lib/components/player/StreamPicker.svelte'
   import DebridCaching from '$lib/components/player/DebridCaching.svelte'
+  import SourceConnecting from '$lib/components/player/SourceConnecting.svelte'
   import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
@@ -199,6 +200,7 @@
 {#if $androidMpvActive}<AndroidPlayer />{/if}
 {#if $androidMpvActive}<CommentsPanel />{/if}
 <StreamPicker />
+<SourceConnecting />
 <DebridCaching />
 <ExitPrompt />
 <OnScreenKeyboard />

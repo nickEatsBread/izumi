@@ -32,6 +32,12 @@ export const streamPicker = writable<{
   hidden?: boolean
 } | null>(null)
 
+/** A source is being turned into something playable. Owns the "connecting" screen, which has to
+ *  work when there is no picker on screen at all — binge continuation and Continue Watching both
+ *  resolve with the picker closed, and they were falling straight through to the debrid caching
+ *  screen even when debrid was not what they were waiting for. */
+export const connecting = writable<{ title: string; detail?: string; art?: string; cancel: () => void } | null>(null)
+
 // Single-window player session. `playing` toggles the in-app player overlay (and
 // the transparent "hole" that lets mpv, embedded in the main window, show
 // through). `nowPlaying` tells the overlay what to display + which ids to fetch

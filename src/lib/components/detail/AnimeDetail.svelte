@@ -261,9 +261,7 @@
         {/if}
       </div>
 
-      {#if heroPlay.status === 'resolving'}
-        <p class="mt-3 text-sm text-muted-foreground">Resolving stream…</p>
-      {:else if heroPlay.status === 'error'}
+      {#if heroPlay.status === 'error'}
         <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
       {/if}
 
@@ -295,9 +293,7 @@
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
   <Hero medias={[m]} showOverlay={false} />
   <div class="relative -mt-[20vh] px-4 pb-16 sm:px-8">
-    {#if heroPlay.status === 'resolving'}
-      <p class="mb-3 text-sm text-muted-foreground">Resolving stream…</p>
-    {:else if heroPlay.status === 'error'}
+    {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}
 
