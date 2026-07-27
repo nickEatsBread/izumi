@@ -310,3 +310,40 @@ describe('real-debrid round trips on a first play', () => {
     expect(infoCalls).toBe(2)
   })
 })
+
+describe('real-debrid magnet conversion window', () => {
+  beforeEach(() => { httpFetch.mockReset(); rdForgetLists() })
+
+  it('waits for the file list before selecting, instead of 404ing', async () => {
+    // Reported: POST /torrents/selectFiles/<id> -> 404. addMagnet returns at once, but the very
+    // next /torrents/info can still be in magnet_conversion with NO files, and selecting when
+    // there is nothing to select is a 404 that killed the whole resolve.
+    let infoCalls = 0
+    const order: string[] = []
+    httpFetch.mockImplementation(async (url: string) => {
+      const u = String(url)
+      const json = (v: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(v) })
+      if (u.includes('/torrents?limit')) return json([])
+      if (u.includes('/torrents/addMagnet')) { order.push('add'); return json({ id: '9' }) }
+      if (u.includes('/torrents/selectFiles/')) {
+        order.push('select')
+        return json({})
+      }
+      if (u.includes('/torrents/info/')) {
+        infoCalls++
+        order.push('info:' + infoCalls)
+        return json(infoCalls === 1
+          ? { status: 'magnet_conversion', files: [], links: [] }
+          : { status: 'downloaded', files: [{ id: 1, path: '/Show_01.mkv', bytes: 500, selected: 1 }], links: ['LINK'] })
+      }
+      if (u.includes('/unrestrict/link')) return json({ download: 'https://cdn.rd/Show_01.mkv', filename: 'Show_01.mkv', filesize: 500 })
+      return { ok: false, status: 404, text: async () => '{}' }
+    })
+
+    await expect(realdebrid.resolveHash('key', HASH)).resolves.toBe('https://cdn.rd/Show_01.mkv')
+    // Must never select while the file list is still empty: the first info returned no files, so
+    // any select has to come after a LATER info.
+    const firstSelect = order.indexOf('select')
+    if (firstSelect >= 0) expect(order.slice(0, firstSelect)).toContain('info:2')
+  })
+})

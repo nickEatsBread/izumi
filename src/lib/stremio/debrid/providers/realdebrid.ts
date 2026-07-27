@@ -325,8 +325,24 @@ export const realdebrid: DebridProvider = {
       rdNoteAdded(key, id, hash)
     }
     let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+    // addMagnet returns the moment the id exists, but Real-Debrid answers /torrents/info with an
+    // EMPTY file list while it is still converting the magnet — and selectFiles with nothing to
+    // select is a 404 that killed the whole resolve ("Real-Debrid request failed (404)"). Wait for
+    // the list to appear before choosing anything from it.
+    if (!(info.files ?? []).length && rdStatus(info).stage !== 'ready') {
+      await poll(async () => {
+        info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+        // Files present is the condition we are waiting on; hand `poll` a ready so it stops. Any
+        // genuine error status still propagates through rdStatus.
+        return (info.files ?? []).length ? { stage: 'ready', raw: info.status } : rdStatus(info)
+      }, opts)
+    }
     if (info.status === 'waiting_files_selection' || !(info.files ?? []).some((f) => f.selected)) {
+      // A 404 here means the selection is not ours to make — the torrent is already finished, or
+      // RD resolved the add onto an entry that is past this stage. Neither is a reason to abandon
+      // playback: re-read the entry and carry on with whatever it actually holds.
       await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: rdSelectFileIds(info.files ?? []) }))
+        .catch((e) => { if (!/\(404\)/.test(String(e instanceof Error ? e.message : e))) throw e })
       info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
     }
     // `poll` probes once before its first sleep, so entering it with an already-`downloaded` info
