@@ -9,6 +9,10 @@ export function titleTokens(s: string): string[] {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter((t) => t.length > 2)
 }
 
+/** The same normalisation titleTokens uses, minus the length filter, so a phrase keeps its short
+ *  words: "Dr. Stone" has to stay "dr stone" to be findable in a release name. */
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
 const nameOf = (s: Stream) =>
   s.behaviorHints?.filename || s.title?.split('\n')[0] || s.description?.split('\n')[0] || s.name || ''
 
@@ -37,10 +41,24 @@ export function relevant(stream: Stream, wanted: string[]): boolean {
     (t) => !RELEASE_JUNK.test(t) && !/^\d+$/.test(t) && !SCENE_CODE.test(t),
   )
   for (const w of wanted) {
-    const wt = titleTokens(w)
+    // DISTINCT tokens: a repeated word in the official title used to inflate its own match ratio.
+    // "Tsuma Tsuma" tokenises to [tsuma, tsuma], so any release containing that one very common
+    // word scored 100% and a different show played (AniList 2507, which is also "Wife with Wife"
+    // — the same trap in English, matching "Wife Swap Diaries").
+    const wt = [...new Set(titleTokens(w))]
     if (!wt.length) continue
-    // (a) release carries ≥50% of the official title's tokens (full-title releases), OR
-    if (wt.filter((t) => toks.has(t)).length / wt.length >= 0.5) return true
+    const hits = wt.filter((t) => toks.has(t)).length
+    // (a) release carries ≥50% of the official title's distinct tokens (full-title releases).
+    //     One matching token is not evidence on its own — that is what let any release containing
+    //     the word "tsuma" pass for "Tsuma Tsuma". So a single hit only counts when the title
+    //     appears VERBATIM, which "Tsuma no Haha" does not and "[SakuraCircle] Tsuma Tsuma - 01"
+    //     does. Tokenisation drops very short words ("Dr"), so the phrase is matched on the
+    //     normalised strings rather than on tokens. A one-word title has no phrase to speak of and
+    //     is left entirely to (b), which asks the harder question: is the release mostly ABOUT
+    //     this show. Otherwise "Bleach Blade Battlers" would pass for "Bleach".
+    const phrase = norm(w)
+    const enough = hits >= 2 || (phrase.includes(' ') && norm(name).includes(phrase))
+    if (enough && hits / wt.length >= 0.5) return true
     // (b) the release's own title words are mostly this anime's (short-title releases):
     //     ≥60% of the release's content tokens appear in the official title.
     if (content.length && content.filter((t) => wt.includes(t)).length / content.length >= 0.6) return true
