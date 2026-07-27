@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseFileEpisode, pickVideoFile } from './episode-file'
+import { parseFileEpisode, pickVideoFile, pickEpisodeVideo } from './episode-file'
 
 describe('parseFileEpisode', () => {
   it('parses the " - NN" fansub convention (the reported batch)', () => {
@@ -144,5 +144,40 @@ describe('pickVideoFile', () => {
   it('handles the movie/single-file case (no episode markers) via largest fallback', () => {
     const files = [{ name: 'Some Movie (2019) 1080p.mkv', bytes: 5e9 }]
     expect(pickVideoFile(files, { episode: 1 })?.name).toBe('Some Movie (2019) 1080p.mkv')
+  })
+})
+
+describe('franchise collection: films must not steal the episode', () => {
+  const GB = 1073741824
+  const files = [
+    { name: 'Attack on Titan/Movies/Attack on Titan Part 1 - Crimson Bow and Arrow (2014).mkv', bytes: 4 * GB },
+    { name: 'Attack on Titan/Movies/Shingeki no Kyojin Movie 1 Guren no Yumiya.mkv', bytes: 4 * GB },
+    { name: 'Attack on Titan/Season 1/Attack on Titan - S01E01 - To You, in 2000 Years.mkv', bytes: 1.4 * GB },
+    { name: 'Attack on Titan/Season 2/Attack on Titan - S02E01 - Beast Titan.mkv', bytes: 1.4 * GB },
+  ]
+
+  it('does not read a film part number as an episode number', () => {
+    expect(parseFileEpisode('Attack on Titan Part 1 - Crimson Bow and Arrow (2014).mkv').episode).toBeUndefined()
+    expect(parseFileEpisode('Shingeki no Kyojin Movie 1 Guren no Yumiya.mkv').episode).toBeUndefined()
+  })
+
+  it('picks the real first episode out of a whole-franchise pack', () => {
+    // The reported case: a collection torrent holding every season plus the recap films. Asking
+    // for episode 1 played a recap film, because the film parsed as "1" and was far bigger.
+    expect(pickEpisodeVideo(files, { episode: 1, season: 1, abs: 1 })?.name).toContain('S01E01')
+  })
+
+  it('picks the real first episode even when the season is unknown', () => {
+    // The nastier half: with no season mapped, `p.season === want.season` was true for the film
+    // (both undefined) and false for the real S01E01, so the film won before size was consulted.
+    expect(pickEpisodeVideo(files, { episode: 1, abs: 1 })?.name).toContain('S01E01')
+  })
+
+  it('still prefers the larger of two genuine duplicates of the wanted episode', () => {
+    const dupes = [
+      { name: 'Show - S01E01 [720p].mkv', bytes: 0.7 * GB },
+      { name: 'Show - S01E01 [1080p].mkv', bytes: 1.9 * GB },
+    ]
+    expect(pickEpisodeVideo(dupes, { episode: 1, season: 1 })?.name).toContain('1080p')
   })
 })

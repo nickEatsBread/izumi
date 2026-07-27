@@ -52,7 +52,15 @@ export function parseFileEpisode(name: string): ParsedFileEpisode {
 
   // De-noise before any bare-number capture.
   for (const rx of NOISE) s = s.replace(rx, ' ')
+  // A film's part number is not an episode number. In a whole-franchise pack ("every season plus
+  // the recap films") "Attack on Titan Part 1" and "Movie 1" both fell through to the bare-number
+  // fallback as episode 1, and being feature-length they then won the size tiebreak against the
+  // real S01E01. Stripping the marker WITH its number keeps it out of every fallback below.
+  // Cour naming ("Final Season Part 1") is deliberately caught too: that names a cour, not an
+  // episode, so reading it as episode 1 was never right either.
+  s = s.replace(/\b(?:part|movie|film|gekijou?ban)\s?\d{1,2}\b/gi, ' ')
 
+  if (process.env.EF_DEBUG) console.log('AFTER FILM STRIP:', JSON.stringify(s))
   // 1x04 form (resolution composites already stripped above).
   const nxn = /\b(\d{1,2})x(\d{1,3})\b/.exec(s)
   if (nxn) return { season: Number(nxn[1]), episode: Number(nxn[2]) }
@@ -117,10 +125,16 @@ export function pickEpisodeVideo<T extends { name: string; bytes: number }>(
   const exact = parsed.filter(({ p }) => seasonOk(p)
     && ((want.episode != null && p.episode === want.episode) || (want.abs != null && p.episode === want.abs)))
   if (exact.length) {
-    // Prefer an explicit season match, then the biggest file (better-quality duplicate).
-    return exact.sort((a, b) =>
-      Number(b.p.season === want.season) - Number(a.p.season === want.season) || b.f.bytes - a.f.bytes,
-    )[0].f
+    // Prefer the better-evidenced parse, then the biggest file (better-quality duplicate).
+    //
+    // The old comparison was `p.season === want.season`, which is TRUE when both are undefined —
+    // so with no season mapped, a film that parsed no season counted as a season match while the
+    // real S01E01 counted as a mismatch, and the film won before size was ever consulted. When the
+    // wanted season is unknown, an explicit SxxExx is simply stronger evidence than a bare number.
+    const rank = (p: ParsedFileEpisode) => want.season != null
+      ? (p.season === want.season ? 0 : 1)
+      : (p.season != null ? 0 : 1)
+    return exact.sort((a, b) => rank(a.p) - rank(b.p) || b.f.bytes - a.f.bytes)[0].f
   }
 
   const inRange = (p: ParsedFileEpisode, n?: number) => n != null && p.range != null && n >= p.range[0] && n <= p.range[1]
