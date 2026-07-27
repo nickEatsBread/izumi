@@ -92,6 +92,10 @@ export interface StreamInfo {
   hdr?: string // DV | HDR10+ | HDR
   dualAudio?: boolean
   audio?: string // primary audio codec token
+  /** Spoken audio languages named in the release (ISO-ish 3-letter codes, plus 'multi'). Empty
+   *  when the name says nothing, which is the common case and must never be read as "wrong
+   *  language" — only a POSITIVE mismatch is actionable. */
+  audioLanguages: string[]
   source?: string // BluRay | WEB-DL | WEBRip | WEB | HDTV | DVD
   batch?: boolean // season pack / multi-episode
   seeders?: number
@@ -119,6 +123,57 @@ const fmtBytes = (n?: number) => {
   let i = 0, v = n
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++ }
   return `${v.toFixed(1)} ${u[i]}`
+}
+
+// Bytes from a human size string. Most addons report size as TEXT only — `behaviorHints.videoSize`
+// was the sole source of `sizeBytes`, so "sort by size" silently tied at zero for all of them.
+// Both the binary and decimal spellings are read as 1024-based, matching fmtBytes: addons that
+// write "GB" overwhelmingly mean GiB, and being consistent matters more here than being pedantic,
+// since the number is used to compare releases with each other.
+const SIZE_TEXT = /(\d+(?:\.\d+)?)\s*([KMGT])i?B\b/i
+export function bytesOfSizeText(text?: string): number | undefined {
+  const m = text?.match(SIZE_TEXT)
+  if (!m) return undefined
+  const n = Number(m[1])
+  if (!Number.isFinite(n) || n <= 0) return undefined
+  const pow = { k: 1, m: 2, g: 3, t: 4 }[m[2].toLowerCase()]
+  return pow ? Math.round(n * 1024 ** pow) : undefined
+}
+
+// A season/complete/range PACK marker (legit, kept): batch, complete, "Season N", a bare "S01"
+// pack (S01 not followed by E), volumes, an "NN-NN" episode range, BD Box. Shared with the
+// relevance heuristics so the picker's "Batch" pill and the rules that must never drop a pack
+// can't drift apart — they were three different regexes with three different ideas of a batch.
+export const BATCH_MARKER = /\bbatch\b|\bcomplete\b|\bseason\b|\bS\d{1,2}(?![\dE])\b|\bvol(?:ume)?\.?\s?\d+\b|\b\d{1,3}\s?[-–~]\s?\d{1,3}\b|\bBD\s?box\b/i
+
+// Spoken/tagged audio languages. Deliberately a small exact-token table rather than a fuzzy match:
+// release names are full of short uppercase tags, and "DL" (from WEB-DL), "NTb" and similar group
+// suffixes are exactly the shapes a looser matcher reads as a language. Anime-relevant entries
+// first — the point is telling an Italian or Portuguese release from a Japanese one, not covering
+// every ISO code.
+const LANG_TOKENS: Record<string, string> = {
+  eng: 'eng', english: 'eng',
+  jpn: 'jpn', jap: 'jpn', japanese: 'jpn', raw: 'jpn',
+  ita: 'ita', italian: 'ita',
+  spa: 'spa', esp: 'spa', spanish: 'spa', castellano: 'spa', latino: 'spa',
+  fre: 'fre', fra: 'fre', french: 'fre', vostfr: 'fre', truefrench: 'fre',
+  ger: 'ger', deu: 'ger', german: 'ger',
+  por: 'por', ptbr: 'por', portuguese: 'por', dublado: 'por',
+  rus: 'rus', russian: 'rus',
+  ara: 'ara', arabic: 'ara',
+  chi: 'chi', chinese: 'chi',
+  kor: 'kor', korean: 'kor',
+  hin: 'hin', hindi: 'hin',
+  multi: 'multi', multisub: 'multi', multiaudio: 'multi',
+}
+
+export function audioLanguagesOf(name: string): string[] {
+  const out = new Set<string>()
+  for (const raw of name.toLowerCase().split(/[^a-z]+/)) {
+    const hit = LANG_TOKENS[raw]
+    if (hit) out.add(hit)
+  }
+  return [...out]
 }
 
 export function resolutionOf(s: Stream): number {
@@ -168,10 +223,22 @@ export const isCached = (s: Stream) => !isUncached(s) && CACHED_MARKER.test(hayO
 
 // Addon notice/error sentinels carry no real media (expired key, no results,
 // rate-limit) — never show these.
+// Account-status cards: some addons return the user's subscription/quota state as a fake stream
+// row, which then sits in the picker looking like a source. Gated hard on the row carrying NO
+// evidence of being a real file — no infoHash, no declared size or filename, and no video-looking
+// URL — so a legitimate release whose name happens to mention "3 days left" is never dropped.
+const STATUS_CARD = /\b(?:expires? in|days? left|quota used|subscription|limit reached|no results)\b/i
+const VIDEO_URL = /\.(?:mkv|mp4|avi|m4v|webm|mov|ts)(?:[?#]|$)/i
+
 export const isNotice = (s: Stream) =>
   /^\s*\[(?:❌|⚠️|🔄)\]/.test(s.name ?? '')
   || /\berror\b/i.test(s.name ?? '')
   || s.url === 'https://comet.feels.legal'
+  || (STATUS_CARD.test(`${s.name ?? ''} ${s.title ?? ''} ${s.description ?? ''}`)
+      && !s.infoHash
+      && !s.behaviorHints?.videoSize
+      && !s.behaviorHints?.filename
+      && !VIDEO_URL.test(s.url ?? ''))
 
 // --- the parser ------------------------------------------------------------
 // Parse each stream once per identity. The picker re-derives the whole list on every source
@@ -197,10 +264,19 @@ function parseStream(s: Stream): StreamInfo {
   const low = hay.toLowerCase()
   const quality = resolutionOf(s)
 
-  const seedersTxt = hay.match(/👤\s*(\d+)/)?.[1] // 👤 = seeders (⚙️/🔎 = tracker; ignore)
+  // Seeders. The person glyph is the common spelling; some indexers use the two-person glyph or
+  // write it out. The `S:` form is anchored to a boundary and requires the colon so it can't
+  // swallow the neighbouring `L:` leecher count — reading leechers as seeders would paint a dead
+  // torrent as healthy, which is worse than reading nothing.
+  const seedersTxt = hay.match(/[👤👥]\s*(\d+)/u)?.[1]
+    ?? hay.match(/\bseeders?\s*[:=]\s*(\d+)/i)?.[1]
+    ?? hay.match(/(?:^|[\s|([])S\s*[:=]\s*(\d+)/i)?.[1]
   const seeders = seedersTxt != null ? Number(seedersTxt) : undefined
   const sizeTxt = hay.match(/💾\s*([\d.]+\s*[KMGT]i?B)/i)?.[1]?.replace(/\s+/g, ' ').trim()
-  const sizeBytes = s.behaviorHints?.videoSize
+  // Structured first (authoritative), then the text the addon wrote. The LABEL keeps the addon's
+  // own wording when it gave one — it is what the user sees on the row, and rounding it through
+  // our formatter only makes it disagree with what the addon's own UI shows.
+  const sizeBytes = s.behaviorHints?.videoSize ?? bytesOfSizeText(sizeTxt)
   const sizeLabel = sizeTxt ?? fmtBytes(sizeBytes)
 
   // provider: [RD+] [RD download] [RD⚡] [RD⬇️] [Torrent🧲] [AD+] ...
@@ -222,8 +298,12 @@ function parseStream(s: Stream): StreamInfo {
     : /\b(?:avc|x\.?264|h\.?264)\b/i.test(low) ? 'H264'
     : /\bxvid\b/i.test(low) ? 'XviD' : undefined
   const bitDepth = /\b10\s?-?bit\b/i.test(low) ? '10bit' : /\b8\s?-?bit\b/i.test(low) ? '8bit' : undefined
+  // Ordered most specific first. Plain HDR10 used to fall through every branch and badge NOTHING:
+  // the HDR10+ test requires the plus, and `\bhdr\b` cannot match inside "HDR10" because there is
+  // no word boundary between R and 1.
   const hdr = /\b(?:dolby\s?vision|dovi|\bdv\b)\b/i.test(low) ? 'DV'
     : /\bhdr10\+|\bhdr10plus\b/i.test(low) ? 'HDR10+'
+    : /\bhdr10\b/i.test(low) ? 'HDR10'
     : /\bhdr\b/i.test(low) ? 'HDR' : undefined
   const source = /\bblu-?ray\b|\bbd(?:rip|mux)?\b|\bremux\b/i.test(low) ? 'BluRay'
     : /\bweb-?dl\b/i.test(low) ? 'WEB-DL'
@@ -236,8 +316,9 @@ function parseStream(s: Stream): StreamInfo {
   const dubOnly = !dualAudio && /\b(?:eng(?:lish)?[\s._-]*dub(?:bed)?|dubbed|multi[\s._-]*audio)\b/i.test(low)
   const audio = dualAudio ? undefined
     : hay.match(/\b(e-?ac-?3|ddp?\+?|atmos|truehd|dts(?:-hd)?|flac|aac|opus|ac-?3)\b/i)?.[1]?.toUpperCase()
-  const batch = /\b(?:batch|complete|season\s?pack)\b/i.test(low)
+  const batch = BATCH_MARKER.test(low)
     && !/\bS\d{1,2}E\d{1,3}\b/i.test(low) // a single SxxExx is not a batch
+  const audioLanguages = audioLanguagesOf(hay)
   // Release group / fansub author. Leading "[Group]" is the anime norm ("[SakuraCircle] Show - 01");
   // fall back to a scene trailing "-GROUP" (must START with a letter, so a "01-02" batch suffix is
   // NOT read as the group "02", and no space before the dash so "Title - Final" isn't a group);
@@ -300,7 +381,7 @@ function parseStream(s: Stream): StreamInfo {
 
   return {
     stream: s, quality, label, filename, group, codec, bitDepth, hdr,
-    dualAudio, audio, source, batch, seeders, sizeBytes, sizeLabel,
+    dualAudio, audio, audioLanguages, source, batch, seeders, sizeBytes, sizeLabel,
     provider, addon, server: s.__server, logo: s.__logo, subtitleLabel,
     cached, badges, langMismatch: s.__langMismatch,
   }
@@ -317,6 +398,15 @@ export function parseSeasonEp(s: Stream): { season?: number; episode?: number; a
     || s.name || ''
   const se = f.match(/\bS(\d{1,2})\s?E(\d{1,4})\b/i) || f.match(/\bS(\d{1,2})\s*P(\d{1,3})\b/i)
   if (se) return { season: Number(se[1]), episode: Number(se[2]) }
+  // Cross-style "1x04". The season group is capped at two digits so a resolution can't parse as
+  // one: "1920x1080" offers no two-or-fewer-digit run ending at the x that starts on a boundary.
+  const cross = f.match(/\b(\d{1,2})x(\d{1,3})\b/)
+  if (cross) return { season: Number(cross[1]), episode: Number(cross[2]) }
+  // Written-out episode numbering, which anime releases use as often as the scene forms. Longest
+  // spelling first: `\bep` would otherwise match the start of "Episode" and then fail on the
+  // letters that follow.
+  const written = f.match(/\bepisode\s*(\d{1,4})\b/i) || f.match(/\bep\.?\s*(\d{1,3})\b/i)
+  if (written) return { abs: Number(written[1]) }
   // Ordinal season: "2nd Season", "3rd Season" → the ORDINAL is the season. Must come before the
   // "Season NN" branch below, which would otherwise misread "2nd Season 01" as season 1 (the "01"
   // is the episode of the 2nd season, not the season). Lets the verifier reject a sequel-season
