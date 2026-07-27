@@ -14,6 +14,12 @@ export const streamPicker = writable<{
   streams: Stream[]
   cachedCount: number
   resolving?: boolean
+  // The autoplay countdown may start. Deliberately NOT `!resolving`: waiting for every source to
+  // settle means waiting out the slowest addon's whole budget (and a wedged provider's 20s cap)
+  // before a cancel window that the user is going to let run anyway — while a cached, in-language,
+  // season-verified row has been sitting on screen since the first second. Set once a pick is
+  // trustworthy, and unconditionally when the resolve finishes.
+  autoReady?: boolean
   playbackError?: string
   // Rendered as nothing while STAYING the current request. Automatic binge continuation uses
   // this while it searches for the previous episode's release; clearing the store would make the

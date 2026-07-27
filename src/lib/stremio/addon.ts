@@ -86,37 +86,72 @@ export async function getStreams(
   return { streams: rankStreams(usable, sort), total, cachedCount }
 }
 
+export interface AddonStreams { streams: Stream[]; total: number }
+
+// Per-addon time budget. A flat cap can only be wrong in one of two directions: addons that
+// run a real-time debrid cache check before answering (they resolve every hash against the
+// service) legitimately need far longer than an indexer that just returns rows, so a cap tight
+// enough to keep the picker responsive silently starved exactly the sources that carry season
+// packs. Matched against the whole configured URL — the family name shows up in the host for a
+// self-hosted instance and in the path for a shared one.
+const BUDGET_FAST_MS = 8_000
+const BUDGET_SLOW_MS = 22_000
+const SLOW_FAMILIES = [/mediafusion/i, /comet/i, /torrentio/i, /knightcrawler/i, /aiostreams/i, /jackettio/i, /torbox/i]
+export const streamBudgetMs = (base: string) =>
+  SLOW_FAMILIES.some((re) => re.test(base)) ? BUDGET_SLOW_MS : BUDGET_FAST_MS
+
 // Fetch ONE addon's usable streams (has a url/infoHash, not a notice), stamped with
 // its manifest logo/name. Split out from getStreams so the picker can fold each addon
 // in AS IT RESPONDS (progressive loading) instead of waiting on the
 // slowest. `total` is the raw count (incl. notices) for the "N torrents, none usable"
-// message. Capped at 9s so one hanging addon can't stall.
+// message.
+//
+// Blowing the budget is not the same as failing: `onLate` receives the response if it lands
+// afterwards, so a slow addon's rows still reach an open picker instead of being thrown away
+// (they were, previously — a response one tick past the cap was discarded outright).
 export async function fetchAddonStreams(
   base: string,
   id: string,
   type = 'series',
-): Promise<{ streams: Stream[]; total: number }> {
+  onLate?: (r: AddonStreams) => void,
+): Promise<AddonStreams> {
   let b = base.replace(/^http:\/\//i, 'https://')
   if (!/^https?:\/\//i.test(b)) b = 'https://' + b
-  const work = (async () => {
+
+  // The manifest carries IDENTITY (logo + display name), never content, so it must never gate
+  // the streams: joining the two under one await meant a host whose /manifest.json hung returned
+  // ZERO streams even when /stream had answered in a few hundred ms. It now rides alongside and
+  // stamps whatever has landed by the time rows are mapped — which, because manifests are
+  // pre-warmed at boot and cached for the session, is the manifest itself in the normal case.
+  let manifest: Awaited<ReturnType<typeof fetchManifest>> | undefined
+  void fetchManifest(b).then((m) => { manifest = m }).catch(() => {})
+
+  const work = (async (): Promise<AddonStreams> => {
     try {
-      // Stream list + manifest (logo/name) fetched CONCURRENTLY; a manifest miss must
-      // not drop the streams, so it's independently caught.
-      const [r, m] = await Promise.all([
-        phttp(`${b}/stream/${type}/${encodeURIComponent(id)}.json`),
-        fetchManifest(b).catch(() => undefined),
-      ])
+      const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(id)}.json`)
       if (!r.ok) return { streams: [], total: 0 }
       const j = await r.json() as { streams?: Stream[] }
       const all = (j.streams ?? []).map((s) => ({
         ...s,
-        __logo: m?.logo,
-        __addonName: m?.name,
-        __origin: { kind: 'addon' as const, id: addonOriginId(b), name: m?.name },
+        __logo: manifest?.logo,
+        __addonName: manifest?.name,
+        __origin: { kind: 'addon' as const, id: addonOriginId(b), name: manifest?.name },
       }))
       const usable = all.filter((s) => (!!s.url || !!s.infoHash) && !isNotice(s))
       return { streams: usable, total: all.length }
     } catch { return { streams: [], total: 0 } }
   })()
-  return Promise.race([work, new Promise<{ streams: Stream[]; total: number }>((res) => setTimeout(() => res({ streams: [], total: 0 }), 9000))])
+
+  let lapsed = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const budget = new Promise<AddonStreams>((res) => {
+    timer = setTimeout(() => { lapsed = true; res({ streams: [], total: 0 }) }, streamBudgetMs(b))
+  })
+  void work.then((r) => {
+    if (timer) clearTimeout(timer)
+    // Nothing to fold in for an empty late response — firing would cost the picker a full
+    // re-rank + re-render for no new rows.
+    if (lapsed && r.streams.length) onLate?.(r)
+  })
+  return Promise.race([work, budget])
 }

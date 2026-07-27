@@ -55,6 +55,7 @@
   // Skeleton while sources resolve; cap the rendered node count (One Piece can
   // return dozens of single-ep files even after collapsing batch packs).
   const resolving = $derived(!!pick?.resolving)
+  const autoReady = $derived(!!pick?.autoReady)
   const RENDER_CAP = 40
   let showAll = $state(false)
   const rendered = $derived(showAll ? shown : shown.slice(0, RENDER_CAP))
@@ -67,10 +68,11 @@
   let error = $state('')
   const playbackError = $derived(error || pick?.playbackError || '')
 
-  // Autoplay countdown: once sources settle with a best cached pick,
-  // fill the Auto button over 5s then play it. Cancelled by hovering/focusing the
-  // Auto button or by interacting (picking a source, typing a filter).
-  const AUTO_MS = 5000
+  // Autoplay countdown: once the resolve reports a trustworthy pick, fill the Auto button then
+  // play it. Cancelled by hovering/focusing the Auto button or by interacting (picking a source,
+  // typing a filter). Shorter than it was because it now STARTS far earlier — it used to wait out
+  // every source first, so the 5s sat on top of a ~9-25s resolve.
+  const AUTO_MS = 2500
   let autoState = $state<'idle' | 'counting' | 'off'>('idle')
   let autoProgress = $state(0) // 0..1
   let autoTimer: ReturnType<typeof setInterval> | undefined
@@ -108,7 +110,7 @@
   const prefersReduce = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const animate = $derived(!prefersReduce)
 
-  // Start the countdown once resolving finishes with a best cached pick + auto-select on. In
+  // Start the countdown once the resolve says the pick is trustworthy + auto-select on. In
   // "immediately" mode, skip the wait entirely and pick right away.
   $effect(() => {
     if (playbackError) {
@@ -116,7 +118,7 @@
       autoState = 'off'
       return
     }
-    if (autoState === 'idle' && !resolving && !!best && !busy && $autoSelectSource) {
+    if (autoState === 'idle' && autoReady && !!best && !busy && $autoSelectSource) {
       if (!$autoSelectCountdown) { autoState = 'off'; autoBest(); return }
       autoState = 'counting'
       autoStart = performance.now()
@@ -297,7 +299,7 @@
             class:!border-theme={isBest}
             class:!border-red-400={isBest && autoState === 'counting' && autoProgress > 0.4}
             class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4 && animate}
-            animate:flip={{ duration: 220 }}
+            animate:flip={{ duration: resolving ? 0 : 220 }}
             in:fade={{ duration: 150 }}
           >
             <span class="mt-0.5 shrink-0 text-lg leading-none {g.cls}" title={g.t} aria-hidden="true">{g.i}</span>
