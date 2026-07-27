@@ -16,7 +16,7 @@
 <!-- Yields to the caching screen: once that is up, debrid genuinely is the wait, and two
      full-screen overlays would fight over the same z-order. -->
 {#if c && !$debridCaching}
-  <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black/85" transition:fade={{ duration: 160 }}>
+  <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black" transition:fade={{ duration: 160 }}>
     {#if backdrop}
       <!-- `filter` on a STATIC image, never `backdrop-filter`: the latter re-samples live content
            every frame, which is what wedged Deck WebKit. -->

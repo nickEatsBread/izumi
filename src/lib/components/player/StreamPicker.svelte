@@ -8,7 +8,7 @@
   import { onDestroy } from 'svelte'
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
-  import { streamPicker, gameMode, bingeSource, debridCaching } from '$lib/player/session'
+  import { streamPicker, gameMode, bingeSource, debridCaching, connecting } from '$lib/player/session'
   import { rankInfos, pickCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
@@ -292,7 +292,7 @@
 <!-- `hidden` renders nothing while the entry stays live: with a single configured source there is
      nothing to choose, but the resolve flow still needs the picker to exist to recognise its own
      request. Errors clear the flag, so a failure is never silent. -->
-{#if pick && !pick.hidden}
+{#if pick && !pick.hidden && !$connecting}
   <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
        Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
        instead of letting WebKit cache one snapshot — at the exact moment the app is busiest
@@ -508,7 +508,7 @@
   <!-- Only the source-LIST phase: once a stream is chosen, playStream owns the connecting screen
        app-wide (SourceConnecting), so rendering it here too would stack two of them. -->
   {#if autoImmediate && resolving && !busy && !$debridCaching && !playbackError}
-    <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black/85" transition:fade={{ duration: 160 }}>
+    <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black" transition:fade={{ duration: 160 }}>
       {#if backdrop}
         <!-- `filter` on a STATIC image, never `backdrop-filter`: the latter re-samples live content
              every frame, which is what wedged Deck WebKit. -->
