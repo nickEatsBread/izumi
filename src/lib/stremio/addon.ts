@@ -26,6 +26,12 @@ const cacheRank = (c: CacheState) => (c === 'instant' ? 0 : c === 'uncached' ? 1
 // "best". It used to apply only to direct-stream rows, because only those carried a resolved
 // language; torrent rows now declare one too when their name names it.
 export interface RankOptions extends ScoreOptions {
+  /** Let the automatic pick commit to a source that still has to be fetched to debrid. Off by
+   *  default: dropping someone into a multi-minute download unasked is the thing this guards.
+   *  On when the user has chosen to skip the confirmation countdown entirely, since every source
+   *  a torrent-extension returns is uncached by construction and the pick would otherwise be
+   *  permanently unavailable for them. */
+  allowUncached?: boolean
   /** Preferred spoken-audio language (ISO-ish 3-letter). A release that NAMES a different one
    *  sorts below; a release that names none is not a mismatch, which is the common case. */
   audioLang?: string
@@ -54,7 +60,7 @@ export function rankInfos(streams: Stream[], sort: StreamSort = 'quality', opts:
   const within = (a: StreamInfo, b: StreamInfo) => {
     if (sort === 'seeders') return (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
     if (sort === 'size') return (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0) || b.quality - a.quality
-    return b.quality - a.quality || scoreOf(b) - scoreOf(a) || (b.seeders ?? -1) - (a.seeders ?? -1)
+    return scoreOf(b) - scoreOf(a) || (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
   }
   return streams
     .map(describe)
@@ -69,8 +75,9 @@ export function rankStreams(streams: Stream[], sort: StreamSort = 'quality', opt
 }
 
 // Auto-select order for a preferred quality: every source we would be willing to start on
-// automatically, best first. Only ever CACHED (instant) sources — we never silently drop the user
-// into a debrid download or a wrong-season file. `want` (the requested episode's season/abs)
+// automatically, best first. Cached sources lead, and only they are eligible at all unless
+// `allowUncached` is set — we never silently drop the user into a debrid download or a
+// wrong-season file. `want` (the requested episode's season/abs)
 // hard-drops confident wrong-season files BEFORE ranking, so a high-seeder off-season batch can't
 // win. `isFailed` sinks (never removes) sources a previous attempt could not play.
 //
@@ -84,14 +91,16 @@ export function pickCandidates(
   opts: RankOptions = {},
 ): Stream[] {
   const pool = want ? streams.filter((s) => !isWrongSeason(s, want)) : streams
-  const all = pool.map(describe).filter((i) => i.cached === 'instant')
+  // 'down' stays excluded either way — that is a source with nothing to fetch FROM.
+  const all = pool.map(describe).filter((i) => i.cached === 'instant' || (opts.allowUncached && i.cached === 'uncached'))
   if (!all.length) return []
   // Auto-select must never silently commit to a foreign-language source. Applied as a hard filter
   // rather than a sort key: sorting alone still let a foreign source win when it was the only one
   // matching the requested quality tier.
   const preferred = all.filter((i) => !languageMismatch(i, opts.audioLang))
+  const cacheFirst = (i: StreamInfo) => (i.cached === 'instant' ? 0 : 1)
   const infos = (preferred.length ? preferred : all)
-    .sort((a, b) => b.quality - a.quality || scoreInfo(b, opts).score - scoreInfo(a, opts).score || (b.seeders ?? -1) - (a.seeders ?? -1))
+    .sort((a, b) => cacheFirst(a) - cacheFirst(b) || scoreInfo(b, opts).score - scoreInfo(a, opts).score || (b.seeders ?? -1) - (a.seeders ?? -1))
   const target = quality === 'any' ? NaN : Number(quality)
   const ordered = Number.isFinite(target)
     ? [

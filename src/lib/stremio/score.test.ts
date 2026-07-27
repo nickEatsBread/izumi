@@ -44,8 +44,11 @@ suite('scoreInfo', () => {
     expect(score('Show - 01 1080p WEB-DL')).toBeGreaterThan(score('Show - 01 1080p HDTV'))
   })
 
-  it('sinks an ancient codec hard', () => {
-    expect(score('Show - 01 1080p XviD')).toBeLessThan(0)
+  it('sinks an ancient codec', () => {
+    // Relative, not absolute: now that resolution contributes points, a total being negative says
+    // nothing on its own. How far the penalty should reach across resolutions is not something the
+    // reference takes a position on, so this only pins the direction.
+    expect(score('Show - 01 1080p XviD')).toBeLessThan(score('Show - 01 1080p'))
   })
 
   it('rewards a known fansub group', () => {
@@ -67,11 +70,26 @@ suite('scoreInfo', () => {
   })
 
   it('buries a bare-hash source that nobody is seeding', () => {
-    const dead = scoreInfo(describe({ infoHash: 'abc', title: 'Show - 01 (1080p) 👤 0' }))
-    expect(dead.score).toBeLessThan(-10)
+    const dead = scoreInfo(describe({ infoHash: 'abc', title: 'Show - 01 (1080p) 👤 0' })).score
+    const alive = scoreInfo(describe({ infoHash: 'abc', title: 'Show - 01 (1080p) 👤 200' })).score
+    const worseButAlive = scoreInfo(describe({ infoHash: 'd', title: 'Show - 01 (720p) 👤 30' })).score
+    // A dead 1080p must lose to a live 720p, or the list keeps leading with things that cannot play.
+    expect(dead).toBeLessThan(alive)
+    expect(dead).toBeLessThan(worseButAlive)
   })
 
-  it('does not score resolution — the tier is decided before the score is consulted', () => {
-    expect(score('Show - 01 2160p')).toBe(score('Show - 01 1080p'))
+  it('scores resolution, so it can be weighed against health rather than vetoing it', () => {
+    expect(score('Show - 01 2160p')).toBeGreaterThan(score('Show - 01 1080p'))
+    expect(score('Show - 01 1080p')).toBeGreaterThan(score('Show - 01 720p'))
+  })
+
+  it('lets a healthy 1080p outrank a barely-seeded 4K', () => {
+    // The whole point: resolution as a hard key meant a 22-seeder 4K release always beat an
+    // 812-seeder 1080p one, so the list led with things that would take an age to actually play.
+    expect(score('Show - 01 1080p 👤 812')).toBeGreaterThan(score('Show - 01 2160p 👤 22'))
+  })
+
+  it('still prefers 4K when health is comparable', () => {
+    expect(score('Show - 01 2160p 👤 400')).toBeGreaterThan(score('Show - 01 1080p 👤 400'))
   })
 })
