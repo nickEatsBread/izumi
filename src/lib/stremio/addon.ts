@@ -3,6 +3,7 @@ import { describe, isNotice, isUncached, isWrongSeason, type Stream, type Stream
 import { fetchManifest, acceptsStreamId } from './manifest'
 import { addonOriginId } from './sources'
 import { dedupeStreams } from './dedupe'
+import { scoreInfo, type ScoreOptions } from './score'
 
 // Re-export the parse surface so existing importers keep using `$lib/stremio/addon`.
 export {
@@ -18,30 +19,52 @@ export const streamId = (kitsuId: number, episode?: number) =>
 const cacheRank = (c: CacheState) => (c === 'instant' ? 0 : c === 'uncached' ? 1 : 2)
 
 // A source in a language the user didn't ask for sorts below one that is (or one whose language is
-// unknown, which is every torrent row — so this never reshuffles the addon/torrent list). This has
-// to be a RANKING term, not just presentation: every direct-stream row is `instant` with quality
-// "auto", so cache tier and quality tie and whatever arrived first won — which is how an Italian
-// provider ended up auto-selected as "best".
-const langRank = (i: { langMismatch?: boolean }) => (i.langMismatch ? 1 : 0)
+// unknown — never drop or demote on silence). This has to be a RANKING term, not just presentation:
+// every direct-stream row is `instant` with quality "auto", so cache tier and quality tie and
+// whatever arrived first won — which is how a foreign-language provider ended up auto-selected as
+// "best". It used to apply only to direct-stream rows, because only those carried a resolved
+// language; torrent rows now declare one too when their name names it.
+export interface RankOptions extends ScoreOptions {
+  /** Preferred spoken-audio language (ISO-ish 3-letter). A release that NAMES a different one
+   *  sorts below; a release that names none is not a mismatch, which is the common case. */
+  audioLang?: string
+}
 
-// Rank into StreamInfo: cache tier first, then the user's preferred within-tier
-// key (quality desc default; seeders desc; size desc), with sensible tie-breaks.
-export function rankInfos(streams: Stream[], sort: StreamSort = 'quality'): StreamInfo[] {
+/** Does this release positively declare an audio language the user did not ask for? */
+export function languageMismatch(i: StreamInfo, audioLang?: string): boolean {
+  if (i.langMismatch) return true // already resolved upstream for direct-stream rows
+  if (!audioLang || !i.audioLanguages.length) return false
+  if (i.dualAudio || i.audioLanguages.includes('multi')) return false
+  return !i.audioLanguages.includes(audioLang.toLowerCase().slice(0, 3))
+}
+
+// Rank into StreamInfo: cache tier first, then language, then the user's preferred within-tier
+// key. `quality` (the default) keeps resolution as a hard key and settles everything inside a
+// resolution tier on the additive score — anime returns a wall of 1080p rows, and the old ladder
+// had nothing but seeders left to separate them. The explicit `seeders` and `size` sorts stay
+// single-key: the user asked a literal question and should get a literal answer.
+export function rankInfos(streams: Stream[], sort: StreamSort = 'quality', opts: RankOptions = {}): StreamInfo[] {
+  const scored = new Map<StreamInfo, number>()
+  const scoreOf = (i: StreamInfo) => {
+    let s = scored.get(i)
+    if (s == null) { s = scoreInfo(i, opts).score; scored.set(i, s) }
+    return s
+  }
   const within = (a: StreamInfo, b: StreamInfo) => {
     if (sort === 'seeders') return (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
     if (sort === 'size') return (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0) || b.quality - a.quality
-    return b.quality - a.quality || (b.seeders ?? -1) - (a.seeders ?? -1)
+    return b.quality - a.quality || scoreOf(b) - scoreOf(a) || (b.seeders ?? -1) - (a.seeders ?? -1)
   }
   return streams
     .map(describe)
     .sort((a, b) => cacheRank(a.cached) - cacheRank(b.cached)
-      || langRank(a) - langRank(b)
+      || (languageMismatch(a, opts.audioLang) ? 1 : 0) - (languageMismatch(b, opts.audioLang) ? 1 : 0)
       || within(a, b)
       || (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0))
 }
 
-export function rankStreams(streams: Stream[], sort: StreamSort = 'quality'): Stream[] {
-  return rankInfos(streams, sort).map((i) => i.stream)
+export function rankStreams(streams: Stream[], sort: StreamSort = 'quality', opts: RankOptions = {}): Stream[] {
+  return rankInfos(streams, sort, opts).map((i) => i.stream)
 }
 
 // Auto-select order for a preferred quality: every source we would be willing to start on
@@ -57,6 +80,7 @@ export function pickCandidates(
   quality: string,
   want?: { season?: number; abs?: number },
   isFailed?: (s: Stream) => boolean,
+  opts: RankOptions = {},
 ): Stream[] {
   const pool = want ? streams.filter((s) => !isWrongSeason(s, want)) : streams
   const all = pool.map(describe).filter((i) => i.cached === 'instant')
@@ -64,9 +88,9 @@ export function pickCandidates(
   // Auto-select must never silently commit to a foreign-language source. Applied as a hard filter
   // rather than a sort key: sorting alone still let a foreign source win when it was the only one
   // matching the requested quality tier.
-  const preferred = all.filter((i) => !i.langMismatch)
+  const preferred = all.filter((i) => !languageMismatch(i, opts.audioLang))
   const infos = (preferred.length ? preferred : all)
-    .sort((a, b) => b.quality - a.quality || (b.seeders ?? -1) - (a.seeders ?? -1))
+    .sort((a, b) => b.quality - a.quality || scoreInfo(b, opts).score - scoreInfo(a, opts).score || (b.seeders ?? -1) - (a.seeders ?? -1))
   const target = quality === 'any' ? NaN : Number(quality)
   const ordered = Number.isFinite(target)
     ? [
@@ -82,8 +106,8 @@ export function pickCandidates(
 }
 
 /** The single best auto-pick — the head of the candidate list. Undefined when nothing is cached. */
-export function pickBest(streams: Stream[], quality: string, want?: { season?: number; abs?: number }): Stream | undefined {
-  return pickCandidates(streams, quality, want)[0]
+export function pickBest(streams: Stream[], quality: string, want?: { season?: number; abs?: number }, opts: RankOptions = {}): Stream | undefined {
+  return pickCandidates(streams, quality, want, undefined, opts)[0]
 }
 
 // Query all configured addons for an episode. Keeps every USABLE stream (has a

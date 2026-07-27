@@ -8,11 +8,12 @@
   import { onDestroy } from 'svelte'
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
-  import { streamPicker, gameMode } from '$lib/player/session'
+  import { streamPicker, gameMode, bingeSource } from '$lib/player/session'
   import { rankInfos, pickCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead } from '$lib/stremio/dead-sources'
+  import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
-  import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
+  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
   import { providerProblems } from '$lib/stremio/onlinestream'
   import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
@@ -27,7 +28,13 @@
   import { copyToClipboard } from '$lib/util/clipboard'
 
   const pick = $derived($streamPicker)
-  const all = $derived(pick ? rankInfos(pick.streams, $preferredStreamSort) : ([] as StreamInfo[]))
+  // Ranking inputs the ordering can't derive from a stream alone: the language the user asked to
+  // hear, and the group the previous episode of THIS title played from.
+  const rankOpts = $derived({
+    audioLang: $preferredAudioLang,
+    previousGroup: $bingeSource?.mediaId === pick?.media.id ? $bingeSource?.group : undefined,
+  })
+  const all = $derived(pick ? rankInfos(pick.streams, $preferredStreamSort, rankOpts) : ([] as StreamInfo[]))
   const visible = $derived($showDeadSources ? all : all.filter((i) => i.cached !== 'down'))
   const uncachedCount = $derived(all.filter((i) => i.cached === 'uncached').length)
   const deadCount = $derived(all.filter((i) => i.cached === 'down').length)
@@ -57,13 +64,25 @@
   // choosing by hand — and, on a binge, no longer does it once per episode.
   let failedKeys = $state<string[]>([])
   const hasFailed = (s: StreamInfo['stream']) => failedKeys.includes(keyOf(describe(s))) || isDead(s)
-  const candidates = $derived(pickCandidates(visible.map((i) => i.stream), $preferredQuality, undefined, hasFailed))
+  const candidates = $derived(pickCandidates(visible.map((i) => i.stream), $preferredQuality, undefined, hasFailed, rankOpts))
   // Cap the chain: each attempt is a real resolve, and walking twenty broken sources in a row is
   // indistinguishable from a hang.
   const AUTO_MAX_TRIES = 3
   let autoIdx = $state(0)
   const bestStream = $derived(candidates[autoIdx])
   const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
+  // A pick that can't explain itself is indistinguishable from a random one. Strongest signals
+  // first, and only the ones that actually moved it.
+  const whyBest = $derived(
+    best
+      ? `Picked for: ${scoreInfo(best, rankOpts).reasons
+          .slice()
+          .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+          .slice(0, 3)
+          .map((r) => `${r.signal} (${r.delta > 0 ? '+' : ''}${r.delta})`)
+          .join(', ') || 'nothing else came close'}`
+      : '',
+  )
 
   // Skeleton while sources resolve; cap the rendered node count (One Piece can
   // return dozens of single-ep files even after collapsing batch packs).
@@ -370,7 +389,7 @@
                 {/if}
                 <span class="truncate text-base font-bold">{info.server ?? info.group ?? info.addon ?? info.provider ?? 'Source'}</span>
                 {#if isBest}
-                  <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white">Best</span>
+                  <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white" title={whyBest}>Best</span>
                   {#if autoState === 'counting'}<span class="shrink-0 font-black tabular-nums text-theme" class:text-red-400={autoProgress > 0.4}>[{Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}]</span>{/if}
                 {/if}
                 {#if filteredAs}
