@@ -50,12 +50,12 @@
     </h1>
   {/if}
 
-  <div bind:this={host} class="h-24 w-40" aria-hidden="true"></div>
+  <div bind:this={host} class="h-28 w-52" aria-hidden="true"></div>
 
   <div class="space-y-2">
-    <p class="text-[11px] font-semibold uppercase tracking-[0.36em] text-white/70">{caption}</p>
+    <p class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
     {#if detail}
-      <p class="max-w-md truncate text-xs text-white/50" {title}>{detail}</p>
+      <p class="max-w-md truncate text-sm text-white/75" {title}>{detail}</p>
     {/if}
   </div>
 
