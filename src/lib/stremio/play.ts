@@ -5,6 +5,7 @@ import { addonOriginId, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, fetchAddonStreams, streamId, pickBest, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
+import { buildStreamIds } from './stream-ids'
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
@@ -810,7 +811,10 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // late extension dump. `resolving` only flips false once ALL sources settle (so
     // the autoplay countdown targets the FINAL best pick).
     // Addons only when we have the Kitsu id they need; the extension wave always runs if configured.
-    let pending = (kitsu != null ? bases.length : 0) + (hasExt ? 2 : 0)
+    // +1 slot for the aligned-imdb wave below, which has to be waited on even though it fires
+    // late: for a title whose addons are all imdb-only, it is the wave that returns everything,
+    // and settling without it would show "no sources found" a moment before they arrive.
+    let pending = (kitsu != null ? bases.length : 0) + (hasExt ? 2 : 0) + (bases.length ? 1 : 0)
     await new Promise<void>((resolve) => {
       // Stop waiting the moment we're superseded/closed — the in-flight fetches keep going and
       // fold in harmlessly (refresh() no-ops once the picker is no longer ours), but we settle now.
@@ -834,6 +838,26 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
             .catch(() => {})
             .finally(done)
         }
+      }
+      // Second wave, on the id namespace the anime one cannot reach. A stream addon configured
+      // for imdb ids returns nothing for `kitsu:` and was previously the entirety of what izumi
+      // asked it. This fires only from a mapping that named both the season and the per-season
+      // episode number, so the triple is aligned rather than guessed; refineStreams and
+      // verifySeason remain the safety net for whatever it brings back.
+      if (bases.length) {
+        const fold = (r: { streams: Stream[]; total: number }) => {
+          if (!stillCurrent() || !r.streams.length) return
+          acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(!resolveSettled)
+        }
+        getExtensionIds(media.id, episode)
+          .then(async (ids) => {
+            const extra = buildStreamIds({ type, imdb: ids.imdbId, season: ids.season, imdbEpisode: ids.episodeNumber, episode })
+            if (!extra.length || !stillCurrent()) return
+            await Promise.all(bases.map((base) =>
+              fetchAddonStreams(base, extra, type, fold).then(fold).catch(() => {})))
+          })
+          .catch(() => {})
+          .finally(done)
       }
       if (hasExt) {
         extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })

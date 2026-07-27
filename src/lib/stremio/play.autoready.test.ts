@@ -9,7 +9,7 @@ const picker = writable<Record<string, unknown> | null>(null)
 const phttp = vi.fn()
 
 vi.mock('$lib/net/http', () => ({ phttp: (...a: unknown[]) => phttp(...a) }))
-vi.mock('./manifest', () => ({ fetchManifest: async () => ({ id: 'a', name: 'Addon', version: '1' }) }))
+vi.mock('./manifest', async (actual) => ({ ...(await actual() as object), fetchManifest: async () => ({ id: 'a', name: 'Addon', version: '1' }) }))
 vi.mock('./sources', () => ({
   enabledAddonUrls: readable<string[]>(['https://addon.test']),
   addonOriginId: () => 'addon',

@@ -1,7 +1,8 @@
 import { phttp } from '$lib/net/http'
 import { describe, isNotice, isUncached, isWrongSeason, type Stream, type StreamInfo, type CacheState, type StreamSort } from './parse'
-import { fetchManifest } from './manifest'
+import { fetchManifest, acceptsStreamId } from './manifest'
 import { addonOriginId } from './sources'
+import { dedupeStreams } from './dedupe'
 
 // Re-export the parse surface so existing importers keep using `$lib/stremio/addon`.
 export {
@@ -130,33 +131,54 @@ export const streamBudgetMs = (base: string) =>
 // (they were, previously — a response one tick past the cap was discarded outright).
 export async function fetchAddonStreams(
   base: string,
-  id: string,
+  id: string | string[],
   type = 'series',
   onLate?: (r: AddonStreams) => void,
 ): Promise<AddonStreams> {
   let b = base.replace(/^http:\/\//i, 'https://')
   if (!/^https?:\/\//i.test(b)) b = 'https://' + b
+  const ids = Array.isArray(id) ? id : [id]
 
   // The manifest carries IDENTITY (logo + display name), never content, so it must never gate
   // the streams: joining the two under one await meant a host whose /manifest.json hung returned
   // ZERO streams even when /stream had answered in a few hundred ms. It now rides alongside and
   // stamps whatever has landed by the time rows are mapped — which, because manifests are
   // pre-warmed at boot and cached for the session, is the manifest itself in the normal case.
+  //
+  // It is ALSO what tells us which ids this addon accepts. That gate is only applied when the
+  // manifest is already known: waiting for it to decide whether to ask would put the identity
+  // fetch back on the critical path, and an unnecessary request costs far less than a missed one.
   let manifest: Awaited<ReturnType<typeof fetchManifest>> | undefined
-  void fetchManifest(b).then((m) => { manifest = m }).catch(() => {})
+  const manifestReady = fetchManifest(b).then((m) => { manifest = m }).catch(() => {})
+  void manifestReady
+
+  const askable = () => {
+    const usable = ids.filter((i) => acceptsStreamId(manifest ?? null, type, i))
+    // Every id rejected while the manifest IS known means this addon genuinely serves none of
+    // them. Asking anyway would only add a request whose empty answer we already predicted.
+    return usable
+  }
 
   const work = (async (): Promise<AddonStreams> => {
     try {
-      const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(id)}.json`)
-      if (!r.ok) return { streams: [], total: 0 }
-      const j = await r.json() as { streams?: Stream[] }
-      const all = (j.streams ?? []).map((s) => ({
+      const ask = askable()
+      if (!ask.length) return { streams: [], total: 0 }
+      // One request per accepted id, in parallel. A title with both an anime id and an aligned
+      // imdb triple reaches addons in either namespace instead of only the anime-aware ones.
+      const responses = await Promise.all(ask.map(async (one) => {
+        try {
+          const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(one)}.json`)
+          if (!r.ok) return []
+          return ((await r.json()) as { streams?: Stream[] }).streams ?? []
+        } catch { return [] }
+      }))
+      const all = responses.flat().map((s) => ({
         ...s,
         __logo: manifest?.logo,
         __addonName: manifest?.name,
         __origin: { kind: 'addon' as const, id: addonOriginId(b), name: manifest?.name },
       }))
-      const usable = all.filter((s) => (!!s.url || !!s.infoHash) && !isNotice(s))
+      const usable = dedupeStreams(all.filter((s) => (!!s.url || !!s.infoHash) && !isNotice(s)))
       return { streams: usable, total: all.length }
     } catch { return { streams: [], total: 0 } }
   })()

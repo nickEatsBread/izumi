@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ phttp: vi.fn(), fetchManifest: vi.fn() }))
 
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
-vi.mock('./manifest', () => ({ fetchManifest: mocks.fetchManifest }))
+// Keep the real acceptsStreamId: stubbing the whole module would silently disable the
+// id gate that the fetch path now depends on.
+vi.mock('./manifest', async (actual) => ({ ...(await actual() as object), fetchManifest: mocks.fetchManifest }))
 
 import { fetchAddonStreams, streamBudgetMs } from './addon'
 

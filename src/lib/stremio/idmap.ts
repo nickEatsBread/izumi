@@ -13,8 +13,17 @@ export function lookupKitsu(idx: Index, anilistId: number): number | undefined {
 const URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-mini.json'
 const KEY = 'anime-id-map-v1', TS = 'anime-id-map-ts'
 let cached: Index | null = null
-export async function getIndex(): Promise<Index> {
-  if (cached) return cached
+// Coalesce concurrent callers. The map is a multi-megabyte download, and a play click landing
+// while the boot pre-warm is still in flight started a SECOND full one — neither could see the
+// other because the memo is only written at the end.
+let inflight: Promise<Index> | null = null
+export function getIndex(): Promise<Index> {
+  if (cached) return Promise.resolve(cached)
+  if (!inflight) inflight = loadIndex().finally(() => { inflight = null })
+  return inflight
+}
+
+async function loadIndex(): Promise<Index> {
   const ts = (await get<number>(TS)) ?? 0
   let data = await get<MapEntry[]>(KEY)
   if (!data || Date.now() - ts > 7 * 864e5) {
