@@ -38,6 +38,12 @@ export const streamPicker = writable<{
  *  screen even when debrid was not what they were waiting for. */
 export const connecting = writable<{ title: string; detail?: string; art?: string; cancel: () => void } | null>(null)
 
+/** The next episode has been resolved ahead of time and will start immediately. Purely additive:
+ *  it is only ever set when a preload actually succeeded, because under the noAdd contract a
+ *  release the account does not already hold is deliberately left alone — so "not ready" is the
+ *  normal state and saying so would be noise rather than information. */
+export const nextEpisodeReady = writable<{ mediaId: number; episode: number } | null>(null)
+
 // Single-window player session. `playing` toggles the in-app player overlay (and
 // the transparent "hole" that lets mpv, embedded in the main window, show
 // through). `nowPlaying` tells the overlay what to display + which ids to fetch
