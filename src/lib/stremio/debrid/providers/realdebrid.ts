@@ -137,17 +137,36 @@ export function rdPickBestDownloaded(entries: RdListRow[], hash: string): { id: 
 const LIST_TTL_MS = 5 * 60 * 1000
 const listCache = new Map<string, { at: number; rows: RdListRow[] }>()
 
-/** Drop the cached account list. Called whenever we change the account, and a test seam. */
+/** Drop the cached account list. Called when an entry is REMOVED, and a test seam. */
 export function rdForgetLists(key?: string): void {
   if (key) listCache.delete(key)
   else listCache.clear()
 }
 
+/** Record a torrent we just added, without throwing away everything else we know.
+ *
+ *  Clearing the cache here was self-defeating: adding is the operation that most often immediately
+ *  precedes the next resolve, so every episode of a binge re-paid the full account scan that the
+ *  cache exists to avoid. The new entry is appended instead — it is not `downloaded` yet, so it
+ *  cannot be mistaken for a reusable one, and once it finishes the worst case is a single extra
+ *  addMagnet that Real-Debrid folds onto the existing entry anyway. */
+function rdNoteAdded(key: string, id: string, hash: string): void {
+  const hit = listCache.get(key)
+  if (!hit) return
+  hit.rows = [{ id, hash, status: 'queued' }, ...hit.rows]
+}
+
 async function loadTorrentList(key: string, now = Date.now()): Promise<RdListRow[]> {
   const hit = listCache.get(key)
   if (hit && now - hit.at < LIST_TTL_MS) return hit.rows
-  const LIMIT = 100
-  const MAX_PAGES = 5 // ≤500 torrents scanned; beyond that, fall through to addMagnet
+  // The default page size is 100, but the endpoint documents a limit anywhere in 0..5000, so a
+  // 400-torrent account can be scanned in ONE request instead of four sequential ones — each of
+  // which sat on the click path. The page loop is kept: it still bounds a very large account, and
+  // the fullest-entry search deliberately spans the whole scan. If a server rejects the larger
+  // limit the first page retries at the documented default rather than silently returning nothing,
+  // which would report every hash as absent and send them all to addMagnet.
+  let LIMIT = 1000
+  const MAX_PAGES = 5
   const rows: RdListRow[] = []
   let complete = false
   for (let page = 1; page <= MAX_PAGES; page++) {
@@ -155,7 +174,12 @@ async function loadTorrentList(key: string, now = Date.now()): Promise<RdListRow
     try {
       list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as RdListRow[]
     }
-    catch { break }
+    catch {
+      if (page > 1 || LIMIT === 100) break
+      LIMIT = 100
+      try { list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as RdListRow[] }
+      catch { break }
+    }
     if (!Array.isArray(list) || list.length === 0) { complete = true; break }
     rows.push(...list)
     if (list.length < LIMIT) { complete = true; break } // last page reached
@@ -206,7 +230,7 @@ async function rdResolveSingleFile(
   key: string, hashOrMagnet: string, fileId: number, opts?: ResolveOpts,
 ): Promise<RdUnrestricted> {
   const id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
-  rdForgetLists(key) // the account just changed — the cached scan is stale
+  rdNoteAdded(key, id, hashOf(hashOrMagnet))
   await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: String(fileId) }))
   let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
   if (rdStatus(info).stage !== 'ready') {
@@ -298,7 +322,7 @@ export const realdebrid: DebridProvider = {
       // "torrent entries the user didn't ask for" noAdd promises never to create.
       if (opts?.noAdd) throw new Error("Real-Debrid needs to add this release, which background prefetch isn't allowed to do.")
       id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
-      rdForgetLists(key) // the account just changed — the cached scan is stale
+      rdNoteAdded(key, id, hash)
     }
     let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
     if (info.status === 'waiting_files_selection' || !(info.files ?? []).some((f) => f.selected)) {

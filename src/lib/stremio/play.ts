@@ -1114,9 +1114,14 @@ export async function playStream(media: Media, episode: number | undefined, stre
       // resolves in ~1s (no screen, no flash), but a stale/mislabeled "cached" hash that RD has to
       // re-fetch dwells in 'queued'/'downloading' — after a short grace the screen appears so the user
       // isn't stuck on a frozen picker with no way to cancel. (poll only ever reports queued/downloading.)
+      // The grace has to outlast the poll's opening probes, or it fires while the resolve is still
+      // in its first sleep and a sub-second resolve flashes a full-screen "downloading" takeover on
+      // its way to playing. The ramp reaches ~2.5s only after five probes have all said
+      // "still downloading", which is the point at which this genuinely is a download.
+      const OVERLAY_GRACE_MS = 2500
       let overlayTimer: ReturnType<typeof setTimeout> | undefined
       if (isUncached(stream)) showCaching()
-      else overlayTimer = setTimeout(showCaching, 1500)
+      else overlayTimer = setTimeout(showCaching, OVERLAY_GRACE_MS)
       try {
         const want = await episodeWant(media, episode, stream)
         const url = await resolveHash(provider, key, torrent, {

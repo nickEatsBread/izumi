@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { classifyAuth, authError, isArchiveName, isDecoy } from './http'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { classifyAuth, authError, isArchiveName, isDecoy, poll } from './http'
 
 describe('classifyAuth', () => {
   // Real-Debrid — HTTP status only
@@ -130,5 +130,57 @@ describe('isDecoy', () => {
   it('says nothing when either size is unknown', () => {
     expect(isDecoy(undefined, 1000)).toBe(false)
     expect(isDecoy(10, 0)).toBe(false)
+  })
+})
+
+describe('poll cadence', () => {
+  afterEach(() => vi.useRealTimers())
+
+  const stage = (s: string) => ({ stage: s } as never)
+
+  it('probes quickly at first instead of sitting out a fixed three seconds', async () => {
+    // A torrent Real-Debrid has ready at ~700ms was not observed until 3000ms, and the caching
+    // overlay fired at 1500ms — inside that sleep. A sub-second resolve presented as a
+    // full-screen "downloading to debrid" takeover.
+    vi.useFakeTimers()
+    let calls = 0
+    const probe = async () => { calls++; return stage(calls >= 3 ? 'ready' : 'downloading') }
+
+    const done = poll(probe, {})
+    await vi.advanceTimersByTimeAsync(800)
+    await done
+
+    expect(calls).toBe(3)
+  })
+
+  it('backs off to a slow cadence for a genuine download', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const probe = async () => { calls++; return stage('downloading') }
+
+    const done = poll(probe, {}).catch(() => {})
+    // Run out the ramp (250+500+750+1000+1500+2000 = 6000ms), then a further 3s should buy
+    // exactly one more probe, not several.
+    await vi.advanceTimersByTimeAsync(6000)
+    const afterRamp = calls
+    await vi.advanceTimersByTimeAsync(3000)
+
+    expect(calls).toBe(afterRamp + 1)
+    vi.useRealTimers()
+    await Promise.resolve()
+    void done
+  })
+
+  it('still honours an explicit interval', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const probe = async () => { calls++; return stage(calls >= 2 ? 'ready' : 'downloading') }
+
+    const done = poll(probe, { pollMs: 5000 })
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(calls).toBe(1)
+    await vi.advanceTimersByTimeAsync(2)
+    await done
+    expect(calls).toBe(2)
   })
 })
