@@ -28,7 +28,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState } from '$lib/player/session'
+import { connecting, playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState } from '$lib/player/session'
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -38,7 +38,7 @@ import {
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
-import { title, cover, airedCount, totalEpisodes } from '$lib/anilist/media'
+import { title, banner, cover, airedCount, totalEpisodes } from '$lib/anilist/media'
 import { isAndroid } from '$lib/platform'
 import { offlineMode } from '$lib/stores/offline'
 import { playViaIntent } from '$lib/player/android-playback'
@@ -1028,7 +1028,21 @@ async function resolveAndPlayBest(media: Media, episode: number | undefined, onS
 
 // Play a specific chosen stream: embed mpv into the main window + wire progress /
 // resume / auto next-episode. Closes the picker.
-export async function playStream(media: Media, episode: number | undefined, stream: Stream, onState: (s: PlayState) => void) {
+export async function playStream(media: Media, episode: number | undefined, stream: Stream, report: (s: PlayState) => void) {
+  // Every exit from this function goes through the state callback, so wrapping it once clears the
+  // connecting screen on all of them — including the early returns.
+  const onState = (s: PlayState) => {
+    if (s.status !== 'resolving') connecting.set(null)
+    report(s)
+  }
+  connecting.set({
+    title: title(media),
+    detail: stream.behaviorHints?.filename || stream.title?.split('\n')[0] || '',
+    // Carried on the payload rather than read from nowPlayingMedia, which this function sets a few
+    // lines later — the overlay would otherwise paint the previous episode's art for a frame.
+    art: banner(media) || cover(media),
+    cancel: () => { connecting.set(null); cancelResolve() },
+  })
   let directPlaybackId: number | null = null
   let directTorrentSubtitles: DirectTorrentSubtitle[] = []
   // Set only on the debrid path, so sidecar subtitles can be resolved after playback starts.

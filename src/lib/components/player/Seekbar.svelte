@@ -46,6 +46,12 @@
   // blank), flipping to the frame the instant the grab returns.
   let interval = $state(0) // seconds between tile grid positions (from player_thumb_info)
   let thumbSrc = $state('') // current hovered tile dataUrl ('' → shimmer)
+  // The shown frame belongs to a DIFFERENT spot than the cursor — a neighbour standing in while
+  // the real grab runs. Rendered dimmed so a stale frame never passes for the real one.
+  let thumbApprox = $state(false)
+  // How far a stand-in may be borrowed from. Past this the frame is telling you about a different
+  // scene entirely, which is worse than admitting we don't know yet.
+  const NEAREST_WINDOW_S = 60
   const tileCache = new Map<number, string>() // tile index → dataUrl
 
   let activeKey: string | null = null
@@ -102,17 +108,37 @@
   // Fetch the tile under the cursor (debounced + superseded on cursor move). The grab
   // itself runs in Rust (~a keyframe seek), so the tooltip shows a shimmer for that
   // brief moment then flips to the frame. `pending` (grab capped) → re-poll this spot.
+  /** Closest cached tile to `i` within the borrow window, or undefined. Walks outward so the
+   *  nearest in TIME wins regardless of direction. */
+  function nearestTile(i: number): string | undefined {
+    if (interval <= 0) return undefined
+    const span = Math.max(1, Math.round(NEAREST_WINDOW_S / interval))
+    for (let d = 1; d <= span; d++) {
+      const before = tileCache.get(i - d)
+      if (before) return before
+      const after = tileCache.get(i + d)
+      if (after) return after
+    }
+    return undefined
+  }
+
   function requestTile(t: number) {
     // Thumbnails disabled in settings → skip the on-demand frame grab entirely (lighter on
     // the Deck iGPU); the tooltip shows just the time + chapter.
-    if (!thumbsEnabled) { thumbSrc = ''; return }
+    if (!thumbsEnabled) { thumbSrc = ''; thumbApprox = false; return }
     const my = ++reqSeq
     const i = interval > 0 ? Math.round(t / interval) : -1
-    if (i >= 0 && tileCache.has(i)) { thumbSrc = tileCache.get(i)!; return }
-    // Cache miss: KEEP showing the previous frame while skimming (VacuumTube-style) instead
-    // of flashing to the shimmer — calmer to look at, and (Game mode) a stable image means
-    // the overlay snapshot is byte-identical between updates, so the changed-frame check in
-    // linux_overlay can skip the mpv re-upload. Shimmer only when there's no frame at all yet.
+    if (i >= 0 && tileCache.has(i)) { thumbSrc = tileCache.get(i)!; thumbApprox = false; return }
+    // Cache miss: stand in with the nearest frame we DO hold, rather than whatever was last shown.
+    // Keeping the last frame regardless of distance meant skimming from five minutes to forty-five
+    // left the five-minute frame on screen at full strength, indistinguishable from a real one.
+    // A neighbour within the window is genuinely informative and is dimmed to say so; beyond it
+    // there is nothing honest to show, so the shimmer returns. Calm to look at either way, and (Game
+    // mode) a stable image keeps the overlay snapshot byte-identical so linux_overlay can skip the
+    // mpv re-upload.
+    const near = i >= 0 ? nearestTile(i) : undefined
+    thumbSrc = near ?? ''
+    thumbApprox = !!near
     const run = async () => {
       if (my !== reqSeq) return
       const key = get(spriteKey)
@@ -120,7 +146,7 @@
       try {
         const r = await invoke<{ status: string; dataUrl?: string; index: number }>('player_thumb_tile', { key, time: t })
         if (my !== reqSeq) return
-        if (r.status === 'ready' && r.dataUrl) { tileCache.set(r.index, r.dataUrl); thumbSrc = r.dataUrl }
+        if (r.status === 'ready' && r.dataUrl) { tileCache.set(r.index, r.dataUrl); thumbSrc = r.dataUrl; thumbApprox = false }
         else if (r.status === 'pending') { reqTimer = setTimeout(run, 400) } // grab capped/in-flight — retry this spot
         // failed / none → leave the shimmer
       }
@@ -323,7 +349,12 @@
         <div class="overflow-hidden rounded-lg border border-white bg-neutral-200 shadow-lg">
           <div class="relative">
             {#if thumbSrc}
-              <img src={thumbSrc} alt="" class="block w-48" />
+              <img
+                src={thumbSrc}
+                alt=""
+                class="block w-48 {gm ? '' : 'transition-opacity duration-150'}"
+                class:opacity-50={thumbApprox}
+              />
             {:else}
               <!-- Tile not ready yet: loading shimmer (never an episode still). Static in game
                    mode — an animated gradient makes every overlay snapshot differ, defeating the
