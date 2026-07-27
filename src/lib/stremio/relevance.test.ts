@@ -4,6 +4,32 @@ import type { Stream } from './parse'
 
 const s = (filename: string): Stream => ({ behaviorHints: { filename } })
 
+describe('relevant (a title that reduces to one distinct word)', () => {
+  // AniList 2507: romaji "Tsuma Tsuma", english "Wife with Wife". Both collapse to a single
+  // distinct content word, so "≥50% of the official title's tokens" was satisfied by ANY release
+  // containing that one very common word — and a different show played.
+  const wanted = ['Tsuma Tsuma', 'Wife with Wife', 'Tsuma Tsuma Hitoduma x Hitoduma']
+
+  it('keeps the actual release', () => {
+    expect(relevant(s('[SakuraCircle] Tsuma Tsuma - 01 (DVD 480p).mkv'), wanted)).toBe(true)
+    expect(relevant(s('Tsuma Tsuma Hitoduma x Hitoduma 01 [720p].mkv'), wanted)).toBe(true)
+  })
+
+  it('rejects a different show that merely shares the one word', () => {
+    expect(relevant(s('[Group] Tsuma no Haha Sayuri - 01.mkv'), wanted)).toBe(false)
+    expect(relevant(s('Wife Swap Diaries - 01.mkv'), wanted)).toBe(false)
+  })
+
+  it('still keeps a single-word title matched by a release that is only that word', () => {
+    expect(relevant(s('[Group] Bleach - 001 [1080p].mkv'), ['Bleach'])).toBe(true)
+    expect(relevant(s('Bleach Blade Battlers - 01.mkv'), ['Bleach'])).toBe(false)
+  })
+
+  it('does not disturb ordinary multi-word matching', () => {
+    expect(relevant(s('[SubsPlease] Dr STONE S04E25 NF WEB-DL.mkv'), ['Dr. Stone: Science Future'])).toBe(true)
+  })
+})
+
 describe('isStandaloneMovie (year-less film sharing a series id — the Ghost in the Shell bug)', () => {
   it('flags a standalone film (no episode/batch marker)', () => {
     expect(isStandaloneMovie(s('GHOST IN THE SHELL 4KAV1 LOSELESS AC3 BLURAYRIP JIBBY'))).toBe(true)
