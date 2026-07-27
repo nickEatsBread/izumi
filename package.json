@@ -34,6 +34,7 @@
     "cheerio": "^1.2.0",
     "crypto-js": "^4.2.0",
     "idb-keyval": "^6.2.6",
+    "lottie-web": "^5.13.0",
     "lucide-svelte": "^1.0.1",
     "sucrase": "^3.35.1",
     "svelte-persisted-store": "^0.12.0",
