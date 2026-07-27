@@ -5,7 +5,7 @@ import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem, catalogPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
-import { extensionSourceConfigured, jvmSourceOwners } from './availability'
+import { extensionSourceConfigured, liveJvmSources } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
 import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
 
@@ -547,17 +547,18 @@ async function runningJvmExtensions(onlyId?: string): Promise<
   { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
   const installed = await installedExtensionPackages()
-  const packageBySource = jvmSourceOwners(installed)
+  // Decided BEFORE the invoke below. Disabling was previously applied to the RESULTS of
+  // `jvm_extension_sources`, so the Java runtime was still spawned to enumerate sources that were
+  // then all thrown away — Java running on every resolve for someone who had switched every source
+  // off, or never enabled one.
+  const packageBySource = liveJvmSources(installed, get(disabledPlugins))
   if (!packageBySource.size) return []
-  const off = new Set(get(disabledPlugins))
   try {
     const sources = await invoke<JvmSource[]>('jvm_extension_sources')
     return dedupeJvmSources(sources)
       .filter((source) =>
         source.type === 'anime'
         && packageBySource.has(source.id)
-        && !off.has(packageBySource.get(source.id)!)
-        && !off.has(source.id)
         && (!onlyId || source.id === onlyId),
       )
       .map((source) => ({

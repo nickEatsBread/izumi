@@ -34,3 +34,20 @@ export function extensionSourceConfigured(
   return enabledManifestUrls.length > 0
     || installed.some((extension) => !disabledPluginIds.includes(extension.id))
 }
+
+/** The JVM sources that are actually allowed to run: installed, and neither the owning package nor
+ *  the source itself switched off.
+ *
+ *  Exists so the decision can be made BEFORE the Java runtime is contacted. The disabled check used
+ *  to be applied to the RESULTS of `jvm_extension_sources`, which meant the runtime was spawned to
+ *  enumerate sources that were then all discarded — Java starting on every resolve for someone who
+ *  had switched every source off, and who quite reasonably expected it never to run. */
+export function liveJvmSources(
+  installed: InstalledJvmExtensionIdentity[],
+  disabled: string[],
+): Map<string, string> {
+  const off = new Set(disabled)
+  return new Map(
+    [...jvmSourceOwners(installed)].filter(([sourceId, pkg]) => !off.has(pkg) && !off.has(sourceId)),
+  )
+}
