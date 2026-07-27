@@ -13,6 +13,7 @@
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
   import { providerProblems } from '$lib/stremio/onlinestream'
+  import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
   import Search from 'lucide-svelte/icons/search'
   import Zap from 'lucide-svelte/icons/zap'
@@ -58,8 +59,24 @@
   const autoReady = $derived(!!pick?.autoReady)
   const RENDER_CAP = 40
   let showAll = $state(false)
-  const rendered = $derived(showAll ? shown : shown.slice(0, RENDER_CAP))
-  const hiddenCount = $derived(shown.length - rendered.length)
+  const renderedMain = $derived(showAll ? shown : shown.slice(0, RENDER_CAP))
+  const hiddenCount = $derived(shown.length - renderedMain.length)
+
+  // Rows the title/production/season heuristics removed. Shown on request, APPENDED rather than
+  // merged: they must never reach `best`, so a release we judged to be the wrong show can't become
+  // the auto-pick just because the user wanted to see what was filtered.
+  const rejected = $derived(pick?.rejected ?? [])
+  let showFiltered = $state(false)
+  // Deduped by the SAME key the {#each} is keyed on: refine dedupes rejections by its own row key,
+  // which can disagree with this one for a row that carries neither a url nor an infoHash, and a
+  // duplicate key crashes the keyed each block outright.
+  const filteredInfos = $derived(
+    showFiltered
+      ? [...new Map(rejected.map((r) => describe(r.stream)).map((i) => [keyOf(i), i])).values()]
+      : [],
+  )
+  const reasonOf = $derived(new Map(rejected.map((r) => [describe(r.stream), rejectLabel[r.reason]])))
+  const rendered = $derived([...renderedMain, ...filteredInfos])
   // Addon logo (URL) or extension icon (base64/url/data:) — one dual-scheme rule.
   const logoSrc = (l: string) =>
     l.startsWith('http') || l.startsWith('data:image') ? l : `data:image/png;base64,${l}`
@@ -89,7 +106,7 @@
     const k = pick ? `${pick.media.id}:${pick.episode}` : ''
     if (k !== lastKey) {
       lastKey = k
-      busy = false; error = ''; filter = ''; showAll = false
+      busy = false; error = ''; filter = ''; showAll = false; showFiltered = false
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
       focusedBest = false
     }
@@ -259,6 +276,11 @@
         <label class="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground" title="Show dead sources">
           <input type="checkbox" bind:checked={$showDeadSources} data-focusable class="accent-theme" /> Dead
         </label>
+        {#if rejected.length}
+          <label class="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground" title="Show sources removed as the wrong title, production, season or an extra">
+            <input type="checkbox" bind:checked={showFiltered} data-focusable class="accent-theme" /> Filtered ({rejected.length})
+          </label>
+        {/if}
       </div>
 
       {#if playbackError}
@@ -284,6 +306,7 @@
           {@const g = cacheGlyph(info.cached)}
           {@const isBest = info === best}
           {@const disabled = busy}
+          {@const filteredAs = reasonOf.get(info)}
           <div
             data-focusable
             data-best-source={isBest ? '' : undefined}
@@ -295,7 +318,7 @@
             onfocus={cancelAuto}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
             class="group flex w-full items-start gap-3 rounded-xl border border-transparent bg-secondary/40 px-3 py-2.5 text-left transition-colors hover:bg-accent {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
-            class:opacity-40={info.cached === 'down'}
+            class:opacity-40={info.cached === 'down' || !!filteredAs}
             class:!border-theme={isBest}
             class:!border-red-400={isBest && autoState === 'counting' && autoProgress > 0.4}
             class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4 && animate}
@@ -314,6 +337,9 @@
                 {#if isBest}
                   <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white">Best</span>
                   {#if autoState === 'counting'}<span class="shrink-0 font-black tabular-nums text-theme" class:text-red-400={autoProgress > 0.4}>[{Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}]</span>{/if}
+                {/if}
+                {#if filteredAs}
+                  <span class="shrink-0 rounded bg-amber-400/20 px-1.5 text-[0.6rem] font-black uppercase text-amber-300" title="Filtered out: {filteredAs}">{filteredAs}</span>
                 {/if}
                 {#if info.batch}<Database size={13} class="shrink-0 text-indigo-300" />{/if}
                 <span class="ml-auto flex shrink-0 items-center gap-2">

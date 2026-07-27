@@ -4,7 +4,7 @@ import { get } from 'svelte/store'
 import { addonOriginId, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, fetchAddonStreams, streamId, pickBest, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
-import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wrongFranchiseSeason } from './relevance'
+import { refineStreams, type Rejection } from './refine'
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
@@ -17,7 +17,6 @@ import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manage
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
-import { dedupeStreams, dedupeBy } from './dedupe'
 import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
@@ -359,52 +358,10 @@ function verifySeason(streams: Stream[], want: { season?: number; abs?: number }
   return [...good, ...unknown]
 }
 
-// Collapse Torrentio's per-file batch explosion: any infoHash contributing 2+ file
-// rows is a season/complete pack (a single-episode torrent yields exactly one row),
-// so keep one row per packed hash. Fixes One Piece ep1 (a 458-file dub pack → 1).
-// Runs BEFORE dedupeStreams (which keys url-first), so this infoHash pass is the first —
-// and for same-hash extension duplicates the ONLY — place a live-seeded copy can win over a
-// 0/unknown-seeder copy of the same torrent; dedupeBy carries that tiebreak. Batch packs are
-// addon rows (not torrent-ext), so they collapse first-wins exactly as before.
-function collapseBatches(streams: Stream[]): Stream[] {
-  return dedupeBy(streams, (s) => s.infoHash ?? '')
-}
-
 // Resolve the streams for an episode (kitsu id map → addons, plus any enabled
 // source extensions). Returns the ranked list (cached first; uncached shown +
 // flagged, dead sunk) plus the cached count, with wrong-season files dropped.
 // Throws a user-facing message on failure.
-// Season/title refinement shared by addon + extension streams: collapse Torrentio's
-// per-file batch explosion (One Piece dub pack = 458 rows → 1) and drop cross-title
-// matches (a shared kitsu id can pull in an unrelated live-action). Sync/fast.
-function refineStreams(media: Media, raw: Stream[]): Stream[] {
-  const wantedTitles = [title(media), media.title.romaji, media.title.english].filter((t): t is string => !!t)
-  const animeYear = media.startDate?.year ?? undefined
-  // Long-running absolute-numbered anime (One Piece, Naruto, Conan…) ship as
-  // "One Piece - 001", never scene "S01E01" — so any SxxExx file is a different
-  // production (the live action / a remake). airedTotal covers ongoing shows whose
-  // media.episodes is still null.
-  const totalEps = totalEpisodes(media)
-  const absoluteNumbered = totalEps > 60
-  // A MULTI-EPISODE SERIES (not a movie/single-ep OVA): a standalone-movie file (no episode/batch
-  // marker) is a different production sharing the id — e.g. the 1995 GitS film / GitS 2: Innocence
-  // under the 2026 series. Drop those; keep every S01E01 + season pack. Not applied to movies.
-  const isSeries = media.format !== 'MOVIE' && totalEps > 1
-  // Direct streams and id-VERIFIED extension results skip the release-NAME heuristics: a source
-  // that matched this exact episode's production id (accuracy 'high') outranks any title parse —
-  // e.g. a CJK-titled release carries zero romaji/english tokens and relevant() would drop it.
-  const trusted = (s: Stream) => !!s.__stream || s.__accuracy === 'high'
-  return dedupeStreams(
-    collapseBatches(raw)
-      .filter((s) => trusted(s) || relevant(s, wantedTitles))
-      .filter((s) => trusted(s) || !likelyOtherProduction(s, animeYear, absoluteNumbered))
-      .filter((s) => trusted(s) || !isEpisodeExtra(s))
-      .filter((s) => trusted(s) || !isSeries || !isStandaloneMovie(s))
-      // Same-franchise wrong season: base-entry request pulling in "… The Final Season" / "Season 2"
-      // files a number-less season gate can't catch (Attack on Titan S1 → Final Season episodes).
-      .filter((s) => trusted(s) || !wrongFranchiseSeason(s, wantedTitles)),
-  )
-}
 
 // Resolve an episode's streams from the ADDONS ONLY — the fast, playable path.
 // Extensions are queried separately (see extToStreams) and merged into the
@@ -437,7 +394,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   const seasonP = episode != null ? getEpisodeSeasonMap(media.id) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
   const { streams: addonStreams, total, cachedCount } = await getStreams(bases, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')
 
-  let streams = refineStreams(media, addonStreams)
+  let streams = refineStreams(media, addonStreams).kept
 
   // Season enforcement: pair the requested episode with its AniZip season/absolute
   // number, then hard-drop returned files that contradict it. `want` is threaded to
@@ -798,11 +755,12 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     }
 
     const paint = (resolving: boolean) => {
-      let s = refineStreams(media, acc)
+      const refined = refineStreams(media, acc)
+      let s = refined.kept
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
       if (resolving) scheduleReady(s)
       else { clearReadyTimer(); autoReady = true; resolveSettled = true }
-      streamPicker.set({ media, episode, streams: s, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving, autoReady, hidden: hideForContinuation })
+      streamPicker.set({ media, episode, streams: s, rejected: refined.rejected, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving, autoReady, hidden: hideForContinuation })
       // Binge continuity: the instant a same-release, ready-to-play source appears, continue on it
       // automatically (close the picker, no interaction). An uncached same-release is handled once
       // the list settles (below), so a late-arriving cached one still wins here. Gated on
@@ -913,7 +871,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
     // no debrid cache in flight (an uncached manual pick keeps the picker open while it caches, so
     // stillCurrent() alone wouldn't catch it).
     if (cont && !continuationAttempted && stillCurrent() && !get(debridCaching)) {
-      let s = refineStreams(media, acc)
+      let s = refineStreams(media, acc).kept
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
       const hit = s.find((x) => matchesRelease(x, cont))
       if (hit) {
@@ -968,7 +926,7 @@ async function resolveRememberedSource(media: Media, episode: number, remembered
     await extToStreams(media, episode, kitsu, (batch) => { streams = [...streams, ...batch] }, remembered.origin.id)
   }
 
-  streams = refineStreams(media, streams)
+  streams = refineStreams(media, streams).kept
   const map = await getEpisodeSeasonMap(media.id).catch(() => ({} as Record<number, { season?: number; abs?: number }>))
   const want = map[episode]
   if (want && (want.season != null || want.abs != null)) streams = verifySeason(streams, want)
