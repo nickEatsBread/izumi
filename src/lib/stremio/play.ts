@@ -6,6 +6,7 @@ import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, fetchAddonStreams, streamId, pickBest, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
+import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
 
 /** Ranking inputs that live in settings rather than on a stream. The non-interactive paths must
@@ -1145,11 +1146,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
       // for a queued/downloading probe, and never runs at all for a cached hash. Two of them, so a
       // torrent that finishes on the second probe never flashes a downloading screen on its way to
       // playing.
-      const PROBES_BEFORE_SCREEN = 2
-      // ...and it has to have actually taken a while. The poll's opening probes are 250ms apart, so
-      // probe count alone was satisfied by a torrent that then completed immediately — the screen
-      // flashed up to announce a download that never happened.
-      const MIN_WAIT_BEFORE_SCREEN_MS = 2500
+      // See caching-screen.ts for why this is not simply "it has been a while".
       const resolveStartedAt = Date.now()
       let notReady = 0
       // Nothing else is on screen when the picker is hidden (binge continuation plays with it
@@ -1163,8 +1160,11 @@ export async function playStream(media: Media, episode: number | undefined, stre
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
           onStatus: (i) => {
-            if (!overlayShown && ++notReady >= PROBES_BEFORE_SCREEN
-              && Date.now() - resolveStartedAt >= MIN_WAIT_BEFORE_SCREEN_MS) showCaching()
+            if (!overlayShown && shouldShowCachingScreen({
+              probes: ++notReady,
+              waitedMs: Date.now() - resolveStartedAt,
+              progress: i.progress,
+            })) showCaching()
             if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c))
           },
           want,
