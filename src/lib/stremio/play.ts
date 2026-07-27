@@ -1147,22 +1147,27 @@ export async function playStream(media: Media, episode: number | undefined, stre
       // torrent that finishes on the second probe never flashes a downloading screen on its way to
       // playing.
       // See caching-screen.ts for why this is not simply "it has been a while".
-      const resolveStartedAt = Date.now()
       let notReady = 0
-      // Nothing else is on screen when the picker is hidden (binge continuation plays with it
-      // closed), so there the caching screen is the only thing that can hold the user — show it
-      // immediately, as before.
-      const heldByResolveScreen = !!get(streamPicker) && !get(streamPicker)?.hidden
-      if (!heldByResolveScreen) showCaching()
+      // Time since the PROVIDER first said not-ready, not since this function began. The clock used
+      // to start here, which meant it was counting the AniZip lookup, the debrid account scan, the
+      // add and the file selection — all our own work, none of it a download. Six seconds of that
+      // elapsed routinely, so the very first probe arrived with the threshold already passed.
+      let firstNotReadyAt = 0
+      // NOTE: there is deliberately no "show it immediately when the picker is hidden" branch here
+      // any more. That existed when the connecting screen lived inside the picker and so did not
+      // exist without it — but Continue Watching and binge continuation both run with the picker
+      // hidden or closed, so the branch fired unconditionally for them and took over before a
+      // single probe had been made. The connecting screen is app-wide now and holds every path.
       try {
         const want = await episodeWant(media, episode, stream)
         const url = await resolveHash(provider, key, torrent, {
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
           onStatus: (i) => {
+            if (!firstNotReadyAt) firstNotReadyAt = Date.now()
             if (!overlayShown && shouldShowCachingScreen({
               probes: ++notReady,
-              waitedMs: Date.now() - resolveStartedAt,
+              waitedMs: Date.now() - firstNotReadyAt,
               progress: i.progress,
             })) showCaching()
             if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c))
