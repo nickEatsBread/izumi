@@ -98,17 +98,20 @@ export function pickCandidates(
   // rather than a sort key: sorting alone still let a foreign source win when it was the only one
   // matching the requested quality tier.
   const preferred = all.filter((i) => !languageMismatch(i, opts.audioLang))
-  const cacheFirst = (i: StreamInfo) => (i.cached === 'instant' ? 0 : 1)
-  const infos = (preferred.length ? preferred : all)
-    .sort((a, b) => cacheFirst(a) - cacheFirst(b) || scoreInfo(b, opts).score - scoreInfo(a, opts).score || (b.seeders ?? -1) - (a.seeders ?? -1))
   const target = quality === 'any' ? NaN : Number(quality)
-  const ordered = Number.isFinite(target)
-    ? [
-        ...infos.filter((i) => i.quality === target),
-        ...infos.filter((i) => i.quality < target),
-        ...infos.filter((i) => i.quality > target),
-      ]
-    : infos
+  // Cache state OUTRANKS the quality preference. It used to be the other way round, because the
+  // tier preference was applied as a partition AFTER the cache ordering and so silently overrode
+  // it: with Quality on 4K, one uncached 2160p release was picked ahead of eleven cached 1080p
+  // copies, committing to a multi-gigabyte download when the episode could have started at once.
+  // Asking for 4K expresses which copy you would rather have, not a willingness to wait for it.
+  const cacheFirst = (i: StreamInfo) => (i.cached === 'instant' ? 0 : 1)
+  const tierRank = (i: StreamInfo) =>
+    !Number.isFinite(target) ? 0 : i.quality === target ? 0 : i.quality < target ? 1 : 2
+  const ordered = (preferred.length ? preferred : all).sort((a, b) =>
+    cacheFirst(a) - cacheFirst(b)
+    || tierRank(a) - tierRank(b)
+    || scoreInfo(b, opts).score - scoreInfo(a, opts).score
+    || (b.seeders ?? -1) - (a.seeders ?? -1))
   // A remembered failure is a hint, not a verdict — a debrid hiccup and an expired token look the
   // same from here, so failed sources go last rather than away.
   const rank = isFailed ? ordered.filter((i) => !isFailed(i.stream)).concat(ordered.filter((i) => isFailed(i.stream))) : ordered
