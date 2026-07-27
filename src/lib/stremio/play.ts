@@ -6,6 +6,12 @@ import { getIndex, lookupKitsu } from './idmap'
 import { getStreams, fetchAddonStreams, streamId, pickBest, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
+import type { RankOptions } from './addon'
+
+/** Ranking inputs that live in settings rather than on a stream. The non-interactive paths must
+ *  use the same ones the picker does, or "best" means two different things depending on whether a
+ *  human was looking. */
+const rankOpts = (): RankOptions => ({ audioLang: get(preferredAudioLang) })
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
@@ -734,7 +740,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       // Season correctness outranks speed: until AniZip has answered we cannot know that the top
       // row is even the right episode, so the confident path stays shut (the same gate the
       // same-release continuation uses).
-      const top = seasonSettled ? pickBest(s, get(preferredQuality), want) : undefined
+      const top = seasonSettled ? pickBest(s, get(preferredQuality), want, rankOpts()) : undefined
       let deadline: number
       if (top) {
         const key = top.url ?? top.infoHash ?? ''
@@ -968,7 +974,7 @@ async function resolveRememberedSource(media: Media, episode: number, remembered
   if (same && playableNow(same) && !isUncached(same)) return same
   // Same origin remains useful even if that origin renamed/repacked the episode. Within the pinned
   // origin, prefer its best ready source; never auto-start an uncached unrelated torrent.
-  return pickBest(rankStreams(streams), get(preferredQuality), want)
+  return pickBest(rankStreams(streams, 'quality', rankOpts()), get(preferredQuality), want, rankOpts())
 }
 
 /** Resume from Continue Watching / the detail Continue button. Refresh the trimmed home-card Media
@@ -1408,7 +1414,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
     const preferred = eligible.filter((stream) => patterns[preferences.codec as 'h264' | 'h265' | 'av1'].test(raw(stream)))
     if (preferred.length) eligible = preferred
   }
-  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want) ?? eligible[0]
+  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts()) ?? eligible[0]
   if (!best) throw new Error('No source found to download.')
   let url = best.url
   let prov: string | undefined
