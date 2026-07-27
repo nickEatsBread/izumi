@@ -5,7 +5,7 @@
   // a manifest logo whose host is down, or a relative path we mis-read as base64, left a broken
   // image box on the row forever. The ladder is: the addon's own icon → a deterministic coloured
   // tile with its initial. Never a broken box, and never nothing.
-  import { logoTile } from '$lib/stremio/addon-logo'
+  import { logoTile, iconSrc } from '$lib/stremio/addon-logo'
 
   let { logo, name, id, size = 20 }: {
     logo?: string
@@ -16,11 +16,7 @@
 
   // Addon manifest logos arrive already absolute (resolved at fetch time, where the base URL is
   // known). Extension icons arrive as a bare base64 payload instead, so they still need wrapping.
-  const src = $derived(
-    !logo ? undefined
-      : /^(?:https?:|data:|blob:)/i.test(logo) ? logo
-      : `data:image/png;base64,${logo}`,
-  )
+  const src = $derived(iconSrc(logo))
   const tile = $derived(logoTile(id ?? name ?? '', name ?? ''))
 
   // Reset when the row is recycled onto a different source, or one dead icon would poison the

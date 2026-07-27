@@ -44,3 +44,15 @@ export function logoTile(seed: string, name: string): { initial: string; from: s
   const [from, to] = PALETTE[h % PALETTE.length]
   return { initial: (name || '?').trim().charAt(0).toUpperCase() || '?', from, to }
 }
+
+/** Turn a stored icon into something an <img>/<image> can actually load.
+ *
+ *  `StreamInfo.logo` is deliberately dual-scheme (parse.ts): addon manifest logos arrive as
+ *  absolute URLs, extension icons as a BARE base64 payload with no data: prefix. Handing the raw
+ *  value to an image source works for the first and renders a broken-image glyph for the second,
+ *  so every consumer has to apply this — which is exactly why it lives in one place now. */
+export function iconSrc(logo: string | undefined): string | undefined {
+  const raw = logo?.trim()
+  if (!raw) return undefined
+  return /^(?:https?:|data:|blob:)/i.test(raw) ? raw : `data:image/png;base64,${raw}`
+}
