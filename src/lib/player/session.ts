@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import type { Media } from '$lib/anilist/types'
 import type { Stream } from '$lib/stremio/addon'
+import type { Rejection } from '$lib/stremio/refine'
 import type { DebridInfo } from '$lib/stremio/debrid/types'
 import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
 import type { SharedSourceState } from '$lib/watch-together/source'
@@ -12,6 +13,10 @@ export const streamPicker = writable<{
   media: Media
   episode: number | undefined
   streams: Stream[]
+  // Rows the title/production/season heuristics removed, each with the rule that removed it. Kept
+  // so the picker can say "12 filtered" and show them on request: silently dropping everything and
+  // then reporting "no usable sources" blamed the addons for our own filtering.
+  rejected?: Rejection[]
   cachedCount: number
   resolving?: boolean
   // The autoplay countdown may start. Deliberately NOT `!resolving`: waiting for every source to
