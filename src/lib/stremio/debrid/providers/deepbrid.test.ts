@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { dbPick, dbSpeed, dbStatus } from './deepbrid'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+
+const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+
+import { serveJson, called } from '../../../../test/debrid-http'
+import { dbPick, dbSpeed, dbStatus, deepbrid } from './deepbrid'
+
+const HASH = 'a'.repeat(40)
 
 // Shapes below are the ones in the first-party docs (deepbrid.com/api-docs).
 const ONE = { error: 0, message: 'OK', id: '14648', filename: 'show.s01e01.mkv', progress: 100, seeders: 12, speed: '0.00 MB/s', links: ['https://www.deepbrid.com/mytorrents?torrent=14648'] }
@@ -50,4 +57,14 @@ describe('dbStatus', () => {
   })
   it('0% = queued', () => expect(dbStatus({ ...ONE, progress: 0 }).stage).toBe('queued'))
   it('a missing torrent is queued, not a crash', () => expect(dbStatus(undefined).stage).toBe('queued'))
+})
+
+describe('deepbrid.resolveHash noAdd', () => {
+  beforeEach(() => httpFetch.mockReset())
+
+  it('never adds the torrent for a background prefetch', async () => {
+    serveJson(httpFetch, [])
+    await expect(deepbrid.resolveHash('key', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(called(httpFetch, '/torrents/add')).toBe(false)
+  })
 })
