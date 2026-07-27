@@ -22,6 +22,28 @@ export interface AddonManifest {
   types?: string[]
 }
 
+/** Would this addon answer a `stream` request for `type` + `id`? Read from the manifest's own
+ *  declaration, per-resource first and falling back to the top-level fields.
+ *
+ *  Nothing gated stream dispatch before, so every configured addon was asked for every id
+ *  regardless of what it said it serves — a meta-only or imdb-only addon answered nothing and
+ *  still spent the picker's patience waiting for it. Unknowns are always accepted: an addon that
+ *  declares no prefixes, or whose manifest we could not fetch, must never be skipped on a guess. */
+export function acceptsStreamId(m: AddonManifest | null, type: string, id: string): boolean {
+  const resources = m?.resources
+  if (!resources?.length) return true // no declaration to gate on
+  const matches = (types: string[] | undefined, prefixes: string[] | undefined) =>
+    (!types?.length || types.includes(type)) && (!prefixes?.length || prefixes.some((p) => id.startsWith(p)))
+  for (const r of resources) {
+    if (typeof r === 'string') {
+      if (r === 'stream' && matches(m?.types, m?.idPrefixes)) return true
+    } else if (r.name === 'stream' && matches(r.types ?? m?.types, r.idPrefixes ?? m?.idPrefixes)) return true
+  }
+  // The manifest listed what it serves and this was not on it — either no stream resource at all
+  // (a meta-only addon) or one that does not cover this type or id namespace.
+  return false
+}
+
 const cache = new Map<string, Promise<AddonManifest | null>>()
 
 export function fetchManifest(base: string): Promise<AddonManifest | null> {
