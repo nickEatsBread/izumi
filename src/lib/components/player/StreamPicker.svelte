@@ -12,6 +12,7 @@
   import { rankInfos, pickBest, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
+  import { providerProblems } from '$lib/stremio/onlinestream'
   import { title, banner, cover } from '$lib/anilist/media'
   import Search from 'lucide-svelte/icons/search'
   import Zap from 'lucide-svelte/icons/zap'
@@ -352,9 +353,18 @@
           </button>
         {/if}
         {#if !shown.length}
-          <p class="px-3 py-8 text-center text-sm text-muted-foreground">
+          <p class="px-3 pb-3 pt-8 text-center text-sm text-muted-foreground">
             {filter.trim() ? 'No sources match your filter.' : deadCount && !$showDeadSources ? 'No sources — enable “Dead” to see uncached/dead torrents.' : 'No sources to show.'}
           </p>
+        {/if}
+        <!-- A provider that failed for a REASON says so, whether or not other providers found rows:
+             a login-gated source is actionable, and an empty list alone reads as izumi being broken. -->
+        {#if !resolving && $providerProblems.length}
+          <div class="mx-3 mb-3 rounded-xl border border-border/70 bg-secondary/30 px-3 py-2.5 text-left">
+            {#each $providerProblems as problem (problem.provider)}
+              <p class="py-0.5 text-xs text-muted-foreground"><span class="font-bold text-amber-400">{problem.provider}</span> · {problem.message}</p>
+            {/each}
+          </div>
         {/if}
         {/if}
       </div>

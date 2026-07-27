@@ -351,11 +351,21 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
                 continue;
             };
             if let Some(sender) = output_pending.lock().await.remove(id) {
+                let payload_error = message
+                    .get("data")
+                    .and_then(|data| data.get("error"))
+                    .and_then(Value::as_str);
                 let result = if message.get("status").and_then(Value::as_str) == Some("error") {
                     Err(message
                         .get("data")
                         .map(Value::to_string)
                         .unwrap_or_else(|| "Extension runtime error".into()))
+                } else if let Some(error) = payload_error {
+                    // A provider that throws is reported INSIDE `data`, with no top-level `status`.
+                    // Passing that object through as a success left the caller reading a missing
+                    // `episodes` field as "this show has no episodes", so a source that actually
+                    // said "log in to Google Drive through webview" showed the user nothing at all.
+                    Err(error.to_string())
                 } else {
                     Ok(message.get("data").cloned().unwrap_or(Value::Null))
                 };

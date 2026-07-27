@@ -1,11 +1,30 @@
 import type { Stream } from './parse'
-import { get } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import type { Media } from '$lib/anilist/types'
 import { title } from '$lib/anilist/media'
 import { preferredAudioLang, preferredSubLang, providerLanguages, providerAudio } from '$lib/settings/ui'
 import { runningStreamExtensions } from '$lib/extensions/manager'
 import { normalizeLang, subtitleTitle } from './sublang'
 import { memo, cacheableList } from './online-cache'
+
+/** Why a provider contributed no rows, when it said so out loud.
+ *
+ *  Every provider call is best-effort — one dead source must never fail the whole resolve — but
+ *  swallowing the reason turned an actionable message into an empty picker. A source gated behind
+ *  a login reports exactly that ("please log in to google drive through webview"); without this the
+ *  user sees silence and reasonably concludes izumi is broken. Reset per resolve. */
+export const providerProblems = writable<{ provider: string; message: string }[]>([])
+
+/** Trim a runtime/provider message to something a picker row can carry. */
+export function providerProblemText(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error ?? '')
+  // Rust hands the payload back as a JSON string when the runtime reported a structured error.
+  // Escaped whitespace survives that round-trip literally, so it has to be collapsed rather than
+  // split on — otherwise the row reads `boom\n\tat Foo.bar(Unknown Source)`.
+  const unquoted = raw.replace(/^"(.*)"$/s, '$1').replace(/\\[nrt]/g, ' ').replace(/ {2,}/g, ' ').trim()
+  const firstLine = unquoted.split('\n')[0].trim()
+  return firstLine.length > 200 ? `${firstLine.slice(0, 197)}…` : firstLine
+}
 
 // onlinestream-provider extension SDK shapes. Fields we consume.
 export interface SnSearchResult { id: string; title: string; url?: string; subOrDub?: string }
@@ -295,6 +314,7 @@ export async function resolveOnlineStreams(
   media: Media, episode: number | undefined, onlyId?: string, onBatch?: (rs: Stream[]) => void,
 ): Promise<Stream[]> {
   if (episode == null) return []
+  providerProblems.set([])
   const unordered = await runningStreamExtensions(onlyId)
   if (!unordered.length) return []
   // A typical catalog is HALF non-English (Italian, German, French, Indonesian, …). Results are
@@ -330,6 +350,14 @@ export async function resolveOnlineStreams(
   // Both hops are memoized: neither the search nor the episode list depends on WHICH episode was
   // asked for, so re-running them per episode was pure waste — the dominant cost of opening the
   // picker on episode 2 of a binge.
+  // Record once per provider: the first failure is the informative one, and a provider whose every
+  // server fails would otherwise repeat the same line for each.
+  const noteProblem = (ext: { id: string; name: string }, error: unknown) => {
+    const message = providerProblemText(error)
+    if (!message) return
+    providerProblems.update((all) =>
+      all.some((p) => p.provider === ext.name) ? all : [...all, { provider: ext.name, message }])
+  }
   const findEp = async (
     ext: (typeof exts)[number],
     dub: boolean,
@@ -340,7 +368,8 @@ export async function resolveOnlineStreams(
     for (const query of queries) {
       const results = await memo(
         `search|${ext.id}|${dub}|${JSON.stringify(query)}|${media.seasonYear ?? ''}`,
-        () => ext.call('search', { query, dub, year: media.seasonYear ?? undefined }).catch(() => null),
+        () => ext.call('search', { query, dub, year: media.seasonYear ?? undefined })
+          .catch((error: unknown) => { noteProblem(ext, error); return null }),
         cacheableList,
       ) as SnSearchResult[] | null
       best = pickSearchResult(results ?? [], identityTitles)
@@ -349,7 +378,9 @@ export async function resolveOnlineStreams(
     if (!best) return null
     const eps = await memo(
       `episodes|${ext.id}|${best.id}`,
-      () => ext.call('findEpisodes', best.id).catch(() => null),
+      // Where a login-gated source fails: the detail page is what fetches the episode list, so this
+      // is the catch that carries "please log in to google drive through webview".
+      () => ext.call('findEpisodes', best.id).catch((error: unknown) => { noteProblem(ext, error); return null }),
       cacheableList,
     ) as SnEpisode[] | null
     const matchedEpisode = pickEpisode(eps ?? [], episode)
@@ -396,7 +427,8 @@ export async function resolveOnlineStreams(
         for (;;) {
           const idx = cursor++
           if (idx >= servers.length) return
-          found[idx] = (await ext.call('findEpisodeServer', ep, servers[idx]).catch(() => null)) as SnEpisodeServer | null
+          found[idx] = (await ext.call('findEpisodeServer', ep, servers[idx])
+            .catch((error: unknown) => { noteProblem(ext, error); return null })) as SnEpisodeServer | null
         }
       }))
       for (const [idx, es] of found.entries()) {
@@ -447,7 +479,7 @@ export async function resolveOnlineStreams(
       if (onBatch && rows.length) onBatch(rows)
       return rows
     }
-    catch { return [] }
+    catch (error) { noteProblem(ext, error); return [] }
   }))
   return per.flat()
 }

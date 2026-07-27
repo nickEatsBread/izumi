@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { readable, writable } from 'svelte/store'
+import { get, readable, writable } from 'svelte/store'
 import { clearProviderCache } from './online-cache'
 
 // resolveOnlineStreams reaches for the extension runtime, the settings stores and the title helper.
@@ -335,5 +335,62 @@ describe('dub and sub resolution', () => {
     const all = await resolveOnlineStreams(media, 1)
     expect(audioOf(all)).toEqual(['dub'])
     expect(all[0].url).toBe('https://cdn/p-dub.m3u8')
+  })
+})
+
+// A provider that fails for a REASON must say so. The real case this pins: a Google-Drive-backed
+// source throws "please log in to google drive through webview" from its detail page, which the
+// resolver used to swallow — the user got an empty picker and no way to know why.
+describe('provider problems', () => {
+  const gated = (name: string, message: string) => ({
+    id: name.toLowerCase(), name, lang: undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    call: async (method: string): Promise<any> => {
+      if (method === 'search') return [{ id: 'x', title: 'Frieren' }]
+      if (method === 'getSettings') return { episodeServers: ['srv'] }
+      if (method === 'findEpisodes') throw new Error(message)
+      return null
+    },
+  })
+
+  it('reports the provider\'s own message instead of an empty list', async () => {
+    const { providerProblems } = await import('./onlinestream')
+    runningStreamExtensions.mockResolvedValue([gated('Kayoanime', 'Failed to load items, please log in to google drive through webview')])
+    const all = await resolveOnlineStreams(media, 1)
+    expect(all).toEqual([])
+    expect(get(providerProblems)).toEqual([
+      { provider: 'Kayoanime', message: 'Failed to load items, please log in to google drive through webview' },
+    ])
+  })
+
+  it('keeps a healthy provider\'s rows alongside a failed one, and resets between resolves', async () => {
+    const { providerProblems } = await import('./onlinestream')
+    runningStreamExtensions.mockResolvedValue([gated('Kayoanime', 'log in to google drive'), provider('ok', 'Ok')])
+    const all = await resolveOnlineStreams(media, 1)
+    expect(all.map((s) => s.url)).toEqual(['https://cdn/ok-sub.m3u8'])
+    expect(get(providerProblems).map((p) => p.provider)).toEqual(['Kayoanime'])
+
+    clearProviderCache()
+    runningStreamExtensions.mockResolvedValue([provider('ok', 'Ok')])
+    await resolveOnlineStreams(media, 1)
+    expect(get(providerProblems)).toEqual([])
+  })
+
+  it('records one line per provider, not one per failed server', async () => {
+    const { providerProblems } = await import('./onlinestream')
+    const noisy = {
+      id: 'noisy', name: 'Noisy', lang: undefined,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      call: async (method: string): Promise<any> => {
+        if (method === 'search') return [{ id: 'x', title: 'Frieren' }]
+        if (method === 'getSettings') return { episodeServers: ['a', 'b', 'c'] }
+        if (method === 'findEpisodes') return [{ id: 'e1', number: 1, title: 'Episode 1', sourceTitle: 'Frieren' }]
+        if (method === 'findEpisodeServer') throw new Error('host is down')
+        return null
+      },
+    }
+    runningStreamExtensions.mockResolvedValue([noisy])
+    await resolveOnlineStreams(media, 1)
+    expect(get(providerProblems)).toEqual([{ provider: 'Noisy', message: 'host is down' }])
   })
 })
