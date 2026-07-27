@@ -289,15 +289,28 @@ async fn ensure_private_java(app: &AppHandle) -> Result<PathBuf, String> {
     find_java(&destination).ok_or_else(|| "Private Java runtime installation failed".into())
 }
 
+/// Windows opens a console window for any console-subsystem child, and `java.exe` is one — so the
+/// extension runtime put a cmd window on screen for as long as it lived, and even the version probe
+/// flashed one up. Nothing here is interactive: the runtime speaks JSON over stdio and its output is
+/// already piped.
+#[cfg(windows)]
+fn hide_console(command: &mut Command) {
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+#[cfg(not(windows))]
+fn hide_console(_command: &mut Command) {}
+
 async fn java_command(app: &AppHandle) -> Result<PathBuf, String> {
     let java = if cfg!(windows) { "java.exe" } else { "java" };
-    let output = Command::new(java)
+    let mut probe = Command::new(java);
+    probe
         .arg("-version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .output()
-        .await;
+        .stderr(Stdio::piped());
+    hide_console(&mut probe);
+    let output = probe.output().await;
     if let Ok(output) = output {
         let version = String::from_utf8_lossy(&output.stderr);
         let quoted = version
@@ -313,7 +326,8 @@ async fn java_command(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, String> {
-    let mut child = Command::new(java)
+    let mut command = Command::new(java);
+    command
         .args([
             "-Dfile.encoding=UTF-8",
             "-Dsun.stdout.encoding=UTF-8",
@@ -326,7 +340,9 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    hide_console(&mut command);
+    let mut child = command
         .spawn()
         .map_err(|error| format!("Could not start the extension runtime: {error}"))?;
     let stdin = child.stdin.take().ok_or("Extension runtime has no stdin")?;
