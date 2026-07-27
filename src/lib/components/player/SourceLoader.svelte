@@ -10,6 +10,7 @@
   // Lottie output; their href is swapped for real addon icons at runtime.
   import { onDestroy, onMount } from 'svelte'
   import lottie, { type AnimationItem } from 'lottie-web'
+  import { iconSrc } from '$lib/stremio/addon-logo'
   import animationData from './source-loader.json'
 
   let { logos = [], caption = 'Finding your source', detail = '', onCancel }: {
@@ -41,7 +42,8 @@
     if (icons.length) {
       data.assets.forEach((asset, i) => {
         const src = icons[i % icons.length]
-        if (src) { asset.p = src; asset.u = '' }
+        const usable = iconSrc(src)
+        if (usable) { asset.p = usable; asset.u = '' }
       })
     }
     return data

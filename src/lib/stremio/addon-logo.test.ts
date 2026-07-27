@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveAddonLogo, logoTile } from './addon-logo'
+import { resolveAddonLogo, logoTile, iconSrc } from './addon-logo'
 
 describe('resolveAddonLogo', () => {
   it('passes an absolute url through', () => {
@@ -58,5 +58,26 @@ describe('logoTile', () => {
 
   it('ignores case and punctuation in the seed so one addon keeps one colour', () => {
     expect(logoTile('Torrentio-RD', 'Torrentio').from).toBe(logoTile('torrentio rd', 'Torrentio').from)
+  })
+})
+
+describe('iconSrc', () => {
+  it('wraps a bare base64 extension icon so an image source can load it', () => {
+    // Extension icons are stored WITHOUT a data: prefix (parse.ts). Passing one straight to an
+    // <image> href renders the broken-image glyph, which is exactly what the loader showed.
+    expect(iconSrc('iVBORw0KGgo=')).toBe('data:image/png;base64,iVBORw0KGgo=')
+  })
+
+  it('leaves an addon manifest URL alone', () => {
+    expect(iconSrc('https://cdn/icon.png')).toBe('https://cdn/icon.png')
+  })
+
+  it('leaves an already-prefixed data url alone', () => {
+    expect(iconSrc('data:image/png;base64,AAA')).toBe('data:image/png;base64,AAA')
+  })
+
+  it('has nothing to offer for an absent icon', () => {
+    expect(iconSrc(undefined)).toBeUndefined()
+    expect(iconSrc('  ')).toBeUndefined()
   })
 })
