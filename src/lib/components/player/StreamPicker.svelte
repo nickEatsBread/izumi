@@ -126,11 +126,9 @@
   const reasonOf = $derived(new Map(rejected.map((r) => [describe(r.stream), rejectLabel[r.reason]])))
   const rendered = $derived([...renderedMain, ...filteredInfos])
 
-  // Backdrop + cargo for the resolve screen. The lanterns carry the addons that are actually
-  // configured, so the wait shows what is being asked rather than a generic spinner.
+  // Backdrop for the resolve screen.
   const backdrop = $derived(pick ? (banner(pick.media) || cover(pick.media)) : '')
-  const cargoLogos = $derived([...new Set(all.map((i) => i.logo).filter((l): l is string => !!l))].slice(0, 3))
-  let chosenLabel = $state('Finding your source')
+  let chosenLabel = $state('')
   /** Abandon the pick and return to the list — the same contract as the debrid screen's Cancel. */
   function cancelChoice() {
     cancelResolve()
@@ -217,7 +215,7 @@
     // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
     cancelResolve()
     busy = true; error = ''
-    chosenLabel = info.group ?? info.server ?? info.addon ?? 'Finding your source'
+    chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
     streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
       if (s.status === 'playing') streamPicker.set(null)
@@ -506,9 +504,9 @@
       {/if}
       <div class="relative">
         <SourceLoader
-          logos={cargoLogos}
-          caption={chosenLabel}
-          detail={directP2p ? 'Preparing direct download' : 'Preparing your source'}
+          title={pick ? title(pick.media) : ''}
+          caption={directP2p ? 'Preparing download' : 'Connecting'}
+          detail={chosenLabel}
           onCancel={cancelChoice}
         />
       </div>
