@@ -9,7 +9,8 @@
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
   import { streamPicker, gameMode } from '$lib/player/session'
-  import { rankInfos, pickBest, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
+  import { rankInfos, pickCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
+  import { isDead, markDead } from '$lib/stremio/dead-sources'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
   import { providerProblems } from '$lib/stremio/onlinestream'
@@ -43,15 +44,26 @@
         ].filter(Boolean).join(' ').toLowerCase().includes(filter.trim().toLowerCase()))
       : visible,
   )
-  // The best cached source == the auto pick; pin + ring it. This MUST go through the same
-  // `pickBest` the non-interactive paths use (play.ts), or the pill labelled "Auto" ignores the
-  // Quality setting entirely and just takes the first cached row in the current sort order —
-  // picking a 2160p remux for someone who asked for 720p. `pickBest` already filters to
-  // `cached === 'instant'`, so the cached-only constraint is preserved. Season correctness is
-  // enforced upstream (verifySeason), so no `want` is needed here.
-  const bestStream = $derived(pickBest(visible.map((i) => i.stream), $preferredQuality))
-  const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
   const keyOf = (i: StreamInfo) => i.stream.url ?? i.stream.infoHash ?? i.label
+
+  // The auto-pick order. This MUST go through the same ranking the non-interactive paths use
+  // (play.ts), or the pill labelled "Auto" ignores the Quality setting entirely and just takes the
+  // first cached row in the current sort order — picking a 2160p remux for someone who asked for
+  // 720p. It already filters to `cached === 'instant'`, so the cached-only constraint is preserved.
+  // Season correctness is enforced upstream (verifySeason), so no `want` is needed here.
+  //
+  // The whole ORDER, not just the winner: an automatic pick that fails to play now advances to the
+  // next candidate instead of dead-ending, so one broken release no longer drops the user back to
+  // choosing by hand — and, on a binge, no longer does it once per episode.
+  let failedKeys = $state<string[]>([])
+  const hasFailed = (s: StreamInfo['stream']) => failedKeys.includes(keyOf(describe(s))) || isDead(s)
+  const candidates = $derived(pickCandidates(visible.map((i) => i.stream), $preferredQuality, undefined, hasFailed))
+  // Cap the chain: each attempt is a real resolve, and walking twenty broken sources in a row is
+  // indistinguishable from a hang.
+  const AUTO_MAX_TRIES = 3
+  let autoIdx = $state(0)
+  const bestStream = $derived(candidates[autoIdx])
+  const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
 
   // Skeleton while sources resolve; cap the rendered node count (One Piece can
   // return dozens of single-ep files even after collapsing batch packs).
@@ -108,6 +120,7 @@
       lastKey = k
       busy = false; error = ''; filter = ''; showAll = false; showFiltered = false
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
+      autoIdx = 0; failedKeys = []
       focusedBest = false
     }
   })
@@ -130,7 +143,11 @@
   // Start the countdown once the resolve says the pick is trustworthy + auto-select on. In
   // "immediately" mode, skip the wait entirely and pick right away.
   $effect(() => {
-    if (playbackError) {
+    // Only OUR OWN exhausted-chain error disarms the countdown. A failed binge continuation
+    // (which arrives on the store) used to disarm it permanently too, which is precisely the
+    // dead-end this chain exists to remove: the remembered release failing says nothing about
+    // whether the best candidate would play.
+    if (error) {
       cancelAuto()
       autoState = 'off'
       return
@@ -146,7 +163,7 @@
     }
   })
 
-  async function choose(info: StreamInfo) {
+  async function choose(info: StreamInfo, fromAuto = false) {
     cancelAuto()
     // A 'down' (0-seeder) row is still selectable — debrid may already hold it cached, or find
     // peers via the magnet's trackers. We dim it as a hint but never block the click; sinking a
@@ -159,13 +176,30 @@
     streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
       if (s.status === 'playing') streamPicker.set(null)
-      else if (s.status === 'error') { error = s.message ?? 'Playback failed.'; busy = false }
+      else if (s.status === 'error') {
+        busy = false
+        // Only the AUTOMATIC path walks on. A source the user picked by hand deserves its error
+        // shown, not a silent substitution — and must never be remembered as failed on their
+        // behalf, since they may well want to retry it.
+        if (fromAuto && advanceAuto(info)) return
+        error = s.message ?? 'Playback failed.'
+      }
       else if (s.status === 'idle') { busy = false } // caching canceled — re-enable the list
     })
   }
+  /** Remember the failure and move to the next candidate. False when the chain is exhausted. */
+  function advanceAuto(info: StreamInfo): boolean {
+    markDead(info.stream)
+    failedKeys = [...failedKeys, keyOf(info)]
+    if (autoIdx + 1 >= Math.min(candidates.length, AUTO_MAX_TRIES)) return false
+    autoIdx += 1
+    autoProgress = 0
+    autoState = 'idle' // re-arms the countdown effect on the new best
+    return true
+  }
   function autoBest() {
     if (!pick || busy) return
-    if (best) choose(best)
+    if (best) choose(best, true)
     else error = 'No cached source to auto-select.'
   }
   let copiedKey = $state<string | null>(null)
@@ -307,6 +341,7 @@
           {@const isBest = info === best}
           {@const disabled = busy}
           {@const filteredAs = reasonOf.get(info)}
+          {@const knownBad = hasFailed(info.stream)}
           <div
             data-focusable
             data-best-source={isBest ? '' : undefined}
@@ -318,7 +353,7 @@
             onfocus={cancelAuto}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
             class="group flex w-full items-start gap-3 rounded-xl border border-transparent bg-secondary/40 px-3 py-2.5 text-left transition-colors hover:bg-accent {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
-            class:opacity-40={info.cached === 'down' || !!filteredAs}
+            class:opacity-40={info.cached === 'down' || !!filteredAs || knownBad}
             class:!border-theme={isBest}
             class:!border-red-400={isBest && autoState === 'counting' && autoProgress > 0.4}
             class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4 && animate}
@@ -340,6 +375,9 @@
                 {/if}
                 {#if filteredAs}
                   <span class="shrink-0 rounded bg-amber-400/20 px-1.5 text-[0.6rem] font-black uppercase text-amber-300" title="Filtered out: {filteredAs}">{filteredAs}</span>
+                {/if}
+                {#if knownBad}
+                  <span class="shrink-0 rounded bg-red-400/20 px-1.5 text-[0.6rem] font-black uppercase text-red-300" title="This source failed to play recently. Still selectable — it may have been a temporary failure.">Failed</span>
                 {/if}
                 {#if info.batch}<Database size={13} class="shrink-0 text-indigo-300" />{/if}
                 <span class="ml-auto flex shrink-0 items-center gap-2">

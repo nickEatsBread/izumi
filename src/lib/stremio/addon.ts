@@ -43,27 +43,46 @@ export function rankStreams(streams: Stream[], sort: StreamSort = 'quality'): St
   return rankInfos(streams, sort).map((i) => i.stream)
 }
 
-// Auto-select the best source for a preferred quality. Only ever commits to a
-// CACHED (instant) stream — we never silently drop the user into a debrid
-// download or a wrong-season file. `want` (the requested episode's season/abs)
-// hard-drops confident wrong-season files BEFORE ranking, so a high-seeder
-// off-season batch can't win the auto-pick. Returns undefined when nothing is
-// cached, so callers fall back to the picker.
-export function pickBest(streams: Stream[], quality: string, want?: { season?: number; abs?: number }): Stream | undefined {
+// Auto-select order for a preferred quality: every source we would be willing to start on
+// automatically, best first. Only ever CACHED (instant) sources — we never silently drop the user
+// into a debrid download or a wrong-season file. `want` (the requested episode's season/abs)
+// hard-drops confident wrong-season files BEFORE ranking, so a high-seeder off-season batch can't
+// win. `isFailed` sinks (never removes) sources a previous attempt could not play.
+//
+// Returning the whole ordered list, rather than just the winner, is what lets a failed automatic
+// pick advance to the next candidate instead of dead-ending in the error state.
+export function pickCandidates(
+  streams: Stream[],
+  quality: string,
+  want?: { season?: number; abs?: number },
+  isFailed?: (s: Stream) => boolean,
+): Stream[] {
   const pool = want ? streams.filter((s) => !isWrongSeason(s, want)) : streams
   const all = pool.map(describe).filter((i) => i.cached === 'instant')
-  if (!all.length) return undefined
+  if (!all.length) return []
   // Auto-select must never silently commit to a foreign-language source. Applied as a hard filter
   // rather than a sort key: sorting alone still let a foreign source win when it was the only one
   // matching the requested quality tier.
   const preferred = all.filter((i) => !i.langMismatch)
-  const infos = preferred.length ? preferred : all
-  const byRank = infos.sort((a, b) => b.quality - a.quality || (b.seeders ?? -1) - (a.seeders ?? -1))
-  if (quality === 'any') return byRank[0].stream
-  const target = Number(quality)
-  return (byRank.find((i) => i.quality === target)
-    ?? byRank.filter((i) => i.quality <= target)[0]
-    ?? byRank[0]).stream
+  const infos = (preferred.length ? preferred : all)
+    .sort((a, b) => b.quality - a.quality || (b.seeders ?? -1) - (a.seeders ?? -1))
+  const target = quality === 'any' ? NaN : Number(quality)
+  const ordered = Number.isFinite(target)
+    ? [
+        ...infos.filter((i) => i.quality === target),
+        ...infos.filter((i) => i.quality < target),
+        ...infos.filter((i) => i.quality > target),
+      ]
+    : infos
+  // A remembered failure is a hint, not a verdict — a debrid hiccup and an expired token look the
+  // same from here, so failed sources go last rather than away.
+  const rank = isFailed ? ordered.filter((i) => !isFailed(i.stream)).concat(ordered.filter((i) => isFailed(i.stream))) : ordered
+  return rank.map((i) => i.stream)
+}
+
+/** The single best auto-pick — the head of the candidate list. Undefined when nothing is cached. */
+export function pickBest(streams: Stream[], quality: string, want?: { season?: number; abs?: number }): Stream | undefined {
+  return pickCandidates(streams, quality, want)[0]
 }
 
 // Query all configured addons for an episode. Keeps every USABLE stream (has a
