@@ -29,7 +29,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState } from '$lib/player/session'
+import { connecting, nextEpisodeReady, playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState } from '$lib/player/session'
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -595,7 +595,11 @@ async function prefetchNext(media: Media, episode: number) {
         noAdd: true,
       }) }
     }
-    if (s.url) { prefetched = { mediaId: media.id, episode: next, stream: s }; hit = true }
+    if (s.url) {
+      prefetched = { mediaId: media.id, episode: next, stream: s }
+      nextEpisodeReady.set({ mediaId: media.id, episode: next })
+      hit = true
+    }
   }
   catch { /* best-effort — the normal resolve runs at play time */ }
   finally {
@@ -607,7 +611,11 @@ async function prefetchNext(media: Media, episode: number) {
 /** Consume a matching prefetched stream, if one is ready for this exact episode. */
 function takePrefetched(mediaId: number, episode: number): Stream | null {
   const pf = prefetched
-  if (pf && pf.mediaId === mediaId && pf.episode === episode && pf.stream.url) { prefetched = null; return pf.stream }
+  if (pf && pf.mediaId === mediaId && pf.episode === episode && pf.stream.url) {
+    prefetched = null
+    nextEpisodeReady.set(null)
+    return pf.stream
+  }
   return null
 }
 

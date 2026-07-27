@@ -23,7 +23,7 @@
   import Search from 'lucide-svelte/icons/search'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady } from '$lib/player/session'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
@@ -37,6 +37,11 @@
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
   const hasNext = $derived(np.episode != null && np.airedTotal != null && np.episode < np.airedTotal)
+  // Ready means THIS show's next episode specifically — a stale entry from another title must not
+  // light the dot.
+  const nextReady = $derived(
+    !!$nextEpisodeReady && $nextEpisodeReady.mediaId === np.id && $nextEpisodeReady.episode === (np.episode ?? 0) + 1,
+  )
 
   // `cmd` runs an mpv command; the page owns the invoke plumbing + live state.
   let {
@@ -421,7 +426,21 @@
         {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
       </button>
       {#if hasNext}
-        <button data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(1) : playNext())} aria-label="Next episode"><SkipForward size={icSize} fill="currentColor" /></button>
+        <!-- A dot when the next episode is already resolved and will start instantly. Shown only
+             when true: under the noAdd contract most episodes are NOT preloaded, so a persistent
+             "not ready" state would be noise rather than information. -->
+        <button
+          data-focusable
+          class="{iconBtn} relative"
+          onclick={() => (gm ? episodeStep(1) : playNext())}
+          aria-label={nextReady ? 'Next episode (ready to play)' : 'Next episode'}
+          title={nextReady ? 'Next episode is ready — starts instantly' : undefined}
+        >
+          <SkipForward size={icSize} fill="currentColor" />
+          {#if nextReady}
+            <span class="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]"></span>
+          {/if}
+        </button>
       {/if}
 
       <!-- Desktop shows the time here; Game mode moved it to flank the bar (above). -->
