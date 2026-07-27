@@ -45,7 +45,12 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   if (info.dualAudio) add('dual audio', 3)
 
   if (info.bitDepth === '10bit') add('10-bit', 1)
-  if (info.codec === 'HEVC') add('HEVC', 1)
+  // HEVC and AV1 both earn the same point: they are the modern efficient encodes, and libmpv
+  // decodes both — in hardware where the GPU supports it, through the software fallback where it
+  // does not. Browser-based clients penalise AV1 because their renderer struggles with it; that is
+  // a property of playing video in a webview, not of the codec, and importing it here would
+  // de-rank good releases for a problem this app does not have.
+  if (info.codec === 'HEVC' || info.codec === 'AV1') add(info.codec, 1)
   if (info.codec === 'XviD') add('ancient codec', -4)
 
   if (info.source === 'BluRay') add('BluRay', 2)
