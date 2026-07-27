@@ -12,6 +12,7 @@
   import { rankInfos, pickCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
+  import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription } from '$lib/settings/ui'
@@ -125,6 +126,17 @@
   const reasonOf = $derived(new Map(rejected.map((r) => [describe(r.stream), rejectLabel[r.reason]])))
   const rendered = $derived([...renderedMain, ...filteredInfos])
 
+  // Backdrop + cargo for the resolve screen. The lanterns carry the addons that are actually
+  // configured, so the wait shows what is being asked rather than a generic spinner.
+  const backdrop = $derived(pick ? (banner(pick.media) || cover(pick.media)) : '')
+  const cargoLogos = $derived([...new Set(all.map((i) => i.logo).filter((l): l is string => !!l))].slice(0, 3))
+  let chosenLabel = $state('Finding your source')
+  /** Abandon the pick and return to the list — the same contract as the debrid screen's Cancel. */
+  function cancelChoice() {
+    cancelResolve()
+    busy = false
+    error = ''
+  }
   let busy = $state(false)
   let error = $state('')
   const playbackError = $derived(error || pick?.playbackError || '')
@@ -205,6 +217,7 @@
     // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
     cancelResolve()
     busy = true; error = ''
+    chosenLabel = info.group ?? info.server ?? info.addon ?? 'Finding your source'
     streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
       if (s.status === 'playing') streamPicker.set(null)
@@ -478,4 +491,25 @@
       </div>
     </div>
   </div>
+
+  <!-- The gap between "you picked" and "video plays". It used to be dead air: the rows greyed out
+       and nothing else happened until either the player or, after a grace period, the debrid
+       caching screen appeared. On a slow resolve that read as a freeze. -->
+  {#if busy}
+    <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black/85" transition:fade={{ duration: 160 }}>
+      {#if backdrop}
+        <!-- `filter` on a STATIC image, never `backdrop-filter`: the latter re-samples live content
+             every frame, which is what wedged Deck WebKit. -->
+        <img src={backdrop} alt="" class="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
+      {/if}
+      <div class="relative">
+        <SourceLoader
+          logos={cargoLogos}
+          caption={chosenLabel}
+          detail={directP2p ? 'Preparing direct download' : 'Preparing your source'}
+          onCancel={cancelChoice}
+        />
+      </div>
+    </div>
+  {/if}
 {/if}
