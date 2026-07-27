@@ -65,8 +65,19 @@ export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; st
 /** Standard poll loop. `probe` returns DebridInfo; resolves when stage==='ready'.
  *  Aborts near-instantly: the abort check does not rely on throwIfAborted, and the
  *  between-polls sleep rejects immediately when opts.signal fires. */
+// Ramp, not a fixed interval. A cached torrent is usually ready within the first second, and a flat
+// 3s meant a torrent the service had ready at ~700ms was not OBSERVED until 3000ms — the resolve
+// felt slow for reasons that had nothing to do with the service. Worse, the caching overlay's grace
+// timer expired inside that first sleep, so a sub-second resolve presented as a full-screen
+// "downloading to debrid" takeover that then vanished. The tail matters much less: a genuine
+// download costs only a handful of extra probes before settling at the slow cadence, and no
+// provider documents a required cadence (Real-Debrid's limit is 250 requests/minute, which this
+// comes nowhere near).
+const POLL_RAMP_MS = [250, 500, 750, 1000, 1500, 2000]
+const POLL_MAX_MS = 3000
+
 export async function poll(probe: () => Promise<DebridInfo>, opts: ResolveOpts = {}): Promise<void> {
-  const pollMs = opts.pollMs ?? 3000
+  let tick = 0
   const deadline = Date.now() + (opts.timeoutMs ?? 600_000)
   const aborted = () => { if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError') }
   for (;;) {
@@ -81,7 +92,8 @@ export async function poll(probe: () => Promise<DebridInfo>, opts: ResolveOpts =
       const sig = opts.signal
       if (sig?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
       const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) }
-      const t = setTimeout(() => { sig?.removeEventListener?.('abort', onAbort); resolve() }, pollMs)
+      const wait = opts.pollMs ?? POLL_RAMP_MS[tick++] ?? POLL_MAX_MS
+      const t = setTimeout(() => { sig?.removeEventListener?.('abort', onAbort); resolve() }, wait)
       sig?.addEventListener?.('abort', onAbort, { once: true })
     })
   }

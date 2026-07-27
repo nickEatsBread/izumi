@@ -261,7 +261,11 @@ describe('real-debrid account list caching', () => {
     expect(afterSecond).toBe(1)
   })
 
-  it('re-scans after the account is modified', async () => {
+  it('keeps the cached scan when a torrent is ADDED, so a binge pays for it once', async () => {
+    // Adding is the operation that most often immediately precedes the next episode's resolve.
+    // Clearing the cache here meant every episode re-paid the full account scan the cache exists
+    // to avoid. The new entry is recorded instead; only a REMOVAL invalidates.
+    const other = 'c'.repeat(40)
     serveJson(httpFetch, [
       ['/torrents?limit', []],
       ['/torrents/addMagnet', { id: '9' }],
@@ -271,8 +275,38 @@ describe('real-debrid account list caching', () => {
     ])
 
     await realdebrid.resolveHash('key', HASH)
-    await realdebrid.resolveHash('key', HASH)
+    await realdebrid.resolveHash('key', other)
 
-    expect(urlsOf(httpFetch).filter((u) => u.includes('/torrents?limit')).length).toBe(2)
+    expect(urlsOf(httpFetch).filter((u) => u.includes('/torrents?limit')).length).toBe(1)
+  })
+})
+
+describe('real-debrid round trips on a first play', () => {
+  beforeEach(() => { httpFetch.mockReset(); rdForgetLists() })
+
+  it('costs exactly two info reads on a cached first play', async () => {
+    // Pre-selection read, then the post-selection read that finds it already downloaded. The
+    // `stage !== 'ready'` guard means poll is never entered on this path, so its first probe adds
+    // no third read — this pins that, since removing the guard would be an invisible regression.
+    let infoCalls = 0
+    httpFetch.mockImplementation(async (url: string) => {
+      const u = String(url)
+      const json = (v: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(v) })
+      if (u.includes('/torrents?limit')) return json([])
+      if (u.includes('/torrents/addMagnet')) return json({ id: '9' })
+      if (u.includes('/torrents/selectFiles/')) return json({})
+      if (u.includes('/torrents/info/')) {
+        infoCalls++
+        // First read is pre-selection; everything after it is the finished torrent.
+        return json(infoCalls === 1
+          ? { status: 'waiting_files_selection', files: [{ id: 1, path: '/Show_01.mkv', bytes: 500, selected: 0 }], links: [] }
+          : { status: 'downloaded', files: [{ id: 1, path: '/Show_01.mkv', bytes: 500, selected: 1 }], links: ['LINK'] })
+      }
+      if (u.includes('/unrestrict/link')) return json({ download: 'https://cdn.rd/Show_01.mkv', filename: 'Show_01.mkv', filesize: 500 })
+      return { ok: false, status: 404, text: async () => '{}' }
+    })
+
+    await expect(realdebrid.resolveHash('key', HASH)).resolves.toBe('https://cdn.rd/Show_01.mkv')
+    expect(infoCalls).toBe(2)
   })
 })
