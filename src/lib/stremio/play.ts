@@ -1110,33 +1110,39 @@ export async function playStream(media: Media, episode: number | undefined, stre
           cancel: () => { debridCaching.set(null); controller.abort() },
         })
       }
-      // Known-uncached → show the caching screen upfront. Otherwise DELAY it: a genuinely-cached hash
-      // resolves in ~1s (no screen, no flash), but a stale/mislabeled "cached" hash that RD has to
-      // re-fetch dwells in 'queued'/'downloading' — after a short grace the screen appears so the user
-      // isn't stuck on a frozen picker with no way to cancel. (poll only ever reports queued/downloading.)
-      // The grace has to outlast the poll's opening probes, or it fires while the resolve is still
-      // in its first sleep and a sub-second resolve flashes a full-screen "downloading" takeover on
-      // its way to playing. The ramp reaches ~2.5s only after five probes have all said
-      // "still downloading", which is the point at which this genuinely is a download.
-      const OVERLAY_GRACE_MS = 2500
-      let overlayTimer: ReturnType<typeof setTimeout> | undefined
-      if (isUncached(stream)) showCaching()
-      else overlayTimer = setTimeout(showCaching, OVERLAY_GRACE_MS)
+      // The caching screen appears only when we are genuinely WAITING ON DEBRID, not merely
+      // resolving. Both of its old triggers were proxies for that and both were wrong: a
+      // known-uncached row showed it upfront even though most of the resolve is our own lookups,
+      // and a wall-clock grace fired on any slow resolve regardless of cause. The source-resolve
+      // screen covers that whole period already, and it carries the same Cancel.
+      //
+      // The honest signal is the provider itself saying "not ready": `poll` only calls onStatus
+      // for a queued/downloading probe, and never runs at all for a cached hash. Two of them, so a
+      // torrent that finishes on the second probe never flashes a downloading screen on its way to
+      // playing.
+      const PROBES_BEFORE_SCREEN = 2
+      let notReady = 0
+      // Nothing else is on screen when the picker is hidden (binge continuation plays with it
+      // closed), so there the caching screen is the only thing that can hold the user — show it
+      // immediately, as before.
+      const heldByResolveScreen = !!get(streamPicker) && !get(streamPicker)?.hidden
+      if (!heldByResolveScreen) showCaching()
       try {
         const want = await episodeWant(media, episode, stream)
         const url = await resolveHash(provider, key, torrent, {
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
-          onStatus: (i) => { if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c)) },
+          onStatus: (i) => {
+            if (!overlayShown && ++notReady >= PROBES_BEFORE_SCREEN) showCaching()
+            if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c))
+          },
           want,
         })
-        clearTimeout(overlayTimer)
         stream = { ...stream, url }
         debridSidecarSource = { provider, key, torrent, want }
         debridCaching.set(null)
       }
       catch (e) {
-        clearTimeout(overlayTimer)
         debridCaching.set(null)
         // User-initiated cancel: quietly return to the picker, no error toast.
         if (e instanceof Error && e.name === 'AbortError') return onState({ status: 'idle' })

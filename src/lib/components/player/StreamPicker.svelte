@@ -8,7 +8,7 @@
   import { onDestroy } from 'svelte'
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
-  import { streamPicker, gameMode, bingeSource } from '$lib/player/session'
+  import { streamPicker, gameMode, bingeSource, debridCaching } from '$lib/player/session'
   import { rankInfos, pickCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
@@ -495,7 +495,9 @@
   <!-- The gap between "you picked" and "video plays". It used to be dead air: the rows greyed out
        and nothing else happened until either the player or, after a grace period, the debrid
        caching screen appeared. On a slow resolve that read as a freeze. -->
-  {#if busy}
+  <!-- Hidden once the debrid screen takes over: that screen is opaque, so leaving the animation
+       running behind it would burn a Lottie render loop nobody can see. -->
+  {#if busy && !$debridCaching}
     <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black/85" transition:fade={{ duration: 160 }}>
       {#if backdrop}
         <!-- `filter` on a STATIC image, never `backdrop-filter`: the latter re-samples live content
