@@ -9,6 +9,7 @@ import {
   providerEpisodeLabel,
   searchQueries,
   searchTitleScore,
+  providerProblemText,
   videoSourceToStream,
 } from './onlinestream'
 import { describe as describeStream } from './parse'
@@ -372,5 +373,26 @@ describe('videoSourceToStream', () => {
     expect(s.__audio).toBe('dub')
     // no episode title → a sensible direct-stream filename
     expect(s.behaviorHints?.filename).toContain('Direct')
+  })
+})
+
+// The runtime reports a provider failure as a plain message, but Rust re-serializes the
+// `status: "error"` form as a JSON string. Both must read as one clean line in the picker.
+describe('providerProblemText', () => {
+  it('unwraps a JSON-quoted runtime error', () => {
+    expect(providerProblemText('"Failed to load items, please log in to google drive through webview"'))
+      .toBe('Failed to load items, please log in to google drive through webview')
+  })
+
+  it('keeps only the first line of a stack-carrying message', () => {
+    expect(providerProblemText(new Error('boom\n\tat Foo.bar(Unknown Source)'))).toBe('boom')
+    // Rust hands the JSON form back with the newline still ESCAPED, so it isn't a line break yet.
+    expect(providerProblemText(String.raw`boom\n\tat Foo.bar`)).toBe('boom at Foo.bar')
+  })
+
+  it('truncates a runaway message rather than blowing out the row', () => {
+    const text = providerProblemText('x'.repeat(500))
+    expect(text.length).toBeLessThanOrEqual(200)
+    expect(text.endsWith('…')).toBe(true)
   })
 })
