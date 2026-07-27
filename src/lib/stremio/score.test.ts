@@ -31,6 +31,14 @@ suite('scoreInfo', () => {
     expect(score('Show - 01 1080p HEVC 10bit')).toBeGreaterThan(score('Show - 01 1080p'))
   })
 
+  it('rewards AV1 exactly as much as HEVC', () => {
+    // Both are modern efficient codecs and libmpv decodes both, in hardware where the GPU
+    // supports it and through the software fallback where it does not. Penalising AV1 would be
+    // importing a browser-renderer problem this app does not have.
+    expect(score('Show - 01 1080p AV1')).toBe(score('Show - 01 1080p HEVC'))
+    expect(score('Show - 01 1080p AV1')).toBeGreaterThan(score('Show - 01 1080p x264'))
+  })
+
   it('prefers BluRay over web, and sinks broadcast rips', () => {
     expect(score('Show - 01 1080p BluRay')).toBeGreaterThan(score('Show - 01 1080p WEB-DL'))
     expect(score('Show - 01 1080p WEB-DL')).toBeGreaterThan(score('Show - 01 1080p HDTV'))
