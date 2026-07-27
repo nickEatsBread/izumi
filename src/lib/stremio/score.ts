@@ -32,9 +32,20 @@ export const TRUSTED_GROUPS = [
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
 const TRUSTED = new Set(TRUSTED_GROUPS.map(norm))
 
+/** Resolution as POINTS, not a veto.
+ *
+ *  It used to be a hard sort key, which meant any 4K release outranked every 1080p one no matter
+ *  how dead it was — so the list led with a 22-seeder 4K file above an 812-seeder 1080p, i.e. with
+ *  the thing least likely to actually start playing. As points, the 4K-over-1080p edge is small
+ *  enough that health can overturn it and large enough to win when health is comparable. */
+const RESOLUTION_POINTS: [number, number][] = [[2160, 25], [1440, 22], [1080, 20], [720, 8], [480, 2]]
+
 export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: number; reasons: ScoreReason[] } {
   const reasons: ScoreReason[] = []
   const add = (signal: string, delta: number) => { if (delta) reasons.push({ signal, delta }) }
+
+  const res = RESOLUTION_POINTS.find(([q]) => info.quality >= q)
+  if (res) add(`${info.quality}p`, res[1])
 
   // Seeders, capped. A swarm of 5000 is not fifty times better than one of 100 — past a point the
   // torrent simply saturates the connection, and letting the number run would drown every other

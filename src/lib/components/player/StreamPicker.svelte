@@ -79,12 +79,22 @@
   // The whole ORDER, not just the winner: an automatic pick that fails to play now advances to the
   // next candidate instead of dead-ending, so one broken release no longer drops the user back to
   // choosing by hand — and, on a binge, no longer does it once per episode.
+  // "Immediately" means the user has opted out of choosing at all: no countdown, no list. The
+  // resolve screen stands in for the picker, the auto-pick may commit to an uncached source (every
+  // torrent-extension row is uncached by construction, so it would otherwise never be eligible),
+  // and a failure walks on instead of dropping them back to a list they asked not to see.
+  const autoImmediate = $derived($autoSelectSource && !$autoSelectCountdown)
   let failedKeys = $state<string[]>([])
   const hasFailed = (s: StreamInfo['stream']) => failedKeys.includes(keyOf(describe(s))) || isDead(s)
-  const candidates = $derived(pickCandidates(visible.map((i) => i.stream), $preferredQuality, undefined, hasFailed, rankOpts))
+  const candidates = $derived(pickCandidates(
+    visible.map((i) => i.stream), $preferredQuality, undefined, hasFailed,
+    { ...rankOpts, allowUncached: autoImmediate },
+  ))
   // Cap the chain: each attempt is a real resolve, and walking twenty broken sources in a row is
-  // indistinguishable from a hang.
-  const AUTO_MAX_TRIES = 3
+  // indistinguishable from a hang. Higher when the user opted out of choosing — a whole page of
+  // releases blocked for the same legal reason is common, and giving up after three hands them
+  // back the list they asked not to see.
+  const AUTO_MAX_TRIES = $derived(autoImmediate ? 8 : 3)
   let autoIdx = $state(0)
   const bestStream = $derived(candidates[autoIdx])
   const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
@@ -224,7 +234,7 @@
         // Only the AUTOMATIC path walks on. A source the user picked by hand deserves its error
         // shown, not a silent substitution — and must never be remembered as failed on their
         // behalf, since they may well want to retry it.
-        if (fromAuto && advanceAuto(info)) return
+        if ((fromAuto || autoImmediate) && advanceAuto(info)) return
         error = s.message ?? 'Playback failed.'
       }
       else if (s.status === 'idle') { busy = false } // caching canceled — re-enable the list
@@ -495,7 +505,7 @@
        caching screen appeared. On a slow resolve that read as a freeze. -->
   <!-- Hidden once the debrid screen takes over: that screen is opaque, so leaving the animation
        running behind it would burn a Lottie render loop nobody can see. -->
-  {#if busy && !$debridCaching}
+  {#if (busy || (autoImmediate && resolving)) && !$debridCaching && !playbackError}
     <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black/85" transition:fade={{ duration: 160 }}>
       {#if backdrop}
         <!-- `filter` on a STATIC image, never `backdrop-filter`: the latter re-samples live content
