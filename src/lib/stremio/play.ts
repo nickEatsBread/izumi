@@ -33,7 +33,7 @@ import { connecting, nextEpisodeReady, playing, nowPlaying, nowPlayingUrl, strea
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
-  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
+  autoplayNext, autoSelectCountdown, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   torrentDownloadLimitMbps, torrentUploadLimitMode, torrentUpstreamCapacityMbps,
 } from '$lib/settings/ui'
@@ -1008,7 +1008,13 @@ export async function resumeEpisode(media: Media, episode: number, onState: (s: 
     cancel: () => { connecting.set(null); cancelResolve() },
   })
   const current = await fetchMediaById(media.id).catch(() => media)
-  const remembered = get(sourceOrigins)[current.id]
+  // Replaying the remembered source skips the picker entirely, which is only ever right when the
+  // user has opted OUT of choosing. It used to be ungated: a countdown is a request for a review
+  // window and this removed it, and with auto-select off altogether the source was still picked
+  // for them. Everything else falls through to the picker, whose auto-pick already weights the
+  // previous episode's group heavily — so the same release usually still wins, just visibly.
+  const skipPicker = get(autoSelectSource) && !get(autoSelectCountdown)
+  const remembered = skipPicker ? get(sourceOrigins)[current.id] : undefined
   if (remembered) {
     try {
       const stream = await resolveRememberedSource(current, episode, remembered)
