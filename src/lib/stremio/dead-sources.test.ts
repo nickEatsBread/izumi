@@ -1,9 +1,34 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { markDead, isDead, forgetDead, DEAD_MS, DEAD_REPEAT_MS } from './dead-sources'
+import { markDead, isDead, forgetDead, fingerprint, DEAD_MS, DEAD_REPEAT_MS } from './dead-sources'
 
 const t0 = 1_700_000_000_000
+const KEY = 'SUPERSECRETAPIKEY123'
+const RESOLVER = `https://torrentio.strem.fun/resolve/realdebrid/${KEY}/aabbccddeeff00112233445566778899aabbccdd/null/1/Show.mkv`
 
 beforeEach(() => forgetDead())
+
+describe('fingerprints never persist a credential', () => {
+  it('does not write a debrid api key into the record', () => {
+    // These rows are resolver URLs with the user's own debrid key embedded in the path, and this
+    // record is persisted to localStorage for days. Keying on the raw URL stored the key.
+    expect(fingerprint({ url: RESOLVER })).not.toContain(KEY)
+  })
+
+  it('recognises the torrent behind a resolver url, so one failure covers every copy', () => {
+    expect(fingerprint({ url: RESOLVER }))
+      .toBe(fingerprint({ infoHash: 'AABBCCDDEEFF00112233445566778899AABBCCDD' }))
+  })
+
+  it('never stores an opaque url verbatim either', () => {
+    const url = 'https://host/stream/abcdef123456token'
+    expect(fingerprint({ url })).not.toContain('abcdef123456token')
+  })
+
+  it('still keys two different urls apart, and one url stably', () => {
+    expect(fingerprint({ url: 'https://host/a' })).not.toBe(fingerprint({ url: 'https://host/b' }))
+    expect(fingerprint({ url: 'https://host/a' })).toBe(fingerprint({ url: 'https://host/a' }))
+  })
+})
 
 describe('failed-source memory', () => {
   it('does not consider an unseen source dead', () => {
