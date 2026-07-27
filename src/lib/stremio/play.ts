@@ -583,7 +583,12 @@ async function prefetchNext(media: Media, episode: number) {
     const { streams, want } = await resolveStreams(media, next)
     const best = pickSameRelease(media, streams, want)
     if (!best) return // no cached same-release — leave it to the picker rather than force a download
-    let s = best
+    // Recover the hash from a debrid resolver URL exactly as playStream does. Without this the
+    // prefetch stored the resolver URL untouched, playStream then discarded it at play time and
+    // ran the whole debrid resolve anyway — so for these rows the preload did nothing at all
+    // beyond the addon fan-out, which is most of why "next episode" felt slow.
+    const resolverHash = torrentioResolverInfoHash(best.url, best.__addonName ?? best.name)
+    let s = resolverHash ? { ...best, url: undefined, infoHash: resolverHash } : best
     if (!s.url && s.infoHash) {
       s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash, {
         want: { episode: next, abs: want?.abs, season: want?.season, filename: s.behaviorHints?.filename },
@@ -1376,8 +1381,11 @@ let currentMedia: Media | null = null
 
 // Surface auto-advance / prev-next progress + errors as a transient overlay toast.
 const noticeState = (s: PlayState) => {
-  if (s.status === 'resolving') playerNotice.set('Loading episode…')
-  else if (s.status === 'error') playerNotice.set(s.message ?? 'Playback failed.')
+  // No "Loading episode…" toast: the connecting screen covers the whole resolve now, app-wide, and
+  // a small hoverable saying the same thing underneath it was both redundant and the clunkier of
+  // the two. Failures still get a toast — those happen once playback has already started, where
+  // there is no connecting screen to carry the message.
+  if (s.status === 'error') playerNotice.set(s.message ?? 'Playback failed.')
   else playerNotice.set('')
 }
 
