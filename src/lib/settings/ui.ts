@@ -70,6 +70,10 @@ export const preferredQuality = persisted<Quality>('preferred-quality', '1080')
 /** Show dead/down sources (uncached torrents with no seeders) in the picker.
  *  Off = hidden (they always sink to the bottom and are never auto-played). */
 export const showDeadSources = persisted<boolean>('show-dead-sources', false)
+/** Show an addon's whole description on a source row instead of clamping it. Addons write real
+ *  detail into that text — tracker, languages, per-file notes — and clamping is a default, not a
+ *  decision that any of it was worth discarding. */
+export const fullStreamDescription = persisted<boolean>('full-stream-description', false)
 /** Within-cache-tier sort order for the source picker. */
 export const preferredStreamSort = persisted<StreamSort>('preferred-stream-sort', 'quality')
 

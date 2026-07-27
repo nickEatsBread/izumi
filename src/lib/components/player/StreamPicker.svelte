@@ -11,9 +11,10 @@
   import { streamPicker, gameMode, bingeSource } from '$lib/player/session'
   import { rankInfos, pickCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead } from '$lib/stremio/dead-sources'
+  import AddonLogo from './AddonLogo.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
-  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey } from '$lib/settings/ui'
+  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription } from '$lib/settings/ui'
   import { providerProblems } from '$lib/stremio/onlinestream'
   import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
@@ -40,11 +41,26 @@
   const deadCount = $derived(all.filter((i) => i.cached === 'down').length)
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
 
+  // What the addon itself wrote about this source. Torrentio-style addons put the release name and
+  // metadata in `title`; Comet-style ones put it in `description` and emit no title at all. Falls
+  // back to the parsed filename for rows that carry neither (direct-stream extension results).
+  const descriptionOf = (i: StreamInfo) =>
+    i.stream.title?.trim() || i.stream.description?.trim() || i.filename || i.label
+
+  // Did the addon already state this in its own text? Matched on the MARKER, never on the value:
+  // a naive body.includes('10') for a 10-seeder torrent also matches "1080p" and would silently
+  // drop the chip on most rows.
+  const statedSeeders = (body: string) => /[👤👥]|\bseeders?\b/iu.test(body)
+  const statedSize = (body: string, label: string) => /💾/u.test(body) || body.includes(label)
+
   let filter = $state('')
   const shown = $derived(
     filter.trim()
       ? visible.filter((i) => [
           i.filename ?? i.label,
+          // The addon's own text is on the row now, so it has to be searchable too — otherwise
+          // filtering for a tracker or language the user can plainly see returns nothing.
+          descriptionOf(i),
           i.server,
           i.addon,
           ...i.badges,
@@ -108,9 +124,6 @@
   )
   const reasonOf = $derived(new Map(rejected.map((r) => [describe(r.stream), rejectLabel[r.reason]])))
   const rendered = $derived([...renderedMain, ...filteredInfos])
-  // Addon logo (URL) or extension icon (base64/url/data:) — one dual-scheme rule.
-  const logoSrc = (l: string) =>
-    l.startsWith('http') || l.startsWith('data:image') ? l : `data:image/png;base64,${l}`
 
   let busy = $state(false)
   let error = $state('')
@@ -329,6 +342,9 @@
         <label class="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground" title="Show dead sources">
           <input type="checkbox" bind:checked={$showDeadSources} data-focusable class="accent-theme" /> Dead
         </label>
+        <label class="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground" title="Show each addon's full description instead of the first few lines">
+          <input type="checkbox" bind:checked={$fullStreamDescription} data-focusable class="accent-theme" /> Full text
+        </label>
         {#if rejected.length}
           <label class="flex cursor-pointer items-center gap-1 text-xs text-muted-foreground" title="Show sources removed as the wrong title, production, season or an extra">
             <input type="checkbox" bind:checked={showFiltered} data-focusable class="accent-theme" /> Filtered ({rejected.length})
@@ -361,6 +377,7 @@
           {@const disabled = busy}
           {@const filteredAs = reasonOf.get(info)}
           {@const knownBad = hasFailed(info.stream)}
+          {@const body = descriptionOf(info)}
           <div
             data-focusable
             data-best-source={isBest ? '' : undefined}
@@ -384,9 +401,7 @@
             <span class="min-w-0 flex-1">
               <!-- heading row -->
               <span class="flex items-center gap-2">
-                {#if info.logo}
-                  <img src={logoSrc(info.logo)} alt={info.addon ?? ''} title={info.addon ?? ''} class="size-5 shrink-0 rounded object-contain" loading="lazy" decoding="async" />
-                {/if}
+                <AddonLogo logo={info.logo} name={info.addon ?? info.provider} id={info.stream.__origin?.id} size={20} />
                 <span class="truncate text-base font-bold">{info.server ?? info.group ?? info.addon ?? info.provider ?? 'Source'}</span>
                 {#if isBest}
                   <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white" title={whyBest}>Best</span>
@@ -400,21 +415,29 @@
                 {/if}
                 {#if info.batch}<Database size={13} class="shrink-0 text-indigo-300" />{/if}
                 <span class="ml-auto flex shrink-0 items-center gap-2">
-                  {#if info.addon && !info.logo}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
+                  <!-- Unconditional. Suppressing the name whenever a logo EXISTED meant a logo that
+                       failed to load left the row with a broken box and no name — no provenance at all. -->
+                  {#if info.addon}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
                   <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
                   <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
                 </span>
               </span>
 
-              <!-- filename -->
-              <span class="mt-0.5 block truncate text-[0.72rem] text-muted-foreground" title={info.filename ?? info.label}>{info.filename ?? info.label}</span>
+              <!-- The addon's OWN text, verbatim. It writes real detail in here — tracker, languages,
+                   per-file notes, its own formatting — and the row used to show a single parsed
+                   filename instead, discarding everything we hadn't explicitly extracted. -->
+              <span
+                class="mt-0.5 block whitespace-pre-line text-[0.72rem] leading-snug text-muted-foreground {$fullStreamDescription ? '' : 'line-clamp-3'}"
+                title={body}
+              >{body}</span>
 
-              <!-- meta + badges -->
+              <!-- meta + badges. Seeders/size are suppressed when the addon already wrote them into
+                   the text above, so the row states each fact once. -->
               <span class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.7rem]">
                 {#if info.provider}<span class="font-bold text-theme">{info.provider}</span>{/if}
                 {#if info.cached === 'uncached'}<span class="text-amber-400">{directP2p ? 'direct P2P' : 'will download'}</span>{/if}
-                {#if info.seeders != null}<span class={seedClass(info.seeders)}>👤 {info.seeders}</span>{/if}
-                {#if info.sizeLabel}<span class="text-muted-foreground">💾 {info.sizeLabel}</span>{/if}
+                {#if info.seeders != null && !statedSeeders(body)}<span class={seedClass(info.seeders)}>👤 {info.seeders}</span>{/if}
+                {#if info.sizeLabel && !statedSize(body, info.sizeLabel)}<span class="text-muted-foreground">💾 {info.sizeLabel}</span>{/if}
                 {#each info.badges as b}
                   <span
                     class="rounded px-1.5 py-0.5 font-medium {badgeClass(b)}"
