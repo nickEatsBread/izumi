@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor, rdShouldRetrySingleFile, rdPickBestDownloaded, rdMatchesSingleFile } from './realdebrid'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+
+const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+
+import { serveJson, called, urlsOf } from '../../../../test/debrid-http'
+import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor, rdShouldRetrySingleFile, rdPickBestDownloaded, rdMatchesSingleFile, rdForgetLists, realdebrid } from './realdebrid'
+
+const HASH = '8'.repeat(40)
 
 describe('rdStatus', () => {
   it('maps a finished torrent to ready', () => {
@@ -199,5 +206,73 @@ describe('rdMatchesSingleFile', () => {
 
   it('does not match when nothing is selected', () => {
     expect(rdMatchesSingleFile([{ id: 3, selected: 0 }, { id: 4, selected: 0 }], 3)).toBe(false)
+  })
+})
+
+// The reference implementation of the noAdd contract every other provider now mirrors:
+// reuse an entry the account already holds, otherwise bail rather than add.
+describe('realdebrid.resolveHash noAdd', () => {
+  // The account-list scan is cached per key across resolves, so each case starts from cold.
+  beforeEach(() => { httpFetch.mockReset(); rdForgetLists() })
+
+  it('never adds the magnet when the hash is not already on the account', async () => {
+    serveJson(httpFetch, [['/torrents?limit=', []]])
+    await expect(realdebrid.resolveHash('key', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(called(httpFetch, '/torrents/addMagnet')).toBe(false)
+  })
+
+  it('never adds the magnet when the account list itself fails', async () => {
+    serveJson(httpFetch, [])
+    await expect(realdebrid.resolveHash('key', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(called(httpFetch, '/torrents/addMagnet')).toBe(false)
+  })
+
+  it('reuses a downloaded torrent already on the account', async () => {
+    serveJson(httpFetch, [
+      ['/torrents?limit=', [{ id: 'T1', hash: HASH.toUpperCase(), status: 'downloaded', bytes: 100 }]],
+      ['/torrents/info/T1', { id: 'T1', status: 'downloaded', files: [{ id: 1, path: 'Show_01.mkv', bytes: 100, selected: 1 }], links: ['https://real-debrid.com/d/AAA'] }],
+      ['/unrestrict/link', { download: 'https://cdn.real-debrid/Show_01.mkv', filename: 'Show_01.mkv', filesize: 100 }],
+    ])
+    await expect(realdebrid.resolveHash('key', HASH, { noAdd: true })).resolves.toBe('https://cdn.real-debrid/Show_01.mkv')
+    expect(called(httpFetch, '/torrents/addMagnet')).toBe(false)
+  })
+})
+
+describe('real-debrid account list caching', () => {
+  beforeEach(() => { httpFetch.mockReset(); rdForgetLists() })
+
+  it('scans the account list once for several hashes in a row', async () => {
+    const other = 'b'.repeat(40)
+    serveJson(httpFetch, [
+      ['/torrents?limit', [
+        { id: '1', hash: HASH, status: 'downloaded', bytes: 500 },
+        { id: '2', hash: other, status: 'downloaded', bytes: 500 },
+      ]],
+      ['/torrents/info/', { status: 'downloaded', files: [{ id: 1, path: '/Show_01.mkv', bytes: 500, selected: 1 }], links: ['LINK'] }],
+      ['/unrestrict/link', { download: 'https://cdn.rd/Show_01.mkv', filename: 'Show_01.mkv', filesize: 500 }],
+    ])
+
+    await realdebrid.resolveHash('key', HASH)
+    const afterFirst = urlsOf(httpFetch).filter((u) => u.includes('/torrents?limit')).length
+    await realdebrid.resolveHash('key', other)
+    const afterSecond = urlsOf(httpFetch).filter((u) => u.includes('/torrents?limit')).length
+
+    expect(afterFirst).toBe(1)
+    expect(afterSecond).toBe(1)
+  })
+
+  it('re-scans after the account is modified', async () => {
+    serveJson(httpFetch, [
+      ['/torrents?limit', []],
+      ['/torrents/addMagnet', { id: '9' }],
+      ['/torrents/selectFiles/', {}],
+      ['/torrents/info/', { status: 'downloaded', files: [{ id: 1, path: '/Show_01.mkv', bytes: 500, selected: 1 }], links: ['LINK'] }],
+      ['/unrestrict/link', { download: 'https://cdn.rd/Show_01.mkv', filename: 'Show_01.mkv', filesize: 500 }],
+    ])
+
+    await realdebrid.resolveHash('key', HASH)
+    await realdebrid.resolveHash('key', HASH)
+
+    expect(urlsOf(httpFetch).filter((u) => u.includes('/torrents?limit')).length).toBe(2)
   })
 })

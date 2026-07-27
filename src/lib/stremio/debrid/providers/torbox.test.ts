@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { tbStatus, tbListItem, tbFile } from './torbox'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+
+const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+
+import { serveJson, called } from '../../../../test/debrid-http'
+import { tbStatus, tbListItem, tbFile, tbFindReady, torbox } from './torbox'
+
+const HASH = 'c'.repeat(40)
 
 describe('tbStatus', () => {
   it('download_finished = ready', () => {
@@ -35,5 +42,55 @@ describe('tbListItem', () => {
 describe('tbFile', () => {
   it('prefers short_name and flags videos', () => {
     expect(tbFile({ id: 2, short_name: 'ep02.mkv', name: 'long/ep02.mkv', size: 40 })).toEqual({ id: '2', name: 'ep02.mkv', size: 40, playable: true })
+  })
+})
+
+describe('tbFindReady', () => {
+  it('finds a finished torrent case-insensitively', () => {
+    expect(tbFindReady([{ id: 9, hash: HASH.toUpperCase(), download_finished: true }], HASH)).toBe('9')
+  })
+  it('accepts the bare-object shape the by-id call answers with', () => {
+    expect(tbFindReady({ id: 9, hash: HASH, download_present: true }, HASH)).toBe('9')
+  })
+  it('ignores a torrent that is still downloading', () => {
+    expect(tbFindReady([{ id: 9, hash: HASH, active: true, progress: 0.5 }], HASH)).toBeUndefined()
+  })
+  it('ignores another release', () => {
+    expect(tbFindReady([{ id: 9, hash: 'd'.repeat(40), download_finished: true }], HASH)).toBeUndefined()
+  })
+})
+
+describe('torbox.resolveHash noAdd', () => {
+  beforeEach(() => httpFetch.mockReset())
+
+  it('never creates the torrent when the hash is not already on the account', async () => {
+    serveJson(httpFetch, [['/torrents/mylist', { success: true, data: [] }]])
+    await expect(torbox.resolveHash('key', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(called(httpFetch, '/torrents/createtorrent')).toBe(false)
+  })
+
+  it('never creates the torrent when the account list itself fails', async () => {
+    serveJson(httpFetch, [])
+    await expect(torbox.resolveHash('key', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(called(httpFetch, '/torrents/createtorrent')).toBe(false)
+  })
+
+  it('reuses a finished torrent already on the account', async () => {
+    serveJson(httpFetch, [
+      ['/torrents/requestdl', { success: true, data: 'https://cdn.torbox/Show_01.mkv' }],
+      ['/torrents/mylist', { success: true, data: [{ id: 9, hash: HASH.toUpperCase(), download_finished: true, files: [{ id: 0, name: 'Show_01.mkv', size: 100 }] }] }],
+    ])
+    await expect(torbox.resolveHash('key', HASH, { noAdd: true })).resolves.toBe('https://cdn.torbox/Show_01.mkv')
+    expect(called(httpFetch, '/torrents/createtorrent')).toBe(false)
+  })
+
+  it('still creates the torrent for a normal (user-initiated) resolve', async () => {
+    serveJson(httpFetch, [
+      ['/torrents/createtorrent', { success: true, data: { torrent_id: 9 } }],
+      ['/torrents/requestdl', { success: true, data: 'https://cdn.torbox/Show_01.mkv' }],
+      ['/torrents/mylist', { success: true, data: [{ id: 9, hash: HASH, download_finished: true, files: [{ id: 0, name: 'Show_01.mkv', size: 100 }] }] }],
+    ])
+    await expect(torbox.resolveHash('key', HASH)).resolves.toBe('https://cdn.torbox/Show_01.mkv')
+    expect(called(httpFetch, '/torrents/createtorrent')).toBe(true)
   })
 })

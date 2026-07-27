@@ -24,6 +24,17 @@ export function isArchiveName(nameOrUrl: string): boolean {
 }
 
 /** Build a magnet from a bare btih hash, or pass an existing magnet through. */
+/** Copyright-decoy guard. When a release is taken down a service can answer with a tiny
+ *  placeholder clip under the real filename — playing it reads as a corrupt episode rather than a
+ *  dead source, so it is worth rejecting and letting the user pick something else. Needs TWO
+ *  independently reported sizes (what the torrent listed vs what the link actually serves); a
+ *  provider that hands back a URL straight from its own file listing has nothing to compare and
+ *  must not pretend otherwise. Half is a deliberately loose threshold: real files vary by a few
+ *  percent, decoys are orders of magnitude off. */
+export function isDecoy(servedBytes: number | undefined, expectedBytes: number): boolean {
+  return expectedBytes > 0 && !!servedBytes && servedBytes < expectedBytes * 0.5
+}
+
 export const magnetOf = (h: string) => (h.startsWith('magnet:') ? h : `magnet:?xt=urn:btih:${h}`)
 /** Extract the infoHash from a magnet, or return the bare hash (lower-cased). */
 export const hashOf = (h: string) => (h.match(/urn:btih:([a-z0-9]+)/i)?.[1] ?? h).toLowerCase()

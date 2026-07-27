@@ -71,6 +71,12 @@ export const megadebrid: DebridProvider = {
   credential: 'userpass',
   experimental: true,
   async resolveHash(cred, hashOrMagnet, opts) {
+    // uploadTorrent creates an entry on the account, and there is no route back from a hash to an
+    // entry the account already holds: getTorrents carries no hash and no links, and the by-hash
+    // status action the docs imply does not exist (it answers UNKNOWN_ACTION). With no verified
+    // way to reuse, a background prefetch can only decline — noAdd promises never to leave a
+    // speculative torrent behind, and that promise outranks prefetching successfully.
+    if (opts?.noAdd) throw new Error("Mega-Debrid needs to add this release, which background prefetch isn't allowed to do.")
     const [login, password] = (cred ?? '').split(':')
     if (!login || !password) throw new Error('Mega-Debrid needs "username:password" in the key field.')
     const token = (await md('connectUser', { login, password })).token

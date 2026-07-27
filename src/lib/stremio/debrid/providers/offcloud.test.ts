@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { ocFiles, ocStatus } from './offcloud'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+
+const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+
+import { serveJson, called } from '../../../../test/debrid-http'
+import { ocFiles, ocStatus, offcloud } from './offcloud'
+
+const HASH = 'a'.repeat(40)
 
 describe('ocStatus', () => {
   it('downloaded = ready', () => expect(ocStatus('downloaded')).toEqual({ stage: 'ready', progress: 100, raw: 'downloaded' }))
@@ -37,5 +44,23 @@ describe('ocFiles', () => {
   it('an error envelope yields no files instead of throwing', () => {
     expect(ocFiles({ error: 'NOAUTH' })).toEqual([])
     expect(ocFiles(undefined)).toEqual([])
+  })
+})
+
+describe('offcloud.resolveHash noAdd', () => {
+  beforeEach(() => httpFetch.mockReset())
+
+  it('never posts the magnet to the cloud for a background prefetch', async () => {
+    serveJson(httpFetch, [])
+    await expect(offcloud.resolveHash('key', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(called(httpFetch, '/cloud')).toBe(false)
+  })
+
+  it('still adds for a normal (user-initiated) resolve', async () => {
+    serveJson(httpFetch, [
+      ['/cloud/explore/', { files: [{ name: 'Show_01.mkv', size: 100, url: 'https://cdn.oc/Show_01.mkv' }] }],
+      ['/cloud', { requestId: 'RID', status: 'downloaded' }],
+    ])
+    await expect(offcloud.resolveHash('key', HASH)).resolves.toBe('https://cdn.oc/Show_01.mkv')
   })
 })

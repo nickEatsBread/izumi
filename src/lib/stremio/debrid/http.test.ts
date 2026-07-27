@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyAuth, authError, isArchiveName } from './http'
+import { classifyAuth, authError, isArchiveName, isDecoy } from './http'
 
 describe('classifyAuth', () => {
   // Real-Debrid — HTTP status only
@@ -112,5 +112,23 @@ describe('isArchiveName', () => {
 
   it('is suffix-anchored, not a substring match', () => {
     expect(isArchiveName('movie.rar.mkv')).toBe(false)
+  })
+})
+
+describe('isDecoy', () => {
+  it('flags a served file far smaller than the torrent claimed', () => {
+    // When a release is taken down the service can answer with a tiny placeholder clip under the
+    // real filename. Playing it looks like a corrupt episode rather than a dead source.
+    expect(isDecoy(10_000_000, 1_000_000_000)).toBe(true)
+  })
+  it('accepts a served file close to the expected size', () => {
+    expect(isDecoy(990_000_000, 1_000_000_000)).toBe(false)
+  })
+  it('accepts exactly half, so a normal rounding gap is never a decoy', () => {
+    expect(isDecoy(500, 1000)).toBe(false)
+  })
+  it('says nothing when either size is unknown', () => {
+    expect(isDecoy(undefined, 1000)).toBe(false)
+    expect(isDecoy(10, 0)).toBe(false)
   })
 })

@@ -1,4 +1,4 @@
-import { jfetch, magnetOf, poll, VIDEO, JUNK, authError } from '../http'
+import { jfetch, magnetOf, hashOf, poll, VIDEO, JUNK, authError } from '../http'
 import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
@@ -55,6 +55,18 @@ export function tbFile(f: { id: number; short_name?: string; name?: string; size
   return { id: String(f.id), name, size: f.size ?? 0, playable: VIDEO.test(name) && !JUNK.test(name) }
 }
 
+/** Pure: the id of an already-ready mylist torrent for `hash`, or undefined. mylist answers with
+ *  an array (whole list) or a bare object (single id), so accept both. Readiness is decided by
+ *  tbStatus, the same mapping the poll loop uses — a still-downloading entry is not something a
+ *  background prefetch can serve. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function tbFindReady(list: any, hash: string): string | undefined {
+  const arr = Array.isArray(list) ? list : (list ? [list] : [])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hit = arr.find((t: any) => (t?.hash ?? '').toLowerCase() === hash && tbStatus(t ?? {}).stage === 'ready')
+  return hit ? String(hit.id) : undefined
+}
+
 export const torbox: DebridProvider = {
   id: 'torbox',
   name: 'TorBox',
@@ -62,9 +74,20 @@ export const torbox: DebridProvider = {
   credential: 'apikey',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No TorBox API key set — add it in Settings → Extensions.')
-    const fd = new FormData(); fd.set('magnet', magnetOf(hashOrMagnet))
-    const cr = await tb('POST', '/torrents/createtorrent', key, fd)
-    const id = cr.torrent_id
+    let id: string | number
+    if (opts?.noAdd) {
+      // createtorrent adds a permanent entry to the account, so a background prefetch may only
+      // reuse a torrent that is already there. mylist is TorBox's only by-hash lookup.
+      const list = await tb('GET', '/torrents/mylist?bypass_cache=true', key).catch(() => undefined)
+      const existing = tbFindReady(list, hashOf(hashOrMagnet))
+      if (!existing) throw new Error("TorBox needs to add this release, which background prefetch isn't allowed to do.")
+      id = existing
+    }
+    else {
+      const fd = new FormData(); fd.set('magnet', magnetOf(hashOrMagnet))
+      const cr = await tb('POST', '/torrents/createtorrent', key, fd)
+      id = cr.torrent_id
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let files: any[] = []
     await poll(async () => {

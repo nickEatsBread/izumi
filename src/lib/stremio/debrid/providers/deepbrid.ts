@@ -94,6 +94,10 @@ export const deepbrid: DebridProvider = {
   experimental: true,
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Deepbrid API key set — add it in Settings → Extensions.')
+    // /torrents/add creates an entry on the account and Deepbrid exposes no verified by-hash
+    // listing to reuse one from, so a background prefetch can only decline. Bailing is the whole
+    // point of noAdd: never a speculative entry the user didn't ask for.
+    if (opts?.noAdd) throw new Error("Deepbrid needs to add this release, which background prefetch isn't allowed to do.")
     const add = await db('POST', '/torrents/add', key, form({ magnet: magnetOf(hashOrMagnet) }))
     const id = add?.id ?? add?.torrent?.id ?? add?.torrentId
     let torrent: DbTorrent | undefined

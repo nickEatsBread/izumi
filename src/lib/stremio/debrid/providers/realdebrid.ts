@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError, isArchiveName } from '../http'
+import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError, isArchiveName, isDecoy } from '../http'
 import { pickEpisodeVideo } from '../episode-file'
 import { selectSidecars, sidecarLanguage, sidecarTitle } from '../sidecar-subs'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridSidecar, ResolveOpts } from '../types'
@@ -130,22 +130,42 @@ export function rdPickBestDownloaded(entries: RdListRow[], hash: string): { id: 
 // request failing mid-scan breaks and keeps whatever `best` earlier pages already found, rather
 // than losing it — a transient blip on page 3 must not discard a valid page-1 hit and fall all
 // the way through to addMagnet.
-async function findDownloadedId(key: string, hash: string): Promise<string | undefined> {
+// The scan is per-ACCOUNT, not per-hash, so it is cached per key rather than repeated: the same
+// up-to-five pages were re-fetched on every single play click, and again for every episode of a
+// binge. Only a completed scan is cached — a partial one (a page failing mid-way) would silently
+// answer "not on the account" for every later hash and send them all to addMagnet.
+const LIST_TTL_MS = 5 * 60 * 1000
+const listCache = new Map<string, { at: number; rows: RdListRow[] }>()
+
+/** Drop the cached account list. Called whenever we change the account, and a test seam. */
+export function rdForgetLists(key?: string): void {
+  if (key) listCache.delete(key)
+  else listCache.clear()
+}
+
+async function loadTorrentList(key: string, now = Date.now()): Promise<RdListRow[]> {
+  const hit = listCache.get(key)
+  if (hit && now - hit.at < LIST_TTL_MS) return hit.rows
   const LIMIT = 100
   const MAX_PAGES = 5 // ≤500 torrents scanned; beyond that, fall through to addMagnet
-  let best: { id: string; bytes: number } | undefined
+  const rows: RdListRow[] = []
+  let complete = false
   for (let page = 1; page <= MAX_PAGES; page++) {
     let list: RdListRow[]
     try {
       list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as RdListRow[]
     }
     catch { break }
-    if (!Array.isArray(list) || list.length === 0) break
-    const pageBest = rdPickBestDownloaded(list, hash)
-    if (pageBest && (!best || pageBest.bytes > best.bytes)) best = pageBest
-    if (list.length < LIMIT) break // last page reached
+    if (!Array.isArray(list) || list.length === 0) { complete = true; break }
+    rows.push(...list)
+    if (list.length < LIMIT) { complete = true; break } // last page reached
   }
-  return best?.id
+  if (complete) listCache.set(key, { at: now, rows })
+  return rows
+}
+
+async function findDownloadedId(key: string, hash: string): Promise<string | undefined> {
+  return rdPickBestDownloaded(await loadTorrentList(key), hash)?.id
 }
 
 interface RdUnrestricted { download: string; filename?: string; filesize?: number }
@@ -186,6 +206,7 @@ async function rdResolveSingleFile(
   key: string, hashOrMagnet: string, fileId: number, opts?: ResolveOpts,
 ): Promise<RdUnrestricted> {
   const id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
+  rdForgetLists(key) // the account just changed — the cached scan is stale
   await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: String(fileId) }))
   let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
   if (rdStatus(info).stage !== 'ready') {
@@ -277,6 +298,7 @@ export const realdebrid: DebridProvider = {
       // "torrent entries the user didn't ask for" noAdd promises never to create.
       if (opts?.noAdd) throw new Error("Real-Debrid needs to add this release, which background prefetch isn't allowed to do.")
       id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
+      rdForgetLists(key) // the account just changed — the cached scan is stale
     }
     let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
     if (info.status === 'waiting_files_selection' || !(info.files ?? []).some((f) => f.selected)) {
@@ -328,7 +350,7 @@ export const realdebrid: DebridProvider = {
     // ("removed by copyright holder") in place of the real file — which otherwise just PLAYS.
     // The torrent still advertises the real size, so a served file far smaller than that (here
     // <50% of the torrent's bytes) is the decoy. Reject it so the user can pick another source.
-    if (chosen.bytes > 0 && un.filesize && un.filesize < chosen.bytes * 0.5)
+    if (isDecoy(un.filesize, chosen.bytes))
       throw new Error('Real-Debrid served a copyright-removed placeholder for this release — pick a different source.')
     return un.download
   },
@@ -398,11 +420,12 @@ export const realdebrid: DebridProvider = {
         : 'Real-Debrid only offers this file inside an archive.')
     }
     // Same copyright-decoy guard as resolveHash: a served file far smaller than the torrent's is a placeholder.
-    if (chosen.bytes > 0 && un.filesize && un.filesize < chosen.bytes * 0.5)
+    if (isDecoy(un.filesize, chosen.bytes))
       throw new Error('Real-Debrid served a copyright-removed placeholder for this file — pick another source.')
     return un.download
   },
   async deleteItem(key, item) {
     await rd('DELETE', `/torrents/delete/${item.id}`, key)
+    rdForgetLists(key)
   },
 }
