@@ -60,7 +60,6 @@ export function parseFileEpisode(name: string): ParsedFileEpisode {
   // episode, so reading it as episode 1 was never right either.
   s = s.replace(/\b(?:part|movie|film|gekijou?ban)\s?\d{1,2}\b/gi, ' ')
 
-  if (process.env.EF_DEBUG) console.log('AFTER FILM STRIP:', JSON.stringify(s))
   // 1x04 form (resolution composites already stripped above).
   const nxn = /\b(\d{1,2})x(\d{1,3})\b/.exec(s)
   if (nxn) return { season: Number(nxn[1]), episode: Number(nxn[2]) }
