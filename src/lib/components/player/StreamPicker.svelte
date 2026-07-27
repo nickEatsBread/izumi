@@ -246,6 +246,18 @@
     failedKeys = [...failedKeys, keyOf(info)]
     if (autoIdx + 1 >= Math.min(candidates.length, AUTO_MAX_TRIES)) return false
     autoIdx += 1
+    // Same tick as the failure that cleared it, so Svelte coalesces both into one update and the
+    // screen never blinks back to the list between two attempts.
+    const next = candidates[autoIdx]
+    if (next && pick) {
+      const info = describe(next)
+      connecting.set({
+        title: title(pick.media),
+        detail: info.filename ?? info.label,
+        art: backdrop,
+        cancel: () => { connecting.set(null); cancelResolve() },
+      })
+    }
     autoProgress = 0
     autoState = 'idle' // re-arms the countdown effect on the new best
     return true
@@ -292,7 +304,7 @@
 <!-- `hidden` renders nothing while the entry stays live: with a single configured source there is
      nothing to choose, but the resolve flow still needs the picker to exist to recognise its own
      request. Errors clear the flag, so a failure is never silent. -->
-{#if pick && !pick.hidden && !$connecting}
+{#if pick && !pick.hidden}
   <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
        Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
        instead of letting WebKit cache one snapshot — at the exact moment the app is busiest
@@ -507,7 +519,7 @@
        running behind it would burn a Lottie render loop nobody can see. -->
   <!-- Only the source-LIST phase: once a stream is chosen, playStream owns the connecting screen
        app-wide (SourceConnecting), so rendering it here too would stack two of them. -->
-  {#if autoImmediate && resolving && !busy && !$debridCaching && !playbackError}
+  {#if autoImmediate && resolving && !busy && !$connecting && !$debridCaching && !playbackError}
     <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black" transition:fade={{ duration: 160 }}>
       {#if backdrop}
         <!-- `filter` on a STATIC image, never `backdrop-filter`: the latter re-samples live content

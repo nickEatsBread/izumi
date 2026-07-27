@@ -632,6 +632,9 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   // Open the picker immediately in a skeleton (resolving) state — no "Resolving
   // stream…" text; it fills in with real sources as EACH addon responds.
   streamPicker.set({ media, episode, streams: [], cachedCount: 0, resolving: true, hidden: hideForContinuation })
+  // The picker is the UI from here — unless it is hidden (binge continuation), in which case the
+  // connecting screen stays up as the only thing holding the user.
+  if (!hideForContinuation) connecting.set(null)
   const stillCurrent = () => {
     const current = get(streamPicker)
     // Media + episode are not a unique request identity: a closed picker can be reopened for the
@@ -982,6 +985,14 @@ async function resolveRememberedSource(media: Media, episode: number, remembered
  *  same unrestricted picker used by a direct episode click — without retrying the failed release. */
 export async function resumeEpisode(media: Media, episode: number, onState: (s: PlayState) => void) {
   onState({ status: 'resolving' })
+  // Nothing is on screen yet: the picker is not open and no source has been chosen, but the media
+  // refetch and the remembered-source lookup below are both network round trips. This window used
+  // to be covered by a line of text on the detail page; without it the app simply looked frozen.
+  connecting.set({
+    title: title(media),
+    art: banner(media) || cover(media),
+    cancel: () => { connecting.set(null); cancelResolve() },
+  })
   const current = await fetchMediaById(media.id).catch(() => media)
   const remembered = get(sourceOrigins)[current.id]
   if (remembered) {
@@ -1135,6 +1146,11 @@ export async function playStream(media: Media, episode: number | undefined, stre
       // torrent that finishes on the second probe never flashes a downloading screen on its way to
       // playing.
       const PROBES_BEFORE_SCREEN = 2
+      // ...and it has to have actually taken a while. The poll's opening probes are 250ms apart, so
+      // probe count alone was satisfied by a torrent that then completed immediately — the screen
+      // flashed up to announce a download that never happened.
+      const MIN_WAIT_BEFORE_SCREEN_MS = 2500
+      const resolveStartedAt = Date.now()
       let notReady = 0
       // Nothing else is on screen when the picker is hidden (binge continuation plays with it
       // closed), so there the caching screen is the only thing that can hold the user — show it
@@ -1147,7 +1163,8 @@ export async function playStream(media: Media, episode: number | undefined, stre
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
           onStatus: (i) => {
-            if (!overlayShown && ++notReady >= PROBES_BEFORE_SCREEN) showCaching()
+            if (!overlayShown && ++notReady >= PROBES_BEFORE_SCREEN
+              && Date.now() - resolveStartedAt >= MIN_WAIT_BEFORE_SCREEN_MS) showCaching()
             if (overlayShown) debridCaching.update((c) => (c ? { ...c, info: i } : c))
           },
           want,
