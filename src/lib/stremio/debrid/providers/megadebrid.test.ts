@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { mdStatus } from './megadebrid'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+
+const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+
+import { serveJson, called } from '../../../../test/debrid-http'
+import { mdStatus, megadebrid } from './megadebrid'
+
+const HASH = 'a'.repeat(40)
 
 describe('mdStatus', () => {
   it('ub_link is the ready signal, whatever the status text says', () => {
@@ -33,5 +40,30 @@ describe('mdStatus', () => {
   })
   it('a missing torrent is queued, not a crash', () => {
     expect(mdStatus(undefined).stage).toBe('queued')
+  })
+})
+
+describe('megadebrid.resolveHash noAdd', () => {
+  beforeEach(() => httpFetch.mockReset())
+
+  it('never uploads the torrent for a background prefetch', async () => {
+    serveJson(httpFetch, [['action=connectUser', { response_code: 'ok', token: 'TOKEN' }]])
+    await expect(megadebrid.resolveHash('user:pass', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(called(httpFetch, 'action=uploadTorrent')).toBe(false)
+  })
+
+  it('declines before spending a login round-trip', async () => {
+    serveJson(httpFetch, [])
+    await expect(megadebrid.resolveHash('user:pass', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(httpFetch).not.toHaveBeenCalled()
+  })
+
+  it('still uploads for a normal (user-initiated) resolve', async () => {
+    serveJson(httpFetch, [
+      ['action=connectUser', { response_code: 'ok', token: 'TOKEN' }],
+      ['action=uploadTorrent', { response_code: 'ok', newTorrent: { hash: HASH } }],
+      ['action=getTorrent', { response_code: 'ok', status: { status: 'ready', ub_link: 'https://cdn.md/ep01.mkv' } }],
+    ])
+    await expect(megadebrid.resolveHash('user:pass', HASH)).resolves.toBe('https://cdn.md/ep01.mkv')
   })
 })

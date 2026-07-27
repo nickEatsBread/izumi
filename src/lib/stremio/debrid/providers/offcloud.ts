@@ -85,6 +85,12 @@ export const offcloud: DebridProvider = {
   credential: 'apikey',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Offcloud API key set — add it in Settings → Extensions.')
+    // POST /cloud creates a cloud download on the account. /cloud/history does list past
+    // requests, but nothing in it is documented or verified to carry the source magnet's hash,
+    // so matching a prefetch against it would be guesswork — and guessing wrong here either adds
+    // the torrent anyway or serves a link to a different release. Decline instead: noAdd's
+    // contract is that nothing speculative is ever created.
+    if (opts?.noAdd) throw new Error("Offcloud needs to add this release, which background prefetch isn't allowed to do.")
     const add = await oc('POST', '/cloud', key, { url: magnetOf(hashOrMagnet) })
     if (add?.not_available) throw new Error(`Offcloud can't take that link on your plan (${add.not_available} add-on required).`)
     if (add?.status === 'error' || !add?.requestId) throw new Error(add?.error ?? 'Offcloud rejected the magnet (cloud add-on required?).')

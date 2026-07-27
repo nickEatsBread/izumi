@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, poll, VIDEO, JUNK, authError } from '../http'
+import { jfetch, form, magnetOf, hashOf, poll, VIDEO, JUNK, authError } from '../http'
 import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
@@ -62,6 +62,19 @@ export function adFiles(tree: any[]): DebridFile[] {
   return out
 }
 
+/** Pure: the id of an already-READY magnet for `hash` on the account, or undefined. AllDebrid's
+ *  status payload is an array on the list call and a bare object when it holds one magnet, so
+ *  accept both (same shape listItems normalizes). Only statusCode 4 counts: an entry still
+ *  downloading isn't something a background prefetch can serve, and treating it as reusable
+ *  would make the prefetch sit on `poll` for the rest of the episode. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function adFindReady(magnets: any, hash: string): string | undefined {
+  const arr = Array.isArray(magnets) ? magnets : (magnets ? [magnets] : [])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hit = arr.find((m: any) => (m?.hash ?? '').toLowerCase() === hash && m?.statusCode === 4)
+  return hit ? String(hit.id) : undefined
+}
+
 export const alldebrid: DebridProvider = {
   id: 'alldebrid',
   name: 'AllDebrid',
@@ -69,10 +82,22 @@ export const alldebrid: DebridProvider = {
   credential: 'apikey',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No AllDebrid API key set — add it in Settings → Extensions.')
-    const up = await ad('/v4/magnet/upload', key, form({ 'magnets[]': magnetOf(hashOrMagnet) }))
-    const m = up.magnets?.[0]
-    if (m?.error) throw new Error(m.error.message ?? 'AllDebrid rejected the magnet.')
-    const id = String(m.id)
+    let id: string
+    if (opts?.noAdd) {
+      // Background prefetch may only serve what the account already holds: magnet/upload creates
+      // a permanent entry, which is exactly the "torrent the user didn't ask for" noAdd forbids.
+      // AllDebrid has no get-by-hash endpoint, so scan the account's magnet list instead.
+      const list = await ad('/v4.1/magnet/status', key, form({})).catch(() => undefined)
+      const existing = adFindReady(list?.magnets, hashOf(hashOrMagnet))
+      if (!existing) throw new Error("AllDebrid needs to add this release, which background prefetch isn't allowed to do.")
+      id = existing
+    }
+    else {
+      const up = await ad('/v4/magnet/upload', key, form({ 'magnets[]': magnetOf(hashOrMagnet) }))
+      const m = up.magnets?.[0]
+      if (m?.error) throw new Error(m.error.message ?? 'AllDebrid rejected the magnet.')
+      id = String(m.id)
+    }
     await poll(async () => {
       const st = (await ad('/v4.1/magnet/status', key, form({ id }))).magnets
       const s = Array.isArray(st) ? st[0] : st

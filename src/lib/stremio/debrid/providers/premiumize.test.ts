@@ -1,5 +1,12 @@
-import { describe, it, expect } from 'vitest'
-import { pmStatus, pmListItem, pmFile } from './premiumize'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+
+const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
+vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+
+import { serveJson, called } from '../../../../test/debrid-http'
+import { pmStatus, pmListItem, pmFile, premiumize } from './premiumize'
+
+const HASH = '1'.repeat(40)
 
 describe('pmStatus', () => {
   it('finished/seeding = ready', () => {
@@ -36,5 +43,32 @@ describe('pmListItem', () => {
 describe('pmFile', () => {
   it('uses the direct link as the id and flags videos', () => {
     expect(pmFile({ name: 'ep01.mkv', bytes: 60, link: 'https://p/ep01.mkv' })).toEqual({ id: 'https://p/ep01.mkv', name: 'ep01.mkv', size: 60, playable: true })
+  })
+})
+
+describe('premiumize.resolveHash noAdd', () => {
+  beforeEach(() => httpFetch.mockReset())
+
+  it('never creates a transfer when the release is not already cached', async () => {
+    serveJson(httpFetch, [['/transfer/directdl', { status: 'error', message: 'not cached' }]])
+    await expect(premiumize.resolveHash('key', HASH, { noAdd: true })).rejects.toThrow(/background prefetch/)
+    expect(called(httpFetch, '/transfer/create')).toBe(false)
+  })
+
+  it('keeps the directdl fast path, which creates nothing', async () => {
+    serveJson(httpFetch, [['/transfer/directdl', { status: 'success', content: [{ path: 'Show_01.mkv', size: 100, link: 'https://cdn.premiumize/Show_01.mkv' }] }]])
+    await expect(premiumize.resolveHash('key', HASH, { noAdd: true })).resolves.toBe('https://cdn.premiumize/Show_01.mkv')
+    expect(called(httpFetch, '/transfer/create')).toBe(false)
+  })
+
+  it('still creates a transfer for a normal (user-initiated) resolve', async () => {
+    serveJson(httpFetch, [
+      ['/transfer/directdl', { status: 'error', message: 'not cached' }],
+      ['/transfer/create', { status: 'success', id: 'T1' }],
+      ['/transfer/list', { transfers: [{ id: 'T1', status: 'finished', folder_id: 'F1' }] }],
+      ['/folder/list', { content: [{ type: 'file', path: 'Show_01.mkv', size: 100, link: 'https://cdn.premiumize/Show_01.mkv' }] }],
+    ])
+    await expect(premiumize.resolveHash('key', HASH)).resolves.toBe('https://cdn.premiumize/Show_01.mkv')
+    expect(called(httpFetch, '/transfer/create')).toBe(true)
   })
 })

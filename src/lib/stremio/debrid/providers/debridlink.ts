@@ -53,6 +53,14 @@ export function dlFile(f: { name?: string; size?: number; downloadUrl?: string }
   return { id: f.downloadUrl ?? '', name, size: f.size ?? 0, playable: VIDEO.test(name) && !JUNK.test(name) }
 }
 
+/** Pure: an already-complete seedbox entry for `hash`, or undefined. Completion is read off
+ *  `downloadPercent` exactly like dlStatus does — a partial entry is not something a background
+ *  prefetch can serve without waiting out the whole download. */
+export function dlFindReady(list: unknown, hash: string): DlTorrent | undefined {
+  const arr = Array.isArray(list) ? list as DlTorrent[] : []
+  return arr.find((t) => (t?.hashString ?? '').toLowerCase() === hash && (t?.downloadPercent ?? 0) >= 100)
+}
+
 export const debridlink: DebridProvider = {
   id: 'debridlink',
   name: 'Debrid-Link',
@@ -60,9 +68,21 @@ export const debridlink: DebridProvider = {
   credential: 'apikey',
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Debrid-Link API key set — add it in Settings → Extensions.')
-    const add = await dl('POST', '/seedbox/add', key, form({ url: magnetOf(hashOrMagnet) }))
-    const addedId = add.value?.id
     const want = hashOf(hashOrMagnet)
+    let addedId: string | undefined
+    if (opts?.noAdd) {
+      // /seedbox/add puts a permanent torrent on the account, so a background prefetch may only
+      // reuse an entry already in the seedbox. The poll below re-finds it by hash anyway; this
+      // lookup exists purely to decide whether there is anything to reuse at all.
+      const list = await dl('GET', '/seedbox/list', key).catch(() => undefined)
+      const hit = dlFindReady(list?.value, want)
+      if (!hit) throw new Error("Debrid-Link needs to add this release, which background prefetch isn't allowed to do.")
+      addedId = hit.id
+    }
+    else {
+      const add = await dl('POST', '/seedbox/add', key, form({ url: magnetOf(hashOrMagnet) }))
+      addedId = add.value?.id
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let files: any[] = []
     await poll(async () => {

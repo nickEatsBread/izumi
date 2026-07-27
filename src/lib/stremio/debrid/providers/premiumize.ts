@@ -73,7 +73,10 @@ export const premiumize: DebridProvider = {
       const best = pickVideoFile(flattenContent(dd.content), opts?.want)
       if (best?.link) return best.link
     }
-    // Fallback — uncached: create + poll + resolve folder.
+    // Fallback — uncached: create + poll + resolve folder. /transfer/directdl above is a pure
+    // cache lookup (it creates nothing), so a background prefetch gets the whole fast path; it is
+    // only this transfer — a permanent entry in the user's cloud — that noAdd forbids.
+    if (opts?.noAdd) throw new Error("Premiumize needs to add this release, which background prefetch isn't allowed to do.")
     const fd2 = new FormData(); fd2.set('src', magnet)
     const cr = await pm('POST', '/transfer/create', key, fd2)
     if (cr?.status !== 'success' || !cr.id) throw new Error(cr?.message ?? 'Premiumize rejected the magnet.')
