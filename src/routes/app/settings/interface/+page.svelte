@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, cwDismissAction, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type CwDismissAction } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type CwDismissAction } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
 
@@ -23,6 +23,28 @@
     { value: 'agenda', label: 'Agenda', hint: 'One long list — each day is a full-width section. Big and easy to read.' },
     { value: 'days', label: 'Day at a time', hint: 'Tabs across the top; one day shown large. Matches the Deck view.' },
   ]
+  const rowLabels: Record<string, string> = {
+    continue: 'Continue Watching', list: 'Your List', recommendations: 'Recommended for You',
+    season: 'Popular This Season', trending: 'Trending Now', popular: 'All Time Popular',
+    romance: 'Romance', action: 'Action', fantasy: 'Fantasy',
+  }
+  const orderedRows = $derived([
+    ...$homeRowOrder.filter((id) => DEFAULT_HOME_ROWS.includes(id as never)),
+    ...DEFAULT_HOME_ROWS.filter((id) => !$homeRowOrder.includes(id)),
+  ])
+  function moveRow(id: string, direction: -1 | 1) {
+    const order = [...orderedRows]
+    const index = order.indexOf(id)
+    const target = index + direction
+    if (index < 0 || target < 0 || target >= order.length) return
+    ;[order[index], order[target]] = [order[target], order[index]]
+    $homeRowOrder = order
+  }
+  function toggleRow(id: string) {
+    $hiddenHomeRows = $hiddenHomeRows.includes(id)
+      ? $hiddenHomeRows.filter((row) => row !== id)
+      : [...$hiddenHomeRows, id]
+  }
 </script>
 
 <div class="p-4 sm:p-8">
@@ -95,6 +117,22 @@
 
     <div class="mb-4">
       <Toggle label="Pin schedule header" desc="Keep the My Shows / All toggle and Next-up strip stuck to the top while scrolling the schedule. Off = the header scrolls away with the list (default on Android)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
+    </div>
+
+    <p class="mb-1 text-sm font-bold">Home rows</p>
+    <p class="mb-2 text-xs text-muted-foreground">Reorder or hide carousel rows. Recommendations use the shows on your connected AniList account.</p>
+    <div class="mb-4 divide-y divide-border overflow-hidden rounded-md border border-border">
+      {#each orderedRows as id, index (id)}
+        {@const hidden = $hiddenHomeRows.includes(id)}
+        <div class="flex items-center gap-2 px-3 py-2">
+          <button data-focusable disabled={index === 0} onclick={() => moveRow(id, -1)} aria-label={`Move ${rowLabels[id]} up`} class="rounded px-2 py-1 font-bold disabled:opacity-25 hover:bg-secondary">↑</button>
+          <button data-focusable disabled={index === orderedRows.length - 1} onclick={() => moveRow(id, 1)} aria-label={`Move ${rowLabels[id]} down`} class="rounded px-2 py-1 font-bold disabled:opacity-25 hover:bg-secondary">↓</button>
+          <span class="min-w-0 flex-1 font-semibold" class:opacity-50={hidden}>{rowLabels[id]}</span>
+          <button data-focusable onclick={() => toggleRow(id)} aria-pressed={!hidden} class="rounded-md border border-border px-3 py-1 text-xs font-bold hover:bg-secondary">
+            {hidden ? 'Show' : 'Hide'}
+          </button>
+        </div>
+      {/each}
     </div>
 
     <p class="mb-1 text-sm font-bold">Remove from Continue Watching</p>

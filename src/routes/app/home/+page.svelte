@@ -6,6 +6,7 @@
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import MalListRow from '$lib/components/cards/MalListRow.svelte'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
+  import PersonalizedRow from '$lib/components/cards/PersonalizedRow.svelte'
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -15,6 +16,7 @@
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META } from '$lib/settings/nav'
   import type { Media } from '$lib/anilist/types'
+  import { DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, type HomeRowId } from '$lib/settings/ui'
 
   const client = getContextClient()
   const sections = homeSections(new Date())
@@ -25,6 +27,13 @@
   // Personalized rows use the connected AniList account name (from OAuth) if present,
   // otherwise the manually-entered username.
   const listUser = $derived($anilistUserName || $anilistUser)
+  const orderedRows = $derived.by(() => {
+    const valid = new Set<string>(DEFAULT_HOME_ROWS)
+    const saved = $homeRowOrder.filter((id) => valid.has(id))
+    const order = [...saved, ...DEFAULT_HOME_ROWS.filter((id) => !saved.includes(id))]
+    return order.filter((id) => !$hiddenHomeRows.includes(id)) as HomeRowId[]
+  })
+  const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
 
   // The hero query doubles as the page's health canary. Rate limits (429) are retried
   // INSIDE the AniList client, so the store stays `fetching` (→ skeleton) and never lands
@@ -136,25 +145,22 @@
     {/if}
 
     {#key retryKey}
-      <!-- Unified resume row: AniList CURRENT + MAL watching + on-device local history merged into
-           one carousel of landscape resume cards. Always rendered (auto-hides when empty) so it
-           works from local history alone, with no tracker linked. -->
-      {#key listUser}
-        <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
-      {/key}
-      {#if listUser}
-        {#key listUser}
-          <ListRow title="Your List" userName={listUser} status="PLANNING" />
-        {/key}
-      {/if}
-      <!-- MAL-sourced "plan to watch" for MAL-primary users (auto-hides when empty, so
-           it doesn't duplicate the AniList row for single-tracker users). -->
-      {#if $malToken || $malUser}
-        <MalListRow title="Your List" status="plan_to_watch" />
-      {/if}
-
-      {#each sections as s (s.key)}
-        <HomeRow title={s.title} vars={s.vars} />
+      {#each orderedRows as row (row)}
+        {#if row === 'continue'}
+          {#key listUser}
+            <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
+          {/key}
+        {:else if row === 'list'}
+          {#if listUser}
+            {#key listUser}<ListRow title="Your List" userName={listUser} status="PLANNING" />{/key}
+          {/if}
+          {#if $malToken || $malUser}<MalListRow title="Your List" status="plan_to_watch" />{/if}
+        {:else if row === 'recommendations'}
+          {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} />{/key}{/if}
+        {:else}
+          {@const section = sectionMap.get(row)}
+          {#if section}<HomeRow title={section.title} vars={section.vars} />{/if}
+        {/if}
       {/each}
     {/key}
   </div>

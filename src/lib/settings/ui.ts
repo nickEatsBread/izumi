@@ -176,6 +176,13 @@ export const showAdult = persisted<boolean>('show-adult', false)
 export const haptics = persisted<boolean>('haptics', true)
 /** User overrides for keyboard shortcuts. Missing actions fall back to their shipped defaults. */
 export const hotkeyBindings = persisted<Record<string, string>>('hotkey-bindings', {})
+export const DEFAULT_HOME_ROWS = [
+  'continue', 'list', 'recommendations', 'season', 'trending', 'popular', 'romance', 'action', 'fantasy',
+] as const
+export type HomeRowId = (typeof DEFAULT_HOME_ROWS)[number]
+/** Home carousel order and visibility. Unknown/new rows are appended by the normalizer on render. */
+export const homeRowOrder = persisted<string[]>('home-row-order', [...DEFAULT_HOME_ROWS])
+export const hiddenHomeRows = persisted<string[]>('home-row-hidden', [])
 
 /** Browse/search result layout: 'grid' (cover-art tiles, default) or 'list' (a vertical list of
  *  compact rows — small cover + title + meta, denser and text-forward). */
