@@ -15,6 +15,7 @@ A native anime library manager for browsing, tracking, and playing from the sour
 [![Windows](https://img.shields.io/badge/Windows-.exe-0078D6?style=for-the-badge)][exe]
 [![Steam Deck](https://img.shields.io/badge/Steam%20Deck-.flatpak-1b2838?style=for-the-badge&logo=steamdeck&logoColor=white)][deck]
 [![MacOS](https://img.shields.io/badge/macOS-.dmg-000000?style=for-the-badge&logo=apple&logoColor=white)][dmg]
+[![Android](https://img.shields.io/badge/Android-.apk-3DDC84?style=for-the-badge&logo=android&logoColor=white)][apkf]
 [![Source Tarball](https://img.shields.io/badge/-Source_tar-green.svg?style=for-the-badge)](https://github.com/nickEatsBread/izumi/releases/latest/download/izumi.tar.gz)
 [![All versions](https://img.shields.io/badge/-All_Versions-lightgrey.svg?style=for-the-badge)](https://github.com/nickEatsBread/izumi/releases)
 <!-- MANPAGE: END EXCLUDED SECTION -->
