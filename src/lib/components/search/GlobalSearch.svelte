@@ -23,6 +23,7 @@
     globalSearchOpen,
     normalizeSearchQuery,
     openGlobalSearch,
+    plainTextSynopsis,
     rankQuickSearchResults,
   } from '$lib/search/global-search'
   import { hotkeyBindings } from '$lib/settings/ui'
@@ -264,24 +265,26 @@
           </div>
         {:else if results.length}
           {@const best = results[0]}
+          {@const synopsis = plainTextSynopsis(best.description)}
           <div class="space-y-5">
             <button type="button" data-focusable onclick={() => choose(best)}
-              class="group relative flex min-h-52 w-full overflow-hidden rounded-2xl border border-border bg-secondary/45 text-left transition-colors hover:border-theme/60">
+              class="group relative flex min-h-44 w-full overflow-hidden rounded-2xl border border-border bg-secondary/45 text-left transition-colors hover:border-theme/60">
               {#if best.bannerImage}
                 <img src={best.bannerImage} alt="" class="absolute inset-0 h-full w-full object-cover opacity-20 transition-transform duration-500 group-hover:scale-105" />
               {/if}
               <div class="absolute inset-0 bg-gradient-to-r from-card via-card/90 to-card/45"></div>
               {#if cover(best)}
-                <img src={cover(best)} alt="" class="relative m-4 h-40 w-28 shrink-0 self-center rounded-lg object-cover shadow-xl sm:m-5 sm:h-48 sm:w-32" />
+                <img src={cover(best)} alt="" class="relative m-4 h-36 w-24 shrink-0 self-center rounded-lg object-cover shadow-xl sm:m-5 sm:h-40 sm:w-28" />
               {/if}
-              <span class="relative flex min-w-0 flex-1 flex-col justify-center py-5 pr-5 sm:py-6 sm:pr-8">
+              <span class="relative flex min-w-0 flex-1 flex-col justify-center py-4 pr-5 sm:py-5 sm:pr-8">
                 <span class="text-[0.65rem] font-black uppercase tracking-[0.2em] text-theme">Top match</span>
                 <span class="mt-2 line-clamp-2 text-xl font-black sm:text-3xl">{title(best)}</span>
                 <span class="mt-2 text-sm text-muted-foreground">
                   {[format(best), season(best), status(best), best.averageScore ? `${best.averageScore}%` : ''].filter(Boolean).join(' · ')}
                 </span>
-                {#if best.description}
-                  <span class="mt-3 hidden max-w-3xl line-clamp-3 text-sm leading-relaxed text-muted-foreground sm:block">{best.description}</span>
+                {#if synopsis}
+                  <span class="mt-3 hidden max-h-10 max-w-3xl overflow-hidden text-sm leading-5 text-muted-foreground sm:block"
+                    style="display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2">{synopsis}</span>
                 {/if}
                 <span class="mt-4 inline-flex items-center gap-1 text-sm font-black text-theme">View details <ArrowRight size={16} /></span>
               </span>

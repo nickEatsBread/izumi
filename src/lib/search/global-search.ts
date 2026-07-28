@@ -30,6 +30,22 @@ export function advancedSearchHref(query: string) {
   return clean ? `/app/search?search=${encodeURIComponent(clean)}` : '/app/search'
 }
 
+/** Convert AniList's occasionally HTML-ish synopsis into compact display text. */
+export function plainTextSynopsis(value?: string) {
+  return (value ?? '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/?(?:p|div|li|ul|ol)\b[^>]*>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&(?:apos|#39);/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function normalizeTitle(value: string) {
   return value
     .normalize('NFKD')
