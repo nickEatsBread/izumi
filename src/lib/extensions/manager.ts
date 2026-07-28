@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
-import { phttp } from '$lib/net/http'
+import { invokeNativeHttp, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem, catalogPackages } from './catalog'
@@ -248,7 +248,7 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
       // header the extension set. See ext_fetch in lib.rs.
       try {
         const init = m.init ?? {}
-        const r = await invoke<{ status: number; url: string; headers: Record<string, string>; setCookie: string[]; body: string }>('ext_fetch', {
+        const r = await invokeNativeHttp<{ status: number; url: string; headers: Record<string, string>; setCookie: string[]; body: string }>('ext_fetch', {
           url: m.url,
           method: init.method,
           headers: init.headers,

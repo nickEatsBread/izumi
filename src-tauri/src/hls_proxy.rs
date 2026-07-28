@@ -49,6 +49,26 @@ pub(crate) async fn prepare_playback_url(
     Ok(proxy.register(upstream, provider_headers(headers)))
 }
 
+/// Give mpv a stable localhost URL for a remote subtitle sidecar.
+///
+/// Some providers return perfectly valid VTT files that reject a direct request unless it carries
+/// the video embed's Origin/Referer/User-Agent. mpv has only one global header set and failures from
+/// `sub-add` are otherwise silent, so fetch the sidecar through the same tiny proxy used by repaired
+/// HLS. Non-HTTP values (notably JVM-created temporary `file:` subtitles) stay untouched.
+pub(crate) async fn prepare_sidecar_url(
+    value: &str,
+    headers: Option<&HashMap<String, String>>,
+) -> Result<String, String> {
+    let Some(upstream) = sidecar_upstream(value) else {
+        return Ok(value.to_string());
+    };
+    let proxy = PROXY
+        .get_or_try_init(start_proxy)
+        .await
+        .map_err(|error| format!("could not start the local media proxy: {error}"))?;
+    Ok(proxy.register(upstream, headers.cloned().unwrap_or_default()))
+}
+
 fn kotocdn_upstream(value: &str) -> Option<Url> {
     let outer = Url::parse(value).ok()?;
     if is_kotocdn(&outer) {
@@ -64,6 +84,11 @@ fn kotocdn_upstream(value: &str) -> Option<Url> {
             .flatten()
     })?;
     is_kotocdn(&nested).then_some(nested)
+}
+
+fn sidecar_upstream(value: &str) -> Option<Url> {
+    let url = Url::parse(value).ok()?;
+    matches!(url.scheme(), "http" | "https").then_some(url)
 }
 
 fn is_kotocdn(url: &Url) -> bool {
@@ -467,6 +492,18 @@ mod tests {
             "https://vidtub.kotocdn.site/b/720.m3u8"
         );
         assert!(kotocdn_upstream("https://cdn.example/x.m3u8").is_none());
+    }
+
+    #[test]
+    fn proxies_remote_sidecars_but_keeps_runtime_files_local() {
+        assert_eq!(
+            sidecar_upstream("https://subs.example/english.vtt")
+                .unwrap()
+                .as_str(),
+            "https://subs.example/english.vtt"
+        );
+        assert!(sidecar_upstream("file:///tmp/decrypted.srt").is_none());
+        assert!(sidecar_upstream("not a url").is_none());
     }
 
     #[test]
