@@ -27,12 +27,13 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, subDlApiKey, openSubtitlesToken } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, subDlApiKey, openSubtitlesToken, subtitleAutoSync } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
   import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
   import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice } from './online-subs'
+  import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
@@ -217,6 +218,7 @@
   type Track = {
     id: number; type: string; title?: string; lang?: string; selected?: boolean
     codec?: string; channels?: number; default?: boolean; forced?: boolean
+    external?: boolean; externalFilename?: string
   }
   let tracks = $state<Track[]>([])
   let showTracks = $state(false)
@@ -272,6 +274,7 @@
     cmd('set', [kind, String(id)])
     const type = kind === 'sid' ? 'sub' : 'audio'
     tracks = tracks.map((t) => (t.type === type ? { ...t, selected: t.id === id } : t))
+    if (kind === 'sid' && $subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
   }
 
   // Desktop drill-down helpers. `detailItems` is the chosen category's track list;
@@ -333,6 +336,7 @@
       })
       tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]
       subtitleNotice.set('')
+      if ($subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
     }
     catch (e) {
       console.warn('add online subtitle failed', e)

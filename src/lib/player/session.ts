@@ -79,6 +79,13 @@ export const nowPlayingPartySource = writable<SharedSourceState>({ source: null,
 // cloud) purely so the DEV-ONLY "Copy URL" tool in the player's track menu can read it — the UI
 // gates it behind import.meta.env.DEV, so it never surfaces in a production build.
 export const nowPlayingUrl = writable('')
+/** Network context for ffmpeg-backed subtitle synchronization. Kept internal to the player and
+ * never displayed or persisted because headers can contain provider credentials. */
+export const nowPlayingStream = writable<{
+  url: string
+  headers: Record<string, string>
+  infoHash: string | null
+}>({ url: '', headers: {}, infoHash: null })
 
 // True while the Game-mode on-screen keyboard is up. The controller translator routes A (type the
 // focused key) / B (close) to it, and directional nav stays trapped on its keys.

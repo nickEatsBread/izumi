@@ -41,6 +41,20 @@ export type SubLang = 'eng' | 'jpn' | 'none'
 export const preferredAudioLang = persisted<AudioLang>('preferred-audio-lang', 'jpn')
 export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'eng')
 
+// --- Subtitle presentation + synchronization ---
+/** Apply Izumi's subtitle appearance instead of leaving styling entirely to the subtitle file. */
+export const subtitleStyleEnabled = persisted<boolean>('subtitle-style-enabled', true)
+export const subtitleFont = persisted<string>('subtitle-font', 'Nunito')
+export const subtitleFontSize = persisted<number>('subtitle-font-size', 42)
+export const subtitleTextColor = persisted<string>('subtitle-text-color', '#ffffff')
+export const subtitleBorderColor = persisted<string>('subtitle-border-color', '#000000')
+export const subtitleBorderSize = persisted<number>('subtitle-border-size', 3)
+export const subtitleShadow = persisted<number>('subtitle-shadow', 1)
+/** mpv's vertical subtitle position: 0 is top and 100 is bottom. */
+export const subtitlePosition = persisted<number>('subtitle-position', 92)
+/** Analyze speech with ffmpeg and align external text subtitles when a track is selected. */
+export const subtitleAutoSync = persisted<boolean>('subtitle-auto-sync', false)
+
 // --- Source extension filtering ---
 /** Content languages (ISO 639-1, as declared by each provider's manifest) worth querying.
  *  EMPTY MEANS ALL — the reference app models the same idea with a "universal" sentinel. Filtering
@@ -59,10 +73,11 @@ export const providerAudio = persisted<ProviderAudio>('provider-audio', 'both')
  *  (Fresh `autoplay-best` key so the new default reliably reaches existing installs.) */
 export const autoSelectSource = persisted<boolean>('autoplay-best', true)
 /** Grace period before the auto-pick fires: true = count down ~5s so you can cancel, false = play
- *  the best match immediately. Storage key kept from when this toggle was animation-only, so an
- *  existing preference carries over. The filling bar is motion and is suppressed under reduced
- *  motion; the wait itself still applies (the numeric readout keeps counting). */
-export const autoSelectCountdown = persisted<boolean>('auto-select-animate', true)
+ *  the best match immediately (the default). Storage key kept from when this toggle was
+ *  animation-only, so an existing explicit preference carries over. The filling bar is motion and
+ *  is suppressed under reduced motion; the wait itself still applies (the numeric readout keeps
+ *  counting). */
+export const autoSelectCountdown = persisted<boolean>('auto-select-animate', false)
 export type Quality = '2160' | '1080' | '720' | '480' | 'any'
 export const preferredQuality = persisted<Quality>('preferred-quality', '1080')
 

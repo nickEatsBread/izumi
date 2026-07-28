@@ -14,6 +14,8 @@ mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
 mod player;
+#[cfg(not(target_os = "android"))]
+mod subsync;
 // Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
 #[cfg(target_os = "linux")]
 mod steam_osk;
@@ -687,6 +689,19 @@ fn set_idle_inhibit(app: AppHandle, on: bool) {
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
     std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
+/// Read a bounded UTF-8 text file for subtitle synchronization. This deliberately is not a
+/// general binary-file bridge: subtitle files over 4 MiB are rejected.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn read_subtitle_file(path: String) -> Result<String, String> {
+    let path = path.strip_prefix("file://").unwrap_or(&path);
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    if bytes.len() > 4 * MIB {
+        return Err("subtitle-file-too-large".into());
+    }
+    String::from_utf8(bytes).map_err(|_| "subtitle-file-not-utf8".into())
 }
 
 /// Byte counter streamed to the update toast as `update-download-progress` while an update
@@ -2827,6 +2842,7 @@ pub fn run() {
             ensure_artcnn,
             set_idle_inhibit,
             write_text_file,
+            read_subtitle_file,
             updater_check,
             updater_install,
             is_flatpak,
@@ -2843,6 +2859,7 @@ pub fn run() {
             player_command,
             player_add_subtitle,
             player_attach_subtitle_url,
+            subsync::sync_subtitle,
             opensubtitles_login,
             oauth_capture,
             da_reaction_state,
