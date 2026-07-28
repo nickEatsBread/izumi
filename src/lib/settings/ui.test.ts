@@ -1,6 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { get } from 'svelte/store'
-import { subtitleProviders, subDlApiKey, enabledSubtitleProviders } from './ui'
+import {
+  autoSelectCountdown,
+  subtitleProviders,
+  subDlApiKey,
+  enabledSubtitleProviders,
+} from './ui'
+
+describe('source autoplay defaults', () => {
+  it('plays the best source immediately instead of starting a countdown', () => {
+    expect(get(autoSelectCountdown)).toBe(false)
+  })
+})
 
 describe('enabledSubtitleProviders', () => {
   beforeEach(() => { subtitleProviders.set(['opensubtitles']); subDlApiKey.set('') })
