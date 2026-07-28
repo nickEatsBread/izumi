@@ -33,6 +33,7 @@
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import RichMetadata from './RichMetadata.svelte'
+  import { reliableImage } from '$lib/util/reliable-image'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -181,7 +182,7 @@
       </div>
 
       <div class="flex gap-4 pt-6">
-        <img src={cover(m)} alt="" class="aspect-[2/3] w-32 shrink-0 rounded-lg object-cover shadow-lg" />
+        <img use:reliableImage={cover(m)} alt="" class="aspect-[2/3] w-32 shrink-0 rounded-lg object-cover shadow-lg" />
         <div class="min-w-0 flex-1 self-end">
           {#if m.title.native || m.title.romaji}
             <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
@@ -304,7 +305,7 @@
 
     <!-- Hero info panel: cover + title/badges/description + action bar. -->
     <div class="mb-6 flex flex-col gap-6 md:flex-row">
-      <img src={cover(m)} alt="" class="h-auto w-40 shrink-0 self-start rounded-lg shadow-lg md:w-52" />
+      <img use:reliableImage={cover(m)} alt="" class="h-auto w-40 shrink-0 self-start rounded-lg shadow-lg md:w-52" />
 
       <div class="min-w-0 flex-1">
         {#if m.title.native || m.title.romaji}

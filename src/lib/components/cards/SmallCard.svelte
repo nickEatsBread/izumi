@@ -11,6 +11,7 @@
 
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
+  import { reliableImage } from '$lib/util/reliable-image'
   import { title, cover, season, format } from '$lib/anilist/media'
   import { fade } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
@@ -76,7 +77,7 @@
       <!-- `loading="lazy"` is load-bearing, not a nicety: ListRow renders EVERY entry of a tracker
            list with no cap, so a large account mounted ~1100 of these and fired ~1100 concurrent
            extraLarge cover fetches at mount. -->
-      <img src={coverSrc} alt={title(media)} loading="lazy" decoding="async" onload={() => (coverReady = true)}
+      <img use:reliableImage={coverSrc} alt={title(media)} loading="lazy" decoding="async" onload={() => (coverReady = true)}
            class="relative h-full w-full object-cover transition-[opacity,transform] duration-150 ease-out {coverReady ? 'opacity-100' : 'opacity-0'} group-hover:scale-105" />
     </div>
     <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
