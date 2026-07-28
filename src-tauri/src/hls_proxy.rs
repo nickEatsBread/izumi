@@ -62,11 +62,12 @@ pub(crate) async fn prepare_sidecar_url(
     let Some(upstream) = sidecar_upstream(value) else {
         return Ok(value.to_string());
     };
+    let resource = sidecar_resource(&upstream);
     let proxy = PROXY
         .get_or_try_init(start_proxy)
         .await
         .map_err(|error| format!("could not start the local media proxy: {error}"))?;
-    Ok(proxy.register(upstream, headers.cloned().unwrap_or_default()))
+    Ok(proxy.register_as(upstream, headers.cloned().unwrap_or_default(), resource))
 }
 
 fn kotocdn_upstream(value: &str) -> Option<Url> {
@@ -89,6 +90,22 @@ fn kotocdn_upstream(value: &str) -> Option<Url> {
 fn sidecar_upstream(value: &str) -> Option<Url> {
     let url = Url::parse(value).ok()?;
     matches!(url.scheme(), "http" | "https").then_some(url)
+}
+
+fn sidecar_resource(url: &Url) -> &'static str {
+    match url
+        .path_segments()
+        .and_then(|segments| segments.last())
+        .and_then(|name| name.rsplit_once('.'))
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("ass") => "subtitle.ass",
+        Some("ssa") => "subtitle.ssa",
+        Some("srt") => "subtitle.srt",
+        Some("ttml") | Some("xml") => "subtitle.ttml",
+        _ => "subtitle.vtt",
+    }
 }
 
 fn is_kotocdn(url: &Url) -> bool {
@@ -141,19 +158,39 @@ async fn start_proxy() -> Result<Arc<HlsRepairProxy>, String> {
 
 impl HlsRepairProxy {
     fn register(&self, upstream: Url, headers: HashMap<String, String>) -> String {
+        self.register_as(upstream, headers, "root")
+    }
+
+    fn register_as(
+        &self,
+        upstream: Url,
+        headers: HashMap<String, String>,
+        resource: &str,
+    ) -> String {
         let token = playlist_token(upstream.as_str(), &headers);
-        let playlist = Arc::new(Playlist {
-            headers,
-            resources: RwLock::new(HashMap::from([("root".to_string(), upstream.to_string())])),
-        });
         let mut playlists = self.playlists.write().unwrap();
+        if let Some(playlist) = playlists.get(&token) {
+            playlist
+                .resources
+                .write()
+                .unwrap()
+                .insert(resource.to_string(), upstream.to_string());
+            return self.local_url(&token, resource);
+        }
         if playlists.len() >= MAX_PLAYLISTS && !playlists.contains_key(&token) {
             if let Some(oldest) = playlists.keys().next().cloned() {
                 playlists.remove(&oldest);
             }
         }
+        let playlist = Arc::new(Playlist {
+            headers,
+            resources: RwLock::new(HashMap::from([(
+                resource.to_string(),
+                upstream.to_string(),
+            )])),
+        });
         playlists.insert(token.clone(), playlist);
-        self.local_url(&token, "root")
+        self.local_url(&token, resource)
     }
 
     fn local_url(&self, token: &str, resource: &str) -> String {
@@ -243,6 +280,10 @@ impl HlsRepairProxy {
             ));
         }
 
+        if looks_like_webvtt(&body) {
+            return Ok((body, "text/vtt; charset=utf-8".to_string()));
+        }
+
         if body.starts_with(PNG_SIGNATURE) {
             let offset = transport_stream_offset(&body).ok_or_else(|| {
                 "provider returned a PNG wrapper without an MPEG-TS payload".to_string()
@@ -327,6 +368,12 @@ fn looks_like_playlist(body: &[u8]) -> bool {
         .skip_while(u8::is_ascii_whitespace)
         .take(7)
         .eq(b"#EXTM3U".iter().copied())
+}
+
+fn looks_like_webvtt(body: &[u8]) -> bool {
+    body.strip_prefix(b"\xef\xbb\xbf")
+        .unwrap_or(body)
+        .starts_with(b"WEBVTT")
 }
 
 fn transport_stream_offset(body: &[u8]) -> Option<usize> {
@@ -496,14 +543,24 @@ mod tests {
 
     #[test]
     fn proxies_remote_sidecars_but_keeps_runtime_files_local() {
+        let vtt = sidecar_upstream("https://subs.example/english.vtt").unwrap();
+        assert_eq!(vtt.as_str(), "https://subs.example/english.vtt");
+        assert_eq!(sidecar_resource(&vtt), "subtitle.vtt");
         assert_eq!(
-            sidecar_upstream("https://subs.example/english.vtt")
-                .unwrap()
-                .as_str(),
-            "https://subs.example/english.vtt"
+            sidecar_resource(&Url::parse("https://subs.example/english.ass").unwrap()),
+            "subtitle.ass"
         );
         assert!(sidecar_upstream("file:///tmp/decrypted.srt").is_none());
         assert!(sidecar_upstream("not a url").is_none());
+    }
+
+    #[test]
+    fn recognizes_webvtt_served_as_generic_binary_data() {
+        assert!(looks_like_webvtt(b"WEBVTT\r\n\r\n00:00.000 --> 00:01.000"));
+        assert!(looks_like_webvtt(
+            b"\xef\xbb\xbfWEBVTT\n\n00:00.000 --> 00:01.000"
+        ));
+        assert!(!looks_like_webvtt(b"1\n00:00:00,000 --> 00:00:01,000"));
     }
 
     #[test]
