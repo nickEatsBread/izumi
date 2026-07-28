@@ -87,6 +87,14 @@ export const nowPlayingStream = writable<{
   infoHash: string | null
 }>({ url: '', headers: {}, infoHash: null })
 
+export const playerStatsOpen = writable(false)
+export const playerSleep = writable<{ deadline: number | null; atEpisodeEnd: boolean }>({
+  deadline: null,
+  atEpisodeEnd: false,
+})
+export const playerAbLoop = writable<{ a: number | null; b: number | null }>({ a: null, b: null })
+export const gifRecordingStart = writable<number | null>(null)
+
 // True while the Game-mode on-screen keyboard is up. The controller translator routes A (type the
 // focused key) / B (close) to it, and directional nav stays trapped on its keys.
 export const oskOpen = writable(false)

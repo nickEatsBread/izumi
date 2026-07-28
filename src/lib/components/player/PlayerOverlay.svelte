@@ -10,7 +10,7 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen } from '$lib/player/session'
+  import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
   import {
     autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
@@ -28,6 +28,7 @@
   import { reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
+  import StatsOverlay from './StatsOverlay.svelte'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -117,6 +118,57 @@
   function cmd(name: string, args: string[] = []) {
     invoke('player_command', { name, args }).catch((e) => console.warn('player_command', name, args, e))
   }
+  function setLoopPoint(point: 'a' | 'b') {
+    const loop = get(playerAbLoop)
+    if (point === 'a') {
+      playerAbLoop.set({ a: pos, b: null })
+      cmd('set', ['ab-loop-a', pos.toFixed(3)])
+      cmd('set', ['ab-loop-b', 'no'])
+    } else if (loop.a != null && pos > loop.a + 0.25) {
+      playerAbLoop.set({ a: loop.a, b: pos })
+      cmd('set', ['ab-loop-b', pos.toFixed(3)])
+    }
+  }
+  function clearLoop() {
+    playerAbLoop.set({ a: null, b: null })
+    cmd('set', ['ab-loop-a', 'no']); cmd('set', ['ab-loop-b', 'no'])
+  }
+  async function capture(kind: 'gif' | 'clip') {
+    if (kind === 'gif') {
+      const start = get(gifRecordingStart)
+      if (start == null) {
+        gifRecordingStart.set(pos)
+        playerNotice.set('GIF recording started')
+        return
+      }
+      gifRecordingStart.set(null)
+      if (pos - start < 0.5) return
+      try {
+        await invoke('player_capture_segment', { kind, startSec: start, endSec: pos })
+        playerNotice.set('GIF saved to Pictures/izumi')
+      } catch { playerNotice.set('GIF recording failed') }
+    } else {
+      try {
+        await invoke('player_capture_segment', { kind, startSec: Math.max(0, pos - 30), endSec: pos })
+        playerNotice.set('Recent clip saved to Pictures/izumi')
+      } catch { playerNotice.set('Clip capture failed') }
+    }
+  }
+
+  // Controls auto-unmount when hidden, so the timer belongs to the persistent overlay.
+  $effect(() => {
+    const deadline = $playerSleep.deadline
+    if (!deadline) return
+    const finish = () => {
+      if (Date.now() < deadline) return
+      cmd('set', ['pause', 'yes'])
+      playerSleep.set({ deadline: null, atEpisodeEnd: false })
+      playerNotice.set('Sleep timer finished')
+    }
+    const timer = setInterval(finish, 1000)
+    finish()
+    return () => clearInterval(timer)
+  })
 
   // Keep subtitle appearance live: settings changes apply to the current track immediately and
   // the same values are re-applied after every new player session.
@@ -158,6 +210,10 @@
 
   async function close() {
     await exitFullscreen()
+    playerSleep.set({ deadline: null, atEpisodeEnd: false })
+    playerAbLoop.set({ a: null, b: null })
+    gifRecordingStart.set(null)
+    playerStatsOpen.set(false)
     playing.set(false)
     spriteKey.set(null)
     bingeSource.set(null)
@@ -203,6 +259,8 @@
     coreIdle = true; seeking = false; eof = false; firstFrame = false
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
+    playerAbLoop.set({ a: null, b: null })
+    gifRecordingStart.set(null)
     subtitleSyncKey = ''
     resetSubtitleSync()
   })
@@ -574,6 +632,17 @@
       else if (action === 'playerScreenshot') invoke('player_screenshot')
         .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))
         .catch(() => playerNotice.set('Screenshot failed'))
+      else if (action === 'playerStats') playerStatsOpen.update((value) => !value)
+      else if (action === 'playerGif') void capture('gif')
+      else if (action === 'playerClip') void capture('clip')
+      else if (action === 'playerSleep') {
+        const enabled = !get(playerSleep).atEpisodeEnd
+        playerSleep.set({ deadline: null, atEpisodeEnd: enabled })
+        playerNotice.set(enabled ? 'Sleep after this episode' : 'Sleep timer cleared')
+      }
+      else if (action === 'playerLoopA') setLoopPoint('a')
+      else if (action === 'playerLoopB') setLoopPoint('b')
+      else if (action === 'playerLoopClear') clearLoop()
     }
     window.addEventListener('keydown', onKeyCapture, true)
     poke()
@@ -634,6 +703,8 @@
   {#if $playerNotice}
     <div transition:fade={{ duration: 150 }} class="pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur">{$playerNotice}</div>
   {/if}
+
+  {#if $playerStatsOpen}<StatsOverlay />{/if}
 
   <!-- Manual Skip button — shown when the current segment won't auto-skip (auto-skip
        off, or an OP/ED debut we intentionally don't auto-skip). Auto-hides after ~5s

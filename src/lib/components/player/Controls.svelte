@@ -23,7 +23,7 @@
   import Search from 'lucide-svelte/icons/search'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart } from '$lib/player/session'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
@@ -164,6 +164,65 @@
   async function screenshot() {
     try { await invoke('player_screenshot'); playerNotice.set('Screenshot saved to Pictures/izumi') }
     catch { playerNotice.set('Screenshot failed') }
+  }
+
+  let captureBusy = $state(false)
+  function setSleep(value: string) {
+    if (value === 'off') playerSleep.set({ deadline: null, atEpisodeEnd: false })
+    else if (value === 'end') playerSleep.set({ deadline: null, atEpisodeEnd: true })
+    else playerSleep.set({ deadline: Date.now() + Number(value) * 60_000, atEpisodeEnd: false })
+    playerNotice.set(value === 'off' ? 'Sleep timer cleared' : value === 'end' ? 'Sleep after this episode' : `Sleep timer set for ${value} minutes`)
+  }
+  function markLoopA() {
+    playerAbLoop.set({ a: pos, b: null })
+    cmd('set', ['ab-loop-a', pos.toFixed(3)])
+    cmd('set', ['ab-loop-b', 'no'])
+    playerNotice.set(`Loop start set at ${fmt(pos)}`)
+  }
+  function markLoopB() {
+    const a = $playerAbLoop.a
+    if (a == null || pos <= a + 0.25) {
+      playerNotice.set('Set loop A before loop B')
+      return
+    }
+    playerAbLoop.set({ a, b: pos })
+    cmd('set', ['ab-loop-b', pos.toFixed(3)])
+    playerNotice.set(`Looping ${fmt(a)} – ${fmt(pos)}`)
+  }
+  function clearLoop() {
+    playerAbLoop.set({ a: null, b: null })
+    cmd('set', ['ab-loop-a', 'no'])
+    cmd('set', ['ab-loop-b', 'no'])
+    playerNotice.set('A/B loop cleared')
+  }
+  async function toggleGifRecording() {
+    if ($gifRecordingStart == null) {
+      gifRecordingStart.set(pos)
+      playerNotice.set('GIF recording started')
+      return
+    }
+    const start = $gifRecordingStart
+    gifRecordingStart.set(null)
+    if (pos - start < 0.5) return
+    captureBusy = true
+    playerNotice.set('Encoding GIF…')
+    try {
+      await invoke('player_capture_segment', { kind: 'gif', startSec: start, endSec: pos })
+      playerNotice.set('GIF saved to Pictures/izumi')
+    } catch (error) {
+      playerNotice.set(String(error).includes('ffmpeg-unavailable') ? 'GIF recording needs ffmpeg installed' : 'GIF recording failed')
+    } finally { captureBusy = false }
+  }
+  async function saveRecentClip() {
+    if (pos < 0.5) return
+    captureBusy = true
+    playerNotice.set('Encoding recent clip…')
+    try {
+      await invoke('player_capture_segment', { kind: 'clip', startSec: Math.max(0, pos - 30), endSec: pos })
+      playerNotice.set('Recent clip saved to Pictures/izumi')
+    } catch (error) {
+      playerNotice.set(String(error).includes('ffmpeg-unavailable') ? 'Clip capture needs ffmpeg installed' : 'Clip capture failed')
+    } finally { captureBusy = false }
   }
 
   let volume = $state(100)
@@ -496,6 +555,22 @@
                 {#each [['best', 'Best fit'], ['fill', 'Fill']] as [v, l]}
                   <button data-focusable onclick={() => setFit(v as 'best' | 'fill')} class="flex-1 rounded px-2 py-1 text-xs transition {$videoFit === v ? 'bg-primary text-primary-foreground' : 'hover:bg-white/15'}">{l}</button>
                 {/each}
+              </div>
+              <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Tools</p>
+              <div class="mb-3 grid grid-cols-2 gap-1">
+                <button data-focusable onclick={() => playerStatsOpen.update((value) => !value)} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</button>
+                <select data-focusable aria-label="Sleep timer" onchange={(event) => setSleep((event.currentTarget as HTMLSelectElement).value)} class="rounded bg-white/10 px-2 py-1.5 text-xs">
+                  <option value="off">Sleep: off</option>
+                  <option value="15">Sleep: 15 min</option>
+                  <option value="30">Sleep: 30 min</option>
+                  <option value="45">Sleep: 45 min</option>
+                  <option value="end">Sleep: episode end</option>
+                </select>
+                <button data-focusable onclick={markLoopA} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">Set loop A{#if $playerAbLoop.a != null} ✓{/if}</button>
+                <button data-focusable onclick={markLoopB} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">Set loop B{#if $playerAbLoop.b != null} ✓{/if}</button>
+                {#if $playerAbLoop.a != null}<button data-focusable onclick={clearLoop} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">Clear loop</button>{/if}
+                <button data-focusable disabled={captureBusy} onclick={toggleGifRecording} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20 disabled:opacity-40">{$gifRecordingStart == null ? 'Record GIF' : 'Stop GIF'}</button>
+                <button data-focusable disabled={captureBusy} onclick={saveRecentClip} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20 disabled:opacity-40">Save last 30s</button>
               </div>
               {#each [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']] as [label, prop]}
                 <div class="flex items-center justify-between gap-2 py-0.5">

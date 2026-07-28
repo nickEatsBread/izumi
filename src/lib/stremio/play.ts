@@ -29,7 +29,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, playing, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState } from '$lib/player/session'
+import { connecting, nextEpisodeReady, playing, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep } from '$lib/player/session'
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -270,6 +270,11 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
     // warms the next episode near the end precisely so it continues automatically, so having it on
     // implies auto-advance. Advance continues the same release seamlessly, else opens the picker.
     clearPosition(media.id, episode)
+    if (get(playerSleep).atEpisodeEnd) {
+      playerSleep.set({ deadline: null, atEpisodeEnd: false })
+      playerNotice.set('Sleep timer stopped autoplay')
+      return
+    }
     if (!get(autoplayNext) && !get(bingePreload)) return
     const airedTotal = airedTotalOf(media)
     let next = episode + 1

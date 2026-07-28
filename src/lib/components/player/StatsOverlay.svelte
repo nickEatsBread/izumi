@@ -1,0 +1,37 @@
+<script lang="ts">
+  import { onMount } from 'svelte'
+  import { invoke } from '@tauri-apps/api/core'
+
+  let values = $state<Record<string, string>>({})
+  const properties = [
+    ['Video', 'video-format'],
+    ['Resolution', 'video-params/w'],
+    ['FPS', 'estimated-vf-fps'],
+    ['Dropped', 'frame-drop-count'],
+    ['Audio', 'audio-codec-name'],
+    ['Cache', 'demuxer-cache-duration'],
+    ['Bitrate', 'video-bitrate'],
+    ['Sync', 'avsync'],
+  ] as const
+
+  async function refresh() {
+    const entries = await Promise.all(properties.map(async ([label, property]) => {
+      try { return [label, await invoke<string>('player_get_property', { name: property })] as const }
+      catch { return [label, '—'] as const }
+    }))
+    values = Object.fromEntries(entries)
+  }
+
+  onMount(() => {
+    void refresh()
+    const timer = setInterval(refresh, 1000)
+    return () => clearInterval(timer)
+  })
+</script>
+
+<aside class="pointer-events-none absolute right-5 top-16 z-20 w-64 rounded-lg border border-white/15 bg-black/80 p-3 font-mono text-xs text-white shadow-2xl">
+  <div class="mb-2 font-sans text-xs font-black uppercase tracking-widest text-white/60">Playback stats</div>
+  {#each properties as [label]}
+    <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">{label}</span><span class="truncate text-right">{values[label] ?? '—'}</span></div>
+  {/each}
+</aside>
