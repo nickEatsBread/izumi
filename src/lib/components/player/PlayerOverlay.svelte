@@ -12,7 +12,12 @@
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
-  import { autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying } from '$lib/settings/ui'
+  import {
+    autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
+    subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
+    subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
+    subtitleAutoSync,
+  } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
   import { startNativeGamepadSeek } from '$lib/player/gamepad'
@@ -20,6 +25,7 @@
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import { reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
+  import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -42,6 +48,7 @@
   let chapters = $state<{ time: number; title: string }[]>([])
   let metaLoaded = false
   let loadedKey = ''
+  let subtitleSyncKey = ''
   // Segments already auto-skipped this episode (by start time), so seeking back
   // into one lets you actually watch it instead of being bounced out again.
   let autoSkipped = new Set<number>()
@@ -108,6 +115,22 @@
   function cmd(name: string, args: string[] = []) {
     invoke('player_command', { name, args }).catch((e) => console.warn('player_command', name, args, e))
   }
+
+  // Keep subtitle appearance live: settings changes apply to the current track immediately and
+  // the same values are re-applied after every new player session.
+  $effect(() => {
+    if (!$playing) return
+    const override = $subtitleStyleEnabled
+    cmd('set', ['sub-ass-override', override ? 'force' : 'no'])
+    if (!override) return
+    cmd('set', ['sub-font', $subtitleFont || 'Nunito'])
+    cmd('set', ['sub-font-size', String($subtitleFontSize)])
+    cmd('set', ['sub-color', `${$subtitleTextColor}ff`])
+    cmd('set', ['sub-border-color', `${$subtitleBorderColor}ff`])
+    cmd('set', ['sub-border-size', String($subtitleBorderSize)])
+    cmd('set', ['sub-shadow-offset', String($subtitleShadow)])
+    cmd('set', ['sub-pos', String($subtitlePosition)])
+  })
   // Exact absolute seek so auto-skip/skip land past the segment (a keyframe seek could
   // snap back into it and re-skip forever).
   const seekTo = (t: number) => cmd('seek', [Math.max(0, t).toFixed(3), 'absolute+exact'])
@@ -178,6 +201,19 @@
     coreIdle = true; seeking = false; eof = false; firstFrame = false
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
+    subtitleSyncKey = ''
+    resetSubtitleSync()
+  })
+
+  // mpv chooses the preferred subtitle during load, before the controls menu has ever opened.
+  // Once duration is known, inspect that selected track and run the optional one-shot alignment.
+  $effect(() => {
+    const key = loadedKey
+    if (!$subtitleAutoSync || dur < 60 || !key || subtitleSyncKey === key) return
+    subtitleSyncKey = key
+    void invoke<string>('player_tracks')
+      .then((raw) => autoSyncSelectedSubtitle(JSON.parse(raw) as SyncableTrack[], dur))
+      .catch(() => {})
   })
 
   // Auto-clear the transient overlay toast.

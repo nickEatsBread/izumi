@@ -55,3 +55,11 @@ https://github.com/lucide-icons/lucide/blob/main/LICENSE.
 
 All remaining npm and Cargo dependencies are permissively licensed (MIT, Apache-2.0,
 BSD-3-Clause, ISC). Refer to each package for its full license text.
+
+## Harbor subtitle synchronizer — MIT
+
+Izumi's speech-interval subtitle alignment is adapted from Harbor:
+https://github.com/harborstremio/harbor
+
+Copyright (c) Harbor contributors. Licensed under the MIT License; the complete license is
+available at https://github.com/harborstremio/harbor/blob/main/LICENSE.

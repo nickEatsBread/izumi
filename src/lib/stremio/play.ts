@@ -29,7 +29,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, playing, nowPlaying, nowPlayingUrl, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState } from '$lib/player/session'
+import { connecting, nextEpisodeReady, playing, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState } from '$lib/player/session'
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -1360,6 +1360,11 @@ export async function playStream(media: Media, episode: number | undefined, stre
       ...audioTracks.map((track) => track.headers ?? {}),
     )
     const mergedHeaders = stream.__stream ? { ...sidecarHeaders, ...(stream.__headers ?? {}) } : undefined
+    nowPlayingStream.set({
+      url: stream.url,
+      headers: mergedHeaders ?? {},
+      infoHash: stream.infoHash ?? null,
+    })
     // alang/slang drive mpv's preferred-language track auto-selection.
     await invoke('player_embed', {
       url: stream.url,
@@ -1426,6 +1431,7 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
     nowPlayingPartySource.set({ source: null, error: 'Cloud-library links are private to this device.' })
     nowPlaying.set({ title: label, animeTitle: label, id: null, malId: null, episode: null, total: null, airedTotal: null })
     nowPlayingUrl.set(url) // for the dev-only Copy URL tool in the track menu
+    nowPlayingStream.set({ url, headers: {}, infoHash: null })
     spriteKey.set(null)   // no per-file scrub sprites for cloud items
     bingeSource.set(null) // no release-continuity chain
     await invoke('player_embed', { url, alang: get(preferredAudioLang), slang: get(preferredSubLang) })

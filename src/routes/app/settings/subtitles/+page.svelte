@@ -9,6 +9,15 @@
     openSubtitlesStaySignedIn,
     openSubtitlesCreds,
     subDlApiKey,
+    subtitleStyleEnabled,
+    subtitleFont,
+    subtitleFontSize,
+    subtitleTextColor,
+    subtitleBorderColor,
+    subtitleBorderSize,
+    subtitleShadow,
+    subtitlePosition,
+    subtitleAutoSync,
   } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
@@ -82,6 +91,53 @@
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Subtitles</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Search external providers for subtitles and load them during playback.</p>
+
+  <section class="mb-8 max-w-2xl">
+    <h3 class="mb-2 font-bold">Appearance</h3>
+    <div class="space-y-4 rounded-md border border-border p-4">
+      <Toggle label="Use custom subtitle style" desc="Override embedded ASS styling with the choices below." value={$subtitleStyleEnabled} onToggle={() => ($subtitleStyleEnabled = !$subtitleStyleEnabled)} />
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">Font family</span>
+        <input type="text" bind:value={$subtitleFont} data-focusable disabled={!$subtitleStyleEnabled} class="rounded-md bg-input px-3 py-2 text-sm disabled:opacity-50" />
+      </label>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-bold">Text colour</span>
+          <input type="color" bind:value={$subtitleTextColor} data-focusable disabled={!$subtitleStyleEnabled} class="h-10 w-full rounded-md bg-input p-1 disabled:opacity-50" />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-bold">Border colour</span>
+          <input type="color" bind:value={$subtitleBorderColor} data-focusable disabled={!$subtitleStyleEnabled} class="h-10 w-full rounded-md bg-input p-1 disabled:opacity-50" />
+        </label>
+      </div>
+      <label class="block text-sm">
+        <span class="flex justify-between font-bold"><span>Font size</span><span>{$subtitleFontSize}px</span></span>
+        <input type="range" min="20" max="80" step="1" bind:value={$subtitleFontSize} data-focusable disabled={!$subtitleStyleEnabled} class="w-full accent-primary disabled:opacity-50" />
+      </label>
+      <label class="block text-sm">
+        <span class="flex justify-between font-bold"><span>Border</span><span>{$subtitleBorderSize}px</span></span>
+        <input type="range" min="0" max="8" step="0.5" bind:value={$subtitleBorderSize} data-focusable disabled={!$subtitleStyleEnabled} class="w-full accent-primary disabled:opacity-50" />
+      </label>
+      <label class="block text-sm">
+        <span class="flex justify-between font-bold"><span>Shadow</span><span>{$subtitleShadow}px</span></span>
+        <input type="range" min="0" max="8" step="0.5" bind:value={$subtitleShadow} data-focusable disabled={!$subtitleStyleEnabled} class="w-full accent-primary disabled:opacity-50" />
+      </label>
+      <label class="block text-sm">
+        <span class="flex justify-between font-bold"><span>Vertical position</span><span>{$subtitlePosition}%</span></span>
+        <input type="range" min="10" max="100" step="1" bind:value={$subtitlePosition} data-focusable disabled={!$subtitleStyleEnabled} class="w-full accent-primary disabled:opacity-50" />
+      </label>
+    </div>
+  </section>
+
+  <section class="mb-8 max-w-2xl">
+    <h3 class="mb-2 font-bold">Synchronization</h3>
+    <Toggle
+      label="Automatically sync external subtitles"
+      desc="Uses local ffmpeg speech analysis when a text subtitle is selected. Embedded image/ASS tracks are left unchanged."
+      value={$subtitleAutoSync}
+      onToggle={() => ($subtitleAutoSync = !$subtitleAutoSync)}
+    />
+  </section>
 
   <section class="mb-8 max-w-2xl">
     <h3 class="mb-2 font-bold">Providers</h3>

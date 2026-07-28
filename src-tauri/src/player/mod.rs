@@ -660,9 +660,16 @@ impl PlayerHandle {
             let forced: bool = mpv
                 .get_property(&format!("track-list/{i}/forced"))
                 .unwrap_or(false);
+            let external: bool = mpv
+                .get_property(&format!("track-list/{i}/external"))
+                .unwrap_or(false);
+            let external_filename: String = mpv
+                .get_property(&format!("track-list/{i}/external-filename"))
+                .unwrap_or_default();
             arr.push(serde_json::json!({
                 "id": id, "type": ty, "title": title, "lang": lang, "selected": selected,
                 "codec": codec, "channels": channels, "default": default, "forced": forced,
+                "external": external, "externalFilename": external_filename,
             }));
         }
         serde_json::to_string(&arr).map_err(|e| e.to_string())
