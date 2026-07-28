@@ -135,18 +135,21 @@
   }
   async function capture(kind: 'gif' | 'clip') {
     if (kind === 'gif') {
-      const start = get(gifRecordingStart)
-      if (start == null) {
-        gifRecordingStart.set(pos)
-        playerNotice.set('GIF recording started')
+      if (get(gifRecordingStart) == null) {
+        try {
+          await invoke('player_gif_start')
+          gifRecordingStart.set(pos)
+          playerNotice.set('GIF recording started')
+        } catch { playerNotice.set('GIF recording failed to start') }
         return
       }
       gifRecordingStart.set(null)
-      if (pos - start < 0.5) return
       try {
-        await invoke('player_capture_segment', { kind, startSec: start, endSec: pos })
+        await invoke('player_gif_stop')
         playerNotice.set('GIF saved to Pictures/izumi')
-      } catch { playerNotice.set('GIF recording failed') }
+      } catch (error) {
+        playerNotice.set(String(error).includes('ffmpeg-unavailable') ? 'GIF recording needs ffmpeg installed' : 'GIF recording failed')
+      }
     } else {
       try {
         await invoke('player_capture_segment', { kind, startSec: Math.max(0, pos - 30), endSec: pos })
@@ -212,6 +215,7 @@
     await exitFullscreen()
     playerSleep.set({ deadline: null, atEpisodeEnd: false })
     playerAbLoop.set({ a: null, b: null })
+    if (get(gifRecordingStart) != null) await invoke('player_gif_abort').catch(() => {})
     gifRecordingStart.set(null)
     playerStatsOpen.set(false)
     playing.set(false)
@@ -260,6 +264,7 @@
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
     playerAbLoop.set({ a: null, b: null })
+    if (get(gifRecordingStart) != null) void invoke('player_gif_abort').catch(() => {})
     gifRecordingStart.set(null)
     subtitleSyncKey = ''
     resetSubtitleSync()

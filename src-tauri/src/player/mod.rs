@@ -127,6 +127,18 @@ struct TileJob {
     url: String, // debrid stream url or local path (SECRET — never logged)
 }
 
+struct GifSession {
+    dir: PathBuf,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    handle: std::thread::JoinHandle<()>,
+    captured_ms: Arc<std::sync::atomic::AtomicU64>,
+}
+
+pub struct GifFrames {
+    pub dir: PathBuf,
+    pub captured_ms: u64,
+}
+
 /// Reply to `player_thumb_tile`. `status` = `ready|pending|failed|none`; when `ready`,
 /// `data_url` is that ONE small tile (few KB) and `index` its grid position.
 #[derive(Serialize)]
@@ -153,6 +165,9 @@ pub struct ThumbInfo {
 /// its window, so we must retain it in state.
 pub struct PlayerHandle {
     mpv: Mutex<Option<Mpv>>,
+    /// Active GIF capture. Frames come from the existing mpv core, so recording
+    /// does not depend on ffmpeg being able to reopen the source URL.
+    gif_session: Mutex<Option<GifSession>>,
     /// URL of what's currently playing.
     current_url: Mutex<Option<String>>,
     /// Sidecar audio/subtitle tracks queued until mpv has actually loaded their stream.
@@ -174,6 +189,7 @@ impl PlayerHandle {
     pub fn new() -> Self {
         PlayerHandle {
             mpv: Mutex::new(None),
+            gif_session: Mutex::new(None),
             current_url: Mutex::new(None),
             pending_external_tracks: Arc::new(Mutex::new(None)),
             sprite_jobs: Arc::new(Mutex::new(HashMap::new())),
@@ -365,6 +381,8 @@ impl PlayerHandle {
     /// the core is fully destroyed. Then we drop the main handle. Used by
     /// `close_player`.
     pub fn stop(&self) -> Result<(), String> {
+        self.gif_abort()?;
+
         // Free the render context (which references the core) BEFORE the core is
         // quit/dropped — required for the `'static` lifetime extension in
         // `linux_embed::attach` to stay sound. No-op if nothing is embedded.
@@ -492,6 +510,111 @@ impl PlayerHandle {
         let guard = self.mpv.lock().map_err(|e| e.to_string())?;
         let mpv = guard.as_ref().ok_or("no player")?;
         mpv.command(name, args).map_err(|e| e.to_string())
+    }
+
+    /// Start a bounded GIF frame capture from the already-playing mpv core.
+    ///
+    /// A separate libmpv client lets the worker own its handle without holding
+    /// `self.mpv`'s mutex between frames. Signed, custom-protocol, and otherwise
+    /// ffmpeg-incompatible streams are therefore captured exactly as mpv renders
+    /// them instead of being opened a second time.
+    pub fn gif_start(&self, dir: PathBuf) -> Result<(), String> {
+        let mut slot = self.gif_session.lock().map_err(|e| e.to_string())?;
+        if slot.is_some() {
+            return Err("gif-already-recording".into());
+        }
+
+        let client = {
+            let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+            let mpv = guard.as_ref().ok_or("no player")?;
+            // libmpv2 6.0.0 has a lifetime bug for named clients; an unnamed
+            // client is the same safe pattern used by the event loop below.
+            mpv.create_client(None).map_err(|e| e.to_string())?
+        };
+
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_stop = stop.clone();
+        let worker_dir = dir.clone();
+        let captured_ms = Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let worker_captured_ms = captured_ms.clone();
+        let handle = std::thread::spawn(move || {
+            use std::sync::atomic::Ordering;
+            use std::time::{Duration, Instant};
+
+            const FRAME_INTERVAL: Duration = Duration::from_millis(50);
+            const MAX_DURATION: Duration = Duration::from_secs(30);
+            const MAX_FRAMES: u32 = 600;
+
+            let _ = client.set_property("screenshot-format", "jpg");
+            let _ = client.set_property("screenshot-jpeg-quality", 92_i64);
+            let _ = client.set_property("screenshot-sw", "yes");
+            let started = Instant::now();
+            let mut frame = 0_u32;
+            while !worker_stop.load(Ordering::Relaxed)
+                && frame < MAX_FRAMES
+                && started.elapsed() < MAX_DURATION
+            {
+                let path = worker_dir.join(format!("f{frame:05}.jpg"));
+                let path = path.to_string_lossy().into_owned();
+                if client
+                    .command("screenshot-to-file", &[path.as_str(), "video"])
+                    .is_ok()
+                {
+                    frame += 1;
+                    worker_captured_ms.store(
+                        started.elapsed().as_millis() as u64,
+                        Ordering::Relaxed,
+                    );
+                }
+                std::thread::sleep(FRAME_INTERVAL);
+            }
+        });
+
+        *slot = Some(GifSession {
+            dir,
+            stop,
+            handle,
+            captured_ms,
+        });
+        Ok(())
+    }
+
+    /// Stop frame capture and return its local frame directory for encoding.
+    pub fn gif_stop(&self) -> Result<GifFrames, String> {
+        let session = self
+            .gif_session
+            .lock()
+            .map_err(|e| e.to_string())?
+            .take()
+            .ok_or("gif-not-recording")?;
+        session
+            .stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let _ = session.handle.join();
+        Ok(GifFrames {
+            dir: session.dir,
+            captured_ms: session
+                .captured_ms
+                .load(std::sync::atomic::Ordering::Relaxed),
+        })
+    }
+
+    /// Cancel a live GIF capture and remove its temporary frames.
+    pub fn gif_abort(&self) -> Result<(), String> {
+        let session = self
+            .gif_session
+            .lock()
+            .map_err(|e| e.to_string())?
+            .take();
+        if let Some(session) = session {
+            session
+                .stop
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            let _ = session.handle.join();
+            let _ = std::fs::remove_dir_all(session.dir);
+        }
+        Ok(())
     }
 
     /// Store the frontend's resolved render-option set and, if a core is live, apply each pair
