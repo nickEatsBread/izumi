@@ -41,6 +41,7 @@
     '/app/settings/sources': 'Sources', '/app/settings/extensions': 'Extensions',
     '/app/settings/downloads': 'Downloads', '/app/settings/interface': 'Interface',
     '/app/settings/history': 'History', '/app/settings/sync': 'Device sync',
+    '/app/settings/backup': 'Backup & restore',
     '/app/settings/accounts': 'Accounts', '/app/settings/network': 'Network',
     '/app/settings/changelog': 'Changelog', '/app/settings/about': 'About',
   }
