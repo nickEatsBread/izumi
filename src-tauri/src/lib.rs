@@ -1676,6 +1676,7 @@ fn player_screenshot(
 fn player_gif_start(
     app: AppHandle,
     player: tauri::State<'_, player::PlayerHandle>,
+    include_subtitles: bool,
 ) -> Result<(), String> {
     let root = app
         .path()
@@ -1687,7 +1688,10 @@ fn player_gif_start(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    player.gif_start(root.join(format!("{}-{stamp}", std::process::id())))
+    player.gif_start(
+        root.join(format!("{}-{stamp}", std::process::id())),
+        include_subtitles,
+    )
 }
 
 #[cfg(not(target_os = "android"))]

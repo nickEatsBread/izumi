@@ -518,7 +518,7 @@ impl PlayerHandle {
     /// `self.mpv`'s mutex between frames. Signed, custom-protocol, and otherwise
     /// ffmpeg-incompatible streams are therefore captured exactly as mpv renders
     /// them instead of being opened a second time.
-    pub fn gif_start(&self, dir: PathBuf) -> Result<(), String> {
+    pub fn gif_start(&self, dir: PathBuf, include_subtitles: bool) -> Result<(), String> {
         let mut slot = self.gif_session.lock().map_err(|e| e.to_string())?;
         if slot.is_some() {
             return Err("gif-already-recording".into());
@@ -536,6 +536,11 @@ impl PlayerHandle {
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let worker_stop = stop.clone();
         let worker_dir = dir.clone();
+        let screenshot_mode = if include_subtitles {
+            "subtitles"
+        } else {
+            "video"
+        };
         let captured_ms = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let worker_captured_ms = captured_ms.clone();
         let handle = std::thread::spawn(move || {
@@ -558,7 +563,7 @@ impl PlayerHandle {
                 let path = worker_dir.join(format!("f{frame:05}.jpg"));
                 let path = path.to_string_lossy().into_owned();
                 if client
-                    .command("screenshot-to-file", &[path.as_str(), "video"])
+                    .command("screenshot-to-file", &[path.as_str(), screenshot_mode])
                     .is_ok()
                 {
                     frame += 1;

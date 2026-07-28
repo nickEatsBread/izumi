@@ -27,7 +27,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, subDlApiKey, openSubtitlesToken, subtitleAutoSync } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, subDlApiKey, openSubtitlesToken, subtitleAutoSync, gifIncludeSubtitles } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
   import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
@@ -199,7 +199,7 @@
     if ($gifRecordingStart == null) {
       captureBusy = true
       try {
-        await invoke('player_gif_start')
+        await invoke('player_gif_start', { includeSubtitles: $gifIncludeSubtitles })
         gifRecordingStart.set(pos)
         playerNotice.set('GIF recording started')
       } catch {

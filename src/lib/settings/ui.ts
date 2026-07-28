@@ -104,6 +104,8 @@ export const seekDuration = persisted<number>('player-seek-seconds', 10)
 /** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
  *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
+/** Burn the currently displayed subtitle track into frames captured for GIF recordings. */
+export const gifIncludeSubtitles = persisted<boolean>('player-gif-include-subtitles', false)
 /** Keep the screen awake (no dim/sleep) while a video is playing — fixes the Steam Deck
  *  turning the screen off mid-episode. Released when paused / stopped, so battery-saver still
  *  kicks in when you're not watching. Default on. */
