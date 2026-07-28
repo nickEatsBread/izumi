@@ -1669,6 +1669,183 @@ fn player_screenshot(
     Ok(dir_s)
 }
 
+/// Begin GIF recording by taking frames from the active libmpv core. Unlike
+/// segment capture, this never asks ffmpeg to reopen the media source.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn player_gif_start(
+    app: AppHandle,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<(), String> {
+    let root = app
+        .path()
+        .app_cache_dir()
+        .or_else(|_| app.path().temp_dir())
+        .map_err(|e| e.to_string())?
+        .join("gif-capture");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    player.gif_start(root.join(format!("{}-{stamp}", std::process::id())))
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn player_gif_abort(player: tauri::State<'_, player::PlayerHandle>) -> Result<(), String> {
+    player.gif_abort()
+}
+
+#[cfg(not(target_os = "android"))]
+fn gif_frames_ffmpeg(
+    input: &std::path::Path,
+    palette: Option<&std::path::Path>,
+    output: &std::path::Path,
+    fps: f64,
+    palette_pass: bool,
+) -> tokio::process::Command {
+    let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
+    let mut command = tokio::process::Command::new(executable);
+    command
+        .kill_on_drop(true)
+        .arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-y")
+        .arg("-framerate")
+        .arg(format!("{fps:.3}"))
+        .arg("-i")
+        .arg(input);
+    if palette_pass {
+        command
+            .arg("-vf")
+            .arg("scale=640:-2:flags=lanczos,palettegen=stats_mode=diff")
+            .arg("-frames:v")
+            .arg("1")
+            .arg(output);
+    } else if let Some(palette) = palette {
+        command
+            .arg("-i")
+            .arg(palette)
+            .arg("-lavfi")
+            .arg(
+                "scale=640:-2:flags=lanczos[x];\
+                 [x][1:v]paletteuse=dither=bayer:bayer_scale=3",
+            )
+            .arg("-loop")
+            .arg("0")
+            .arg(output);
+    } else {
+        // The captured JPEGs have a conventional pixel format, but keep a
+        // palette-free encoder as a last resort for unusual ffmpeg builds.
+        command
+            .arg("-vf")
+            .arg("scale=480:-2:flags=lanczos,format=rgb8")
+            .arg("-loop")
+            .arg("0")
+            .arg(output);
+    }
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000 | 0x0000_4000);
+    command
+}
+
+#[cfg(not(target_os = "android"))]
+async fn encode_gif_frames(
+    app: &AppHandle,
+    frames: &player::GifFrames,
+) -> Result<String, String> {
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&frames.dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jpg"))
+        })
+        .collect();
+    files.sort();
+    if files.len() < 2 {
+        return Err("gif-no-frames".into());
+    }
+
+    let fps = if frames.captured_ms >= 200 {
+        (files.len() as f64 / (frames.captured_ms as f64 / 1000.0)).clamp(2.0, 30.0)
+    } else {
+        12.0
+    };
+    let dir = app
+        .path()
+        .picture_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| e.to_string())?
+        .join("izumi");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let output = dir.join(format!("izumi-gif-{stamp}.gif"));
+    let input = frames.dir.join("f%05d.jpg");
+    let palette = frames.dir.join("palette.png");
+
+    let mut palette_command = gif_frames_ffmpeg(&input, None, &palette, fps, true);
+    let palette_result = run_capture_ffmpeg(&mut palette_command, 90).await;
+    if matches!(&palette_result, Err(error) if error == "ffmpeg-unavailable") {
+        return Err("ffmpeg-unavailable".into());
+    }
+
+    if matches!(&palette_result, Ok(result) if result.status.success()) {
+        let mut gif_command = gif_frames_ffmpeg(&input, Some(&palette), &output, fps, false);
+        match run_capture_ffmpeg(&mut gif_command, 90).await {
+            Ok(result) if result.status.success() => {
+                return Ok(output.to_string_lossy().into_owned());
+            }
+            Err(error) if error == "ffmpeg-unavailable" => return Err(error),
+            failed => eprintln!(
+                "[capture] local palette GIF failed, retrying direct encoder: {}",
+                match failed {
+                    Ok(result) => capture_failure(&result),
+                    Err(error) => error,
+                }
+            ),
+        }
+    } else {
+        eprintln!(
+            "[capture] local GIF palette generation failed, retrying direct encoder: {}",
+            match palette_result {
+                Ok(result) => capture_failure(&result),
+                Err(error) => error,
+            }
+        );
+    }
+
+    let _ = std::fs::remove_file(&output);
+    let mut fallback = gif_frames_ffmpeg(&input, None, &output, fps, false);
+    let result = run_capture_ffmpeg(&mut fallback, 90).await?;
+    if !result.status.success() {
+        let _ = std::fs::remove_file(&output);
+        return Err(capture_failure(&result));
+    }
+    Ok(output.to_string_lossy().into_owned())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn player_gif_stop(
+    app: AppHandle,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<String, String> {
+    let frames = player.gif_stop()?;
+    let result = encode_gif_frames(&app, &frames).await;
+    let _ = std::fs::remove_dir_all(&frames.dir);
+    result
+}
+
 /// Encode a bounded segment of the current source as GIF or MP4 using the user's local ffmpeg.
 /// The frontend supplies timestamps from the live player; output always stays in Pictures/izumi.
 #[cfg(not(target_os = "android"))]
@@ -2995,6 +3172,9 @@ pub fn run() {
             player_exit_fullscreen,
             player_set_inset,
             player_screenshot,
+            player_gif_start,
+            player_gif_stop,
+            player_gif_abort,
             player_capture_segment,
             player_diag,
             mpv_version,

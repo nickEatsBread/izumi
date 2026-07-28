@@ -197,17 +197,21 @@
   }
   async function toggleGifRecording() {
     if ($gifRecordingStart == null) {
-      gifRecordingStart.set(pos)
-      playerNotice.set('GIF recording started')
+      captureBusy = true
+      try {
+        await invoke('player_gif_start')
+        gifRecordingStart.set(pos)
+        playerNotice.set('GIF recording started')
+      } catch {
+        playerNotice.set('GIF recording failed to start')
+      } finally { captureBusy = false }
       return
     }
-    const start = $gifRecordingStart
     gifRecordingStart.set(null)
-    if (pos - start < 0.5) return
     captureBusy = true
     playerNotice.set('Encoding GIF…')
     try {
-      await invoke('player_capture_segment', { kind: 'gif', startSec: start, endSec: pos })
+      await invoke('player_gif_stop')
       playerNotice.set('GIF saved to Pictures/izumi')
     } catch (error) {
       playerNotice.set(String(error).includes('ffmpeg-unavailable') ? 'GIF recording needs ffmpeg installed' : 'GIF recording failed')
