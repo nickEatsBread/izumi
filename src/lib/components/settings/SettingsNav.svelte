@@ -17,6 +17,7 @@
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import PanelBottom from 'lucide-svelte/icons/panel-bottom'
   import Keyboard from 'lucide-svelte/icons/keyboard'
+  import DatabaseBackup from 'lucide-svelte/icons/database-backup'
 
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
@@ -35,6 +36,7 @@
       { title: 'Navigation', href: '/app/settings/navigation', icon: PanelBottom },
       { title: 'History', href: '/app/settings/history', icon: History },
       { title: 'Device sync', href: '/app/settings/sync', icon: RefreshCw },
+      { title: 'Backup & restore', href: '/app/settings/backup', icon: DatabaseBackup },
       { title: 'Accounts', href: '/app/settings/accounts', icon: User },
       { title: 'Network', href: '/app/settings/network', icon: Globe },
     ] },
