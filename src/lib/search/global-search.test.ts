@@ -4,6 +4,7 @@ import {
   advancedSearchHref,
   createSearchRequestGuard,
   normalizeSearchQuery,
+  plainTextSynopsis,
   rankQuickSearchResults,
 } from './global-search'
 import type { Media } from '$lib/anilist/types'
@@ -39,6 +40,12 @@ describe('global search helpers', () => {
   it('builds an advanced-search link without emitting an empty query', () => {
     expect(advancedSearchHref('')).toBe('/app/search')
     expect(advancedSearchHref('Cowboy Bebop')).toBe('/app/search?search=Cowboy%20Bebop')
+  })
+
+  it('turns AniList description markup into compact plain text', () => {
+    expect(plainTextSynopsis(
+      'The Grand Line.<br><br><b>This includes:</b><br>Fish &amp; chips.',
+    )).toBe('The Grand Line. This includes: Fish & chips.')
   })
 
   it('rejects stale asynchronous requests', () => {
