@@ -83,7 +83,7 @@
   // resolve screen stands in for the picker, the auto-pick may commit to an uncached source (every
   // torrent-extension row is uncached by construction, so it would otherwise never be eligible),
   // and a failure walks on instead of dropping them back to a list they asked not to see.
-  const autoImmediate = $derived($autoSelectSource && !$autoSelectCountdown)
+  const autoImmediate = $derived($autoSelectSource && !$autoSelectCountdown && !pick?.manualOnly)
   let failedKeys = $state<string[]>([])
   const hasFailed = (s: StreamInfo['stream']) => failedKeys.includes(keyOf(describe(s))) || isDead(s)
   const candidates = $derived(pickCandidates(
@@ -204,7 +204,7 @@
       autoState = 'off'
       return
     }
-    if (autoState === 'idle' && autoReady && !!best && !busy && $autoSelectSource) {
+    if (autoState === 'idle' && autoReady && !!best && !busy && $autoSelectSource && !pick?.manualOnly) {
       if (!$autoSelectCountdown) { autoState = 'off'; autoBest(); return }
       autoState = 'counting'
       autoStart = performance.now()
@@ -238,7 +238,7 @@
         error = s.message ?? 'Playback failed.'
       }
       else if (s.status === 'idle') { busy = false } // caching canceled — re-enable the list
-    })
+    }, { autoplay: pick.autoplay })
   }
   /** Remember the failure and move to the next candidate. False when the chain is exhausted. */
   function advanceAuto(info: StreamInfo): boolean {

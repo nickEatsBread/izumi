@@ -10,7 +10,7 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
   import { playPrev, playNext } from '$lib/stremio/play'
   import {
     autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
@@ -256,10 +256,10 @@
   // chapters, AniSkip windows and `dur` — so auto-skip seeks to a timestamp that belongs to a file
   // that is no longer loaded. Seekbar already keys its thumbnails on the same store.
   $effect(() => {
-    const key = `${np.title}|${np.episode}|${$spriteKey ?? ''}`
+    const key = `${$playerLoadId}|${np.title}|${np.episode}|${$spriteKey ?? ''}`
     if (key === loadedKey) return
     loadedKey = key
-    pos = 0; dur = 0; buffer = 0; segments = []; chapters = []; metaLoaded = false
+    pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
     coreIdle = true; seeking = false; eof = false; firstFrame = false
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
@@ -507,7 +507,7 @@
     const now = performance.now()
     if (padEpArm && padEpDir === dir && now - padEpArm < 1400) {
       padEpArm = 0
-      if (dir > 0) playNext(); else playPrev()
+      if (dir > 0) playNext(undefined, !paused); else playPrev(undefined, !paused)
     } else {
       padEpArm = now
       padEpDir = dir
@@ -631,8 +631,8 @@
       else if (action === 'playerSubtitleCycle') cmd('cycle', ['sid'])
       else if (action === 'playerSubDelayDown') cmd('add', ['sub-delay', '-0.1'])
       else if (action === 'playerSubDelayUp') cmd('add', ['sub-delay', '0.1'])
-      else if (action === 'playerNextEpisode') playNext()
-      else if (action === 'playerPreviousEpisode') playPrev()
+      else if (action === 'playerNextEpisode') playNext(undefined, !paused)
+      else if (action === 'playerPreviousEpisode') playPrev(undefined, !paused)
       else if (action === 'playerFullscreen') toggleFullscreen()
       else if (action === 'playerScreenshot') invoke('player_screenshot')
         .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))

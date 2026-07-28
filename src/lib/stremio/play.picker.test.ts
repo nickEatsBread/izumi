@@ -5,6 +5,7 @@ const picker = writable<Record<string, unknown> | null>(null)
 const hasConfiguredExtensions = vi.fn(async () => true)
 const runningExtensionCount = vi.fn(async () => 1)
 const resolveOnlineStreams = vi.fn(() => new Promise<never>(() => {}))
+const automaticSources = writable(true)
 
 vi.mock('./sources', () => ({
   enabledAddonUrls: readable<string[]>([]),
@@ -45,7 +46,8 @@ vi.mock('$lib/stores/offline', () => ({ offlineMode: readable(false) }))
 vi.mock('$lib/settings/ui', () => ({
   preferredAudioLang: readable('jpn'),
   preferredSubLang: readable('eng'),
-  autoSelectSource: readable(false),
+  autoSelectSource: automaticSources,
+  autoSelectCountdown: readable(false),
   preferredQuality: readable('1080p'),
   skipFiller: readable(false),
   autoplayNext: readable(false),
@@ -65,6 +67,7 @@ vi.mock('$lib/player/session', () => ({
   streamPicker: picker,
   connecting: writable(null),
   playing: writable(false),
+  playerLoadId: writable(0),
   nowPlaying: writable({}),
   nowPlayingUrl: writable(''),
   playerNotice: writable(''),
@@ -108,6 +111,20 @@ describe('manual episode source chooser', () => {
       resolving: true,
       hidden: false,
     })
+
+    cancelResolve()
+    await resolving
+  })
+
+  it('marks Change source as manual even when automatic selection is enabled', async () => {
+    const resolving = playEpisode(media as never, 2, () => {}, { forceManual: true })
+
+    await vi.waitFor(() => expect(get(picker)).toMatchObject({
+      episode: 2,
+      resolving: true,
+      manualOnly: true,
+      autoplay: true,
+    }))
 
     cancelResolve()
     await resolving

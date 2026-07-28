@@ -703,7 +703,11 @@
   function trackLabel(t: MpvTrack) { return [t.lang?.toUpperCase(), t.title].filter(Boolean).join(' · ') || `Track ${t.id}` }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
   async function pickSub(id: number | 'no') { await setSubTrack(id); tracks = await getTracks() }
-  function changeSource() { sheet = null; const m = $nowPlayingMedia; if (m) playEpisode(m.media, m.episode, () => {}) }
+  function changeSource() {
+    sheet = null
+    const m = $nowPlayingMedia
+    if (m) playEpisode(m.media, m.episode, () => {}, { forceManual: true, autoplay: !paused })
+  }
 
   let speed = $state(1)
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -991,8 +995,8 @@
           total={np.total}
           {hasPrev}
           {hasNext}
-          onPrev={() => playPrev()}
-          onNext={() => playNext()}
+          onPrev={() => playPrev(undefined, !paused)}
+          onNext={() => playNext(undefined, !paused)}
           onPip={() => { controlsShown = false; void mpvPip() }}
           onRelated={openRelated}
         />
