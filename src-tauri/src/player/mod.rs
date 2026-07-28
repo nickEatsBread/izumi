@@ -77,7 +77,7 @@ pub fn libmpv_version() -> String {
 /// An external subtitle track (VTT/ASS URL) the source provided alongside a raw
 /// HLS/HTTP stream (e.g. a Seanime online-stream episode). Threaded from the
 /// frontend through `player_embed` → `play_embedded`/`play_embedded_render` →
-/// `load_file`, which `sub-add`s each one after `loadfile`.
+/// `load_file`, which queues each one until mpv reports `FileLoaded`.
 #[derive(serde::Deserialize, Clone)]
 pub struct Subtitle {
     pub url: String,
@@ -100,6 +100,19 @@ pub struct AudioTrack {
     pub lang: Option<String>,
     #[serde(default)]
     pub title: Option<String>,
+}
+
+/// Sidecar tracks waiting for mpv to finish loading their parent stream.
+///
+/// `loadfile` only queues a load and returns before the new file is ready. Calling
+/// `sub-add`/`audio-add` immediately afterwards races that load and can silently
+/// target the previous file (or no file at all), so the event-loop client attaches
+/// these after the matching `FileLoaded` event.
+#[derive(Clone)]
+pub(crate) struct PendingExternalTracks {
+    url: String,
+    subtitles: Vec<Subtitle>,
+    audio_tracks: Vec<AudioTrack>,
 }
 
 /// Scrub-preview thumbnail state for one stream. Tiles are produced ON DEMAND — when
@@ -142,6 +155,8 @@ pub struct PlayerHandle {
     mpv: Mutex<Option<Mpv>>,
     /// URL of what's currently playing.
     current_url: Mutex<Option<String>>,
+    /// Sidecar audio/subtitle tracks queued until mpv has actually loaded their stream.
+    pending_external_tracks: Arc<Mutex<Option<PendingExternalTracks>>>,
     /// Scrub-preview thumbnail jobs, keyed by stream cache key (infoHash or
     /// media-episode). Holds the url + geometry so tiles can be produced on demand.
     sprite_jobs: Arc<Mutex<HashMap<String, TileJob>>>,
@@ -160,6 +175,7 @@ impl PlayerHandle {
         PlayerHandle {
             mpv: Mutex::new(None),
             current_url: Mutex::new(None),
+            pending_external_tracks: Arc::new(Mutex::new(None)),
             sprite_jobs: Arc::new(Mutex::new(HashMap::new())),
             thumb_inflight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             headless: Arc::new(HeadlessMpv::new()),
@@ -188,7 +204,7 @@ impl PlayerHandle {
         // If we already have an mpv core, just queue the new file into its
         // existing window.
         if let Some(mpv) = guard.as_ref() {
-            load_file(mpv, url, start_seconds, &None, &[], &[])?;
+            load_file(mpv, url, start_seconds, &None, &[], &[], &self.pending_external_tracks)?;
             return Ok(());
         }
 
@@ -196,9 +212,10 @@ impl PlayerHandle {
         let mpv = create_mpv(None).map_err(|e| e.to_string())?;
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
-        spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
+        spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
+            .map_err(|e| e.to_string())?;
 
-        load_file(&mpv, url, start_seconds, &None, &[], &[])?;
+        load_file(&mpv, url, start_seconds, &None, &[], &[], &self.pending_external_tracks)?;
 
         *guard = Some(mpv);
         Ok(())
@@ -238,7 +255,15 @@ impl PlayerHandle {
         // existing (embedded) window.
         if let Some(mpv) = guard.as_ref() {
             set_langs(mpv, &alang, &slang);
-            load_file(mpv, url, start_seconds, &headers, &subs, &audio)?;
+            load_file(
+                mpv,
+                url,
+                start_seconds,
+                &headers,
+                &subs,
+                &audio,
+                &self.pending_external_tracks,
+            )?;
             return Ok(());
         }
 
@@ -251,10 +276,19 @@ impl PlayerHandle {
         let mpv = create_mpv(if wid > 0 { Some(wid) } else { None }).map_err(|e| e.to_string())?;
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
-        spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
+        spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
+            .map_err(|e| e.to_string())?;
 
         set_langs(&mpv, &alang, &slang);
-        load_file(&mpv, url, start_seconds, &headers, &subs, &audio)?;
+        load_file(
+            &mpv,
+            url,
+            start_seconds,
+            &headers,
+            &subs,
+            &audio,
+            &self.pending_external_tracks,
+        )?;
 
         *guard = Some(mpv);
         Ok(())
@@ -288,17 +322,34 @@ impl PlayerHandle {
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
         if let Some(mpv) = guard.as_ref() {
             set_langs(mpv, &alang, &slang);
-            load_file(mpv, url, start_seconds, &headers, &subs, &audio)?;
+            load_file(
+                mpv,
+                url,
+                start_seconds,
+                &headers,
+                &subs,
+                &audio,
+                &self.pending_external_tracks,
+            )?;
             return Ok(());
         }
 
         let mpv = new_mpv_libmpv().map_err(|e| e.to_string())?;
-        spawn_event_loop(&mpv, app).map_err(|e| e.to_string())?;
+        spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
+            .map_err(|e| e.to_string())?;
         set_langs(&mpv, &alang, &slang);
         // Bind the render context to this core BEFORE it moves into the mutex.
         // `attach` borrows `&mpv` only for the (blocking) duration of the call.
         linux_embed::attach(&mpv, window)?;
-        load_file(&mpv, url, start_seconds, &headers, &subs, &audio)?;
+        load_file(
+            &mpv,
+            url,
+            start_seconds,
+            &headers,
+            &subs,
+            &audio,
+            &self.pending_external_tracks,
+        )?;
 
         *guard = Some(mpv);
         Ok(())
@@ -327,6 +378,10 @@ impl PlayerHandle {
         *guard = None;
         // Drop the current url and tear down the headless thumbnail decoder.
         *self.current_url.lock().map_err(|e| e.to_string())? = None;
+        *self
+            .pending_external_tracks
+            .lock()
+            .map_err(|e| e.to_string())? = None;
         self.headless.stop();
         Ok(())
     }
@@ -706,8 +761,8 @@ impl PlayerHandle {
 /// having set it) means "play from the beginning".
 ///
 /// `headers` (e.g. `Referer` for HLS CDNs — Seanime online-stream sources) are
-/// applied as mpv's `http-header-fields` before `loadfile`; `subtitles` (external
-/// VTT/ASS URLs the source provided) are `sub-add`ed after.
+/// applied as mpv's `http-header-fields` before `loadfile`; `subtitles` and
+/// `audio_tracks` are queued for the event loop to add after `FileLoaded`.
 /// Demuxer read-ahead cache ceiling in bytes — the main tunable RAM cost of playback. The frontend
 /// writes it from the user's setting via `set_player_cache`; load_file applies it per file, so a
 /// change takes effect on the next video. Default 128 MiB.
@@ -726,6 +781,7 @@ fn load_file(
     headers: &Option<HashMap<String, String>>,
     subtitles: &[Subtitle],
     audio_tracks: &[AudioTrack],
+    pending_external_tracks: &Arc<Mutex<Option<PendingExternalTracks>>>,
 ) -> Result<(), String> {
     // Apply the user's cache-size setting to this file's demuxer (overrides the init default).
     let cache = PLAYER_CACHE_BYTES.load(std::sync::atomic::Ordering::Relaxed);
@@ -745,28 +801,73 @@ fn load_file(
         .map(|h| h.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(","))
         .unwrap_or_default();
     let _ = mpv.set_property("http-header-fields", hdr.as_str());
-    mpv.command("loadfile", &[url]).map_err(|e| e.to_string())?;
-    for track in audio_tracks {
+
+    *pending_external_tracks.lock().map_err(|e| e.to_string())? =
+        Some(PendingExternalTracks {
+            url: url.to_string(),
+            subtitles: subtitles.to_vec(),
+            audio_tracks: audio_tracks.to_vec(),
+        });
+
+    if let Err(error) = mpv.command("loadfile", &[url]) {
+        *pending_external_tracks.lock().map_err(|e| e.to_string())? = None;
+        return Err(error.to_string());
+    }
+    Ok(())
+}
+
+/// Take queued sidecar tracks only when the load event belongs to their parent URL.
+///
+/// Keeping a mismatched entry matters when the user rapidly changes sources: a late
+/// `FileLoaded` from the replaced source must never attach the new source's tracks.
+fn take_pending_external_tracks(
+    pending: &Mutex<Option<PendingExternalTracks>>,
+    loaded_url: &str,
+) -> Option<PendingExternalTracks> {
+    let mut guard = pending.lock().ok()?;
+    if guard.as_ref().is_some_and(|tracks| tracks.url == loaded_url) {
+        guard.take()
+    } else {
+        None
+    }
+}
+
+/// Attach sidecar tracks after mpv has finished loading their video.
+/// Returns the number of failed optional tracks without exposing signed URLs.
+fn attach_external_tracks(mpv: &Mpv, tracks: PendingExternalTracks) -> usize {
+    let mut failures = 0;
+
+    for track in &tracks.audio_tracks {
         let lang = track.lang.as_deref().unwrap_or("und");
         let title = track
             .title
             .as_deref()
             .filter(|value| !value.is_empty())
             .unwrap_or(lang);
-        let _ = mpv.command("audio-add", &[track.url.as_str(), "auto", title, lang]);
+        if mpv.command("audio-add", &[track.url.as_str(), "auto", title, lang]).is_err() {
+            failures += 1;
+        }
     }
-    // External subtitle tracks (VTT/ASS URLs the source provided). `select` the provider's
-    // default track so a sub shows without the user hunting for it; the rest are `auto`.
+
+    // Add non-default subtitles first, then explicitly select the provider/user-preferred
+    // track last. This prevents a later `auto` addition from replacing the chosen language.
     // mpv's arg order is `sub-add <url> <flags> <title> <lang>`. Passing the code as BOTH left the
     // menu showing "eng" (or "und") instead of the provider's label, so title and lang are now
     // distinct: the label reads well, and the code is what `slang` matches on.
-    for sub in subtitles {
+    for sub in tracks
+        .subtitles
+        .iter()
+        .filter(|sub| !sub.is_default)
+        .chain(tracks.subtitles.iter().filter(|sub| sub.is_default))
+    {
         let lang = sub.lang.as_deref().unwrap_or("und");
         let title = sub.title.as_deref().filter(|t| !t.is_empty()).unwrap_or(lang);
         let flag = if sub.is_default { "select" } else { "auto" };
-        let _ = mpv.command("sub-add", &[sub.url.as_str(), flag, title, lang]);
+        if mpv.command("sub-add", &[sub.url.as_str(), flag, title, lang]).is_err() {
+            failures += 1;
+        }
     }
-    Ok(())
+    failures
 }
 
 /// Set mpv's preferred audio/subtitle languages BEFORE `loadfile`, so mpv
@@ -804,7 +905,11 @@ fn set_langs(mpv: &Mpv, alang: &Option<String>, slang: &Option<String>) {
 /// the properties on it, and move that client into the thread. `Mpv` is `Send`,
 /// so this compiles cleanly, and the client keeps the core alive alongside the
 /// main handle.
-pub(crate) fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2::Error> {
+pub(crate) fn spawn_event_loop(
+    mpv: &Mpv,
+    app: AppHandle,
+    pending_external_tracks: Arc<Mutex<Option<PendingExternalTracks>>>,
+) -> Result<(), libmpv2::Error> {
     // Pass `None`, NOT `Some("event-loop")`. libmpv2 6.0.0's `create_client`
     // has a use-after-free: `CString::new(name)?.as_ptr()` drops the CString
     // before `mpv_create_client` reads the name, so a *named* client passes a
@@ -840,6 +945,20 @@ pub(crate) fn spawn_event_loop(mpv: &Mpv, app: AppHandle) -> Result<(), libmpv2:
         loop {
             // Block up to 1s waiting for the next event on this client's queue.
             match client.wait_event(1.0) {
+                Some(Ok(Event::FileLoaded)) => {
+                    let loaded_url: Result<String, _> = client.get_property("path");
+                    if let Ok(loaded_url) = loaded_url {
+                        if let Some(tracks) =
+                            take_pending_external_tracks(&pending_external_tracks, &loaded_url)
+                        {
+                            let failures = attach_external_tracks(&client, tracks);
+                            if failures > 0 {
+                                eprintln!("mpv could not attach {failures} external media track(s)");
+                                let _ = app.emit("player-track-error", failures);
+                            }
+                        }
+                    }
+                }
                 Some(Ok(Event::PropertyChange { name, change, .. })) => match (name, change) {
                     // A new file reports its duration on load → reset both throttle buckets so the
                     // next episode's first frame + first buffer sample always emit immediately.
@@ -1263,5 +1382,35 @@ mod tests {
             ("scale".to_string(), "spline36".to_string()),
             ("deband".to_string(), "no".to_string()),
         ]);
+    }
+
+    #[test]
+    fn pending_tracks_are_only_taken_by_their_matching_file() {
+        let pending = Mutex::new(Some(PendingExternalTracks {
+            url: "https://video.example/episode-2.m3u8".to_string(),
+            subtitles: vec![Subtitle {
+                url: "https://subs.example/episode-2.vtt".to_string(),
+                lang: Some("eng".to_string()),
+                title: Some("English".to_string()),
+                is_default: true,
+            }],
+            audio_tracks: Vec::new(),
+        }));
+
+        assert!(take_pending_external_tracks(
+            &pending,
+            "https://video.example/episode-1.m3u8"
+        )
+        .is_none());
+        assert!(pending.lock().unwrap().is_some());
+
+        let tracks = take_pending_external_tracks(
+            &pending,
+            "https://video.example/episode-2.m3u8",
+        )
+        .expect("matching file should receive its queued tracks");
+        assert_eq!(tracks.subtitles.len(), 1);
+        assert!(tracks.subtitles[0].is_default);
+        assert!(pending.lock().unwrap().is_none());
     }
 }
