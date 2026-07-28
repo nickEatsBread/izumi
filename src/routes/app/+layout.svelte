@@ -14,6 +14,7 @@
   import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
+  import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
   import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
   import { playing, fullscreen, gameMode, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
@@ -203,6 +204,7 @@
 <SourceConnecting />
 <DebridCaching />
 <ExitPrompt />
+<GlobalSearch />
 <OnScreenKeyboard />
 <DeckKeyboardWarning />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->

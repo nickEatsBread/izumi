@@ -49,10 +49,6 @@
 
 <svelte:window onkeydown={(e) => {
   if (open && e.key === 'Escape') { e.preventDefault(); close() }
-  else if (!open && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-    e.preventDefault()
-    show()
-  }
 }} />
 
 <button bind:this={trigger} type="button" data-focusable onclick={show} aria-label="Search settings"
@@ -63,7 +59,6 @@
   <Search size={compact ? 21 : 17} />
   {#if !compact}
     <span class="min-w-0 flex-1 truncate text-left">Search</span>
-    <kbd class="rounded border border-border bg-background/60 px-1.5 py-0.5 font-mono text-[0.6rem] font-bold text-muted-foreground group-hover:text-foreground">Ctrl K</kbd>
   {/if}
 </button>
 

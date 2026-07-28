@@ -17,6 +17,7 @@
   // SearchResults, replaying the card animation a second time.
   const sp = page.url.searchParams
   const seed: SearchFilters = {
+    search: sp.get('search') ?? undefined,
     sort: sp.get('sort') ?? undefined,
     genres: sp.get('genre') ? [sp.get('genre') as string] : undefined,
     season: sp.get('season') ?? undefined,
