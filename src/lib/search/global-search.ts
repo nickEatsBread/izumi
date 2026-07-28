@@ -41,13 +41,12 @@ function normalizeTitle(value: string) {
     .replace(/\s+/g, ' ')
 }
 
-function searchableTitles(media: Media) {
+function canonicalTitles(media: Media) {
   return [
     media.title.english,
     media.title.romaji,
     media.title.native,
     media.title.userPreferred,
-    ...(media.synonyms ?? []),
   ].filter((value): value is string => !!value)
 }
 
@@ -80,17 +79,26 @@ export function rankQuickSearchResults(media: Media[], rawQuery: string): Media[
   const query = normalizeTitle(normalizeSearchQuery(rawQuery))
   if (!query) return media
 
-  const ranked = media.map((item, index) => ({
-    item,
-    index,
-    relevance: searchableTitles(item).reduce(
+  const ranked = media.map((item, index) => {
+    const canonical = canonicalTitles(item).reduce(
       (best, candidate) => Math.max(best, titleRelevance(candidate, query)),
       0,
-    ),
-  }))
+    )
+    const synonym = (item.synonyms ?? []).reduce(
+      (best, candidate) => Math.max(best, titleRelevance(candidate, query)),
+      0,
+    )
+    return { item, index, canonical, relevance: canonical > 0 ? 10_000 + canonical : synonym }
+  })
+  // Prefer canonical results as a class, not just by sort order. AniList calls Onigiri
+  // "Demon Slayer" in its synonyms; leaving synonym-only rows in this result set made an
+  // unrelated show look like a valid Demon Slayer result. Synonyms remain useful when the API
+  // supplies no canonical match for an alternate/localized title.
+  const hasCanonicalMatch = ranked.some(({ canonical }) => canonical > 0)
   const hasTextualMatch = ranked.some(({ relevance }) => relevance > 0)
   return ranked
-    .filter(({ relevance }) => !hasTextualMatch || relevance > 0)
+    .filter(({ canonical, relevance }) =>
+      hasCanonicalMatch ? canonical > 0 : (!hasTextualMatch || relevance > 0))
     .sort((a, b) =>
       b.relevance - a.relevance
       || (b.item.popularity ?? 0) - (a.item.popularity ?? 0)

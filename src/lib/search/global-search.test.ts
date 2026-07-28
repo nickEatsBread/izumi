@@ -53,7 +53,8 @@ describe('global search helpers', () => {
 
   it('puts the direct Demon Slayer title above unrelated fuzzy API results', () => {
     const results = rankQuickSearchResults([
-      media(1, 'Onigiri', { popularity: 50_000 }),
+      // AniList really does give Onigiri the exact synonym "Demon Slayer".
+      media(1, 'Onigiri', { synonyms: ['Demon Slayer', 'Demon Cutter'], popularity: 50_000 }),
       media(2, 'Demon Slayer -Kimetsu no Yaiba- The Movie: Mugen Train', { popularity: 400_000 }),
       media(3, 'Demon Slayer: Kimetsu no Yaiba', { popularity: 900_000 }),
       media(4, 'Junior High and High School!! Kimetsu Academy Story'),
