@@ -19,6 +19,7 @@
   import Puzzle from 'lucide-svelte/icons/puzzle'
   import Search from 'lucide-svelte/icons/search'
   import Trash2 from 'lucide-svelte/icons/trash-2'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   const current = $derived(providerMeta($debridProvider))
 
@@ -153,19 +154,22 @@
     <div class="mb-4 grid gap-x-4 gap-y-1 sm:grid-cols-2">
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Torrent playback</span>
-        <select data-focusable bind:value={$torrentPlaybackMode} class="rounded-md bg-input px-3 py-2 text-sm">
-          <option value="debrid">Prefer debrid</option>
-          <option value="direct">Direct P2P</option>
-        </select>
+        <SelectMenu bind:value={$torrentPlaybackMode} ariaLabel="Torrent playback" options={[
+          { value: 'debrid', label: 'Prefer debrid' },
+          { value: 'direct', label: 'Direct P2P' },
+        ]} />
       </label>
 
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Debrid service</span>
-        <select data-focusable bind:value={$debridProvider} class="rounded-md bg-input px-3 py-2 text-sm">
-          {#each providerList as p (p.id)}
-            <option value={p.id}>{p.name}{p.experimental ? ' (experimental)' : ''}</option>
-          {/each}
-        </select>
+        <SelectMenu
+          bind:value={$debridProvider}
+          ariaLabel="Debrid service"
+          options={providerList.map((provider) => ({
+            value: provider.id,
+            label: `${provider.name}${provider.experimental ? ' (experimental)' : ''}`,
+          }))}
+        />
       </label>
 
       <span class="text-xs text-muted-foreground sm:col-span-2">
@@ -182,11 +186,11 @@
     <div class="mb-6 grid items-start gap-x-4 gap-y-4 sm:grid-cols-2">
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Audio</span>
-        <select data-focusable bind:value={$providerAudio} class="rounded-md bg-input px-3 py-2 text-sm">
-          <option value="both">Subbed and dubbed</option>
-          <option value="sub">Subbed only</option>
-          <option value="dub">Dubbed only</option>
-        </select>
+        <SelectMenu bind:value={$providerAudio} ariaLabel="Audio" options={[
+          { value: 'both', label: 'Subbed and dubbed' },
+          { value: 'sub', label: 'Subbed only' },
+          { value: 'dub', label: 'Dubbed only' },
+        ]} />
         <span class="text-xs text-muted-foreground">
           {#if $providerAudio === 'both'}Both are offered when a source carries them, each labelled SUB or DUB.{:else}Only {$providerAudio === 'dub' ? 'dubbed' : 'subbed'} results are requested — sources that carry nothing else are skipped entirely, which also makes the search faster.{/if}
         </span>

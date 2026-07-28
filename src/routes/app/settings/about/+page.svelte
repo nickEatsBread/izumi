@@ -7,6 +7,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import { clearDiagnostics, diagnosticEvents, diagnosticsSnapshot } from '$lib/diagnostics'
   import { save } from '@tauri-apps/plugin-dialog'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   let appVersion = $state('')
   let tauriVersion = $state('')
@@ -113,10 +114,10 @@
         <div class="text-sm font-bold">Release channel</div>
         <p class="mt-0.5 text-xs text-muted-foreground">Beta receives pre-releases first.</p>
       </div>
-      <select data-focusable bind:value={$updateChannel} class="rounded-md bg-input px-3 py-2 text-sm">
-        <option value="stable">Stable</option>
-        <option value="beta">Beta</option>
-      </select>
+      <SelectMenu bind:value={$updateChannel} className="min-w-28" ariaLabel="Release channel" options={[
+        { value: 'stable', label: 'Stable' },
+        { value: 'beta', label: 'Beta' },
+      ]} />
     </label>
     {/if}
 

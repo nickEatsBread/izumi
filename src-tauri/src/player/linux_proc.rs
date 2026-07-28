@@ -160,7 +160,7 @@ fn spawn_event_loop(app: AppHandle, sock: String) {
         let Some(mut s) = stream else { return };
 
         // Observe the properties that drive progress + end-of-file.
-        for (id, prop) in ["time-pos", "duration", "eof-reached"].iter().enumerate() {
+        for (id, prop) in ["time-pos", "duration", "eof-reached", "mute"].iter().enumerate() {
             let c = serde_json::json!({ "command": ["observe_property", id + 1, prop] });
             let _ = s.write_all(c.to_string().as_bytes());
             let _ = s.write_all(b"\n");
@@ -183,6 +183,11 @@ fn spawn_event_loop(app: AppHandle, sock: String) {
                         "time-pos" => {
                             if let Some(pos) = v.get("data").and_then(|d| d.as_f64()) {
                                 let _ = app.emit("player-progress", (pos, duration));
+                            }
+                        }
+                        "mute" => {
+                            if let Some(muted) = v.get("data").and_then(|d| d.as_bool()) {
+                                let _ = app.emit("player-muted", muted);
                             }
                         }
                         _ => {}

@@ -7,16 +7,16 @@
 //! playing" setting — so all play/pause/close logic already lives there and this module
 //! is just the per-OS mechanism.
 //!
-//! Why it exists: the embedded libmpv render path (`vo=libmpv`) has no windowing video
-//! output, so mpv's own `--stop-screensaver` never runs. We inhibit per-OS instead:
+//! Why it exists: the embedded libmpv paths cannot reliably reset SteamOS's own idle timer.
+//! We inhibit per-OS instead:
 //!
 //!   * **Linux Wayland** — a `zwp_idle_inhibit_manager_v1` inhibitor on the app's toplevel
-//!     surface. REQUIRED for the Steam Deck: gamescope (Game mode) honors this Wayland
-//!     protocol but ignores logind idle locks, so `systemd-inhibit` never worked there.
-//!     Acts on GTK's toplevel surface, so it covers Desktop and Game mode alike regardless
-//!     of which video path (subsurface vs layer-shell) is in use. Bound/toggled on the GTK
-//!     main thread (that's where GTK's Wayland connection lives — same as the embed).
-//!   * **Linux X11 / no idle-inhibit global** — fall back to a held `systemd-inhibit` child.
+//!     surface. Bound/toggled on GTK's main thread, where its Wayland connection lives.
+//!   * **Linux X11 / Steam Deck Game mode** — first request the sandbox-safe XDG Inhibit
+//!     portal, then periodically reset the X11 screensaver timer while playback is active.
+//!     SteamOS's gamescope portal currently lacks Inhibit, so the heartbeat is the important
+//!     Game-mode path. A held `systemd-inhibit` child is retained as a final best-effort
+//!     system-suspend fallback outside the Flatpak sandbox.
 //!   * **Windows** — `SetThreadExecutionState(DISPLAY|SYSTEM)` on a dedicated long-lived
 //!     thread (the continuous request is cleared when the *setting* thread exits, so one
 //!     owner thread must both set and clear it — not Tauri's rotating command-thread pool).
@@ -84,10 +84,8 @@ mod win {
     }
 }
 
-// ===================== macOS + Linux: held child process =====================
-// Both hold a child that asserts "stay awake" for its lifetime and is killed to release —
-// identical shape, different binary.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+// ======================== macOS: held child process ========================
+#[cfg(target_os = "macos")]
 fn child_slot() -> &'static std::sync::Mutex<Option<std::process::Child>> {
     static SLOT: std::sync::OnceLock<std::sync::Mutex<Option<std::process::Child>>> =
         std::sync::OnceLock::new();
@@ -95,7 +93,7 @@ fn child_slot() -> &'static std::sync::Mutex<Option<std::process::Child>> {
 }
 
 /// Spawn (once) or kill the held inhibitor child. Idempotent.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn child_set(on: bool, build: impl FnOnce() -> std::process::Command) {
     let mut slot = child_slot().lock().unwrap();
     if on {
@@ -135,23 +133,213 @@ mod linux {
         let _ = app.run_on_main_thread(move || {
             if let Some(win) = app_main.get_webview_window("main") {
                 if wayland::try_set(&win, on) {
+                    // Defensive release in case a session changed from the X11 fallback to a
+                    // native-Wayland window without restarting the process.
+                    fallback::set(false);
                     return; // handled by the compositor-honored Wayland path
                 }
             }
-            // X11 / no idle-inhibit global → logind idle lock (works on ordinary desktops).
-            super::child_set(on, || {
-                let mut c = std::process::Command::new("systemd-inhibit");
-                c.args([
+            // Steam Deck Game mode is deliberately XWayland, so the wl_surface path above
+            // cannot apply. The worker owns all fallback resources and serializes rapid
+            // play/pause transitions.
+            fallback::set(on);
+        });
+    }
+
+    mod fallback {
+        use ashpd::desktop::{
+            inhibit::{InhibitFlags, InhibitOptions, InhibitProxy},
+            Request,
+        };
+        use std::{
+            ffi::c_void,
+            os::raw::{c_char, c_int},
+            process::{Child, Command, Stdio},
+            sync::{mpsc, OnceLock},
+            time::Duration,
+        };
+
+        // Shorter than SteamOS's first dim threshold while avoiding needless wakeups.
+        const HEARTBEAT: Duration = Duration::from_secs(20);
+
+        #[allow(non_snake_case)]
+        #[link(name = "X11")]
+        extern "C" {
+            fn XOpenDisplay(name: *const c_char) -> *mut c_void;
+            fn XCloseDisplay(display: *mut c_void) -> c_int;
+            fn XResetScreenSaver(display: *mut c_void) -> c_int;
+            fn XFlush(display: *mut c_void) -> c_int;
+        }
+
+        fn sender() -> &'static mpsc::Sender<bool> {
+            static TX: OnceLock<mpsc::Sender<bool>> = OnceLock::new();
+            TX.get_or_init(|| {
+                let (tx, rx) = mpsc::channel();
+                std::thread::Builder::new()
+                    .name("izumi-idle-inhibit".into())
+                    .spawn(move || worker(rx))
+                    .expect("spawn Linux idle-inhibit worker");
+                tx
+            })
+        }
+
+        pub fn set(on: bool) {
+            if sender().send(on).is_err() {
+                eprintln!("[wakelock] Linux idle-inhibit worker stopped unexpectedly");
+            }
+        }
+
+        fn worker(rx: mpsc::Receiver<bool>) {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    eprintln!("[wakelock] could not create portal runtime: {error}");
+                    return;
+                }
+            };
+
+            // Open lazily on the first active frame. Native-Wayland sessions send a defensive
+            // `false` to this worker and should not create an otherwise unused X11 connection.
+            let mut display = std::ptr::null_mut();
+            let mut active = false;
+            let mut portal: Option<Request<()>> = None;
+            let mut logind: Option<Child> = None;
+
+            loop {
+                let message = if active {
+                    rx.recv_timeout(HEARTBEAT)
+                } else {
+                    match rx.recv() {
+                        Ok(value) => Ok(value),
+                        Err(_) => break,
+                    }
+                };
+
+                match message {
+                    Ok(on) if on == active => {
+                        // Idempotent repeated state from Svelte's reactive effect.
+                    }
+                    Ok(true) => {
+                        active = true;
+                        ensure_x11(&mut display);
+                        reset_x11(display);
+
+                        match runtime.block_on(acquire_portal()) {
+                            Ok(request) => {
+                                eprintln!(
+                                    "[wakelock] active via XDG Inhibit portal + X11 heartbeat"
+                                );
+                                portal = Some(request);
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "[wakelock] XDG Inhibit unavailable ({error}); using X11 heartbeat"
+                                );
+                                logind = spawn_logind();
+                            }
+                        }
+                    }
+                    Ok(false) => {
+                        active = false;
+                        if let Some(request) = portal.take() {
+                            if let Err(error) = runtime.block_on(request.close()) {
+                                eprintln!("[wakelock] failed to close XDG inhibitor: {error}");
+                            }
+                        }
+                        stop_logind(&mut logind);
+                        eprintln!("[wakelock] released (playback paused/stopped)");
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        ensure_x11(&mut display);
+                        reset_x11(display);
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            }
+
+            if let Some(request) = portal.take() {
+                let _ = runtime.block_on(request.close());
+            }
+            stop_logind(&mut logind);
+            if !display.is_null() {
+                unsafe { XCloseDisplay(display) };
+            }
+        }
+
+        async fn acquire_portal() -> Result<Request<()>, String> {
+            // A broken/missing portal must never delay a pause/close transition indefinitely.
+            tokio::time::timeout(Duration::from_secs(2), async {
+                let proxy = InhibitProxy::new().await?;
+                proxy
+                    .inhibit(
+                        None,
+                        InhibitFlags::Idle | InhibitFlags::Suspend,
+                        InhibitOptions::default().set_reason("Playing video"),
+                    )
+                    .await
+            })
+            .await
+            .map_err(|_| "request timed out".to_string())?
+            .map_err(|error| error.to_string())
+        }
+
+        fn ensure_x11(display: &mut *mut c_void) {
+            if !(*display).is_null() {
+                return;
+            }
+            // This connection belongs exclusively to this worker thread. XOpenDisplay uses the
+            // Flatpak's DISPLAY, which is gamescope's XWayland server in Steam Deck Game mode.
+            *display = unsafe { XOpenDisplay(std::ptr::null()) };
+            if (*display).is_null() {
+                eprintln!("[wakelock] X11 heartbeat unavailable: XOpenDisplay failed");
+            }
+        }
+
+        fn reset_x11(display: *mut c_void) {
+            if display.is_null() {
+                return;
+            }
+            unsafe {
+                XResetScreenSaver(display);
+                XFlush(display);
+            }
+        }
+
+        fn spawn_logind() -> Option<Child> {
+            let mut command = Command::new("systemd-inhibit");
+            command
+                .args([
                     "--what=idle:sleep",
                     "--who=izumi",
                     "--why=Playing video",
                     "--mode=block",
                     "sleep",
                     "infinity",
-                ]);
-                c
-            });
-        });
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            match command.spawn() {
+                Ok(child) => {
+                    eprintln!("[wakelock] logind fallback started");
+                    Some(child)
+                }
+                Err(error) => {
+                    eprintln!("[wakelock] logind fallback unavailable: {error}");
+                    None
+                }
+            }
+        }
+
+        fn stop_logind(child: &mut Option<Child>) {
+            if let Some(mut process) = child.take() {
+                let _ = process.kill();
+                let _ = process.wait();
+            }
+        }
     }
 
     /// Wayland `zwp_idle_inhibit_manager_v1` on GTK's toplevel surface. Only ever called on

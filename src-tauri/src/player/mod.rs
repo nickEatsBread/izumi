@@ -1064,6 +1064,7 @@ pub(crate) fn spawn_event_loop(
     // sync and drive the buffering spinner without the webview polling.
     client.observe_property("demuxer-cache-time", Format::Double, 0)?;
     client.observe_property("pause", Format::Flag, 0)?;
+    client.observe_property("mute", Format::Flag, 0)?;
     client.observe_property("paused-for-cache", Format::Flag, 0)?;
     // Loading/stall signals the overlay composes into one spinner state:
     // `core-idle` = no frame is being shown (pre-first-frame OR a stall);
@@ -1125,6 +1126,9 @@ pub(crate) fn spawn_event_loop(
                     }
                     ("pause", PropertyData::Flag(paused)) => {
                         let _ = app.emit("player-paused", paused);
+                    }
+                    ("mute", PropertyData::Flag(muted)) => {
+                        let _ = app.emit("player-muted", muted);
                     }
                     ("paused-for-cache", PropertyData::Flag(buffering)) => {
                         let _ = app.emit("player-buffering", buffering);

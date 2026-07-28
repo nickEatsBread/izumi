@@ -10,6 +10,7 @@
   import { open } from '@tauri-apps/plugin-dialog'
   import { invoke } from '@tauri-apps/api/core'
   import { isAndroid } from '$lib/platform'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   let pendingAnime = $state(false) // shows the one-time shader consent
 
@@ -58,18 +59,18 @@
   <div class="mb-4 grid max-w-2xl gap-3 sm:grid-cols-2">
     <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Audio language</span>
-      <select data-focusable bind:value={$preferredAudioLang} class="rounded-md bg-input px-3 py-2 text-sm">
-        <option value="jpn">Japanese</option>
-        <option value="eng">English</option>
-      </select>
+      <SelectMenu bind:value={$preferredAudioLang} ariaLabel="Audio language" options={[
+        { value: 'jpn', label: 'Japanese' },
+        { value: 'eng', label: 'English' },
+      ]} />
     </label>
     <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Subtitle language</span>
-      <select data-focusable bind:value={$preferredSubLang} class="rounded-md bg-input px-3 py-2 text-sm">
-        <option value="eng">English</option>
-        <option value="jpn">Japanese</option>
-        <option value="none">Off</option>
-      </select>
+      <SelectMenu bind:value={$preferredSubLang} ariaLabel="Subtitle language" options={[
+        { value: 'eng', label: 'English' },
+        { value: 'jpn', label: 'Japanese' },
+        { value: 'none', label: 'Off' },
+      ]} />
     </label>
 
     <!-- Video-quality / render-option controls drive the in-app mpv player, whose Rust commands
@@ -78,22 +79,22 @@
     {#if !$isAndroid}
     <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Video quality</span>
-      <select
-        data-focusable
-        class="rounded-md bg-input px-3 py-2 text-sm"
+      <SelectMenu
         value={$videoQualityPreset}
-        onchange={(e) => {
-          const v = (e.currentTarget as HTMLSelectElement).value as typeof $videoQualityPreset
+        ariaLabel="Video quality"
+        onChange={(value) => {
+          const v = value as typeof $videoQualityPreset
           if (v === 'anime') { pendingAnime = true; return } // confirm download first
           $videoQualityPreset = v
         }}
-      >
-        <option value="performance">Performance</option>
-        <option value="standard">Standard</option>
-        <option value="high">High Quality</option>
-        <option value="anime">Anime (ArtCNN)</option>
-        <option value="custom">Custom…</option>
-      </select>
+        options={[
+          { value: 'performance', label: 'Performance' },
+          { value: 'standard', label: 'Standard' },
+          { value: 'high', label: 'High Quality' },
+          { value: 'anime', label: 'Anime (ArtCNN)' },
+          { value: 'custom', label: 'Custom…' },
+        ]}
+      />
     </label>
 
     {#if pendingAnime}
@@ -201,10 +202,10 @@
   <div class="max-w-2xl">
     <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Title language</span>
-      <select data-focusable bind:value={$titleLanguage} class="rounded-md bg-input px-3 py-2 text-sm sm:max-w-xs">
-        <option value="romaji">Romaji</option>
-        <option value="english">English</option>
-      </select>
+      <SelectMenu bind:value={$titleLanguage} className="sm:max-w-xs" ariaLabel="Title language" options={[
+        { value: 'romaji', label: 'Romaji' },
+        { value: 'english', label: 'English' },
+      ]} />
       <span class="text-xs text-muted-foreground">Show anime titles in Romaji (e.g. Shingeki no Kyojin) or English (Attack on Titan). Falls back to the other when a title has only one.</span>
     </label>
 
