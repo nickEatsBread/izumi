@@ -16,12 +16,14 @@
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import PanelBottom from 'lucide-svelte/icons/panel-bottom'
+  import Keyboard from 'lucide-svelte/icons/keyboard'
 
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
     { label: 'Playback', items: [
       { title: 'Player', href: '/app/settings/player', icon: Play },
       { title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions },
+      { title: 'Hotkeys', href: '/app/settings/hotkeys', icon: Keyboard },
     ] },
     { label: 'Content', items: [
       { title: 'Sources', href: '/app/settings/sources', icon: Rss },

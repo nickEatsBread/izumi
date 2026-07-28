@@ -17,6 +17,7 @@
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     subtitleAutoSync,
+    hotkeyBindings,
   } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
@@ -26,6 +27,7 @@
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import { reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
+  import { findHotkey, isTypingTarget } from '$lib/hotkeys'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -545,28 +547,33 @@
     // stopImmediatePropagation so they can never also reach the app-wide spatial nav (whose
     // window listener registered first, at app start) — otherwise a seek arrow would ALSO walk
     // focus onto the chrome (the back button, the sidebar logo) while the video plays.
-    const PLAYER_KEYS = new Set([' ', 'k', 'Escape', 'ArrowLeft', 'ArrowRight', 'n', 'N', 'p', 'P', 'f'])
-    const isTextField = (el: EventTarget | null): boolean => {
-      const t = el as HTMLElement | null
-      return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || !!t.isContentEditable)
-    }
     const onKeyCapture = (e: KeyboardEvent) => {
       // A focused text field (e.g. the "Search subtitles…" box) OWNS every key. Otherwise typing a
       // language like "spa[n]ish" / "ja[p]anese" fires n→next / p→prev — which re-resolves the
       // episode and pops the source picker ("change source search") — plus f→fullscreen, space/k→pause.
       // Capture-phase runs before the input's own handler, so this guard (not stopPropagation) is the fix.
-      if (isTextField(e.target)) return
-      if (!PLAYER_KEYS.has(e.key)) return
+      if (isTypingTarget(e.target)) return
+      const action = findHotkey(e, get(hotkeyBindings), 'Player')
+      if (!action) return
       if (get(deckKeyboardWarning)) return
       e.preventDefault(); e.stopImmediatePropagation()
       poke()
-      if (e.key === 'Escape') { if (get(fullscreen)) exitFullscreen() }
-      else if (e.key === ' ' || e.key === 'k') cmd('cycle', ['pause'])
-      else if (e.key === 'ArrowLeft') cmd('seek', [String(-get(seekDuration)), 'relative+exact'])
-      else if (e.key === 'ArrowRight') cmd('seek', [String(get(seekDuration)), 'relative+exact'])
-      else if (e.key === 'n' || e.key === 'N') playNext()
-      else if (e.key === 'p' || e.key === 'P') playPrev()
-      else if (e.key === 'f') toggleFullscreen()
+      if (action === 'playerClose') { if (get(fullscreen)) exitFullscreen() }
+      else if (action === 'playerPlayPause') cmd('cycle', ['pause'])
+      else if (action === 'playerSeekBack') cmd('seek', [String(-get(seekDuration)), 'relative+exact'])
+      else if (action === 'playerSeekForward') cmd('seek', [String(get(seekDuration)), 'relative+exact'])
+      else if (action === 'playerVolumeUp') cmd('add', ['volume', '5'])
+      else if (action === 'playerVolumeDown') cmd('add', ['volume', '-5'])
+      else if (action === 'playerMute') cmd('cycle', ['mute'])
+      else if (action === 'playerSubtitleCycle') cmd('cycle', ['sid'])
+      else if (action === 'playerSubDelayDown') cmd('add', ['sub-delay', '-0.1'])
+      else if (action === 'playerSubDelayUp') cmd('add', ['sub-delay', '0.1'])
+      else if (action === 'playerNextEpisode') playNext()
+      else if (action === 'playerPreviousEpisode') playPrev()
+      else if (action === 'playerFullscreen') toggleFullscreen()
+      else if (action === 'playerScreenshot') invoke('player_screenshot')
+        .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))
+        .catch(() => playerNotice.set('Screenshot failed'))
     }
     window.addEventListener('keydown', onKeyCapture, true)
     poke()

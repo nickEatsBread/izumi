@@ -174,6 +174,8 @@ export const showAdult = persisted<boolean>('show-adult', false)
 /** Haptic feedback on taps/toggles/actions (Android only; desktop has no haptics engine and
  *  always no-ops regardless). Default on. */
 export const haptics = persisted<boolean>('haptics', true)
+/** User overrides for keyboard shortcuts. Missing actions fall back to their shipped defaults. */
+export const hotkeyBindings = persisted<Record<string, string>>('hotkey-bindings', {})
 
 /** Browse/search result layout: 'grid' (cover-art tiles, default) or 'list' (a vertical list of
  *  compact rows — small cover + title + meta, denser and text-forward). */
