@@ -6,6 +6,7 @@ import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCachin
 import { seekDuration } from '$lib/settings/ui'
 import { inputType } from './input'
 import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
+import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
@@ -98,6 +99,13 @@ export function startGamepadNav(): () => void {
     if (get(oskOpen)) {
       if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
       else if (name === 'b') window.dispatchEvent(new Event('osk-close'))
+      return
+    }
+    // Global search is a browse-level modal: A activates its focused result/control and B
+    // dismisses it without navigating away from the page beneath it.
+    if (get(globalSearchOpen)) {
+      if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
+      else if (name === 'b') closeGlobalSearch()
       return
     }
     // The exit prompt (if open) captures A/B: A activates the focused button (Exit/Cancel);

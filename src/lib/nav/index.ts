@@ -23,7 +23,10 @@ export function initDpadNav() {
     if (!dir) { if (e.key === 'Enter') (document.activeElement as HTMLElement)?.click(); return }
     // Focus trap: while a modal marks itself `data-nav-trap` (e.g. the exit prompt), confine
     // navigation to its focusables so the d-pad/stick can't wander onto the browse behind it.
-    const trap = document.querySelector('[data-nav-trap]')
+    // The built-in Deck keyboard can sit above another modal. Prefer its trap while it is
+    // visible; otherwise arrow navigation would continue moving through the dialog underneath.
+    const trap = document.querySelector('[aria-label="On-screen keyboard"][data-nav-trap]')
+      ?? document.querySelector('[data-nav-trap]')
     const root: ParentNode = trap ?? document
     const els = [...root.querySelectorAll<HTMLElement>('[data-focusable]')]
       .filter(el => el.checkVisibility?.() ?? true)
