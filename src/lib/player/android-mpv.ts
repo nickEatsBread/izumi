@@ -11,6 +11,7 @@ export interface MpvLoad {
   title?: string
   startPos?: number
   subtitles?: string[]
+  autoplay?: boolean
 }
 
 /** True while the embedded player overlay is showing (drives the transparent hole + AndroidPlayer). */
@@ -126,6 +127,9 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
       subtitles: p.subtitles ?? [],
     },
   })
+  // The reusable core can be paused by keep-open at EOF. Reassert the
+  // transition's play/pause intent after queueing the replacement file.
+  await mpvCommand(['set', 'pause', p.autoplay === false ? 'yes' : 'no'])
 }
 
 export async function mpvCommand(args: string[]): Promise<void> {

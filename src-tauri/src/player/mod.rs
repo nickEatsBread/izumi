@@ -220,7 +220,7 @@ impl PlayerHandle {
         // If we already have an mpv core, just queue the new file into its
         // existing window.
         if let Some(mpv) = guard.as_ref() {
-            load_file(mpv, url, start_seconds, &None, &[], &[], &self.pending_external_tracks)?;
+            load_file(mpv, url, start_seconds, true, &None, &[], &[], &self.pending_external_tracks)?;
             return Ok(());
         }
 
@@ -231,7 +231,7 @@ impl PlayerHandle {
         spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
             .map_err(|e| e.to_string())?;
 
-        load_file(&mpv, url, start_seconds, &None, &[], &[], &self.pending_external_tracks)?;
+        load_file(&mpv, url, start_seconds, true, &None, &[], &[], &self.pending_external_tracks)?;
 
         *guard = Some(mpv);
         Ok(())
@@ -254,6 +254,7 @@ impl PlayerHandle {
         wid: i64,
         app: AppHandle,
         start_seconds: Option<f64>,
+        autoplay: bool,
         alang: Option<String>,
         slang: Option<String>,
         headers: Option<HashMap<String, String>>,
@@ -275,6 +276,7 @@ impl PlayerHandle {
                 mpv,
                 url,
                 start_seconds,
+                autoplay,
                 &headers,
                 &subs,
                 &audio,
@@ -300,6 +302,7 @@ impl PlayerHandle {
             &mpv,
             url,
             start_seconds,
+            autoplay,
             &headers,
             &subs,
             &audio,
@@ -324,6 +327,7 @@ impl PlayerHandle {
         url: &str,
         app: AppHandle,
         start_seconds: Option<f64>,
+        autoplay: bool,
         alang: Option<String>,
         slang: Option<String>,
         window: &tauri::WebviewWindow,
@@ -342,6 +346,7 @@ impl PlayerHandle {
                 mpv,
                 url,
                 start_seconds,
+                autoplay,
                 &headers,
                 &subs,
                 &audio,
@@ -361,6 +366,7 @@ impl PlayerHandle {
             &mpv,
             url,
             start_seconds,
+            autoplay,
             &headers,
             &subs,
             &audio,
@@ -906,6 +912,7 @@ fn load_file(
     mpv: &Mpv,
     url: &str,
     start_seconds: Option<f64>,
+    autoplay: bool,
     headers: &Option<HashMap<String, String>>,
     subtitles: &[Subtitle],
     audio_tracks: &[AudioTrack],
@@ -941,6 +948,11 @@ fn load_file(
         *pending_external_tracks.lock().map_err(|e| e.to_string())? = None;
         return Err(error.to_string());
     }
+    // `keep-open-pause=yes` leaves the reusable core paused at EOF. Explicitly
+    // apply the caller's intent after queueing the replacement file so the next
+    // episode cannot inherit that EOF pause.
+    mpv.set_property("pause", !autoplay)
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 

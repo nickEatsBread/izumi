@@ -29,7 +29,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, playing, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep } from '$lib/player/session'
+import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep } from '$lib/player/session'
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -52,6 +52,16 @@ import {
 import { torrentioResolverInfoHash } from './resolver-url'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
+
+export type PlayEpisodeOptions = {
+  continuation?: ContinueHint
+  forceManual?: boolean
+  autoplay?: boolean
+}
+
+export type PlayStreamOptions = {
+  autoplay?: boolean
+}
 
 type DirectTorrentPlayback = {
   url: string
@@ -230,7 +240,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
     // Binge preload: pre-resolve the next episode in the last stretch so Next /
     // auto-advance starts instantly, then warm the debrid/CDN edge in the final
     // seconds (kept late + small so it can't starve the current episode's tail).
-    if (get(bingePreload) && dur > 0) {
+    if ((get(bingePreload) || get(autoplayNext)) && dur > 0) {
       if (pos / dur > 0.85) prefetchNext(media, episode)
       if (!warmed && dur - pos < 20 && prefetched?.mediaId === media.id && prefetched.episode === episode + 1 && prefetched.stream.url) {
         warmed = true
@@ -286,7 +296,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
     // Bail if a newer play has since taken over (this ended-event belongs to a superseded
     // episode) — otherwise two overlapping plays both advance and skip an episode.
     if (gen !== playGen) return
-    if (next <= airedTotal) resolveAndPlayBest(media, next, onState)
+    if (next <= airedTotal) resolveAndPlayBest(media, next, onState, true)
   })
 }
 
@@ -309,7 +319,7 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
       const filler = await fillerEpisodes(media.id)
       while (next <= airedTotal && filler.includes(next)) next++
     }
-    if (next <= airedTotal) resolveAndPlayBest(media, next, onState)
+    if (next <= airedTotal) resolveAndPlayBest(media, next, onState, true)
   }
   // mpvState updates on every observed time-pos/duration/pause/eof — same cadence as the desktop
   // player-progress event, so the throttle + watch-threshold logic transfers directly.
@@ -325,7 +335,7 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
       markWatched(media, episode)
     }
     // Preload the next episode's stream near the end so auto-advance / Next starts instantly.
-    if (get(bingePreload) && dur > 0 && pos / dur > 0.85) prefetchNext(media, episode)
+    if ((get(bingePreload) || get(autoplayNext)) && dur > 0 && pos / dur > 0.85) prefetchNext(media, episode)
     if (eof && !ended) { ended = true; onEnded() }
   })
   stopAndroid = unsub
@@ -522,7 +532,7 @@ export function matchesRelease(s: Stream, c: ContinueHint): boolean {
 // playing now. undefined when continuity is off, nothing is playing, or it's a different
 // title — the caller then just opens the picker normally.
 function continueHint(media: Media): ContinueHint | undefined {
-  if (!get(bingePreload)) return undefined
+  if (!get(bingePreload) && !get(autoplayNext)) return undefined
   const b = get(bingeSource)
   if (!b || b.mediaId !== media.id || !(b.bingeGroup || b.infoHash || b.group || b.originId)) return undefined
   return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group, originId: b.originId }
@@ -574,7 +584,7 @@ function resetPrefetchMiss() { prefetchMiss = null }
  *  background so the transition is instant. Best-effort; cached-only (never
  *  proactively starts a debrid download). */
 async function prefetchNext(media: Media, episode: number) {
-  if (!get(bingePreload)) return
+  if (!get(bingePreload) && !get(autoplayNext)) return
   const airedTotal = airedTotalOf(media)
   const next = episode + 1
   if (next > airedTotal || prefetching) return
@@ -625,10 +635,17 @@ function takePrefetched(mediaId: number, episode: number): Stream | null {
 }
 
 // User-initiated play: resolve, then show the source picker. The user picks a source and
-// `playStream` starts it. `cont` (set by auto-advance) carries the previous episode's
+// `playStream` starts it. `continuation` (set by auto-advance) carries the previous episode's
 // release identity: as sources fold in, a same-release one auto-continues without the user
 // touching the picker — a ready one instantly, an uncached one after the list settles.
-export async function playEpisode(media: Media, episode: number | undefined, onState: (s: PlayState) => void, cont?: ContinueHint) {
+export async function playEpisode(
+  media: Media,
+  episode: number | undefined,
+  onState: (s: PlayState) => void,
+  options: PlayEpisodeOptions = {},
+) {
+  const cont = options.continuation
+  const autoplay = options.autoplay ?? true
   // Supersede any resolve still running from a previous click (its fetches keep going in the
   // background, but this one owns the picker now). `signal` also lets an explicit close abort us.
   // Done FIRST so even an offline/instant play cancels a stale resolve that's still holding a picker.
@@ -640,7 +657,13 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = episode != null ? downloadOf(media.id, episode) : undefined
   if (local?.status === 'done' && local.path) {
-    return await playStream(media, episode, { url: local.path, name: '📥 Downloaded' } as Stream, onState)
+    return await playStream(
+      media,
+      episode,
+      { url: local.path, name: '📥 Downloaded' } as Stream,
+      onState,
+      { autoplay },
+    )
   }
   onState({ status: 'resolving' })
   // Continuing a binge: keep the picker HIDDEN while we look for the same source. It used to open
@@ -650,7 +673,16 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   let hideForContinuation = !!cont
   // Open the picker immediately in a skeleton (resolving) state — no "Resolving
   // stream…" text; it fills in with real sources as EACH addon responds.
-  streamPicker.set({ media, episode, streams: [], cachedCount: 0, resolving: true, hidden: hideForContinuation })
+  streamPicker.set({
+    media,
+    episode,
+    streams: [],
+    cachedCount: 0,
+    resolving: true,
+    hidden: hideForContinuation,
+    manualOnly: options.forceManual,
+    autoplay,
+  })
   // The picker is the UI from here — unless it is hidden (binge continuation), in which case the
   // connecting screen stays up as the only thing holding the user.
   if (!hideForContinuation) connecting.set(null)
@@ -666,6 +698,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   // so the user has to choose (or at least see why nothing played).
   const revealPicker = () => {
     hideForContinuation = false
+    connecting.set(null)
     if (!stillCurrent()) return
     streamPicker.update((c) => c ? { ...c, hidden: false } : c)
   }
@@ -690,9 +723,12 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
   try {
     // Instant path: this episode was prefetched near the end of the previous one
     // (binge continuity) — skip the picker entirely.
-    if (get(autoSelectSource) && episode != null) {
+    if (!options.forceManual && get(autoSelectSource) && episode != null) {
       const pre = takePrefetched(media.id, episode)
-      if (pre) { streamPicker.set(null); return await playStream(media, episode, pre, onState) }
+      if (pre) {
+        streamPicker.set(null)
+        return await playStream(media, episode, pre, onState, { autoplay })
+      }
     }
 
     const bases = get(enabledAddonUrls)
@@ -733,7 +769,7 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
           const result = applyContinuationState(state, () => streamPicker.set(null), onState)
           played ||= result.played
           continuationError ||= result.error
-        })
+        }, { autoplay })
         return played
       })()
     }
@@ -789,7 +825,18 @@ export async function playEpisode(media: Media, episode: number | undefined, onS
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
       if (resolving) scheduleReady(s)
       else { clearReadyTimer(); autoReady = true; resolveSettled = true }
-      streamPicker.set({ media, episode, streams: s, rejected: refined.rejected, cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length, resolving, autoReady, hidden: hideForContinuation })
+      streamPicker.set({
+        media,
+        episode,
+        streams: s,
+        rejected: refined.rejected,
+        cachedCount: s.filter((x) => !!x.url && !isUncached(x)).length,
+        resolving,
+        autoReady,
+        hidden: hideForContinuation,
+        manualOnly: options.forceManual,
+        autoplay,
+      })
       // Binge continuity: the instant a same-release, ready-to-play source appears, continue on it
       // automatically (close the picker, no interaction). An uncached same-release is handled once
       // the list settles (below), so a late-arriving cached one still wins here. Gated on
@@ -1040,31 +1087,63 @@ export async function resumeEpisode(media: Media, episode: number, onState: (s: 
 // Advance to an episode (auto next-episode + the in-player Prev/Next buttons). Continues
 // the SAME release seamlessly when a cached one exists; otherwise opens the picker for the
 // episode (auto-continuing an extension/uncached same-release, else leaving it for a pick).
-async function resolveAndPlayBest(media: Media, episode: number | undefined, onState: (s: PlayState) => void) {
+let advanceGeneration = 0
+async function resolveAndPlayBest(
+  media: Media,
+  episode: number | undefined,
+  onState: (s: PlayState) => void,
+  autoplay = true,
+) {
+  const generation = ++advanceGeneration
+  onState({ status: 'resolving' })
+  // Cover the previous file immediately. Resolving the remembered release can take several
+  // network round trips; leaving mpv's keep-open frame visible during that work made the old
+  // episode/anime look like it was still the thing being loaded.
+  connecting.set({
+    title: title(media),
+    detail: episode != null ? `Episode ${episode}` : undefined,
+    art: banner(media) || cover(media),
+    cancel: () => {
+      if (generation === advanceGeneration) advanceGeneration++
+      connecting.set(null)
+      cancelResolve()
+    },
+  })
   // Instant path: use the stream prefetched near the end of the previous episode.
   if (episode != null) {
     const pre = takePrefetched(media.id, episode)
-    if (pre) return await playStream(media, episode, pre, onState)
+    if (pre) return await playStream(media, episode, pre, onState, { autoplay })
   }
-  onState({ status: 'resolving' })
   // Seamless continuity: if the addons already have a CACHED source from the same release
   // we were watching, play it straight away — no picker between back-to-back episodes.
   try {
     const { streams, want } = await resolveStreams(media, episode)
+    if (generation !== advanceGeneration) return onState({ status: 'idle' })
     const same = pickSameRelease(media, streams, want)
-    if (same) return await playStream(media, episode, same, onState)
+    if (same) return await playStream(media, episode, same, onState, { autoplay })
   }
   catch { /* no addons / nothing yet — the full picker below still queries extensions */ }
+  if (generation !== advanceGeneration) return onState({ status: 'idle' })
   // No cached same-release: open the full source picker (addons + extensions) for this
   // episode, carrying the continuity hint so a same-release source auto-continues when it
   // lands (extension/fansub content), and otherwise the user picks. This replaces the old
   // dead-end "no cached source" toast — the next episode always goes somewhere.
-  return await playEpisode(media, episode, onState, continueHint(media))
+  return await playEpisode(media, episode, onState, {
+    continuation: continueHint(media),
+    autoplay,
+  })
 }
 
 // Play a specific chosen stream: embed mpv into the main window + wire progress /
 // resume / auto next-episode. Closes the picker.
-export async function playStream(media: Media, episode: number | undefined, stream: Stream, report: (s: PlayState) => void) {
+export async function playStream(
+  media: Media,
+  episode: number | undefined,
+  stream: Stream,
+  report: (s: PlayState) => void,
+  options: PlayStreamOptions = {},
+) {
+  const autoplay = options.autoplay ?? true
   // Every exit from this function goes through the state callback, so wrapping it once clears the
   // connecting screen on all of them — including the early returns.
   const onState = (s: PlayState) => {
@@ -1229,6 +1308,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
   })
   try {
     currentMedia = media
+    playerLoadId.update((id) => id + 1)
     // Resume from the last saved position for this exact episode, if any.
     const startSeconds = episode != null ? getPosition(media.id, episode) : 0
     const label = episode != null ? `${title(media)} — Episode ${episode}` : title(media)
@@ -1261,7 +1341,13 @@ export async function playStream(media: Media, episode: number | undefined, stre
           ...addonSubs.filter((s) => !!s.url).map((s) => s.url!),
         ]
         await startMpvEvents()
-        await mpvLoad({ url: stream.url, title: label, startPos: startSeconds || 0, subtitles: subs })
+        await mpvLoad({
+          url: stream.url,
+          title: label,
+          startPos: startSeconds || 0,
+          subtitles: subs,
+          autoplay,
+        })
         // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
         androidStreamInfo.set({ url: stream.url, headers: (stream.__stream ? stream.__headers : undefined) ?? {} })
         androidMpvActive.set(true)
@@ -1374,6 +1460,7 @@ export async function playStream(media: Media, episode: number | undefined, stre
     await invoke('player_embed', {
       url: stream.url,
       startSeconds: startSeconds || undefined,
+      autoplay,
       alang: get(preferredAudioLang),
       slang: get(preferredSubLang),
       headers: mergedHeaders && Object.keys(mergedHeaders).length ? mergedHeaders : undefined,
@@ -1432,6 +1519,7 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
     // replace on this path. See detach().
     detach()
     currentMedia = null
+    playerLoadId.update((id) => id + 1)
     nowPlayingMedia.set(null)
     nowPlayingPartySource.set({ source: null, error: 'Cloud-library links are private to this device.' })
     nowPlaying.set({ title: label, animeTitle: label, id: null, malId: null, episode: null, total: null, airedTotal: null })
@@ -1447,15 +1535,15 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
 }
 
 /** Play the previous episode (in-player button). No-op past episode 1. */
-export function playPrev(onState: (s: PlayState) => void = noticeState) {
+export function playPrev(onState: (s: PlayState) => void = noticeState, autoplay = true) {
   const ep = get(nowPlaying).episode
   if (!currentMedia || ep == null || ep <= 1) return
-  resolveAndPlayBest(currentMedia, ep - 1, onState)
+  resolveAndPlayBest(currentMedia, ep - 1, onState, autoplay)
 }
 /** Play the next episode (in-player button + keyboard `n`). No-op past the aired total, mirroring
  *  the on-screen Next button's bounds gate — otherwise the keyboard path resolved a non-existent
  *  episode and popped an empty "No streams found" picker. */
-export function playNext(onState: (s: PlayState) => void = noticeState) {
+export function playNext(onState: (s: PlayState) => void = noticeState, autoplay = true) {
   const ep = get(nowPlaying).episode
   if (!currentMedia || ep == null) return
   const airedTotal = airedTotalOf(currentMedia)
@@ -1464,7 +1552,7 @@ export function playNext(onState: (s: PlayState) => void = noticeState) {
   if (airedTotal > 0 && ep >= airedTotal) {
     return onState({ status: 'error', message: 'No later episode has aired yet.' })
   }
-  resolveAndPlayBest(currentMedia, ep + 1, onState)
+  resolveAndPlayBest(currentMedia, ep + 1, onState, autoplay)
 }
 
 export interface ResolvedDownload { url: string; filename: string; quality?: string; provider?: string; infoHash?: string }

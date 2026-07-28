@@ -111,7 +111,7 @@
     const now = performance.now()
     if (epArm && epArmDir === dir && now - epArm < 1400) {
       epArm = 0
-      if (dir > 0) playNext(); else playPrev()
+      if (dir > 0) playNext(undefined, !paused); else playPrev(undefined, !paused)
     } else {
       epArm = now
       epArmDir = dir
@@ -153,7 +153,12 @@
   function changeSource() {
     showOptions = false
     const np = get(nowPlayingMedia)
-    if (np) playEpisode(np.media, np.episode, () => {})
+    if (np) {
+      playEpisode(np.media, np.episode, () => {}, {
+        forceManual: true,
+        autoplay: !paused,
+      })
+    }
   }
 
   // Video fit: 'best' = letterbox (panscan 0); 'fill' = crop-to-fill (panscan 1),
@@ -484,7 +489,7 @@
 
     <div class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
       {#if hasPrev}
-        <button data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(-1) : playPrev())} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
+        <button data-focusable class={iconBtn} onclick={() => (gm ? episodeStep(-1) : playPrev(undefined, !paused))} aria-label="Previous episode"><SkipBack size={icSize} fill="currentColor" /></button>
       {/if}
       <!-- Play/pause: Game mode gets a filled white circle (no outline) — the primary,
            thumb-sized touch target; Desktop keeps the subtle hover-only button. -->
@@ -499,7 +504,7 @@
         <button
           data-focusable
           class="{iconBtn} relative"
-          onclick={() => (gm ? episodeStep(1) : playNext())}
+          onclick={() => (gm ? episodeStep(1) : playNext(undefined, !paused))}
           aria-label={nextReady ? 'Next episode (ready to play)' : 'Next episode'}
           title={nextReady ? 'Next episode is ready — starts instantly' : undefined}
         >

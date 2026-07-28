@@ -63,6 +63,7 @@ vi.mock('$lib/player/session', () => ({
   streamPicker: picker,
   connecting: writable(null),
   playing: writable(false),
+  playerLoadId: writable(0),
   nowPlaying: writable({}),
   nowPlayingUrl: writable(''),
   playerNotice: writable(''),

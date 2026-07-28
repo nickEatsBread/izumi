@@ -26,6 +26,10 @@ export const streamPicker = writable<{
   // trustworthy, and unconditionally when the resolve finishes.
   autoReady?: boolean
   playbackError?: string
+  // "Change source" is always a user choice, regardless of the global automatic-source setting.
+  manualOnly?: boolean
+  // Preserve play/pause intent while replacing the current file.
+  autoplay?: boolean
   // Rendered as nothing while STAYING the current request. Automatic binge continuation uses
   // this while it searches for the previous episode's release; clearing the store would make the
   // resolve flow treat that search as superseded and abandon it.
@@ -49,6 +53,10 @@ export const nextEpisodeReady = writable<{ mediaId: number; episode: number } | 
 // through). `nowPlaying` tells the overlay what to display + which ids to fetch
 // AniSkip OP/ED segments for. Both are set by `playEpisode` in stremio/play.ts.
 export const playing = writable(false)
+// Monotonic file-load identity. Unlike media/episode or spriteKey, this changes even when
+// "Change source" replaces an online stream that has no infoHash, so the overlay can discard
+// every pause/EOF/frame flag belonging to the previous mpv file.
+export const playerLoadId = writable(0)
 export const nowPlaying = writable<{
   title: string
   animeTitle: string
