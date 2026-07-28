@@ -33,4 +33,18 @@ export interface Media {
   // independent); repeat = rewatch count; startedAt/completedAt are the viewer's own dates.
   mediaListEntry?: { id?: number; progress?: number; status?: string; score?: number; repeat?: number; startedAt?: FuzzyDate | null; completedAt?: FuzzyDate | null } | null
   relations?: { edges: { relationType: string; node: Media }[] }
+  characters?: {
+    edges: {
+      role: string
+      node: { id: number; name: { full?: string; native?: string }; image?: { large?: string } }
+      voiceActors?: { id: number; name: { full?: string; native?: string }; image?: { large?: string } }[]
+    }[]
+  }
+  staff?: {
+    edges: {
+      role: string
+      node: { id: number; name: { full?: string; native?: string }; image?: { large?: string } }
+    }[]
+  }
+  recommendations?: { nodes: { rating?: number; mediaRecommendation?: Media | null }[] }
 }
