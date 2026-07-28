@@ -83,3 +83,26 @@ export function homeSections(now: Date) {
     { key: 'fantasy', title: 'Fantasy', vars: { sort: ['TRENDING_DESC'], genre: 'Fantasy' } },
   ]
 }
+
+/** Recommendations from the connected user's highest-scored current/completed titles. */
+export const PERSONAL_RECOMMENDATIONS_QUERY = gql`
+  query PersonalRecommendations($userName: String!) {
+    Page(page: 1, perPage: 8) {
+      mediaList(
+        userName: $userName
+        type: ANIME
+        status_in: [CURRENT, COMPLETED]
+        sort: SCORE_DESC
+      ) {
+        media {
+          recommendations(perPage: 5, sort: RATING_DESC) {
+            nodes {
+              rating
+              mediaRecommendation { ...MediaFields }
+            }
+          }
+        }
+      }
+    }
+  }
+  ${MEDIA_FIELDS}`
