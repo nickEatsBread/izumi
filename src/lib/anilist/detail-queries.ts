@@ -13,6 +13,21 @@ export const MEDIA_BY_ID = gql`
       isFavourite
       mediaListEntry { id progress status score(format: POINT_100) repeat startedAt { year month day } completedAt { year month day } }
       relations { edges { relationType node { ...MediaFields } } }
+      characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
+        edges {
+          role
+          node { id name { full native } image { large } }
+          voiceActors(language: JAPANESE, sort: [RELEVANCE]) {
+            id name { full native } image { large }
+          }
+        }
+      }
+      staff(perPage: 12, sort: [RELEVANCE]) {
+        edges { role node { id name { full native } image { large } } }
+      }
+      recommendations(perPage: 12, sort: [RATING_DESC]) {
+        nodes { rating mediaRecommendation { ...MediaFields } }
+      }
     }
   }
   ${MEDIA_FIELDS}`

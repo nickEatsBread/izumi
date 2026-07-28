@@ -32,6 +32,7 @@
   import MoreHorizontal from 'lucide-svelte/icons/more-horizontal'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
+  import RichMetadata from './RichMetadata.svelte'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -266,7 +267,7 @@
       {/if}
 
       <div class="mt-6">
-        <Tabs tabs={['Episodes', 'Relations', 'Details']} bind:active />
+        <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
         {#if active === 'Episodes'}
           <EpisodeList media={m} offline={$offlineMode} />
         {:else if active === 'Relations'}
@@ -277,6 +278,10 @@
               {/each}
             </div>
           {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
+        {:else if active === 'Cast & Crew'}
+          <div class="mt-3"><RichMetadata media={m} view="people" /></div>
+        {:else if active === 'Recommended'}
+          <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
         {:else}
           <div class="mt-3 space-y-4">
             {#if m.description}<p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>{/if}
@@ -371,7 +376,7 @@
       </div>
     </div>
 
-    <Tabs tabs={['Episodes', 'Relations', 'Details']} bind:active />
+    <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
     {#if active === 'Episodes'}
       <EpisodeList media={m} offline={$offlineMode} />
     {:else if active === 'Relations'}
@@ -387,6 +392,10 @@
       {:else}
         <p class="text-muted-foreground">No related titles.</p>
       {/if}
+    {:else if active === 'Cast & Crew'}
+      <RichMetadata media={m} view="people" />
+    {:else if active === 'Recommended'}
+      <RichMetadata media={m} view="recommendations" />
     {:else}
       <div class="max-w-3xl space-y-4">
         {#if m.description}
