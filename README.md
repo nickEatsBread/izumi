@@ -1,14 +1,15 @@
-<h1 align="center">
-  <img src="brand/svg/izumi-mark-color.svg" alt="izumi brand mark" width="96" />
-  <br>
-  <b>izumi</b>
-</h1>
+<div align="center">
+  <a name="readme-top"></a>
 
-<!-- <h1 align="center"><b>izumi</b></h1> -->
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/svg/izumi-lockup-color-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="brand/svg/izumi-lockup-color-light.svg">
+    <img src="brand/svg/izumi-lockup-color-light.svg" alt="izumi" width="320">
+  </picture>
 
-<p align="center">
-  <img width="100%" height="940" alt="README artwork" src="https://github.com/user-attachments/assets/665d0f1a-8360-4386-9d22-f9159fc1f1ac" />
-</p>
+### Your anime, your library, your sources.
+
+A native anime library manager for browsing, tracking, and playing from the sources you choose.
 
 <!-- MANPAGE: BEGIN EXCLUDED SECTION -->
 [![Windows](https://img.shields.io/badge/Windows-.exe-0078D6?style=for-the-badge)][exe]
@@ -18,28 +19,40 @@
 [![All versions](https://img.shields.io/badge/-All_Versions-lightgrey.svg?style=for-the-badge)](https://github.com/nickEatsBread/izumi/releases)
 <!-- MANPAGE: END EXCLUDED SECTION -->
 
-izumi is a **personal media library manager** for organizing, tracking, and playing anime allowing you to add your own sources, and stream.
+[Supported sources](#supported-sources) · [Features](#features) · [Get started](#get-started)
+</div>
+
+<br>
+
+<p align="center">
+  <img width="100%" alt="izumi app preview" src="https://github.com/user-attachments/assets/665d0f1a-8360-4386-9d22-f9159fc1f1ac" />
+</p>
 
 > [!IMPORTANT]
 > This application **does not host, distribute, or provide media content**.
 >
 > izumi is intended solely as a **personal media library manager** for organizing, tracking, and playing content that you **legally own**. Users are responsible for ensuring that all media content used with this application has been **legally** obtained and that its use complies with all applicable **copyright laws**.
 
+## Supported sources
+
+- **Stremio add-ons** — add stream and subtitle add-ons by manifest URL and browse their results together in one source picker.
+- **Aniyomi / Mihon-compatible extensions** — use supported anime-source extensions from the Tachiyomi ecosystem when distributed as verified `.izumi-ext` packages (desktop only).
+- **Community extension formats** — load native izumi JavaScript providers, Miru video extensions, Seanime online-stream providers, and anime torrent providers from a GitHub repository, manifest, or package catalog.
+- **Flexible playback** — play direct HTTP streams, resolve torrents through a supported debrid service, stream torrents with the built-in P2P engine, or watch files from your local library.
+- **Tracking services** — connect AniList or MyAnimeList, with playback progress synced back to your account.
+
 ## Features
 
 - **Browse** — weekly schedule, search with filters, rich detail pages (banner, description, trailer, relations, per-episode cards).
 - **Tracking** — connect **AniList** or **MyAnimeList**, or set a
   read-only AniList username. Progress syncs back on playback.
-- **Streaming** — add any Stremio stream addon or source extension, and on desktop
-  import verified `.izumi-ext` anime-provider packages. Results resolve through debrid
-  services or direct HTTP streams and appear live in the source picker.
+- **Streaming** — add any Stremio stream addon or source extension. Results resolve
+  through debrid services or direct HTTP streams and appear live in the source picker.
 - **Native player** — libmpv embedded in the main window (single window, transparent overlay
   controls): custom seekbar with **on-demand scrub thumbnails**, chapter popouts, AniSkip
   OP/ED/recap skipping, AnimeThemes-aware first-play, audio/subtitle menus, video-fit toggle,
   screenshot, next/prev episode, full controller/d-pad navigation.
 - **Offline** — download a resolved stream to disk and play it back locally.
-- **Local library** — recursively scan existing video folders, infer season/episode numbers,
-  match titles through AniList, and manually correct uncertain matches.
 - **Automatic downloads** — follow a show and collect aired episodes using per-series quality,
   audio, codec, cache, delay, and starting-episode rules.
 - **Watch Together** — host or join synchronized playback rooms across paired Izumi devices;
