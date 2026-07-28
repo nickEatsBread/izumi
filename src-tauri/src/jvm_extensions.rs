@@ -188,13 +188,20 @@ fn jre_asset() -> Result<JreAsset, String> {
 }
 
 fn find_java(folder: &Path) -> Option<PathBuf> {
+    find_java_executables(folder).into_iter().next()
+}
+
+fn find_java_executables(folder: &Path) -> Vec<PathBuf> {
     let executable = if cfg!(windows) { "java.exe" } else { "java" };
     let mut pending = vec![(folder.to_path_buf(), 0usize)];
+    let mut found = Vec::new();
     while let Some((current, depth)) = pending.pop() {
         if depth > 5 {
             continue;
         }
-        let entries = std::fs::read_dir(current).ok()?;
+        let Ok(entries) = std::fs::read_dir(current) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file()
@@ -205,14 +212,14 @@ fn find_java(folder: &Path) -> Option<PathBuf> {
                     .and_then(|name| name.to_str())
                     == Some("bin")
             {
-                return Some(path);
+                found.push(path.clone());
             }
             if path.is_dir() {
                 pending.push((path, depth + 1));
             }
         }
     }
-    None
+    found
 }
 
 fn extract_jre(bytes: &[u8], destination: &Path, gzip: bool) -> Result<(), String> {
@@ -302,27 +309,129 @@ fn hide_console(command: &mut Command) {
 fn hide_console(_command: &mut Command) {}
 
 async fn java_command(app: &AppHandle) -> Result<PathBuf, String> {
-    let java = if cfg!(windows) { "java.exe" } else { "java" };
+    let candidates = tokio::task::spawn_blocking(installed_java_candidates)
+        .await
+        .map_err(|error| format!("Installed Java discovery failed: {error}"))?;
+    for java in candidates {
+        if supported_java(&java).await {
+            return Ok(java);
+        }
+    }
+    ensure_private_java(app).await
+}
+
+fn installed_java_candidates() -> Vec<PathBuf> {
+    let executable = if cfg!(windows) { "java.exe" } else { "java" };
+    let mut candidates = Vec::new();
+
+    // Honour explicit Java locations first, even when the user did not add them to PATH.
+    for variable in ["JAVA_HOME", "JRE_HOME"] {
+        if let Some(home) = std::env::var_os(variable) {
+            push_unique(
+                &mut candidates,
+                PathBuf::from(home).join("bin").join(executable),
+            );
+        }
+    }
+
+    // Inspect every PATH entry instead of asking the OS for only the first `java`. An old Java 8
+    // earlier in PATH must not hide a usable Java 17+ later in it.
+    if let Some(path) = std::env::var_os("PATH") {
+        for folder in std::env::split_paths(&path) {
+            push_unique(&mut candidates, folder.join(executable));
+        }
+    }
+    // Keep the normal process lookup as a final PATH/App Paths fallback.
+    push_unique(&mut candidates, PathBuf::from(executable));
+
+    for root in standard_java_roots() {
+        for java in find_java_executables(&root) {
+            push_unique(&mut candidates, java);
+        }
+    }
+    candidates
+}
+
+fn standard_java_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if cfg!(windows) {
+        for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
+            let Some(folder) = std::env::var_os(variable).map(PathBuf::from) else {
+                continue;
+            };
+            for vendor in [
+                "Eclipse Adoptium",
+                "Java",
+                "Microsoft",
+                "BellSoft",
+                "Zulu",
+                "Amazon Corretto",
+            ] {
+                push_unique(&mut roots, folder.join(vendor));
+            }
+        }
+        if let Some(folder) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) {
+            push_unique(&mut roots, folder.join("Programs").join("Eclipse Adoptium"));
+        }
+    } else if cfg!(target_os = "macos") {
+        push_unique(
+            &mut roots,
+            PathBuf::from("/Library/Java/JavaVirtualMachines"),
+        );
+        if let Some(folder) = std::env::var_os("HOME").map(PathBuf::from) {
+            push_unique(&mut roots, folder.join("Library/Java/JavaVirtualMachines"));
+        }
+    } else {
+        push_unique(&mut roots, PathBuf::from("/usr/lib/jvm"));
+        push_unique(&mut roots, PathBuf::from("/usr/java"));
+    }
+    roots
+}
+
+fn push_unique(values: &mut Vec<PathBuf>, value: PathBuf) {
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+async fn supported_java(java: &Path) -> bool {
     let mut probe = Command::new(java);
     probe
         .arg("-version")
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     hide_console(&mut probe);
-    let output = probe.output().await;
-    if let Ok(output) = output {
-        let version = String::from_utf8_lossy(&output.stderr);
-        let quoted = version
-            .split('"')
-            .nth(1)
-            .and_then(|value| value.split('.').next())
-            .and_then(|value| value.parse::<u32>().ok());
-        if output.status.success() && quoted.is_some_and(|major| major >= 17) {
-            return Ok(PathBuf::from(java));
-        }
+    let Ok(output) = probe.output().await else {
+        return false;
+    };
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    output.status.success()
+        && parse_java_major(&stderr)
+            .or_else(|| parse_java_major(&stdout))
+            .is_some_and(|major| major >= 17)
+}
+
+fn parse_java_major(version_output: &str) -> Option<u32> {
+    let value = version_output.split('"').nth(1).or_else(|| {
+        version_output
+            .split_whitespace()
+            .map(|token| token.trim_matches('"'))
+            .find(|token| {
+                token
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.is_ascii_digit())
+            })
+    })?;
+    let mut parts = value.split('.');
+    let first = parts.next()?.parse::<u32>().ok()?;
+    if first == 1 {
+        parts.next()?.parse().ok()
+    } else {
+        Some(first)
     }
-    ensure_private_java(app).await
 }
 
 async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, String> {
@@ -482,4 +591,23 @@ pub async fn jvm_extension_call(
 pub async fn jvm_extension_reload(runtime: tauri::State<'_, Runtime>) -> Result<(), String> {
     runtime.stop().await;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_java_major;
+
+    #[test]
+    fn parses_modern_and_legacy_java_versions() {
+        assert_eq!(
+            parse_java_major(r#"openjdk version "21.0.7" 2025-04-15"#),
+            Some(21)
+        );
+        assert_eq!(
+            parse_java_major(r#"java version "17.0.12" 2024-07-16 LTS"#),
+            Some(17)
+        );
+        assert_eq!(parse_java_major(r#"java version "1.8.0_451""#), Some(8));
+        assert_eq!(parse_java_major("not a Java version"), None);
+    }
 }
