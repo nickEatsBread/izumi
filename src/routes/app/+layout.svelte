@@ -40,6 +40,8 @@
   import { startUpdateChecks } from '$lib/updater'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
   import { get } from 'svelte/store'
+  import { initCrashReporting } from '$lib/diagnostics'
+  import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
   let { children } = $props()
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
   // re-sizes it per file by bitrate in play.ts). Handles the Uncapped sentinel. Picked up next file.
@@ -55,6 +57,7 @@
     return () => { stop(); invoke('gamepad_stop').catch(() => {}) }
   })
   $effect(() => {
+    initCrashReporting()
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
     initOffline() // latch offline mode from launch connectivity + the persisted force toggle
     if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
@@ -160,7 +163,8 @@
     invoke('player_set_inset', { left, top: 0 }).catch(() => {})
   })
   // Navigating away (e.g. a sidebar link) exits playback and restores the browse UI.
-  beforeNavigate(() => {
+  beforeNavigate(({ from }) => {
+    if (from?.url) rememberScroll(from.url)
     if ($playing) {
       invoke('close_player').catch(() => {})
       playing.set(false)
@@ -169,7 +173,8 @@
   // Gamescope may switch the XWayland touch mode while a controller action changes screens. The
   // gamepad-side restore runs shortly after the button press; this second restore runs after Svelte
   // has completed the navigation, so touch scrolling remains available on the destination screen.
-  afterNavigate(() => {
+  afterNavigate(({ to }) => {
+    if (to?.url && !$playing) restoreScroll(to.url)
     if (get(gameMode)) invoke('restore_native_touch').catch(() => {})
   })
 </script>

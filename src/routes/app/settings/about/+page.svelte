@@ -4,6 +4,9 @@
   import { updateChannel } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
   import { checkForUpdate, applyUpdate, availableUpdate, updatePhase, updateProgress, updateError } from '$lib/updater'
+  import { copyToClipboard } from '$lib/util/clipboard'
+  import { clearDiagnostics, diagnosticEvents, diagnosticsSnapshot } from '$lib/diagnostics'
+  import { save } from '@tauri-apps/plugin-dialog'
 
   let appVersion = $state('')
   let tauriVersion = $state('')
@@ -53,6 +56,23 @@
     availableUpdate.set(null); updateError.set(''); updatePhase.set('idle')
     await checkForUpdate()
     checking = false; checked = true
+  }
+
+  let diagnosticNotice = $state('')
+  async function copyDiagnostics() {
+    const report = diagnosticsSnapshot({ appVersion, tauriVersion, mpvVersion, os })
+    diagnosticNotice = copyToClipboard(report) ? 'Diagnostics copied' : 'Copy failed'
+  }
+  async function saveDiagnostics() {
+    try {
+      const path = await save({
+        defaultPath: `izumi-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (!path) return
+      await invoke('write_text_file', { path, contents: diagnosticsSnapshot({ appVersion, tauriVersion, mpvVersion, os }) })
+      diagnosticNotice = 'Diagnostics saved'
+    } catch { diagnosticNotice = 'Save failed' }
   }
 </script>
 
@@ -129,4 +149,15 @@
   <p class="mt-6 max-w-md text-xs text-muted-foreground">
     A native desktop anime client — Stremio add-on + debrid sourcing, native libmpv2 playback.
   </p>
+
+  <div class="mt-6 max-w-md">
+    <h3 class="mb-1 text-sm font-black">Diagnostics</h3>
+    <p class="mb-3 text-xs text-muted-foreground">Izumi keeps the latest {$diagnosticEvents.length} frontend errors for this session. Reports redact settings whose names look sensitive.</p>
+    <div class="flex flex-wrap gap-2">
+      <button data-focusable onclick={copyDiagnostics} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Copy report</button>
+      <button data-focusable onclick={saveDiagnostics} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Save report</button>
+      <button data-focusable onclick={() => { clearDiagnostics(); diagnosticNotice = 'Diagnostics cleared' }} class="rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-secondary">Clear</button>
+    </div>
+    {#if diagnosticNotice}<p class="mt-2 text-xs text-muted-foreground">{diagnosticNotice}</p>{/if}
+  </div>
 </div>
