@@ -1669,6 +1669,82 @@ fn player_screenshot(
     Ok(dir_s)
 }
 
+/// Encode a bounded segment of the current source as GIF or MP4 using the user's local ffmpeg.
+/// The frontend supplies timestamps from the live player; output always stays in Pictures/izumi.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn player_capture_segment(
+    app: AppHandle,
+    player: tauri::State<'_, player::PlayerHandle>,
+    kind: String,
+    start_sec: f64,
+    end_sec: f64,
+) -> Result<String, String> {
+    if kind != "gif" && kind != "clip" {
+        return Err("unsupported-capture-kind".into());
+    }
+    if !start_sec.is_finite() || !end_sec.is_finite() || end_sec <= start_sec {
+        return Err("invalid-capture-range".into());
+    }
+    let max_duration = if kind == "gif" { 30.0 } else { 60.0 };
+    let duration = (end_sec - start_sec).min(max_duration);
+    let start = (end_sec - duration).max(0.0);
+    let source = player.get_property("path")?;
+    if source.is_empty() {
+        return Err("no-player-source".into());
+    }
+    let headers = player.get_property("http-header-fields").unwrap_or_default();
+    let dir = app
+        .path()
+        .picture_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| e.to_string())?
+        .join("izumi");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let output = dir.join(format!("izumi-{kind}-{stamp}.{}", if kind == "gif" { "gif" } else { "mp4" }));
+
+    let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
+    let mut command = tokio::process::Command::new(executable);
+    command.arg("-hide_banner").arg("-loglevel").arg("error").arg("-y");
+    if !headers.is_empty() {
+        command.arg("-headers").arg(headers.replace(',', "\r\n"));
+    }
+    command
+        .arg("-ss").arg(format!("{start:.3}"))
+        .arg("-i").arg(source)
+        .arg("-t").arg(format!("{duration:.3}"));
+    if kind == "gif" {
+        command
+            .arg("-vf")
+            .arg("fps=12,scale=640:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
+            .arg("-an");
+    } else {
+        command
+            .arg("-c:v").arg("libx264")
+            .arg("-preset").arg("veryfast")
+            .arg("-crf").arg("20")
+            .arg("-c:a").arg("aac")
+            .arg("-movflags").arg("+faststart");
+    }
+    command.arg(&output);
+    command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000 | 0x0000_4000);
+    let result = tokio::time::timeout(std::time::Duration::from_secs(180), command.output())
+        .await
+        .map_err(|_| "capture-timeout".to_string())?
+        .map_err(|_| "ffmpeg-unavailable".to_string())?;
+    if !result.status.success() {
+        let error = String::from_utf8_lossy(&result.stderr);
+        return Err(format!("capture-failed: {}", error.lines().last().unwrap_or("ffmpeg error")));
+    }
+    Ok(output.to_string_lossy().into_owned())
+}
+
 /// Toggle the MAIN window between windowed and fullscreen — the player is embedded
 /// here, so this is the video's fullscreen. Returns the NEW state so the UI hides
 /// the sidebar/titlebar chrome for edge-to-edge video.
@@ -2854,6 +2930,7 @@ pub fn run() {
             player_exit_fullscreen,
             player_set_inset,
             player_screenshot,
+            player_capture_segment,
             player_diag,
             mpv_version,
             player_command,

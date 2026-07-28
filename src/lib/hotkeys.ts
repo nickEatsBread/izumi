@@ -15,6 +15,13 @@ export type HotkeyId =
   | 'playerSubtitleCycle'
   | 'playerSubDelayDown'
   | 'playerSubDelayUp'
+  | 'playerStats'
+  | 'playerGif'
+  | 'playerClip'
+  | 'playerSleep'
+  | 'playerLoopA'
+  | 'playerLoopB'
+  | 'playerLoopClear'
 
 export type HotkeyDefinition = {
   id: HotkeyId
@@ -32,6 +39,13 @@ export const HOTKEYS: HotkeyDefinition[] = [
   { id: 'playerFullscreen', scope: 'Player', group: 'Playback', label: 'Toggle fullscreen', description: 'Enter or leave fullscreen.', defaultBinding: 'f' },
   { id: 'playerMute', scope: 'Player', group: 'Playback', label: 'Toggle mute', description: 'Mute or restore player audio.', defaultBinding: 'm' },
   { id: 'playerScreenshot', scope: 'Player', group: 'Playback', label: 'Screenshot', description: 'Save the current frame to Pictures/izumi.', defaultBinding: 'p' },
+  { id: 'playerStats', scope: 'Player', group: 'Tools', label: 'Stats overlay', description: 'Show or hide live playback diagnostics.', defaultBinding: 'i' },
+  { id: 'playerGif', scope: 'Player', group: 'Tools', label: 'Record GIF', description: 'Start or stop a GIF recording.', defaultBinding: 'o' },
+  { id: 'playerClip', scope: 'Player', group: 'Tools', label: 'Save recent clip', description: 'Save the previous 30 seconds as MP4.', defaultBinding: 'c' },
+  { id: 'playerSleep', scope: 'Player', group: 'Tools', label: 'Sleep after episode', description: 'Stop autoplay when this episode ends.', defaultBinding: 'l' },
+  { id: 'playerLoopA', scope: 'Player', group: 'Tools', label: 'Set loop A', description: 'Set the A/B loop start.', defaultBinding: '[' },
+  { id: 'playerLoopB', scope: 'Player', group: 'Tools', label: 'Set loop B', description: 'Set the A/B loop end.', defaultBinding: ']' },
+  { id: 'playerLoopClear', scope: 'Player', group: 'Tools', label: 'Clear A/B loop', description: 'Disable the active A/B loop.', defaultBinding: '\\' },
   { id: 'playerSeekBack', scope: 'Player', group: 'Seeking', label: 'Seek back', description: 'Seek by the configured player step.', defaultBinding: 'ArrowLeft' },
   { id: 'playerSeekForward', scope: 'Player', group: 'Seeking', label: 'Seek forward', description: 'Seek by the configured player step.', defaultBinding: 'ArrowRight' },
   { id: 'playerVolumeUp', scope: 'Player', group: 'Audio', label: 'Volume up', description: 'Raise volume five points.', defaultBinding: 'ArrowUp' },
