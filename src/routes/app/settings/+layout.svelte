@@ -37,6 +37,7 @@
   // hidden (see <style>) — one title in the bar, app-style, not a redundant second heading below.
   const childTitles: Record<string, string> = {
     '/app/settings/player': 'Player', '/app/settings/subtitles': 'Subtitles',
+    '/app/settings/hotkeys': 'Hotkeys',
     '/app/settings/sources': 'Sources', '/app/settings/extensions': 'Extensions',
     '/app/settings/downloads': 'Downloads', '/app/settings/interface': 'Interface',
     '/app/settings/history': 'History', '/app/settings/sync': 'Device sync',

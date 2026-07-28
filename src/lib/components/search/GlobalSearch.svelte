@@ -25,6 +25,8 @@
     openGlobalSearch,
     rankQuickSearchResults,
   } from '$lib/search/global-search'
+  import { hotkeyBindings } from '$lib/settings/ui'
+  import { findHotkey, isTypingTarget } from '$lib/hotkeys'
 
   type SearchState = 'idle' | 'typing' | 'loading' | 'done' | 'error'
   type SearchResponse = { Page?: { media?: Media[] } }
@@ -184,10 +186,9 @@
 </script>
 
 <svelte:window onkeydown={(event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+  if (!$globalSearchOpen && !isTypingTarget(event.target) && findHotkey(event, $hotkeyBindings, 'Global') === 'globalSearch') {
     event.preventDefault()
-    if ($globalSearchOpen) close()
-    else show()
+    show()
   } else if ($globalSearchOpen && event.key === 'Escape') {
     event.preventDefault()
     close()
