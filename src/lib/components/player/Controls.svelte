@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
+  import { listen } from '@tauri-apps/api/event'
   import { onMount } from 'svelte'
   import type { Segment } from '$lib/stremio/aniskip'
   import Seekbar from './Seekbar.svelte'
@@ -267,6 +268,11 @@
   // (1× / 100 / unmuted) while playback ran at the real values, and the next click snapped mpv to the
   // wrong displayed value. Seed local state from mpv on (re)mount. `mute` is a yes/no flag, not a float.
   onMount(() => {
+    // Keyboard shortcuts are handled by PlayerOverlay, outside this conditionally-mounted
+    // component. Follow mpv's observed property so every mute path updates this icon.
+    const unlistenMuted = listen<boolean>('player-muted', (event) => {
+      muted = event.payload
+    })
     void (async () => {
       try {
         const sp = parseFloat(await invoke<string>('player_get_property', { name: 'speed' }))
@@ -280,6 +286,7 @@
         muted = (await invoke<string>('player_get_property', { name: 'mute' })) === 'yes'
       } catch { /* no player yet — keep default */ }
     })()
+    return () => { void unlistenMuted.then((unlisten) => unlisten()) }
   })
 
   // Track menu (subtitle/audio) — populated lazily from mpv's track-list.

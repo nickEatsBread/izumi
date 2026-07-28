@@ -4,6 +4,7 @@
   import { fetchManifest } from '$lib/stremio/manifest'
   import { defaultDiscussionPlatform } from '$lib/comments'
   import Globe from 'lucide-svelte/icons/globe'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   // One control over two stores: whether to auto-pick at all, and whether to wait first. They were
   // separate toggles, which read as unrelated settings even though the second only means anything
@@ -28,11 +29,16 @@
   <div class="mb-6 max-w-2xl space-y-3">
     <label data-setting-key="auto-play-the-best-source" class="flex flex-col gap-1">
       <span class="text-sm font-bold">Auto-play the best source</span>
-      <select data-focusable value={autoMode} onchange={(e) => setAutoMode(e.currentTarget.value)} class="rounded-md bg-input px-3 py-2 text-sm">
-        <option value="countdown">After a ~5s countdown</option>
-        <option value="instant">Immediately</option>
-        <option value="off">Off — always choose manually</option>
-      </select>
+      <SelectMenu
+        value={autoMode}
+        onChange={setAutoMode}
+        ariaLabel="Auto-play the best source"
+        options={[
+          { value: 'countdown', label: 'After a ~5s countdown' },
+          { value: 'instant', label: 'Immediately' },
+          { value: 'off', label: 'Off — always choose manually' },
+        ]}
+      />
       <span class="text-xs text-muted-foreground">
         {#if autoMode === 'off'}The source list stays open until you pick one yourself.
         {:else if autoMode === 'instant'}The best cached match for your preferred quality plays the moment the source list settles — no wait, no chance to cancel.
@@ -43,13 +49,17 @@
     {#if $autoSelectSource}
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Preferred quality</span>
-        <select data-focusable bind:value={$preferredQuality} class="rounded-md bg-input px-3 py-2 text-sm">
-          <option value="2160">4K</option>
-          <option value="1080">1080p</option>
-          <option value="720">720p</option>
-          <option value="480">480p</option>
-          <option value="any">Any (highest available)</option>
-        </select>
+        <SelectMenu
+          bind:value={$preferredQuality}
+          ariaLabel="Preferred quality"
+          options={[
+            { value: '2160', label: '4K' },
+            { value: '1080', label: '1080p' },
+            { value: '720', label: '720p' },
+            { value: '480', label: '480p' },
+            { value: 'any', label: 'Any (highest available)' },
+          ]}
+        />
       </label>
     {/if}
   </div>
@@ -98,15 +108,20 @@
     <label data-setting-key="default-discussion-source" class="flex flex-col gap-1">
       <span class="text-sm font-bold">Default source</span>
       <span class="text-xs text-muted-foreground">Which source the discussion panel opens on. An embeddable source (Disqus/forum) renders its embed inline.</span>
-      <select data-focusable bind:value={$defaultDiscussionPlatform} class="mt-1 rounded-md bg-input px-3 py-2 text-sm">
-        <option value="disqus">Disqus</option>
-        <option value="auto">Auto — all sources</option>
-        <option value="reddit">Reddit</option>
-        <option value="anilist">AniList</option>
-        <option value="mal">MyAnimeList</option>
-        <option value="youtube">YouTube</option>
-        <option value="animecommunity">Anime Community</option>
-      </select>
+      <SelectMenu
+        bind:value={$defaultDiscussionPlatform}
+        className="mt-1"
+        ariaLabel="Default discussion source"
+        options={[
+          { value: 'disqus', label: 'Disqus' },
+          { value: 'auto', label: 'Auto — all sources' },
+          { value: 'reddit', label: 'Reddit' },
+          { value: 'anilist', label: 'AniList' },
+          { value: 'mal', label: 'MyAnimeList' },
+          { value: 'youtube', label: 'YouTube' },
+          { value: 'animecommunity', label: 'Anime Community' },
+        ]}
+      />
     </label>
   </div>
 </div>

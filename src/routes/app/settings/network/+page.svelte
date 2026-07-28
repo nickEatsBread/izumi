@@ -7,6 +7,7 @@
   import { getSyncRelayConfig, setSyncRelay } from '$lib/sync/client'
   import { isAndroid } from '$lib/platform'
   import Toggle from '$lib/components/settings/Toggle.svelte'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   let applyingRelay = $state(false)
   let relayNotice = $state('')
@@ -67,10 +68,10 @@
           <span class="block text-sm font-bold">Upload limit</span>
           <span class="block text-xs text-muted-foreground">Auto caps seeding at 1 Mb/s.</span>
         </span>
-        <select data-focusable bind:value={$torrentUploadLimitMode} class="rounded-md bg-input px-3 py-2 text-sm">
-          <option value="auto">Auto (1 Mb/s)</option>
-          <option value="capacity">Use my upstream</option>
-        </select>
+        <SelectMenu bind:value={$torrentUploadLimitMode} className="min-w-44" ariaLabel="Upload limit" options={[
+          { value: 'auto', label: 'Auto (1 Mb/s)' },
+          { value: 'capacity', label: 'Use my upstream' },
+        ]} />
       </label>
 
       {#if $torrentUploadLimitMode === 'capacity'}

@@ -138,9 +138,9 @@ gl = "0.14"
 khronos-egl = { version = "6", features = ["dynamic"] }
 wayland-client = "0.31"
 wayland-egl = "0.32"
-# zwp_idle_inhibit_manager_v1 — keep the screen awake during playback. gamescope (Deck Game
-# mode) honors this Wayland protocol but ignores logind idle locks (systemd-inhibit), so this
-# is the only path that stops the Deck screen dimming mid-episode. Pairs with wayland-client 0.31.
+# zwp_idle_inhibit_manager_v1 keeps native-Wayland desktops awake during playback. Steam Deck
+# Game mode presents Izumi through XWayland, so wakelock.rs uses its X11 heartbeat there instead.
+# Pairs with wayland-client 0.31.
 wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
 # Steam Deck Game mode (gamescope): gamescope exposes NO wl_subcompositor (so the subsurface
 # path above can't run) but DOES expose zwlr_layer_shell_v1 + dmabuf. We render the video into
@@ -162,4 +162,4 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 # sandbox holes / --talk-name needed. `tokio` matches our async commands; `flatpak` gates the
 # UpdateMonitor API (the module is behind that feature). Uses the same zbus 5 as the rest of the
 # tree, so no duplicate D-Bus stack. Linux-only (portals don't exist elsewhere).
-ashpd = { version = "0.13", default-features = false, features = ["tokio", "flatpak"] }
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "flatpak", "inhibit"] }

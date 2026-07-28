@@ -16,6 +16,7 @@
   } from '$lib/downloads/rules'
   import Trash2 from 'lucide-svelte/icons/trash-2'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   // Desktop: native folder picker → an absolute filesystem path the reqwest downloader can write to.
   // (Android's picker returns a content:// tree URI, which the downloader can't use — so it's
@@ -79,13 +80,22 @@
       <p class="mt-1 text-xs text-muted-foreground">Used by both manual downloads and automatic new-episode downloads. A preference falls back to the best available match when no exact match exists.</p>
       <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label class="text-sm font-bold">Quality
-          <select data-focusable bind:value={$downloadQuality} class="mt-1 w-full rounded-md bg-input px-3 py-2 font-normal"><option value="2160">4K</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="any">Any</option></select>
+          <SelectMenu bind:value={$downloadQuality} className="mt-1 w-full font-normal" ariaLabel="Download quality" options={[
+            { value: '2160', label: '4K' }, { value: '1080', label: '1080p' },
+            { value: '720', label: '720p' }, { value: '480', label: '480p' },
+            { value: 'any', label: 'Any' },
+          ]} />
         </label>
         <label class="text-sm font-bold">Audio
-          <select data-focusable bind:value={$downloadAudio} class="mt-1 w-full rounded-md bg-input px-3 py-2 font-normal"><option value="sub">Sub</option><option value="dub">Dub</option><option value="any">Any</option></select>
+          <SelectMenu bind:value={$downloadAudio} className="mt-1 w-full font-normal" ariaLabel="Download audio" options={[
+            { value: 'sub', label: 'Sub' }, { value: 'dub', label: 'Dub' }, { value: 'any', label: 'Any' },
+          ]} />
         </label>
         <label class="text-sm font-bold">Codec
-          <select data-focusable bind:value={$downloadCodec} class="mt-1 w-full rounded-md bg-input px-3 py-2 font-normal"><option value="any">Any</option><option value="h264">H.264</option><option value="h265">H.265 / HEVC</option><option value="av1">AV1</option></select>
+          <SelectMenu bind:value={$downloadCodec} className="mt-1 w-full font-normal" ariaLabel="Download codec" options={[
+            { value: 'any', label: 'Any' }, { value: 'h264', label: 'H.264' },
+            { value: 'h265', label: 'H.265 / HEVC' }, { value: 'av1', label: 'AV1' },
+          ]} />
         </label>
       </div>
       <div class="mt-3"><Toggle label="Only download cached sources" desc="Require a source that is already available through the configured debrid service." value={$downloadCachedOnly} onToggle={() => ($downloadCachedOnly = !$downloadCachedOnly)} /></div>

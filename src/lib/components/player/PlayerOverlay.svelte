@@ -473,11 +473,13 @@
     return () => { el.style.overflow = prev }
   })
 
-  // Keep the screen awake ONLY while actively watching — inhibit the OS idle/screen-blank when
-  // playing, release it when paused or at EOF (so the Deck's battery-saver can dim then). The
-  // player closing (onDestroy below) releases it too, so browsing/paused screens dim normally.
-  // Gated by the user setting: toggling it off re-runs this effect → releases immediately.
-  $effect(() => { invoke('set_idle_inhibit', { on: $keepAwakeWhilePlaying && !paused && !eof }).catch(() => {}) })
+  // Keep the screen awake ONLY after a real video frame has appeared and playback is advancing.
+  // The first-frame gate avoids inhibiting during the initial/next-episode loading screen.
+  // Pause, EOF, player close, navigation away, or disabling the setting releases immediately.
+  $effect(() => {
+    const activelyWatching = $playing && firstFrame && !paused && !eof
+    invoke('set_idle_inhibit', { on: $keepAwakeWhilePlaying && activelyWatching }).catch(() => {})
+  })
 
   onDestroy(() => {
     // Close the discussion panel on every player-close path (← button, B, navigate-away) so the

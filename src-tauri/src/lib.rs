@@ -676,10 +676,10 @@ async fn ensure_artcnn(app: tauri::AppHandle, variant: String) -> Result<String,
 /// screen doesn't dim mid-episode. Called with `on=false` when paused, at EOF, or when the
 /// player closes (and gated by the user's "Keep screen awake while playing" setting), so
 /// battery-saver still kicks in then and on other screens. Per-OS backends live in
-/// [`player::wakelock`] — Wayland idle-inhibit on the Deck (gamescope ignores the old
-/// systemd-inhibit logind lock), SetThreadExecutionState on Windows, `caffeinate` on macOS,
-/// systemd-inhibit fallback on X11. The embedded libmpv render path has no window, so mpv's
-/// own `stop-screensaver` can't do this for us.
+/// [`player::wakelock`] — Wayland idle-inhibit on native Wayland, an X11 activity heartbeat
+/// plus portal/logind fallbacks in Steam Deck Game mode, SetThreadExecutionState on Windows,
+/// and `caffeinate` on macOS. The embedded libmpv paths cannot reliably inhibit SteamOS's
+/// own idle timer for us.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn set_idle_inhibit(app: AppHandle, on: bool) {
