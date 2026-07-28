@@ -1672,6 +1672,80 @@ fn player_screenshot(
 /// Encode a bounded segment of the current source as GIF or MP4 using the user's local ffmpeg.
 /// The frontend supplies timestamps from the live player; output always stays in Pictures/izumi.
 #[cfg(not(target_os = "android"))]
+fn capture_ffmpeg_command(
+    source: &str,
+    headers: &str,
+    output: &std::path::Path,
+    kind: &str,
+    start: f64,
+    duration: f64,
+    palette: bool,
+) -> tokio::process::Command {
+    let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
+    let mut command = tokio::process::Command::new(executable);
+    command.kill_on_drop(true).arg("-hide_banner").arg("-loglevel").arg("error").arg("-y");
+    if !headers.is_empty() {
+        command.arg("-headers").arg(headers.replace(',', "\r\n"));
+    }
+    command
+        .arg("-ss").arg(format!("{start:.3}"))
+        .arg("-i").arg(source)
+        // Output `-t` is only a safety net for GIFs. `palettegen` buffers until its INPUT reaches
+        // EOF, so the filter's `trim` below is what prevents it scanning the rest of an episode.
+        .arg("-t").arg(format!("{duration:.3}"));
+    if kind == "gif" {
+        if palette {
+            command.arg("-filter_complex").arg(format!(
+                "[0:v]trim=duration={duration:.3},setpts=PTS-STARTPTS,\
+                 fps=12,scale=640:-1:flags=lanczos,split[s0][s1];\
+                 [s0]palettegen=stats_mode=diff[p];\
+                 [s1][p]paletteuse=dither=sierra2_4a"
+            ));
+        } else {
+            // Odd source pixel formats can reject the two-branch palette graph. The direct GIF
+            // encoder is larger but more permissive, so use it as an automatic second attempt.
+            command.arg("-vf").arg(format!(
+                "trim=duration={duration:.3},setpts=PTS-STARTPTS,\
+                 fps=10,scale=480:-1:flags=lanczos,format=rgb8"
+            ));
+        }
+        command.arg("-an");
+    } else {
+        command
+            .arg("-c:v").arg("libx264")
+            .arg("-preset").arg("veryfast")
+            .arg("-crf").arg("20")
+            .arg("-c:a").arg("aac")
+            .arg("-movflags").arg("+faststart");
+    }
+    command.arg(output);
+    command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000 | 0x0000_4000);
+    command
+}
+
+#[cfg(not(target_os = "android"))]
+async fn run_capture_ffmpeg(
+    command: &mut tokio::process::Command,
+    timeout_secs: u64,
+) -> Result<std::process::Output, String> {
+    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), command.output())
+        .await
+        .map_err(|_| "capture-timeout".to_string())?
+        .map_err(|_| "ffmpeg-unavailable".to_string())
+}
+
+#[cfg(not(target_os = "android"))]
+fn capture_failure(output: &std::process::Output) -> String {
+    let error = String::from_utf8_lossy(&output.stderr);
+    format!(
+        "capture-failed: {}",
+        error.lines().rev().find(|line| !line.trim().is_empty()).unwrap_or("ffmpeg error")
+    )
+}
+
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn player_capture_segment(
     app: AppHandle,
@@ -1707,40 +1781,31 @@ async fn player_capture_segment(
         .as_millis();
     let output = dir.join(format!("izumi-{kind}-{stamp}.{}", if kind == "gif" { "gif" } else { "mp4" }));
 
-    let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
-    let mut command = tokio::process::Command::new(executable);
-    command.arg("-hide_banner").arg("-loglevel").arg("error").arg("-y");
-    if !headers.is_empty() {
-        command.arg("-headers").arg(headers.replace(',', "\r\n"));
-    }
-    command
-        .arg("-ss").arg(format!("{start:.3}"))
-        .arg("-i").arg(source)
-        .arg("-t").arg(format!("{duration:.3}"));
-    if kind == "gif" {
-        command
-            .arg("-vf")
-            .arg("fps=12,scale=640:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
-            .arg("-an");
-    } else {
-        command
-            .arg("-c:v").arg("libx264")
-            .arg("-preset").arg("veryfast")
-            .arg("-crf").arg("20")
-            .arg("-c:a").arg("aac")
-            .arg("-movflags").arg("+faststart");
-    }
-    command.arg(&output);
-    command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
-    #[cfg(windows)]
-    command.creation_flags(0x0800_0000 | 0x0000_4000);
-    let result = tokio::time::timeout(std::time::Duration::from_secs(180), command.output())
-        .await
-        .map_err(|_| "capture-timeout".to_string())?
-        .map_err(|_| "ffmpeg-unavailable".to_string())?;
+    let mut primary = capture_ffmpeg_command(&source, &headers, &output, &kind, start, duration, true);
+    let first = run_capture_ffmpeg(&mut primary, if kind == "gif" { 90 } else { 180 }).await;
+    let result = match first {
+        Ok(result) if result.status.success() => result,
+        Err(error) if error == "ffmpeg-unavailable" => return Err(error),
+        failed if kind == "gif" => {
+            let _ = std::fs::remove_file(&output);
+            eprintln!(
+                "[capture] palette GIF failed, retrying direct encoder: {}",
+                match &failed {
+                    Ok(output) => capture_failure(output),
+                    Err(error) => error.clone(),
+                }
+            );
+            let mut fallback = capture_ffmpeg_command(
+                &source, &headers, &output, &kind, start, duration, false,
+            );
+            run_capture_ffmpeg(&mut fallback, 90).await?
+        }
+        Ok(result) => return Err(capture_failure(&result)),
+        Err(error) => return Err(error),
+    };
     if !result.status.success() {
-        let error = String::from_utf8_lossy(&result.stderr);
-        return Err(format!("capture-failed: {}", error.lines().last().unwrap_or("ffmpeg error")));
+        let _ = std::fs::remove_file(&output);
+        return Err(capture_failure(&result));
     }
     Ok(output.to_string_lossy().into_owned())
 }
