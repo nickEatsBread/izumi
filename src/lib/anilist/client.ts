@@ -1,7 +1,7 @@
 import { Client, fetchExchange } from '@urql/core'
 import { authExchange } from '@urql/exchange-auth'
 import { cacheExchange } from '@urql/exchange-graphcache'
-import { invoke } from '@tauri-apps/api/core'
+import { invokeNativeHttp } from '$lib/net/http'
 // `bottleneck/light`, NOT `bottleneck`: the package declares only `main` (no browser/module/exports
 // field), so the bundler resolves the full Node build and drags RedisConnection, IORedisConnection,
 // RedisDatastore and an 18KB lua.json into a chunk that is modulepreloaded before first paint.
@@ -32,9 +32,10 @@ async function nativeFetch(input: RequestInfo | URL, init?: RequestInit): Promis
   const url = typeof input === 'string' ? input : input.toString()
   const body = typeof init?.body === 'string' ? init.body : ''
   const headers = headersToObject(init?.headers)
-  const r = await invoke<{ status: number; headers: Record<string, string>; body: string }>(
+  const r = await invokeNativeHttp<{ status: number; headers: Record<string, string>; body: string }>(
     'http_post',
     { url, body, headers },
+    { signal: init?.signal ?? undefined },
   )
   return new Response(r.body, { status: r.status, headers: r.headers })
 }

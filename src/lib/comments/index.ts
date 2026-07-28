@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core'
+import { invokeNativeHttp } from '$lib/net/http'
 import { get } from 'svelte/store'
 import {
   createDiscussionClient, type DiscussionClient, type HttpAdapter,
@@ -18,7 +18,7 @@ export { commentsBackendUrl, defaultDiscussionPlatform, discussionExpanded } fro
 // Referer / Authorization — un-stripped, unlike the webview fetch) and the AniList token for authed
 // reads/posts. Reddit/AniList/MAL/YouTube need no backend; the forum comes from the user-set mapper URL.
 const http: HttpAdapter = async (url, init) => {
-  const r = await invoke<{ status: number; headers: Record<string, string>; body: string }>('ext_fetch', {
+  const r = await invokeNativeHttp<{ status: number; headers: Record<string, string>; body: string }>('ext_fetch', {
     url, method: init?.method ?? 'GET', headers: init?.headers, body: init?.body,
   })
   return {

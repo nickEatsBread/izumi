@@ -23,6 +23,8 @@ describe('malHttpFetch', () => {
       method: 'GET',
       headers: {},
       body: undefined,
+      requestId: expect.any(String),
+      timeoutMs: 20_000,
     })
     expect(response.ok).toBe(true)
     expect(await response.json()).toEqual({ data: [] })

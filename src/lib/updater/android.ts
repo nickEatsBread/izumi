@@ -8,6 +8,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getVersion } from '@tauri-apps/api/app'
 import { writable } from 'svelte/store'
 import { hasEmbeddedPlayer } from '$lib/player/android-mpv'
+import { phttp } from '$lib/net/http'
 
 const REPO = 'nickEatsBread/izumi'
 const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`
@@ -32,12 +33,9 @@ export function cmpVersion(a: string, b: string): number {
 export async function checkAndroidUpdate(): Promise<UpdateInfo | null> {
   try {
     const current = await getVersion()
-    const res = await invoke<{ status: number; body: string }>('http_get', {
-      url: LATEST_API,
-      headers: { Accept: 'application/vnd.github+json' },
-    })
+    const res = await phttp(LATEST_API, { headers: { Accept: 'application/vnd.github+json' } })
     if (res.status !== 200) return null
-    const rel = JSON.parse(res.body) as {
+    const rel = await res.json() as {
       tag_name?: string
       body?: string
       assets?: { name?: string; browser_download_url?: string }[]

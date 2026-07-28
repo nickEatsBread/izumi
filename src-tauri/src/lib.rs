@@ -4,6 +4,7 @@ mod download;
 mod direct_torrent;
 mod direct_torrent_select;
 mod extension_package;
+mod http_lifecycle;
 #[cfg(not(target_os = "android"))]
 mod hls_proxy;
 #[cfg(not(target_os = "android"))]
@@ -99,6 +100,12 @@ async fn player_embed(
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
     let url = hls_proxy::prepare_playback_url(&url, headers.as_ref()).await?;
+    let mut subtitles = subtitles;
+    if let Some(tracks) = subtitles.as_mut() {
+        for track in tracks {
+            track.url = hls_proxy::prepare_sidecar_url(&track.url, headers.as_ref()).await?;
+        }
+    }
     let main = app.get_webview_window("main").ok_or("no main window")?;
     #[cfg(windows)]
     let (main_raw, wid) = {
@@ -766,22 +773,52 @@ pub struct HttpReply {
     body: String,
 }
 
+const MIB: usize = 1024 * 1024;
+const HTTP_GET_BODY_LIMIT: usize = 16 * MIB;
+const HTTP_POST_BODY_LIMIT: usize = 4 * MIB;
+const EXT_FETCH_BODY_LIMIT: usize = 16 * MIB;
+const HTTP_GET_BODY_HARD_MAX: usize = 32 * MIB;
+const HTTP_POST_BODY_HARD_MAX: usize = 16 * MIB;
+const EXT_FETCH_BODY_HARD_MAX: usize = 32 * MIB;
+
+/// Cancel a materialized native HTTP request by the opaque ID supplied with the original command.
+/// False means the request already completed or was never registered.
+#[tauri::command]
+fn http_cancel(request_id: String) -> bool {
+    http_lifecycle::cancel(&request_id)
+}
+
 /// Pooled HTTP GET — reuses the shared client so repeated resolve-path fetches skip
 /// the per-request TLS handshake that `tauri-plugin-http` pays. Follows redirects.
 /// Not scope-restricted (it's our own trusted frontend calling it). NEVER logs the
 /// url (addon URLs can embed a debrid secret).
 #[tauri::command]
-async fn http_get(url: String, headers: Option<std::collections::HashMap<String, String>>) -> Result<HttpReply, String> {
-    let mut req = http_client().get(&url);
-    if let Some(h) = headers {
-        for (k, v) in h {
-            req = req.header(k, v);
-        }
-    }
-    let resp = req.send().await.map_err(|_| "request failed".to_string())?;
-    let status = resp.status().as_u16();
-    let body = resp.text().await.map_err(|_| "read failed".to_string())?;
-    Ok(HttpReply { status, body })
+async fn http_get(
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+    request_id: Option<String>,
+    timeout_ms: Option<u64>,
+    max_bytes: Option<u64>,
+) -> Result<HttpReply, String> {
+    let limit = http_lifecycle::body_limit(max_bytes, HTTP_GET_BODY_LIMIT, HTTP_GET_BODY_HARD_MAX);
+    http_lifecycle::run(
+        request_id,
+        http_lifecycle::timeout_ms(timeout_ms, 30_000),
+        http_lifecycle::RequestClass::Metadata,
+        async move {
+            let mut req = http_client().get(&url);
+            if let Some(h) = headers {
+                for (k, v) in h {
+                    req = req.header(k, v);
+                }
+            }
+            let resp = req.send().await.map_err(|_| "request failed".to_string())?;
+            let status = resp.status().as_u16();
+            let body = http_lifecycle::read_limited_text(resp, limit).await?;
+            Ok(HttpReply { status, body })
+        },
+    )
+    .await
 }
 
 #[derive(serde::Serialize)]
@@ -814,23 +851,35 @@ async fn http_post(
     url: String,
     body: String,
     headers: Option<std::collections::HashMap<String, String>>,
+    request_id: Option<String>,
+    timeout_ms: Option<u64>,
+    max_bytes: Option<u64>,
 ) -> Result<HttpFullReply, String> {
-    let mut req = http_client().post(&url).body(body);
-    if let Some(h) = headers {
-        for (k, v) in h {
-            req = req.header(k, v);
-        }
-    }
-    let resp = req.send().await.map_err(|_| "request failed".to_string())?;
-    let status = resp.status().as_u16();
-    let mut hdrs = std::collections::HashMap::new();
-    for (k, v) in resp.headers() {
-        if let Ok(vs) = v.to_str() {
-            hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
-        }
-    }
-    let body = resp.text().await.map_err(|_| "read failed".to_string())?;
-    Ok(HttpFullReply { status, headers: hdrs, body })
+    let limit = http_lifecycle::body_limit(max_bytes, HTTP_POST_BODY_LIMIT, HTTP_POST_BODY_HARD_MAX);
+    http_lifecycle::run(
+        request_id,
+        http_lifecycle::timeout_ms(timeout_ms, 30_000),
+        http_lifecycle::RequestClass::Metadata,
+        async move {
+            let mut req = http_client().post(&url).body(body);
+            if let Some(h) = headers {
+                for (k, v) in h {
+                    req = req.header(k, v);
+                }
+            }
+            let resp = req.send().await.map_err(|_| "request failed".to_string())?;
+            let status = resp.status().as_u16();
+            let mut hdrs = std::collections::HashMap::new();
+            for (k, v) in resp.headers() {
+                if let Ok(vs) = v.to_str() {
+                    hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
+                }
+            }
+            let body = http_lifecycle::read_limited_text(resp, limit).await?;
+            Ok(HttpFullReply { status, headers: hdrs, body })
+        },
+    )
+    .await
 }
 
 /// Method-agnostic pooled fetch for source-extension HTTP. The webview `fetch`
@@ -847,7 +896,16 @@ async fn ext_fetch(
     method: Option<String>,
     headers: Option<std::collections::HashMap<String, String>>,
     body: Option<String>,
+    request_id: Option<String>,
+    timeout_ms: Option<u64>,
+    max_bytes: Option<u64>,
 ) -> Result<ExtFetchReply, String> {
+    let limit = http_lifecycle::body_limit(max_bytes, EXT_FETCH_BODY_LIMIT, EXT_FETCH_BODY_HARD_MAX);
+    http_lifecycle::run(
+        request_id,
+        http_lifecycle::timeout_ms(timeout_ms, 30_000),
+        http_lifecycle::RequestClass::Extension,
+        async move {
     let verb = method.unwrap_or_else(|| "GET".into()).to_ascii_uppercase();
     let verb = reqwest::Method::from_bytes(verb.as_bytes()).map_err(|_| "bad method".to_string())?;
     let mut req = ext_http_client().request(verb, &url);
@@ -875,8 +933,11 @@ async fn ext_fetch(
             hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
         }
     }
-    let body = resp.text().await.map_err(|_| "read failed".to_string())?;
+    let body = http_lifecycle::read_limited_text(resp, limit).await?;
     Ok(ExtFetchReply { status, url: final_url, headers: hdrs, set_cookie, body })
+        },
+    )
+    .await
 }
 
 /// izumi's embedded OpenSubtitles consumer Api-Key — makes *search* keyless for users (download
@@ -2752,6 +2813,7 @@ pub fn run() {
             http_get,
             http_post,
             ext_fetch,
+            http_cancel,
             extension_package::extension_install,
             extension_package::extension_install_url,
             extension_package::extension_list,
@@ -2821,6 +2883,7 @@ pub fn run() {
         http_get,
         http_post,
         ext_fetch,
+        http_cancel,
         extension_package::extension_install,
         extension_package::extension_install_url,
         extension_package::extension_list,
