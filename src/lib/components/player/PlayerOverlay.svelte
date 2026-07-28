@@ -16,7 +16,7 @@
     autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
-    subtitleAutoSync,
+    subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings,
   } from '$lib/settings/ui'
   import { get } from 'svelte/store'
@@ -137,7 +137,7 @@
     if (kind === 'gif') {
       if (get(gifRecordingStart) == null) {
         try {
-          await invoke('player_gif_start')
+          await invoke('player_gif_start', { includeSubtitles: $gifIncludeSubtitles })
           gifRecordingStart.set(pos)
           playerNotice.set('GIF recording started')
         } catch { playerNotice.set('GIF recording failed to start') }
