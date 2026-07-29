@@ -23,4 +23,8 @@ describe('SettingsNav', () => {
     expect(ext).toBeGreaterThan(subs)
     expect(dl).toBeGreaterThan(ext)
   })
+
+  it('keeps the Source Store inside Sources instead of as a separate navigation item', () => {
+    expect(src).not.toContain("{ title: 'Source Store', href: '/app/settings/store'")
+  })
 })

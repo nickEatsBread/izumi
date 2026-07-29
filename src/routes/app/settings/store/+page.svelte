@@ -1,13 +1,14 @@
 <script lang="ts">
-  import { openUrl } from '@tauri-apps/plugin-opener'
   import {
     listCommunityAddons,
     type CommunityAddon,
   } from '$lib/stremio/community-store'
-  import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
+  import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import { fetchManifest } from '$lib/stremio/manifest'
+  import { findAddonConfigureUrl } from '$lib/stremio/configure'
   import { resolveAddonLogo } from '$lib/stremio/addon-logo'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
+  import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
   import {
     OFFICIAL_ANIME_CATALOG,
     fetchExtensionInfo,
@@ -21,7 +22,6 @@
   import Search from 'lucide-svelte/icons/search'
   import Star from 'lucide-svelte/icons/star'
   import Puzzle from 'lucide-svelte/icons/puzzle'
-  import ExternalLink from 'lucide-svelte/icons/external-link'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
   import Check from 'lucide-svelte/icons/check'
 
@@ -36,6 +36,13 @@
   let error = $state('')
   let busyId = $state('')
   let notice = $state('')
+  let installedAddonBases = $state<Record<string, string>>({})
+  let configuring = $state<{
+    name: string
+    id: string
+    configureUrl: string
+    currentBase?: string
+  } | null>(null)
 
   const configuredBases = $derived(new Set($addonUrls.map(normalizeBase)))
   const packageById = $derived(new Map(installedPackages.map((item) => [item.id, item])))
@@ -99,6 +106,20 @@
     void loadExtensions()
     void refreshInstalled()
   })
+  // A configured add-on has a credential-bearing URL that differs from the public directory URL.
+  // Match installed entries by manifest id so configuring one does not make its store card look
+  // uninstalled (or cause a second, unconfigured copy to be added).
+  $effect(() => {
+    const bases = [...$addonUrls]
+    let stale = false
+    void Promise.all(bases.map(async (base) => [base, await fetchManifest(base)] as const)).then((entries) => {
+      if (stale) return
+      installedAddonBases = Object.fromEntries(
+        entries.flatMap(([base, manifest]) => manifest?.id ? [[manifest.id, base]] : []),
+      )
+    })
+    return () => { stale = true }
+  })
 
   function addonBase(addon: CommunityAddon) {
     return normalizeBase(addon.manifestUrl)
@@ -115,6 +136,29 @@
     if (!$addonUrls.includes(base)) $addonUrls = [...$addonUrls, base]
     $disabledSources = $disabledSources.filter((item) => item !== base)
     notice = `${addon.manifest.name} installed and enabled.`
+  }
+  function configureAddon(addon: CommunityAddon, currentBase?: string) {
+    if (!addon.configureUrl) return
+    beginAddonConfiguration(addon.manifest.name, addon.manifest.id, addon.configureUrl, currentBase)
+  }
+  function beginAddonConfiguration(name: string, id: string, configureUrl: string, currentBase?: string) {
+    error = ''
+    notice = ''
+    configuring = {
+      name,
+      id,
+      configureUrl,
+      currentBase,
+    }
+  }
+  function saveConfiguredAddon(base: string) {
+    if (!configuring) return
+    const previous = configuring.currentBase
+    $addonUrls = replaceAddonBase($addonUrls, previous, base)
+    $disabledSources = $disabledSources.filter((item) =>
+      item !== previous && normalizeBase(item) !== normalizeBase(base))
+    notice = `${configuring.name} configured, installed, and enabled.`
+    configuring = null
   }
   function toggleAddon(base: string) {
     $disabledSources = $disabledSources.includes(base)
@@ -204,8 +248,9 @@
       <div class="grid max-w-5xl gap-3 sm:grid-cols-2">
         {#each addons as addon (addon.uuid)}
           {@const base = addonBase(addon)}
-          {@const installed = configuredBases.has(base)}
-          {@const off = $disabledSources.includes(base)}
+          {@const installedBase = installedAddonBases[addon.manifest.id] ?? (configuredBases.has(base) ? base : '')}
+          {@const installed = !!installedBase}
+          {@const off = installed && $disabledSources.includes(installedBase)}
           <article class="flex gap-3 rounded-xl border border-border bg-secondary/25 p-4" class:opacity-60={installed && off}>
             <AddonLogo
               logo={resolveAddonLogo(addon.manifest.logo, base)}
@@ -221,15 +266,17 @@
               <p class="mt-1 line-clamp-2 text-xs text-muted-foreground">{addon.manifest.description || 'Community Stremio addon'}</p>
               <div class="mt-3 flex flex-wrap gap-2">
                 {#if installed}
-                  <button data-focusable onclick={() => toggleAddon(base)}
+                  <button data-focusable onclick={() => toggleAddon(installedBase)}
                           class="rounded-md px-3 py-1.5 text-xs font-black {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
-                  <button data-focusable onclick={() => removeAddon(base)} class="rounded-md px-3 py-1.5 text-xs font-bold text-destructive">Remove</button>
-                {:else}
+                  <button data-focusable onclick={() => removeAddon(installedBase)} class="rounded-md px-3 py-1.5 text-xs font-bold text-destructive">Remove</button>
+                {:else if !addon.configureUrl}
                   <button data-focusable onclick={() => addAddon(addon)} class="rounded-md bg-primary px-3 py-1.5 text-xs font-black text-primary-foreground">Install</button>
                 {/if}
                 {#if addon.configureUrl}
-                  <button data-focusable onclick={() => openUrl(addon.configureUrl!)}
-                          class="flex items-center gap-1 rounded-md bg-secondary px-3 py-1.5 text-xs font-bold">Configure <ExternalLink size={12} /></button>
+                  <button data-focusable onclick={() => configureAddon(addon, installedBase || undefined)}
+                          class="flex items-center gap-1 rounded-md {installed ? 'bg-secondary' : 'bg-primary text-primary-foreground'} px-3 py-1.5 text-xs font-bold">
+                    {installed ? 'Reconfigure' : 'Configure & install'}
+                  </button>
                 {/if}
               </div>
             </div>
@@ -292,6 +339,14 @@
                   size={36}
                 />
                 <span class="min-w-0 flex-1"><span class="block truncate text-sm font-black">{manifest?.name ?? addonLocation(base)}</span><span class="block truncate text-xs text-muted-foreground">{addonLocation(base)}</span></span>
+                {#if manifest}
+                  {#await findAddonConfigureUrl(base, manifest, addons) then configureUrl}
+                    {#if configureUrl}
+                      <button data-focusable onclick={() => beginAddonConfiguration(manifest.name, manifest.id, configureUrl, base)}
+                              class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold">Configure</button>
+                    {/if}
+                  {/await}
+                {/if}
               {/await}
               <button data-focusable onclick={() => toggleAddon(base)}
                       class="rounded-md px-3 py-1.5 text-xs font-black {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Disabled' : 'Enabled'}</button>
@@ -325,3 +380,13 @@
     </div>
   {/if}
 </div>
+
+{#if configuring}
+  <AddonConfigurator
+    name={configuring.name}
+    expectedId={configuring.id}
+    configureUrl={configuring.configureUrl}
+    onCancel={() => (configuring = null)}
+    onConfigured={saveConfiguredAddon}
+  />
+{/if}
