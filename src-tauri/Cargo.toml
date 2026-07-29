@@ -45,6 +45,7 @@ tauri-plugin-os = "2"
 tauri-plugin-extplayer = { path = "tauri-plugin-extplayer" }
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
+regex = "1"
 # rustls (not native-tls) so the whole HTTP stack cross-compiles for Android — native-tls needs
 # OpenSSL, which has no Android target here.
 tauri-plugin-http = { version = "2.5.9", default-features = false, features = ["rustls-tls"] }

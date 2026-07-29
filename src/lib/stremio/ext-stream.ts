@@ -21,6 +21,7 @@ export function extToStream(r: TorrentResult, extName: string): Stream {
     __magnet: r.link?.startsWith('magnet:') ? r.link : undefined,
     // Source-declared confidence: 'high' = id-verified by the source → refine trusts it.
     __accuracy: r.accuracy,
+    __batch: r.type === 'batch',
     // Raw count for the dedupe pass: lets a live-seeded copy of the same hash win over an
     // indexer that reports 0/unknown (the title string above is already baked by then).
     __seeders: r.seeders,

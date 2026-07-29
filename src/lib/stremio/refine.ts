@@ -2,7 +2,7 @@ import type { Media } from '$lib/anilist/types'
 import { title, totalEpisodes } from '$lib/anilist/media'
 import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wrongFranchiseSeason } from './relevance'
 import { dedupeStreams, dedupeBy } from './dedupe'
-import type { Stream } from './parse'
+import { describe, type Stream } from './parse'
 
 // Season/title refinement shared by addon + extension streams. Pure (no Tauri/stores beyond the
 // title-language preference), so it's unit-testable.
@@ -17,6 +17,7 @@ export type RejectReason =
   | 'title-mismatch'
   | 'other-production'
   | 'episode-extra'
+  | 'implausibly-small'
   | 'standalone-movie'
   | 'wrong-franchise-season'
 
@@ -28,6 +29,7 @@ export const rejectLabel: Record<RejectReason, string> = {
   'title-mismatch': 'different title',
   'other-production': 'different production',
   'episode-extra': 'opening/ending or extra',
+  'implausibly-small': 'too small for a full episode',
   'standalone-movie': 'movie, not an episode',
   'wrong-franchise-season': 'different season',
 }
@@ -40,7 +42,14 @@ export const rejectLabel: Record<RejectReason, string> = {
 // dedupeBy carries that tiebreak. Batch packs are addon rows (not torrent-ext), so they collapse
 // first-wins exactly as before.
 export function collapseBatches(streams: Stream[]): Stream[] {
-  return dedupeBy(streams, (s) => s.infoHash ?? '')
+  const rowsPerHash = new Map<string, number>()
+  for (const stream of streams) {
+    if (stream.infoHash) rowsPerHash.set(stream.infoHash, (rowsPerHash.get(stream.infoHash) ?? 0) + 1)
+  }
+  return dedupeBy(streams, (s) => s.infoHash ?? '').map((stream) =>
+    stream.infoHash && (rowsPerHash.get(stream.infoHash) ?? 0) > 1
+      ? { ...stream, __batch: true }
+      : stream)
 }
 
 const rowKey = (s: Stream) => s.url ?? s.infoHash ?? s.behaviorHints?.filename ?? s.name ?? ''
@@ -58,6 +67,7 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
   // marker) is a different production sharing the id — e.g. the 1995 GitS film / GitS 2: Innocence
   // under the 2026 series. Drop those; keep every S01E01 + season pack. Not applied to movies.
   const isSeries = media.format !== 'MOVIE' && totalEps > 1
+  const expectedSeconds = (media.duration ?? 0) * 60
   // Direct streams and id-VERIFIED extension results skip the release-NAME heuristics: a source
   // that matched this exact episode's production id (accuracy 'high') outranks any title parse —
   // e.g. a CJK-titled release carries zero romaji/english tokens and relevant() would drop it.
@@ -65,6 +75,14 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
 
   // Ordered, so a row is attributed to the FIRST rule that objects to it.
   const why = (s: Stream): RejectReason | null => {
+    // A source can be title-correct yet point at a mini-episode. Compare its declared bytes with
+    // AniList's expected runtime using an extremely conservative 16 KiB/s floor: this rejects a
+    // 7 MB, two-minute short masquerading as a 24-minute episode without touching even tiny
+    // low-resolution encodes. ID verification cannot make an impossibly small file full-length.
+    const size = describe(s).sizeBytes
+    if (isSeries && expectedSeconds >= 10 * 60 && size != null && size < expectedSeconds * 16 * 1024) {
+      return 'implausibly-small'
+    }
     if (!relevant(s, wantedTitles)) return 'title-mismatch'
     if (likelyOtherProduction(s, animeYear, absoluteNumbered)) return 'other-production'
     if (isEpisodeExtra(s)) return 'episode-extra'
@@ -92,6 +110,11 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
   // Safety net, matching the season verifier's: five heuristics firing at once must never be the
   // reason the user sees nothing. Hand back the unfiltered pool and claim no rejections, because
   // showing everything and saying "12 filtered" at the same time would be a lie.
-  if (!kept.length) return { kept: dedupeStreams(pool), rejected: [] }
+  // Never restore a known extra or physically implausible file just because every source was bad.
+  // The safety net remains for fuzzy title/season heuristics, where uncertainty is real.
+  if (!kept.length && !rejected.some(({ reason }) =>
+    reason === 'episode-extra' || reason === 'implausibly-small')) {
+    return { kept: dedupeStreams(pool), rejected: [] }
+  }
   return { kept: dedupeStreams(kept), rejected }
 }

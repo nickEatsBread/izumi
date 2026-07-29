@@ -44,6 +44,9 @@ export interface Stream {
   // must not second-guess it — foreign-language release names carry no romaji/english tokens
   // and would otherwise be dropped as irrelevant.
   __accuracy?: 'high' | 'medium' | 'low'
+  // Structural season-pack signal supplied by an extension's batch() method or provider
+  // metadata. Some legitimate packs have no "batch", "complete", range, or S01 in their name.
+  __batch?: boolean
   // Direct streaming source (Seanime onlinestream-provider): plays its `url` straight in libmpv
   // with no debrid. __headers → mpv http-header-fields; __subtitles → external sub tracks.
   __stream?: boolean

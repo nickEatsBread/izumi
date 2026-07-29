@@ -1089,6 +1089,10 @@ pub(crate) fn spawn_event_loop(
                 Some(Ok(Event::FileLoaded)) => {
                     let loaded_url: Result<String, _> = client.get_property("path");
                     if let Ok(loaded_url) = loaded_url {
+                        // Include the path so the frontend can associate this event with the exact
+                        // direct-torrent playback. Generic progress events from the previous file
+                        // may still be queued after loadfile; FileLoaded + URL cannot be mistaken.
+                        let _ = app.emit("player-file-loaded", loaded_url.clone());
                         if let Some(tracks) =
                             take_pending_external_tracks(&pending_external_tracks, &loaded_url)
                         {

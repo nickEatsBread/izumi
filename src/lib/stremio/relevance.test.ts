@@ -45,6 +45,12 @@ describe('isStandaloneMovie (year-less film sharing a series id — the Ghost in
     expect(isStandaloneMovie(s('[Judas] One Piece (Complete Batch) [1080p]'))).toBe(false)
     expect(isStandaloneMovie(s('Attack on Titan S01 1080p BluRay'))).toBe(false)
   })
+  it('keeps a markerless pack identified structurally by an extension', () => {
+    expect(isStandaloneMovie({
+      ...s('[smol] Masamune-kun no Revenge (BD 1080p HEVC Opus)'),
+      __batch: true,
+    })).toBe(false)
+  })
 })
 
 describe('relevant', () => {

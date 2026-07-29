@@ -12,7 +12,11 @@ import type { RankOptions } from './addon'
 /** Ranking inputs that live in settings rather than on a stream. The non-interactive paths must
  *  use the same ones the picker does, or "best" means two different things depending on whether a
  *  human was looking. */
-const rankOpts = (): RankOptions => ({ audioLang: get(preferredAudioLang) })
+const directP2pEnabled = () => get(torrentPlaybackMode) === 'direct' || !get(debridKey)
+const rankOpts = (): RankOptions => ({
+  audioLang: get(preferredAudioLang),
+  directP2p: directP2pEnabled(),
+})
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
@@ -30,7 +34,13 @@ import { savePosition, getPosition, clearPosition, watched, positions, progressK
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
 import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery } from '$lib/player/session'
-import { recoveryStreamKey } from '$lib/player/recovery-watchdog'
+import {
+  DIRECT_TORRENT_HARD_START_TIMEOUT_MS,
+  DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS,
+  DIRECT_TORRENT_RECOVERY_TIMEOUT_MS,
+  implausiblyShortEpisode,
+  recoveryStreamKey,
+} from '$lib/player/recovery-watchdog'
 import { markDead } from './dead-sources'
 import { shareableSource } from '$lib/watch-together/source'
 import {
@@ -44,11 +54,18 @@ import { applyContinuationState } from './continuation'
 import { title, banner, cover, airedCount, totalEpisodes } from '$lib/anilist/media'
 import { isAndroid } from '$lib/platform'
 import { offlineMode } from '$lib/stores/offline'
+import {
+  beginPlaybackOwner,
+  currentPlaybackOwner,
+  invalidatePlaybackOwner,
+  ownsPlayback,
+  type PlaybackOwner,
+} from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
 import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
 import {
-  activateDirectTorrentPlayback, currentDirectTorrentPlaybackId,
+  activateDirectTorrentPlayback, currentDirectTorrentPlaybackId, directTorrentHealth,
   reportDirectTorrentBuffer, stopDirectTorrentPlayback,
 } from '$lib/player/direct-torrent'
 import { torrentioResolverInfoHash } from './resolver-url'
@@ -65,6 +82,9 @@ export type PlayStreamOptions = {
   autoplay?: boolean
   /** Override history resume when replacing a failed source in-place. */
   startSeconds?: number
+  /** Internal: a watchdog replacement may retain ownership, but can never claim it after a newer
+   * episode/source request has taken over. */
+  recoveryOwner?: PlaybackOwner
 }
 
 type DirectTorrentPlayback = {
@@ -227,8 +247,15 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
   let marked = false
   let lastSave = 0
   let warmed = false
+  let wrongDurationHandled = false
   pushListen<[number, number]>('player-progress', (e) => {
     const [pos, dur] = e.payload
+    if (!wrongDurationHandled && implausiblyShortEpisode(media.duration, dur)) {
+      wrongDurationHandled = true
+      clearPosition(media.id, episode)
+      void recoverPlaybackSource(0, true, 'Wrong short video detected — trying a full episode…')
+      return
+    }
     // Throttle position writes to ~once every 5s to avoid store churn.
     if (Date.now() - lastSave > 5000) {
       savePosition(media.id, episode, pos, dur)
@@ -314,6 +341,7 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
   let marked = false
   let lastSave = 0
   let ended = false
+  let wrongDurationHandled = false
   const onEnded = async () => {
     clearPosition(media.id, episode)
     if (!get(autoplayNext) && !get(bingePreload)) return
@@ -330,6 +358,12 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
   const unsub = mpvState.subscribe((s) => {
     const { pos, dur, eof, cacheEnd } = s
     reportDirectTorrentBuffer(pos, cacheEnd)
+    if (!wrongDurationHandled && implausiblyShortEpisode(media.duration, dur)) {
+      wrongDurationHandled = true
+      clearPosition(media.id, episode)
+      void recoverPlaybackSource(0, !s.paused, 'Wrong short video detected — trying a full episode…')
+      return
+    }
     if (dur > 0 && Date.now() - lastSave > 5000) {
       savePosition(media.id, episode, pos, dur)
       lastSave = Date.now()
@@ -662,6 +696,8 @@ export async function playEpisode(
   onState: (s: PlayState) => void,
   options: PlayEpisodeOptions = {},
 ) {
+  // Cancel a watchdog replacement immediately, before this new episode has even resolved a source.
+  invalidatePlaybackOwner()
   const cont = options.continuation
   const autoplay = options.autoplay ?? true
   // Supersede any resolve still running from a previous click (its fetches keep going in the
@@ -1136,20 +1172,24 @@ async function resolveAndPlayBest(
   }
   // Seamless continuity: if the addons already have a CACHED source from the same release
   // we were watching, play it straight away — no picker between back-to-back episodes.
-  try {
-    const { streams, want } = await resolveStreams(media, episode)
-    if (generation !== advanceGeneration) return onState({ status: 'idle' })
-    const same = pickSameRelease(media, streams, want)
-    if (same) return await playStream(media, episode, same, onState, { autoplay })
+  // Direct P2P deliberately skips this shortcut: preserving a group must not bypass the torrent
+  // health/size ranking and commit Next to another multi-gigabyte release.
+  if (!directP2pEnabled()) {
+    try {
+      const { streams, want } = await resolveStreams(media, episode)
+      if (generation !== advanceGeneration) return onState({ status: 'idle' })
+      const same = pickSameRelease(media, streams, want)
+      if (same) return await playStream(media, episode, same, onState, { autoplay })
+    }
+    catch { /* no addons / nothing yet — the full picker below still queries extensions */ }
   }
-  catch { /* no addons / nothing yet — the full picker below still queries extensions */ }
   if (generation !== advanceGeneration) return onState({ status: 'idle' })
   // No cached same-release: open the full source picker (addons + extensions) for this
   // episode, carrying the continuity hint so a same-release source auto-continues when it
   // lands (extension/fansub content), and otherwise the user picks. This replaces the old
   // dead-end "no cached source" toast — the next episode always goes somewhere.
   return await playEpisode(media, episode, onState, {
-    continuation: continueHint(media),
+    continuation: directP2pEnabled() ? undefined : continueHint(media),
     autoplay,
   })
 }
@@ -1163,6 +1203,8 @@ export async function playStream(
   report: (s: PlayState) => void,
   options: PlayStreamOptions = {},
 ) {
+  const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
+  if (!playbackOwner) return
   const autoplay = options.autoplay ?? true
   const recoveryOriginal = stream
   playbackRecovery.update((current) => {
@@ -1228,6 +1270,7 @@ export async function playStream(
     const provider = get(debridProvider)
     const key = get(debridKey)
     const torrent = stream.__magnet ?? stream.infoHash
+    const want = await episodeWant(media, episode, stream)
     const direct = get(torrentPlaybackMode) === 'direct' || !key
     if (direct) {
       onState({ status: 'resolving' })
@@ -1235,6 +1278,9 @@ export async function playStream(
         const playback = await invoke<DirectTorrentPlayback>('torrent_playback_url', {
           magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${torrent}`,
           preferredFilename: stream.behaviorHints?.filename,
+          episode: want?.episode,
+          absoluteEpisode: want?.abs,
+          season: want?.season,
           downloadLimitMbps: Math.max(0, Number(get(torrentDownloadLimitMbps)) || 0),
           upstreamCapacityMbps: get(torrentUploadLimitMode) === 'capacity'
             ? Math.max(0.1, Number(get(torrentUpstreamCapacityMbps)) || 0.1)
@@ -1242,7 +1288,7 @@ export async function playStream(
         })
         directPlaybackId = playback.playbackId
         directTorrentSubtitles = playback.subtitles
-        activateDirectTorrentPlayback(playback.playbackId)
+        activateDirectTorrentPlayback(playback.playbackId, playback.url)
         stream = {
           ...stream,
           url: playback.url,
@@ -1297,7 +1343,6 @@ export async function playStream(
       // hidden or closed, so the branch fired unconditionally for them and took over before a
       // single probe had been made. The connecting screen is app-wide now and holds every path.
       try {
-        const want = await episodeWant(media, episode, stream)
         const url = await resolveHash(provider, key, torrent, {
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
@@ -1521,22 +1566,75 @@ export async function playStream(
   }
 }
 
+/** `player_embed` resolving means mpv accepted the URL, not that the replacement produced video.
+ * Direct torrents can sit there downloading indefinitely, so recovery must wait for a real
+ * duration/progress event before declaring a candidate healthy. */
+async function waitForDesktopFirstFrame(timeoutMs: number): Promise<boolean> {
+  if (get(isAndroid) || get(enableExternalPlayer)) return true
+  return await new Promise<boolean>(async (resolve) => {
+    let settled = false
+    let unlisten: (() => void) | null = null
+    let lastDownloadedBytes = 0
+    let lastAdvancedAt = Date.now()
+    const startedAt = Date.now()
+    const finish = (ready: boolean) => {
+      if (settled) return
+      settled = true
+      clearInterval(timer)
+      unlisten?.()
+      resolve(ready)
+    }
+    const timer = setInterval(() => {
+      void directTorrentHealth().then((health) => {
+        if (settled) return
+        const now = Date.now()
+        if (health && health.downloadedBytes > lastDownloadedBytes) {
+          lastDownloadedBytes = health.downloadedBytes
+          lastAdvancedAt = now
+        }
+        if (now - startedAt >= DIRECT_TORRENT_HARD_START_TIMEOUT_MS
+          || (now - startedAt >= timeoutMs
+            && now - lastAdvancedAt >= DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS)) {
+          finish(false)
+        }
+      })
+    }, 1_000)
+    try {
+      const off = await listen<[number, number]>('player-progress', (event) => {
+        if (event.payload[1] > 0) finish(true)
+      })
+      if (settled) return off()
+      unlisten = off
+    } catch {
+      finish(false)
+    }
+  })
+}
+
 /** Replace a source that successfully opened but later stopped producing video. This is separate
  * from the picker's startup-error chain: the watchdog calls it minutes into an active session.
  * The current playhead and play/pause intent are explicit inputs so a replacement is genuinely
  * in-place. Returns true once a replacement has been handed to mpv. */
-export async function recoverPlaybackSource(position: number, autoplay: boolean): Promise<boolean> {
+export async function recoverPlaybackSource(
+  position: number,
+  autoplay: boolean,
+  notice = 'Playback stalled — trying another source…',
+): Promise<boolean> {
+  const owner = currentPlaybackOwner()
+  if (!owner) return false
+  const stillOwnsPlayback = () => ownsPlayback(owner)
   let context = get(playbackRecovery)
   if (!context || context.recovering) return false
 
   const failed = context.current
   const attempted = new Set(context.attempted)
-  if (failed) {
+  if (failed && stillOwnsPlayback()) {
     attempted.add(recoveryStreamKey(failed))
     markDead(failed)
   }
+  if (!stillOwnsPlayback()) return false
   playbackRecovery.set({ ...context, attempted: [...attempted], recovering: true })
-  playerNotice.set('Playback stalled — trying another source…')
+  playerNotice.set(notice)
 
   // The progressive picker normally leaves us its complete ranked pool. Prefetched/remembered
   // sources bypass that picker, so rebuild the pool only when there is no alternative retained.
@@ -1550,6 +1648,7 @@ export async function recoverPlaybackSource(position: number, autoplay: boolean)
         extToStreams(context.media, context.episode, base.kitsu, fold),
         resolveOnlineStreams(context.media, context.episode, undefined, fold).then(fold),
       ])
+      if (!stillOwnsPlayback()) return false
       const refined = refineStreams(context.media, streams).kept
       streams = base.want ? verifySeason(refined, base.want) : refined
       retainRecoveryCandidates(context.media, context.episode, streams)
@@ -1560,17 +1659,21 @@ export async function recoverPlaybackSource(position: number, autoplay: boolean)
     }
   }
 
+  const directP2p = directP2pEnabled()
   const candidates = pickCandidates(
     streams,
     get(preferredQuality),
     undefined,
     (stream) => attempted.has(recoveryStreamKey(stream)),
     { ...rankOpts(), allowUncached: true },
-  ).filter((stream) => !attempted.has(recoveryStreamKey(stream))).slice(0, 3)
+  )
+    .filter((stream) => !attempted.has(recoveryStreamKey(stream)))
+    .slice(0, directP2p ? 2 : 3)
 
   const subDelay = await invoke<string>('player_get_property', { name: 'sub-delay' }).catch(() => '')
   let lastError = ''
   for (const candidate of candidates) {
+    if (!stillOwnsPlayback()) return false
     const key = recoveryStreamKey(candidate)
     attempted.add(key)
     playbackRecovery.update((current) => current ? {
@@ -1582,7 +1685,17 @@ export async function recoverPlaybackSource(position: number, autoplay: boolean)
     await playStream(context.media, context.episode, candidate, (state) => {
       if (state.status === 'playing') played = true
       if (state.status === 'error') lastError = state.message ?? 'The replacement source failed.'
-    }, { autoplay, startSeconds: Math.max(0, position) })
+    }, { autoplay, startSeconds: Math.max(0, position), recoveryOwner: owner })
+    if (!stillOwnsPlayback()) return false
+    const directCandidate = directP2p && !!candidate.infoHash && !candidate.url
+    if (played && directCandidate) {
+      played = await waitForDesktopFirstFrame(DIRECT_TORRENT_RECOVERY_TIMEOUT_MS)
+      if (!stillOwnsPlayback()) return false
+      if (!played) {
+        lastError = 'Replacement torrent also failed to produce video.'
+        await stopDirectTorrentPlayback()
+      }
+    }
     if (played) {
       if (subDelay) {
         await invoke('player_command', { name: 'set', args: ['sub-delay', subDelay] }).catch(() => {})
@@ -1594,7 +1707,9 @@ export async function recoverPlaybackSource(position: number, autoplay: boolean)
     markDead(candidate)
   }
 
+  if (!stillOwnsPlayback()) return false
   playbackRecovery.update((current) => current ? { ...current, recovering: false } : current)
+  if (directP2p) await stopDirectTorrentPlayback()
   playerNotice.set(lastError || 'Automatic recovery ran out of sources — choose another source')
   void playEpisode(context.media, context.episode, (state) => {
     if (state.status === 'error') playerNotice.set(state.message ?? 'No replacement source was found.')
