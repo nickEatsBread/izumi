@@ -35,6 +35,7 @@
   import {
     classifyDrag,
     fullscreenPullProgress,
+    fullscreenPullTransform,
     shouldEnterFullscreen,
     shouldDismissSheet,
     landscapeExitProgress,
@@ -66,6 +67,7 @@
   import Minimize from 'lucide-svelte/icons/minimize'
   import X from 'lucide-svelte/icons/x'
   import AndroidWatchDetails from './AndroidWatchDetails.svelte'
+  import BufferSpinner from './BufferSpinner.svelte'
 
   let controlsShown = $state(true)
   let scrubbing = $state(false)
@@ -88,6 +90,9 @@
   let fullscreenPull = $state(0)
   let fullscreenPullDragging = $state(false)
   let pullDim = $state(0) // 0..1 page-dim/scale progress, drives the enlarge + details fade
+  let pullScale = $state(1)
+  let pullTranslateY = $state(0)
+  let pullDetailsOffset = $state(0)
   let exitDrag = $state(0) // 0..1 landscape swipe-down-to-exit progress → dims the video
   let orientationForced = false
 
@@ -100,7 +105,8 @@
   // whenever playback is merely paused, so it must never be read without the `!paused` guard.
   const stalled = $derived(
     !$mpvState.eof &&
-      (dur === 0 ||
+      (!$mpvState.frameReady ||
+        dur === 0 ||
         $mpvState.seekBusy ||
         $mpvState.seeking ||
         $mpvState.buffering ||
@@ -415,9 +421,6 @@
   let pullAnimFrame = 0
   let exitAnimFrame = 0
   const VIDEO_SCRUB_SPAN = 90 // seconds spanned by a full-width horizontal drag over the video
-  const PULL_SCALE_GAIN = 0.6 // extra surface scale at a full pull (1 → 1.6), YouTube-style zoom
-  const PULL_LIFT_FRACTION = 0.18 // upward translate at a full pull, as a fraction of video height
-
   // Coalesced native-surface transform: only the latest (scale, translate) is ever in flight, so a
   // fast drag never floods the IPC bridge. Unlike a viewport resize this is a cheap compositor op.
   function queuePullTransform(scale: number, tyCssPx: number) {
@@ -435,13 +438,18 @@
     })()
   }
 
-  // Map a 0..1 pull progress to the live surface zoom + upward lift + page dim. The 16:9 box itself
-  // stays put — the video scales as one unit over the (fading) details pane, like YouTube.
+  // Move the native clipped container and its HTML control frame with identical geometry. YouTube's
+  // gesture enlarges the player rectangle modestly; the big transition happens on rotation after
+  // release. A surface-only 1.6× zoom is what made the old animation crop and escape the player.
   function applyPull(progress: number) {
     pullDim = progress
-    const scale = 1 + PULL_SCALE_GAIN * progress
-    const lift = -PULL_LIFT_FRACTION * pullPlayerHeight * progress
-    queuePullTransform(scale, lift)
+    const transform = fullscreenPullTransform(progress, pullPlayerHeight)
+    pullScale = transform.scale
+    pullTranslateY = transform.translateY
+    // Scaling around the player's centre grows its lower edge. Move the watch page by exactly that
+    // overlap so the player remains a rectangle in layout instead of ghosting through page content.
+    pullDetailsOffset = Math.max(0, pullPlayerHeight * (transform.scale - 1) / 2 + transform.translateY)
+    queuePullTransform(transform.scale, transform.translateY)
   }
 
   // Ease the pull to a target progress (used for the spring-back on cancel).
@@ -552,6 +560,10 @@
     // landscape immersive there is no top bar, no chevron and no other way back, making the lock a
     // one-way trap that could only be escaped by force-quitting (losing the unfinalized position).
     if (!e.isPrimary || rootPointerId != null) return
+    // Blank areas of visible chrome are still part of the video gesture surface. Actual controls
+    // remain ordinary taps, so a pull-up can begin beside them without stealing a button press.
+    const target = e.target
+    if (target instanceof Element && target.closest('button, a, input, select, textarea, [role="slider"]')) return
     cancelScrub()
     rootPointerId = e.pointerId
     rootEl?.setPointerCapture?.(e.pointerId)
@@ -821,6 +833,9 @@
     fullscreenPullDragging = false
     fullscreenPull = 0
     pullDim = 0 // the viewport call above already reset the native surface transform to identity
+    pullScale = 1
+    pullTranslateY = 0
+    pullDetailsOffset = 0
     exitDrag = 0
     portraitVideoHeight = nextLandscape ? null : ratioHeight
     safeTop = insets.top / dpr
@@ -856,16 +871,17 @@
   })
 </script>
 
-<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden} class:pulling-fullscreen={fullscreenPullDragging}
+<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden} class:pulling-fullscreen={fullscreenPullDragging || pullDim > 0}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
-  <section bind:this={rootEl} class="video-frame relative touch-none overflow-visible bg-transparent"
+  <section bind:this={rootEl} class="video-frame relative touch-none overflow-hidden bg-transparent"
+    style:transform={`translate3d(0, ${pullTranslateY}px, 0) scale(${pullScale})`}
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture} role="presentation">
   <!-- Loading with the controls hidden (or locked): the spinner is the only thing on screen, so it
        still reads as "working on it" without a tap. With controls up it moves into the transport
        button below instead, so the play/pause target is never taken away. -->
   {#if loading && (!controlsShown || locked)}
     <div transition:fade={{ duration: 150 }} class="pointer-events-none absolute inset-0 grid place-items-center">
-      <div class="size-12 animate-spin rounded-full border-4 border-white/25 border-t-white"></div>
+      <BufferSpinner size={48} />
     </div>
   {/if}
 
@@ -911,7 +927,7 @@
     <div transition:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/75"></div>
 
     <!-- Top bar -->
-    <div transition:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
+    <div transition:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onclick={(e) => e.stopPropagation()} role="presentation">
       <button onclick={close} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label="Close player">
         {#if landscape}<ChevronLeft size={27} />{:else}<ChevronDown size={29} />{/if}
       </button>
@@ -934,7 +950,7 @@
       <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={loading ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading}>
         {#if loading}
           <span in:fade={{ duration: 120 }} class="grid place-items-center">
-            <span class="size-10 animate-spin rounded-full border-4 border-white/25 border-t-white"></span>
+            <BufferSpinner size={40} />
           </span>
         {:else}
           {#key paused}
@@ -948,7 +964,7 @@
     </div>
 
     <!-- Timeline sits on the actual bottom edge of the video, matching native mobile players. -->
-    <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 h-14" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => e.stopPropagation()} role="presentation">
+    <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 h-14" onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="timeline-controls absolute inset-x-0 bottom-3 flex items-center justify-between px-3 text-xs tabular-nums text-white/90">
         <span class="pointer-events-none">{fmt(pos)} / {fmt(dur)}</span>
         <button
@@ -985,9 +1001,12 @@
   </section>
 
   {#if !landscape}
-    <!-- Fades out as the video zooms so the enlarging native surface shows through it (the video is
-         behind the WebView — an opaque details pane would otherwise clip the lower half of the zoom). -->
-    <section class="watch-details overflow-y-auto" style:opacity={1 - pullDim} style:pointer-events={pullDim > 0 ? 'none' : null}>
+    <!-- The watch page is displaced by the expanded player's exact lower-edge growth. It dims only
+         slightly; the player stays a bounded rectangle instead of bleeding through faded content. -->
+    <section class="watch-details overflow-y-auto"
+      style:transform={`translate3d(0, ${pullDetailsOffset}px, 0)`}
+      style:opacity={1 - pullDim * 0.35}
+      style:pointer-events={pullDim > 0 ? 'none' : null}>
       {#if $nowPlayingMedia}
         <AndroidWatchDetails
           media={$nowPlayingMedia.media}
@@ -1054,8 +1073,9 @@
 
 <style>
   .player-shell { touch-action: none; background: transparent; }
-  .video-frame { width: 100%; height: var(--portrait-player-height); margin-top: var(--player-safe-top); transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .video-frame { width: 100%; height: var(--portrait-player-height); margin-top: var(--player-safe-top); transform-origin: center; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .watch-details { height: calc(100% - var(--player-safe-top) - var(--portrait-player-height)); touch-action: pan-y; background: #0a0a0b; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .pulling-fullscreen .video-frame { will-change: transform; }
   .pulling-fullscreen .video-frame, .pulling-fullscreen .watch-details { transition: none; }
   .settings-backdrop { transition: opacity 240ms ease-out; }
   .settings-sheet { inset-inline: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }

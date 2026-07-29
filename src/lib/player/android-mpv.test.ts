@@ -4,12 +4,14 @@ import { get } from 'svelte/store'
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   progress: undefined as ((event: unknown) => void) | undefined,
+  event: undefined as ((event: unknown) => void) | undefined,
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: mocks.invoke,
   addPluginListener: vi.fn(async (_plugin: string, event: string, listener: (event: unknown) => void) => {
     if (event === 'progress') mocks.progress = listener
+    if (event === 'event') mocks.event = listener
     return { unregister: vi.fn() }
   }),
 }))
@@ -33,6 +35,7 @@ describe('Android mpv seek coordination', () => {
       seeking: false,
       coreIdle: false,
       seekBusy: false,
+      frameReady: true,
       cacheEnd: 0,
     })
   })
@@ -78,6 +81,7 @@ describe('Android mpv loading signals', () => {
       seeking: false,
       coreIdle: false,
       seekBusy: false,
+      frameReady: true,
       cacheEnd: 0,
     })
   })
@@ -85,6 +89,7 @@ describe('Android mpv loading signals', () => {
   it('marks a seek busy immediately and releases it when the position lands', async () => {
     await seekRelative(30)
     expect(get(mpvState).seekBusy).toBe(true)
+    expect(get(mpvState).frameReady).toBe(false)
 
     // A stale event from before the seek must not release it.
     mocks.progress?.({ property: 'time-pos', value: 100 })
@@ -93,6 +98,10 @@ describe('Android mpv loading signals', () => {
     mocks.progress?.({ property: 'time-pos', value: 130 })
     expect(get(mpvState).seekBusy).toBe(false)
     expect(get(mpvState).pos).toBe(130)
+    expect(get(mpvState).frameReady).toBe(false)
+
+    mocks.event?.({ id: 21 })
+    expect(get(mpvState).frameReady).toBe(true)
   })
 
   it('tracks seeking and core-idle so a stall outside paused-for-cache is still visible', () => {
@@ -106,5 +115,23 @@ describe('Android mpv loading signals', () => {
     mocks.progress?.({ property: 'core-idle', value: false })
     expect(get(mpvState).seeking).toBe(false)
     expect(get(mpvState).coreIdle).toBe(false)
+  })
+
+  it('uses playback restart as the definitive first-frame/loading boundary', () => {
+    mpvState.update((s) => ({ ...s, frameReady: false, buffering: true }))
+
+    // Metadata and clock updates can precede the first decoded frame.
+    mocks.progress?.({ property: 'duration', value: 1000 })
+    mocks.progress?.({ property: 'time-pos', value: 100 })
+    mocks.progress?.({ property: 'paused-for-cache', value: false })
+    expect(get(mpvState).frameReady).toBe(false)
+    expect(get(mpvState).buffering).toBe(false)
+
+    mocks.event?.({ id: 21 })
+    expect(get(mpvState).frameReady).toBe(true)
+    expect(get(mpvState).buffering).toBe(false)
+
+    mocks.event?.({ id: 20 })
+    expect(get(mpvState).frameReady).toBe(false)
   })
 })

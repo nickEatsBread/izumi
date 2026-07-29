@@ -46,6 +46,22 @@ export function shouldEnterFullscreen(progress: number, velocityY: number): bool
 }
 
 /**
+ * YouTube-style direct manipulation for the portrait player. The whole clipped player grows only
+ * modestly under the finger; the large geometry change belongs to Android's orientation transition
+ * after release. Scaling the decoded video by 60% here made it crop and float over the watch page.
+ */
+export function fullscreenPullTransform(
+  progress: number,
+  playerHeight: number,
+): { scale: number; translateY: number } {
+  const p = Math.max(0, Math.min(1, progress))
+  return {
+    scale: 1 + p * 0.18,
+    translateY: p === 0 ? 0 : -p * Math.max(0, playerHeight) * 0.02,
+  }
+}
+
+/**
  * Progress for the landscape swipe-DOWN gesture that exits fullscreen back to the portrait inline
  * player — the mirror of `fullscreenPullProgress`. Only activates on a clearly downward drag where
  * vertical travel wins over horizontal, and never from the very top edge (a swipe there just reveals

@@ -5,6 +5,7 @@ import {
   accumulateSeek,
   fullscreenPullProgress,
   shouldEnterFullscreen,
+  fullscreenPullTransform,
   shouldDismissSheet,
   landscapeExitProgress,
   shouldExitFullscreen,
@@ -107,6 +108,12 @@ describe('portrait fullscreen pull', () => {
     expect(shouldEnterFullscreen(0.5, -0.1)).toBe(true)
     expect(shouldEnterFullscreen(0.2, -0.7)).toBe(true)
     expect(shouldEnterFullscreen(0.2, -0.1)).toBe(false)
+  })
+
+  it('grows the bounded player modestly instead of zooming the video through the page', () => {
+    expect(fullscreenPullTransform(0, 240)).toEqual({ scale: 1, translateY: 0 })
+    expect(fullscreenPullTransform(1, 240)).toEqual({ scale: 1.18, translateY: -4.8 })
+    expect(fullscreenPullTransform(2, 240)).toEqual({ scale: 1.18, translateY: -4.8 })
   })
 })
 
