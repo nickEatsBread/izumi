@@ -520,11 +520,11 @@
   <!-- Only the source-LIST phase: once a stream is chosen, playStream owns the connecting screen
        app-wide (SourceConnecting), so rendering it here too would stack two of them. -->
   {#if autoImmediate && resolving && !busy && !$connecting && !$debridCaching && !playbackError}
-    <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black" transition:fade={{ duration: 160 }}>
+    <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black" transition:fade={{ duration: $gameMode ? 0 : 160 }}>
       {#if backdrop}
-        <!-- `filter` on a STATIC image, never `backdrop-filter`: the latter re-samples live content
-             every frame, which is what wedged Deck WebKit. -->
-        <img src={backdrop} alt="" class="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
+        <!-- Desktop blurs this static image; Game mode removes the filter via loading-backdrop so
+             the loader cannot trigger a full-screen filtered repaint on every frame. -->
+        <img src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
       {/if}
       <div class="relative">
         <SourceLoader

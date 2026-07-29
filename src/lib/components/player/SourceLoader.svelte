@@ -11,6 +11,7 @@
   import { onDestroy } from 'svelte'
   import lottie, { type AnimationItem } from 'lottie-web'
   import animationData from './source-loader.json'
+  import { gameMode } from '$lib/player/session'
 
   let { title = '', caption = 'Connecting', detail = '', onCancel }: {
     title?: string
@@ -28,6 +29,14 @@
     && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
   $effect(() => {
+    // SVG Lottie mutates several DOM nodes every frame. That is cheap on Desktop, but in Gamescope
+    // it invalidates the full WebKit surface and competes with mpv on the Deck iGPU. The markup
+    // below uses a tiny stepped CSS ring there instead.
+    if ($gameMode) {
+      anim?.destroy()
+      anim = undefined
+      return
+    }
     if (!host || anim) return
     anim = lottie.loadAnimation({
       container: host,
@@ -50,7 +59,13 @@
     </h1>
   {/if}
 
-  <div bind:this={host} class="h-28 w-52" aria-hidden="true"></div>
+  {#if $gameMode}
+    <div class="grid h-28 w-52 place-items-center" aria-hidden="true">
+      <div class="loading-spinner size-14 animate-spin rounded-full border-4 border-white/20 border-t-white"></div>
+    </div>
+  {:else}
+    <div bind:this={host} class="h-28 w-52" aria-hidden="true"></div>
+  {/if}
 
   <div class="space-y-2">
     <p class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>

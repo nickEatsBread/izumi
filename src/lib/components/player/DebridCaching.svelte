@@ -22,19 +22,18 @@
        through. NO backdrop-blur (Deck WebKit). -->
   <div class="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-black px-6 text-white">
     {#if c.cover}
-      <!-- Blurred cover as the backdrop. `filter` on a STATIC image, never `backdrop-filter`:
-           the latter re-samples live content every frame and is what wedged Deck WebKit, while
-           this rasterises once. Scaled up so the blur's soft edge never shows a seam. -->
+      <!-- Desktop uses a blurred cover. Game mode keeps it unfiltered via loading-backdrop so the
+           spinner/progress updates do not invalidate a full-screen filter on every frame. -->
       <img
         src={c.cover}
         alt=""
-        class="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl"
+        class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl"
       />
     {/if}
 
     <div class="relative flex w-full max-w-md flex-col items-center gap-5 text-center">
       <div class="flex items-center gap-2 text-sm uppercase tracking-wide text-white/60">
-        <Loader size={16} class="animate-spin" /> Caching via {c.provider}
+        <Loader size={16} class="loading-spinner animate-spin" /> Caching via {c.provider}
       </div>
 
       <h2 class="text-xl font-bold">{c.title}{c.episode != null ? ` · Ep ${c.episode}` : ''}</h2>

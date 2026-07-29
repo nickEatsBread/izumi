@@ -69,6 +69,21 @@ body { overflow-x: clip; }
    the track. Transform-only so WebKitGTK/gamescope composite it without repainting the track. */
 @keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
 .indeterminate { animation: indeterminate 1.2s ease-in-out infinite; }
+/* Loading screens normally blur a full-screen cover. Under Gamescope, WebKitGTK repaints that
+   filtered 1280x800 layer whenever a child spinner changes because Game mode deliberately avoids
+   compositor layer promotion. Keep the artwork but drop the expensive filter/scale there. */
+.gamemode .loading-backdrop {
+  filter: none !important;
+  transform: none !important;
+  opacity: 0.18 !important;
+}
+/* Eight discrete turns per second look intentional and leave most frames completely unchanged,
+   which keeps the Deck's WebKit renderer idle between steps. */
+.gamemode .loading-spinner {
+  animation-duration: 1s !important;
+  animation-timing-function: steps(8, end) !important;
+  contain: paint;
+}
 /* Hover-preview card fade/scale-in (smooth crossfade between adjacent cards). */
 @keyframes preview-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 .preview-in { animation: preview-in 0.14s ease-out both; }
