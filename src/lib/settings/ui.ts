@@ -43,7 +43,7 @@ export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'eng')
 
 // --- Subtitle presentation + synchronization ---
 /** Apply Izumi's subtitle appearance instead of leaving styling entirely to the subtitle file. */
-export const subtitleStyleEnabled = persisted<boolean>('subtitle-style-enabled', true)
+export const subtitleStyleEnabled = persisted<boolean>('subtitle-style-enabled', false)
 export const subtitleFont = persisted<string>('subtitle-font', 'Nunito')
 export const subtitleFontSize = persisted<number>('subtitle-font-size', 42)
 export const subtitleTextColor = persisted<string>('subtitle-text-color', '#ffffff')
