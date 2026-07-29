@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { title, banner, format, ratingBg, airedCount, totalEpisodes, resumeEp, hasAiredEpisodeToWatch } from './media'
+import { title, banner, format, mediaHref, ratingBg, airedCount, totalEpisodes, resumeEp, hasAiredEpisodeToWatch } from './media'
 
 describe('media helpers', () => {
   it('title prefers userPreferred, falls back to TBA', () => {
@@ -15,6 +15,12 @@ describe('media helpers', () => {
   it('format maps enum to label', () => {
     expect(format({ id: 1, title: {}, format: 'TV_SHORT' } as any)).toBe('TV Short')
     expect(format({ id: 1, title: {}, format: 'MOVIE' } as any)).toBe('Movie')
+    expect(format({ id: 1, title: {}, format: 'NOVEL' } as any)).toBe('Novel')
+  })
+  it('routes manga and novels to the information-only detail page', () => {
+    expect(mediaHref({ id: 1, type: 'ANIME', title: {} })).toBe('/app/anime/1')
+    expect(mediaHref({ id: 2, type: 'MANGA', format: 'MANGA', title: {} })).toBe('/app/manga/2')
+    expect(mediaHref({ id: 3, type: 'MANGA', format: 'NOVEL', title: {} })).toBe('/app/manga/3')
   })
   it('ratingBg buckets by score', () => {
     expect(ratingBg(80)).toContain('green'); expect(ratingBg(70)).toContain('orange'); expect(ratingBg(50)).toContain('red')

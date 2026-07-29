@@ -12,7 +12,7 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { reliableImage } from '$lib/util/reliable-image'
-  import { title, cover, season, format } from '$lib/anilist/media'
+  import { title, cover, season, format, mediaHref } from '$lib/anilist/media'
   import { fade } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import { get } from 'svelte/store'
@@ -67,7 +67,7 @@
 </script>
 
 <div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
-  <a href={`/app/anime/${media.id}`} data-focusable onclick={() => h.tap()}
+  <a href={mediaHref(media)} data-focusable onclick={() => h.tap()}
      class="group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
@@ -84,7 +84,7 @@
       <span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{title(media)}
     </div>
     <div class="mt-0.5 flex justify-between text-[0.7rem] text-muted-foreground">
-      <span>{season(media)}</span><span>{format(media)}</span>
+      <span>{season(media) || media.startDate?.year || ''}</span><span>{format(media)}</span>
     </div>
   </a>
 </div>

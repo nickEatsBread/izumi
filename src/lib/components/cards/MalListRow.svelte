@@ -5,13 +5,21 @@
   // like the AniList rows, then re-sorts into MAL's recency order.
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { MEDIA_BY_MAL_QUERY } from '$lib/anilist/lists'
-  import { getMalAnimeIdsOrThrow } from '$lib/trackers'
+  import {
+    MEDIA_BY_MAL_QUERY, READING_MEDIA_BY_MAL_QUERY, matchesLibraryKind, type LibraryKind,
+  } from '$lib/anilist/lists'
+  import { getMalAnimeIdsOrThrow, getMalMangaIdsOrThrow } from '$lib/trackers'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
   import type { Media } from '$lib/anilist/types'
 
-  let { title, status }: { title: string; status: string } = $props()
+  let {
+    title, status, kind = 'anime',
+  }: {
+    title: string
+    status: string
+    kind?: LibraryKind
+  } = $props()
   const client = getContextClient()
   let medias = $state<Media[]>([])
   let loading = $state(true)
@@ -21,11 +29,16 @@
     loading = true
     error = ''
     try {
-      const ids = await getMalAnimeIdsOrThrow(status)
+      const ids = kind === 'anime'
+        ? await getMalAnimeIdsOrThrow(status)
+        : await getMalMangaIdsOrThrow(status)
       if (!ids.length) return
-      const res = await client.query(MEDIA_BY_MAL_QUERY, { ids }).toPromise()
+      const res = await client
+        .query(kind === 'anime' ? MEDIA_BY_MAL_QUERY : READING_MEDIA_BY_MAL_QUERY, { ids })
+        .toPromise()
       if (res.error) throw res.error
-      const list = (res.data?.Page?.media ?? []) as Media[]
+      const list = ((res.data?.Page?.media ?? []) as Media[])
+        .filter((media) => matchesLibraryKind(media, kind))
       const order = new Map(ids.map((id, i) => [id, i]))
       medias = list.slice().sort((a, b) => (order.get(a.idMal ?? -1) ?? 999) - (order.get(b.idMal ?? -1) ?? 999))
     }

@@ -13,7 +13,11 @@ export interface Media {
   format?: string
   status?: string
   episodes?: number
+  chapters?: number
+  volumes?: number
   duration?: number
+  countryOfOrigin?: string
+  source?: string
   averageScore?: number
   popularity?: number
   trending?: number
@@ -48,4 +52,5 @@ export interface Media {
     }[]
   }
   recommendations?: { nodes: { rating?: number; mediaRecommendation?: Media | null }[] }
+  tags?: { name: string; rank?: number; isMediaSpoiler?: boolean }[]
 }

@@ -250,14 +250,16 @@ export async function getMalProgress(idMal?: number): Promise<{ progress: number
 // One MAL animelist row (shared shape of the OAuth @me and public-username endpoints — MAL
 // returns identical JSON for both).
 interface MalListNode { node?: { id?: number }; list_status?: { num_episodes_watched?: number; updated_at?: string } }
+type MalListKind = 'anime' | 'manga'
 
 // Fetch a MAL anime list for `status`, most-recently-updated first. Prefers the signed-in
 // viewer (OAuth @me); falls back to the PUBLIC list of a read-only `malUser` username, which
 // MAL's official API serves with just the app's X-MAL-CLIENT-ID header (no token). Returns
 // null when neither is configured; throws on an HTTP error so callers can tell "offline/error"
 // from "genuinely empty".
-async function fetchMalListRaw(status: string, limit: number): Promise<MalListNode[] | null> {
-  const q = `animelist?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`
+async function fetchMalListRaw(status: string, limit: number, kind: MalListKind = 'anime'): Promise<MalListNode[] | null> {
+  const endpoint = kind === 'manga' ? 'mangalist' : 'animelist'
+  const q = `${endpoint}?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`
   if (get(malToken)) {
     const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/${q}`)
     if (!r) return null
@@ -288,6 +290,14 @@ export async function getMalAnimeIdsOrThrow(status: string, limit = 20): Promise
 export async function getMalAnimeIds(status: string, limit = 20): Promise<number[]> {
   try { return await getMalAnimeIdsOrThrow(status, limit) }
   catch { return [] }
+}
+
+// MAL exposes manga and light novels through one manga-list endpoint. AniList's matching MANGA
+// records carry the format that lets the UI split that combined list into Manga and Novels.
+export async function getMalMangaIdsOrThrow(status: string, limit = 50): Promise<number[]> {
+  const data = await fetchMalListRaw(status, limit, 'manga')
+  if (!data) return []
+  return data.map((d) => d.node?.id).filter((n): n is number => typeof n === 'number')
 }
 
 // Like getMalAnimeIds, but keeps the canonical watched-episode count that the list
