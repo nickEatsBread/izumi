@@ -10,7 +10,7 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import {
     recoveryWatchDecision,
@@ -34,6 +34,10 @@
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
+  import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
+  import X from 'lucide-svelte/icons/x'
+  import PlayIcon from 'lucide-svelte/icons/play'
+  import PauseIcon from 'lucide-svelte/icons/pause'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -220,6 +224,7 @@
 
   async function close() {
     await exitFullscreen()
+    await exitPictureInPicture()
     playerSleep.set({ deadline: null, atEpisodeEnd: false })
     playerAbLoop.set({ a: null, b: null })
     if (get(gifRecordingStart) != null) await invoke('player_gif_abort').catch(() => {})
@@ -710,8 +715,8 @@
   class:touch-auto={$commentsOpen}
   class:cursor-pointer={!gmMode && controlsVisible}
   class:cursor-none={gmMode || !controlsVisible}
-  class:left-14={!$fullscreen && !gmMode}
-  class:left-0={$fullscreen || gmMode}
+  class:left-14={!$fullscreen && !gmMode && !$pictureInPicture}
+  class:left-0={$fullscreen || gmMode || $pictureInPicture}
   onclick={onOverlayTap}
   role="presentation"
 >
@@ -758,7 +763,34 @@
     </button>
   {/if}
 
-  {#if controlsVisible}
+  {#if controlsVisible && $pictureInPicture}
+    <div class="pointer-events-none absolute inset-0 flex flex-col justify-between bg-gradient-to-b from-black/70 via-transparent to-black/80 p-3 text-white">
+      <div class="flex min-w-0 items-start gap-2">
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-black">{np.animeTitle}</p>
+          <p class="truncate text-xs text-white/65">{np.episode != null ? `Episode ${np.episode}` : np.title}</p>
+        </div>
+        <button data-focusable onclick={(event) => { event.stopPropagation(); togglePictureInPicture() }}
+                class="pointer-events-auto grid size-8 place-items-center rounded-full bg-black/50" aria-label="Exit picture in picture">
+          <PictureInPicture size={16} />
+        </button>
+        <button data-focusable onclick={(event) => { event.stopPropagation(); close() }}
+                class="pointer-events-auto grid size-8 place-items-center rounded-full bg-black/50" aria-label="Close player">
+          <X size={17} />
+        </button>
+      </div>
+      <div class="flex items-center gap-3">
+        <button data-focusable onclick={(event) => { event.stopPropagation(); cmd('cycle', ['pause']) }}
+                class="pointer-events-auto grid size-10 shrink-0 place-items-center rounded-full bg-white text-black" aria-label={paused ? 'Play' : 'Pause'}>
+          {#if paused}<PlayIcon size={20} fill="currentColor" />{:else}<PauseIcon size={20} fill="currentColor" />{/if}
+        </button>
+        <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/25">
+          <div class="h-full bg-theme" style="width:{dur > 0 ? Math.min(100, pos / dur * 100) : 0}%"></div>
+        </div>
+        <span class="text-[0.65rem] tabular-nums text-white/70">{Math.floor(pos / 60)}:{String(Math.floor(pos % 60)).padStart(2, '0')}</span>
+      </div>
+    </div>
+  {:else if controlsVisible}
     <div class:opacity-0={gmDynamicActive}>
       <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {chapters} {cmd} onclose={close} gm={gmMode} />
     </div>
@@ -771,5 +803,5 @@
   {/if}
 
   <!-- Discussion panel: self-gates on `commentsOpen`. Keyed on the playing episode. -->
-  <CommentsPanel />
+  {#if !$pictureInPicture}<CommentsPanel />{/if}
 </div>

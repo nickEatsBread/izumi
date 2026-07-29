@@ -16,7 +16,7 @@
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
   import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
-  import { playing, fullscreen, gameMode, initGameMode, debridCaching } from '$lib/player/session'
+  import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
@@ -159,13 +159,14 @@
   // Full-frame in fullscreen (chrome hidden) and 0 in browse. Physical px = CSS × DPR.
   $effect(() => {
     // Game mode = always fullscreen video (no sidebar rail), so no inset there either.
-    const left = $playing && !$fullscreen && !$gameMode ? Math.round(56 * $uiScale * window.devicePixelRatio) : 0
+    const left = $playing && !$fullscreen && !$gameMode && !$pictureInPicture ? Math.round(56 * $uiScale * window.devicePixelRatio) : 0
     invoke('player_set_inset', { left, top: 0 }).catch(() => {})
   })
   // Navigating away (e.g. a sidebar link) exits playback and restores the browse UI.
   beforeNavigate(({ from }) => {
     if (from?.url) rememberScroll(from.url)
     if ($playing) {
+      void exitPictureInPicture()
       invoke('close_player').catch(() => {})
       playing.set(false)
     }
@@ -184,7 +185,7 @@
 <!-- Chrome hides in fullscreen playback (edge-to-edge video); stays visible and
      clickable over windowed playback. Game mode (Deck/gamescope) is always fullscreen
      touch — no sidebar/titlebar while playing, just the content. -->
-{#if !($playing && ($fullscreen || $gameMode)) && !$androidMpvActive}
+{#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && !$androidMpvActive}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
   {#if $isMobile}<BottomNav />{:else}<Sidebar />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the

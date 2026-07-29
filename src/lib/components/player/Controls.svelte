@@ -23,8 +23,9 @@
   import Languages from 'lucide-svelte/icons/languages'
   import Search from 'lucide-svelte/icons/search'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
+  import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart } from '$lib/player/session'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
@@ -776,6 +777,7 @@
              bar to just Subtitles + options (the Deck has its own Steam screenshot shortcut). -->
         {#if !gm}
           <button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
+          <button data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>
         {/if}
 
         <!-- Fullscreen (user-initiated; player opens windowed). Hidden in game mode —
