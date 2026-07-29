@@ -31,6 +31,8 @@ export interface MpvState {
   coreIdle: boolean
   /** Our own optimistic flag: a seek has been issued but mpv hasn't reported the new position yet. */
   seekBusy: boolean
+  /** A decoded frame has been presented after the current load/seek (`MPV_EVENT_PLAYBACK_RESTART`). */
+  frameReady: boolean
   cacheEnd: number
 }
 
@@ -43,6 +45,7 @@ const IDLE_STATE: MpvState = {
   seeking: false,
   coreIdle: false,
   seekBusy: false,
+  frameReady: false,
   cacheEnd: 0,
 }
 
@@ -84,33 +87,56 @@ export async function hasEmbeddedPlayer(): Promise<boolean> {
 }
 
 let progressSub: PluginListener | undefined
+let eventSub: PluginListener | undefined
 /** Start the single observed-property subscription that keeps `mpvState` current. Idempotent;
  *  lives for the app session (the plugin core is recreated per play, the JS listener persists). */
 export async function startMpvEvents(): Promise<void> {
-  if (progressSub) return
-  progressSub = await addPluginListener('mpv', 'progress', (e: unknown) => {
-    const { property, value } = e as { property: string; value: unknown }
-    mpvState.update((s) => {
-      if (property === 'time-pos' && typeof value === 'number') {
-        if (pendingSeekTarget != null) {
-          if (Math.abs(value - pendingSeekTarget) > 2.5) return s
-          // The position landed, but the frame at it may still be loading — `seeking`/`core-idle`
-          // carry the loading signal from here, so this only retires the optimistic flag.
-          clearPendingSeekTimers()
-          return { ...s, pos: value, seekBusy: false }
+  if (!progressSub) {
+    progressSub = await addPluginListener('mpv', 'progress', (e: unknown) => {
+      const { property, value } = e as { property: string; value: unknown }
+      mpvState.update((s) => {
+        if (property === 'time-pos' && typeof value === 'number') {
+          if (pendingSeekTarget != null) {
+            if (Math.abs(value - pendingSeekTarget) > 2.5) return s
+            // The clock landing does not mean the target frame is visible. The native
+            // playback-restart event owns `frameReady`, so an unbuffered seek keeps its spinner.
+            clearPendingSeekTimers()
+            return { ...s, pos: value, seekBusy: false }
+          }
+          return { ...s, pos: value }
         }
-        return { ...s, pos: value }
-      }
-      if (property === 'duration' && typeof value === 'number') return { ...s, dur: value }
-      if (property === 'pause' && typeof value === 'boolean') return { ...s, paused: value }
-      if (property === 'eof-reached') return { ...s, eof: value === true }
-      if (property === 'paused-for-cache') return { ...s, buffering: value === true }
-      if (property === 'seeking') return { ...s, seeking: value === true }
-      if (property === 'core-idle') return { ...s, coreIdle: value === true }
-      if (property === 'demuxer-cache-time' && typeof value === 'number') return { ...s, cacheEnd: value }
-      return s
+        if (property === 'duration' && typeof value === 'number') return { ...s, dur: value }
+        if (property === 'pause' && typeof value === 'boolean') return { ...s, paused: value }
+        if (property === 'eof-reached') return { ...s, eof: value === true }
+        if (property === 'paused-for-cache') return { ...s, buffering: value === true }
+        if (property === 'seeking') return { ...s, seeking: value === true }
+        if (property === 'core-idle') return { ...s, coreIdle: value === true }
+        if (property === 'demuxer-cache-time' && typeof value === 'number') return { ...s, cacheEnd: value }
+        return s
+      })
     })
-  })
+  }
+  if (!eventSub) {
+    eventSub = await addPluginListener('mpv', 'event', (e: unknown) => {
+      const { id } = e as { id: unknown }
+      // Stable mpv_event_id values: START_FILE=6, SEEK=20, PLAYBACK_RESTART=21.
+      if (id === 6 || id === 20) {
+        mpvState.update((s) => (s.frameReady ? { ...s, frameReady: false } : s))
+      } else if (id === 21) {
+        // The definitive edge that says a frame is being presented again. Metadata and time-pos
+        // updates can arrive first and must not retire the loader.
+        mpvState.update((s) => ({
+          ...s,
+          frameReady: true,
+          seekBusy: false,
+          seeking: false,
+          coreIdle: false,
+          buffering: false,
+        }))
+        clearPendingSeekTimers()
+      }
+    })
+  }
 }
 
 export async function mpvLoad(p: MpvLoad): Promise<void> {
@@ -254,7 +280,7 @@ function requestExactSeek(sec: number) {
     // seekBusy from the instant the seek is requested: mpv only reports `seeking` once the command
     // has crossed the JNI bridge and been picked up, and that gap is exactly where a fast-forward
     // into unbuffered data used to look like a frozen player.
-    return { ...s, pos: target, seekBusy: true }
+    return { ...s, pos: target, seekBusy: true, frameReady: false }
   })
   const generation = ++seekGeneration
   clearTimeout(pendingSeekTimer)

@@ -89,7 +89,7 @@ class FullscreenArgs {
 
 @InvokeArg
 class TransformArgs {
-    /** Unitless view scale (1.0 = resting 16:9). */
+    /** Unitless player-container scale (1.0 = resting 16:9). */
     var scale: Double = 1.0
     /** Vertical translate in physical pixels (negative = up). */
     var translateY: Int = 0
@@ -104,6 +104,8 @@ class TransformArgs {
 class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.EventObserver {
     private var mpv: MPVLib? = null
     private var view: IzumiMpvView? = null
+    /** Clips the SurfaceView and moves with the web player shell during direct-manipulation gestures. */
+    private var container: FrameLayout? = null
     private var landscapeReleaseListener: OrientationEventListener? = null
 
     private fun stopLandscapeReleaseListener() {
@@ -200,16 +202,33 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             Log.w("MpvPlugin", "WebView NOT found under android.R.id.content")
         }
         val v = IzumiMpvView(activity, m)
-        // Fill the screen — a SurfaceView with no layout params can size to 0x0 (invisible).
+        // SurfaceView must live inside a real clipped player container. Transforming the surface
+        // directly let decoded video spill over the watch page while the HTML player frame stayed
+        // still. YouTube moves one bounded player rectangle; this FrameLayout gives us that same
+        // unit and keeps letterbox/background pixels inside it.
+        val playerContainer = FrameLayout(activity).apply {
+            setBackgroundColor(Color.BLACK)
+            clipChildren = true
+            clipToPadding = true
+        }
+        playerContainer.addView(
+            v,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        // Fill the screen — a container with no layout params can size to 0x0 (invisible).
         val lp = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         )
-        content.addView(v, 0, lp) // index 0 → behind the WebView, match-parent size
+        content.addView(playerContainer, 0, lp) // index 0 → behind the WebView
         setImmersive(true)
         Log.i("MpvPlugin", "surface added; content children=${content.childCount}")
         mpv = m
         view = v
+        container = playerContainer
         return m
     }
 
@@ -290,21 +309,21 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 "MpvPlugin",
                 "viewport immersive=${a.immersive} top=$safeTop height=${a.height}",
             )
-            view?.let { playerView ->
+            container?.let { playerContainer ->
                 val height = if (a.height > 0) a.height else ViewGroup.LayoutParams.MATCH_PARENT
-                val params = (playerView.layoutParams as? FrameLayout.LayoutParams)
+                val params = (playerContainer.layoutParams as? FrameLayout.LayoutParams)
                     ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
                 params.width = ViewGroup.LayoutParams.MATCH_PARENT
                 params.height = height
                 params.topMargin = a.top.coerceAtLeast(0) + if (a.immersive) 0 else safeTop
-                playerView.layoutParams = params
-                // A viewport settle always returns the surface to an untransformed identity, clearing
-                // any leftover pull-to-fullscreen scale/translate so a rotate never inherits a stale zoom.
-                playerView.scaleX = 1f
-                playerView.scaleY = 1f
-                playerView.translationX = 0f
-                playerView.translationY = 0f
-                playerView.requestLayout()
+                playerContainer.layoutParams = params
+                // A viewport settle returns the whole player rectangle to identity. The child
+                // SurfaceView is never transformed independently.
+                playerContainer.scaleX = 1f
+                playerContainer.scaleY = 1f
+                playerContainer.translationX = 0f
+                playerContainer.translationY = 0f
+                playerContainer.requestLayout()
             }
             val ret = JSObject()
             ret.put("top", safeTop)
@@ -316,22 +335,21 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     }
 
     /**
-     * Live scale + vertical translate of the video surface for the portrait pull-to-fullscreen
-     * gesture. Uses view compositor transforms (position-synced + artifact-free on API 24+), so the
-     * video keeps playing and zooms as one unit instead of the surface being re-laid-out every frame.
-     * Identity (scale 1, translateY 0) is restored by [viewport] on the next settle.
+     * Live scale + vertical translate of the clipped player container for the portrait
+     * pull-to-fullscreen gesture. The video, black frame and HTML-aligned viewport therefore move
+     * as one bounded rectangle. Identity is restored by [viewport] on the next settle.
      */
     @Command
     fun transform(invoke: Invoke) {
         val a = invoke.parseArgs(TransformArgs::class.java)
         activity.runOnUiThread {
-            view?.let { v ->
-                v.pivotX = v.width / 2f
-                v.pivotY = v.height / 2f
+            container?.let { playerContainer ->
+                playerContainer.pivotX = playerContainer.width / 2f
+                playerContainer.pivotY = playerContainer.height / 2f
                 val s = a.scale.toFloat().coerceIn(1f, 4f)
-                v.scaleX = s
-                v.scaleY = s
-                v.translationY = a.translateY.toFloat()
+                playerContainer.scaleX = s
+                playerContainer.scaleY = s
+                playerContainer.translationY = a.translateY.toFloat()
             }
             invoke.resolve()
         }
@@ -442,7 +460,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         activity.runOnUiThread {
             stopLandscapeReleaseListener()
             setImmersive(false)
-            view?.let { (it.parent as? ViewGroup)?.removeView(it) }
+            container?.let { (it.parent as? ViewGroup)?.removeView(it) }
             mpv?.let {
                 it.command(arrayOf("stop"))
                 it.removeObserver(this)
@@ -450,6 +468,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             }
             mpv = null
             view = null
+            container = null
             invoke.resolve()
         }
     }
