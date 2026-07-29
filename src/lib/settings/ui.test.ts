@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { get } from 'svelte/store'
 import {
   autoSelectCountdown,
+  subtitleStyleEnabled,
   subtitleProviders,
   subDlApiKey,
   enabledSubtitleProviders,
@@ -10,6 +11,12 @@ import {
 describe('source autoplay defaults', () => {
   it('plays the best source immediately instead of starting a countdown', () => {
     expect(get(autoSelectCountdown)).toBe(false)
+  })
+})
+
+describe('subtitle appearance defaults', () => {
+  it('leaves embedded subtitle styling untouched', () => {
+    expect(get(subtitleStyleEnabled)).toBe(false)
   })
 })
 
