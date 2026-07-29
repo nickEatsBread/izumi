@@ -95,6 +95,19 @@ export const nowPlayingStream = writable<{
   infoHash: string | null
 }>({ url: '', headers: {}, infoHash: null })
 
+/** Source candidates retained after the picker closes. The playback watchdog uses this exact
+ * ranked pool to recover from a source that starts but later freezes, instead of reopening a
+ * resolver and potentially selecting the same broken release again. URLs may contain credentials,
+ * so this is deliberately memory-only and is cleared/replaced with each episode. */
+export const playbackRecovery = writable<{
+  media: Media
+  episode: number | undefined
+  streams: Stream[]
+  current: Stream | null
+  attempted: string[]
+  recovering: boolean
+} | null>(null)
+
 export const playerStatsOpen = writable(false)
 export const playerSleep = writable<{ deadline: number | null; atEpisodeEnd: boolean }>({
   deadline: null,
