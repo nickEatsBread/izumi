@@ -14,6 +14,7 @@
   } from '$lib/settings/ui'
   import { localHistory, sessionProgress, manualProgressOverrides, setLocalProgress } from '$lib/player/history'
   import { updateProgress } from '$lib/trackers'
+  import { anilistToken, malToken } from '$lib/trackers/config'
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
   import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
@@ -65,6 +66,7 @@
       $sessionProgress[media.id] ?? 0,
     ),
   )
+  const trackerLinked = $derived(Boolean($anilistToken || $malToken))
 
   const PER = 48
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
@@ -225,25 +227,27 @@
               class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">
         <Shuffle size={15} /> Random
       </button>
-      <details class="relative">
-        <summary data-focusable class="flex cursor-pointer list-none items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">
-          <ListChecks size={15} /> Progress tools
-        </summary>
-        <div class="absolute right-0 z-20 mt-2 w-72 rounded-lg border border-border bg-card p-3 shadow-2xl">
-          <label class="text-xs font-bold text-muted-foreground" for="progress-through">Watched through episode</label>
-          <div class="mt-1 flex gap-2">
-            <input id="progress-through" data-focusable type="number" min="0" max={aired} bind:value={progressTarget}
-                   class="min-w-0 flex-1 rounded-md bg-input px-3 py-2 text-sm" />
-            <button data-focusable onclick={applyProgress}
-                    class="rounded-md bg-primary px-3 py-2 text-xs font-black text-primary-foreground">Save</button>
+      {#if !trackerLinked}
+        <details class="relative">
+          <summary data-focusable class="flex cursor-pointer list-none items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">
+            <ListChecks size={15} /> Progress tools
+          </summary>
+          <div class="absolute right-0 z-20 mt-2 w-72 rounded-lg border border-border bg-card p-3 shadow-2xl">
+            <label class="text-xs font-bold text-muted-foreground" for="progress-through">Watched through episode</label>
+            <div class="mt-1 flex gap-2">
+              <input id="progress-through" data-focusable type="number" min="0" max={aired} bind:value={progressTarget}
+                     class="min-w-0 flex-1 rounded-md bg-input px-3 py-2 text-sm" />
+              <button data-focusable onclick={applyProgress}
+                      class="rounded-md bg-primary px-3 py-2 text-xs font-black text-primary-foreground">Save</button>
+            </div>
+            <button data-focusable onclick={clearProgress}
+                    class="mt-2 w-full rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
+              Mark season unwatched
+            </button>
+            {#if progressStatus}<p class="mt-2 text-[0.68rem] text-muted-foreground">{progressStatus}</p>{/if}
           </div>
-          <button data-focusable onclick={clearProgress}
-                  class="mt-2 w-full rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
-            Mark season unwatched
-          </button>
-          {#if progressStatus}<p class="mt-2 text-[0.68rem] text-muted-foreground">{progressStatus}</p>{/if}
-        </div>
-      </details>
+        </details>
+      {/if}
     </div>
     <div class="mb-3 flex flex-wrap items-center gap-2">
       {#if !selecting}
