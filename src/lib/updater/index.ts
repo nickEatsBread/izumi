@@ -62,10 +62,9 @@ export async function checkForUpdate(): Promise<void> {
 }
 
 const RELEASES = 'https://github.com/nickEatsBread/izumi/releases/latest'
-const FLATPAK_ID = 'com.nicho.izumi'
 
-/** Apply the pending update for the current target. Desktop/Android install in place; flatpak is
- *  handled in Phase 2 (portal) — until then it routes to the release page (current behavior). */
+/** Apply the pending update for the current target. Every target installs in place; Flatpak uses
+ *  its update portal with a host-CLI fallback for older SteamOS portal implementations. */
 export async function applyUpdate(): Promise<void> {
   const u = get(availableUpdate); if (!u) return
   updateError.set('')
@@ -92,9 +91,9 @@ export async function applyUpdate(): Promise<void> {
       } finally { unlisten() }
       return
     }
-    // flatpak (Steam Deck) — apply via the org.freedesktop.portal.Flatpak UpdateMonitor. It swaps
-    // the deploy atomically; the new version takes effect on next launch (no self-relaunch under
-    // gamescope). Progress arrives on the `flatpak-update-progress` event.
+    // Flatpak (Steam Deck) — Rust prefers the UpdateMonitor portal and falls back to a scoped host
+    // `flatpak update` when SteamOS lacks that portal API. The new deploy takes effect on next
+    // launch (no self-relaunch under gamescope). Portal progress arrives on this event.
     if (u.target === 'flatpak') {
       updatePhase.set('downloading')
       const unlisten = listenSafe<number>('flatpak-update-progress', (e) => updateProgress.set((e.payload ?? 0) / 100))
@@ -103,17 +102,12 @@ export async function applyUpdate(): Promise<void> {
         updateProgress.set(1)
         updatePhase.set('ready') // toast: quit + relaunch from Steam
       } catch (e) {
-        // The portal refused (no update origin on a bundle install, or no portal backend). Do NOT
-        // open a browser in Game mode: gamescope has no sensible browser target, so this either did
-        // nothing or threw an unusable window over the game — which is what the user actually saw.
-        // Show the reason plus the manual route instead, and keep the browser hop for Desktop mode
-        // where there IS a browser.
+        // Rust already tried both the narrow update portal and the host Flatpak fallback. Do not
+        // open a browser in Game mode: gamescope has no sensible browser target. Keep the backend
+        // error in-app, with a short generic fallback only if it returned no detail.
         const reason = (e instanceof Error ? e.message : String(e)).trim()
         if (get(gameMode)) {
-          updateError.set(
-            `${reason || 'the Flatpak portal refused the update'}. `
-            + `Switch to Desktop Mode and update izumi from Discover, or run: flatpak update ${FLATPAK_ID}`,
-          )
+          updateError.set(reason || 'Automatic Flatpak update failed. Please try again.')
           updatePhase.set('error')
         } else {
           await openUrl(RELEASES)

@@ -35,6 +35,9 @@ finish-args:
   # if Steam is unreachable.
   - --filesystem=~/.steam
   - --filesystem=~/.local/share/Steam:ro
+  # SteamOS Game mode can expose a Flatpak portal older than the UpdateMonitor API. The updater
+  # uses that narrow portal first, then falls back to a host `flatpak update` through this service.
+  - --talk-name=org.freedesktop.Flatpak
 
 # libmpv links ffmpeg internally; the runtime + codecs-extra (already on the Deck at branch
 # 25.08-extra) provide the codecs, so we do NOT build or bundle ffmpeg.

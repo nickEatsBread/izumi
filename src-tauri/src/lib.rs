@@ -2529,7 +2529,7 @@ async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), S
     // mount, so tauri's rename-into-place install fails with EXDEV. Never attempt it — the
     // frontend routes the user to the release page to reinstall the .flatpak instead.
     if running_in_flatpak() {
-        return Err("Flatpak builds update through the release page, not in-app.".into());
+        return Err("Flatpak builds use the Flatpak updater, not the binary updater.".into());
     }
     let channel = if channel == "beta" { "beta" } else { "stable" };
     let updater = build_updater(&app, channel)?;
@@ -2619,11 +2619,127 @@ async fn flatpak_update_check() -> Result<Option<String>, String> {
     }
 }
 
-/// Flatpak (Steam Deck) update install via the portal UpdateMonitor. Asks the portal to fetch +
-/// stage the new deploy; the portal applies it atomically and it takes effect on the NEXT launch
-/// (we never self-relaunch under gamescope — the toast tells the user to quit + relaunch from
-/// Steam). Streams the portal's `Progress` to the webview as `flatpak-update-progress` (0..100) so
-/// the toast can show a percentage. Errors (incl. a portal `Failed` status) propagate to the UI.
+#[cfg(all(not(target_os = "android"), target_os = "linux"))]
+async fn flatpak_portal_update(app: &tauri::AppHandle) -> Result<(), String> {
+    use ashpd::flatpak::update_monitor::UpdateStatus;
+    use ashpd::flatpak::Flatpak;
+    use futures_util::StreamExt;
+
+    let proxy = Flatpak::new()
+        .await
+        .map_err(|e| format!("Flatpak portal unavailable: {e}"))?;
+    let monitor = proxy
+        .create_update_monitor(Default::default())
+        .await
+        .map_err(|e| format!("could not create the update monitor: {e}"))?;
+    // Subscribe before asking for the update so no early signal is missed.
+    let mut progress = monitor
+        .receive_progress()
+        .await
+        .map_err(|e| format!("could not subscribe to update progress: {e}"))?;
+    monitor
+        .update(None, Default::default())
+        .await
+        .map_err(|e| format!("the portal refused the update: {e}"))?;
+
+    while let Some(update) = progress.next().await {
+        if let Some(percent) = update.progress() {
+            let _ = app.emit("flatpak-update-progress", percent);
+        }
+        match update.status() {
+            Some(UpdateStatus::Done) => {
+                let _ = monitor.close().await;
+                return Ok(());
+            }
+            Some(UpdateStatus::Empty) => {
+                let _ = monitor.close().await;
+                return Err("the portal found no update in the configured Flatpak remote".into());
+            }
+            Some(UpdateStatus::Failed) => {
+                let message = update
+                    .error_message()
+                    .unwrap_or("the portal Flatpak update failed")
+                    .to_string();
+                let _ = monitor.close().await;
+                return Err(message);
+            }
+            _ => {}
+        }
+    }
+    let _ = monitor.close().await;
+    Err("the Flatpak update monitor closed before reporting completion".into())
+}
+
+/// SteamOS Game mode can expose an org.freedesktop.portal.Flatpak implementation older than the
+/// UpdateMonitor API. In that case, ask the host Flatpak CLI to update only Izumi. The manifest
+/// grants access to org.freedesktop.Flatpak specifically for this fallback.
+#[cfg(all(not(target_os = "android"), target_os = "linux"))]
+async fn flatpak_host_commit() -> Result<String, String> {
+    const APP_ID: &str = "com.nicho.izumi";
+    let output = tokio::process::Command::new("flatpak-spawn")
+        .args(["--host", "flatpak", "info", "--show-commit", APP_ID])
+        .output()
+        .await
+        .map_err(|error| format!("could not inspect the installed Flatpak: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("host Flatpak info exited with {}", output.status));
+    }
+    let commit = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if commit.is_empty() {
+        return Err("host Flatpak info returned an empty commit".into());
+    }
+    Ok(commit)
+}
+
+#[cfg(all(not(target_os = "android"), target_os = "linux"))]
+async fn flatpak_host_update() -> Result<(), String> {
+    const APP_ID: &str = "com.nicho.izumi";
+    // `flatpak update` returns success when there is nothing to do. Preserve the installed commit
+    // when this Flatpak version supports --show-commit, then make sure the app actually changed.
+    let previous_commit = flatpak_host_commit().await.ok();
+    let output = tokio::process::Command::new("flatpak-spawn")
+        .args([
+            "--host",
+            "flatpak",
+            "update",
+            "--noninteractive",
+            "-y",
+            APP_ID,
+        ])
+        .output()
+        .await
+        .map_err(|error| format!("could not start the host Flatpak updater: {error}"))?;
+    if output.status.success() {
+        if let Some(previous) = previous_commit {
+            if let Ok(current) = flatpak_host_commit().await {
+                if current == previous {
+                    return Err(
+                        "the Flatpak repository has not published the new Izumi build yet. \
+                         Try again shortly."
+                            .into(),
+                    );
+                }
+            }
+        }
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = stderr
+        .trim()
+        .lines()
+        .last()
+        .or_else(|| stdout.trim().lines().last())
+        .unwrap_or("unknown error");
+    Err(format!(
+        "host Flatpak updater exited with {}: {detail}",
+        output.status
+    ))
+}
+
+/// Install a Flatpak update without leaving Gamescope. Prefer the narrow UpdateMonitor portal and
+/// fall back to a host `flatpak update` when SteamOS lacks that portal version. Either path stages
+/// the new deploy atomically; it takes effect the next time Izumi launches.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn flatpak_update_install(app: tauri::AppHandle) -> Result<(), String> {
