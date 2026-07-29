@@ -17,7 +17,7 @@
 
   let {
     media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay,
-    selecting = false, selectedEp = false,
+    selecting = false, selectedEp = false, numberLabel,
   }: {
     media: Media
     ep: number
@@ -34,7 +34,9 @@
     // playing, and the card shows a checkbox instead of the play affordance.
     selecting?: boolean
     selectedEp?: boolean
+    numberLabel?: string
   } = $props()
+  const shownNumber = $derived(numberLabel ?? String(ep))
 
   const img = $derived(meta?.image)
   // Progressive image: fade each thumbnail in when it decodes, with
@@ -111,7 +113,7 @@
            class="h-full w-full object-cover transition-[opacity,transform] duration-500 {imgReady ? 'opacity-100' : 'opacity-0'} {released ? 'group-hover:scale-105' : 'grayscale'}" />
       <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
 
-      <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{ep}</span>
+      <span class="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-xs font-black">{shownNumber}</span>
 
       <!-- Top-right corner: rating + download status packed together so a missing badge
            leaves NO gap (the rating used to be offset to clear a fixed download-icon slot). -->
@@ -155,7 +157,7 @@
     </div>
   {:else}
     <div class="relative flex items-center gap-3 p-3">
-      <span class="grid h-9 min-w-9 shrink-0 place-items-center rounded bg-background/50 px-1.5 text-xs font-black tabular-nums">{ep}</span>
+      <span class="grid h-9 min-w-9 shrink-0 place-items-center rounded bg-background/50 px-1.5 text-xs font-black tabular-nums">{shownNumber}</span>
       <div class="min-w-0 flex-1">
         <span class="flex items-center gap-1.5">
           <span class="truncate text-sm font-bold">{labels.primary}</span>

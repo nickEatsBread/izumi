@@ -27,6 +27,9 @@ export const localHistory = persisted<Record<number, HistoryEntry>>('local-histo
 // Session-only progress keeps tracker-backed Continue Watching rows reactive even when the user has
 // disabled persisted local history. It is deliberately not saved across launches.
 export const sessionProgress = writable<Record<number, number>>({})
+/** Exact progress chosen from the episode tools. Unlike normal playback progress, this may move
+ * backwards, so it must override the detail query's stale tracker snapshot until a refetch. */
+export const manualProgressOverrides = writable<Record<number, number>>({})
 
 // Only the fields the cards / resume / MAL export actually read — NOT description/relations/etc,
 // which the detail-page media object carries and would bloat localStorage (quota + per-play rewrite).
@@ -92,6 +95,28 @@ export function recordProgress(media: Media, episode: number) {
       updatedAt: Date.now(),
       release: prev?.release, // keep the remembered release across a progress bump
     } }
+  })
+}
+
+/** Set an exact watched-through value from the detail-page tools. Remote tracker mutation is owned
+ * by the caller; this updates the immediate local/session view, including deliberate rewinds. */
+export function setLocalProgress(media: Media, progress: number) {
+  const value = Math.max(0, Math.floor(progress))
+  manualProgressOverrides.update((all) => ({ ...all, [media.id]: value }))
+  sessionProgress.update((all) => ({ ...all, [media.id]: value }))
+  if (!get(saveLocalHistory)) return
+  localHistory.update((history) => {
+    const previous = history[media.id]
+    return {
+      ...history,
+      [media.id]: {
+        media: mediaSnapshot(media),
+        episode: value > 0 ? value : previous?.episode ?? 1,
+        progress: value,
+        updatedAt: Date.now(),
+        release: previous?.release,
+      },
+    }
   })
 }
 

@@ -5,6 +5,7 @@ export type FuzzyDate = { year?: number; month?: number; day?: number }
 export interface Media {
   id: number
   idMal?: number
+  type?: 'ANIME' | 'MANGA'
   title: { romaji?: string; english?: string; native?: string; userPreferred?: string }
   description?: string
   season?: string
