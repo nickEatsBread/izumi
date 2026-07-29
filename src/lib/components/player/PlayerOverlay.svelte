@@ -38,6 +38,7 @@
   import X from 'lucide-svelte/icons/x'
   import PlayIcon from 'lucide-svelte/icons/play'
   import PauseIcon from 'lucide-svelte/icons/pause'
+  import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the
   // webview) by `player_embed`; this transparent overlay paints the controls on
@@ -747,6 +748,7 @@
   {/if}
 
   {#if $playerStatsOpen}<StatsOverlay />{/if}
+  {#if !$pictureInPicture}<PartyPresence floating />{/if}
 
   <!-- Manual Skip button — shown when the current segment won't auto-skip (auto-skip
        off, or an OP/ED debut we intentionally don't auto-skip). Auto-hides after ~5s

@@ -39,6 +39,7 @@
   import { initWatchTogether } from '$lib/watch-together/client'
   import { startUpdateChecks } from '$lib/updater'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
+  import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
@@ -206,6 +207,7 @@
      commentsOpen; the desktop mounts its own inside PlayerOverlay). -->
 {#if $androidMpvActive}<AndroidPlayer />{/if}
 {#if $androidMpvActive}<CommentsPanel />{/if}
+{#if $androidMpvActive}<PartyPresence floating />{/if}
 <StreamPicker />
 <SourceConnecting />
 <DebridCaching />

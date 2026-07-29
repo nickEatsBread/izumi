@@ -13,8 +13,19 @@ import {
 } from './sync'
 
 export type PartyRole = 'host' | 'guest'
+export type PartyReadiness = 'waiting' | 'loading' | 'ready' | 'buffering'
 export interface WatchPartySession { roomCode: string; role: PartyRole; joinedAt: number }
-export interface PartyParticipant { deviceId: string; name: string; role: PartyRole; updatedAt: number }
+export interface PartyParticipant {
+  deviceId: string
+  name: string
+  role: PartyRole
+  updatedAt: number
+  readiness: PartyReadiness
+  paused: boolean
+  position: number
+  mediaId?: number
+  episode?: number
+}
 interface PartyPlayback {
   media: Media
   episode?: number
@@ -28,7 +39,11 @@ interface PartyPlayback {
   sequence: number
   sentAt: number
 }
-interface PartyWireState extends PartyParticipant {
+interface PartyWireState {
+  deviceId: string
+  name: string
+  role: PartyRole
+  updatedAt: number
   app: 'izumi'
   kind: 'watch-party'
   version: 1
@@ -41,6 +56,12 @@ interface PartyWireState extends PartyParticipant {
   pongs?: Record<string, ClockPong>
   /** This peer is stalled on its cache. Drives the host-side buffer gate. */
   buffering?: boolean
+  /** Human-readable participant readiness. Optional for compatibility with older room peers. */
+  readiness?: PartyReadiness
+  paused?: boolean
+  position?: number
+  mediaId?: number
+  episode?: number
 }
 
 const LIVE_ROOM_MS = 30_000
@@ -58,6 +79,7 @@ const partyDeviceId = persisted<string>('watch-party-device-id-v1', '')
 const partyDisplayName = persisted<string>('watch-party-name-v1', '')
 
 let localClock = { position: 0, duration: 0, paused: false, buffering: false }
+let localReadiness: PartyReadiness = 'waiting'
 let sequence = 0
 let lastPublished = 0
 let lastHostPlayback: PartyPlayback | undefined
@@ -88,6 +110,8 @@ function resetSyncState() {
   driftStreak = 0
   gate = { holdingSince: null }
   partyNotice.set('')
+  const active = get(playing) || get(androidMpvActive)
+  localReadiness = active ? (localClock.duration > 0 ? 'ready' : 'loading') : 'waiting'
 }
 
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -122,6 +146,7 @@ function wireState(session: WatchPartySession, playback?: PartyPlayback): PartyW
   const pongs = session.role === 'host'
     ? Object.fromEntries(Object.entries(inboundPings).map(([id, p]) => [id, { ...p, t2: now }]))
     : undefined
+  const activeMedia = get(playing) || get(androidMpvActive) ? get(nowPlayingMedia) : null
   return {
     app: 'izumi', kind: 'watch-party', version: 1,
     roomCode: session.roomCode, role: session.role, deviceId,
@@ -130,6 +155,36 @@ function wireState(session: WatchPartySession, playback?: PartyPlayback): PartyW
     ping: session.role === 'guest' ? pendingPing ?? undefined : undefined,
     pongs: pongs && Object.keys(pongs).length ? pongs : undefined,
     buffering: localClock.buffering || undefined,
+    readiness: !activeMedia ? 'waiting' : localClock.buffering ? 'buffering' : localReadiness,
+    paused: localClock.paused,
+    position: localClock.position,
+    mediaId: activeMedia?.media.id,
+    episode: activeMedia?.episode,
+  }
+}
+
+export function participantFromWire(value: {
+  deviceId: string
+  name: string
+  role: PartyRole
+  updatedAt: number
+  readiness?: PartyReadiness
+  buffering?: boolean
+  paused?: boolean
+  position?: number
+  mediaId?: number
+  episode?: number
+}): PartyParticipant {
+  return {
+    deviceId: value.deviceId,
+    name: value.name,
+    role: value.role,
+    updatedAt: value.updatedAt,
+    readiness: value.buffering ? 'buffering' : value.readiness ?? (value.mediaId ? 'ready' : 'waiting'),
+    paused: !!value.paused,
+    position: Number(value.position) || 0,
+    mediaId: value.mediaId,
+    episode: value.episode,
   }
 }
 
@@ -189,10 +244,14 @@ async function applyHostPlayback(playback: PartyPlayback) {
     loadingRemote = key
     remoteRequestedAt = Date.now()
     partySyncing.set(true)
+    localReadiness = 'loading'
     try {
       let playbackError = ''
       await playStream(playback.media, playback.episode, streamFromSharedSource(playback.source), (state) => {
-        if (state.status === 'error') playbackError = state.message || 'The host source could not be opened.'
+        if (state.status === 'error') {
+          playbackError = state.message || 'The host source could not be opened.'
+          localReadiness = 'waiting'
+        }
       })
       if (playbackError) throw new Error(playbackError)
     } finally {
@@ -232,7 +291,7 @@ async function consumeRecords(records: string[], session: WatchPartySession) {
   const self = localDeviceId()
   const states = records.map(parse).filter((value): value is PartyWireState => !!value)
     .filter((value) => value.roomCode === session.roomCode && now - value.updatedAt < LIVE_ROOM_MS)
-  partyParticipants.set(states.map(({ deviceId, name, role, updatedAt }) => ({ deviceId, name, role, updatedAt })))
+  partyParticipants.set(states.map(participantFromWire))
   const peers = states.filter((value) => value.deviceId !== self)
   const host = states.filter((value) => value.role === 'host' && value.playback)
     .sort((left, right) => right.updatedAt - left.updatedAt)[0]
@@ -336,6 +395,7 @@ export async function leaveWatchParty() {
  *  guests extrapolating through a host that isn't actually advancing. */
 export function reportWatchPlayback(position: number, duration: number, paused: boolean, buffering = false) {
   localClock = { position, duration, paused, buffering }
+  localReadiness = buffering ? 'buffering' : duration > 0 ? 'ready' : get(nowPlayingMedia) ? 'loading' : 'waiting'
   const session = get(watchParty)
   if (!session || session.role !== 'host' || applyingRemote) return
   const now = Date.now()
@@ -359,10 +419,17 @@ export function initWatchTogether() {
   initialized = true
   const heartbeat = setInterval(() => {
     if (get(watchParty)) {
-      if (get(watchParty)?.role === 'host' && get(nowPlayingMedia)) {
+      const host = get(watchParty)?.role === 'host'
+      const active = get(playing) || get(androidMpvActive)
+      if (host && active && get(nowPlayingMedia)) {
         reportWatchPlayback(localClock.position, localClock.duration, localClock.paused, localClock.buffering)
+      } else {
+        if (host) {
+          lastHostPlayback = undefined
+          localReadiness = 'waiting'
+        }
+        void refreshWatchParty()
       }
-      else void refreshWatchParty()
     }
   }, 1_000)
   return () => { clearInterval(heartbeat); initialized = false }
