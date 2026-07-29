@@ -201,6 +201,7 @@ export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; info
 // sidebar/titlebar chrome for edge-to-edge video. Kept in sync with the actual
 // window state via the Rust command's return value.
 export const fullscreen = writable(false)
+export const pictureInPicture = writable(false)
 
 // Game mode (gamescope / Steam Deck): the app runs fullscreen with a TOUCH player
 // and no windowed layout — video takes the whole screen, no sidebar/titlebar chrome
@@ -213,6 +214,7 @@ export async function initGameMode() {
 }
 
 export async function toggleFullscreen() {
+  if (get(pictureInPicture)) await exitPictureInPicture()
   try { fullscreen.set(await invoke<boolean>('player_toggle_fullscreen')) }
   catch (e) { console.warn('toggle fullscreen', e) }
 }
@@ -222,4 +224,25 @@ export async function exitFullscreen() {
   fullscreen.set(false)
   try { await invoke('player_exit_fullscreen') }
   catch (e) { console.warn('exit fullscreen', e) }
+}
+
+/** Desktop miniplayer uses the existing main window and embedded mpv instance, so playback remains
+ * uninterrupted. Android owns its native Activity PiP and does not call this path. */
+export async function togglePictureInPicture() {
+  if (get(fullscreen)) await exitFullscreen()
+  try {
+    pictureInPicture.set(await invoke<boolean>('player_toggle_pip'))
+  } catch (error) {
+    console.warn('toggle picture-in-picture', error)
+    playerNotice.set(error instanceof Error ? error.message : String(error))
+  }
+}
+
+export async function exitPictureInPicture() {
+  if (!get(pictureInPicture)) return
+  try {
+    pictureInPicture.set(await invoke<boolean>('player_toggle_pip'))
+  } catch (error) {
+    console.warn('exit picture-in-picture', error)
+  }
 }

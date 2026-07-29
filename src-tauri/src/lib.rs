@@ -30,6 +30,17 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 #[derive(Default)]
 struct FsWasMax(std::sync::Mutex<bool>);
 
+#[cfg(not(target_os = "android"))]
+struct PipSnapshot {
+    position: tauri::PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
+    maximized: bool,
+}
+
+#[cfg(not(target_os = "android"))]
+#[derive(Default)]
+struct PipWindowState(std::sync::Mutex<Option<PipSnapshot>>);
+
 // Unique labels for webview popups created from discussion embeds. Tauri requires each live
 // webview window to have a distinct label, and Disqus can open more than one OAuth hop.
 static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 =
@@ -2047,6 +2058,73 @@ fn player_exit_fullscreen(app: AppHandle, wasmax: tauri::State<'_, FsWasMax>) ->
     Ok(())
 }
 
+/// Turn the existing main/player window into a compact always-on-top miniplayer. Keeping the same
+/// window is intentional: mpv remains embedded in its original native parent, so switching PiP
+/// never reloads the file, loses decoder state, or starts a second stream.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn player_toggle_pip(
+    app: AppHandle,
+    state: tauri::State<'_, PipWindowState>,
+) -> Result<bool, String> {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
+        return Err("Picture-in-picture is unavailable in Steam Deck Game mode.".into());
+    }
+
+    let window = app.get_webview_window("main").ok_or("no main window")?;
+    let mut saved = state.0.lock().map_err(|_| "PiP state lock poisoned")?;
+    if let Some(snapshot) = saved.take() {
+        window
+            .set_always_on_top(false)
+            .map_err(|error| error.to_string())?;
+        if snapshot.maximized {
+            window.maximize().map_err(|error| error.to_string())?;
+        } else {
+            window
+                .set_size(snapshot.size)
+                .map_err(|error| error.to_string())?;
+            window
+                .set_position(snapshot.position)
+                .map_err(|error| error.to_string())?;
+        }
+        return Ok(false);
+    }
+
+    let snapshot = PipSnapshot {
+        position: window.outer_position().map_err(|error| error.to_string())?,
+        size: window.inner_size().map_err(|error| error.to_string())?,
+        maximized: window.is_maximized().unwrap_or(false),
+    };
+    if window.is_fullscreen().unwrap_or(false) {
+        window
+            .set_fullscreen(false)
+            .map_err(|error| error.to_string())?;
+    }
+    if snapshot.maximized {
+        window.unmaximize().map_err(|error| error.to_string())?;
+    }
+    window
+        .set_size(tauri::LogicalSize::new(480.0, 300.0))
+        .map_err(|error| error.to_string())?;
+    window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+
+    // Dock inside the current monitor's lower-right corner. Physical coordinates account for a
+    // mixed-DPI desktop; a small margin leaves the OS resize edge reachable.
+    if let Some(monitor) = window.current_monitor().map_err(|error| error.to_string())? {
+        let pip = window.outer_size().map_err(|error| error.to_string())?;
+        let bounds = monitor.size();
+        let origin = monitor.position();
+        let x = origin.x + bounds.width.saturating_sub(pip.width + 16) as i32;
+        let y = origin.y + bounds.height.saturating_sub(pip.height + 48) as i32;
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
+    }
+    *saved = Some(snapshot);
+    Ok(true)
+}
+
 /// Run an mpv command on behalf of the on-screen controls (e.g. `cycle pause`,
 /// `seek 10`, `set volume 80`). `args` are the mpv command arguments.
 #[cfg(not(target_os = "android"))]
@@ -2698,6 +2776,8 @@ pub fn run() {
         .manage(TacVerificationConfig::default())
         .manage(FsWasMax::default());
     #[cfg(not(target_os = "android"))]
+    let builder = builder.manage(PipWindowState::default());
+    #[cfg(not(target_os = "android"))]
     let builder = builder.manage(jvm_extensions::Runtime::default());
     let builder = builder.setup(|app| {
             // Restore iroh only for devices that already opted into a sync group. Fresh
@@ -3176,6 +3256,7 @@ pub fn run() {
             player_chapters,
             player_toggle_fullscreen,
             player_exit_fullscreen,
+            player_toggle_pip,
             player_set_inset,
             player_screenshot,
             player_gif_start,
