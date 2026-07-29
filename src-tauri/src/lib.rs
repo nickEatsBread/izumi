@@ -9,6 +9,9 @@ mod http_lifecycle;
 mod hls_proxy;
 #[cfg(not(target_os = "android"))]
 mod jvm_extensions;
+#[cfg(target_os = "android")]
+#[path = "jvm_extensions_android.rs"]
+mod jvm_extensions;
 mod sync;
 mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
@@ -3314,6 +3317,9 @@ pub fn run() {
         extension_package::extension_install_url,
         extension_package::extension_list,
         extension_package::extension_remove,
+        jvm_extensions::jvm_extension_sources,
+        jvm_extensions::jvm_extension_call,
+        jvm_extensions::jvm_extension_reload,
         set_doh,
         write_text_file,
         updater_download_apk,

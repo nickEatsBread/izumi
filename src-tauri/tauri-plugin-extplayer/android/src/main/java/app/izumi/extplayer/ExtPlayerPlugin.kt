@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.Gravity
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -31,9 +32,14 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import dalvik.system.DexClassLoader
 import java.io.File
+import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.zip.ZipFile
+import org.json.JSONArray
+import org.json.JSONObject
 
 // Uniquely-named FileProvider subclass so the merged app manifest never clashes with a
 // FileProvider another plugin registers (two <provider> nodes sharing android:name collide).
@@ -49,6 +55,20 @@ class PlayArgs {
 @InvokeArg
 class InstallArgs {
     var path: String = ""
+}
+
+@InvokeArg
+class AniyomiRuntimeArgs {
+    var runtimePath: String = ""
+    var extensionsPath: String = ""
+}
+
+@InvokeArg
+class AniyomiCallArgs {
+    var runtimePath: String = ""
+    var extensionsPath: String = ""
+    var method: String = ""
+    var argsJson: String = "{}"
 }
 
 @InvokeArg
@@ -87,10 +107,211 @@ class DaLoginArgs {
 
 @TauriPlugin
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
+    private val aniyomiLock = Any()
+    @Volatile private var aniyomiRuntime: Any? = null
+    @Volatile private var aniyomiRuntimeClass: Class<*>? = null
+    @Volatile private var aniyomiRuntimePath: String? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     // The app's main WebView, captured in load(); used to reload the in-app Disqus embed iframe after
     // an in-overlay login so it re-boots with the freshly-set session cookie.
     private var appWebView: WebView? = null
+
+    private fun loadAniyomiRuntime(runtimePath: String) {
+        synchronized(aniyomiLock) {
+            if (aniyomiRuntime != null && aniyomiRuntimePath == runtimePath) return
+            val context = activity.applicationContext
+            val originalApk = File(runtimePath)
+            require(originalApk.isFile) { "Aniyomi runtime host is missing" }
+
+            // Android 14 requires dynamically loaded code to be read-only. Copy the verified host
+            // into the app's private files directory before creating the class loader.
+            val cachedApk = File(
+                context.filesDir,
+                "izumi_anymex_runtime_${originalApk.length()}_${originalApk.lastModified()}.apk",
+            )
+            if (!cachedApk.exists()) {
+                context.filesDir.listFiles()?.forEach { file ->
+                    if (file.name.startsWith("izumi_anymex_runtime_") &&
+                        file.name.endsWith(".apk") &&
+                        file != cachedApk
+                    ) file.delete()
+                }
+                originalApk.inputStream().use { input ->
+                    FileOutputStream(cachedApk).use(input::copyTo)
+                }
+                cachedApk.setReadOnly()
+            }
+
+            context.cacheDir.listFiles()?.forEach { file ->
+                if (file.isDirectory &&
+                    (file.name.startsWith("izumi_anymex_dex_") ||
+                        file.name.startsWith("izumi_anymex_libs_"))
+                ) file.deleteRecursively()
+            }
+            val optimizedDir = File(
+                context.cacheDir,
+                "izumi_anymex_dex_${System.currentTimeMillis()}",
+            ).apply { mkdirs() }
+            val librariesDir = File(
+                context.cacheDir,
+                "izumi_anymex_libs_${System.currentTimeMillis()}",
+            ).apply { mkdirs() }
+
+            // The runtime host currently ships native helpers. DexClassLoader does not extract an
+            // APK's lib/<abi> directory, so mirror the upstream bridge and provide it explicitly.
+            ZipFile(cachedApk).use { zip ->
+                val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull { candidate ->
+                    val prefix = "lib/$candidate/"
+                    zip.entries().asSequence().any {
+                        it.name.startsWith(prefix) && it.name.endsWith(".so")
+                    }
+                }
+                if (abi != null) {
+                    val prefix = "lib/$abi/"
+                    zip.entries().asSequence()
+                        .filter { it.name.startsWith(prefix) && it.name.endsWith(".so") }
+                        .forEach { entry ->
+                            zip.getInputStream(entry).use { input ->
+                                FileOutputStream(File(librariesDir, entry.name.substringAfterLast('/')))
+                                    .use(input::copyTo)
+                            }
+                        }
+                }
+            }
+
+            val loader = ChildFirstClassLoader(
+                cachedApk.absolutePath,
+                optimizedDir.absolutePath,
+                librariesDir.absolutePath,
+                context.classLoader,
+            )
+            val bridgeClass = loader.loadClass("com.anymex.runtimehost.RuntimeBridge")
+            aniyomiRuntimeClass = bridgeClass
+            aniyomiRuntime = bridgeClass.getField("INSTANCE").get(null)
+            aniyomiRuntimePath = runtimePath
+            invokeAniyomi("initialize", context, null)
+            Log.i("IzumiAniyomi", "AnymeX Android runtime host loaded")
+        }
+    }
+
+    private fun invokeAniyomi(methodName: String, vararg args: Any?): Any? {
+        val bridge = aniyomiRuntime ?: error("Aniyomi runtime host is not loaded")
+        val bridgeClass = aniyomiRuntimeClass ?: error("Aniyomi runtime class is not loaded")
+        val method = bridgeClass.methods
+            .firstOrNull { it.name == methodName && it.parameterTypes.size == args.size }
+            ?: throw NoSuchMethodException("RuntimeBridge.$methodName/${args.size}")
+        return try {
+            method.invoke(bridge, *args)
+        } catch (error: java.lang.reflect.InvocationTargetException) {
+            throw error.targetException ?: error
+        }
+    }
+
+    private fun jsonValue(value: Any?): Any? = when (value) {
+        null, JSONObject.NULL -> null
+        is JSONObject -> value.keys().asSequence().associateWith { jsonValue(value.get(it)) }
+        is JSONArray -> (0 until value.length()).map { jsonValue(value.get(it)) }
+        else -> value
+    }
+
+    private fun jsonText(value: Any?): String = when (value) {
+        null -> "null"
+        is Map<*, *> -> JSONObject(value).toString()
+        is Collection<*> -> JSONArray(value).toString()
+        is Array<*> -> JSONArray(value.toList()).toString()
+        else -> JSONObject.wrap(value)?.toString() ?: "null"
+    }
+
+    private fun resolveJson(invoke: Invoke, value: Any?) {
+        invoke.resolve(JSObject().put("json", jsonText(value)))
+    }
+
+    @Command
+    fun aniyomiSources(invoke: Invoke) {
+        val args = invoke.parseArgs(AniyomiRuntimeArgs::class.java)
+        Thread {
+            try {
+                loadAniyomiRuntime(args.runtimePath)
+                val context = activity.applicationContext
+                val raw = invokeAniyomi(
+                    "getInstalledAnimeExtensions",
+                    context,
+                    args.extensionsPath,
+                ) as? List<*> ?: emptyList<Any?>()
+                // Match the desktop bridge shape consumed by manager.ts.
+                val sources = raw.mapNotNull { source ->
+                    @Suppress("UNCHECKED_CAST")
+                    val map = source as? Map<String, Any?> ?: return@mapNotNull null
+                    map.toMutableMap().apply { put("type", "anime") }
+                }
+                resolveJson(invoke, sources)
+            } catch (error: Throwable) {
+                Log.e("IzumiAniyomi", "Could not enumerate sources", error)
+                invoke.reject(error.message ?: "Could not load Aniyomi sources")
+            }
+        }.start()
+    }
+
+    @Command
+    fun aniyomiCall(invoke: Invoke) {
+        val args = invoke.parseArgs(AniyomiCallArgs::class.java)
+        Thread {
+            try {
+                loadAniyomiRuntime(args.runtimePath)
+                @Suppress("UNCHECKED_CAST")
+                val values = jsonValue(JSONObject(args.argsJson)) as Map<String, Any?>
+                val context = activity.applicationContext
+                val sourceId = values["sourceId"]?.toString()
+                    ?: error("Aniyomi call has no sourceId")
+                val isAnime = values["isAnime"] as? Boolean ?: true
+                val result = when (args.method) {
+                    "search" -> invokeAniyomi(
+                        "aniyomiSearch",
+                        context,
+                        sourceId,
+                        isAnime,
+                        values["query"]?.toString() ?: "",
+                        (values["page"] as? Number)?.toInt() ?: 1,
+                        null,
+                    )
+                    "getDetail" -> invokeAniyomi(
+                        "aniyomiGetDetail",
+                        context,
+                        sourceId,
+                        isAnime,
+                        values["media"] as? Map<*, *> ?: emptyMap<String, Any?>(),
+                        null,
+                    )
+                    "getVideoList" -> invokeAniyomi(
+                        "aniyomiGetVideoList",
+                        context,
+                        sourceId,
+                        isAnime,
+                        values["episode"] as? Map<*, *> ?: emptyMap<String, Any?>(),
+                        null,
+                    )
+                    else -> error("Unsupported Aniyomi method: ${args.method}")
+                }
+                resolveJson(invoke, result)
+            } catch (error: Throwable) {
+                Log.e("IzumiAniyomi", "Runtime call ${args.method} failed", error)
+                invoke.reject(error.message ?: "Aniyomi extension call failed")
+            }
+        }.start()
+    }
+
+    @Command
+    fun aniyomiReload(invoke: Invoke) {
+        synchronized(aniyomiLock) {
+            runCatching {
+                if (aniyomiRuntime != null) invokeAniyomi("shutdown")
+            }
+            aniyomiRuntime = null
+            aniyomiRuntimeClass = null
+            aniyomiRuntimePath = null
+        }
+        invoke.resolve()
+    }
 
     private fun openDisqusLogin(rawUrl: String) {
         val uri = runCatching { Uri.parse(rawUrl) }.getOrNull() ?: return
@@ -585,5 +806,35 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 invoke.reject(e.message ?: "react failed")
             }
         }.start()
+    }
+
+    // Runtime-host dependencies must win over similarly named app dependencies (Kotlin/OkHttp),
+    // except AndroidX classes which have to keep the Activity's process-wide identity.
+    private class ChildFirstClassLoader(
+        dexPath: String,
+        optimizedDirectory: String?,
+        librarySearchPath: String?,
+        parent: ClassLoader,
+    ) : DexClassLoader(dexPath, optimizedDirectory, librarySearchPath, parent) {
+        private val system = getSystemClassLoader()
+
+        override fun loadClass(name: String?, resolve: Boolean): Class<*> {
+            var loaded = findLoadedClass(name)
+            if (loaded == null) {
+                loaded = runCatching { system?.loadClass(name) }.getOrNull()
+            }
+            if (loaded == null && name?.startsWith("androidx.") == true) {
+                loaded = runCatching { parent.loadClass(name) }.getOrNull()
+            }
+            if (loaded == null) {
+                loaded = try {
+                    findClass(name)
+                } catch (_: ClassNotFoundException) {
+                    super.loadClass(name, false)
+                }
+            }
+            if (resolve) resolveClass(loaded)
+            return loaded
+        }
     }
 }

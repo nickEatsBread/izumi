@@ -10,7 +10,6 @@
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { sourceLabel } from '$lib/extensions/catalog'
-  import { isAndroid } from '$lib/platform'
   import { langName } from '$lib/player/track-label'
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
@@ -31,6 +30,8 @@
   let packageBusy = $state(false)
   const installedById = $derived(new Map(localPackages.map((extension) => [extension.id, extension])))
   const installedIn = (packages: ExtensionCatalogPackage[]) => packages.filter((p) => installedById.has(p.id))
+  const enabledInstalledIn = (packages: ExtensionCatalogPackage[]) =>
+    installedIn(packages).filter((extension) => !pluginOff(extension.id))
 
   async function refreshPackages() {
     localPackages = await installedExtensionPackages()
@@ -139,6 +140,12 @@
         extension.language,
         ...(extension.sources ?? []).flatMap((source) => [source.name, source.language]),
       ].some((value) => value?.toLocaleLowerCase().includes(query))
+    }).sort((a, b) => {
+      // Keep the handful of locally-installed packages visible above a catalog with hundreds of
+      // entries. Enabled first, then installed-but-off, then packages that are not installed.
+      const rank = (extension: ExtensionCatalogPackage) =>
+        !installedById.has(extension.id) ? 2 : pluginOff(extension.id) ? 1 : 0
+      return rank(a) - rank(b)
     })
   }
 </script>
@@ -267,8 +274,12 @@
               </div>
               {#if pkgs}
                 {@const mine = installedIn(pkgs)}
-                <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
-                  {mine.length} of {pkgs.length} packages installed · {(mine.length ? mine : pkgs).map((p) => p.name).join(' · ') || 'this catalog is empty'}
+                {@const enabledMine = enabledInstalledIn(pkgs)}
+                <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                  {mine.length} of {pkgs.length} installed · {enabledMine.length} enabled
+                  {#if enabledMine.length} · {enabledMine.map((p) => p.name).join(' · ')}
+                  {:else if mine.length} · none enabled
+                  {:else} · no packages installed{/if}
                 </p>
               {:else if metas.length > 1}
                 {@const on = enabledCount(metas.map((x) => x.id))}
@@ -304,6 +315,7 @@
                 {@const pkgs = info.packages}
                 {@const shown = visiblePackages(url, pkgs)}
                 {@const ids = installedIn(pkgs).map((p) => p.id)}
+                {@const enabledPackages = enabledInstalledIn(pkgs)}
                 <div class="mt-3 border-t border-border pt-3">
                   <div class="mb-2 flex flex-wrap items-center gap-2">
                     <label class="relative min-w-48 flex-1">
@@ -331,8 +343,14 @@
                   {/if}
                   <p class="px-1 pb-1 text-[0.68rem] text-muted-foreground">
                     {shown.length} of {pkgs.length} packages. Installed ones stay installed if this source is removed.
-                    {#if $isAndroid}Installing packages isn't available on Android.{:else}JVM support and its shared runtime download only when needed.{/if}
+                    Aniyomi support and its shared runtime download only when needed.
                   </p>
+                  {#if ids.length}
+                    <p class="mb-2 rounded-md bg-secondary/60 px-2 py-1.5 text-[0.68rem] text-muted-foreground">
+                      <span class="font-bold text-foreground">Enabled ({enabledPackages.length}):</span>
+                      {enabledPackages.map((extension) => extension.name).join(' · ') || 'None'}
+                    </p>
+                  {/if}
                   <ul class="max-h-72 space-y-1 overflow-y-auto pr-1">
                     {#each shown as p (p.id)}
                       {@const inst = installedById.get(p.id)}
@@ -350,6 +368,9 @@
                             {/if}
                             {#if inst}
                               <span class="rounded bg-secondary px-1 py-0.5 text-[0.55rem] font-bold text-muted-foreground">v{inst.version}</span>
+                              <span class="rounded px-1 py-0.5 text-[0.55rem] font-bold {pOff ? 'bg-white/10 text-muted-foreground' : 'bg-emerald-500/15 text-emerald-400'}">
+                                {pOff ? 'OFF' : 'ENABLED'}
+                              </span>
                             {/if}
                           </div>
                           <p class="truncate text-[0.65rem] text-muted-foreground">{(p.sources ?? []).map((source) => source.name).join(' · ') || p.id}</p>
@@ -361,17 +382,15 @@
                             <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
                           </button>
                         {/if}
-                        {#if !$isAndroid}
-                          <button
-                            data-focusable
-                            disabled={packageBusy}
-                            onclick={() => installFromCatalog(url, p)}
-                            class="shrink-0 rounded-md px-2 py-1 text-xs font-bold {inst ? 'text-muted-foreground hover:bg-accent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
-                          >{!inst ? 'Install' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
-                          {#if inst}
-                            <button data-focusable disabled={packageBusy} onclick={() => removePackage(url, p.id)} title="Uninstall"
-                              class="grid size-7 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50"><Trash2 size={14} /></button>
-                          {/if}
+                        <button
+                          data-focusable
+                          disabled={packageBusy}
+                          onclick={() => installFromCatalog(url, p)}
+                          class="shrink-0 rounded-md px-2 py-1 text-xs font-bold {inst ? 'text-muted-foreground hover:bg-accent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
+                        >{!inst ? 'Install' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
+                        {#if inst}
+                          <button data-focusable disabled={packageBusy} onclick={() => removePackage(url, p.id)} title="Uninstall"
+                            class="grid size-7 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50"><Trash2 size={14} /></button>
                         {/if}
                       </li>
                     {/each}
