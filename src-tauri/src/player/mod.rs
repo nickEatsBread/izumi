@@ -111,6 +111,10 @@ pub struct AudioTrack {
 #[derive(Clone)]
 pub(crate) struct PendingExternalTracks {
     url: String,
+    // `loadfile` is asynchronous. In particular, a core held paused by keep-open-pause at the
+    // previous episode's EOF can restore that pause after load_file's immediate property write.
+    // Reapply the caller's intent when this exact replacement reaches FileLoaded.
+    autoplay: bool,
     subtitles: Vec<Subtitle>,
     audio_tracks: Vec<AudioTrack>,
 }
@@ -940,6 +944,7 @@ fn load_file(
     *pending_external_tracks.lock().map_err(|e| e.to_string())? =
         Some(PendingExternalTracks {
             url: url.to_string(),
+            autoplay,
             subtitles: subtitles.to_vec(),
             audio_tracks: audio_tracks.to_vec(),
         });
@@ -1096,10 +1101,19 @@ pub(crate) fn spawn_event_loop(
                         if let Some(tracks) =
                             take_pending_external_tracks(&pending_external_tracks, &loaded_url)
                         {
+                            let autoplay = tracks.autoplay;
                             let failures = attach_external_tracks(&client, tracks);
                             if failures > 0 {
                                 eprintln!("mpv could not attach {failures} external media track(s)");
                                 let _ = app.emit("player-track-error", failures);
+                            }
+                            // Gamescope's reusable X11 core is commonly still under the previous
+                            // file's keep-open EOF pause while a debrid link resolves. `loadfile`
+                            // only queues the replacement, so the eager write in load_file can be
+                            // overwritten during the slow transition. FileLoaded is the first
+                            // point at which the new file definitively owns the pause property.
+                            if let Err(error) = client.set_property("pause", !autoplay) {
+                                eprintln!("mpv could not apply autoplay after file load: {error}");
                             }
                         }
                     }
@@ -1536,6 +1550,7 @@ mod tests {
     fn pending_tracks_are_only_taken_by_their_matching_file() {
         let pending = Mutex::new(Some(PendingExternalTracks {
             url: "https://video.example/episode-2.m3u8".to_string(),
+            autoplay: true,
             subtitles: vec![Subtitle {
                 url: "https://subs.example/episode-2.vtt".to_string(),
                 lang: Some("eng".to_string()),
@@ -1557,6 +1572,7 @@ mod tests {
             "https://video.example/episode-2.m3u8",
         )
         .expect("matching file should receive its queued tracks");
+        assert!(tracks.autoplay);
         assert_eq!(tracks.subtitles.len(), 1);
         assert!(tracks.subtitles[0].is_default);
         assert!(pending.lock().unwrap().is_none());
