@@ -14,8 +14,8 @@ mod mobile;
 
 pub use error::{Error, Result};
 pub use models::{
-    BrowserRequest, DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse,
-    PlayRequest,
+    AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DeviceStatus, InstallRequest,
+    JsonResponse, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
 };
 
 #[cfg(desktop)]

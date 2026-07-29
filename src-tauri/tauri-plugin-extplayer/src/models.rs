@@ -21,6 +21,31 @@ pub struct InstallRequest {
     pub path: String,
 }
 
+/// Paths needed to load the pinned AnymeX Android runtime and enumerate Izumi's privately stored
+/// Aniyomi APKs. Both paths stay inside the app data directory.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AniyomiRuntimeRequest {
+    pub runtime_path: String,
+    pub extensions_path: String,
+}
+
+/// One call through the Android runtime host. JSON is used at the Kotlin boundary because the
+/// returned extension maps are heterogeneous and Tauri's generated argument classes are static.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AniyomiCallRequest {
+    pub runtime_path: String,
+    pub extensions_path: String,
+    pub method: String,
+    pub args_json: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct JsonResponse {
+    pub json: String,
+}
+
 /// A URL to show in Android's browser-backed Custom Tab.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BrowserRequest {

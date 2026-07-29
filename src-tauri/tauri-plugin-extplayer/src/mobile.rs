@@ -5,9 +5,10 @@ use tauri::{
 };
 
 use crate::models::{
-    BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
-    DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
-    ReactResponse, ReactionStateResponse,
+    AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DaLoginRequest, DaLoginResponse,
+    DaReactRequest, DaReactionStateRequest, DeviceStatus, InstallRequest, JsonResponse,
+    LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest, ReactResponse,
+    ReactionStateResponse,
 };
 
 #[cfg(target_os = "android")]
@@ -80,6 +81,27 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn da_login(&self, payload: DaLoginRequest) -> crate::Result<DaLoginResponse> {
         self.0
             .run_mobile_plugin("daLogin", payload)
+            .map_err(Into::into)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn aniyomi_sources(&self, payload: AniyomiRuntimeRequest) -> crate::Result<JsonResponse> {
+        self.0
+            .run_mobile_plugin("aniyomiSources", payload)
+            .map_err(Into::into)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn aniyomi_call(&self, payload: AniyomiCallRequest) -> crate::Result<JsonResponse> {
+        self.0
+            .run_mobile_plugin("aniyomiCall", payload)
+            .map_err(Into::into)
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn aniyomi_reload(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("aniyomiReload", ())
             .map_err(Into::into)
     }
 }

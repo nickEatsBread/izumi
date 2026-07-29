@@ -15,8 +15,7 @@ pub struct InstalledExtension {
     pub signed: bool,
 }
 
-#[cfg(not(target_os = "android"))]
-mod desktop {
+mod package {
     use super::InstalledExtension;
     use base64::Engine;
     use ed25519_dalek::pkcs8::DecodePublicKey;
@@ -259,7 +258,7 @@ mod desktop {
             )
         } else {
             if !entry_bytes.starts_with(b"PK") {
-                return Err("Aniyomi extension entry is not a JAR".into());
+                return Err("Aniyomi extension entry is not an APK/JAR archive".into());
             }
             None
         };
@@ -329,6 +328,9 @@ mod desktop {
     }
 
     fn jvm_dir(app: &AppHandle) -> Result<PathBuf, String> {
+        #[cfg(target_os = "android")]
+        return Ok(android_runtime_root(app)?.join("exts"));
+        #[cfg(not(target_os = "android"))]
         Ok(extension_dir(app)?.join("jvm"))
     }
 
@@ -336,24 +338,32 @@ mod desktop {
         if !safe_id(id) {
             return Err("Extension id is unsafe".into());
         }
+        #[cfg(target_os = "android")]
+        return Ok(jvm_dir(app)?.join(format!("{id}.apk")));
+        #[cfg(not(target_os = "android"))]
         Ok(jvm_dir(app)?.join(format!("{id}.jar")))
     }
 
-    fn store_jvm_entry(app: &AppHandle, id: &str, jar: Option<&[u8]>) -> Result<(), String> {
-        let Some(jar) = jar else {
+    #[cfg(target_os = "android")]
+    pub fn android_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
+        Ok(extension_dir(app)?.join("android"))
+    }
+
+    fn store_jvm_entry(app: &AppHandle, id: &str, payload: Option<&[u8]>) -> Result<(), String> {
+        let Some(payload) = payload else {
             return Ok(());
         };
         let dir = jvm_dir(app)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let destination = jvm_path(app, id)?;
         if std::fs::read(&destination)
-            .map(|existing| sha256(&existing) == sha256(jar))
+            .map(|existing| sha256(&existing) == sha256(payload))
             .unwrap_or(false)
         {
             return Ok(());
         }
-        let temporary = destination.with_extension("jar.part");
-        std::fs::write(&temporary, jar).map_err(|e| e.to_string())?;
+        let temporary = destination.with_extension("part");
+        std::fs::write(&temporary, payload).map_err(|e| e.to_string())?;
         if destination.exists() {
             std::fs::remove_file(&destination).map_err(|e| e.to_string())?;
         }
@@ -576,13 +586,7 @@ mod desktop {
 
 #[tauri::command]
 pub fn extension_install(app: AppHandle, path: String) -> Result<InstalledExtension, String> {
-    #[cfg(not(target_os = "android"))]
-    return desktop::install(&app, std::path::Path::new(&path));
-    #[cfg(target_os = "android")]
-    {
-        let _ = (app, path);
-        Err("Local extension packages are currently desktop-only".into())
-    }
+    package::install(&app, std::path::Path::new(&path))
 }
 
 #[tauri::command]
@@ -591,33 +595,20 @@ pub async fn extension_install_url(
     url: String,
     expected_sha256: String,
 ) -> Result<InstalledExtension, String> {
-    #[cfg(not(target_os = "android"))]
-    return desktop::install_url(&app, &url, &expected_sha256).await;
-    #[cfg(target_os = "android")]
-    {
-        let _ = (app, url, expected_sha256);
-        Err("Local extension packages are currently desktop-only".into())
-    }
+    package::install_url(&app, &url, &expected_sha256).await
 }
 
 #[tauri::command]
 pub fn extension_list(app: AppHandle) -> Result<Vec<InstalledExtension>, String> {
-    #[cfg(not(target_os = "android"))]
-    return desktop::list(&app);
-    #[cfg(target_os = "android")]
-    {
-        let _ = app;
-        Ok(Vec::new())
-    }
+    package::list(&app)
 }
 
 #[tauri::command]
 pub fn extension_remove(app: AppHandle, id: String) -> Result<(), String> {
-    #[cfg(not(target_os = "android"))]
-    return desktop::remove(&app, &id);
-    #[cfg(target_os = "android")]
-    {
-        let _ = (app, id);
-        Err("Local extension packages are currently desktop-only".into())
-    }
+    package::remove(&app, &id)
+}
+
+#[cfg(target_os = "android")]
+pub fn android_runtime_root(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    package::android_runtime_root(app)
 }
