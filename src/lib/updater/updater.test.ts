@@ -116,9 +116,8 @@ it('applyUpdate on flatpak uses the portal + ends in ready (no relaunch)', async
   expect(get(updateError)).toBe('')
 })
 
-// The portal refusing is the common Steam Deck case (bundle install with no update origin, or no
-// portal backend). In Game mode there is no browser to send the user to — opening one is exactly
-// the reported bug — so the failure has to stay in-app.
+// Rust tries the portal and host fallback before rejecting. In Game mode there is no browser to
+// send the user to, so the final backend error stays in-app without obsolete manual steps.
 it('applyUpdate on flatpak surfaces the reason in Game mode instead of opening a browser', async () => {
   const { invoke } = await import('@tauri-apps/api/core')
   const { openUrl } = await import('@tauri-apps/plugin-opener')
@@ -131,7 +130,7 @@ it('applyUpdate on flatpak surfaces the reason in Game mode instead of opening a
   expect(openUrl).not.toHaveBeenCalled()
   expect(get(updatePhase)).toBe('error')
   expect(get(updateError)).toContain('the portal refused the update')
-  expect(get(updateError)).toContain('flatpak update com.nicho.izumi')
+  expect(get(updateError)).not.toContain('Switch to Desktop Mode')
 })
 
 it('applyUpdate on flatpak still falls back to the release page outside Game mode', async () => {
