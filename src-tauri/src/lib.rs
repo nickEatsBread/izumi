@@ -2748,63 +2748,18 @@ async fn flatpak_update_install(app: tauri::AppHandle) -> Result<(), String> {
         if !running_in_flatpak() {
             return Err("not a flatpak build".into());
         }
-        use ashpd::flatpak::update_monitor::UpdateStatus;
-        use ashpd::flatpak::Flatpak;
-        use futures_util::StreamExt;
-        // Each step is labelled: this command's only failure surface is a single string shown in a
-        // toast, and "connect to the portal" / "create a monitor" / "ask for the update" fail for
-        // completely different reasons (no portal backend vs. no update origin on a bundle
-        // install). Without the label an on-device report is undiagnosable.
-        let proxy = Flatpak::new()
-            .await
-            .map_err(|e| format!("Flatpak portal unavailable: {e}"))?;
-        let monitor = proxy
-            .create_update_monitor(Default::default())
-            .await
-            .map_err(|e| format!("could not create the update monitor: {e}"))?;
-        // Subscribe to `Progress` BEFORE asking for the update so no early signal is missed.
-        let mut progress = monitor
-            .receive_progress()
-            .await
-            .map_err(|e| format!("could not subscribe to update progress: {e}"))?;
-        // No parent window (Game mode has none) and default options.
-        // NOTE: this is where a sideloaded/bundle install fails — a deploy with no OSTree origin
-        // has no remote for the portal to pull from.
-        monitor
-            .update(None, Default::default())
-            .await
-            .map_err(|e| format!("the portal refused the update (installed without an update origin?): {e}"))?;
-        // Forward the portal's progress to the toast and stop on a terminal status.
-        while let Some(p) = progress.next().await {
-            if let Some(pct) = p.progress() {
-                let _ = app.emit("flatpak-update-progress", pct);
-            }
-            match p.status() {
-                Some(UpdateStatus::Done) => break,
-                // `Empty` is "the portal had nothing to pull". Treating it as success told the user
-                // to quit and relaunch for an update that was never staged — they'd come back on
-                // the same version. It happens when the GitHub version check (which is what the
-                // frontend actually checks) is ahead of the OSTree remote, so say so honestly.
-                Some(UpdateStatus::Empty) => {
-                    let _ = monitor.close().await;
-                    return Err(
-                        "the Flatpak remote has no newer build yet — it may not have published this \
-                         version. Try again later."
-                            .into(),
-                    );
-                }
-                Some(UpdateStatus::Failed) => {
-                    let _ = monitor.close().await;
-                    return Err(p
-                        .error_message()
-                        .unwrap_or("flatpak update failed")
-                        .to_string());
-                }
-                _ => {}
-            }
+        if let Err(portal_error) = flatpak_portal_update(&app).await {
+            player::linux_embed::elog(&format!(
+                "updater: Flatpak portal failed, trying host updater: {portal_error}"
+            ));
+            flatpak_host_update().await.map_err(|host_error| {
+                format!(
+                    "automatic Flatpak update failed. Portal: {portal_error}. \
+                     Host fallback: {host_error}"
+                )
+            })?;
         }
         let _ = app.emit("flatpak-update-progress", 100u32);
-        let _ = monitor.close().await;
         return Ok(());
     }
     #[cfg(not(target_os = "linux"))]
@@ -3250,28 +3205,6 @@ pub fn run() {
                         }
                     }
                 });
-                // The edge restores above (boot, focus, gamepad press, navigation) all lose the
-                // property war whenever Steam writes AFTER them with no further edge — Steam owns
-                // the mode from its own XWayland root (a different X server; its writes are
-                // unobservable from in here), and gamescope keeps one global last-writer-wins
-                // value. That's the touch-dead-at-launch-until-a-d-pad-press bug and the random
-                // mid-session touch deaths. So on top of the edges, re-publish passthrough every
-                // 250ms: a same-value XChangeProperty still raises PropertyNotify, which makes
-                // gamescope re-read mode 4 from OUR root. One property write + flush on the local
-                // socket per tick — negligible.
-                if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
-                    let keepalive_win = win.clone();
-                    let mut err_logged = false;
-                    glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
-                        if let Err(e) = player::linux_x11::keepalive_native_touch(&keepalive_win) {
-                            if !err_logged {
-                                err_logged = true;
-                                player::linux_embed::elog(&format!("x11: touch keepalive failed (logged once): {e}"));
-                            }
-                        }
-                        glib::ControlFlow::Continue
-                    });
-                }
                 let _ = win.with_webview(|pw| {
                     use glib::object::ObjectType;
                     use webkit2gtk::{
