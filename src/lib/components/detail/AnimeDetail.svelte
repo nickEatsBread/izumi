@@ -33,7 +33,6 @@
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import RichMetadata from './RichMetadata.svelte'
-  import FranchiseNavigator from './FranchiseNavigator.svelte'
   import { reliableImage } from '$lib/util/reliable-image'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
@@ -275,7 +274,6 @@
       {/if}
 
       <div class="mt-6">
-        <FranchiseNavigator media={m} />
         <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
         {#if active === 'Episodes'}
           <EpisodeList media={m} offline={$offlineMode} />
@@ -385,7 +383,6 @@
       </div>
     </div>
 
-    <FranchiseNavigator media={m} />
     <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
     {#if active === 'Episodes'}
       <EpisodeList media={m} offline={$offlineMode} />
