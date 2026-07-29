@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateRoomCode, liveRoomHost } from './client'
+import { generateRoomCode, liveRoomHost, participantFromWire } from './client'
 
 describe('Watch Together room codes', () => {
   it('generates the six characters required by the join screen', () => {
@@ -10,6 +10,39 @@ describe('Watch Together room codes', () => {
 
   it('rejects an undersized random input', () => {
     expect(() => generateRoomCode(new Uint8Array(3))).toThrow('Six random bytes')
+  })
+})
+
+describe('Watch Together participant readiness', () => {
+  const base = {
+    deviceId: 'peer',
+    name: 'Peer',
+    role: 'guest' as const,
+    updatedAt: 1,
+  }
+
+  it('keeps explicit ready/loading states and exposes playback position', () => {
+    expect(participantFromWire({
+      ...base,
+      readiness: 'ready',
+      paused: true,
+      position: 42,
+      mediaId: 7,
+      episode: 3,
+    })).toMatchObject({ readiness: 'ready', paused: true, position: 42, mediaId: 7, episode: 3 })
+  })
+
+  it('lets the live buffering signal override a stale ready state', () => {
+    expect(participantFromWire({
+      ...base,
+      readiness: 'ready',
+      buffering: true,
+    }).readiness).toBe('buffering')
+  })
+
+  it('maps old peers without readiness to a useful compatible status', () => {
+    expect(participantFromWire(base).readiness).toBe('waiting')
+    expect(participantFromWire({ ...base, mediaId: 9 }).readiness).toBe('ready')
   })
 })
 

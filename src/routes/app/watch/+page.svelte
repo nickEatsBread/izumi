@@ -12,6 +12,9 @@
   import { torrentPlaybackMode, debridKey, debridRoomNoticeAck } from '$lib/settings/ui'
   import DebridRoomNotice from '$lib/components/watch/DebridRoomNotice.svelte'
   import { isEffectiveDebridMode, shouldWarnBeforeHosting } from '$lib/watch-together/debrid-warning'
+  import LoaderCircle from 'lucide-svelte/icons/loader-circle'
+  import CircleCheck from 'lucide-svelte/icons/circle-check'
+  import Clock3 from 'lucide-svelte/icons/clock-3'
 
   heroMedia.set(null)
   let code = $state('')
@@ -42,6 +45,11 @@
     if (!$watchParty) return
     copyToClipboard($watchParty.roomCode)
   }
+  const readinessLabel = (status: 'waiting' | 'loading' | 'ready' | 'buffering', paused: boolean) =>
+    status === 'buffering' ? 'Buffering'
+    : status === 'loading' ? 'Loading episode'
+    : status === 'waiting' ? 'Waiting for playback'
+    : paused ? 'Ready · paused' : 'Ready'
 </script>
 
 <div class="mx-auto max-w-3xl p-4 pb-24 sm:p-8">
@@ -65,7 +73,34 @@
       {#if $partyNotice}<div class="mt-3 text-sm font-bold text-muted-foreground">{$partyNotice}</div>{/if}
     </section>
     <div class="mt-5 flex items-center justify-between"><h2 class="font-black">Participants ({$partyParticipants.length})</h2><button onclick={refreshWatchParty} class="grid size-9 place-items-center rounded-lg bg-secondary"><RefreshCw size={16} /></button></div>
-    <div class="mt-2 space-y-2">{#each $partyParticipants as participant (participant.deviceId)}<div class="flex items-center gap-3 rounded-lg bg-secondary/40 px-4 py-3"><span class="grid size-8 place-items-center rounded-full bg-theme/15 font-black text-theme">{participant.name.slice(0, 1).toUpperCase()}</span><span class="flex-1 font-bold">{participant.name}</span><span class="rounded-full bg-background px-2 py-1 text-[0.65rem] font-black uppercase text-muted-foreground">{participant.role}</span></div>{/each}</div>
+    <div class="mt-2 space-y-2">
+      {#each $partyParticipants as participant (participant.deviceId)}
+        <div class="flex items-center gap-3 rounded-lg bg-secondary/40 px-4 py-3">
+          <span class="grid size-8 place-items-center rounded-full bg-theme/15 font-black text-theme">{participant.name.slice(0, 1).toUpperCase()}</span>
+          <span class="min-w-0 flex-1">
+            <span class="block truncate font-bold">{participant.name}</span>
+            {#if participant.mediaId}
+              <span class="block text-[0.68rem] text-muted-foreground">Episode {participant.episode ?? '—'} · {Math.floor(participant.position / 60)}:{String(Math.floor(participant.position % 60)).padStart(2, '0')}</span>
+            {/if}
+          </span>
+          <span class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.65rem] font-black
+            {participant.readiness === 'buffering' ? 'bg-amber-500/15 text-amber-400'
+              : participant.readiness === 'loading' ? 'bg-sky-500/15 text-sky-400'
+              : participant.readiness === 'ready' ? 'bg-emerald-500/15 text-emerald-400'
+              : 'bg-background text-muted-foreground'}">
+            {#if participant.readiness === 'buffering' || participant.readiness === 'loading'}
+              <LoaderCircle size={11} class="animate-spin" />
+            {:else if participant.readiness === 'ready'}
+              <CircleCheck size={11} />
+            {:else}
+              <Clock3 size={11} />
+            {/if}
+            {readinessLabel(participant.readiness, participant.paused)}
+          </span>
+          <span class="rounded-full bg-background px-2 py-1 text-[0.6rem] font-black uppercase text-muted-foreground">{participant.role}</span>
+        </div>
+      {/each}
+    </div>
     <button onclick={leaveWatchParty} class="mt-6 flex w-full items-center justify-center gap-2 rounded-lg border border-destructive/40 py-2.5 font-bold text-destructive"><LogOut size={17} /> Leave room</button>
   {/if}
 </div>
