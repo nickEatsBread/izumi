@@ -12,7 +12,8 @@
   import {
     episodeLayout, hideSpoilers, downloadQuality, downloadAudio, downloadCodec, downloadCachedOnly,
   } from '$lib/settings/ui'
-  import { localHistory, sessionProgress } from '$lib/player/history'
+  import { localHistory, sessionProgress, manualProgressOverrides, setLocalProgress } from '$lib/player/history'
+  import { updateProgress } from '$lib/trackers'
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
   import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
@@ -26,6 +27,9 @@
   import Loader from 'lucide-svelte/icons/loader-circle'
   import Pause from 'lucide-svelte/icons/pause'
   import Check from 'lucide-svelte/icons/check'
+  import Search from 'lucide-svelte/icons/search'
+  import Shuffle from 'lucide-svelte/icons/shuffle'
+  import ListChecks from 'lucide-svelte/icons/list-checks'
   let { media, offline = false }: { media: Media; offline?: boolean } = $props()
 
   // Offline: the playable set is exactly the DOWNLOADED episodes (the download keys carry the
@@ -54,11 +58,13 @@
     const a = airedCount(media)
     return Math.min(total, Number.isFinite(a) ? a : total)
   })
-  const watchedThrough = $derived(Math.max(
-    media.mediaListEntry?.progress ?? 0,
-    $localHistory[media.id]?.progress ?? 0,
-    $sessionProgress[media.id] ?? 0,
-  ))
+  const watchedThrough = $derived(
+    $manualProgressOverrides[media.id] ?? Math.max(
+      media.mediaListEntry?.progress ?? 0,
+      $localHistory[media.id]?.progress ?? 0,
+      $sessionProgress[media.id] ?? 0,
+    ),
+  )
 
   const PER = 48
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
@@ -72,15 +78,30 @@
   )
   const curPage = $derived(page ?? autoPage)
   const startIdx = $derived(curPage * PER)
+  const allEpisodes = $derived(
+    offline ? offlineEps : Array.from({ length: total }, (_, index) => index + 1),
+  )
+  let episodeQuery = $state('')
+  const searchedEpisodes = $derived.by(() => {
+    const query = episodeQuery.trim().toLocaleLowerCase().replace(/^ep(?:isode)?\s*/i, '')
+    if (!query) return null
+    return allEpisodes.filter((episode) =>
+      String(episode).includes(query)
+      || meta[episode]?.title?.toLocaleLowerCase().includes(query)
+      || String(meta[episode]?.abs ?? '').includes(query))
+  })
   const eps = $derived(
+    searchedEpisodes ?? (
     offline
       ? offlineEps.slice(startIdx, startIdx + PER)
-      : Array.from({ length: Math.max(0, Math.min(PER, total - startIdx)) }, (_, i) => startIdx + i + 1),
+      : allEpisodes.slice(startIdx, startIdx + PER)
+    ),
   )
 
   // Oldest/Newest toggle: reorders the current page's episodes for display. Pagination itself
   // still pages ascending (startIdx/PER above are unchanged) — see the note near the toggle.
   let sortDir = $state<SortDir>('asc')
+  let numberMode = $state<'series' | 'absolute'>('series')
   const rows = $derived(orderEpisodes(eps, sortDir))
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
 
@@ -116,6 +137,30 @@
   let playState = $state<PlayState>({ status: 'idle' })
   const resolving = $derived(playState.status === 'resolving')
   function play(ep: number) { if (!resolving) playEpisode(media, ep, (s) => (playState = s)) }
+  const absoluteAvailable = $derived(Object.entries(meta).some(([episode, value]) =>
+    value.abs != null && value.abs !== Number(episode)))
+  const numberLabel = (episode: number) =>
+    numberMode === 'absolute' && meta[episode]?.abs != null ? `A${meta[episode].abs}` : String(episode)
+
+  let progressTarget = $state(0)
+  let progressStatus = $state('')
+  $effect(() => { if (!progressTarget && watchedThrough) progressTarget = watchedThrough })
+  async function applyProgress() {
+    const value = Math.max(0, Math.min(aired, Math.floor(Number(progressTarget) || 0)))
+    progressTarget = value
+    setLocalProgress(media, value)
+    const status = total > 0 && value >= total ? 'COMPLETED' : 'CURRENT'
+    const trackers = await updateProgress(media, value, status)
+    progressStatus = `Watched through episode ${value}${trackers.length ? ` · synced to ${trackers.join(' + ')}` : ' · saved locally'}`
+  }
+  async function clearProgress() {
+    progressTarget = 0
+    await applyProgress()
+  }
+  function randomEpisode() {
+    if (aired < 1 || resolving) return
+    play(1 + Math.floor(Math.random() * aired))
+  }
 
   // Downloads are a deliberate MULTI-SELECT mode instead of a per-episode button under
   // every card (which doubled the D-pad stops and cluttered the grid). A "Download" button
@@ -167,6 +212,40 @@
 
   {#if aired > 0}
     <div class="mb-3 flex flex-wrap items-center gap-2">
+      <label class="relative min-w-52 flex-1 sm:max-w-sm">
+        <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input
+          bind:value={episodeQuery}
+          data-focusable
+          placeholder="Find episode number or title…"
+          class="w-full rounded-md bg-input py-2 pl-9 pr-3 text-sm"
+        />
+      </label>
+      <button data-focusable onclick={randomEpisode}
+              class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">
+        <Shuffle size={15} /> Random
+      </button>
+      <details class="relative">
+        <summary data-focusable class="flex cursor-pointer list-none items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">
+          <ListChecks size={15} /> Progress tools
+        </summary>
+        <div class="absolute right-0 z-20 mt-2 w-72 rounded-lg border border-border bg-card p-3 shadow-2xl">
+          <label class="text-xs font-bold text-muted-foreground" for="progress-through">Watched through episode</label>
+          <div class="mt-1 flex gap-2">
+            <input id="progress-through" data-focusable type="number" min="0" max={aired} bind:value={progressTarget}
+                   class="min-w-0 flex-1 rounded-md bg-input px-3 py-2 text-sm" />
+            <button data-focusable onclick={applyProgress}
+                    class="rounded-md bg-primary px-3 py-2 text-xs font-black text-primary-foreground">Save</button>
+          </div>
+          <button data-focusable onclick={clearProgress}
+                  class="mt-2 w-full rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
+            Mark season unwatched
+          </button>
+          {#if progressStatus}<p class="mt-2 text-[0.68rem] text-muted-foreground">{progressStatus}</p>{/if}
+        </div>
+      </details>
+    </div>
+    <div class="mb-3 flex flex-wrap items-center gap-2">
       {#if !selecting}
         <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
           <button data-focusable onclick={() => toggleSort('asc')}
@@ -174,6 +253,14 @@
           <button data-focusable onclick={() => toggleSort('desc')}
                   class="rounded-md px-3 py-1 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
+        {#if absoluteAvailable}
+          <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
+            <button data-focusable onclick={() => (numberMode = 'series')}
+                    class="rounded-md px-3 py-1 {numberMode === 'series' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Series #</button>
+            <button data-focusable onclick={() => (numberMode = 'absolute')}
+                    class="rounded-md px-3 py-1 {numberMode === 'absolute' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Absolute #</button>
+          </div>
+        {/if}
         {#if !offline}
           <button data-focusable onclick={startSelect}
                   class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-1.5 text-sm font-bold transition-colors hover:bg-accent">
@@ -246,6 +333,7 @@
           {next}
           {selecting}
           selectedEp={selected.has(ep)}
+          numberLabel={numberLabel(ep)}
           onplay={tap}
         />
       {/each}
@@ -276,7 +364,7 @@
               <Check size={16} />
             </span>
           {:else}
-            <span class="grid h-7 w-7 shrink-0 place-items-center rounded bg-background/40 text-sm font-black sm:h-8 sm:w-8">{ep}</span>
+            <span class="grid h-7 min-w-7 shrink-0 place-items-center rounded bg-background/40 px-1 text-sm font-black sm:h-8 sm:min-w-8">{numberLabel(ep)}</span>
           {/if}
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-1.5">
@@ -305,7 +393,7 @@
     </div>
   {/if}
 
-  {#if pages > 1}
+  {#if pages > 1 && !searchedEpisodes}
     <div class="mt-4 flex items-center gap-3 text-sm">
       <button data-focusable disabled={curPage === 0} onclick={() => (page = curPage - 1)}
               class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Prev</button>

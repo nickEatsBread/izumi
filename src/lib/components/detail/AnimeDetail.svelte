@@ -11,7 +11,7 @@
   import { resumeEpisode, playEpisode, type PlayState } from '$lib/stremio/play'
   import { offlineMode } from '$lib/stores/offline'
   import { downloads, downloadedMedia } from '$lib/downloads/state'
-  import { localHistory } from '$lib/player/history'
+  import { localHistory, manualProgressOverrides } from '$lib/player/history'
   import { seriesTitle } from '$lib/downloads/library'
   import { readable } from 'svelte/store'
   import { focusOnMount } from '$lib/nav'
@@ -33,6 +33,7 @@
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import RichMetadata from './RichMetadata.svelte'
+  import FranchiseNavigator from './FranchiseNavigator.svelte'
   import { reliableImage } from '$lib/util/reliable-image'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
@@ -139,7 +140,13 @@
     if (listOpt.status) return listOpt.status
     return (rawEntry?.status as AniStatus | undefined) ?? malToAni(malEntry?.status)
   })
-  const effProgress = $derived(listOpt.removed ? 0 : (listOpt.progress ?? rawEntry?.progress ?? malEntry?.progress ?? 0))
+  const effProgress = $derived(listOpt.removed ? 0 : (
+    listOpt.progress
+    ?? $manualProgressOverrides[id]
+    ?? rawEntry?.progress
+    ?? malEntry?.progress
+    ?? 0
+  ))
   const effScore100 = $derived(listOpt.removed ? 0 : (listOpt.score ?? rawEntry?.score ?? (malEntry?.score ?? 0) * 10))
   const hasEntry = $derived(!!effStatus)
 
@@ -268,6 +275,7 @@
       {/if}
 
       <div class="mt-6">
+        <FranchiseNavigator media={m} />
         <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
         {#if active === 'Episodes'}
           <EpisodeList media={m} offline={$offlineMode} />
@@ -377,6 +385,7 @@
       </div>
     </div>
 
+    <FranchiseNavigator media={m} />
     <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
     {#if active === 'Episodes'}
       <EpisodeList media={m} offline={$offlineMode} />
