@@ -6,6 +6,8 @@
   } from '$lib/stremio/community-store'
   import { addonUrls, disabledSources, normalizeBase } from '$lib/stremio/sources'
   import { fetchManifest } from '$lib/stremio/manifest'
+  import { resolveAddonLogo } from '$lib/stremio/addon-logo'
+  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import {
     OFFICIAL_ANIME_CATALOG,
     fetchExtensionInfo,
@@ -16,10 +18,8 @@
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { disabledPlugins, extensionUrls } from '$lib/settings/ui'
-  import { isAndroid } from '$lib/platform'
   import Search from 'lucide-svelte/icons/search'
   import Star from 'lucide-svelte/icons/star'
-  import Globe from 'lucide-svelte/icons/globe'
   import Puzzle from 'lucide-svelte/icons/puzzle'
   import ExternalLink from 'lucide-svelte/icons/external-link'
   import RefreshCw from 'lucide-svelte/icons/refresh-cw'
@@ -207,11 +207,12 @@
           {@const installed = configuredBases.has(base)}
           {@const off = $disabledSources.includes(base)}
           <article class="flex gap-3 rounded-xl border border-border bg-secondary/25 p-4" class:opacity-60={installed && off}>
-            {#if addon.manifest.logo}
-              <img src={addon.manifest.logo} alt="" class="size-12 shrink-0 rounded-lg bg-neutral-900 object-contain" />
-            {:else}
-              <span class="grid size-12 shrink-0 place-items-center rounded-lg bg-secondary"><Globe size={20} /></span>
-            {/if}
+            <AddonLogo
+              logo={resolveAddonLogo(addon.manifest.logo, base)}
+              name={addon.manifest.name}
+              id={addon.manifest.id}
+              size={48}
+            />
             <div class="min-w-0 flex-1">
               <div class="flex items-start gap-2">
                 <h3 class="min-w-0 flex-1 truncate font-black">{addon.manifest.name}</h3>
@@ -240,7 +241,6 @@
   {:else if tab === 'extensions'}
     <p class="mb-3 text-xs text-muted-foreground">
       {extensionResults.length} packages · signed/hash-pinned catalog from nickEatsBread/izumi-extension-repo
-      {#if $isAndroid} · installation requires desktop{/if}
     </p>
     <div class="grid max-w-5xl gap-3 sm:grid-cols-2">
       {#each extensionResults as item (item.id)}
@@ -262,7 +262,7 @@
               <button data-focusable disabled={busyId === item.id} onclick={() => removeExtension(item.id)}
                       class="rounded-md px-3 py-1.5 text-xs font-bold text-destructive">Remove</button>
             {:else}
-              <button data-focusable disabled={$isAndroid || !!busyId} onclick={() => installExtension(item)}
+              <button data-focusable disabled={!!busyId} onclick={() => installExtension(item)}
                       class="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-black text-primary-foreground disabled:opacity-40">
                 {#if busyId === item.id}<RefreshCw size={12} class="animate-spin" />{/if} Install
               </button>
@@ -285,7 +285,12 @@
               {#await fetchManifest(base)}
                 <span class="skeloader size-9 rounded"></span><span class="flex-1 text-sm text-muted-foreground">Loading manifest…</span>
               {:then manifest}
-                {#if manifest?.logo}<img src={manifest.logo} alt="" class="size-9 rounded bg-neutral-900 object-contain" />{:else}<Globe size={18} />{/if}
+                <AddonLogo
+                  logo={resolveAddonLogo(manifest?.logo, base)}
+                  name={manifest?.name ?? addonLocation(base)}
+                  id={manifest?.id ?? base}
+                  size={36}
+                />
                 <span class="min-w-0 flex-1"><span class="block truncate text-sm font-black">{manifest?.name ?? addonLocation(base)}</span><span class="block truncate text-xs text-muted-foreground">{addonLocation(base)}</span></span>
               {/await}
               <button data-focusable onclick={() => toggleAddon(base)}

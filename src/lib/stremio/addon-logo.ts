@@ -16,7 +16,10 @@ export function resolveAddonLogo(logo: string | undefined, base: string): string
   // Protocol-relative: the webview is https, so http would be blocked as mixed content anyway.
   if (raw.startsWith('//')) return `https:${raw}`
   try {
-    return new URL(raw, base).toString()
+    // `base` is the addon directory after `/manifest.json` has been stripped. URL resolution
+    // treats a path without a trailing slash as a filename, so add it back before resolving a
+    // bare relative logo (`logo.png`) or `/addon/logo.png` would incorrectly become `/logo.png`.
+    return new URL(raw, `${base.replace(/\/+$/, '')}/`).toString()
   } catch {
     return undefined // an unusable base is better admitted than turned into a broken <img>
   }

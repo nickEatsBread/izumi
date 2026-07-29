@@ -22,28 +22,34 @@
   // Reset when the row is recycled onto a different source, or one dead icon would poison the
   // next addon to reuse this component instance.
   let failedSrc = $state<string | undefined>(undefined)
+  let loadedSrc = $state<string | undefined>(undefined)
   const broken = $derived(!src || failedSrc === src)
+  const loaded = $derived(!!src && loadedSrc === src)
 </script>
 
-{#if broken}
-  <span
-    title={name}
-    aria-label={name}
-    class="inline-flex shrink-0 items-center justify-center rounded font-black leading-none text-white/95 ring-1 ring-white/10"
-    style="height:{size}px;width:{size}px;font-size:{Math.round(size * 0.5)}px;background:linear-gradient(135deg,{tile.from},{tile.to})"
-  >{tile.initial}</span>
-{:else}
+<span
+  title={name}
+  role="img"
+  aria-label={name ?? 'Addon'}
+  class="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded font-black leading-none text-white/95 ring-1 ring-white/10"
+  style="height:{size}px;width:{size}px;font-size:{Math.round(size * 0.5)}px;background:linear-gradient(135deg,{tile.from},{tile.to})"
+>
+  {tile.initial}
+  {#if !broken}
   <img
     {src}
-    alt={name ?? ''}
+    alt=""
     title={name}
     width={size}
     height={size}
     loading="lazy"
     decoding="async"
     referrerpolicy="no-referrer"
+    onload={() => (loadedSrc = src)}
     onerror={() => (failedSrc = src)}
-    class="shrink-0 rounded object-contain ring-1 ring-white/10"
+    class="absolute inset-0 rounded bg-neutral-900 object-contain transition-opacity duration-150"
+    class:opacity-0={!loaded}
     style="height:{size}px;width:{size}px"
   />
-{/if}
+  {/if}
+</span>

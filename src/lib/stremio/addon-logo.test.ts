@@ -20,7 +20,7 @@ describe('resolveAddonLogo', () => {
   })
 
   it('resolves a bare relative filename against the addon base', () => {
-    expect(resolveAddonLogo('logo.png', 'https://addon.test/abc/'))
+    expect(resolveAddonLogo('logo.png', 'https://addon.test/abc'))
       .toBe('https://addon.test/abc/logo.png')
   })
 
