@@ -18,6 +18,7 @@
   import PanelBottom from 'lucide-svelte/icons/panel-bottom'
   import Keyboard from 'lucide-svelte/icons/keyboard'
   import DatabaseBackup from 'lucide-svelte/icons/database-backup'
+  import Store from 'lucide-svelte/icons/store'
 
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
@@ -27,6 +28,7 @@
       { title: 'Hotkeys', href: '/app/settings/hotkeys', icon: Keyboard },
     ] },
     { label: 'Content', items: [
+      { title: 'Source Store', href: '/app/settings/store', icon: Store },
       { title: 'Sources', href: '/app/settings/sources', icon: Rss },
       { title: 'Extensions', href: '/app/settings/extensions', icon: Puzzle },
       { title: 'Downloads', href: '/app/settings/downloads', icon: Download },
