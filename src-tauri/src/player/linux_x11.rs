@@ -14,13 +14,17 @@
 //!
 //! All X calls run on the GTK main thread. The container calls below share GTK's Xlib connection
 //! (fetched per-call from the window handle); the STEAM_TOUCH_CLICK_MODE writes use their OWN
-//! dedicated connection (see `TOUCH_DPY`) so they can't dangle when that window handle is torn down.
+//! dedicated worker + connection (see `TOUCH_WORKER`) so they survive GTK stalls and teardown.
 
 #![cfg(target_os = "linux")]
 
 use std::ffi::c_void;
 use std::os::raw::{c_char, c_int, c_uchar, c_ulong};
-use std::sync::Mutex;
+use std::sync::{
+    mpsc::{self, SyncSender, TrySendError},
+    Mutex, OnceLock,
+};
+use std::time::Duration;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
 
@@ -93,18 +97,16 @@ impl X11 {
 
 static STATE: Mutex<Option<X11>> = Mutex::new(None);
 
-// Dedicated Xlib connection used ONLY for the STEAM_TOUCH_CLICK_MODE writes in `set_native_touch`.
-// We own it and it stays open for the whole app lifetime, so — unlike GTK's Display (which was
-// borrowed per-call via `display_handle()`) — it can never dangle when the webview's window/display
-// handle passes through a transient teardown. That borrow was a use-after-free: under gamescope the
-// 250ms keepalive fired mid-transition, `display_handle()` returned a freed Display, and
-// `XDefaultScreen` dereferenced it → SIGSEGV on the main thread (Game-mode-only, minutes in). The
-// root window + property are X-server-global, so a separate connection sets them identically.
-struct TouchDisplay(*mut c_void);
-// SAFETY: the pointer is only dereferenced on the GTK main thread (every caller of
-// `set_native_touch` runs there); the Mutex guards lazy init and makes the static `Send`.
-unsafe impl Send for TouchDisplay {}
-static TOUCH_DPY: Mutex<Option<TouchDisplay>> = Mutex::new(None);
+// Gamescope exposes one global touch mode, but accepts updates from every XWayland root. Steam can
+// replace our passthrough request at any time. Keep the X connection and all its calls on one
+// dedicated thread so GTK/WebKit work cannot stall the keepalive and no Display crosses threads.
+//
+// A bounded wake channel gives focus/navigation/controller edges an immediate reassertion. The
+// worker also writes every 50ms so a later Steam write cannot leave touch dead until another UI
+// event. One tiny XChangeProperty + XFlush at 20Hz is negligible.
+static TOUCH_WORKER: OnceLock<SyncSender<()>> = OnceLock::new();
+static TOUCH_WORKER_START: Mutex<()> = Mutex::new(());
+const TOUCH_KEEPALIVE: Duration = Duration::from_millis(50);
 
 fn raw_x11(win: &tauri::WebviewWindow) -> Result<(*mut c_void, u64), String> {
     let rw = win
@@ -138,50 +140,97 @@ fn raw_x11(win: &tauri::WebviewWindow) -> Result<(*mut c_void, u64), String> {
 /// The mode is ONE global in gamescope, last-writer-wins across every XWayland root — and Steam
 /// keeps rewriting it (to Left, mode 1) from its own root on a server this Flatpak cannot even
 /// see, at unpredictable moments (launch transition end, overlay/keyboard toggles, per-app input
-/// profile loads). Every call here is therefore a re-assert that can be silently clobbered right
-/// after; lib.rs runs a 250ms keepalive tick on top of the event-edge restores for that reason.
+/// profile loads). Every call here wakes the independent keepalive worker so the reassertion is not
+/// delayed behind GTK/WebKit work.
 pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> {
-    let _ = window; // now writes via our own X connection, not the window's Display
-    set_native_touch(true)
-}
-
-/// Keepalive variant of [`enable_native_touch`]: identical property write, but no per-call
-/// success log — it runs on a 250ms tick for the app's whole lifetime (see lib.rs setup).
-pub fn keepalive_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> {
-    let _ = window; // now writes via our own X connection, not the window's Display
-    set_native_touch(false)
-}
-
-fn set_native_touch(log: bool) -> Result<(), String> {
+    let _ = window; // touch mode is a root property, independent of the window handle
     if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
         return Ok(());
     }
-
-    // Use our OWN dedicated X connection (see `TOUCH_DPY`) instead of borrowing GTK's Display from
-    // the window handle — the latter dangles during webview/window teardown and crashed here.
-    // Opened lazily on first use; the lock is held across the writes so the calls stay serialized.
-    let mut guard = TOUCH_DPY.lock().map_err(|e| e.to_string())?;
-    if guard.is_none() {
-        let dpy = unsafe { XOpenDisplay(std::ptr::null()) };
-        if dpy.is_null() {
-            return Err("XOpenDisplay(NULL) for touch mode failed".into());
+    let sender = touch_worker()?;
+    match sender.try_send(()) {
+        Ok(()) | Err(TrySendError::Full(())) => {}
+        Err(TrySendError::Disconnected(())) => {
+            return Err("native-touch keepalive stopped unexpectedly".into());
         }
-        *guard = Some(TouchDisplay(dpy));
     }
-    let dpy = guard.as_ref().unwrap().0;
+    crate::player::linux_embed::elog("x11: requested Gamescope native touch passthrough (mode 4)");
+    Ok(())
+}
 
-    let name = b"STEAM_TOUCH_CLICK_MODE\0";
+fn touch_worker() -> Result<&'static SyncSender<()>, String> {
+    if let Some(sender) = TOUCH_WORKER.get() {
+        return Ok(sender);
+    }
+    // Do not cache a transient XOpenDisplay/startup failure for the entire session. A later focus,
+    // navigation, or controller edge can retry once Gamescope's XWayland socket is ready.
+    let _start_guard = TOUCH_WORKER_START
+        .lock()
+        .map_err(|error| error.to_string())?;
+    if TOUCH_WORKER.get().is_none() {
+        let sender = start_touch_worker()?;
+        let _ = TOUCH_WORKER.set(sender);
+    }
+    TOUCH_WORKER
+        .get()
+        .ok_or_else(|| "native-touch keepalive was not initialized".into())
+}
+
+fn start_touch_worker() -> Result<SyncSender<()>, String> {
+    let (wake_tx, wake_rx) = mpsc::sync_channel(1);
+    let (ready_tx, ready_rx) = mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("izumi-native-touch".into())
+        .spawn(move || {
+            // This thread creates, uses, and owns the Display for its entire lifetime. It never
+            // touches GTK's connection and therefore needs no cross-thread Xlib assumptions.
+            let dpy = unsafe { XOpenDisplay(std::ptr::null()) };
+            if dpy.is_null() {
+                let _ = ready_tx.send(Err("XOpenDisplay(NULL) for touch mode failed".into()));
+                return;
+            }
+            let root = unsafe { XDefaultRootWindow(dpy) };
+            if root == 0 {
+                let _ = ready_tx.send(Err("XDefaultRootWindow returned 0".into()));
+                return;
+            }
+            let name = b"STEAM_TOUCH_CLICK_MODE\0";
+            let atom = unsafe { XInternAtom(dpy, name.as_ptr().cast(), 0) };
+            if atom == 0 {
+                let _ = ready_tx.send(Err("XInternAtom(STEAM_TOUCH_CLICK_MODE) failed".into()));
+                return;
+            }
+
+            write_native_touch(dpy, root, atom, true);
+            if ready_tx.send(Ok(())).is_err() {
+                return;
+            }
+            loop {
+                let sync = match wake_rx.recv_timeout(TOUCH_KEEPALIVE) {
+                    Ok(()) => true,
+                    Err(mpsc::RecvTimeoutError::Timeout) => false,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                };
+                write_native_touch(dpy, root, atom, sync);
+            }
+        })
+        .map_err(|error| format!("could not start native-touch keepalive: {error}"))?;
+
+    match ready_rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(Ok(())) => Ok(wake_tx),
+        Ok(Err(error)) => Err(error),
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            Err("native-touch keepalive did not start within 2 seconds".into())
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            Err("native-touch keepalive stopped during startup".into())
+        }
+    }
+}
+
+fn write_native_touch(dpy: *mut c_void, root: u64, atom: c_ulong, sync: bool) {
     let value: c_ulong = 4; // TouchClickModes::Passthrough
-
     unsafe {
-        let root = XDefaultRootWindow(dpy);
-        if root == 0 {
-            return Err("XDefaultRootWindow returned 0".into());
-        }
-        let atom = XInternAtom(dpy, name.as_ptr().cast(), 0);
-        if atom == 0 {
-            return Err("XInternAtom(STEAM_TOUCH_CLICK_MODE) failed".into());
-        }
         XChangeProperty(
             dpy,
             root,
@@ -192,21 +241,12 @@ fn set_native_touch(log: bool) -> Result<(), String> {
             (&value as *const c_ulong).cast(),
             1,
         );
-        if log {
-            // Event-edge restores (boot/focus/navigation/controller) need to take effect before
-            // the next gesture, so wait for the local X server to process the property write.
+        if sync {
             XSync(dpy, 0);
         } else {
-            // The periodic keepalive runs on GTK's main thread. Flushing is enough to deliver its
-            // PropertyNotify without adding a synchronous round trip four times per second.
             XFlush(dpy);
         }
     }
-
-    if log {
-        crate::player::linux_embed::elog("x11: requested Gamescope native touch passthrough (mode 4)");
-    }
-    Ok(())
 }
 
 /// Create (once) the mpv container: a raw X11 child of the app's toplevel, fullscreen-sized,
