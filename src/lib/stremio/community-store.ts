@@ -11,7 +11,7 @@ export interface CommunityAddon {
   stars: number
   categories: { name: string; slug: string }[]
   createdAt: string
-  manifest: AddonManifest & { behaviorHints?: { adult?: boolean } }
+  manifest: AddonManifest & { behaviorHints?: AddonManifest['behaviorHints'] & { adult?: boolean } }
 }
 
 export interface CommunityAddonPage {

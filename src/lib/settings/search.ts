@@ -69,7 +69,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
 
   { title: 'Navigation items', category: 'Navigation', href: '/app/settings/navigation', keywords: 'bottom tabs top bar hidden reorder Android' },
   { title: 'Save watch history on this device', category: 'History', href: '/app/settings/history', keywords: 'local progress privacy', anchored: true },
-  { title: 'Source Store', category: 'Content', href: '/app/settings/store', keywords: 'addons extensions marketplace discover install enabled packages' },
+  { title: 'Source Store', category: 'Sources', href: '/app/settings/sources', keywords: 'addons extensions marketplace discover install enabled packages' },
   { title: 'Import & export history', category: 'History', href: '/app/settings/history', keywords: 'backup restore json' },
   { title: 'Clear watch history', category: 'History', href: '/app/settings/history', keywords: 'delete forget watched' },
 

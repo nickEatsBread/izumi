@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { get } from 'svelte/store'
-import { addonOriginId, addonUrls, disabledSources, enabledAddonUrls } from './sources'
+import {
+  addonOriginId,
+  addonUrls,
+  disabledSources,
+  enabledAddonUrls,
+  normalizeBase,
+  replaceAddonBase,
+} from './sources'
 
 describe('enabledAddonUrls', () => {
   it('filters out disabled sources, keeps the rest', () => {
@@ -20,5 +27,29 @@ describe('addonOriginId', () => {
     expect(id).toBe(addonOriginId('https://example.com/secret-api-key'))
     expect(id).not.toContain('secret-api-key')
     expect(id).toMatch(/^[a-f0-9]{16}$/)
+  })
+})
+
+describe('normalizeBase', () => {
+  it('accepts the stremio install links emitted by addon configuration pages', () => {
+    expect(normalizeBase('stremio://torrent.example/secret/manifest.json'))
+      .toBe('https://torrent.example/secret')
+    expect(normalizeBase('"https://torrent.example/secret/manifest.json"'))
+      .toBe('https://torrent.example/secret')
+  })
+
+  it('rejects empty and non-web URLs', () => {
+    expect(normalizeBase('')).toBe('')
+    expect(normalizeBase('file:///tmp/manifest.json')).toBe('')
+  })
+})
+
+describe('replaceAddonBase', () => {
+  it('reconfigures in place and removes an existing duplicate', () => {
+    expect(replaceAddonBase(
+      ['https://one.example', 'https://addon.example/old', 'https://addon.example/new'],
+      'https://addon.example/old',
+      'stremio://addon.example/new/manifest.json',
+    )).toEqual(['https://one.example', 'https://addon.example/new'])
   })
 })

@@ -20,6 +20,10 @@ export interface AddonManifest {
   resources?: AddonResource[]
   idPrefixes?: string[]
   types?: string[]
+  behaviorHints?: {
+    configurable?: boolean
+    configurationRequired?: boolean
+  }
 }
 
 /** Would this addon answer a `stream` request for `type` + `id`? Read from the manifest's own
