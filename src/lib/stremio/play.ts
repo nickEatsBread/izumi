@@ -3,7 +3,7 @@ import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
 import { addonOriginId, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
-import { getStreams, fetchAddonStreams, streamId, pickBest, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
+import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
@@ -29,7 +29,9 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
-import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep } from '$lib/player/session'
+import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery } from '$lib/player/session'
+import { recoveryStreamKey } from '$lib/player/recovery-watchdog'
+import { markDead } from './dead-sources'
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
@@ -61,6 +63,8 @@ export type PlayEpisodeOptions = {
 
 export type PlayStreamOptions = {
   autoplay?: boolean
+  /** Override history resume when replacing a failed source in-place. */
+  startSeconds?: number
 }
 
 type DirectTorrentPlayback = {
@@ -634,6 +638,20 @@ function takePrefetched(mediaId: number, episode: number): Stream | null {
   return null
 }
 
+function retainRecoveryCandidates(media: Media, episode: number | undefined, streams: Stream[]) {
+  playbackRecovery.update((current) => {
+    const same = current?.media.id === media.id && current.episode === episode
+    return {
+      media,
+      episode,
+      streams,
+      current: same ? current.current : null,
+      attempted: same ? current.attempted : [],
+      recovering: same ? current.recovering : false,
+    }
+  })
+}
+
 // User-initiated play: resolve, then show the source picker. The user picks a source and
 // `playStream` starts it. `continuation` (set by auto-advance) carries the previous episode's
 // release identity: as sources fold in, a same-release one auto-continues without the user
@@ -653,6 +671,7 @@ export async function playEpisode(
   const abort = new AbortController()
   resolveAbort = abort
   const { signal } = abort
+  retainRecoveryCandidates(media, episode, [])
   // Offline first: a completed local download plays instantly — no resolve, no
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = episode != null ? downloadOf(media.id, episode) : undefined
@@ -823,6 +842,7 @@ export async function playEpisode(
       const refined = refineStreams(media, acc)
       let s = refined.kept
       if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
+      retainRecoveryCandidates(media, episode, s)
       if (resolving) scheduleReady(s)
       else { clearReadyTimer(); autoReady = true; resolveSettled = true }
       streamPicker.set({
@@ -1144,6 +1164,21 @@ export async function playStream(
   options: PlayStreamOptions = {},
 ) {
   const autoplay = options.autoplay ?? true
+  const recoveryOriginal = stream
+  playbackRecovery.update((current) => {
+    const same = current?.media.id === media.id && current.episode === episode
+    const streams = same ? current.streams : []
+    return {
+      media,
+      episode,
+      streams: streams.some((candidate) => recoveryStreamKey(candidate) === recoveryStreamKey(recoveryOriginal))
+        ? streams
+        : [...streams, recoveryOriginal],
+      current: recoveryOriginal,
+      attempted: same && current.recovering ? current.attempted : [],
+      recovering: same ? current.recovering : false,
+    }
+  })
   // Every exit from this function goes through the state callback, so wrapping it once clears the
   // connecting screen on all of them — including the early returns.
   const onState = (s: PlayState) => {
@@ -1310,7 +1345,7 @@ export async function playStream(
     currentMedia = media
     playerLoadId.update((id) => id + 1)
     // Resume from the last saved position for this exact episode, if any.
-    const startSeconds = episode != null ? getPosition(media.id, episode) : 0
+    const startSeconds = options.startSeconds ?? (episode != null ? getPosition(media.id, episode) : 0)
     const label = episode != null ? `${title(media)} — Episode ${episode}` : title(media)
     // Schedule-aware so the Next button + "Ep X / N" work on airing-schedule-only titles
     // (episodes/nextAiringEpisode both null on AniList). null when genuinely unknown, so the
@@ -1484,6 +1519,87 @@ export async function playStream(
     if (directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)
     onState({ status: 'error', message: String(e) })
   }
+}
+
+/** Replace a source that successfully opened but later stopped producing video. This is separate
+ * from the picker's startup-error chain: the watchdog calls it minutes into an active session.
+ * The current playhead and play/pause intent are explicit inputs so a replacement is genuinely
+ * in-place. Returns true once a replacement has been handed to mpv. */
+export async function recoverPlaybackSource(position: number, autoplay: boolean): Promise<boolean> {
+  let context = get(playbackRecovery)
+  if (!context || context.recovering) return false
+
+  const failed = context.current
+  const attempted = new Set(context.attempted)
+  if (failed) {
+    attempted.add(recoveryStreamKey(failed))
+    markDead(failed)
+  }
+  playbackRecovery.set({ ...context, attempted: [...attempted], recovering: true })
+  playerNotice.set('Playback stalled — trying another source…')
+
+  // The progressive picker normally leaves us its complete ranked pool. Prefetched/remembered
+  // sources bypass that picker, so rebuild the pool only when there is no alternative retained.
+  let streams = context.streams
+  if (!streams.some((stream) => !attempted.has(recoveryStreamKey(stream)))) {
+    try {
+      const base = await resolveStreams(context.media, context.episode)
+      streams = [...base.streams]
+      const fold = (batch: Stream[]) => { streams = [...streams, ...batch] }
+      await Promise.all([
+        extToStreams(context.media, context.episode, base.kitsu, fold),
+        resolveOnlineStreams(context.media, context.episode, undefined, fold).then(fold),
+      ])
+      const refined = refineStreams(context.media, streams).kept
+      streams = base.want ? verifySeason(refined, base.want) : refined
+      retainRecoveryCandidates(context.media, context.episode, streams)
+      context = get(playbackRecovery) ?? context
+      playbackRecovery.set({ ...context, attempted: [...attempted], recovering: true })
+    } catch {
+      // The retained candidates, even if empty, still lead to the manual recovery picker below.
+    }
+  }
+
+  const candidates = pickCandidates(
+    streams,
+    get(preferredQuality),
+    undefined,
+    (stream) => attempted.has(recoveryStreamKey(stream)),
+    { ...rankOpts(), allowUncached: true },
+  ).filter((stream) => !attempted.has(recoveryStreamKey(stream))).slice(0, 3)
+
+  const subDelay = await invoke<string>('player_get_property', { name: 'sub-delay' }).catch(() => '')
+  let lastError = ''
+  for (const candidate of candidates) {
+    const key = recoveryStreamKey(candidate)
+    attempted.add(key)
+    playbackRecovery.update((current) => current ? {
+      ...current,
+      attempted: [...attempted],
+      recovering: true,
+    } : current)
+    let played = false
+    await playStream(context.media, context.episode, candidate, (state) => {
+      if (state.status === 'playing') played = true
+      if (state.status === 'error') lastError = state.message ?? 'The replacement source failed.'
+    }, { autoplay, startSeconds: Math.max(0, position) })
+    if (played) {
+      if (subDelay) {
+        await invoke('player_command', { name: 'set', args: ['sub-delay', subDelay] }).catch(() => {})
+      }
+      playbackRecovery.update((current) => current ? { ...current, recovering: false } : current)
+      playerNotice.set('Switched to a working source')
+      return true
+    }
+    markDead(candidate)
+  }
+
+  playbackRecovery.update((current) => current ? { ...current, recovering: false } : current)
+  playerNotice.set(lastError || 'Automatic recovery ran out of sources — choose another source')
+  void playEpisode(context.media, context.episode, (state) => {
+    if (state.status === 'error') playerNotice.set(state.message ?? 'No replacement source was found.')
+  }, { forceManual: true, autoplay })
+  return false
 }
 
 // The Media currently playing, so the in-player Prev/Next buttons can resolve the

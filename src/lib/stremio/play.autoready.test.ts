@@ -75,6 +75,7 @@ vi.mock('$lib/player/session', () => ({
   onlineSubCandidates: writable([]),
   subtitleNotice: writable(''),
   torrentSubtitleState: writable({ status: 'idle', tracks: [] }),
+  playbackRecovery: writable(null),
 }))
 
 const { cancelResolve, playEpisode } = await import('./play')

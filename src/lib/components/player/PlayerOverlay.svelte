@@ -11,7 +11,12 @@
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playing, playerLoadId, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
-  import { playPrev, playNext } from '$lib/stremio/play'
+  import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
+  import {
+    recoveryWatchDecision,
+    resetRecoveryWatch,
+    type RecoveryWatchState,
+  } from '$lib/player/recovery-watchdog'
   import {
     autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
@@ -47,6 +52,8 @@
   let seeking = $state(false)
   let eof = $state(false)
   let firstFrame = $state(false)
+  let recoveryWatch: RecoveryWatchState = resetRecoveryWatch(Date.now())
+  let recoveryBusy = false
   let segments = $state<Segment[]>([])
   let chapters = $state<{ time: number; title: string }[]>([])
   let metaLoaded = false
@@ -261,6 +268,8 @@
     loadedKey = key
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
     coreIdle = true; seeking = false; eof = false; firstFrame = false
+    recoveryWatch = resetRecoveryWatch(Date.now())
+    recoveryBusy = false
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
     playerAbLoop.set({ a: null, b: null })
@@ -652,6 +661,26 @@
       else if (action === 'playerLoopClear') clearLoop()
     }
     window.addEventListener('keydown', onKeyCapture, true)
+    const recoveryTimer = setInterval(() => {
+      if (!$playing || recoveryBusy) return
+      const decision = recoveryWatchDecision(recoveryWatch, {
+        now: Date.now(),
+        position: pos,
+        duration: dur,
+        paused,
+        buffering,
+        seeking,
+        eof,
+        firstFrame,
+      })
+      recoveryWatch = decision.state
+      if (!decision.recover) return
+      recoveryBusy = true
+      void recoverPlaybackSource(pos, !paused).catch((error) => {
+        console.warn('automatic playback recovery', error)
+        playerNotice.set('Automatic source recovery failed')
+      })
+    }, 1_000)
     poke()
     return () => {
       uns.forEach((u) => u.then((f) => f()))
@@ -659,6 +688,7 @@
       window.removeEventListener('pointercancel', endStuckScrub)
       window.removeEventListener('blur', endStuckScrub)
       window.removeEventListener('keydown', onKeyCapture, true)
+      clearInterval(recoveryTimer)
       clearTimeout(hideT)
     }
   })
