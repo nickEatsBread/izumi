@@ -324,8 +324,8 @@ pub async fn torrent_playback_url(
         }
     }
 
-    let handle = if let Some(handle) = same_torrent {
-        handle
+    let (handle, reused_torrent) = if let Some(handle) = same_torrent {
+        (handle, true)
     } else {
         let added = engine
             .session
@@ -342,16 +342,25 @@ pub async fn torrent_playback_url(
             .map_err(|e| format!("Could not start the torrent: {e:#}"))?;
         added
             .into_handle()
+            .map(|handle| (handle, false))
             .ok_or_else(|| "The torrent did not start.".to_string())?
     };
 
-    // A season pack may already be active from the previous episode. Update its selection to the
-    // newly requested video plus its tiny sidecars. Active HTTP streams still receive priority.
-    engine
-        .session
-        .update_only_files(&handle, &selected_indices)
-        .await
-        .map_err(|e| format!("Could not select the episode inside the torrent: {e:#}"))?;
+    // A newly-added torrent already received this exact selection through AddTorrentOptions.
+    // Calling update_only_files again before librqbit finishes initialization fails with
+    // "can't update initializing torrent". Only a reused season pack needs its selection changed
+    // to the newly requested episode; its active HTTP stream still receives priority.
+    if reused_torrent {
+        timeout(METADATA_TIMEOUT, handle.wait_until_initialized())
+            .await
+            .map_err(|_| "Timed out while preparing the existing torrent.".to_string())?
+            .map_err(|e| format!("Could not prepare the existing torrent: {e:#}"))?;
+        engine
+            .session
+            .update_only_files(&handle, &selected_indices)
+            .await
+            .map_err(|e| format!("Could not select the episode inside the torrent: {e:#}"))?;
+    }
 
     let playback_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let uploaded_at_start = handle.stats().uploaded_bytes;
