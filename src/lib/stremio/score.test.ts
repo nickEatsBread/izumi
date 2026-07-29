@@ -23,6 +23,57 @@ suite('scoreInfo', () => {
     expect(score('Show - 01 👤 100000')).toBe(score('Show - 01 👤 100'))
   })
 
+  it('favours a smaller healthy encode when bytes must come directly from P2P', () => {
+    const torrent = (size: number) => describe({
+      infoHash: 'aabbcc',
+      __seeders: 150,
+      behaviorHints: { filename: 'Show - 01 (1080p).mkv', videoSize: size },
+    })
+    const small = scoreInfo(torrent(400 * 1024 ** 2), { directP2p: true }).score
+    const large = scoreInfo(torrent(1_500 * 1024 ** 2), { directP2p: true }).score
+    expect(small).toBeGreaterThan(large)
+  })
+
+  it('ranks the efficient Clevatess dual-audio release above the slow 1.5 GB one for P2P', () => {
+    const torrent = (filename: string, size: number, seeders: number) => describe({
+      infoHash: filename,
+      __seeders: seeders,
+      behaviorHints: { filename, videoSize: size },
+    })
+    const judas = torrent(
+      '[Judas] Clevatess - S02E01 [1080p][HEVC x265 10bit][Dual-Audio][Multi-Subs].mkv',
+      542 * 1024 ** 2,
+      144,
+    )
+    const anozu = torrent(
+      'Clevatess.2025.S02E01.REPACK.1080p.CR.WEB-DL.DUAL.DDP2.0.H.264-AnoZu.mkv',
+      1_400 * 1024 ** 2,
+      172,
+    )
+    expect(scoreInfo(judas, { directP2p: true }).score)
+      .toBeGreaterThan(scoreInfo(anozu, { directP2p: true }).score)
+  })
+
+  it('ranks a streamable episode above Masamune-sized Blu-ray files in direct P2P mode', () => {
+    const torrent = (filename: string, size: number, seeders: number) => describe({
+      infoHash: filename,
+      __seeders: seeders,
+      behaviorHints: { filename, videoSize: size },
+    })
+    const streamable = torrent(
+      '[ASW] Masamune-kun no Revenge - 05 [1080p HEVC 10Bit].mkv',
+      650 * 1024 ** 2,
+      35,
+    )
+    const archival = torrent(
+      '[smol] Masamune-kun no Revenge - S01E05 (BD 1080p HEVC Opus) [Dual Audio].mkv',
+      2_252 * 1024 ** 2,
+      150,
+    )
+    expect(scoreInfo(streamable, { directP2p: true }).score)
+      .toBeGreaterThan(scoreInfo(archival, { directP2p: true }).score)
+  })
+
   it('rewards dual audio, which is a real differentiator for anime', () => {
     expect(score('Show - 01 (1080p) [Dual Audio]')).toBeGreaterThan(score('Show - 01 (1080p)'))
   })
@@ -62,6 +113,14 @@ suite('scoreInfo', () => {
     const same = score('[Erai-raws] Show - 02 (1080p)', {}, { previousGroup: 'Erai-raws' })
     const other = score('[SubsPlease] Show - 02 (1080p) 👤 500', {}, { previousGroup: 'Erai-raws' })
     expect(same).toBeGreaterThan(other)
+  })
+
+  it('keeps release continuity as only a tie-breaker during direct P2P playback', () => {
+    const ranked = scoreInfo(
+      info('[Erai-raws] Show - 02 (1080p)', { infoHash: 'aabbcc', url: undefined }),
+      { previousGroup: 'Erai-raws', directP2p: true },
+    )
+    expect(ranked.reasons).toContainEqual({ signal: 'same group as last episode', delta: 2 })
   })
 
   it('matches the previous group regardless of case and punctuation', () => {

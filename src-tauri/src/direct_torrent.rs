@@ -50,11 +50,13 @@ struct ActivePlayback {
     playback_id: u64,
     torrent_id: usize,
     handle: Arc<ManagedTorrent>,
+    selected_file_index: usize,
     subtitle_indices: HashSet<usize>,
     selected_size: u64,
     uploaded_at_start: u64,
     upload_bps: NonZeroU32,
     upload_reduced: bool,
+    stream_only_scheduled: bool,
     cleanup_task: Option<JoinHandle<()>>,
 }
 
@@ -67,6 +69,15 @@ pub struct DirectTorrentPlayback {
     size: u64,
     playback_id: u64,
     subtitles: Vec<DirectTorrentSubtitle>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectTorrentHealth {
+    downloaded_bytes: u64,
+    selected_size: u64,
+    download_mbps: f64,
+    live_peers: usize,
 }
 
 #[derive(Serialize)]
@@ -227,6 +238,9 @@ pub async fn torrent_playback_url(
     state: tauri::State<'_, DirectTorrentState>,
     magnet: String,
     preferred_filename: Option<String>,
+    episode: Option<u32>,
+    absolute_episode: Option<u32>,
+    season: Option<u32>,
     download_limit_mbps: Option<f64>,
     upstream_capacity_mbps: Option<f64>,
 ) -> Result<DirectTorrentPlayback, String> {
@@ -269,8 +283,21 @@ pub async fn torrent_playback_url(
             })
         })
         .collect::<Vec<_>>();
-    let selected = select_file(&files, preferred_filename.as_deref())
-        .ok_or_else(|| "This torrent does not contain a supported video file.".to_string())?;
+    let selected = select_file(
+        &files,
+        preferred_filename.as_deref(),
+        episode,
+        absolute_episode,
+        season,
+    )
+    .ok_or_else(|| {
+        if episode.is_some() || absolute_episode.is_some() {
+            "Could not identify the requested episode inside this torrent. Try another source."
+                .to_string()
+        } else {
+            "This torrent does not contain a supported video file.".to_string()
+        }
+    })?;
     // Direct sidecars are tiny and selected alongside the video, but nothing waits for their
     // pieces here. The active video HTTP stream retains librqbit's priority; Windows attaches
     // these tracks live once player_embed has returned.
@@ -369,11 +396,13 @@ pub async fn torrent_playback_url(
         playback_id,
         torrent_id,
         handle,
+        selected_file_index: selected.index,
         subtitle_indices: subtitle_files.iter().map(|file| file.index).collect(),
         selected_size: selected.length,
         uploaded_at_start,
         upload_bps,
         upload_reduced: false,
+        stream_only_scheduled: false,
         cleanup_task: None,
     });
     drop(active);
@@ -422,6 +451,85 @@ pub async fn torrent_playback_add_subtitle(
         engine.port, torrent_id, file_index
     );
     player.add_subtitle_auto(&url, &lang, &title)
+}
+
+/// Once a player has accepted the local HTTP URL, stop the background whole-file download. The
+/// active librqbit FileStream continues requesting and prioritising its 32 MiB window, while tiny
+/// external subtitle files remain selected in the background. This keeps large season-pack
+/// episodes from downloading gigabytes unrelated to the player's immediate reads before frame one.
+#[tauri::command]
+pub async fn torrent_playback_streaming(
+    state: tauri::State<'_, DirectTorrentState>,
+    playback_id: u64,
+) -> Result<(), String> {
+    let Some(engine) = state.engine.get().cloned() else {
+        return Ok(());
+    };
+    let (handle, subtitle_indices) = {
+        let mut active = state.active.lock().await;
+        let current = active
+            .as_mut()
+            .filter(|item| item.playback_id == playback_id && item.cleanup_task.is_none())
+            .ok_or("This torrent playback is no longer active.")?;
+        if current.stream_only_scheduled {
+            return Ok(());
+        }
+        current.stream_only_scheduled = true;
+        (current.handle.clone(), current.subtitle_indices.clone())
+    };
+    let active = state.active.clone();
+    tokio::spawn(async move {
+        // `player_embed` queues loadfile rather than waiting for FileLoaded. Give mpv time to open
+        // the HTTP stream before removing the video's background file selection.
+        sleep(Duration::from_secs(2)).await;
+        let still_playing = active
+            .lock()
+            .await
+            .as_ref()
+            .map(|item| item.playback_id == playback_id && item.cleanup_task.is_none())
+            .unwrap_or(false);
+        if still_playing {
+            let _ = engine
+                .session
+                .update_only_files(&handle, &subtitle_indices)
+                .await;
+        }
+    });
+    Ok(())
+}
+
+/// Report actual progress for the selected video. The web player uses this to distinguish a
+/// torrent that is still downloading from a genuinely dead source while mpv waits for its first
+/// frame (Matroska files may require data near the end before playback begins).
+#[tauri::command]
+pub async fn torrent_playback_health(
+    state: tauri::State<'_, DirectTorrentState>,
+    playback_id: u64,
+) -> Result<DirectTorrentHealth, String> {
+    let active = state.active.lock().await;
+    let current = active
+        .as_ref()
+        .filter(|item| item.playback_id == playback_id && item.cleanup_task.is_none())
+        .ok_or("This torrent playback is no longer active.")?;
+    let stats = current.handle.stats();
+    let downloaded_bytes = stats
+        .file_progress
+        .get(current.selected_file_index)
+        .copied()
+        .unwrap_or(stats.progress_bytes)
+        .min(current.selected_size);
+    let (download_mbps, live_peers) = stats
+        .live
+        .as_ref()
+        .map(|live| (live.download_speed.mbps, live.snapshot.peer_stats.live))
+        .unwrap_or((0.0, 0));
+
+    Ok(DirectTorrentHealth {
+        downloaded_bytes,
+        selected_size: current.selected_size,
+        download_mbps,
+        live_peers,
+    })
 }
 
 /// Protect playback from upload-induced buffer starvation. The player reports seconds buffered

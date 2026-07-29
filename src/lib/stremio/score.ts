@@ -18,6 +18,9 @@ export interface ScoreReason { signal: string; delta: number }
 export interface ScoreOptions {
   /** Release group the previous episode played from, for cross-episode consistency. */
   previousGroup?: string
+  /** Direct P2P has to fetch bytes before the first frame. Within the same quality tier, favour
+   * efficient encodes that can build a useful playback buffer sooner. */
+  directP2p?: boolean
 }
 
 /** Fansub groups with a track record for encode quality and subtitle accuracy. Anime-first by
@@ -52,6 +55,20 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   // signal exactly the way the old ladder did.
   if (info.seeders != null) add('seeders', Math.min(Math.floor(info.seeders / 10), 10))
 
+  if (opts.directP2p && info.stream.infoHash && !info.stream.url && info.sizeBytes != null) {
+    const mib = info.sizeBytes / (1024 ** 2)
+    // A multi-gigabyte Blu-ray episode can have a healthy swarm and still take far too long to
+    // satisfy MKV startup seeks. Direct mode values time-to-first-frame over archival bitrate.
+    const efficiency = mib <= 450 ? 8
+      : mib <= 700 ? 6
+        : mib <= 1_024 ? 3
+          : mib <= 1_536 ? 0
+            : mib <= 2_048 ? -4
+              : mib <= 3_072 ? -8
+                : -12
+    add('P2P startup size', efficiency)
+  }
+
   // Anime-specific, and the single most requested distinction after resolution.
   if (info.dualAudio) add('dual audio', 3)
 
@@ -77,7 +94,11 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   // way a slightly worse encode is not. Weighted above the seeder cap on purpose: the popular
   // alternative essentially always has more seeders, so anything lower would mean this never
   // decided the one case it exists for.
-  if (group && opts.previousGroup && group === norm(opts.previousGroup)) add('same group as last episode', 12)
+  if (group && opts.previousGroup && group === norm(opts.previousGroup)) {
+    // Continuity is a preference, not permission to fetch a much larger torrent on every Next.
+    // Direct P2P keeps a small tie-breaker; debrid/CDN playback retains the strong preference.
+    add('same group as last episode', opts.directP2p ? 2 : 12)
+  }
 
   // Nothing to download from and nothing already resolved: not merely worse, effectively unplayable.
   // A penalty rather than a filter, because seeder counts are often stale or simply absent.

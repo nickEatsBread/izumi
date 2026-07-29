@@ -119,7 +119,7 @@ const EPISODE_MARKER = /\bS\d{1,2}E\d{1,3}\b|\b\d{1,2}x\d{1,3}\b|\s[-–]\s?\d{1
 // real movie/OVA request WANTS the marker-less file.
 export function isStandaloneMovie(stream: Stream): boolean {
   const name = nameOf(stream)
-  return !EPISODE_MARKER.test(name) && !BATCH_MARKER.test(name)
+  return !stream.__batch && !EPISODE_MARKER.test(name) && !BATCH_MARKER.test(name)
 }
 
 // A SEQUEL-season marker used to DROP a file: a named final season, or a season numbered ≥ 2. Note

@@ -10,9 +10,10 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import {
+    DIRECT_TORRENT_START_TIMEOUT_MS,
     recoveryWatchDecision,
     resetRecoveryWatch,
     type RecoveryWatchState,
@@ -30,7 +31,7 @@
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
-  import { reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
+  import { confirmDirectTorrentFileLoaded, currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -59,6 +60,8 @@
   let firstFrame = $state(false)
   let recoveryWatch: RecoveryWatchState = resetRecoveryWatch(Date.now())
   let recoveryBusy = false
+  let directTorrentDownloadedBytes = 0
+  let directTorrentHealthBusy = false
   let segments = $state<Segment[]>([])
   let chapters = $state<{ time: number; title: string }[]>([])
   let metaLoaded = false
@@ -275,7 +278,7 @@
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
     coreIdle = true; seeking = false; eof = false; firstFrame = false
     recoveryWatch = resetRecoveryWatch(Date.now())
-    recoveryBusy = false
+    directTorrentDownloadedBytes = 0
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
     playerAbLoop.set({ a: null, b: null })
@@ -591,6 +594,7 @@
 
   onMount(() => {
     const uns = [
+      listen<string>('player-file-loaded', (e) => confirmDirectTorrentFileLoaded(e.payload)),
       listen<[number, number]>('player-progress', (e) => {
         pos = e.payload[0]
         dur = e.payload[1]
@@ -669,6 +673,19 @@
     window.addEventListener('keydown', onKeyCapture, true)
     const recoveryTimer = setInterval(() => {
       if (!$playing || recoveryBusy) return
+      const directP2p = !!$nowPlayingStream.infoHash
+        && /^http:\/\/127\.0\.0\.1:\d+\/torrents\//.test($nowPlayingStream.url)
+      if (directP2p && !directTorrentHealthBusy) {
+        const playbackId = currentDirectTorrentPlaybackId()
+        directTorrentHealthBusy = true
+        void directTorrentHealth()
+          .then((health) => {
+            if (health && currentDirectTorrentPlaybackId() === playbackId) {
+              directTorrentDownloadedBytes = health.downloadedBytes
+            }
+          })
+          .finally(() => { directTorrentHealthBusy = false })
+      }
       const decision = recoveryWatchDecision(recoveryWatch, {
         now: Date.now(),
         position: pos,
@@ -678,14 +695,22 @@
         seeking,
         eof,
         firstFrame,
+        startTimeoutMs: directP2p ? DIRECT_TORRENT_START_TIMEOUT_MS : undefined,
+        networkBytes: directP2p ? directTorrentDownloadedBytes : undefined,
       })
       recoveryWatch = decision.state
       if (!decision.recover) return
       recoveryBusy = true
-      void recoverPlaybackSource(pos, !paused).catch((error) => {
-        console.warn('automatic playback recovery', error)
-        playerNotice.set('Automatic source recovery failed')
-      })
+      void recoverPlaybackSource(
+        pos,
+        !paused,
+        directP2p ? 'P2P source is too slow — trying a healthier torrent…' : undefined,
+      )
+        .catch((error) => {
+          console.warn('automatic playback recovery', error)
+          playerNotice.set('Automatic source recovery failed')
+        })
+        .finally(() => { recoveryBusy = false })
     }, 1_000)
     poke()
     return () => {

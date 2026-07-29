@@ -30,18 +30,18 @@
   import { copyToClipboard } from '$lib/util/clipboard'
 
   const pick = $derived($streamPicker)
+  const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
   // Ranking inputs the ordering can't derive from a stream alone: the language the user asked to
   // hear, and the group the previous episode of THIS title played from.
   const rankOpts = $derived({
     audioLang: $preferredAudioLang,
     previousGroup: $bingeSource?.mediaId === pick?.media.id ? $bingeSource?.group : undefined,
+    directP2p,
   })
   const all = $derived(pick ? rankInfos(pick.streams, $preferredStreamSort, rankOpts) : ([] as StreamInfo[]))
   const visible = $derived($showDeadSources ? all : all.filter((i) => i.cached !== 'down'))
   const uncachedCount = $derived(all.filter((i) => i.cached === 'uncached').length)
   const deadCount = $derived(all.filter((i) => i.cached === 'down').length)
-  const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
-
   // What the addon itself wrote about this source. Torrentio-style addons put the release name and
   // metadata in `title`; Comet-style ones put it in `description` and emit no title at all. Falls
   // back to the parsed filename for rows that carry neither (direct-stream extension results).

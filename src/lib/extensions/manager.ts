@@ -374,7 +374,34 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
     // torrent-provider path, so the picker labels the row with the real source instead of the
     // generic "Extension" fallback. Per-extension map (not a flat fan-out) keeps that association.
     const batches = await Promise.all(live.map(async (e) => {
-      const rs = (await Promise.all(methods.map((m) => call(e, m, query)))).flat()
+      const queried = await Promise.all(methods.map(async (method) => ({
+        method,
+        results: await call(e, method, query),
+      })))
+      // Preserve which SDK method produced the row. A lot of Blu-ray packs are named only
+      // "[Group] Title (BD 1080p)" with no textual batch marker, so losing `batch()` here made
+      // refinement label them "movie, not an episode". If single() and batch() return the same
+      // hash, merge the structural batch fact before the incremental callback sees it.
+      const byHash = new Map<string, TorrentResult>()
+      const noHash: TorrentResult[] = []
+      for (const { method, results } of queried) {
+        for (const result of results) {
+          const next = method === 'batch' && result.type == null
+            ? { ...result, type: 'batch' as const }
+            : result
+          if (!next.hash) {
+            noHash.push(next)
+            continue
+          }
+          const previous = byHash.get(next.hash)
+          if (!previous) {
+            byHash.set(next.hash, next)
+          } else if (next.type === 'batch' && previous.type !== 'batch') {
+            byHash.set(next.hash, { ...previous, type: 'batch' })
+          }
+        }
+      }
+      const rs = [...byHash.values(), ...noHash]
       const stamped = rs.map((r) => ({
         ...r,
         provider: r.provider ?? e.cfg.name,

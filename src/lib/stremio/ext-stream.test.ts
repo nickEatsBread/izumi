@@ -32,4 +32,13 @@ describe('extToStream', () => {
     const s = extToStream(base, 'Nyaa')
     expect(s.title).toBe('Rel S01E03')
   })
+
+  it('preserves a structural batch result even when its title has no pack marker', () => {
+    const s = extToStream({
+      ...base,
+      title: '[smol] Masamune-kun no Revenge (BD 1080p HEVC Opus)',
+      type: 'batch',
+    }, 'Nyaa')
+    expect(s.__batch).toBe(true)
+  })
 })
