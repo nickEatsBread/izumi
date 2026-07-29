@@ -1,6 +1,6 @@
 import { gql } from '@urql/core'
 import { get } from 'svelte/store'
-import { MEDIA_FIELDS, SCHEDULE_MEDIA_FIELDS } from './fragments'
+import { MEDIA_FIELDS, READING_MEDIA_FIELDS, SCHEDULE_MEDIA_FIELDS } from './fragments'
 import { showAdult } from '$lib/settings/ui'
 
 // Detail page only: pull the viewer's list entry (progress/status) + favourite
@@ -31,6 +31,33 @@ export const MEDIA_BY_ID = gql`
     }
   }
   ${MEDIA_FIELDS}`
+
+// Information-only detail query for manga and light novels. It intentionally has no playback
+// fields or mutation-facing list entry: reading media can be browsed from tracker libraries, but
+// Izumi remains an anime player.
+export const READING_MEDIA_BY_ID = gql`
+  query ReadingMediaById($id: Int!) {
+    Media(id: $id, type: MANGA) {
+      ...ReadingMediaFields
+      tags { name rank isMediaSpoiler }
+      relations {
+        edges { relationType node { ...ReadingMediaFields } }
+      }
+      characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
+        edges {
+          role
+          node { id name { full native } image { large } }
+        }
+      }
+      staff(perPage: 12, sort: [RELEVANCE]) {
+        edges { role node { id name { full native } image { large } } }
+      }
+      recommendations(perPage: 12, sort: [RATING_DESC]) {
+        nodes { rating mediaRecommendation { ...ReadingMediaFields } }
+      }
+    }
+  }
+  ${READING_MEDIA_FIELDS}`
 
 // Shared filter arg lists, kept in ONE place so the SFW / 18+ / count variants can't
 // drift. Interpolated as plain strings into the gql templates below (advanced fields —

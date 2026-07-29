@@ -14,7 +14,7 @@ export const SCHEDULE_MEDIA_FIELDS = gql`
 
 export const MEDIA_FIELDS = gql`
   fragment MediaFields on Media {
-    id idMal
+    id idMal type
     title { romaji english native userPreferred }
     description(asHtml: false)
     season seasonYear format status episodes duration averageScore popularity trending genres
@@ -26,4 +26,19 @@ export const MEDIA_FIELDS = gql`
     trailer { id site }
     nextAiringEpisode { episode timeUntilAiring }
     airingSchedule(perPage: 100) { nodes { episode airingAt } }
+  }`
+
+// Manga/light-novel cards need publication metadata, but none of the anime-only airing schedule,
+// trailer, or studio payload. Keeping this separate prevents reading-list support from making every
+// anime browse query heavier.
+export const READING_MEDIA_FIELDS = gql`
+  fragment ReadingMediaFields on Media {
+    id idMal type
+    title { romaji english native userPreferred }
+    description(asHtml: false)
+    format status chapters volumes averageScore popularity genres synonyms
+    countryOfOrigin source
+    startDate { year month day }
+    coverImage { extraLarge medium color }
+    bannerImage
   }`

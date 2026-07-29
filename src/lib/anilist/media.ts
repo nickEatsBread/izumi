@@ -19,8 +19,14 @@ export const banner = (m: Media) =>
 
 export const cover = (m: Media) => m.coverImage?.extraLarge || m.coverImage?.medium || ''
 
-const FORMATS: Record<string, string> = { TV: 'TV', TV_SHORT: 'TV Short', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA', ONA: 'ONA', MUSIC: 'Music' }
+const FORMATS: Record<string, string> = {
+  TV: 'TV', TV_SHORT: 'TV Short', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA',
+  ONA: 'ONA', MUSIC: 'Music', MANGA: 'Manga', NOVEL: 'Novel', ONE_SHOT: 'One Shot',
+}
 export const format = (m: Media) => (m.format ? FORMATS[m.format] ?? m.format : '')
+
+/** Reading media deliberately uses a separate information-only route. */
+export const mediaHref = (m: Media) => m.type === 'MANGA' ? `/app/manga/${m.id}` : `/app/anime/${m.id}`
 
 const STATUS: Record<string, string> = { RELEASING: 'Releasing', NOT_YET_RELEASED: 'Not Yet Released', FINISHED: 'Finished', CANCELLED: 'Cancelled', HIATUS: 'Hiatus' }
 export const status = (m: Media) => (m.status ? STATUS[m.status] ?? m.status : '')

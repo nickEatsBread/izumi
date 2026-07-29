@@ -2,13 +2,28 @@
   // One personalized home row = one MediaListCollection query + one carousel.
   // Owns its own query store (child-owns-store pattern) so `$store` auto-subscribes.
   import { queryStore, getContextClient } from '@urql/svelte'
-  import { LIST_QUERY, flattenEntries } from '$lib/anilist/lists'
+  import {
+    LIST_QUERY, READING_LIST_QUERY, flattenEntries, matchesLibraryKind, type LibraryKind,
+  } from '$lib/anilist/lists'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
-  let { title, userName, status }: { title: string; userName: string; status: string } = $props()
+  let {
+    title, userName, status, kind = 'anime',
+  }: {
+    title: string
+    userName: string
+    status: string
+    kind?: LibraryKind
+  } = $props()
   const client = getContextClient()
-  const store = $derived(queryStore({ client, query: LIST_QUERY, variables: { userName, status } }))
-  const entries = $derived(flattenEntries($store.data))
+  const store = $derived(queryStore({
+    client,
+    query: kind === 'anime' ? LIST_QUERY : READING_LIST_QUERY,
+    variables: { userName, status },
+  }))
+  const entries = $derived(
+    flattenEntries($store.data).filter(({ media }) => matchesLibraryKind(media, kind)),
+  )
 </script>
 {#if $store.fetching}
   <Carousel {title}>

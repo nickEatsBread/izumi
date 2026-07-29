@@ -1,5 +1,5 @@
 import { gql } from '@urql/core'
-import { MEDIA_FIELDS } from './fragments'
+import { MEDIA_FIELDS, READING_MEDIA_FIELDS } from './fragments'
 import type { Media } from './types'
 
 export const LIST_QUERY = gql`
@@ -9,6 +9,14 @@ export const LIST_QUERY = gql`
     }
   }
   ${MEDIA_FIELDS}`
+
+export const READING_LIST_QUERY = gql`
+  query ReadingLists($userName: String!, $status: MediaListStatus) {
+    MediaListCollection(userName: $userName, type: MANGA, status: $status, sort: UPDATED_TIME_DESC) {
+      lists { entries { progress updatedAt media { ...ReadingMediaFields } } }
+    }
+  }
+  ${READING_MEDIA_FIELDS}`
 
 // Id-only list projection for callers that just need the SET of ids on a list (e.g. the
 // schedule's "my shows" highlighting), not card data. LIST_QUERY drags full MediaFields —
@@ -29,6 +37,13 @@ export function flattenEntries(data: Coll | undefined): Entry[] {
   return (data?.MediaListCollection?.lists ?? []).flatMap((l) => l.entries ?? [])
 }
 
+export type LibraryKind = 'anime' | 'manga' | 'novel'
+export function matchesLibraryKind(media: Media, kind: LibraryKind): boolean {
+  if (kind === 'anime') return media.type !== 'MANGA'
+  if (media.type !== 'MANGA') return false
+  return kind === 'novel' ? media.format === 'NOVEL' : media.format !== 'NOVEL'
+}
+
 // Look up AniList media by a batch of MAL ids (for MAL-sourced home rows). AniList
 // supports `idMal_in`, so this is one request. Results come back in AniList's own
 // order — callers re-sort into the MAL list order.
@@ -37,6 +52,12 @@ export const MEDIA_BY_MAL_QUERY = gql`
     Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { ...MediaFields } }
   }
   ${MEDIA_FIELDS}`
+
+export const READING_MEDIA_BY_MAL_QUERY = gql`
+  query ReadingMediaByMal($ids: [Int]) {
+    Page(perPage: 50) { media(idMal_in: $ids, type: MANGA) { ...ReadingMediaFields } }
+  }
+  ${READING_MEDIA_FIELDS}`
 
 // Refresh locally-saved history snapshots in one request. In particular, nextAiringEpisode must be
 // current so Continue Watching can hide a caught-up show and bring it back when a new episode airs.

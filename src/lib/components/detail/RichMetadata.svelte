@@ -13,7 +13,7 @@
 {#if view === 'people'}
   <div class="space-y-7">
     <section>
-      <h3 class="mb-3 text-lg font-black">Characters &amp; Japanese voices</h3>
+      <h3 class="mb-3 text-lg font-black">{media.type === 'MANGA' ? 'Characters' : 'Characters & Japanese voices'}</h3>
       {#if media.characters?.edges?.length}
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {#each media.characters.edges as character (character.node.id)}
