@@ -17,6 +17,13 @@ export function implausiblyShortEpisode(expectedMinutes: number | null | undefin
     && expectedSeconds - actualSeconds > 8 * 60
 }
 
+/** Some broken HLS manifests reach FILE_LOADED and immediately EOF without yielding a packet.
+ * Treat that as a dead source, while preserving ordinary EOF at the actual end of a file. */
+export function prematureEof(position: number, duration: number): boolean {
+  if (!Number.isFinite(position) || position >= 5) return false
+  return !Number.isFinite(duration) || duration <= 0 || duration - position > 3
+}
+
 export interface RecoveryWatchState {
   loadedAt: number
   lastAdvancedAt: number
