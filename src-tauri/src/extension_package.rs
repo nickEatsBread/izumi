@@ -150,6 +150,13 @@ mod package {
         Ok(true)
     }
 
+    fn is_android_apk(bytes: &[u8]) -> bool {
+        let Ok(mut archive) = ZipArchive::new(Cursor::new(bytes)) else {
+            return false;
+        };
+        archive.by_name("AndroidManifest.xml").is_ok() && archive.by_name("classes.dex").is_ok()
+    }
+
     fn parse_package(bytes: &[u8]) -> Result<(InstalledExtension, Option<Vec<u8>>), String> {
         if bytes.is_empty() || bytes.len() > MAX_PACKAGE_BYTES {
             return Err("Extension package is empty or too large".into());
@@ -174,10 +181,6 @@ mod package {
             "manifest.json",
             "signature.json",
         ];
-        if archive.len() != required.len() {
-            return Err("Extension package contains unexpected files".into());
-        }
-        let expected = required.into_iter().collect::<BTreeSet<_>>();
         let actual = (0..archive.len())
             .map(|index| {
                 archive
@@ -186,13 +189,24 @@ mod package {
                     .map_err(|e| e.to_string())
             })
             .collect::<Result<BTreeSet<_>, _>>()?;
-        if actual != expected.iter().map(|value| value.to_string()).collect() {
+        let mut expected = required
+            .into_iter()
+            .map(ToOwned::to_owned)
+            .collect::<BTreeSet<_>>();
+        let has_android_entry = backend == "aniyomi-jvm" && actual.contains("extension.apk");
+        if has_android_entry {
+            expected.insert("extension.apk".to_string());
+        }
+        if archive.len() != expected.len() || actual != expected {
             return Err("Extension package contains unexpected files".into());
         }
 
         let integrity_bytes = read_entry(&mut archive, "integrity.json")?;
         let signature_bytes = read_entry(&mut archive, "signature.json")?;
         let entry_bytes = read_entry(&mut archive, entry)?;
+        let android_entry_bytes = has_android_entry
+            .then(|| read_entry(&mut archive, "extension.apk"))
+            .transpose()?;
         let compatibility_bytes = read_entry(&mut archive, "compatibility.json")?;
         let integrity = json(&integrity_bytes, "integrity.json")?;
         let signature = json(&signature_bytes, "signature.json")?;
@@ -231,11 +245,14 @@ mod package {
             .get("files")
             .and_then(Value::as_object)
             .ok_or("Extension integrity file is invalid")?;
-        let expected_hashes = [
+        let mut expected_hashes = vec![
             ("manifest.json", &manifest_bytes),
             ("compatibility.json", &compatibility_bytes),
             (entry, &entry_bytes),
         ];
+        if let Some(android_entry) = android_entry_bytes.as_ref() {
+            expected_hashes.push(("extension.apk", android_entry));
+        }
         if integrity.get("algorithm").and_then(Value::as_str) != Some("SHA-256")
             || integrity_files.len() != expected_hashes.len()
         {
@@ -262,6 +279,17 @@ mod package {
             }
             None
         };
+        if let Some(android_entry) = android_entry_bytes.as_ref() {
+            if !is_android_apk(android_entry) {
+                return Err("Aniyomi Android entry is not a valid extension APK".into());
+            }
+        }
+        #[cfg(target_os = "android")]
+        if backend == "aniyomi-jvm" && android_entry_bytes.is_none() {
+            return Err(
+                "This extension package predates Android support; update it from the store".into(),
+            );
+        }
         let sources = manifest
             .get("sources")
             .and_then(Value::as_array)
@@ -310,7 +338,19 @@ mod package {
             source_ids,
             signed,
         };
-        Ok((installed, (backend == "aniyomi-jvm").then_some(entry_bytes)))
+        let runtime_entry = if backend == "aniyomi-jvm" {
+            #[cfg(target_os = "android")]
+            {
+                android_entry_bytes
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                Some(entry_bytes)
+            }
+        } else {
+            None
+        };
+        Ok((installed, runtime_entry))
     }
 
     fn extension_dir(app: &AppHandle) -> Result<PathBuf, String> {

@@ -10,9 +10,9 @@ use tauri_plugin_extplayer::{
 // Android cannot launch the desktop Java 17 process. The upstream runtime publishes a dedicated
 // Android host APK which is loaded inside Izumi's process through DexClassLoader. Pin both its
 // version and digest: executable code never runs merely because "latest" changed upstream.
-const RUNTIME_VERSION: &str = "1.9.9";
-const RUNTIME_URL: &str = "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/download/v1.9.9/anymex_runtime_host.apk";
-const RUNTIME_SHA256: &str = "a7fbeba30675b8c844b9d0498774f33c2fb37eda622f9cd517aa4ad7c11456cc";
+const RUNTIME_VERSION: &str = "2.0.0";
+const RUNTIME_URL: &str = "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/download/v2.0.0/anymex_runtime_host.apk";
+const RUNTIME_SHA256: &str = "b54cce2af8fda9e48cfa37d814362a41a85bde248b3519f9231410dc18b25f52";
 const MAX_RUNTIME_BYTES: usize = 20 * 1024 * 1024;
 
 fn digest(bytes: &[u8]) -> String {
