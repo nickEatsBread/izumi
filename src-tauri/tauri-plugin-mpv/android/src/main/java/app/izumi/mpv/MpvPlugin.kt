@@ -122,6 +122,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var view: IzumiMpvView? = null
     private var preferredSubLanguage: String? = null
     private var pendingSubtitles: PendingSubtitles? = null
+    /** The first load must wait for SurfaceView.surfaceCreated or mpv can initialize its VO with
+     * no Android surface and remain black at 0:00 even though demuxed metadata is available. */
+    private var pendingSurfaceLoad: LoadArgs? = null
     /** Clips the SurfaceView and moves with the web player shell during direct-manipulation gestures. */
     private var container: FrameLayout? = null
     private var landscapeReleaseListener: OrientationEventListener? = null
@@ -219,7 +222,13 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         } else {
             Log.w("MpvPlugin", "WebView NOT found under android.R.id.content")
         }
-        val v = IzumiMpvView(activity, m)
+        val v = IzumiMpvView(activity, m, onSurfaceReady@{
+            if (mpv !== m) return@onSurfaceReady
+            pendingSurfaceLoad?.let { args ->
+                pendingSurfaceLoad = null
+                loadIntoCore(m, args)
+            }
+        })
         // SurfaceView must live inside a real clipped player container. Transforming the surface
         // directly let decoded video spill over the watch page while the HTML player frame stayed
         // still. YouTube moves one bounded player rectangle; this FrameLayout gives us that same
@@ -289,34 +298,47 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         m.setPropertyString("sid", match?.takeIf { it.isNotBlank() } ?: "no")
     }
 
+    private fun loadIntoCore(m: MPVLib, args: LoadArgs) {
+        args.alang?.takeIf { it.isNotBlank() }?.let {
+            m.setPropertyString("alang", it)
+        }
+        val slang = args.slang?.trim().orEmpty()
+        preferredSubLanguage = slang
+        if (slang.equals("none", ignoreCase = true)) {
+            m.setPropertyString("sid", "no")
+        } else {
+            m.setPropertyString("sid", "auto")
+            if (slang.isNotEmpty()) m.setPropertyString("slang", slang)
+        }
+        // Aniyomi/HTTP streams commonly require Referer/Origin. libmpv's HTTP header field is
+        // process-global, so reset it on every load rather than leaking the previous source's
+        // headers into the next episode.
+        m.setPropertyString(
+            "http-header-fields",
+            args.headers.entries.joinToString(",") { "${it.key}: ${it.value}" },
+        )
+        pendingSubtitles = PendingSubtitles(args.url, args.subtitles)
+        m.command(arrayOf("loadfile", args.url))
+        if (args.startPos > 0) m.command(arrayOf("seek", args.startPos.toString(), "absolute"))
+        if (slang.equals("none", ignoreCase = true)) {
+            m.setPropertyString("sid", "no")
+        }
+    }
+
     @Command
     fun load(invoke: Invoke) {
         val args = invoke.parseArgs(LoadArgs::class.java)
         activity.runOnUiThread {
             val m = ensure()
-            args.alang?.takeIf { it.isNotBlank() }?.let {
-                m.setPropertyString("alang", it)
-            }
-            val slang = args.slang?.trim().orEmpty()
-            preferredSubLanguage = slang
-            if (slang.equals("none", ignoreCase = true)) {
-                m.setPropertyString("sid", "no")
+            // BaseMPVView from mpv-android follows the same rule: the first loadfile is retained
+            // until surfaceCreated has attached the Android Surface. Later loads can reuse it.
+            if (view?.surfaceReady == true) {
+                pendingSurfaceLoad = null
+                loadIntoCore(m, args)
             } else {
-                m.setPropertyString("sid", "auto")
-                if (slang.isNotEmpty()) m.setPropertyString("slang", slang)
-            }
-            // Aniyomi/HTTP streams commonly require Referer/Origin. libmpv's HTTP header field is
-            // process-global, so reset it on every load rather than leaking the previous source's
-            // headers into the next episode.
-            m.setPropertyString(
-                "http-header-fields",
-                args.headers.entries.joinToString(",") { "${it.key}: ${it.value}" },
-            )
-            pendingSubtitles = PendingSubtitles(args.url, args.subtitles)
-            m.command(arrayOf("loadfile", args.url))
-            if (args.startPos > 0) m.command(arrayOf("seek", args.startPos.toString(), "absolute"))
-            if (slang.equals("none", ignoreCase = true)) {
-                m.setPropertyString("sid", "no")
+                // Keep only the newest request if the user changes source before the surface is
+                // ready. Invokes resolve immediately because the request has been accepted.
+                pendingSurfaceLoad = args
             }
             invoke.resolve()
         }
@@ -547,6 +569,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             mpv = null
             view = null
             container = null
+            pendingSurfaceLoad = null
             invoke.resolve()
         }
     }
@@ -566,26 +589,31 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
     override fun event(eventId: Int) {
-        // MPV_EVENT_FILE_LOADED. Adding sidecars immediately after `loadfile` races mpv's
-        // asynchronous replacement and can silently discard them. Attach only when the loaded
-        // path belongs to the pending request, then enforce the user's language across embedded
-        // and external tracks.
-        if (eventId == 8) mpv?.let { m ->
-            val pending = pendingSubtitles
-            if (pending != null && m.getPropertyString("path") == pending.url) {
-                pendingSubtitles = null
-                for (subtitle in pending.tracks) {
-                    if (subtitle.url.isBlank()) continue
-                    m.command(arrayOf(
-                        "sub-add",
-                        subtitle.url,
-                        if (subtitle.selected) "select" else "auto",
-                        subtitle.title?.takeIf { it.isNotBlank() } ?: "Subtitles",
-                        subtitle.lang?.takeIf { it.isNotBlank() } ?: "und",
-                    ))
+        // MPVLib dispatches observers while holding its observer monitor on the native event
+        // thread. Never call back into synchronous libmpv APIs from that callback: FILE_LOADED can
+        // otherwise leave metadata (including duration) visible while the event loop and decoder
+        // remain stuck at 0:00. Posting also preserves the original reason for waiting until
+        // FILE_LOADED: adding sidecars immediately after `loadfile` races the async replacement.
+        if (eventId == 8) {
+            val loadedCore = mpv
+            activity.window.decorView.post {
+                if (loadedCore == null || mpv !== loadedCore) return@post
+                val pending = pendingSubtitles
+                if (pending != null && loadedCore.getPropertyString("path") == pending.url) {
+                    pendingSubtitles = null
+                    for (subtitle in pending.tracks) {
+                        if (subtitle.url.isBlank()) continue
+                        loadedCore.command(arrayOf(
+                            "sub-add",
+                            subtitle.url,
+                            if (subtitle.selected) "select" else "auto",
+                            subtitle.title?.takeIf { it.isNotBlank() } ?: "Subtitles",
+                            subtitle.lang?.takeIf { it.isNotBlank() } ?: "und",
+                        ))
+                    }
                 }
+                enforcePreferredSubtitle(loadedCore)
             }
-            enforcePreferredSubtitle(m)
         }
         trigger("event", JSObject().put("id", eventId))
     }
