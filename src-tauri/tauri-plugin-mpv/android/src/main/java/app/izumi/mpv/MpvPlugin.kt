@@ -32,12 +32,28 @@ import dev.jdtech.mpv.MPVLib
 import kotlin.math.max
 
 @InvokeArg
+class SubtitleArgs {
+    var url: String = ""
+    var title: String? = null
+    var lang: String? = null
+    var selected: Boolean = false
+}
+
+@InvokeArg
 class LoadArgs {
     var url: String = ""
     var title: String? = null
     var startPos: Double = 0.0
-    var subtitles: Array<String> = arrayOf()
+    var subtitles: Array<SubtitleArgs> = arrayOf()
+    var alang: String? = null
+    var slang: String? = null
+    var headers: Map<String, String> = emptyMap()
 }
+
+private data class PendingSubtitles(
+    val url: String,
+    val tracks: Array<SubtitleArgs>,
+)
 
 @InvokeArg
 class CommandArgs {
@@ -104,6 +120,8 @@ class TransformArgs {
 class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.EventObserver {
     private var mpv: MPVLib? = null
     private var view: IzumiMpvView? = null
+    private var preferredSubLanguage: String? = null
+    private var pendingSubtitles: PendingSubtitles? = null
     /** Clips the SurfaceView and moves with the web player shell during direct-manipulation gestures. */
     private var container: FrameLayout? = null
     private var landscapeReleaseListener: OrientationEventListener? = null
@@ -232,14 +250,74 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         return m
     }
 
+    private fun normalizedLanguage(raw: String?): String = when (raw?.trim()?.lowercase()) {
+        "en", "eng", "english" -> "eng"
+        "ja", "jpn", "japanese" -> "jpn"
+        "zh", "chi", "zho", "chinese" -> "chi"
+        "ko", "kor", "korean" -> "kor"
+        "es", "spa", "spanish" -> "spa"
+        "fr", "fre", "fra", "french" -> "fre"
+        "de", "ger", "deu", "german" -> "ger"
+        "it", "ita", "italian" -> "ita"
+        "pt", "por", "portuguese" -> "por"
+        "ru", "rus", "russian" -> "rus"
+        "ar", "ara", "arabic" -> "ara"
+        "pl", "pol", "polish" -> "pol"
+        "tr", "tur", "turkish" -> "tur"
+        else -> raw?.trim()?.lowercase().orEmpty()
+    }
+
+    /** mpv treats `slang` as a preference, not a restriction: if English is absent it may still
+     * select a source-default Chinese track. Enforce the user's language once the file's embedded
+     * track list exists; an explicitly-selected external English track added just after load can
+     * still override this through `sub-add ... select`. */
+    private fun enforcePreferredSubtitle(m: MPVLib) {
+        val preferred = normalizedLanguage(preferredSubLanguage)
+        if (preferred.isEmpty()) return
+        if (preferred == "none") {
+            m.setPropertyString("sid", "no")
+            return
+        }
+        val count = m.getPropertyString("track-list/count")?.toIntOrNull() ?: 0
+        var match: String? = null
+        for (index in 0 until count) {
+            if (m.getPropertyString("track-list/$index/type") != "sub") continue
+            if (normalizedLanguage(m.getPropertyString("track-list/$index/lang")) != preferred) continue
+            match = m.getPropertyString("track-list/$index/id")
+            if (!match.isNullOrBlank()) break
+        }
+        m.setPropertyString("sid", match?.takeIf { it.isNotBlank() } ?: "no")
+    }
+
     @Command
     fun load(invoke: Invoke) {
         val args = invoke.parseArgs(LoadArgs::class.java)
         activity.runOnUiThread {
             val m = ensure()
+            args.alang?.takeIf { it.isNotBlank() }?.let {
+                m.setPropertyString("alang", it)
+            }
+            val slang = args.slang?.trim().orEmpty()
+            preferredSubLanguage = slang
+            if (slang.equals("none", ignoreCase = true)) {
+                m.setPropertyString("sid", "no")
+            } else {
+                m.setPropertyString("sid", "auto")
+                if (slang.isNotEmpty()) m.setPropertyString("slang", slang)
+            }
+            // Aniyomi/HTTP streams commonly require Referer/Origin. libmpv's HTTP header field is
+            // process-global, so reset it on every load rather than leaking the previous source's
+            // headers into the next episode.
+            m.setPropertyString(
+                "http-header-fields",
+                args.headers.entries.joinToString(",") { "${it.key}: ${it.value}" },
+            )
+            pendingSubtitles = PendingSubtitles(args.url, args.subtitles)
             m.command(arrayOf("loadfile", args.url))
             if (args.startPos > 0) m.command(arrayOf("seek", args.startPos.toString(), "absolute"))
-            for (s in args.subtitles) m.command(arrayOf("sub-add", s, "auto"))
+            if (slang.equals("none", ignoreCase = true)) {
+                m.setPropertyString("sid", "no")
+            }
             invoke.resolve()
         }
     }
@@ -488,6 +566,27 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
     override fun event(eventId: Int) {
+        // MPV_EVENT_FILE_LOADED. Adding sidecars immediately after `loadfile` races mpv's
+        // asynchronous replacement and can silently discard them. Attach only when the loaded
+        // path belongs to the pending request, then enforce the user's language across embedded
+        // and external tracks.
+        if (eventId == 8) mpv?.let { m ->
+            val pending = pendingSubtitles
+            if (pending != null && m.getPropertyString("path") == pending.url) {
+                pendingSubtitles = null
+                for (subtitle in pending.tracks) {
+                    if (subtitle.url.isBlank()) continue
+                    m.command(arrayOf(
+                        "sub-add",
+                        subtitle.url,
+                        if (subtitle.selected) "select" else "auto",
+                        subtitle.title?.takeIf { it.isNotBlank() } ?: "Subtitles",
+                        subtitle.lang?.takeIf { it.isNotBlank() } ?: "und",
+                    ))
+                }
+            }
+            enforcePreferredSubtitle(m)
+        }
         trigger("event", JSObject().put("id", eventId))
     }
 }

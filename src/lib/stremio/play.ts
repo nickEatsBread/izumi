@@ -25,6 +25,7 @@ import { resolveHash, resolveSidecars, providerName, type EpisodeWant } from './
 import { resolveOnlineStreams } from './onlinestream'
 import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
+import { normalizeLang } from './sublang'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
@@ -98,6 +99,7 @@ type DirectTorrentPlayback = {
 
 type DirectTorrentSubtitle = {
   fileIndex: number
+  url: string
   lang: string
   title: string
 }
@@ -1256,10 +1258,11 @@ export async function playStream(
   torrentSubtitleState.set({ playbackId: null, status: 'idle', loaded: 0, total: 0, revision: 0 })
   // Fetch external subtitles from any subtitle-capable addon (OpenSubtitles etc) CONCURRENTLY with the
   // slow source resolve below, so they're ready by embed time without adding latency. Skipped for the
-  // external/Android players (they own subtitle handling). Best-effort — [] on any failure.
+  // generic external players and Android lite (they own subtitle handling). Best-effort — [] on any failure.
   // Also skipped in offline mode — the external-subtitle addons are network-only, and offline
   // playback is always a local file (any embedded/downloaded subs travel with it).
-  const subsP: Promise<SubtitleCandidate[]> = get(isAndroid) || get(enableExternalPlayer) || get(offlineMode)
+  const androidEmbedded = get(isAndroid) ? await hasEmbeddedPlayer() : false
+  const subsP: Promise<SubtitleCandidate[]> = (get(isAndroid) ? !androidEmbedded : get(enableExternalPlayer)) || get(offlineMode)
     ? Promise.resolve([])
     : fetchExternalSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename).catch(() => [])
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
@@ -1407,29 +1410,62 @@ export async function playStream(
     // release identity so Continue Watching can resume the SAME release later. Progress bumps on watch.
     recordPlay(media, episode, { group: describe(stream).group, bingeGroup: stream.behaviorHints?.bingeGroup })
 
-    // Android: hand the resolved URL to an external video player (no embedded mpv on mobile). This
+    // Android full: play through embedded mpv. Android lite falls back to an external player. This
     // returns before the desktop embed below, so nothing libmpv-related runs and `playing` stays
     // false (browse UI stays up, no overlay). The episode is marked watched when the user returns.
     if (get(isAndroid)) {
       // "Full" flavor: embedded libmpv player (renders in-app). The plugin only exists when the
       // app was built with the `android-mpv` feature; on the "lite" build hasEmbeddedPlayer() is
       // false and we fall through to the external-player intent below.
-      if (await hasEmbeddedPlayer()) {
+      if (androidEmbedded) {
         const addonSubs = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 4000))])
+        onlineSubCandidates.set({ status: 'ready', items: addonSubs.filter((s) => s.download?.needsFetch) })
+        const sourceSubs = stream.__stream ? stream.__subtitles ?? [] : []
+        const preferred = get(preferredSubLang)
+        let selectedPreferred = false
         const subs = [
-          ...(stream.__stream ? (stream.__subtitles ?? []).map((s: { url: string }) => s.url) : []),
-          ...addonSubs.filter((s) => !!s.url).map((s) => s.url!),
-        ]
+          ...sourceSubs.map((s) => ({
+            url: s.url,
+            lang: s.lang,
+            title: s.title,
+          })),
+          ...directTorrentSubtitles.map((s) => ({
+            url: s.url,
+            lang: s.lang,
+            title: s.title,
+          })),
+          ...addonSubs.filter((s) => !!s.url).map((s) => ({
+            url: s.url!,
+            lang: normalizeLang(s.lang),
+            title: s.release ?? s.lang ?? 'Online subtitles',
+          })),
+        ].map((subtitle) => {
+          const lang = normalizeLang(subtitle.lang) ?? subtitle.lang
+          const selected = preferred !== 'none' && !selectedPreferred && lang === preferred
+          if (selected) selectedPreferred = true
+          return { ...subtitle, lang, selected }
+        })
+        const sidecarHeaders = Object.assign(
+          {},
+          ...sourceSubs.map((s) => s.headers ?? {}),
+        )
+        const headers = {
+          ...sidecarHeaders,
+          ...(stream.__stream ? stream.__headers ?? {} : {}),
+        }
         await startMpvEvents()
         await mpvLoad({
           url: stream.url,
           title: label,
           startPos: startSeconds || 0,
           subtitles: subs,
+          alang: get(preferredAudioLang),
+          slang: preferred,
+          headers,
           autoplay,
         })
         // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
-        androidStreamInfo.set({ url: stream.url, headers: (stream.__stream ? stream.__headers : undefined) ?? {} })
+        androidStreamInfo.set({ url: stream.url, headers })
         androidMpvActive.set(true)
         rememberSuccess()
         onState({ status: 'playing' })

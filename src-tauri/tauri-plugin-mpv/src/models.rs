@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtitleRequest {
+    pub url: String,
+    pub title: Option<String>,
+    pub lang: Option<String>,
+    #[serde(default)]
+    pub selected: bool,
+}
+
 /// Load a stream (or local file) into the embedded player.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -11,9 +21,15 @@ pub struct LoadRequest {
     /// Resume position in seconds (0 = start).
     #[serde(default)]
     pub start_pos: f64,
-    /// Optional external subtitle URLs to add after load.
+    /// Optional external subtitle tracks to add after load.
     #[serde(default)]
-    pub subtitles: Vec<String>,
+    pub subtitles: Vec<SubtitleRequest>,
+    /// Preferred mpv audio/subtitle language codes.
+    pub alang: Option<String>,
+    pub slang: Option<String>,
+    /// HTTP headers shared by the video and sidecar requests.
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
 }
 
 /// A raw mpv command, e.g. ["seek","10","relative"] or ["set","pause","yes"].
@@ -95,12 +111,16 @@ mod tests {
 
     #[test]
     fn load_request_camel_case() {
-        let j = r#"{"url":"http://x/v.mkv","title":"Ep 1","startPos":42.5,"subtitles":["http://x/s.ass"]}"#;
+        let j = r#"{"url":"http://x/v.mkv","title":"Ep 1","startPos":42.5,"subtitles":[{"url":"http://x/s.ass","title":"English","lang":"eng","selected":true}],"alang":"jpn","slang":"eng","headers":{"Referer":"https://x/"}}"#;
         let r: LoadRequest = serde_json::from_str(j).unwrap();
         assert_eq!(r.url, "http://x/v.mkv");
         assert_eq!(r.title.as_deref(), Some("Ep 1"));
         assert_eq!(r.start_pos, 42.5);
-        assert_eq!(r.subtitles, vec!["http://x/s.ass"]);
+        assert_eq!(r.subtitles[0].url, "http://x/s.ass");
+        assert_eq!(r.subtitles[0].lang.as_deref(), Some("eng"));
+        assert!(r.subtitles[0].selected);
+        assert_eq!(r.slang.as_deref(), Some("eng"));
+        assert_eq!(r.headers.get("Referer").map(String::as_str), Some("https://x/"));
     }
 
     #[test]
@@ -110,6 +130,7 @@ mod tests {
         assert_eq!(r.title, None);
         assert_eq!(r.start_pos, 0.0);
         assert!(r.subtitles.is_empty());
+        assert!(r.headers.is_empty());
     }
 
     #[test]

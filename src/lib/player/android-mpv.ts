@@ -10,7 +10,15 @@ export interface MpvLoad {
   url: string
   title?: string
   startPos?: number
-  subtitles?: string[]
+  subtitles?: {
+    url: string
+    title?: string
+    lang?: string
+    selected?: boolean
+  }[]
+  alang?: string
+  slang?: string
+  headers?: Record<string, string>
   autoplay?: boolean
 }
 
@@ -151,6 +159,9 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
       title: p.title ?? null,
       startPos: p.startPos ?? 0,
       subtitles: p.subtitles ?? [],
+      alang: p.alang ?? null,
+      slang: p.slang ?? null,
+      headers: p.headers ?? {},
     },
   })
   // The reusable core can be paused by keep-open at EOF. Reassert the

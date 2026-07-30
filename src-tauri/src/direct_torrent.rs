@@ -84,6 +84,7 @@ pub struct DirectTorrentHealth {
 #[serde(rename_all = "camelCase")]
 pub struct DirectTorrentSubtitle {
     file_index: usize,
+    url: String,
     lang: String,
     title: String,
 }
@@ -301,19 +302,7 @@ pub async fn torrent_playback_url(
     // Direct sidecars are tiny and selected alongside the video, but nothing waits for their
     // pieces here. The active video HTTP stream retains librqbit's priority; Windows attaches
     // these tracks live once player_embed has returned.
-    let subtitle_files = if cfg!(target_os = "android") {
-        Vec::new()
-    } else {
-        select_subtitles(&files, &selected)
-    };
-    let subtitles = subtitle_files
-        .iter()
-        .map(|file| DirectTorrentSubtitle {
-            file_index: file.index,
-            lang: subtitle_language(&file.name).to_string(),
-            title: subtitle_title(&selected, file),
-        })
-        .collect::<Vec<_>>();
+    let subtitle_files = select_subtitles(&files, &selected);
     let selected_indices = std::iter::once(selected.index)
         .chain(subtitle_files.iter().map(|file| file.index))
         .collect::<HashSet<_>>();
@@ -392,6 +381,18 @@ pub async fn torrent_playback_url(
     let playback_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let uploaded_at_start = handle.stats().uploaded_bytes;
     let torrent_id = handle.id();
+    let subtitles = subtitle_files
+        .iter()
+        .map(|file| DirectTorrentSubtitle {
+            file_index: file.index,
+            url: format!(
+                "http://127.0.0.1:{}/torrents/{}/stream/{}",
+                engine.port, torrent_id, file.index
+            ),
+            lang: subtitle_language(&file.name).to_string(),
+            title: subtitle_title(&selected, file),
+        })
+        .collect::<Vec<_>>();
     *active = Some(ActivePlayback {
         playback_id,
         torrent_id,

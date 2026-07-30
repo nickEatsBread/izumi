@@ -975,7 +975,6 @@ async fn ext_fetch(
 /// still needs the user's own JWT + quota). A consumer key is client-embedded by design (it ships in
 /// the binary), so it's effectively public; the `OPENSUBTITLES_API_KEY` build env overrides the
 /// baked default so it can be rotated without a code change.
-#[cfg(not(target_os = "android"))]
 const OPENSUBTITLES_API_KEY: &str = match option_env!("OPENSUBTITLES_API_KEY") {
     Some(k) => k,
     None => "kpwJltOBFOqFaoRvWSIPph7katlIMxas",
@@ -983,7 +982,6 @@ const OPENSUBTITLES_API_KEY: &str = match option_env!("OPENSUBTITLES_API_KEY") {
 
 /// Mandatory OpenSubtitles `User-Agent` — a missing/default/duplicate UA is an instant 403. Built
 /// from the crate version at compile time (e.g. "izumi v0.1.4").
-#[cfg(not(target_os = "android"))]
 const OPENSUBTITLES_USER_AGENT: &str = concat!("izumi v", env!("CARGO_PKG_VERSION"));
 
 /// Result of an OpenSubtitles `POST /api/v1/login`. Serialized with the Rust field names
@@ -991,7 +989,6 @@ const OPENSUBTITLES_USER_AGENT: &str = concat!("izumi v", env!("CARGO_PKG_VERSIO
 /// remaining, level, expires_at }`. `expires_at` is a client-computed epoch-ms deadline
 /// (there is no refresh token; the JWT lives ~12h) after which the frontend must re-login.
 /// `base_url` is the resolved (possibly VIP) API base all later calls must target.
-#[cfg(not(target_os = "android"))]
 #[derive(serde::Serialize)]
 pub struct OpenSubtitlesSession {
     token: String,
@@ -1007,7 +1004,6 @@ pub struct OpenSubtitlesSession {
 /// (e.g. "vip-api.opensubtitles.com"); it is normalized to an absolute `https://…/api/v1` base the
 /// frontend can prefix directly. The login response carries `allowed_downloads` but not
 /// `remaining` (that comes from `/download`), so `remaining` defaults to the allowance.
-#[cfg(not(target_os = "android"))]
 fn parse_opensubtitles_login(body: &str, now_ms: i64) -> Result<OpenSubtitlesSession, String> {
     let v: serde_json::Value =
         serde_json::from_str(body).map_err(|_| "bad login json".to_string())?;
@@ -1057,7 +1053,6 @@ fn parse_opensubtitles_login(body: &str, now_ms: i64) -> Result<OpenSubtitlesSes
 /// token (and, only with "Stay signed in", the credentials). `POST /api/v1/login` on the pooled
 /// client with the embedded Api-Key + mandatory User-Agent. KONG rate-limits `/login`; on a non-2xx
 /// (incl. 401) we surface the body and stop — the frontend must not spam re-login.
-#[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn opensubtitles_login(
     username: String,
@@ -1092,7 +1087,6 @@ async fn opensubtitles_login(
 /// Pick the first subtitle entry from a SubDL ZIP archive and return its raw (still-encoded) bytes.
 /// Prefers the first `.srt`; falls back to the first `.ass`/`.ssa`. SubDL always returns a ZIP (a
 /// non-`unpack` response is never a bare `.srt`). Two-pass so a later `.srt` beats an earlier `.ass`.
-#[cfg(not(target_os = "android"))]
 fn unzip_first_subtitle(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).map_err(|e| e.to_string())?;
     let mut srt_idx: Option<usize> = None;
@@ -1122,7 +1116,6 @@ fn unzip_first_subtitle(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
 /// encoding (trusted over the heuristic); otherwise chardetng guesses the legacy encoding and
 /// encoding_rs decodes it. `Encoding::decode` strips a leading BOM itself; the trailing
 /// `strip_prefix` removes any residual U+FEFF so it can never leak into the first cue.
-#[cfg(not(target_os = "android"))]
 fn normalize_subtitle_charset(bytes: &[u8]) -> String {
     let text = if let Some((enc, _)) = encoding_rs::Encoding::for_bom(bytes) {
         enc.decode(bytes).0.into_owned()
@@ -1139,7 +1132,6 @@ fn normalize_subtitle_charset(bytes: &[u8]) -> String {
 
 /// Write `bytes` to `out` atomically (temp file + rename) so a reader never sees a partial file.
 /// Mirrors the scrub-tile writer in `player/mod.rs`, but for the normalized subtitle cache.
-#[cfg(not(target_os = "android"))]
 fn write_text_atomic(out: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
     let tmp = out.with_extension("part");
     std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
@@ -1157,7 +1149,6 @@ fn write_text_atomic(out: &std::path::Path, bytes: &[u8]) -> Result<(), String> 
 /// `.srt`/`.ass` entry. Bytes are charset-detected, decoded to UTF-8, and written atomically to a
 /// blake3-content-named `.srt`. Transport is modelled on `ext_fetch` (pooled client + arbitrary auth
 /// headers) but reads `bytes()` — SubDL bodies are binary zips, never text. Returns the cache path.
-#[cfg(not(target_os = "android"))]
 async fn fetch_normalize_subtitle(
     app: &AppHandle,
     provider: &str,
@@ -1275,6 +1266,32 @@ async fn player_add_subtitle(
     )
     .await?;
     player.add_subtitle(&path, &lang, &title)
+}
+
+/// Android uses the same provider download/ZIP/charset pipeline, then hands the returned private
+/// cache path to its in-process libmpv plugin. Keeping byte handling here avoids binary ZIP bodies
+/// crossing the WebView bridge and keeps provider behavior identical on desktop and Android.
+#[cfg(target_os = "android")]
+#[tauri::command]
+async fn player_add_subtitle(
+    app: AppHandle,
+    provider: String,
+    url: Option<String>,
+    file_id: Option<i64>,
+    _lang: String,
+    _title: String,
+    api_key: Option<String>,
+    token: Option<String>,
+) -> Result<String, String> {
+    fetch_normalize_subtitle(
+        &app,
+        &provider,
+        url.as_deref(),
+        file_id,
+        api_key.as_deref(),
+        token.as_deref(),
+    )
+    .await
 }
 
 /// Attach an already-resolved external subtitle URL to the LIVE player. Unlike
@@ -3374,6 +3391,8 @@ pub fn run() {
         set_doh,
         write_text_file,
         updater_download_apk,
+        opensubtitles_login,
+        player_add_subtitle,
         oauth_capture,
         download::download_start,
         download::download_cancel,
