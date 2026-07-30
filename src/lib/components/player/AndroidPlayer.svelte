@@ -11,6 +11,7 @@
   // its verdicts to mpv/native calls.
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
+  import { invoke } from '@tauri-apps/api/core'
   import { scale, fade } from 'svelte/transition'
   import {
     mpvState,
@@ -44,13 +45,16 @@
     HOLD_MS,
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
-  import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
   import { reportWatchPlayback } from '$lib/watch-together/client'
-  import { autoSkip, seekDuration, scrubThumbnails } from '$lib/settings/ui'
+  import { autoSkip, seekDuration, scrubThumbnails, subDlApiKey, openSubtitlesToken } from '$lib/settings/ui'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playNext, playPrev, playEpisode, finalizeAndroidWatch } from '$lib/stremio/play'
+  import { playNext, playPrev, playEpisode, finalizeAndroidWatch, searchOnlineSubtitles } from '$lib/stremio/play'
+  import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
+  import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
+  import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import ChevronDown from 'lucide-svelte/icons/chevron-down'
@@ -715,6 +719,38 @@
   function trackLabel(t: MpvTrack) { return [t.lang?.toUpperCase(), t.title].filter(Boolean).join(' · ') || `Track ${t.id}` }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
   async function pickSub(id: number | 'no') { await setSubTrack(id); tracks = await getTracks() }
+  let downloadingSubtitle = $state<string | null>(null)
+  async function addOnlineSub(candidate: SubtitleCandidate) {
+    const key = candidateKey(candidate)
+    downloadingSubtitle = key
+    try {
+      const path = await invoke<string>('player_add_subtitle', {
+        provider: candidate.provider,
+        url: candidate.download?.zipUrl,
+        fileId: candidate.download?.fileId,
+        lang: candidate.lang ?? 'und',
+        title: candidateTitle(candidate),
+        apiKey: candidate.provider === 'subdl' ? $subDlApiKey : OPEN_SUBS_API_KEY,
+        token: $openSubtitlesToken,
+      })
+      await mpvCommand([
+        'sub-add',
+        path,
+        'select',
+        candidateTitle(candidate),
+        candidate.lang ?? 'und',
+      ])
+      tracks = await getTracks()
+      subtitleNotice.set('')
+    } catch (error) {
+      subtitleNotice.set(subtitleErrorNotice(candidate.provider, error))
+    } finally {
+      downloadingSubtitle = null
+    }
+  }
+  async function refreshOnlineSubtitles() {
+    await searchOnlineSubtitles()
+  }
   function changeSource() {
     sheet = null
     const m = $nowPlayingMedia
@@ -1057,6 +1093,28 @@
           <button onclick={() => pickSub('no')} class="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm {subOff ? 'bg-theme/20 font-bold text-theme' : 'hover:bg-white/10'}">Off {#if subOff}<span>✓</span>{/if}</button>
           {#each subTracks as t (t.id)}
             <button onclick={() => pickSub(t.id)} class="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm {t.selected ? 'bg-theme/20 font-bold text-theme' : 'hover:bg-white/10'}">{trackLabel(t)} {#if t.selected}<span>✓</span>{/if}</button>
+          {/each}
+          <div class="mb-2 mt-4 flex items-center justify-between">
+            <p class="text-xs font-bold uppercase tracking-wide text-white/50">Online subtitles</p>
+            <button disabled={$onlineSubCandidates.status === 'searching'} onclick={refreshOnlineSubtitles} class="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold disabled:opacity-50">
+              {$onlineSubCandidates.status === 'searching' ? 'Searching…' : 'Search again'}
+            </button>
+          </div>
+          {#if $subtitleNotice}
+            <p class="mb-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-white/60">{$subtitleNotice}</p>
+          {/if}
+          {#each $onlineSubCandidates.items as candidate (candidateKey(candidate))}
+            <button disabled={downloadingSubtitle === candidateKey(candidate)} onclick={() => addOnlineSub(candidate)} class="mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-white/10 disabled:opacity-50">
+              <span class="min-w-0">
+                <span class="block font-bold">{candidate.lang ?? 'und'} · {providerBadge(candidate.provider)}</span>
+                {#if candidate.release}<span class="block truncate text-xs text-white/45">{candidate.release}</span>{/if}
+              </span>
+              <span class="shrink-0 text-xs text-white/50">{downloadingSubtitle === candidateKey(candidate) ? 'Loading…' : 'Add'}</span>
+            </button>
+          {:else}
+            {#if $onlineSubCandidates.status === 'ready'}
+            <p class="px-3 py-2 text-sm text-white/40">No additional subtitles found.</p>
+            {/if}
           {/each}
           <p class="mb-2 mt-4 text-xs font-bold uppercase tracking-wide text-white/50">Audio</p>
           {#each audioTracks as t (t.id)}

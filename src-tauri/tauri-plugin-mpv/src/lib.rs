@@ -15,7 +15,7 @@ mod mobile;
 pub use error::{Error, Result};
 pub use models::{
     BrightnessRequest, CommandRequest, GetRequest, HapticRequest, LoadRequest, SetRequest,
-    ThumbRequest, TransformRequest, ViewportRequest,
+    SubtitleRequest, ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 #[cfg(desktop)]

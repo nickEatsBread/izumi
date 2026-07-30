@@ -80,6 +80,8 @@ ed25519-dalek = { version = "3.0.0-rc.0", features = ["pkcs8"] }
 # Decode bounded, manually-streamed metadata/HTML bodies using the response charset. This keeps
 # the old reqwest `Response::text()` behaviour after adding a strict pre-allocation body ceiling.
 encoding_rs = "0.8"
+# Subtitle downloads are normalized on desktop and Android before libmpv sees them.
+chardetng = "0.1"
 # Native file dialog — pick the external-player executable.
 tauri-plugin-dialog = "2"
 url = "2"
@@ -100,7 +102,6 @@ tauri-plugin-updater = "2"
 # decode to UTF-8 before mpv can load it. All pure-Rust: `zip` with the zlib-rs deflate backend
 # (no C toolchain), `chardetng` guesses the legacy encoding, `encoding_rs` decodes it.
 tar = "0.4"
-chardetng = "0.1"
 realfft = "3"
 
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
