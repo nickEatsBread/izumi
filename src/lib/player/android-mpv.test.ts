@@ -155,4 +155,12 @@ describe('Android mpv loading signals', () => {
       expect(mocks.confirmFileLoaded).toHaveBeenCalledWith('http://127.0.0.1:1234/playback')
     })
   })
+
+  it('treats END_FILE as EOF when the observed property never changes', () => {
+    mpvState.update((s) => ({ ...s, eof: false, pos: 0, dur: 0 }))
+
+    mocks.event?.({ id: 7 })
+
+    expect(get(mpvState).eof).toBe(true)
+  })
 })

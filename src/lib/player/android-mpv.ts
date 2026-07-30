@@ -128,10 +128,14 @@ export async function startMpvEvents(): Promise<void> {
   if (!eventSub) {
     eventSub = await addPluginListener('mpv', 'event', (e: unknown) => {
       const { id } = e as { id: unknown }
-      // Stable mpv_event_id values: START_FILE=6, FILE_LOADED=8, SEEK=20,
+      // Stable mpv_event_id values: START_FILE=6, END_FILE=7, FILE_LOADED=8, SEEK=20,
       // PLAYBACK_RESTART=21.
       if (id === 6 || id === 20) {
         mpvState.update((s) => (s.frameReady ? { ...s, frameReady: false } : s))
+      } else if (id === 7) {
+        // Failed HLS inputs can emit END_FILE without ever changing the observed eof-reached
+        // property. Treat the event itself as authoritative so empty-source recovery runs.
+        mpvState.update((s) => ({ ...s, eof: true }))
       } else if (id === 8) {
         // Query after the observer callback has returned. Besides avoiding synchronous re-entry
         // into libmpv's event thread, the exact loaded path proves the direct-torrent HTTP stream
