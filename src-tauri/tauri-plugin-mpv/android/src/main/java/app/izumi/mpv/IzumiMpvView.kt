@@ -10,8 +10,15 @@ import dev.jdtech.mpv.MPVLib
  * hardware compositor already places a SurfaceView behind the app window, so with a transparent
  * WebView on top the video shows through (the desktop "opaque window + transparent webview" model).
  */
-class IzumiMpvView(context: Context, private val mpv: MPVLib) :
+class IzumiMpvView(
+    context: Context,
+    private val mpv: MPVLib,
+    private val onSurfaceReady: () -> Unit,
+) :
     SurfaceView(context), SurfaceHolder.Callback {
+
+    var surfaceReady: Boolean = false
+        private set
 
     init {
         holder.addCallback(this)
@@ -24,6 +31,8 @@ class IzumiMpvView(context: Context, private val mpv: MPVLib) :
         // a resume re-attaches the surface but renders nothing (audio plays, screen stays black).
         mpv.setPropertyString("vo", "gpu")
         mpv.setPropertyString("android-surface-size", "${width}x$height")
+        surfaceReady = true
+        onSurfaceReady()
     }
 
     override fun surfaceChanged(h: SurfaceHolder, format: Int, w: Int, ht: Int) {
@@ -31,6 +40,7 @@ class IzumiMpvView(context: Context, private val mpv: MPVLib) :
     }
 
     override fun surfaceDestroyed(h: SurfaceHolder) {
+        surfaceReady = false
         // Stop drawing to a surface that's going away, then release it.
         mpv.setPropertyString("vo", "null")
         mpv.detachSurface()
