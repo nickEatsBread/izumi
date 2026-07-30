@@ -37,7 +37,7 @@ export async function directTorrentHealth(): Promise<DirectTorrentHealth | null>
 
 /** Tell the native engine that a player now owns the HTTP stream, so only player-requested video
  * windows (plus tiny sidecars) should download instead of the entire selected episode. */
-function prioritizeDirectTorrentStream(playbackId: number | null = activePlaybackId) {
+export function prioritizeDirectTorrentStream(playbackId: number | null = activePlaybackId) {
   if (playbackId == null) return
   streamPrioritized = true
   void invoke('torrent_playback_streaming', { playbackId }).catch(() => {

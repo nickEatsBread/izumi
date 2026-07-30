@@ -36,11 +36,14 @@ import { recordPlay, localHistory } from '$lib/player/history'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
 import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery } from '$lib/player/session'
 import {
+  DIRECT_TORRENT_START_TIMEOUT_MS,
   DIRECT_TORRENT_HARD_START_TIMEOUT_MS,
   DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS,
   DIRECT_TORRENT_RECOVERY_TIMEOUT_MS,
   implausiblyShortEpisode,
+  recoveryWatchDecision,
   recoveryStreamKey,
+  resetRecoveryWatch,
 } from '$lib/player/recovery-watchdog'
 import { markDead } from './dead-sources'
 import { shareableSource } from '$lib/watch-together/source'
@@ -67,7 +70,7 @@ import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents,
 import type { Media } from '$lib/anilist/types'
 import {
   activateDirectTorrentPlayback, currentDirectTorrentPlaybackId, directTorrentHealth,
-  reportDirectTorrentBuffer, stopDirectTorrentPlayback,
+  prioritizeDirectTorrentStream, reportDirectTorrentBuffer, stopDirectTorrentPlayback,
 } from '$lib/player/direct-torrent'
 import { torrentioResolverInfoHash } from './resolver-url'
 
@@ -337,13 +340,23 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
 // property stream (mpvState) instead of the desktop player-* events. No scrub-prefetch (that's a
 // desktop-only command). Re-attaches per episode; the previous episode's subscription is torn down.
 let stopAndroid: (() => void) | null = null
-function attachAndroid(media: Media, episode: number, onState: (s: PlayState) => void) {
+function attachAndroid(
+  media: Media,
+  episode: number,
+  onState: (s: PlayState) => void,
+  directP2p: boolean,
+) {
   stopAndroid?.()
   resetPrefetchMiss()
   let marked = false
   let lastSave = 0
   let ended = false
   let wrongDurationHandled = false
+  let latest = get(mpvState)
+  let recoveryWatch = resetRecoveryWatch(Date.now())
+  let downloadedBytes = 0
+  let healthBusy = false
+  let recoveryBusy = false
   const onEnded = async () => {
     clearPosition(media.id, episode)
     if (!get(autoplayNext) && !get(bingePreload)) return
@@ -358,6 +371,7 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
   // mpvState updates on every observed time-pos/duration/pause/eof — same cadence as the desktop
   // player-progress event, so the throttle + watch-threshold logic transfers directly.
   const unsub = mpvState.subscribe((s) => {
+    latest = s
     const { pos, dur, eof, cacheEnd } = s
     reportDirectTorrentBuffer(pos, cacheEnd)
     if (!wrongDurationHandled && implausiblyShortEpisode(media.duration, dur)) {
@@ -378,7 +392,49 @@ function attachAndroid(media: Media, episode: number, onState: (s: PlayState) =>
     if ((get(bingePreload) || get(autoplayNext)) && dur > 0 && pos / dur > 0.85) prefetchNext(media, episode)
     if (eof && !ended) { ended = true; onEnded() }
   })
-  stopAndroid = unsub
+  const recoveryTimer = setInterval(() => {
+    if (recoveryBusy) return
+    if (directP2p && !healthBusy) {
+      const playbackId = currentDirectTorrentPlaybackId()
+      healthBusy = true
+      void directTorrentHealth()
+        .then((health) => {
+          if (health && currentDirectTorrentPlaybackId() === playbackId) {
+            downloadedBytes = health.downloadedBytes
+          }
+        })
+        .finally(() => { healthBusy = false })
+    }
+    const decision = recoveryWatchDecision(recoveryWatch, {
+      now: Date.now(),
+      position: latest.pos,
+      duration: latest.dur,
+      paused: latest.paused,
+      buffering: latest.buffering || latest.coreIdle,
+      seeking: latest.seeking || latest.seekBusy,
+      eof: latest.eof,
+      firstFrame: latest.frameReady,
+      startTimeoutMs: directP2p ? DIRECT_TORRENT_START_TIMEOUT_MS : undefined,
+      networkBytes: directP2p ? downloadedBytes : undefined,
+    })
+    recoveryWatch = decision.state
+    if (!decision.recover) return
+    recoveryBusy = true
+    void recoverPlaybackSource(
+      latest.pos,
+      !latest.paused,
+      directP2p
+        ? 'P2P source is too slow — trying a healthier torrent…'
+        : 'Source failed to start — trying another source…',
+    ).catch((error) => {
+      console.warn('automatic Android playback recovery', error)
+      playerNotice.set('Automatic source recovery failed')
+    })
+  }, 1_000)
+  stopAndroid = () => {
+    unsub()
+    clearInterval(recoveryTimer)
+  }
 }
 
 /** Persist the resume point + mark-watched on manual close, then stop tracking. The throttled save
@@ -1469,7 +1525,7 @@ export async function playStream(
         androidMpvActive.set(true)
         rememberSuccess()
         onState({ status: 'playing' })
-        if (episode != null) attachAndroid(media, episode, onState)
+        if (episode != null) attachAndroid(media, episode, onState, directPlaybackId != null)
         return
       }
       // A completed download resolves to an absolute on-disk path (not an http URL); flag it so the
@@ -1483,6 +1539,7 @@ export async function playStream(
         isLocalFile,
         directPlaybackId == null ? undefined : () => stopDirectTorrentPlayback(directPlaybackId),
       )
+      if (ok && directPlaybackId != null) prioritizeDirectTorrentStream(directPlaybackId)
       if (!ok && directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)
       if (ok) rememberSuccess()
       return onState(
@@ -1515,6 +1572,7 @@ export async function playStream(
           url: stream.url,
           headers: stream.__stream ? stream.__headers : undefined,
         })
+        if (directPlaybackId != null) prioritizeDirectTorrentStream(directPlaybackId)
       } catch (error) {
         unlistenExit?.()
         throw error

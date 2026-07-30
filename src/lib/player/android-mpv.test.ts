@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   progress: undefined as ((event: unknown) => void) | undefined,
   event: undefined as ((event: unknown) => void) | undefined,
+  confirmFileLoaded: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -14,6 +15,10 @@ vi.mock('@tauri-apps/api/core', () => ({
     if (event === 'event') mocks.event = listener
     return { unregister: vi.fn() }
   }),
+}))
+
+vi.mock('./direct-torrent', () => ({
+  confirmDirectTorrentFileLoaded: mocks.confirmFileLoaded,
 }))
 
 import { mpvState, seekRelative, startMpvEvents } from './android-mpv'
@@ -26,6 +31,7 @@ describe('Android mpv seek coordination', () => {
   beforeEach(() => {
     mocks.invoke.mockReset()
     mocks.invoke.mockResolvedValue(undefined)
+    mocks.confirmFileLoaded.mockReset()
     mpvState.set({
       pos: 100,
       dur: 1000,
@@ -72,6 +78,7 @@ describe('Android mpv loading signals', () => {
   beforeEach(() => {
     mocks.invoke.mockReset()
     mocks.invoke.mockResolvedValue(undefined)
+    mocks.confirmFileLoaded.mockReset()
     mpvState.set({
       pos: 100,
       dur: 1000,
@@ -133,5 +140,19 @@ describe('Android mpv loading signals', () => {
 
     mocks.event?.({ id: 20 })
     expect(get(mpvState).frameReady).toBe(false)
+  })
+
+  it('confirms the exact loaded path after FILE_LOADED returns', async () => {
+    mocks.invoke.mockResolvedValueOnce({ value: 'http://127.0.0.1:1234/playback' })
+
+    mocks.event?.({ id: 8 })
+    expect(mocks.invoke).toHaveBeenCalledWith('plugin:mpv|mpv_get', {
+      payload: { property: 'path' },
+    })
+    expect(mocks.confirmFileLoaded).not.toHaveBeenCalled()
+
+    await vi.waitFor(() => {
+      expect(mocks.confirmFileLoaded).toHaveBeenCalledWith('http://127.0.0.1:1234/playback')
+    })
   })
 })
