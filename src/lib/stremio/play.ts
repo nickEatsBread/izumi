@@ -41,6 +41,7 @@ import {
   DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS,
   DIRECT_TORRENT_RECOVERY_TIMEOUT_MS,
   implausiblyShortEpisode,
+  prematureEof,
   recoveryWatchDecision,
   recoveryStreamKey,
   resetRecoveryWatch,
@@ -390,7 +391,22 @@ function attachAndroid(
     }
     // Preload the next episode's stream near the end so auto-advance / Next starts instantly.
     if ((get(bingePreload) || get(autoplayNext)) && dur > 0 && pos / dur > 0.85) prefetchNext(media, episode)
-    if (eof && !ended) { ended = true; onEnded() }
+    if (eof && !ended) {
+      ended = true
+      if (prematureEof(pos, dur)) {
+        recoveryBusy = true
+        void recoverPlaybackSource(
+          pos,
+          !s.paused,
+          'Source returned no playable video — trying another source…',
+        ).catch((error) => {
+          console.warn('automatic Android empty-source recovery', error)
+          playerNotice.set('Automatic source recovery failed')
+        })
+      } else {
+        onEnded()
+      }
+    }
   })
   const recoveryTimer = setInterval(() => {
     if (recoveryBusy) return

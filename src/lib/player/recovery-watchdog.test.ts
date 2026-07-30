@@ -6,6 +6,7 @@ import {
   START_TIMEOUT_MS,
   STALL_TIMEOUT_MS,
   implausiblyShortEpisode,
+  prematureEof,
   recoveryWatchDecision,
   resetRecoveryWatch,
 } from './recovery-watchdog'
@@ -19,6 +20,18 @@ describe('implausiblyShortEpisode', () => {
     expect(implausiblyShortEpisode(24, 1_260)).toBe(false)
     expect(implausiblyShortEpisode(undefined, 125)).toBe(false)
     expect(implausiblyShortEpisode(5, 120)).toBe(false)
+  })
+})
+
+describe('prematureEof', () => {
+  it('rejects a source that ends before producing playable media', () => {
+    expect(prematureEof(0, 0)).toBe(true)
+    expect(prematureEof(0, 1_470)).toBe(true)
+  })
+
+  it('allows EOF at the real end of a file', () => {
+    expect(prematureEof(1_469, 1_470)).toBe(false)
+    expect(prematureEof(2, 2)).toBe(false)
   })
 })
 
