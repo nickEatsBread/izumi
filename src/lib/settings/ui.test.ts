@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { get } from 'svelte/store'
 import {
   autoSelectCountdown,
+  androidAutoPip,
   subtitleStyleEnabled,
   subtitleProviders,
   subDlApiKey,
@@ -11,6 +12,12 @@ import {
 describe('source autoplay defaults', () => {
   it('plays the best source immediately instead of starting a countdown', () => {
     expect(get(autoSelectCountdown)).toBe(false)
+  })
+})
+
+describe('android playback defaults', () => {
+  it('shrinks into the miniplayer when leaving the app, like every other mobile video app', () => {
+    expect(get(androidAutoPip)).toBe(true)
   })
 })
 

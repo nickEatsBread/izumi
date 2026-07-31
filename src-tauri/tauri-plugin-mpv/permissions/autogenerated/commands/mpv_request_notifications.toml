@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-request-notifications"
+description = "Enables the mpv_request_notifications command without any pre-configured scope."
+commands.allow = ["mpv_request_notifications"]
+
+[[permission]]
+identifier = "deny-mpv-request-notifications"
+description = "Denies the mpv_request_notifications command without any pre-configured scope."
+commands.deny = ["mpv_request_notifications"]

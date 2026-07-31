@@ -3,7 +3,7 @@
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
-    videoQualityPreset, rawMpvOptions, gifIncludeSubtitles,
+    videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, androidAutoPip,
   } from '$lib/settings/ui'
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -127,15 +127,16 @@
     {/if}
   </div>
 
-  <!-- The in-app player is desktop-only. On Android playback hands off to an external video
-       app, so none of these mpv-side controls apply — hide them and say why. -->
+  <!-- The mpv-side tuning below (cache, quality presets, external player) is desktop-only; Android
+       gets the handful of options that do apply to the built-in player. -->
   {#if $isAndroid}
     <p class="max-w-2xl rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
-      Playback opens in your device's video player (whichever you pick from the "Open with…" chooser). The in-app player options below don't apply on this platform.
+      Playback uses the built-in player on the full build, or your device's video player on the lite build. The mpv tuning options further down don't apply on this platform.
     </p>
     <!-- The in-app player builds record GIFs from the live video; the recorder itself lives in the
          player's own settings sheet, but this is the same preference the desktop build exposes. -->
     <div class="mt-3 max-w-2xl space-y-3">
+      <Toggle label="Miniplayer when you leave the app" desc="Leaving izumi (home or recents) while a video is playing shrinks it into a floating miniplayer instead of leaving it on the watch page. Off leaves the app normally; playback keeps running with the notification controls either way." value={$androidAutoPip} onToggle={() => ($androidAutoPip = !$androidAutoPip)} />
       <Toggle label="Include subtitles in GIFs" desc="Burn the currently displayed subtitle track into GIF recordings. Recording is started from the player's settings sheet." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
     </div>
   {:else}

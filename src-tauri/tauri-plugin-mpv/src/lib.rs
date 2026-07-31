@@ -14,8 +14,9 @@ mod mobile;
 
 pub use error::{Error, Result};
 pub use models::{
-    BrightnessRequest, CommandRequest, GetRequest, GifSaveRequest, GifStartRequest, HapticRequest,
-    LoadRequest, SetRequest, SubtitleRequest, ThumbRequest, TransformRequest, ViewportRequest,
+    AutoPipRequest, BrightnessRequest, CommandRequest, GetRequest, GifSaveRequest, GifStartRequest,
+    HapticRequest, LoadRequest, MediaSessionRequest, SetRequest, SubtitleRequest, ThumbRequest,
+    TransformRequest, ViewportRequest,
 };
 
 #[cfg(desktop)]
@@ -46,6 +47,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::mpv_set,
             commands::mpv_stop,
             commands::mpv_pip,
+            commands::mpv_auto_pip,
+            commands::mpv_media_session,
+            commands::mpv_request_notifications,
             commands::mpv_viewport,
             commands::mpv_fullscreen,
             commands::mpv_transform,

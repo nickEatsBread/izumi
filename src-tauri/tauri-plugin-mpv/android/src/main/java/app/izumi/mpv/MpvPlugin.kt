@@ -1,5 +1,6 @@
 package app.izumi.mpv
 
+import android.Manifest
 import android.app.Activity
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
@@ -9,6 +10,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
@@ -40,6 +42,8 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
+import app.tauri.annotation.Permission
+import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -128,6 +132,26 @@ class TransformArgs {
 }
 
 @InvokeArg
+class AutoPipArgs {
+    /** Enter the miniplayer automatically when the user leaves the app while a video is playing. */
+    var enabled: Boolean = true
+}
+
+@InvokeArg
+class MediaSessionArgs {
+    /** False tears the session + notification down (playback stopped / left the player). */
+    var enabled: Boolean = true
+    /** Primary line — the series. */
+    var title: String = ""
+    /** Secondary line — the episode. */
+    var subtitle: String = ""
+    /** Poster URL, fetched natively and shown as the transport's artwork. */
+    var artwork: String? = null
+    var hasPrev: Boolean = false
+    var hasNext: Boolean = false
+}
+
+@InvokeArg
 class GifStartArgs {
     /** Burn the displayed subtitle track into the captured frames. */
     var includeSubtitles: Boolean = false
@@ -164,7 +188,11 @@ private const val GIF_MAX_MS = 30_000L
  * (made-transparent) Tauri WebView, and forwards observed properties to JS as plugin events.
  * libmpv itself is thread-safe, so only view-hierarchy work (create/destroy) runs on the UI thread.
  */
-@TauriPlugin
+@TauriPlugin(
+    permissions = [
+        Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications"),
+    ],
+)
 class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.EventObserver {
     private var mpv: MPVLib? = null
     private var view: IzumiMpvView? = null
@@ -187,6 +215,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var pipLayoutListener: View.OnLayoutChangeListener? = null
     private var pipReceiver: BroadcastReceiver? = null
     private var gifSession: GifSession? = null
+    /** User preference: enter the miniplayer automatically when leaving the app while playing. */
+    private var autoPipEnabled = true
+    /** Mirror of mpv's `pause`, kept from the observer so the UI thread never has to read back into
+     *  libmpv just to decide whether playback is live. */
+    private var corePaused = false
+    private var mediaReceiver: BroadcastReceiver? = null
 
     private fun stopLandscapeReleaseListener() {
         landscapeReleaseListener?.disable()
@@ -464,16 +498,45 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // whole window, which is what makes the transition read as the video "shrinking".
         pipSourceHint?.let { builder.setSourceRectHint(it) }
         builder.setActions(pipActions())
+        if (Build.VERSION.SDK_INT >= 31) {
+            // The system-driven half of "press home and it becomes a miniplayer": Android enters
+            // PiP itself on the home/recents gesture, so the transition is the platform's own
+            // animation instead of a request we fire after the window has already gone away.
+            // Armed only while a video is actually playing, or every trip to the home screen would
+            // leave a miniplayer behind.
+            builder.setAutoEnterEnabled(autoPipEnabled && mpv != null && !corePaused)
+            builder.setSeamlessResizeEnabled(true)
+        }
         return builder.build()
     }
 
-    /** Re-publish the params so the action button matches the CURRENT play/pause state. */
-    private fun updatePipActions() {
-        if (!pipActive || Build.VERSION.SDK_INT < 26) return
+    /**
+     * Publish the current PiP params. Unlike the old in-PiP-only refresh this also runs on the
+     * watch page, because auto-enter has to be armed BEFORE the user leaves — by the time the app
+     * is backgrounded it is too late to ask.
+     */
+    private fun publishPipParams() {
+        if (Build.VERSION.SDK_INT < 26 || mpv == null) return
+        // Keep the shrink-from-the-video animation honest: the rectangle is only meaningful while
+        // the video is still laid out on the watch page.
+        if (!pipActive && !pipRequested) pipSourceHint = captureSourceHint()
         try {
             activity.setPictureInPictureParams(pipParams())
         } catch (e: Exception) {
             Log.w("MpvPlugin", "pip params update failed: ${e.message}")
+        }
+    }
+
+    /** Re-publish the params so the action button matches the CURRENT play/pause state. */
+    private fun updatePipActions() = publishPipParams()
+
+    @Command
+    fun autoPip(invoke: Invoke) {
+        val a = invoke.parseArgs(AutoPipArgs::class.java)
+        activity.runOnUiThread {
+            autoPipEnabled = a.enabled
+            publishPipParams()
+            invoke.resolve()
         }
     }
 
@@ -553,6 +616,141 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 invoke.reject(failure)
             }
         }
+    }
+
+    /**
+     * Pre-31 auto-PiP. Android 12 introduced `setAutoEnterEnabled`, which the system honours by
+     * itself; before that the only hook is the activity leaving the foreground, so the miniplayer
+     * is requested here instead. Best effort by nature — the window may already be gone, and the
+     * platform is free to refuse.
+     */
+    override fun onPause() {
+        if (Build.VERSION.SDK_INT !in 26..30) return
+        if (!autoPipEnabled || mpv == null || corePaused || pipActive || pipRequested) return
+        try {
+            pipSourceHint = captureSourceHint()
+            pipRequested = true
+            applyPipLayout()
+            if (!activity.enterPictureInPictureMode(pipParams())) {
+                pipRequested = false
+                pipSourceHint = null
+                applyViewport(lastViewport ?: ViewportArgs())
+            }
+        } catch (e: Exception) {
+            pipRequested = false
+            pipSourceHint = null
+            Log.w("MpvPlugin", "auto pip failed: ${e.message}")
+        }
+    }
+
+    // --- Media session / notification -----------------------------------------------------------
+    //
+    // The lock-screen and notification-shade transport. Play/pause and the scrubber are answered
+    // natively (a direct libmpv command lands even when the WebView has been frozen by Android);
+    // next/previous/stop need the JS episode logic, so they are forwarded as plugin events.
+
+    private val mediaTransport = object : MediaTransport {
+        override fun onPlay() {
+            mpv?.command(arrayOf("set", "pause", "no"))
+        }
+
+        override fun onPause() {
+            mpv?.command(arrayOf("set", "pause", "yes"))
+        }
+
+        override fun onSeekTo(positionMs: Long) {
+            val seconds = (positionMs.coerceAtLeast(0L) / 1000.0)
+            mpv?.command(arrayOf("seek", seconds.toString(), "absolute+exact"))
+        }
+
+        override fun onSkipNext() {
+            trigger("media", JSObject().put("action", "next"))
+        }
+
+        override fun onSkipPrev() {
+            trigger("media", JSObject().put("action", "prev"))
+        }
+
+        override fun onStop() {
+            // Silence it immediately rather than waiting for the web layer to wake up and unwind
+            // the session; the JS side still gets the event and does the real teardown.
+            mpv?.command(arrayOf("set", "pause", "yes"))
+            trigger("media", JSObject().put("action", "stop"))
+            // Retire the transport here too. Dismissing the notification is a stop, and leaving the
+            // session alive means the very next state update posts the notification straight back.
+            // `mpv_stop` repeats this once JS unwinds; the teardown is idempotent.
+            activity.runOnUiThread { teardownMediaSession() }
+        }
+    }
+
+    private fun registerMediaReceiver() {
+        if (mediaReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val code = intent?.getIntExtra(MediaController.EXTRA_CODE, 0) ?: return
+                if (code == 0) return
+                MediaController.handleAction(code)
+            }
+        }
+        ContextCompat.registerReceiver(
+            activity,
+            receiver,
+            IntentFilter(MediaController.ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        mediaReceiver = receiver
+    }
+
+    private fun unregisterMediaReceiver() {
+        mediaReceiver?.let { runCatching { activity.unregisterReceiver(it) } }
+        mediaReceiver = null
+    }
+
+    private fun teardownMediaSession() {
+        unregisterMediaReceiver()
+        MediaController.stop()
+    }
+
+    @Command
+    fun mediaSession(invoke: Invoke) {
+        val a = invoke.parseArgs(MediaSessionArgs::class.java)
+        activity.runOnUiThread {
+            if (!a.enabled || mpv == null) {
+                teardownMediaSession()
+                invoke.resolve()
+                return@runOnUiThread
+            }
+            registerMediaReceiver()
+            MediaController.start(activity, mediaTransport)
+            MediaController.setMetadata(a.title, a.subtitle, a.artwork, a.hasPrev, a.hasNext)
+            MediaController.setPlaying(!corePaused)
+            invoke.resolve()
+        }
+    }
+
+    /** Ask for POST_NOTIFICATIONS. Without it the media notification — and therefore the whole
+     *  lock-screen transport — is silently suppressed on API 33+. Resolves `{ granted }`. */
+    @Command
+    fun requestNotifications(invoke: Invoke) {
+        if (Build.VERSION.SDK_INT < 33) {
+            invoke.resolve(JSObject().put("granted", true))
+            return
+        }
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            invoke.resolve(JSObject().put("granted", true))
+            return
+        }
+        requestPermissionForAliases(arrayOf("notifications"), invoke, "notificationsResult")
+    }
+
+    @PermissionCallback
+    fun notificationsResult(invoke: Invoke) {
+        val granted = Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        invoke.resolve(JSObject().put("granted", granted))
     }
 
     private fun normalizedLanguage(raw: String?): String = when (raw?.trim()?.lowercase()) {
@@ -636,6 +834,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 // ready. Invokes resolve immediately because the request has been accepted.
                 pendingSurfaceLoad = args
             }
+            publishPipParams()
             invoke.resolve()
         }
     }
@@ -732,7 +931,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 fill.put("left", 0)
                 fill
             } else {
-                applyViewport(a)
+                val insets = applyViewport(a)
+                // The video rectangle just moved, so the auto-enter source hint is stale.
+                publishPipParams()
+                insets
             }
             invoke.resolve(ret)
         }
@@ -1048,9 +1250,11 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             stopLandscapeReleaseListener()
             unregisterPipReceiver()
             removePipWatcher()
+            teardownMediaSession()
             pipActive = false
             pipRequested = false
             pipSourceHint = null
+            corePaused = false
             lastViewport = null
             setImmersive(false)
             container?.let { (it.parent as? ViewGroup)?.removeView(it) }
@@ -1073,11 +1277,16 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
     override fun eventProperty(property: String, value: Boolean) {
-        // Keep the miniplayer's play/pause button honest. Posted to the UI thread: this callback runs
-        // on libmpv's event thread holding its observer monitor, and pipParams() reads back from the
-        // core (see the note in `event` below).
-        if (property == "pause" && pipActive) {
-            activity.window.decorView.post { updatePipActions() }
+        // Keep the miniplayer's play/pause button, the auto-enter arming and the notification
+        // transport honest. Posted to the UI thread: this callback runs on libmpv's event thread
+        // holding its observer monitor, and pipParams() reads back from the core (see the note in
+        // `event` below).
+        if (property == "pause") {
+            activity.window.decorView.post {
+                corePaused = value
+                updatePipActions()
+                MediaController.setPlaying(!value)
+            }
         }
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
@@ -1085,6 +1294,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
     override fun eventProperty(property: String, value: Double) {
+        // MediaController hops to the main thread itself and throttles its own publishing, so the
+        // per-frame time-pos stream costs a comparison here and nothing more.
+        when (property) {
+            "time-pos" -> MediaController.setPosition(value)
+            "duration" -> MediaController.setDuration(value)
+        }
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
     override fun event(eventId: Int) {

@@ -2,9 +2,9 @@ use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
-    BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, GifSaveRequest,
-    GifStartRequest, HapticRequest, LoadRequest, SetRequest, ThumbRequest, TransformRequest,
-    ViewportRequest,
+    AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
+    GifSaveRequest, GifStartRequest, HapticRequest, LoadRequest, MediaSessionRequest, SetRequest,
+    ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -42,6 +42,18 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn pip(&self) -> crate::Result<()> {
         Ok(())
+    }
+
+    pub fn auto_pip(&self, _payload: AutoPipRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn media_session(&self, _payload: MediaSessionRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn request_notifications(&self) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::json!({ "granted": false }))
     }
 
     pub fn viewport(&self, _payload: ViewportRequest) -> crate::Result<serde_json::Value> {

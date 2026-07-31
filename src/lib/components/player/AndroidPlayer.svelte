@@ -36,6 +36,10 @@
     setPlayerViewport,
     setPlayerFullscreen,
     setPlayerTransform,
+    setAndroidAutoPip,
+    setAndroidMediaSession,
+    setAndroidMediaHandler,
+    requestAndroidNotifications,
     type MpvTrack,
   } from '$lib/player/android-mpv'
   import {
@@ -56,7 +60,7 @@
     autoSkip, seekDuration, scrubThumbnails, subDlApiKey, openSubtitlesToken,
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
-    gifIncludeSubtitles,
+    gifIncludeSubtitles, androidAutoPip,
   } from '$lib/settings/ui'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
@@ -165,6 +169,30 @@
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
   const hasNext = $derived(np.episode != null && np.total != null && np.episode < np.total)
+
+  // --- System integration: miniplayer on leave + lock-screen transport ---
+  //
+  // The notification/lock-screen control — including the scrubber the user drags to skim the
+  // episode — is drawn by Android from a MediaSession the plugin owns, not by this component. All
+  // that happens here is keeping the now-playing identity current and answering the two buttons
+  // that need episode logic; play/pause and seek are served natively, so they still work in the
+  // window where Android has frozen this WebView.
+  const mediaArtwork = $derived(
+    $nowPlayingMedia?.media.coverImage?.extraLarge ?? $nowPlayingMedia?.media.coverImage?.medium ?? null,
+  )
+  $effect(() => { void setAndroidAutoPip($androidAutoPip) })
+  $effect(() => {
+    void setAndroidMediaSession({
+      enabled: true,
+      title: np.animeTitle || np.title || 'izumi',
+      subtitle: np.episode != null
+        ? `Episode ${np.episode}${np.total ? ` / ${np.total}` : ''}`
+        : np.title,
+      artwork: mediaArtwork,
+      hasPrev,
+      hasNext,
+    })
+  })
 
   // --- AniSkip OP/ED/recap segments + chapters ---
   let segments = $state<Segment[]>([])
@@ -981,6 +1009,13 @@
 
   onMount(() => {
     armHide()
+    // A denial only costs the notification — playback is unaffected — so this never gates anything.
+    void requestAndroidNotifications()
+    setAndroidMediaHandler((action) => {
+      if (action === 'next') { if (hasNext) void playNext(undefined, !paused) }
+      else if (action === 'prev') { if (hasPrev) void playPrev(undefined, !paused) }
+      else void close()
+    })
     const orientation = window.matchMedia('(orientation: landscape)')
     let viewportFrame = 0
     const scheduleViewportSync = () => {
@@ -1002,6 +1037,10 @@
       cancelAnimationFrame(viewportFrame)
       orientation.removeEventListener('change', scheduleViewportSync)
       window.removeEventListener('resize', scheduleViewportSync)
+      setAndroidMediaHandler(null)
+      // `mpv_stop` already drops the session natively; this covers an unmount without a stop
+      // (the overlay being torn down while the core is reused for the next episode).
+      void setAndroidMediaSession({ enabled: false })
     }
   })
 </script>
