@@ -107,6 +107,11 @@ realfft = "3"
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
 # Embedded libmpv player for the Android "full" flavor (optional; see the `android-mpv` feature).
 tauri-plugin-mpv = { path = "tauri-plugin-mpv", optional = true }
+# In-process GIF recording. The desktop recorder pipes mpv's JPEG frames through the user's ffmpeg;
+# Android has none, so the same palette + LZW encode runs here. Both are pure Rust (zune-jpeg decode,
+# NeuQuant quantization via the gif crate's color_quant), so they cross-compile with no C toolchain.
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+gif = "0.13"
 # UI-wide haptics (impact/notification/selection). Android/iOS only; no desktop haptics engine,
 # so it is never compiled into the desktop/Deck builds. Registered unconditionally on mobile.
 tauri-plugin-haptics = "2"

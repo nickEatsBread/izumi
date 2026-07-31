@@ -133,6 +133,11 @@
     <p class="max-w-2xl rounded-md border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
       Playback opens in your device's video player (whichever you pick from the "Open with…" chooser). The in-app player options below don't apply on this platform.
     </p>
+    <!-- The in-app player builds record GIFs from the live video; the recorder itself lives in the
+         player's own settings sheet, but this is the same preference the desktop build exposes. -->
+    <div class="mt-3 max-w-2xl space-y-3">
+      <Toggle label="Include subtitles in GIFs" desc="Burn the currently displayed subtitle track into GIF recordings. Recording is started from the player's settings sheet." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
+    </div>
   {:else}
   <div class="max-w-2xl space-y-3">
     <Toggle label="Auto-play next episode" desc="Play the next episode automatically when one finishes." value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />

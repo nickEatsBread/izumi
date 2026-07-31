@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
+  import { goto } from '$app/navigation'
+  import { isAndroid } from '$lib/platform'
   import RotateCcw from 'lucide-svelte/icons/rotate-ccw'
   import {
     HOTKEYS,
@@ -48,8 +51,14 @@
     recording = null
     conflict = ''
   }
+
+  // The category is hidden from the settings list on Android (SettingsNav), so this only catches a
+  // stale deep link / restored route — send it back to the list instead of rendering keyboard
+  // bindings on a device that has no keyboard scope to bind into.
+  onMount(() => { if ($isAndroid) void goto('/app/settings', { replaceState: true }) })
 </script>
 
+{#if !$isAndroid}
 <div class="p-4 sm:p-8">
   <div class="mb-6 flex max-w-3xl items-start justify-between gap-4">
     <div>
@@ -96,3 +105,4 @@
     {/each}
   </div>
 </div>
+{/if}

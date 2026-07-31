@@ -22,6 +22,11 @@ distribute izumi, comply with the license of the specific libmpv binary you ship
 
 Nunito and Geist Mono are licensed under the [OFL-1.1](https://openfontlicense.org/).
 
+The Android build additionally ships Nunito as a **font file** (not just a webfont) so the
+embedded player's subtitle renderer can use it — Android has no Nunito of its own. It is fetched
+from the upstream Google Fonts repository at build time by `scripts/fetch-subtitle-font.mjs`, which
+stages the OFL text next to it inside the APK.
+
 ## lucide-svelte — ISC (icons)
 
 izumi's interface icons come from [lucide-svelte](https://lucide.dev/). The build strips the

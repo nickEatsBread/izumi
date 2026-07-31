@@ -33,6 +33,7 @@
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import { confirmDirectTorrentFileLoaded, currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
+  import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
@@ -192,16 +193,16 @@
   // the same values are re-applied after every new player session.
   $effect(() => {
     if (!$playing) return
-    const override = $subtitleStyleEnabled
-    cmd('set', ['sub-ass-override', override ? 'force' : 'no'])
-    if (!override) return
-    cmd('set', ['sub-font', $subtitleFont || 'Nunito'])
-    cmd('set', ['sub-font-size', String($subtitleFontSize)])
-    cmd('set', ['sub-color', `${$subtitleTextColor}ff`])
-    cmd('set', ['sub-border-color', `${$subtitleBorderColor}ff`])
-    cmd('set', ['sub-border-size', String($subtitleBorderSize)])
-    cmd('set', ['sub-shadow-offset', String($subtitleShadow)])
-    cmd('set', ['sub-pos', String($subtitlePosition)])
+    for (const [property, value] of subtitleStyleProps({
+      enabled: $subtitleStyleEnabled,
+      font: $subtitleFont,
+      fontSize: $subtitleFontSize,
+      textColor: $subtitleTextColor,
+      borderColor: $subtitleBorderColor,
+      borderSize: $subtitleBorderSize,
+      shadow: $subtitleShadow,
+      position: $subtitlePosition,
+    })) cmd('set', [property, value])
   })
   // Exact absolute seek so auto-skip/skip land past the segment (a keyframe seek could
   // snap back into it and re-skip forever).

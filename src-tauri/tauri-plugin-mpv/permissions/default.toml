@@ -15,6 +15,10 @@ permissions = [
     "allow-mpv-brightness",
     "allow-mpv-haptic",
     "allow-mpv-thumb",
+    "allow-mpv-gif-start",
+    "allow-mpv-gif-stop",
+    "allow-mpv-gif-abort",
+    "allow-mpv-gif-save",
     "allow-registerListener",
     "allow-removeListener",
 ]

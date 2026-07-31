@@ -22,7 +22,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Auto-skip openings & endings', category: 'Player', href: '/app/settings/player', keywords: 'op ed recap aniskip', anchored: true, desktopOnly: true },
   { title: 'Skip filler episodes', category: 'Player', href: '/app/settings/player', anchored: true, desktopOnly: true },
   { title: 'Scrub preview thumbnails', category: 'Player', href: '/app/settings/player', keywords: 'seek frame preview', anchored: true, desktopOnly: true },
-  { title: 'Include subtitles in GIFs', category: 'Player', href: '/app/settings/player', keywords: 'capture record captions burn in', anchored: true, desktopOnly: true },
+  { title: 'Include subtitles in GIFs', category: 'Player', href: '/app/settings/player', keywords: 'capture record captions burn in', anchored: true },
   { title: 'Player cache size', category: 'Player', href: '/app/settings/player', keywords: 'buffer ram memory', desktopOnly: true },
   { title: 'Seek duration', category: 'Player', href: '/app/settings/player', keywords: 'skip seconds arrows', desktopOnly: true },
   { title: 'Enable external player', category: 'Player', href: '/app/settings/player', keywords: 'mpv vlc', anchored: true, desktopOnly: true },
@@ -30,6 +30,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Title at top of player (Game mode)', category: 'Player', href: '/app/settings/player', keywords: 'Steam Deck now playing', anchored: true, desktopOnly: true },
   { title: 'Clear video cache', category: 'Player', href: '/app/settings/player', keywords: 'storage thumbnails', desktopOnly: true },
 
+  { title: 'Use custom subtitle style', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'appearance font family size colour color border outline shadow position nunito', anchored: true },
   { title: 'OpenSubtitles', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'provider captions', anchored: true },
   { title: 'SubDL', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'provider captions api key', anchored: true },
   { title: 'OpenSubtitles account', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'login username password quota' },

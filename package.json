@@ -15,7 +15,9 @@
     "tauri": "tauri",
     "android:studio": "tauri android dev --open",
     "android:studio:full": "tauri android dev --open --features android-mpv --config src-tauri/tauri.android-mpv.conf.json",
-    "gen:android-icons": "node scripts/gen-android-icons.mjs"
+    "gen:android-icons": "node scripts/gen-android-icons.mjs",
+    "fonts:subtitle": "node scripts/fetch-subtitle-font.mjs",
+    "preandroid:studio:full": "node scripts/fetch-subtitle-font.mjs"
   },
   "dependencies": {
     "@fontsource-variable/nunito": "^5.2.7",

@@ -10,6 +10,7 @@
   // A pure recognizer (android-gestures.ts) classifies each pointer stream; this component wires
   // its verdicts to mpv/native calls.
   import { onMount } from 'svelte'
+  import { get } from 'svelte/store'
   import { goto } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { scale, fade } from 'svelte/transition'
@@ -24,6 +25,10 @@
     haptic,
     grabThumb,
     mpvPip,
+    androidPipActive,
+    androidGifStart,
+    androidGifStop,
+    androidGifAbort,
     getTracks,
     getChapterList,
     setAudioTrack,
@@ -47,7 +52,13 @@
   } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
   import { reportWatchPlayback } from '$lib/watch-together/client'
-  import { autoSkip, seekDuration, scrubThumbnails, subDlApiKey, openSubtitlesToken } from '$lib/settings/ui'
+  import {
+    autoSkip, seekDuration, scrubThumbnails, subDlApiKey, openSubtitlesToken,
+    subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
+    subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
+    gifIncludeSubtitles,
+  } from '$lib/settings/ui'
+  import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
@@ -66,6 +77,8 @@
   import Ratio from 'lucide-svelte/icons/ratio'
   import Layers from 'lucide-svelte/icons/layers'
   import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
+  import Film from 'lucide-svelte/icons/film'
+  import Check from 'lucide-svelte/icons/check'
   import Settings from 'lucide-svelte/icons/settings'
   import Maximize from 'lucide-svelte/icons/maximize'
   import Minimize from 'lucide-svelte/icons/minimize'
@@ -128,6 +141,24 @@
     return () => clearTimeout(t)
   })
   $effect(() => { reportWatchPlayback($mpvState.pos, $mpvState.dur, $mpvState.paused, $mpvState.buffering) })
+
+  // Subtitle appearance. Same property set the desktop overlay pushes — Android simply never applied
+  // it, so every control on Settings → Subtitles was inert here. Re-keyed on the loaded file as well
+  // as on the settings themselves: the core is reused across episodes, but a fresh core (player
+  // closed and reopened) starts from mpv's defaults.
+  $effect(() => {
+    void np.id, np.episode
+    for (const [property, value] of subtitleStyleProps({
+      enabled: $subtitleStyleEnabled,
+      font: $subtitleFont,
+      fontSize: $subtitleFontSize,
+      textColor: $subtitleTextColor,
+      borderColor: $subtitleBorderColor,
+      borderSize: $subtitleBorderSize,
+      shadow: $subtitleShadow,
+      position: $subtitlePosition,
+    })) void mpvCommand(['set', property, value]).catch(() => {})
+  })
   const playedPct = $derived(dur > 0 ? Math.min(100, (pos / dur) * 100) : 0)
   const cachePct = $derived(dur > 0 ? Math.min(100, ($mpvState.cacheEnd / dur) * 100) : 0)
 
@@ -760,7 +791,71 @@
   let speed = $state(1)
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
   function setSpeed(v: number) { speed = v; mpvCommand(['set', 'speed', String(v)]) }
-  const overlayHidden = $derived($streamPicker != null || $commentsOpen)
+  // In picture-in-picture the WebView is scaled down to the miniplayer window with it. Every pixel it
+  // paints — the watch page's opaque background above all — lands on top of the video surface, so the
+  // whole shell goes away and the transparent WebView leaves nothing but the video.
+  const overlayHidden = $derived($streamPicker != null || $commentsOpen || $androidPipActive)
+
+  // --- GIF recording ---
+  // Same 30s bound the desktop recorder uses. The native worker stops itself there too; the UI stop
+  // keeps the badge honest instead of counting up forever against a capture that already ended.
+  const GIF_MAX_SECONDS = 30
+  let gifRecording = $state(false)
+  let gifBusy = $state(false)
+  let gifElapsed = $state(0)
+  let gifStartedAt = 0
+  $effect(() => {
+    if (!gifRecording) { gifElapsed = 0; return }
+    const tick = () => {
+      gifElapsed = Math.min(GIF_MAX_SECONDS, Math.round((Date.now() - gifStartedAt) / 1000))
+      if (gifElapsed >= GIF_MAX_SECONDS) void toggleGifRecording()
+    }
+    const timer = setInterval(tick, 250)
+    tick()
+    return () => clearInterval(timer)
+  })
+  async function toggleGifRecording() {
+    if (gifBusy) return
+    if (!gifRecording) {
+      gifBusy = true
+      try {
+        await androidGifStart($gifIncludeSubtitles)
+        gifStartedAt = Date.now()
+        gifRecording = true
+        sheet = null
+        haptic(15)
+        flashToast('Recording GIF…')
+      } catch {
+        flashToast('GIF recording failed to start')
+      } finally {
+        gifBusy = false
+      }
+      return
+    }
+    gifBusy = true
+    gifRecording = false
+    flashToast('Encoding GIF…')
+    try {
+      const saved = await androidGifStop()
+      haptic(15)
+      flashToast(`GIF saved to ${saved.location}`)
+    } catch (error) {
+      flashToast(String(error).includes('gif-no-frames') ? 'GIF captured no frames' : 'GIF recording failed')
+    } finally {
+      gifBusy = false
+    }
+  }
+
+  // Leaving picture-in-picture returns the activity to a full-size window, so the native surface has
+  // to be given the watch-page geometry again. The plugin restores its last viewport immediately;
+  // this re-measures from the (now correct) CSS layout.
+  let wasPip = false
+  $effect(() => {
+    if ($androidPipActive) { wasPip = true; return }
+    if (!wasPip) return
+    wasPip = false
+    void syncViewport()
+  })
 
   // Pull-down sheet: follow the finger exactly, then animate either home or fully off-screen.
   let sheetDrag = $state(0)
@@ -844,6 +939,7 @@
   }
 
   async function close() {
+    if (gifRecording) { gifRecording = false; await androidGifAbort() }
     finalizeAndroidWatch($mpvState.pos, $mpvState.dur)
     await mpvStop().catch(() => {})
     await stopDirectTorrentPlayback()
@@ -857,6 +953,10 @@
 
   let viewportGeneration = 0
   async function syncViewport() {
+    // The miniplayer window is its own resize, and re-measuring the watch-page layout inside it is
+    // exactly what used to push the video out of frame. The native side ignores viewport calls while
+    // in PiP as well; this just avoids the pointless round trip.
+    if (get(androidPipActive)) return
     const generation = ++viewportGeneration
     const nextLandscape = window.matchMedia('(orientation: landscape)').matches
     landscape = nextLandscape
@@ -948,6 +1048,18 @@
     <div class="pointer-events-none absolute left-1/2 top-4 z-20 -translate-x-1/2 rounded-full bg-black/65 px-4 py-2 text-sm font-black backdrop-blur landscape:top-[max(1rem,var(--player-safe-top))]">
       2× speed
     </div>
+  {/if}
+
+  {#if gifRecording}
+    <!-- The sheet closes when recording starts, so this is the only thing telling you a capture is
+         running — and the only way to end it without reopening the menu. -->
+    <button transition:fade={{ duration: 150 }} onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()}
+            onclick={(e) => { e.stopPropagation(); void toggleGifRecording() }}
+            class="absolute bottom-14 left-3 z-20 flex items-center gap-2 rounded-full bg-black/65 px-3 py-1.5 text-xs font-black tabular-nums backdrop-blur landscape:left-[max(0.75rem,var(--player-safe-left))]"
+            aria-label="Stop GIF recording">
+      <span class="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500"></span>
+      GIF {gifElapsed}s
+    </button>
   {/if}
 
   {#if currentSeg && !(willSkip(currentSeg) && !autoSkipped.has(currentSeg.start))}
@@ -1052,7 +1164,7 @@
           {hasNext}
           onPrev={() => playPrev(undefined, !paused)}
           onNext={() => playNext(undefined, !paused)}
-          onPip={() => { controlsShown = false; void mpvPip() }}
+          onPip={() => { controlsShown = false; void mpvPip().catch(() => flashToast('Miniplayer unavailable on this device')) }}
           onRelated={openRelated}
         />
       {:else}
@@ -1122,8 +1234,24 @@
           {:else}
             <p class="px-3 py-2 text-sm text-white/40">Only one audio track.</p>
           {/each}
+          <p class="mb-2 mt-4 text-xs font-bold uppercase tracking-wide text-white/50">Capture</p>
+          <button onclick={() => void toggleGifRecording()} disabled={gifBusy}
+                  class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07] disabled:opacity-50">
+            {#if gifRecording}<span class="grid h-5 w-5 place-items-center"><span class="h-2.5 w-2.5 rounded-full bg-red-500"></span></span>{:else}<Film size={20} />{/if}
+            <span class="text-sm font-bold">{gifBusy ? 'Working…' : gifRecording ? `Stop recording (${gifElapsed}s)` : 'Record GIF'}</span>
+          </button>
+          <button onclick={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)}
+                  class="mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07]">
+            <span class="grid h-5 w-5 place-items-center rounded border {$gifIncludeSubtitles ? 'border-theme bg-theme text-white' : 'border-white/30'}">
+              {#if $gifIncludeSubtitles}<Check size={14} />{/if}
+            </span>
+            <span class="min-w-0">
+              <span class="block text-sm font-bold">Include subtitles</span>
+              <span class="block text-xs text-white/45">Burn the displayed subtitle track into the recording. Up to {GIF_MAX_SECONDS}s, saved to your gallery.</span>
+            </span>
+          </button>
           <button onclick={toggleLock} class="mb-2 mt-4 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07]"><Lock size={20} /><span class="text-sm font-bold">{locked ? 'Unlock controls' : 'Lock controls'}</span></button>
-          <button onclick={() => { sheet = null; controlsShown = false; mpvPip() }} class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07]"><PictureInPicture size={20} /><span class="text-sm font-bold">Open miniplayer</span></button>
+          <button onclick={() => { sheet = null; controlsShown = false; void mpvPip().catch(() => flashToast('Miniplayer unavailable on this device')) }} class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07]"><PictureInPicture size={20} /><span class="text-sm font-bold">Open miniplayer</span></button>
       </div>
     </div>
   {/if}

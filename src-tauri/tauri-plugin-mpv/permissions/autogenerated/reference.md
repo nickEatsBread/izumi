@@ -16,6 +16,10 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-brightness`
 - `allow-mpv-haptic`
 - `allow-mpv-thumb`
+- `allow-mpv-gif-start`
+- `allow-mpv-gif-stop`
+- `allow-mpv-gif-abort`
+- `allow-mpv-gif-save`
 - `allow-registerListener`
 - `allow-removeListener`
 
@@ -128,6 +132,110 @@ Enables the mpv_get command without any pre-configured scope.
 <td>
 
 Denies the mpv_get command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-gif-abort`
+
+</td>
+<td>
+
+Enables the mpv_gif_abort command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-gif-abort`
+
+</td>
+<td>
+
+Denies the mpv_gif_abort command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-gif-save`
+
+</td>
+<td>
+
+Enables the mpv_gif_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-gif-save`
+
+</td>
+<td>
+
+Denies the mpv_gif_save command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-gif-start`
+
+</td>
+<td>
+
+Enables the mpv_gif_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-gif-start`
+
+</td>
+<td>
+
+Denies the mpv_gif_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-gif-stop`
+
+</td>
+<td>
+
+Enables the mpv_gif_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-gif-stop`
+
+</td>
+<td>
+
+Denies the mpv_gif_stop command without any pre-configured scope.
 
 </td>
 </tr>

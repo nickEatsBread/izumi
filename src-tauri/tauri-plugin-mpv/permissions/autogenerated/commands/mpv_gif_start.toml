@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-gif-start"
+description = "Enables the mpv_gif_start command without any pre-configured scope."
+commands.allow = ["mpv_gif_start"]
+
+[[permission]]
+identifier = "deny-mpv-gif-start"
+description = "Denies the mpv_gif_start command without any pre-configured scope."
+commands.deny = ["mpv_gif_start"]

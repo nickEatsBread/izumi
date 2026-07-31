@@ -27,4 +27,12 @@ describe('SettingsNav', () => {
   it('keeps the Source Store inside Sources instead of as a separate navigation item', () => {
     expect(src).not.toContain("{ title: 'Source Store', href: '/app/settings/store'")
   })
+
+  it('drops the Hotkeys category on Android, keyed on $isAndroid rather than $isMobile', () => {
+    // A narrow desktop window is $isMobile but still has a keyboard, so the filter must not use it.
+    expect(src).toContain("import { isAndroid, isMobile } from '$lib/platform'")
+    expect(src).toContain("$isAndroid")
+    expect(src).toContain("it.href !== '/app/settings/hotkeys'")
+    expect(src).toContain('{#each visibleGroups as g (g.label)}')
+  })
 })

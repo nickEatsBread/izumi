@@ -66,8 +66,53 @@ function makeClient(): DiscussionClient {
   })
 }
 
-/** Fetch episode-discussion threads (with inline comments where available) for a title. Best-effort. */
-export async function fetchDiscussion(media: Media, episode: number | null | undefined): Promise<DiscussionThread[]> {
+/**
+ * Identity of the DISCUSSION, not of the object that carried it. `nowPlaying`/`nowPlayingMedia` are
+ * replaced wholesale on every source change — "Change source", and above all the recovery watchdog
+ * cycling through releases that fail to start — and Svelte 5 props are lazy getters, so every
+ * consumer effect re-runs on each of those. Keyed on ids + episode, a re-run is a cache hit.
+ */
+export const discussionKey = (media: Media, episode: number | null | undefined) =>
+  `${media.id}:${media.idMal ?? ''}:${episode ?? ''}`
+
+// The aggregation is a fan-out (Reddit search + AniList + MAL + YouTube + the configured mapper), so
+// re-issuing it for an episode whose comments cannot have changed is pure rate-limit burn. The entry
+// holds the PROMISE, so concurrent callers (the in-player panel and the Android watch page both ask
+// on open) share one round of requests instead of racing two.
+const DISCUSSION_TTL_MS = 10 * 60 * 1000
+const DISCUSSION_CACHE_MAX = 32
+const discussionCache = new Map<string, { at: number; value: Promise<DiscussionThread[]> }>()
+
+/** Drop every memoized discussion (used by tests; also safe to call on sign-in changes). */
+export function clearDiscussionCache() {
+  discussionCache.clear()
+}
+
+/** Fetch episode-discussion threads (with inline comments where available) for a title. Best-effort.
+ *  Memoized per (anilistId, malId, episode) — see `discussionKey`. */
+export function fetchDiscussion(media: Media, episode: number | null | undefined): Promise<DiscussionThread[]> {
+  const key = discussionKey(media, episode)
+  const hit = discussionCache.get(key)
+  if (hit && Date.now() - hit.at < DISCUSSION_TTL_MS) return hit.value
+
+  // An empty result is "nothing found YET" as often as it is "nothing exists" — a transient SDK/network
+  // failure returns [] too (getDiscussion never rejects). Caching that would hide real comments for the
+  // whole TTL, so only a non-empty aggregation is retained.
+  const value = fetchDiscussionUncached(media, episode).then((threads) => {
+    if (!threads.length && discussionCache.get(key)?.value === value) discussionCache.delete(key)
+    return threads
+  })
+  discussionCache.set(key, { at: Date.now(), value })
+  // Map iteration is insertion-ordered, so the first key is the oldest entry.
+  while (discussionCache.size > DISCUSSION_CACHE_MAX) {
+    const oldest = discussionCache.keys().next()
+    if (oldest.done) break
+    discussionCache.delete(oldest.value)
+  }
+  return value
+}
+
+async function fetchDiscussionUncached(media: Media, episode: number | null | undefined): Promise<DiscussionThread[]> {
   const titles = [...new Set([media.title.romaji, media.title.english, media.title.userPreferred].filter((t): t is string => !!t))]
   const client = makeClient()
   try {

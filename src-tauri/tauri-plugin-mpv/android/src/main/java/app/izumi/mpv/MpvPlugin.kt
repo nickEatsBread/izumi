@@ -1,22 +1,38 @@
 package app.izumi.mpv
 
 import android.app.Activity
+import android.app.PendingIntent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Rect
+import android.graphics.drawable.Icon
 import android.media.MediaMetadataRetriever
 import android.content.pm.ActivityInfo
 import android.os.Build
+import android.os.Environment
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
+import android.util.Rational
 import android.view.OrientationEventListener
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.Locale
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.FrameLayout
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -111,6 +127,38 @@ class TransformArgs {
     var translateY: Int = 0
 }
 
+@InvokeArg
+class GifStartArgs {
+    /** Burn the displayed subtitle track into the captured frames. */
+    var includeSubtitles: Boolean = false
+}
+
+@InvokeArg
+class GifSaveArgs {
+    /** Absolute path of the encoded .gif in the app cache. */
+    var path: String = ""
+    /** Frame directory to delete once the GIF has been published. */
+    var cleanupDir: String? = null
+}
+
+/** A live GIF frame capture. Owned by [MpvPlugin.gifSession]; the worker only reads the flags. */
+private class GifSession(val dir: File) {
+    @Volatile var stop = false
+    @Volatile var frames = 0
+    @Volatile var capturedMs = 0L
+    var thread: Thread? = null
+}
+
+/** Broadcast fired by the picture-in-picture remote action. Package-scoped, never exported. */
+private const val PIP_ACTION = "app.izumi.mpv.PIP_ACTION"
+private const val PIP_EXTRA_CODE = "code"
+private const val PIP_CODE_PLAY_PAUSE = 1
+
+// Bounds for a capture, matched to the desktop recorder so both platforms produce comparable files.
+private const val GIF_FRAME_INTERVAL_MS = 50L
+private const val GIF_MAX_FRAMES = 600
+private const val GIF_MAX_MS = 30_000L
+
 /**
  * Embedded libmpv player. Renders into a [IzumiMpvView] (SurfaceView) inserted behind the
  * (made-transparent) Tauri WebView, and forwards observed properties to JS as plugin events.
@@ -128,6 +176,17 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     /** Clips the SurfaceView and moves with the web player shell during direct-manipulation gestures. */
     private var container: FrameLayout? = null
     private var landscapeReleaseListener: OrientationEventListener? = null
+    /** The last viewport the web shell asked for, replayed when picture-in-picture ends. */
+    private var lastViewport: ViewportArgs? = null
+    /** True once Android reports the activity is actually in PiP (see [installPipWatcher]). */
+    private var pipActive = false
+    /** True from the moment PiP is requested until it ends — covers the transition, during which
+     *  `isInPictureInPictureMode` is still false but the portrait geometry must NOT be re-applied. */
+    private var pipRequested = false
+    private var contentView: ViewGroup? = null
+    private var pipLayoutListener: View.OnLayoutChangeListener? = null
+    private var pipReceiver: BroadcastReceiver? = null
+    private var gifSession: GifSession? = null
 
     private fun stopLandscapeReleaseListener() {
         landscapeReleaseListener?.disable()
@@ -179,12 +238,54 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         else -> null
     }
 
+    /**
+     * Stage izumi's bundled subtitle fonts where libass can see them and return that directory.
+     *
+     * Android has no Nunito, and `config=no` (below) also disables mpv's `subfont.ttf` lookup, so the
+     * app's default subtitle font could never resolve here — the appearance settings looked broken
+     * even once they were being applied. `sub-fonts-dir` is ADDITIVE: the platform font provider
+     * still supplies the device's own families (and CJK coverage) on top of these.
+     *
+     * Returns null when no fonts are bundled (the assets directory is populated at build time), in
+     * which case mpv is left on its own defaults.
+     */
+    private fun prepareFontsDir(): String? {
+        return try {
+            val names = activity.assets.list("fonts")?.filter {
+                it.endsWith(".ttf", true) || it.endsWith(".otf", true) || it.endsWith(".ttc", true)
+            }.orEmpty()
+            if (names.isEmpty()) return null
+            val dir = File(activity.filesDir, "mpv-fonts")
+            dir.mkdirs()
+            // Assets only change with a reinstall/update, and they are stored compressed (so their
+            // uncompressed size isn't cheaply readable) — stamp the copy with the build instead.
+            val info = activity.packageManager.getPackageInfo(activity.packageName, 0)
+            @Suppress("DEPRECATION")
+            val build = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+            // Kept OUTSIDE the fonts directory — libass scans everything in there.
+            val stamp = File(activity.filesDir, "mpv-fonts.stamp")
+            val want = "$build|${names.sorted().joinToString(",")}"
+            if (stamp.isFile && stamp.readText() == want) return dir.absolutePath
+            for (name in names) {
+                activity.assets.open("fonts/$name").use { input ->
+                    File(dir, name).outputStream().use { input.copyTo(it) }
+                }
+            }
+            stamp.writeText(want)
+            dir.absolutePath
+        } catch (e: Exception) {
+            Log.w("MpvPlugin", "subtitle fonts unavailable: ${e.message}")
+            null
+        }
+    }
+
     /** Lazily create the mpv core + surface view on first play. Must run on the UI thread. */
     private fun ensure(): MPVLib {
         mpv?.let { return it }
         val m = MPVLib.create(activity) ?: error("libmpv: MPVLib.create returned null")
         // izumi controls all options — never read the user's ~/.config/mpv.
         m.setOptionString("config", "no")
+        prepareFontsDir()?.let { m.setOptionString("sub-fonts-dir", it) }
         m.setOptionString("vo", "gpu")
         m.setOptionString("gpu-context", "android")
         m.setOptionString("hwdec", "mediacodec-copy")
@@ -256,7 +357,202 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         mpv = m
         view = v
         container = playerContainer
+        contentView = content
+        installPipWatcher(content)
         return m
+    }
+
+    // --- Picture-in-picture -------------------------------------------------------------------
+    //
+    // The player container is normally laid out for the PORTRAIT watch page: a top margin for the
+    // status-bar inset and an explicit 16:9 pixel height, with the web shell painting the rest of
+    // the screen. Entering PiP shrinks the window to a small floating rectangle but left those
+    // physical-pixel values untouched, so the video sat below the window's top edge and was clipped
+    // to a band — only a slice of the picture was ever visible. PiP therefore takes the container
+    // to a plain fill, and the previous viewport is replayed when it ends.
+
+    /** Detect PiP enter/exit without depending on an activity subclass: entering or leaving PiP
+     *  always resizes the activity window, and `isInPictureInPictureMode` is authoritative. */
+    private fun installPipWatcher(content: ViewGroup) {
+        if (pipLayoutListener != null) return
+        val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val now = Build.VERSION.SDK_INT >= 24 && activity.isInPictureInPictureMode
+            if (now == pipActive) return@OnLayoutChangeListener
+            pipActive = now
+            if (now) onEnteredPip() else onLeftPip()
+        }
+        content.addOnLayoutChangeListener(listener)
+        pipLayoutListener = listener
+    }
+
+    private fun removePipWatcher() {
+        pipLayoutListener?.let { contentView?.removeOnLayoutChangeListener(it) }
+        pipLayoutListener = null
+        contentView = null
+    }
+
+    /** Fill the (now tiny) PiP window with the video rectangle: no inset margin, no fixed height,
+     *  no leftover gesture transform. */
+    private fun applyPipLayout() {
+        container?.let { playerContainer ->
+            val params = (playerContainer.layoutParams as? FrameLayout.LayoutParams)
+                ?: FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+            params.width = ViewGroup.LayoutParams.MATCH_PARENT
+            params.height = ViewGroup.LayoutParams.MATCH_PARENT
+            params.topMargin = 0
+            playerContainer.layoutParams = params
+            playerContainer.scaleX = 1f
+            playerContainer.scaleY = 1f
+            playerContainer.translationX = 0f
+            playerContainer.translationY = 0f
+            playerContainer.requestLayout()
+        }
+    }
+
+    /** The PiP window's shape. Android rejects anything outside 1:2.39 … 2.39:1, so the video's own
+     *  display aspect is clamped rather than passed through (and 16:9 stands in before it is known). */
+    private fun pipAspect(): Rational {
+        val m = mpv
+        val width = m?.getPropertyString("video-params/dw")?.toIntOrNull() ?: 0
+        val height = m?.getPropertyString("video-params/dh")?.toIntOrNull() ?: 0
+        if (width <= 0 || height <= 0) return Rational(16, 9)
+        val ratio = width.toDouble() / height.toDouble()
+        return when {
+            ratio < 1.0 / 2.39 -> Rational(100, 239)
+            ratio > 2.39 -> Rational(239, 100)
+            else -> Rational(width, height)
+        }
+    }
+
+    /** A single play/pause remote action. Without it the miniplayer is a picture you cannot stop. */
+    private fun pipActions(): List<RemoteAction> {
+        if (Build.VERSION.SDK_INT < 26) return emptyList()
+        val paused = mpv?.getPropertyString("pause") == "yes"
+        val label = if (paused) "Play" else "Pause"
+        val icon = Icon.createWithResource(
+            activity,
+            if (paused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+        )
+        val intent = PendingIntent.getBroadcast(
+            activity,
+            PIP_CODE_PLAY_PAUSE,
+            Intent(PIP_ACTION)
+                .setPackage(activity.packageName)
+                .putExtra(PIP_EXTRA_CODE, PIP_CODE_PLAY_PAUSE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return listOf(RemoteAction(icon, label, label, intent))
+    }
+
+    /** The video rectangle as it sits on the watch page, captured BEFORE the PiP fill is applied so
+     *  the system animates from where the user actually sees the video. Null when unavailable. */
+    private fun captureSourceHint(): Rect? {
+        val playerContainer = container ?: return null
+        val rect = Rect()
+        if (!playerContainer.getGlobalVisibleRect(rect)) return null
+        return if (rect.width() > 0 && rect.height() > 0) rect else null
+    }
+
+    private var pipSourceHint: Rect? = null
+
+    private fun pipParams(): PictureInPictureParams {
+        val builder = PictureInPictureParams.Builder().setAspectRatio(pipAspect())
+        // Lets the system animate FROM the on-screen video rectangle instead of cross-fading the
+        // whole window, which is what makes the transition read as the video "shrinking".
+        pipSourceHint?.let { builder.setSourceRectHint(it) }
+        builder.setActions(pipActions())
+        return builder.build()
+    }
+
+    /** Re-publish the params so the action button matches the CURRENT play/pause state. */
+    private fun updatePipActions() {
+        if (!pipActive || Build.VERSION.SDK_INT < 26) return
+        try {
+            activity.setPictureInPictureParams(pipParams())
+        } catch (e: Exception) {
+            Log.w("MpvPlugin", "pip params update failed: ${e.message}")
+        }
+    }
+
+    private fun registerPipReceiver() {
+        if (pipReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.getIntExtra(PIP_EXTRA_CODE, 0) != PIP_CODE_PLAY_PAUSE) return
+                mpv?.command(arrayOf("cycle", "pause"))
+                // The observed `pause` event also refreshes the button, but post one update so the
+                // icon flips even if the property observer is momentarily behind.
+                activity.window.decorView.postDelayed({ updatePipActions() }, 150L)
+            }
+        }
+        ContextCompat.registerReceiver(
+            activity,
+            receiver,
+            IntentFilter(PIP_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        pipReceiver = receiver
+    }
+
+    private fun unregisterPipReceiver() {
+        pipReceiver?.let { runCatching { activity.unregisterReceiver(it) } }
+        pipReceiver = null
+    }
+
+    private fun onEnteredPip() {
+        pipRequested = true
+        applyPipLayout()
+        setImmersive(true)
+        registerPipReceiver()
+        updatePipActions()
+        trigger("pip", JSObject().put("active", true))
+    }
+
+    private fun onLeftPip() {
+        pipRequested = false
+        pipSourceHint = null
+        unregisterPipReceiver()
+        // Restore the watch-page geometry immediately. The web shell also re-syncs on its own resize
+        // event; both converge on the same values, so a duplicate call is harmless.
+        applyViewport(lastViewport ?: ViewportArgs())
+        trigger("pip", JSObject().put("active", false))
+    }
+
+    @Command
+    fun pip(invoke: Invoke) {
+        activity.runOnUiThread {
+            if (Build.VERSION.SDK_INT < 26) {
+                invoke.reject("pip-unsupported")
+                return@runOnUiThread
+            }
+            // Reshape BEFORE the transition: the system captures the window during the animation, so
+            // fixing the layout only after `isInPictureInPictureMode` flips leaves a clipped first
+            // frame. `pipRequested` then keeps a racing viewport() from undoing it mid-transition.
+            // The source-rect hint is read first, while the video is still the watch-page rectangle.
+            pipSourceHint = captureSourceHint()
+            pipRequested = true
+            applyPipLayout()
+            // Denied (the per-app PiP permission is off, the device does not support it, the
+            // activity is not resumed) — put the watch page back rather than leaving a stretched
+            // surface behind. The API signals refusal BOTH ways: `false` and, for bad params, a throw.
+            val failure = try {
+                if (activity.enterPictureInPictureMode(pipParams())) null else "pip-denied"
+            } catch (e: Exception) {
+                Log.w("MpvPlugin", "enterPictureInPictureMode failed: ${e.message}")
+                e.message ?: "pip-failed"
+            }
+            if (failure == null) {
+                invoke.resolve()
+            } else {
+                pipRequested = false
+                pipSourceHint = null
+                applyViewport(lastViewport ?: ViewportArgs())
+                invoke.reject(failure)
+            }
+        }
     }
 
     private fun normalizedLanguage(raw: String?): String = when (raw?.trim()?.lowercase()) {
@@ -366,70 +662,78 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         invoke.resolve()
     }
 
-    @Command
-    fun pip(invoke: Invoke) {
-        activity.runOnUiThread {
-            if (android.os.Build.VERSION.SDK_INT >= 26) {
-                val params = android.app.PictureInPictureParams.Builder()
-                    .setAspectRatio(android.util.Rational(16, 9))
-                    .build()
-                @Suppress("DEPRECATION")
-                activity.enterPictureInPictureMode(params)
-            }
-            invoke.resolve()
-        }
-    }
-
     /**
      * Keep the native SurfaceView aligned with the web player shell. In portrait the WebView
      * presents a YouTube-style watch page with a 16:9 video at the top; in landscape the video
      * returns to a full-screen immersive surface. Values arrive in physical pixels because Android
      * layout params do not use WebView CSS pixels.
+     *
+     * Returns the window's safe-area insets as { top, right, bottom, left } physical pixels. Must
+     * run on the UI thread.
      */
+    private fun applyViewport(a: ViewportArgs): JSObject {
+        setImmersive(a.immersive)
+        val rootInsets = ViewCompat.getRootWindowInsets(activity.window.decorView)
+        val cutout = rootInsets?.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.displayCutout(),
+        ) ?: Insets.NONE
+        val status = if (a.immersive) Insets.NONE else rootInsets?.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.statusBars(),
+        ) ?: Insets.NONE
+        val navigation = if (a.immersive) Insets.NONE else rootInsets?.getInsetsIgnoringVisibility(
+            WindowInsetsCompat.Type.navigationBars(),
+        ) ?: Insets.NONE
+        val safeTop = max(cutout.top, status.top)
+        val safeRight = max(cutout.right, max(status.right, navigation.right))
+        val safeBottom = max(cutout.bottom, navigation.bottom)
+        val safeLeft = max(cutout.left, max(status.left, navigation.left))
+        Log.i(
+            "MpvPlugin",
+            "viewport immersive=${a.immersive} top=$safeTop height=${a.height}",
+        )
+        container?.let { playerContainer ->
+            val height = if (a.height > 0) a.height else ViewGroup.LayoutParams.MATCH_PARENT
+            val params = (playerContainer.layoutParams as? FrameLayout.LayoutParams)
+                ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
+            params.width = ViewGroup.LayoutParams.MATCH_PARENT
+            params.height = height
+            params.topMargin = a.top.coerceAtLeast(0) + if (a.immersive) 0 else safeTop
+            playerContainer.layoutParams = params
+            // A viewport settle returns the whole player rectangle to identity. The child
+            // SurfaceView is never transformed independently.
+            playerContainer.scaleX = 1f
+            playerContainer.scaleY = 1f
+            playerContainer.translationX = 0f
+            playerContainer.translationY = 0f
+            playerContainer.requestLayout()
+        }
+        val ret = JSObject()
+        ret.put("top", safeTop)
+        ret.put("right", safeRight)
+        ret.put("bottom", safeBottom)
+        ret.put("left", safeLeft)
+        return ret
+    }
+
     @Command
     fun viewport(invoke: Invoke) {
         val a = invoke.parseArgs(ViewportArgs::class.java)
         activity.runOnUiThread {
-            setImmersive(a.immersive)
-            val rootInsets = ViewCompat.getRootWindowInsets(activity.window.decorView)
-            val cutout = rootInsets?.getInsetsIgnoringVisibility(
-                WindowInsetsCompat.Type.displayCutout(),
-            ) ?: Insets.NONE
-            val status = if (a.immersive) Insets.NONE else rootInsets?.getInsetsIgnoringVisibility(
-                WindowInsetsCompat.Type.statusBars(),
-            ) ?: Insets.NONE
-            val navigation = if (a.immersive) Insets.NONE else rootInsets?.getInsetsIgnoringVisibility(
-                WindowInsetsCompat.Type.navigationBars(),
-            ) ?: Insets.NONE
-            val safeTop = max(cutout.top, status.top)
-            val safeRight = max(cutout.right, max(status.right, navigation.right))
-            val safeBottom = max(cutout.bottom, navigation.bottom)
-            val safeLeft = max(cutout.left, max(status.left, navigation.left))
-            Log.i(
-                "MpvPlugin",
-                "viewport immersive=${a.immersive} top=$safeTop height=${a.height}",
-            )
-            container?.let { playerContainer ->
-                val height = if (a.height > 0) a.height else ViewGroup.LayoutParams.MATCH_PARENT
-                val params = (playerContainer.layoutParams as? FrameLayout.LayoutParams)
-                    ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
-                params.width = ViewGroup.LayoutParams.MATCH_PARENT
-                params.height = height
-                params.topMargin = a.top.coerceAtLeast(0) + if (a.immersive) 0 else safeTop
-                playerContainer.layoutParams = params
-                // A viewport settle returns the whole player rectangle to identity. The child
-                // SurfaceView is never transformed independently.
-                playerContainer.scaleX = 1f
-                playerContainer.scaleY = 1f
-                playerContainer.translationX = 0f
-                playerContainer.translationY = 0f
-                playerContainer.requestLayout()
+            lastViewport = a
+            // In (or entering) picture-in-picture the container must stay a plain fill. The web shell
+            // still re-syncs on the PiP window's resize, and applying the watch-page geometry there
+            // is exactly what pushed the video out of the miniplayer. Insets are still reported so
+            // the caller's own layout maths stay correct.
+            val ret = if (pipActive || pipRequested) {
+                val fill = JSObject()
+                fill.put("top", 0)
+                fill.put("right", 0)
+                fill.put("bottom", 0)
+                fill.put("left", 0)
+                fill
+            } else {
+                applyViewport(a)
             }
-            val ret = JSObject()
-            ret.put("top", safeTop)
-            ret.put("right", safeRight)
-            ret.put("bottom", safeBottom)
-            ret.put("left", safeLeft)
             invoke.resolve(ret)
         }
     }
@@ -555,10 +859,199 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }.start()
     }
 
+    // --- GIF recording ------------------------------------------------------------------------
+    //
+    // Same shape as the desktop recorder: bounded JPEG frames are pulled straight out of the LIVE
+    // core with `screenshot-to-file`, so signed/DRM-free-but-header-gated streams are captured
+    // exactly as mpv renders them and nothing has to reopen the source. Android has no ffmpeg, so
+    // the palette + LZW encode happens in Rust (`android_gif_encode`) and the finished file is
+    // published to the gallery by [gifSave].
+
+    @Command
+    fun gifStart(invoke: Invoke) {
+        val a = invoke.parseArgs(GifStartArgs::class.java)
+        val m = mpv
+        if (m == null) {
+            invoke.reject("mpv-not-running")
+            return
+        }
+        if (gifSession != null) {
+            invoke.reject("gif-already-recording")
+            return
+        }
+        val dir = File(activity.cacheDir, "gif-capture/${System.currentTimeMillis()}")
+        if (!dir.mkdirs() && !dir.isDirectory) {
+            invoke.reject("gif-dir-failed")
+            return
+        }
+        val session = GifSession(dir)
+        val mode = if (a.includeSubtitles) "subtitles" else "video"
+        val worker = Thread {
+            m.setPropertyString("screenshot-format", "jpg")
+            m.setPropertyString("screenshot-jpeg-quality", "90")
+            // Software readback: the GPU surface is not guaranteed to be readable on Android.
+            m.setPropertyString("screenshot-sw", "yes")
+            val started = System.currentTimeMillis()
+            while (!session.stop &&
+                session.frames < GIF_MAX_FRAMES &&
+                System.currentTimeMillis() - started < GIF_MAX_MS
+            ) {
+                val frameStart = System.currentTimeMillis()
+                val file = File(session.dir, String.format(Locale.US, "f%05d.jpg", session.frames))
+                // MPVLib.command has no return value, so the written file is the success signal.
+                m.command(arrayOf("screenshot-to-file", file.absolutePath, mode))
+                if (file.isFile && file.length() > 0) {
+                    session.frames += 1
+                    session.capturedMs = System.currentTimeMillis() - started
+                } else {
+                    file.delete()
+                }
+                val spent = System.currentTimeMillis() - frameStart
+                if (spent < GIF_FRAME_INTERVAL_MS) {
+                    try {
+                        Thread.sleep(GIF_FRAME_INTERVAL_MS - spent)
+                    } catch (e: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                }
+            }
+        }
+        session.thread = worker
+        gifSession = session
+        worker.start()
+        invoke.resolve()
+    }
+
+    /** Stop capturing and hand back the frame directory for encoding. */
+    @Command
+    fun gifStop(invoke: Invoke) {
+        val session = gifSession
+        gifSession = null
+        if (session == null) {
+            invoke.reject("gif-not-recording")
+            return
+        }
+        session.stop = true
+        // Join off the caller's thread: the worker may be inside a blocking screenshot.
+        Thread {
+            try {
+                session.thread?.join(5_000)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            val ret = JSObject()
+            ret.put("dir", session.dir.absolutePath)
+            ret.put("frames", session.frames)
+            ret.put("capturedMs", session.capturedMs)
+            invoke.resolve(ret)
+        }.start()
+    }
+
+    /** Cancel a live capture and drop its frames. Safe to call when nothing is recording. */
+    @Command
+    fun gifAbort(invoke: Invoke) {
+        val session = gifSession
+        gifSession = null
+        if (session != null) {
+            session.stop = true
+            Thread {
+                try {
+                    session.thread?.join(5_000)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+                session.dir.deleteRecursively()
+            }.start()
+        }
+        invoke.resolve()
+    }
+
+    /**
+     * Publish an encoded GIF to the gallery and clean up the working files.
+     *
+     * API 29+ uses MediaStore, which needs no storage permission and puts the file in Pictures/izumi
+     * where the gallery picks it up. Older devices would need the legacy WRITE_EXTERNAL_STORAGE
+     * permission for that, which is not worth requesting, so they get the app-scoped Pictures folder.
+     */
+    @Command
+    fun gifSave(invoke: Invoke) {
+        val a = invoke.parseArgs(GifSaveArgs::class.java)
+        Thread {
+            val source = File(a.path)
+            val cleanup = {
+                source.delete()
+                a.cleanupDir?.takeIf { it.isNotBlank() }?.let { File(it).deleteRecursively() }
+                Unit
+            }
+            try {
+                if (!source.isFile || source.length() == 0L) error("gif-missing")
+                val name = "izumi-gif-${System.currentTimeMillis()}.gif"
+                val location: String
+                if (Build.VERSION.SDK_INT >= 29) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                        put(MediaStore.MediaColumns.MIME_TYPE, "image/gif")
+                        put(
+                            MediaStore.MediaColumns.RELATIVE_PATH,
+                            Environment.DIRECTORY_PICTURES + "/izumi",
+                        )
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                    val resolver = activity.contentResolver
+                    val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                        ?: error("gif-insert-failed")
+                    resolver.openOutputStream(uri).use { out ->
+                        if (out == null) error("gif-open-failed")
+                        source.inputStream().use { it.copyTo(out) }
+                    }
+                    values.clear()
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    location = "Pictures/izumi"
+                } else {
+                    val dir = activity.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+                        ?: activity.filesDir
+                    dir.mkdirs()
+                    source.copyTo(File(dir, name), overwrite = true)
+                    location = dir.absolutePath
+                }
+                cleanup()
+                val ret = JSObject()
+                ret.put("name", name)
+                ret.put("location", location)
+                invoke.resolve(ret)
+            } catch (e: Exception) {
+                cleanup()
+                Log.w("MpvPlugin", "gifSave failed: ${e.message}")
+                invoke.reject(e.message ?: "gif-save-failed")
+            }
+        }.start()
+    }
+
     @Command
     fun stop(invoke: Invoke) {
+        val recording = gifSession
+        gifSession = null
+        recording?.let { session ->
+            session.stop = true
+            Thread {
+                try {
+                    session.thread?.join(5_000)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                }
+                session.dir.deleteRecursively()
+            }.start()
+        }
         activity.runOnUiThread {
             stopLandscapeReleaseListener()
+            unregisterPipReceiver()
+            removePipWatcher()
+            pipActive = false
+            pipRequested = false
+            pipSourceHint = null
+            lastViewport = null
             setImmersive(false)
             container?.let { (it.parent as? ViewGroup)?.removeView(it) }
             mpv?.let {
@@ -580,6 +1073,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
     override fun eventProperty(property: String, value: Boolean) {
+        // Keep the miniplayer's play/pause button honest. Posted to the UI thread: this callback runs
+        // on libmpv's event thread holding its observer monitor, and pipParams() reads back from the
+        // core (see the note in `event` below).
+        if (property == "pause" && pipActive) {
+            activity.window.decorView.post { updatePipActions() }
+        }
         trigger("progress", JSObject().put("property", property).put("value", value))
     }
     override fun eventProperty(property: String, value: String) {

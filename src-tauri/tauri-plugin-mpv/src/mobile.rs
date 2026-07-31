@@ -5,8 +5,9 @@ use tauri::{
 };
 
 use crate::models::{
-    BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest, LoadRequest,
-    SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
+    BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, GifSaveRequest,
+    GifStartRequest, HapticRequest, LoadRequest, SetRequest, ThumbRequest, TransformRequest,
+    ViewportRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -87,6 +88,28 @@ impl<R: Runtime> Mpv<R> {
     pub fn thumb(&self, payload: ThumbRequest) -> crate::Result<serde_json::Value> {
         self.0
             .run_mobile_plugin("thumb", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn gif_start(&self, payload: GifStartRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("gifStart", payload)
+            .map_err(Into::into)
+    }
+
+    /// Resolves `{ dir, frames, capturedMs }` — the captured frame directory, ready to encode.
+    pub fn gif_stop(&self) -> crate::Result<serde_json::Value> {
+        self.0.run_mobile_plugin("gifStop", ()).map_err(Into::into)
+    }
+
+    pub fn gif_abort(&self) -> crate::Result<()> {
+        self.0.run_mobile_plugin("gifAbort", ()).map_err(Into::into)
+    }
+
+    /// Resolves `{ name, location }` once the GIF has been published to the gallery.
+    pub fn gif_save(&self, payload: GifSaveRequest) -> crate::Result<serde_json::Value> {
+        self.0
+            .run_mobile_plugin("gifSave", payload)
             .map_err(Into::into)
     }
 }

@@ -756,6 +756,123 @@ fn emit_update_progress(
     let _ = app.emit("update-download-progress", UpdateProgress { downloaded, total });
 }
 
+/// Encode the JPEG frames the Android mpv plugin captured (`mpv_gif_start`/`mpv_gif_stop`) into an
+/// animated GIF, returning its path in the app cache. The Kotlin side then publishes it to the
+/// gallery (`mpv_gif_save`).
+///
+/// The desktop recorder shells out to the user's ffmpeg for the palette + encode; Android has no
+/// ffmpeg to shell out to, so the same two steps happen in-process: NeuQuant picks a 256-colour
+/// palette per frame (via the `gif` crate) after the frame is scaled down to a size that produces a
+/// shareable file rather than a 40 MB one.
+#[cfg(target_os = "android")]
+fn encode_android_gif(dir: &std::path::Path, captured_ms: u64) -> Result<String, String> {
+    use std::io::BufWriter;
+
+    /// Wide enough to stay legible, small enough that 30s stays in the low megabytes.
+    const TARGET_WIDTH: u32 = 480;
+    /// NeuQuant sampling factor: 1 is best/slowest, 30 fastest. Phones get a fast-but-decent tier.
+    const QUANT_SPEED: i32 = 20;
+
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jpg"))
+        })
+        .collect();
+    // Capture names are zero-padded (`f00000.jpg`), so a lexical sort is the capture order.
+    files.sort();
+    if files.len() < 2 {
+        return Err("gif-no-frames".into());
+    }
+
+    // Play the GIF back at the rate the frames were actually captured — the screenshot loop targets
+    // 20fps but a slow decode or a network stall stretches that out, and a fixed rate would then
+    // render the clip in fast-forward.
+    let fps = if captured_ms >= 200 {
+        (files.len() as f64 / (captured_ms as f64 / 1000.0)).clamp(2.0, 20.0)
+    } else {
+        12.0
+    };
+    // GIF delays are centiseconds, and viewers clamp anything under 2cs up to 10cs.
+    let delay = ((100.0 / fps).round() as u16).max(2);
+
+    let output = dir.join("izumi.gif");
+    let file = std::fs::File::create(&output).map_err(|e| e.to_string())?;
+    let mut writer = Some(BufWriter::new(file));
+    let mut encoder: Option<gif::Encoder<BufWriter<std::fs::File>>> = None;
+    let mut size = (0u16, 0u16);
+    let mut written = 0usize;
+
+    for path in &files {
+        // A frame torn by the capture stopping mid-write is skipped, not fatal.
+        let Ok(image) = image::open(path) else { continue };
+        let rgb = image.to_rgb8();
+        let (width, height) = (rgb.width(), rgb.height());
+        if width == 0 || height == 0 {
+            continue;
+        }
+        let (target_w, target_h) = if width > TARGET_WIDTH {
+            let scaled_h = (f64::from(height) * f64::from(TARGET_WIDTH) / f64::from(width)).round();
+            (TARGET_WIDTH, (scaled_h as u32).max(2))
+        } else {
+            (width, height)
+        };
+        let frame_rgb = if (target_w, target_h) == (width, height) {
+            rgb
+        } else {
+            image::imageops::resize(&rgb, target_w, target_h, image::imageops::FilterType::Triangle)
+        };
+
+        let encoder = match encoder.as_mut() {
+            Some(encoder) => encoder,
+            None => {
+                size = (target_w as u16, target_h as u16);
+                let mut new = gif::Encoder::new(
+                    writer.take().ok_or("gif-writer-taken")?,
+                    size.0,
+                    size.1,
+                    &[],
+                )
+                .map_err(|e| e.to_string())?;
+                new.set_repeat(gif::Repeat::Infinite)
+                    .map_err(|e| e.to_string())?;
+                encoder.insert(new)
+            }
+        };
+        // Every frame shares one logical screen size. A rotation mid-capture changes the surface
+        // dimensions, and writing that frame anyway would tear the rest of the animation.
+        if (target_w as u16, target_h as u16) != size {
+            continue;
+        }
+        let mut frame = gif::Frame::from_rgb_speed(size.0, size.1, &frame_rgb, QUANT_SPEED);
+        frame.delay = delay;
+        encoder.write_frame(&frame).map_err(|e| e.to_string())?;
+        written += 1;
+    }
+    // Dropping the encoder writes the GIF trailer.
+    drop(encoder);
+    if written < 2 {
+        let _ = std::fs::remove_file(&output);
+        return Err("gif-no-frames".into());
+    }
+    Ok(output.to_string_lossy().into_owned())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+async fn android_gif_encode(dir: String, captured_ms: u64) -> Result<String, String> {
+    // Decode + quantize is CPU-bound and runs for seconds on a phone — keep it off the async runtime's
+    // worker threads so IPC, playback commands and the download stream stay responsive.
+    tauri::async_runtime::spawn_blocking(move || {
+        encode_android_gif(std::path::Path::new(&dir), captured_ms)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Android self-update: download a release APK to the app cache dir and return its path
 /// (the frontend then hands it to the package installer via the extplayer plugin). Uses the
 /// download client (no total timeout). Overwrites any previous update file.
@@ -3391,6 +3508,7 @@ pub fn run() {
         set_doh,
         write_text_file,
         updater_download_apk,
+        android_gif_encode,
         opensubtitles_login,
         player_add_subtitle,
         oauth_capture,
