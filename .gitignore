@@ -21,6 +21,9 @@ src-tauri/*.dll
 src-tauri/*.dylib
 src-tauri/macos-frameworks/
 
+# Subtitle font staged into the Android mpv plugin at build time (scripts/fetch-subtitle-font.mjs)
+src-tauri/tauri-plugin-mpv/android/src/main/assets/fonts/
+
 # Local Flatpak bundle artifact (built + deployed, not committed)
 izumi.flatpak
 

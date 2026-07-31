@@ -20,6 +20,14 @@
     subtitleAutoSync,
   } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
+  import { isAndroid } from '$lib/platform'
+
+  // Font names libass can actually resolve. Nunito travels with the app on every platform (the
+  // Android player registers it through the plugin's bundled fonts directory); the rest are the
+  // families that are present on essentially every Android device, so a pick here renders rather
+  // than silently falling back. Desktop additionally resolves any installed system font, which is
+  // why this stays a free-text field with suggestions instead of a closed dropdown.
+  const FONT_SUGGESTIONS = ['Nunito', 'Roboto', 'Noto Sans', 'Noto Serif', 'Noto Sans Mono', 'sans-serif']
 
   // Shape returned by the Rust `opensubtitles_login` command.
   type OpenSubtitlesLogin = {
@@ -98,7 +106,17 @@
       <Toggle label="Use custom subtitle style" desc="Override embedded ASS styling with the choices below." value={$subtitleStyleEnabled} onToggle={() => ($subtitleStyleEnabled = !$subtitleStyleEnabled)} />
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Font family</span>
-        <input type="text" bind:value={$subtitleFont} data-focusable disabled={!$subtitleStyleEnabled} class="rounded-md bg-input px-3 py-2 text-sm disabled:opacity-50" />
+        <input type="text" list="subtitle-font-suggestions" bind:value={$subtitleFont} data-focusable disabled={!$subtitleStyleEnabled} class="rounded-md bg-input px-3 py-2 text-sm disabled:opacity-50" />
+        <datalist id="subtitle-font-suggestions">
+          {#each FONT_SUGGESTIONS as font (font)}<option value={font}></option>{/each}
+        </datalist>
+        <span class="text-xs text-muted-foreground">
+          {#if $isAndroid}
+            Nunito ships with the app; the other suggestions are your device's own fonts. A name this device has no font for falls back to the system sans-serif.
+          {:else}
+            Any font installed on this computer, plus the bundled Nunito.
+          {/if}
+        </span>
       </label>
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="flex flex-col gap-1">
@@ -129,6 +147,9 @@
     </div>
   </section>
 
+  <!-- Speech-analysis sync shells out to a local ffmpeg, which Android has no path to — the toggle
+       was a control that could never do anything there. -->
+  {#if !$isAndroid}
   <section class="mb-8 max-w-2xl">
     <h3 class="mb-2 font-bold">Synchronization</h3>
     <Toggle
@@ -138,6 +159,7 @@
       onToggle={() => ($subtitleAutoSync = !$subtitleAutoSync)}
     />
   </section>
+  {/if}
 
   <section class="mb-8 max-w-2xl">
     <h3 class="mb-2 font-bold">Providers</h3>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores'
-  import { isMobile } from '$lib/platform'
+  import { isAndroid, isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import Play from 'lucide-svelte/icons/play'
   import LayoutGrid from 'lucide-svelte/icons/layout-grid'
@@ -45,10 +45,20 @@
       { title: 'About', href: '/app/settings/about', icon: Info },
     ] },
   ]
+  // Hotkeys rebinds physical keyboard shortcuts for the desktop player. Android is a touch device
+  // with no keyboard scope to bind into, so the whole category is dropped there — note this keys on
+  // $isAndroid, NOT $isMobile: a narrow desktop window still has a keyboard.
+  const visibleGroups = $derived(
+    $isAndroid
+      ? groups
+          .map((g) => ({ ...g, items: g.items.filter((it) => it.href !== '/app/settings/hotkeys') }))
+          .filter((g) => g.items.length)
+      : groups,
+  )
   // Navigation configures the mobile shell (bottom tab bar + top icons), so it's mobile-only — the
   // desktop app uses the fixed sidebar instead. Keep it out of the desktop rail (mobile renders
-  // `groups` directly, and that whole branch is already gated on $isMobile).
-  const flat = groups.flatMap((g) => g.items).filter((it) => it.href !== '/app/settings/navigation') // desktop rail order
+  // `visibleGroups` directly, and that whole branch is already gated on $isMobile).
+  const flat = $derived(visibleGroups.flatMap((g) => g.items).filter((it) => it.href !== '/app/settings/navigation')) // desktop rail order
   const active = (href: string) =>
     $page.url.pathname === href ||
     $page.url.pathname.startsWith(href + '/') ||
@@ -61,7 +71,7 @@
   <!-- Mobile: a vertical grouped list of chevron rows. Tapping a row navigates to its route; the
        layout shows a back-header on the child page. Vertical scroll only — no horizontal strip. -->
   <div class="space-y-5">
-    {#each groups as g (g.label)}
+    {#each visibleGroups as g (g.label)}
       <div>
         <div class="mb-1.5 px-1 text-sm font-bold text-muted-foreground">{g.label}</div>
         <div class="overflow-hidden rounded-xl bg-secondary/40">

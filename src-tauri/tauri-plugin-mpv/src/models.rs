@@ -105,6 +105,25 @@ fn default_thumb_width() -> u32 {
     320
 }
 
+/// Begin capturing GIF frames from the live core.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifStartRequest {
+    /// Burn the displayed subtitle track into the captured frames.
+    #[serde(default)]
+    pub include_subtitles: bool,
+}
+
+/// Publish an encoded GIF to the gallery and delete the working files.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifSaveRequest {
+    /// Absolute path of the encoded `.gif` produced by `android_gif_encode`.
+    pub path: String,
+    /// Frame directory to remove once the GIF has been published.
+    pub cleanup_dir: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

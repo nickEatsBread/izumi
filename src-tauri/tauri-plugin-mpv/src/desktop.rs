@@ -2,8 +2,9 @@ use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
-    BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest, LoadRequest,
-    SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
+    BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, GifSaveRequest,
+    GifStartRequest, HapticRequest, LoadRequest, SetRequest, ThumbRequest, TransformRequest,
+    ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -64,6 +65,22 @@ impl<R: Runtime> Mpv<R> {
     }
 
     pub fn thumb(&self, _payload: ThumbRequest) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::Value::Null)
+    }
+
+    pub fn gif_start(&self, _payload: GifStartRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn gif_stop(&self) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::Value::Null)
+    }
+
+    pub fn gif_abort(&self) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn gif_save(&self, _payload: GifSaveRequest) -> crate::Result<serde_json::Value> {
         Ok(serde_json::Value::Null)
     }
 }

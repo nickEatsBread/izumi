@@ -34,6 +34,11 @@
   let loadedKey = ''
 
   // (Re)fetch when the panel opens or the episode changes; cached by media+episode.
+  // `$nowPlayingMedia` is REPLACED on every source change, so this effect re-runs each time the user
+  // steps through a dead release — the key compare is what makes that free. It deliberately has no
+  // teardown: a teardown fires on those same re-runs, and the old one cancelled the request it had
+  // just started and cleared `loadedKey`, so nine failed sources meant nine identical aggregations.
+  // The panel stays mounted while closed, so a late result is simply kept for the next open.
   $effect(() => {
     if (!$commentsOpen) return
     const np = $nowPlayingMedia
@@ -44,11 +49,8 @@
     loading = true
     filter = 'All'
     embedEverShown = false
-    let cancelled = false
-    let completed = false
     fetchDiscussion(np.media, np.episode).then((t) => {
-      if (cancelled) return
-      completed = true
+      if (key !== loadedKey) return
       threads = t
       loading = false
       // Open on the preferred source if it's present (else the aggregated 'All' list).
@@ -56,12 +58,6 @@
       const lbl = want !== 'auto' ? platLabel(want) : 'All'
       filter = lbl !== 'All' && t.some((x) => x.source === lbl) ? lbl : 'All'
     })
-    return () => {
-      cancelled = true
-      // If the panel closes before the initial request resolves, its result is intentionally ignored.
-      // Let the same episode fetch again on reopen instead of treating that cancelled request as cached.
-      if (!completed && loadedKey === key) loadedKey = ''
-    }
   })
 
   // SDK platform slug → the badge/filter label (mirrors comments/index.ts).

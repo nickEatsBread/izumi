@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-gif-save"
+description = "Enables the mpv_gif_save command without any pre-configured scope."
+commands.allow = ["mpv_gif_save"]
+
+[[permission]]
+identifier = "deny-mpv-gif-save"
+description = "Denies the mpv_gif_save command without any pre-configured scope."
+commands.deny = ["mpv_gif_save"]

@@ -88,20 +88,32 @@
   let tabTouched = false
   let commentsLoading = $state(true)
   let threads = $state<DiscussionThread[]>([])
+  // Latches are plain `let`, never `$state`: a latch that is read AND written inside its own effect
+  // re-triggers that effect, and the teardown then cancels the request the pass just started.
+  // For the same reason nothing here cancels via a teardown flag — in-flight results are gated by
+  // comparing the key they were requested for.
+  //
+  // The props these effects read (`media`, `episode`) are lazy getters over `nowPlayingMedia` /
+  // `nowPlaying`, which `playStream` REPLACES on every source change. A user cycling nine dead
+  // releases therefore re-ran all four effects nine times for one unchanged episode: the whole
+  // discussion aggregation, an AniList relations query, a MAL progress read and an AniZip lookup
+  // each time. Keyed on the identity that actually matters, those re-runs are now no-ops.
+  let discussionKey = ''
   $effect(() => {
     const ep = episode
+    const key = `${media.id}:${ep ?? ''}`
+    if (key === discussionKey) return
+    discussionKey = key
     tabTouched = false
     threads = []
     commentsLoading = true
     active = 'comments'
-    let cancelled = false
     fetchDiscussion(media, ep).then((value) => {
-      if (cancelled) return
+      if (key !== discussionKey) return
       threads = value
       commentsLoading = false
       if (!preferredMobileDiscussion(value) && !tabTouched) active = 'episodes'
     })
-    return () => { cancelled = true }
   })
   const discussion = $derived(preferredMobileDiscussion(threads))
   const tabs = $derived<Tab[]>(
@@ -189,15 +201,17 @@
   }
 
   let malProgress = $state(0)
+  let malKey = ''
   $effect(() => {
     const idMal = media.idMal
+    const key = String(idMal ?? '')
+    if (key === malKey) return
+    malKey = key
     malProgress = 0
     if (!idMal) return
-    let cancelled = false
     getMalProgress(idMal).then((entry) => {
-      if (!cancelled) malProgress = entry?.progress ?? 0
+      if (key === malKey) malProgress = entry?.progress ?? 0
     }).catch(() => {})
-    return () => { cancelled = true }
   })
   const watchedThrough = $derived(Math.max(
     media.mediaListEntry?.progress ?? 0,
@@ -205,14 +219,16 @@
     $sessionProgress[media.id] ?? 0,
     malProgress,
   ))
+  let metaKey = ''
   $effect(() => {
     const id = media.id
     const watched = watchedThrough
-    let cancelled = false
+    const key = `${id}:${watched}`
+    if (key === metaKey) return
+    metaKey = key
     getEpisodeMeta(id, watched).then((value) => {
-      if (!cancelled) episodeMeta = value
+      if (key === metaKey) episodeMeta = value
     })
-    return () => { cancelled = true }
   })
   const knownTotal = $derived((total ?? totalEpisodes(media)) || 0)
   const aired = $derived.by(() => {
@@ -233,12 +249,14 @@
   }
 
   let relatedMedia = $state<Media | null>(null)
+  let relationsKey = ''
   $effect(() => {
+    const key = String(media.id)
+    if (key === relationsKey) return
+    relationsKey = key
     relatedMedia = media
     if (media.relations?.edges?.length) return
-    let cancelled = false
-    fetchMediaById(media.id, true).then((value) => { if (!cancelled) relatedMedia = value }).catch(() => {})
-    return () => { cancelled = true }
+    fetchMediaById(media.id, true).then((value) => { if (key === relationsKey) relatedMedia = value }).catch(() => {})
   })
   const relations = $derived.by(() => {
     const seen = new Set<number>()

@@ -343,6 +343,54 @@
           "markdownDescription": "Denies the mpv_get command without any pre-configured scope."
         },
         {
+          "description": "Enables the mpv_gif_abort command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-gif-abort",
+          "markdownDescription": "Enables the mpv_gif_abort command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_gif_abort command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-gif-abort",
+          "markdownDescription": "Denies the mpv_gif_abort command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mpv_gif_save command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-gif-save",
+          "markdownDescription": "Enables the mpv_gif_save command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_gif_save command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-gif-save",
+          "markdownDescription": "Denies the mpv_gif_save command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mpv_gif_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-gif-start",
+          "markdownDescription": "Enables the mpv_gif_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_gif_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-gif-start",
+          "markdownDescription": "Denies the mpv_gif_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mpv_gif_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-gif-stop",
+          "markdownDescription": "Enables the mpv_gif_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_gif_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-gif-stop",
+          "markdownDescription": "Denies the mpv_gif_stop command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_haptic command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-haptic",
@@ -463,10 +511,10 @@
           "markdownDescription": "Denies the removeListener command without any pre-configured scope."
         },
         {
-          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-registerListener`\n- `allow-removeListener`",
+          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-registerListener`\n- `allow-removeListener`"
+          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`"
         }
       ]
     }

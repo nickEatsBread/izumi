@@ -2,8 +2,9 @@ use tauri::{command, AppHandle, Runtime};
 
 use crate::{
     models::{
-        BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, HapticRequest,
-        LoadRequest, SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
+        BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, GifSaveRequest,
+        GifStartRequest, HapticRequest, LoadRequest, SetRequest, ThumbRequest, TransformRequest,
+        ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -90,4 +91,30 @@ pub(crate) async fn mpv_thumb<R: Runtime>(
     payload: ThumbRequest,
 ) -> Result<serde_json::Value> {
     app.mpv().thumb(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_gif_start<R: Runtime>(
+    app: AppHandle<R>,
+    payload: GifStartRequest,
+) -> Result<()> {
+    app.mpv().gif_start(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_gif_stop<R: Runtime>(app: AppHandle<R>) -> Result<serde_json::Value> {
+    app.mpv().gif_stop()
+}
+
+#[command]
+pub(crate) async fn mpv_gif_abort<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    app.mpv().gif_abort()
+}
+
+#[command]
+pub(crate) async fn mpv_gif_save<R: Runtime>(
+    app: AppHandle<R>,
+    payload: GifSaveRequest,
+) -> Result<serde_json::Value> {
+    app.mpv().gif_save(payload)
 }

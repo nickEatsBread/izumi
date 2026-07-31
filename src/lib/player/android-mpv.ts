@@ -95,8 +95,13 @@ export async function hasEmbeddedPlayer(): Promise<boolean> {
   return embeddedChecked
 }
 
+/** True while the activity is in Android picture-in-picture (the miniplayer). Fed by the plugin, which
+ *  detects the real mode change rather than assuming the request succeeded. */
+export const androidPipActive = writable(false)
+
 let progressSub: PluginListener | undefined
 let eventSub: PluginListener | undefined
+let pipSub: PluginListener | undefined
 /** Start the single observed-property subscription that keeps `mpvState` current. Idempotent;
  *  lives for the app session (the plugin core is recreated per play, the JS listener persists). */
 export async function startMpvEvents(): Promise<void> {
@@ -158,6 +163,11 @@ export async function startMpvEvents(): Promise<void> {
       }
     })
   }
+  if (!pipSub) {
+    pipSub = await addPluginListener('mpv', 'pip', (e: unknown) => {
+      androidPipActive.set((e as { active?: unknown })?.active === true)
+    })
+  }
 }
 
 export async function mpvLoad(p: MpvLoad): Promise<void> {
@@ -201,10 +211,47 @@ export async function mpvStop(): Promise<void> {
   clearPendingSeekTimers()
   mpvState.set({ ...IDLE_STATE })
   androidStreamInfo.set(null)
+  androidPipActive.set(false)
 }
 
 /** Enter Android picture-in-picture. Video keeps rendering into the SurfaceView in the PIP window. */
 export const mpvPip = () => invoke('plugin:mpv|mpv_pip')
+
+// --- GIF recording (embedded full flavor) ---
+// Frames come straight out of the live core as JPEGs (Kotlin), Rust turns them into a GIF, then
+// Kotlin publishes it to the gallery. Split that way because only Kotlin can reach MediaStore and
+// only Rust has the encoder — see `android_gif_encode` and the plugin's `gifSave`.
+
+interface GifFrames {
+  dir: string
+  frames: number
+  capturedMs: number
+}
+
+export const androidGifStart = (includeSubtitles: boolean) =>
+  invoke('plugin:mpv|mpv_gif_start', { payload: { includeSubtitles } })
+
+/** Cancel a live capture and drop its frames. Safe when nothing is recording. */
+export const androidGifAbort = () => invoke('plugin:mpv|mpv_gif_abort').catch(() => {})
+
+/** Stop, encode and publish. Resolves with where the finished GIF landed. */
+export async function androidGifStop(): Promise<{ name: string; location: string }> {
+  const frames = (await invoke('plugin:mpv|mpv_gif_stop')) as GifFrames
+  try {
+    const path = await invoke<string>('android_gif_encode', {
+      dir: frames.dir,
+      capturedMs: Math.max(0, Math.round(frames.capturedMs ?? 0)),
+    })
+    return (await invoke('plugin:mpv|mpv_gif_save', {
+      payload: { path, cleanupDir: frames.dir },
+    })) as { name: string; location: string }
+  } catch (error) {
+    // The encoder owns the frame directory only on the success path, so a failed encode has to
+    // clean up after itself or every abandoned capture stays in the cache.
+    await invoke('plugin:mpv|mpv_gif_save', { payload: { path: '', cleanupDir: frames.dir } }).catch(() => {})
+    throw error
+  }
+}
 
 /**
  * Align the native video surface with the WebView player shell. A zero height restores full-screen.
