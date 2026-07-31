@@ -732,19 +732,19 @@
     cancelAnimationFrame(sheetOpenFrame)
     sheetDragging = false
     sheetClosing = false
-    sheetDrag = landscape ? 0 : window.innerHeight
-    sheetBackdropOpacity = landscape ? 1 : 0
+    sheetDrag = window.innerHeight
+    sheetBackdropOpacity = 0
     sheet = 'settings'
-    if (!landscape) {
-      // Two frames guarantee the off-screen transform is painted before the animated resting state.
+    // Two frames guarantee the off-screen transform is painted before the animated resting state.
+    // Landscape uses the same bottom sheet as portrait (the phone-video convention) — it is not a
+    // side drawer, so the slide-up/drag-to-dismiss behaviour is orientation-independent.
+    sheetOpenFrame = requestAnimationFrame(() => {
       sheetOpenFrame = requestAnimationFrame(() => {
-        sheetOpenFrame = requestAnimationFrame(() => {
-          if (!sheet || sheetClosing) return
-          sheetDrag = 0
-          sheetBackdropOpacity = 1
-        })
+        if (!sheet || sheetClosing) return
+        sheetDrag = 0
+        sheetBackdropOpacity = 1
       })
-    }
+    })
     tracks = await getTracks()
   }
   function trackLabel(t: MpvTrack) { return [t.lang?.toUpperCase(), t.title].filter(Boolean).join(' · ') || `Track ${t.id}` }
@@ -882,7 +882,6 @@
   function dismissSettings() {
     if (!sheet || sheetClosing) return
     cancelAnimationFrame(sheetOpenFrame)
-    if (landscape) { finishSheetClose(); return }
     sheetDragging = false
     sheetClosing = true
     sheetBackdropOpacity = 0
@@ -891,7 +890,7 @@
     sheetCloseTimer = setTimeout(finishSheetClose, 280)
   }
   function handleDown(e: PointerEvent) {
-    if (!e.isPrimary || landscape || sheetClosing) return
+    if (!e.isPrimary || sheetClosing) return
     e.stopPropagation()
     sheetPointerId = e.pointerId
     sheetStartY = e.clientY
@@ -1186,7 +1185,7 @@
       <div class="sheet-handle cursor-grab py-4 touch-none active:cursor-grabbing" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleCancel} role="presentation">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>
       </div>
-      <div class="flex items-center justify-between px-5 pb-3 landscape:pt-4">
+      <div class="flex items-center justify-between px-5 pb-3">
         <div><h2 class="text-lg font-extrabold">Video settings</h2><p class="text-xs text-white/45">Everything for this stream, in one place</p></div>
         <button onclick={dismissSettings} class="grid h-10 w-10 place-items-center rounded-full bg-white/10" aria-label="Close"><X size={21} /></button>
       </div>
@@ -1267,7 +1266,7 @@
   .pulling-fullscreen .video-frame { will-change: transform; }
   .pulling-fullscreen .video-frame, .pulling-fullscreen .watch-details { transition: none; }
   .settings-backdrop { transition: opacity 240ms ease-out; }
-  .settings-sheet { inset-inline: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
+  .settings-sheet { left: 0; right: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
   .settings-sheet.sheet-dragging { transition: none; }
   .settings-body { max-height: calc(86vh - 5.25rem); touch-action: pan-y; }
 
@@ -1276,8 +1275,10 @@
     .player-top-bar { padding-top: max(0.75rem, var(--player-safe-top)); padding-right: max(0.75rem, var(--player-safe-right)); padding-left: max(0.75rem, var(--player-safe-left)); }
     .player-timeline { left: max(3rem, calc(var(--player-safe-left) + 1.5rem), 6vw); right: max(3rem, calc(var(--player-safe-right) + 1.5rem), 6vw); bottom: max(2.5rem, calc(var(--player-safe-bottom) + 1.25rem)); height: 3.5rem; padding: 0; }
     .timeline-controls { padding: 0; }
-    .settings-sheet { inset-block: 0; right: 0; left: auto; width: min(28rem, 48vw); max-height: none; border-radius: 1.25rem 0 0 1.25rem; transform: none !important; transition: none; }
-    .settings-body { max-height: calc(100vh - 5.75rem); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
-    .sheet-handle { display: none; }
+    /* Landscape keeps the SAME bottom sheet as portrait — a full-width slide-up panel, not a side
+       drawer. Only the height budget changes, because a landscape viewport is short. The side insets
+       clear the display cutout, which sits on a long edge once the phone is rotated. */
+    .settings-sheet { left: max(0px, var(--player-safe-left)); right: max(0px, var(--player-safe-right)); max-height: 90%; }
+    .settings-body { max-height: calc(90vh - 5.25rem); padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
   }
 </style>
