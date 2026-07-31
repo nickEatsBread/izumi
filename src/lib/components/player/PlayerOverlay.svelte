@@ -4,6 +4,7 @@
   import { listen } from '@tauri-apps/api/event'
   import { listenSafe } from '$lib/util/listen'
   import { invoke } from '@tauri-apps/api/core'
+  import { getCurrentWindow } from '@tauri-apps/api/window'
   import Controls from './Controls.svelte'
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
@@ -89,9 +90,42 @@
     // toggle play/pause. The panel tags itself `data-comments-panel` instead of stopPropagation
     // (which would break Svelte's delegated button clicks). See CommentsPanel.svelte.
     if ((e.target as HTMLElement)?.closest?.('[data-comments-panel]')) return
+    // A drag that ends over the window still delivers a click; moving the miniplayer must not
+    // also pause it.
+    if (pipDragged) { pipDragged = false; return }
     if (gmMode) poke()
     else cmd('cycle', ['pause'])
   }
+
+  // Desktop miniplayer: picture-in-picture unmounts the whole app chrome, including the
+  // titlebar that carries the window's only drag region — so the miniplayer had nothing left to
+  // grab and sat wherever it was docked. Hand the press to the native window drag once the
+  // pointer has actually travelled; a stationary press still falls through to the click above,
+  // so tap-to-pause is unaffected.
+  const PIP_DRAG_SLOP = 4
+  let pipDragOrigin: { x: number; y: number } | null = null
+  let pipDragged = false
+  function pipDragDown(e: PointerEvent) {
+    // Cleared here rather than after the drag: the native move loop can swallow both the pointerup
+    // and the click, and a stale latch would eat the NEXT tap instead.
+    pipDragged = false
+    if (!$pictureInPicture || e.button !== 0 || !e.isPrimary) return
+    // The overlay's own controls own their presses; dragging off a button would be a surprise.
+    if ((e.target as HTMLElement)?.closest?.('button')) return
+    pipDragOrigin = { x: e.clientX, y: e.clientY }
+  }
+  function pipDragMove(e: PointerEvent) {
+    const origin = pipDragOrigin
+    if (!origin) return
+    if (
+      Math.abs(e.clientX - origin.x) < PIP_DRAG_SLOP &&
+      Math.abs(e.clientY - origin.y) < PIP_DRAG_SLOP
+    ) return
+    pipDragOrigin = null
+    pipDragged = true
+    void getCurrentWindow().startDragging().catch(() => { pipDragged = false })
+  }
+  function endPipDrag() { pipDragOrigin = null }
 
   // ONE loading boolean, never sticky: true while bringing up the first frame, on
   // a cache stall, or mid-seek — but never while the user paused or at real EOF.
@@ -745,6 +779,10 @@
   class:left-14={!$fullscreen && !gmMode && !$pictureInPicture}
   class:left-0={$fullscreen || gmMode || $pictureInPicture}
   onclick={onOverlayTap}
+  onpointerdown={pipDragDown}
+  onpointermove={pipDragMove}
+  onpointerup={endPipDrag}
+  onpointercancel={endPipDrag}
   role="presentation"
 >
   <!-- Loading/buffering. Black backdrop ONLY before the first frame (covers the
