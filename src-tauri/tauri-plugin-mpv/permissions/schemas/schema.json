@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the mpv_auto_pip command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-auto-pip",
+          "markdownDescription": "Enables the mpv_auto_pip command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_auto_pip command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-auto-pip",
+          "markdownDescription": "Denies the mpv_auto_pip command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_brightness command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-brightness",
@@ -415,6 +427,18 @@
           "markdownDescription": "Denies the mpv_load command without any pre-configured scope."
         },
         {
+          "description": "Enables the mpv_media_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-media-session",
+          "markdownDescription": "Enables the mpv_media_session command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_media_session command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-media-session",
+          "markdownDescription": "Denies the mpv_media_session command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_pip command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-pip",
@@ -425,6 +449,18 @@
           "type": "string",
           "const": "deny-mpv-pip",
           "markdownDescription": "Denies the mpv_pip command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mpv_request_notifications command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-request-notifications",
+          "markdownDescription": "Enables the mpv_request_notifications command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_request_notifications command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-request-notifications",
+          "markdownDescription": "Denies the mpv_request_notifications command without any pre-configured scope."
         },
         {
           "description": "Enables the mpv_set command without any pre-configured scope.",
@@ -511,10 +547,10 @@
           "markdownDescription": "Denies the removeListener command without any pre-configured scope."
         },
         {
-          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`",
+          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`"
+          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`"
         }
       ]
     }

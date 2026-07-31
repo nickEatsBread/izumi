@@ -106,6 +106,10 @@ export const seekDuration = persisted<number>('player-seek-seconds', 10)
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
 /** Burn the currently displayed subtitle track into frames captured for GIF recordings. */
 export const gifIncludeSubtitles = persisted<boolean>('player-gif-include-subtitles', false)
+/** Android: leaving the app (home / recents) while a video is playing shrinks it into the
+ *  miniplayer instead of stopping, the way every mobile video app behaves. Default on; turn it off
+ *  to keep the episode on the watch page and just leave. */
+export const androidAutoPip = persisted<boolean>('android-auto-pip', true)
 /** Keep the screen awake (no dim/sleep) while a video is playing — fixes the Steam Deck
  *  turning the screen off mid-episode. Released when paused / stopped, so battery-saver still
  *  kicks in when you're not watching. Default on. */

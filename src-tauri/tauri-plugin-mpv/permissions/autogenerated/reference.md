@@ -10,6 +10,9 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-set`
 - `allow-mpv-stop`
 - `allow-mpv-pip`
+- `allow-mpv-auto-pip`
+- `allow-mpv-media-session`
+- `allow-mpv-request-notifications`
 - `allow-mpv-viewport`
 - `allow-mpv-fullscreen`
 - `allow-mpv-transform`
@@ -31,6 +34,32 @@ Allow controlling the embedded libmpv player.
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`mpv:allow-mpv-auto-pip`
+
+</td>
+<td>
+
+Enables the mpv_auto_pip command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-auto-pip`
+
+</td>
+<td>
+
+Denies the mpv_auto_pip command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>
@@ -295,6 +324,32 @@ Denies the mpv_load command without any pre-configured scope.
 <tr>
 <td>
 
+`mpv:allow-mpv-media-session`
+
+</td>
+<td>
+
+Enables the mpv_media_session command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-media-session`
+
+</td>
+<td>
+
+Denies the mpv_media_session command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `mpv:allow-mpv-pip`
 
 </td>
@@ -314,6 +369,32 @@ Enables the mpv_pip command without any pre-configured scope.
 <td>
 
 Denies the mpv_pip command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-request-notifications`
+
+</td>
+<td>
+
+Enables the mpv_request_notifications command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-request-notifications`
+
+</td>
+<td>
+
+Denies the mpv_request_notifications command without any pre-configured scope.
 
 </td>
 </tr>

@@ -2,9 +2,9 @@ use tauri::{command, AppHandle, Runtime};
 
 use crate::{
     models::{
-        BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, GifSaveRequest,
-        GifStartRequest, HapticRequest, LoadRequest, SetRequest, ThumbRequest, TransformRequest,
-        ViewportRequest,
+        AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
+        GifSaveRequest, GifStartRequest, HapticRequest, LoadRequest, MediaSessionRequest,
+        SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -43,6 +43,29 @@ pub(crate) async fn mpv_stop<R: Runtime>(app: AppHandle<R>) -> Result<()> {
 #[command]
 pub(crate) async fn mpv_pip<R: Runtime>(app: AppHandle<R>) -> Result<()> {
     app.mpv().pip()
+}
+
+#[command]
+pub(crate) async fn mpv_auto_pip<R: Runtime>(
+    app: AppHandle<R>,
+    payload: AutoPipRequest,
+) -> Result<()> {
+    app.mpv().auto_pip(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_media_session<R: Runtime>(
+    app: AppHandle<R>,
+    payload: MediaSessionRequest,
+) -> Result<()> {
+    app.mpv().media_session(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_request_notifications<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<serde_json::Value> {
+    app.mpv().request_notifications()
 }
 
 #[command]

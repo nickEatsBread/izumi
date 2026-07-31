@@ -105,6 +105,32 @@ fn default_thumb_width() -> u32 {
     320
 }
 
+/// Arm (or disarm) automatic picture-in-picture when the user leaves the app while playing.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AutoPipRequest {
+    pub enabled: bool,
+}
+
+/// Publish (or tear down) the lock-screen / notification-shade media transport.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaSessionRequest {
+    /// False removes the session and its notification.
+    pub enabled: bool,
+    /// Primary line — the series.
+    #[serde(default)]
+    pub title: String,
+    /// Secondary line — the episode.
+    #[serde(default)]
+    pub subtitle: String,
+    /// Poster URL, fetched natively for the transport artwork.
+    pub artwork: Option<String>,
+    #[serde(default)]
+    pub has_prev: bool,
+    #[serde(default)]
+    pub has_next: bool,
+}
+
 /// Begin capturing GIF frames from the live core.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -179,5 +205,32 @@ mod tests {
     fn fullscreen_request_deserializes() {
         let r: FullscreenRequest = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
         assert!(r.enabled);
+    }
+
+    #[test]
+    fn auto_pip_request_deserializes() {
+        let r: AutoPipRequest = serde_json::from_str(r#"{"enabled":false}"#).unwrap();
+        assert!(!r.enabled);
+    }
+
+    #[test]
+    fn media_session_request_camel_case() {
+        let j = r#"{"enabled":true,"title":"Frieren","subtitle":"Episode 4","artwork":"https://x/p.jpg","hasPrev":true,"hasNext":false}"#;
+        let r: MediaSessionRequest = serde_json::from_str(j).unwrap();
+        assert!(r.enabled);
+        assert_eq!(r.title, "Frieren");
+        assert_eq!(r.subtitle, "Episode 4");
+        assert_eq!(r.artwork.as_deref(), Some("https://x/p.jpg"));
+        assert!(r.has_prev);
+        assert!(!r.has_next);
+    }
+
+    #[test]
+    fn media_session_request_teardown_defaults() {
+        let r: MediaSessionRequest = serde_json::from_str(r#"{"enabled":false}"#).unwrap();
+        assert!(!r.enabled);
+        assert!(r.title.is_empty());
+        assert_eq!(r.artwork, None);
+        assert!(!r.has_next);
     }
 }

@@ -2,5 +2,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- INTERNET is declared in the app manifest; VIBRATE backs the player's haptic feedback. -->
     <uses-permission android:name="android.permission.VIBRATE" />
-    <application />
+    <!-- Playback survives the screen going off / the app leaving the foreground: the media
+         notification is only useful if the thing it controls is still running. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Runtime-requested on API 33+; without it the media notification (and therefore the
+         lock-screen transport) is suppressed. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application>
+        <service
+            android:name="app.izumi.mpv.PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+    </application>
 </manifest>

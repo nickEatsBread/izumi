@@ -102,6 +102,7 @@ export const androidPipActive = writable(false)
 let progressSub: PluginListener | undefined
 let eventSub: PluginListener | undefined
 let pipSub: PluginListener | undefined
+let mediaSub: PluginListener | undefined
 /** Start the single observed-property subscription that keeps `mpvState` current. Idempotent;
  *  lives for the app session (the plugin core is recreated per play, the JS listener persists). */
 export async function startMpvEvents(): Promise<void> {
@@ -168,6 +169,14 @@ export async function startMpvEvents(): Promise<void> {
       androidPipActive.set((e as { active?: unknown })?.active === true)
     })
   }
+  if (!mediaSub) {
+    mediaSub = await addPluginListener('mpv', 'media', (e: unknown) => {
+      const action = (e as { action?: unknown })?.action
+      if (action === 'next' || action === 'prev' || action === 'stop') {
+        mediaActionHandler?.(action)
+      }
+    })
+  }
 }
 
 export async function mpvLoad(p: MpvLoad): Promise<void> {
@@ -216,6 +225,67 @@ export async function mpvStop(): Promise<void> {
 
 /** Enter Android picture-in-picture. Video keeps rendering into the SurfaceView in the PIP window. */
 export const mpvPip = () => invoke('plugin:mpv|mpv_pip')
+
+/**
+ * Arm/disarm automatic picture-in-picture. On Android 12+ the system itself shrinks the app into
+ * the miniplayer on the home/recents gesture; older releases fall back to a best-effort request
+ * from the activity's pause. Only takes effect while something is actually playing.
+ */
+export const setAndroidAutoPip = (enabled: boolean) =>
+  invoke('plugin:mpv|mpv_auto_pip', { payload: { enabled } }).catch(() => {})
+
+/** Now-playing identity for the lock-screen / notification-shade transport. */
+export interface AndroidMediaSession {
+  /** False tears the transport down (playback stopped). */
+  enabled: boolean
+  /** Primary line — the series. */
+  title?: string
+  /** Secondary line — the episode. */
+  subtitle?: string
+  /** Poster URL, fetched natively for the transport artwork. */
+  artwork?: string | null
+  hasPrev?: boolean
+  hasNext?: boolean
+}
+
+/**
+ * Publish (or remove) the system media transport. The scrubber the user drags in the notification
+ * is drawn by Android from this session, not by us — the native side keeps its position/duration
+ * current from the same mpv observers that feed `mpvState`.
+ */
+export const setAndroidMediaSession = (p: AndroidMediaSession) =>
+  invoke('plugin:mpv|mpv_media_session', {
+    payload: {
+      enabled: p.enabled,
+      title: p.title ?? '',
+      subtitle: p.subtitle ?? '',
+      artwork: p.artwork ?? null,
+      hasPrev: p.hasPrev === true,
+      hasNext: p.hasNext === true,
+    },
+  }).catch(() => {})
+
+/** Ask for POST_NOTIFICATIONS (API 33+). Denied means the media transport stays hidden; playback
+ *  itself is unaffected, so this never blocks. */
+export async function requestAndroidNotifications(): Promise<boolean> {
+  try {
+    const r = (await invoke('plugin:mpv|mpv_request_notifications')) as { granted?: boolean }
+    return r?.granted === true
+  } catch {
+    return false
+  }
+}
+
+/** What the notification / lock-screen transport asked for. Play/pause and seeking are answered
+ *  natively (they must work even when Android has frozen the WebView); these three need the app's
+ *  own episode logic. */
+export type AndroidMediaAction = 'next' | 'prev' | 'stop'
+
+let mediaActionHandler: ((action: AndroidMediaAction) => void) | null = null
+/** Register the player's handler for transport buttons. Pass null on teardown. */
+export function setAndroidMediaHandler(fn: ((action: AndroidMediaAction) => void) | null) {
+  mediaActionHandler = fn
+}
 
 // --- GIF recording (embedded full flavor) ---
 // Frames come straight out of the live core as JPEGs (Kotlin), Rust turns them into a GIF, then

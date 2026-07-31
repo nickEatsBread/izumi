@@ -5,9 +5,9 @@ use tauri::{
 };
 
 use crate::models::{
-    BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest, GifSaveRequest,
-    GifStartRequest, HapticRequest, LoadRequest, SetRequest, ThumbRequest, TransformRequest,
-    ViewportRequest,
+    AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
+    GifSaveRequest, GifStartRequest, HapticRequest, LoadRequest, MediaSessionRequest, SetRequest,
+    ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -53,6 +53,25 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn pip(&self) -> crate::Result<()> {
         self.0.run_mobile_plugin("pip", ()).map_err(Into::into)
+    }
+
+    pub fn auto_pip(&self, payload: AutoPipRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("autoPip", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn media_session(&self, payload: MediaSessionRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("mediaSession", payload)
+            .map_err(Into::into)
+    }
+
+    /// Resolves `{ granted }` — POST_NOTIFICATIONS, without which the media transport is hidden.
+    pub fn request_notifications(&self) -> crate::Result<serde_json::Value> {
+        self.0
+            .run_mobile_plugin("requestNotifications", ())
+            .map_err(Into::into)
     }
 
     pub fn viewport(&self, payload: ViewportRequest) -> crate::Result<serde_json::Value> {
