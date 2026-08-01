@@ -319,3 +319,9 @@ export const downloadAudio = persisted<'any' | 'sub' | 'dub'>('download-audio', 
 export const downloadCodec = persisted<'any' | 'h264' | 'h265' | 'av1'>('download-codec', 'any')
 /** Wait after the scheduled air time so release/indexing providers can catch up. */
 export const autoDownloadDelayMinutes = persisted<number>('auto-download-delay-minutes', 15)
+
+/** Opt-in native notifications for upcoming episodes. Permission is requested only from the
+ * explicit settings action; boot never prompts. */
+export const airingNotifications = persisted<boolean>('airing-notifications', false)
+export const airingNotificationLeadMinutes = persisted<number>('airing-notification-lead-minutes', 0)
+export const scheduledAiringNotificationIds = persisted<number[]>('scheduled-airing-notification-ids', [])

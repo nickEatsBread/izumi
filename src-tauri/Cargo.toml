@@ -41,6 +41,7 @@ tauri-plugin-opener = "2"
 # Platform/OS detection (used to branch behavior on Android vs desktop). Registered
 # for all platforms.
 tauri-plugin-os = "2"
+tauri-plugin-notification = "2"
 # In-tree plugin: launch an external Android video player via ACTION_VIEW (no-op on desktop).
 tauri-plugin-extplayer = { path = "tauri-plugin-extplayer" }
 serde = { version = "1", features = ["derive", "rc"] }

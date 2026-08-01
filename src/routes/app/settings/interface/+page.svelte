@@ -1,7 +1,16 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type CwDismissAction } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type CwDismissAction } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
+  import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+
+  let notificationError = $state('')
+  async function toggleAiringNotifications() {
+    notificationError = ''
+    const enabled = await setAiringNotificationsEnabled(!$airingNotifications)
+    if (!enabled) notificationError = 'Notification permission was not granted.'
+  }
 
   const cwActions: { value: CwDismissAction; label: string; hint: string }[] = [
     { value: 'none', label: 'Do nothing', hint: 'Just hide it from the row.' },
@@ -158,6 +167,21 @@
     </div>
 
     <div class="space-y-3">
+      <div data-setting-key="airing-notifications">
+        <Toggle label="Episode airing notifications" desc="Notify you when an episode in your watch history airs. Off by default; enabling asks for system permission." value={$airingNotifications} onToggle={toggleAiringNotifications} />
+        {#if $airingNotifications}
+          <label class="mt-2 flex items-center justify-between gap-3 pl-3 text-sm">
+            <span class="font-bold">Notify me</span>
+            <SelectMenu value={String($airingNotificationLeadMinutes)} onChange={(value) => ($airingNotificationLeadMinutes = Number(value))} ariaLabel="Airing notification timing" options={[
+              { value: '0', label: 'When it airs' },
+              { value: '10', label: '10 minutes before' },
+              { value: '30', label: '30 minutes before' },
+              { value: '60', label: '1 hour before' },
+            ]} />
+          </label>
+        {/if}
+        {#if notificationError}<p role="alert" class="mt-1 text-xs text-amber-400">{notificationError}</p>{/if}
+      </div>
       <label class="flex items-center justify-between rounded-md border border-border p-3">
         <div>
           <div class="font-bold">UI scale</div>
