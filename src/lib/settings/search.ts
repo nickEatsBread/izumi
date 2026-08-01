@@ -17,6 +17,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Audio language', category: 'Player', href: '/app/settings/player', keywords: 'Japanese English dub' },
   { title: 'Subtitle language', category: 'Player', href: '/app/settings/player', keywords: 'captions default language off' },
   { title: 'Auto-play next episode', category: 'Player', href: '/app/settings/player', anchored: true, desktopOnly: true },
+  { title: 'Discord Rich Presence', category: 'Player', href: '/app/settings/player', keywords: 'discord rpc activity status sharing privacy', anchored: true, desktopOnly: true },
   { title: 'Keep screen awake while playing', category: 'Player', href: '/app/settings/player', keywords: 'sleep dim battery', anchored: true, desktopOnly: true },
   { title: 'Binge next episode (preload)', category: 'Player', href: '/app/settings/player', keywords: 'buffer instant next', anchored: true, desktopOnly: true },
   { title: 'Auto-skip openings & endings', category: 'Player', href: '/app/settings/player', keywords: 'op ed recap aniskip', anchored: true, desktopOnly: true },

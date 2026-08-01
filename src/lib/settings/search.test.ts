@@ -21,7 +21,12 @@ describe('settings search', () => {
 
   it('hides controls that do not exist in the Android UI', () => {
     expect(searchSettings('player cache', true)).toHaveLength(0)
+    expect(searchSettings('discord rpc', true)).toHaveLength(0)
     expect(searchSettings('title language', true)[0]?.title).toBe('Title language')
+  })
+
+  it('finds the desktop Discord toggle by RPC terminology', () => {
+    expect(searchSettings('discord rpc')[0]?.title).toBe('Discord Rich Presence')
   })
 
   it('hides Android-only controls on desktop', () => {
