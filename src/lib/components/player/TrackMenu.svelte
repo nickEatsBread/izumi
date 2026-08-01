@@ -5,9 +5,8 @@
   import { trackMenuOpen, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { searchOnlineSubtitles } from '$lib/stremio/play'
-  import { subDlApiKey, openSubtitlesToken } from '$lib/settings/ui'
-  import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
-  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice } from './online-subs'
+  import { openSubtitlesToken } from '$lib/settings/ui'
+  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel, langName } from '$lib/player/track-label'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
@@ -118,11 +117,11 @@
     try {
       await invoke('player_add_subtitle', {
         provider: c.provider,
-        url: c.download?.zipUrl,
+        url: candidateDownloadUrl(c),
         fileId: c.download?.fileId,
         lang: c.lang ?? 'und',
         title: candidateTitle(c),
-        apiKey: c.provider === 'subdl' ? get(subDlApiKey) : OPEN_SUBS_API_KEY,
+        apiKey: candidateApiKey(c.provider),
         token: get(openSubtitlesToken),
       })
       tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]

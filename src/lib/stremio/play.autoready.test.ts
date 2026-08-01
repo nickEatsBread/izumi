@@ -46,6 +46,7 @@ vi.mock('$lib/settings/ui', () => ({
   autoSelectSource: readable(false),
   preferredQuality: readable('any'),
   skipFiller: readable(false),
+  seadexAnnotations: readable(true),
   autoplayNext: readable(false),
   enableExternalPlayer: readable(false),
   externalPlayerPath: readable(''),
