@@ -289,13 +289,19 @@ impl PlayerHandle {
             return Ok(());
         }
 
-        // First launch: build a fresh mpv core. A real window handle (Windows HWND /
-        // container, always > 0) embeds into it; wid <= 0 (non-Windows, no embed yet)
-        // means "no host window" → create_mpv(None) so mpv opens its OWN fullscreen
-        // window. Passing Some(0) here told mpv to embed into X-window 0 (the root),
-        // which aborts libmpv init on Wayland → the command panicked → invoke rejected
-        // with null.
-        let mpv = create_mpv(if wid > 0 { Some(wid) } else { None }).map_err(|e| e.to_string())?;
+        // First launch: build a fresh mpv core. Any non-zero handle (Windows HWND or
+        // container child, X11 container id) embeds into it; 0 is the ONLY "no host
+        // window" sentinel any caller produces (non-Windows, no embed yet) → that
+        // alone maps to create_mpv(None) so mpv opens its OWN fullscreen window.
+        // Passing Some(0) here told mpv to embed into X-window 0 (the root), which
+        // aborts libmpv init on Wayland → the command panicked → invoke rejected with
+        // null. The test must be `!= 0` and not `> 0`: a Windows HWND is a pointer
+        // widened through isize, so an allocation with the top bit set arrives here
+        // NEGATIVE, and `> 0` silently dropped the embed and opened a SECOND
+        // fullscreen mpv window. (mpv's own handling of a negative wid on Windows is
+        // still an open upstream bug, so such a handle may need a fix inside mpv too —
+        // that is not something we can work around from this side.)
+        let mpv = create_mpv(if wid != 0 { Some(wid) } else { None }).map_err(|e| e.to_string())?;
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
