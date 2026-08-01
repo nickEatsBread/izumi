@@ -16,13 +16,20 @@
 <!-- Yields to the caching screen: once that is up, debrid genuinely is the wait, and two
      full-screen overlays would fight over the same z-order. -->
 {#if c && !$debridCaching}
-  <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black" transition:fade={{ duration: $gameMode ? 0 : 160 }}>
+  <div
+    class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
+    onclick={() => c?.cancel()}
+    onkeydown={(e) => e.key === 'Escape' && c?.cancel()}
+    role="presentation"
+    transition:fade={{ duration: $gameMode ? 0 : 160 }}
+  >
     {#if backdrop}
       <!-- Desktop blurs this static image. Game mode's loading-backdrop rule removes the filter:
            animating over a full-screen filtered layer makes Deck WebKit repaint it every frame. -->
       <img src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
     {/if}
-    <div class="relative">
+    <button data-focusable onclick={(e) => { e.stopPropagation(); c?.cancel() }} class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white" aria-label="Close">✕</button>
+    <div class="relative" onclick={(e) => e.stopPropagation()} role="presentation">
       <SourceLoader title={c.title} caption="Connecting" detail={c.detail} onCancel={c.cancel} />
     </div>
   </div>
