@@ -13,14 +13,15 @@
   import { inputType } from '$lib/nav'
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
+  import { m } from '$lib/paraglide/messages.js'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
-    { href: '/app/home', icon: Home, label: 'Home', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
-    { href: '/app/schedule', icon: Calendar, label: 'Schedule', anim: 'group-hover:animate-[swing_0.5s_ease]' },
-    { href: '/app/search', icon: Search, label: 'Search', anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
-    { href: '/app/downloads', icon: Download, label: 'Downloads', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
-    { href: '/app/watch', icon: Users, label: 'Watch Together', anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
-    { href: '/app/cloud', icon: Cloud, label: 'Cloud', anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
+    { href: '/app/home', icon: Home, label: m.nav_home(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
+    { href: '/app/schedule', icon: Calendar, label: m.nav_schedule(), anim: 'group-hover:animate-[swing_0.5s_ease]' },
+    { href: '/app/search', icon: Search, label: m.nav_search(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
+    { href: '/app/downloads', icon: Download, label: m.nav_downloads(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
+    { href: '/app/watch', icon: Users, label: m.nav_watch_together(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
+    { href: '/app/cloud', icon: Cloud, label: m.nav_cloud(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
   ]
   const name = $derived($anilistUserName || $malUserName || $anilistUser || $malUser)
   const avatarUrl = $derived($anilistUserAvatar || $malUserAvatar)
@@ -73,7 +74,7 @@
      class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 overflow-hidden py-3 pt-9 transition-[width] duration-200 ease-out
        {open ? 'w-[200px]' : 'w-14'} {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing ? '' : 'drop-shadow-md'}">
   <!-- Logo: NOT a d-pad/keyboard nav stop (it's just the brand); still mouse-clickable → Home. -->
-  <a href="/app/home" aria-label="Home" tabindex={-1} class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3">
+  <a href="/app/home" aria-label={m.nav_home()} tabindex={-1} class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3">
     <span class="grid w-8 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110"><Logo /></span>
     <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
   </a>
@@ -92,15 +93,15 @@
   <!-- Spacer pushes Settings + profile to the bottom. -->
   <div class="flex-1"></div>
 
-  <a href="/app/settings" title="Settings" data-focusable={df} tabindex={tab}
+  <a href="/app/settings" title={m.nav_settings()} data-focusable={df} tabindex={tab}
      class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground
        {active('/app/settings') ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
     {#if active('/app/settings')}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-theme"></span>{/if}
     <span class="grid w-8 shrink-0 place-items-center"><Settings size={20} class="group-hover:animate-[spin_0.6s_ease]" /></span>
-    <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">Settings</span>
+    <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_settings()}</span>
   </a>
 
-  <a href="/app/settings/accounts" title={name ? name : 'Sign in'} data-focusable={df} tabindex={tab}
+  <a href="/app/settings/accounts" title={name ? name : m.nav_sign_in()} data-focusable={df} tabindex={tab}
      class="group mt-1 flex h-12 shrink-0 items-center gap-3 rounded-md pl-3 text-muted-foreground transition-colors hover:text-foreground">
     <span class="grid w-8 shrink-0 place-items-center">
       {#if name}
@@ -114,6 +115,6 @@
         <span class="grid h-8 w-8 place-items-center rounded-full bg-secondary transition group-hover:bg-accent"><LogIn size={16} /></span>
       {/if}
     </span>
-    <span class="max-w-[140px] truncate whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{name || 'Sign in'}</span>
+    <span class="max-w-[140px] truncate whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{name || m.nav_sign_in()}</span>
   </a>
 </nav>

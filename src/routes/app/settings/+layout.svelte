@@ -8,6 +8,7 @@
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import * as h from '$lib/haptics'
   import { fly } from 'svelte/transition'
+  import { m } from '$lib/paraglide/messages.js'
 
   let { children } = $props()
 
@@ -49,7 +50,7 @@
   const childTitle = $derived.by(() => {
     const p = $page.url.pathname
     const hit = Object.keys(childTitles).find((k) => p === k || p.startsWith(k + '/'))
-    return hit ? childTitles[hit] : 'Settings'
+    return hit ? childTitles[hit] : m.nav_settings()
   })
 
   // Search results for shared Toggle rows carry a stable key. Once the destination page has
@@ -85,12 +86,12 @@
     <!-- Mobile index: the grouped list, full width. -->
     <div class="p-4">
       <div class="mb-4 flex items-center justify-between px-1">
-        <h1 class="text-2xl font-black">Settings</h1>
+        <h1 class="text-2xl font-black">{m.nav_settings()}</h1>
         <SettingsSearch compact />
       </div>
       <SettingsNav />
       <div class="mt-6 space-y-0.5 px-1 text-xs text-muted-foreground">
-        {#if appVersion}<div>Client v{appVersion}</div>{/if}
+        {#if appVersion}<div>{m.common_client_version({ version: appVersion })}</div>{/if}
         {#if osLine}<div>{osLine}</div>{/if}
       </div>
     </div>
@@ -99,7 +100,7 @@
     <div class="min-h-screen">
       <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur"
            style="padding-top:max(0.5rem,env(safe-area-inset-top))">
-        <a href="/app/settings" data-focusable onclick={() => h.tap()} aria-label="Back to settings"
+        <a href="/app/settings" data-focusable onclick={() => h.tap()} aria-label={m.common_back_to_settings()}
            class="grid h-10 w-10 place-items-center rounded-full transition-colors active:bg-accent">
           <ChevronLeft size={22} />
         </a>
@@ -115,11 +116,11 @@
   <!-- Desktop: nav rail + content side-by-side (unchanged). -->
   <div class="flex min-h-screen flex-row">
     <aside class="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-border bg-background p-4">
-      <h1 class="mb-3 px-3 text-2xl font-black">Settings</h1>
+      <h1 class="mb-3 px-3 text-2xl font-black">{m.nav_settings()}</h1>
       <div class="mb-4 px-1"><SettingsSearch /></div>
       <SettingsNav />
       <div class="mt-auto space-y-0.5 px-3 pt-6 text-xs text-muted-foreground">
-        {#if appVersion}<div>Client v{appVersion}</div>{/if}
+        {#if appVersion}<div>{m.common_client_version({ version: appVersion })}</div>{/if}
         {#if osLine}<div>{osLine}</div>{/if}
       </div>
     </aside>
