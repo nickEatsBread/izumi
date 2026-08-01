@@ -475,6 +475,9 @@ export const getVolume = async () => Number(await mpvGet('volume')) || 0
 /** Screen brightness 0..1, or -1 to restore system/auto brightness. */
 export const setBrightness = (value: number) =>
   invoke('plugin:mpv|mpv_brightness', { payload: { value } }).catch(() => {})
+/** Keep Android's display awake while a decoded video frame is actively playing. */
+export const setAndroidKeepScreenAwake = (enabled: boolean) =>
+  invoke('plugin:mpv|mpv_keep_screen_awake', { payload: { enabled } }).catch(() => {})
 /** Short haptic pulse (ms). */
 export const haptic = (ms: number) => invoke('plugin:mpv|mpv_haptic', { payload: { ms } }).catch(() => {})
 
