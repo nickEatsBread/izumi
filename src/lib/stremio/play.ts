@@ -57,7 +57,7 @@ import { markDead } from './dead-sources'
 import { shareableSource } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
-  autoplayNext, autoSelectCountdown, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
+  autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   torrentDownloadLimitMbps, torrentUploadLimitMode, torrentUpstreamCapacityMbps,
 } from '$lib/settings/ui'
@@ -1272,13 +1272,10 @@ export async function resumeEpisode(media: Media, episode: number, onState: (s: 
     cancel: () => { connecting.set(null); cancelResolve() },
   })
   const current = await fetchMediaById(media.id).catch(() => media)
-  // Replaying the remembered source skips the picker entirely, which is only ever right when the
-  // user has opted OUT of choosing. It used to be ungated: a countdown is a request for a review
-  // window and this removed it, and with auto-select off altogether the source was still picked
-  // for them. Everything else falls through to the picker, whose auto-pick already weights the
-  // previous episode's group heavily — so the same release usually still wins, just visibly.
-  const skipPicker = get(autoSelectSource) && !get(autoSelectCountdown)
-  const remembered = skipPicker ? get(sourceOrigins)[current.id] : undefined
+  // "Continue" is an explicit request for continuity, independent of the general source-picker
+  // mode. Always try the last successful provider/release first; countdown/manual preferences only
+  // govern the recovery picker when that remembered source is missing or can no longer play.
+  const remembered = get(sourceOrigins)[current.id]
   if (remembered) {
     try {
       const stream = await resolveRememberedSource(current, episode, remembered)
