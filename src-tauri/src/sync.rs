@@ -1234,11 +1234,16 @@ pub async fn sync_read(
     while let Some(entry) = entries.next().await {
         let entry = entry.map_err(|e| e.to_string())?;
         let key = String::from_utf8(entry.key().to_vec()).map_err(|_| "invalid sync record key")?;
-        let bytes = runtime
-            .blobs()
-            .get_bytes(entry.content_hash())
-            .await
-            .map_err(|e| e.to_string())?;
+        // A peer's key replicates before its content does, and that content never
+        // arrives if the peer leaves the group first. Skip those entries so one
+        // unreadable record cannot discard every other device's records too.
+        let bytes = match runtime.blobs().get_bytes(entry.content_hash()).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                eprintln!("[sync] skipped sync record {key}: {error}");
+                continue;
+            }
+        };
         let payload =
             String::from_utf8(bytes.to_vec()).map_err(|_| "invalid sync record payload")?;
         if let Some(device_id) = key.strip_prefix(&format!("{category}/")) {
