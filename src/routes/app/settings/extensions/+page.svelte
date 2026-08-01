@@ -13,7 +13,7 @@
   import { langName } from '$lib/player/track-label'
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
-  import { providerList, providerMeta } from '$lib/stremio/debrid'
+  import { accountInfo, providerList, providerMeta, type DebridAccountInfo } from '$lib/stremio/debrid'
   import Boxes from 'lucide-svelte/icons/boxes'
   import Puzzle from 'lucide-svelte/icons/puzzle'
   import Search from 'lucide-svelte/icons/search'
@@ -21,6 +21,21 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   const current = $derived(providerMeta($debridProvider))
+  let account = $state<DebridAccountInfo | null>(null)
+  let accountError = $state('')
+  let accountLoading = $state(false)
+  async function refreshAccount() {
+    if (!$debridKey) { account = null; accountError = ''; return }
+    accountLoading = true
+    accountError = ''
+    try { account = await accountInfo($debridProvider, $debridKey) }
+    catch (error) { account = null; accountError = error instanceof Error ? error.message : String(error) }
+    finally { accountLoading = false }
+  }
+  const accountDate = (value?: number) => value
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value)
+    : ''
+  $effect(() => { void $debridProvider; void $debridKey; account = null; accountError = '' })
 
   let extInput = $state('')
   let localPackages = $state<InstalledExtensionPackage[]>([])
@@ -189,6 +204,39 @@
       <input type="password" bind:value={$debridKey} data-focusable placeholder={current?.credential === 'userpass' ? 'username:password' : `Your ${current?.name ?? 'debrid'} token`} class="rounded-md bg-input px-3 py-2 text-sm" />
       <span class="text-xs text-muted-foreground">From {current?.keyHint ?? 'your debrid account'}. Turns extension torrent results into cached streams.</span>
     </label>
+
+    {#if $debridKey}
+      <section class="mb-6 rounded-lg border border-border bg-card p-4" aria-label="Debrid account usage">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h3 class="text-sm font-black">Account & usage</h3>
+            <p class="text-xs text-muted-foreground">Live data from {current?.name ?? 'your provider'}; fetched only when you ask.</p>
+          </div>
+          <button data-focusable onclick={refreshAccount} disabled={accountLoading}
+            class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent disabled:opacity-50">
+            {accountLoading ? 'Checking…' : account ? 'Refresh' : 'Check account'}
+          </button>
+        </div>
+        {#if account}
+          <dl class="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+            {#if account.username}<div><dt class="text-xs text-muted-foreground">Account</dt><dd class="truncate font-bold">{account.username}</dd></div>{/if}
+            {#if account.plan}<div><dt class="text-xs text-muted-foreground">Plan</dt><dd class="font-bold capitalize">{account.plan}</dd></div>{/if}
+            {#if account.premiumUntil}<div><dt class="text-xs text-muted-foreground">Premium until</dt><dd class="font-bold">{accountDate(account.premiumUntil)}</dd></div>{/if}
+            {#if account.points != null}<div><dt class="text-xs text-muted-foreground">Points</dt><dd class="font-bold">{account.points}</dd></div>{/if}
+          </dl>
+          {#if account.quotaUsed != null}
+            <div class="mt-3">
+              <div class="mb-1 flex justify-between text-xs"><span>Fair-use allowance</span><span>{Math.round(account.quotaUsed * 100)}% used</span></div>
+              <div class="h-2 overflow-hidden rounded-full bg-secondary" role="progressbar" aria-label="Fair-use allowance used" aria-valuenow={Math.round(account.quotaUsed * 100)} aria-valuemin="0" aria-valuemax="100">
+                <div class="h-full rounded-full bg-theme" style={`width:${Math.round(account.quotaUsed * 100)}%`}></div>
+              </div>
+            </div>
+          {/if}
+        {:else if accountError}
+          <p role="alert" class="mt-3 text-xs text-amber-400">{accountError}</p>
+        {/if}
+      </section>
+    {/if}
 
     <div class="mb-6 grid items-start gap-x-4 gap-y-4 sm:grid-cols-2">
       <label class="flex flex-col gap-1">

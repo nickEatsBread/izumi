@@ -1,6 +1,6 @@
 import { jfetch, form, magnetOf, hashOf, poll, VIDEO, JUNK, authError } from '../http'
 import { pickVideoFile } from '../episode-file'
-import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridAccountInfo } from '../types'
 
 // AllDebrid. Auto-selects files; ready = statusCode===4; the file link MUST be
 // unlocked. Envelope: { status:'success'|'error', data, error }.
@@ -101,12 +101,26 @@ export function adOwnedHashes(
 let adOwnedCache: { at: number; key: string; magnets: unknown } | undefined
 const AD_OWNED_TTL = 5 * 60_000
 
+export function adAccountInfo(user: { username?: string; isPremium?: boolean; isTrial?: boolean; premiumUntil?: number | string; fidelityPoints?: number }): DebridAccountInfo {
+  const until = Number(user.premiumUntil)
+  return {
+    username: user.username,
+    plan: user.isPremium ? 'premium' : user.isTrial ? 'trial' : 'free',
+    premiumUntil: until > 0 ? until * 1000 : undefined,
+    points: user.fidelityPoints,
+  }
+}
+
 export const alldebrid: DebridProvider = {
   id: 'alldebrid',
   name: 'AllDebrid',
   keyHint: 'alldebrid.com/apikeys',
   credential: 'apikey',
   cacheCheck: 'library',
+  async accountInfo(key) {
+    if (!key) throw new Error('No AllDebrid API key set.')
+    return adAccountInfo((await ad('/v4/user', key, '')).user ?? {})
+  },
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No AllDebrid API key set — add it in Settings → Extensions.')
     let id: string

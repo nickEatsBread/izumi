@@ -84,6 +84,15 @@ export interface DebridProviderMeta {
   cacheCheck: 'native' | 'library' | 'none'
 }
 
+/** Provider-neutral account snapshot for the settings dashboard. */
+export interface DebridAccountInfo {
+  username?: string
+  plan?: string
+  premiumUntil?: number // epoch milliseconds
+  quotaUsed?: number // 0..1 fair-use fraction
+  points?: number
+}
+
 export interface DebridProvider extends DebridProviderMeta {
   /** Resolve a torrent hash or magnet to a direct playable URL. MUST throw a
    *  user-facing Error on failure and NEVER leak the key in the message. */
@@ -105,4 +114,6 @@ export interface DebridProvider extends DebridProviderMeta {
    *  MUST NOT THROW: an auth failure is classified for its message and reported, but the caller
    *  receives an empty map. A bad key degrades badges; it must not break the picker. */
   checkCached?(key: string, hashes: string[]): Promise<Map<string, 'cached' | 'uncached'>>
+  /** Current subscription/quota snapshot. Called only from Settings. */
+  accountInfo?(key: string): Promise<DebridAccountInfo>
 }

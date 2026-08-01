@@ -1,7 +1,7 @@
 import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError, isArchiveName, isDecoy } from '../http'
 import { pickEpisodeVideo } from '../episode-file'
 import { selectSidecars, sidecarLanguage, sidecarTitle } from '../sidecar-subs'
-import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridSidecar, ResolveOpts } from '../types'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridSidecar, ResolveOpts, DebridAccountInfo } from '../types'
 
 // Real-Debrid. Flow: addMagnet → selectFiles(video ids, never `all`) [RD is the only one that
 // requires this] → poll info until 'downloaded' → pick the wanted episode (or largest video) →
@@ -329,12 +329,26 @@ async function resolveViaSingleFile(
   return await rdResolveSingleFile(key, hashOrMagnet, chosenId, opts)
 }
 
+export function rdAccountInfo(user: { username?: string; type?: string; premium?: number; expiration?: string; points?: number }): DebridAccountInfo {
+  const expiration = user.expiration ? Date.parse(user.expiration) : NaN
+  return {
+    username: user.username,
+    plan: user.type,
+    premiumUntil: Number.isFinite(expiration) ? expiration : (user.premium ? Date.now() + user.premium * 1000 : undefined),
+    points: user.points,
+  }
+}
+
 export const realdebrid: DebridProvider = {
   id: 'realdebrid',
   name: 'Real-Debrid',
   keyHint: 'real-debrid.com/apitoken',
   credential: 'apikey',
   cacheCheck: 'library',
+  async accountInfo(key) {
+    if (!key) throw new Error('No Real-Debrid API token set.')
+    return rdAccountInfo(await rd('GET', '/user', key))
+  },
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Extensions.')
     // Reuse an already-DOWNLOADED torrent for this hash instead of re-adding. A fresh addMagnet
