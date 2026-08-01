@@ -13,6 +13,7 @@
   import {
     loadMySets, classifyMine, isMine, hasMySources, emptyMySets, type MySets, type MineKind,
   } from '$lib/anilist/my-shows'
+  import { getScheduleInfoMany, scheduleTitles, type ScheduleInfo } from '$lib/anime/animeschedule'
   import { anilistUserName, malToken } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
   import { localHistory } from '$lib/player/history'
@@ -91,6 +92,24 @@
   const shownDays = $derived(view === 'mine' ? mineDays : days)
   const mineCount = $derived(mineDays.reduce((n, d) => n + d.length, 0))
 
+  // AnimeSchedule delay overlay, looked up ONLY for the viewer's own shows: a week of the global
+  // feed lists well over a hundred titles, and a break only matters for something you're actually
+  // following — so the public API sees a handful of requests instead of a hundred. Rendered in the
+  // All view too, since these are the same titles that get the Watching/Planning border.
+  let delayInfo = $state<Map<number, ScheduleInfo>>(new Map())
+  // Deduped by id: a show with two airings in the week is ONE title to look up, and the batch cap is
+  // a budget of titles — letting repeats eat it would silently drop later days off the overlay.
+  const mineMedia = $derived([...new Map(mineDays.flat().map((a) => [a.media.id, a.media])).values()])
+  $effect(() => {
+    const wanted = mineMedia
+    if (!wanted.length) return
+    let cancelled = false
+    getScheduleInfoMany(wanted.map((m) => ({ id: m.id, titles: scheduleTitles(m.title) })))
+      .then((map) => { if (!cancelled && map.size) delayInfo = map })
+    return () => { cancelled = true }
+  })
+  const infoOf = (m: Media): ScheduleInfo | null => delayInfo.get(m.id) ?? null
+
   // Today's column (local weekday) — only when the shown week IS the current week.
   const todayIdx = $derived(start === weekRange(new Date()).start ? (new Date().getDay() + 6) % 7 : -1)
   const isCurrentWeek = $derived(todayIdx >= 0)
@@ -165,7 +184,7 @@
   {#if showHint}
     <p class="mb-3 text-xs text-muted-foreground">L1 / R1 to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
   {/if}
-  <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={shownDays[selected]} {badgeOf} big />
+  <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={shownDays[selected]} {badgeOf} {infoOf} big />
 {/snippet}
 
 {#snippet mineEmpty()}
@@ -206,6 +225,6 @@
   {:else if layout === 'days' || $isMobile}
     {@render dayView(false)}
   {:else}
-    <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} headerOffset={$scheduleStickyHeader ? headerH : 0} />
+    <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} {infoOf} headerOffset={$scheduleStickyHeader ? headerH : 0} />
   {/if}
 {/if}

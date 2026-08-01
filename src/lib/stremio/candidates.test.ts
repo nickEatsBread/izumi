@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pickCandidates, pickBest } from './addon'
+import { RESOLUTION_POINTS } from './score'
 
 const row = (url: string, quality: string, extra: Record<string, unknown> = {}) =>
   ({ url, name: '[RD+] Addon', title: `[Group] Show - 01 (${quality})`, ...extra }) as never
@@ -55,6 +56,54 @@ describe('pickCandidates', () => {
     const bad = row('bad', '2160p')
     const candidates = pickCandidates([bad, good], 'any', undefined, (s) => s.url === 'bad')
     expect(candidates.map((s) => s.url)).toEqual(['good', 'bad'])
+  })
+})
+
+describe('curated best release', () => {
+  const HASH = 'a'.repeat(40)
+  const opts = { seadexHashes: new Set([HASH]) }
+  const curated = (q: string, extra: Record<string, unknown> = {}) =>
+    row(`curated-${q}`, q, { infoHash: HASH, ...extra })
+
+  // The mandated invariant, over the ladder rather than one hand-picked pair: an automatic pick
+  // must never hand back a lower tier than the one that was asked for because a human liked it.
+  // The pair whose gap happens to be widest proves nothing about the pair whose gap is 2.
+  for (const [i, [higher]] of RESOLUTION_POINTS.entries()) {
+    const lower = RESOLUTION_POINTS[i + 1]?.[0]
+    if (!lower) continue
+    it(`picks a plain ${higher}p over a curated ${lower}p when ${higher} was asked for`, () => {
+      const streams = [curated(`${lower}p`), row('plain', `${higher}p`)]
+      expect(pickBest(streams, String(higher), undefined, opts)?.url).toBe('plain')
+    })
+  }
+
+  it('leads within the tier that was asked for', () => {
+    const streams = [row('plain', '1080p', { title: '[Group] Show - 01 (1080p) 👤 900' }), curated('1080p')]
+    expect(pickBest(streams, '1080', undefined, opts)?.url).toBe('curated-1080p')
+  })
+
+  it('never outranks cache state', () => {
+    // The curated release is worth waiting for only if the user said so; a curated download still
+    // sorts below an instantly playable copy, exactly as the quality preference does.
+    const streams = [
+      { url: 'cached', name: '[RD+] Addon', title: '[Group] Show - 01 (1080p)' } as never,
+      { url: 'uncached', name: '[RD download] Addon', title: '[Group] Show - 01 (1080p)', infoHash: HASH } as never,
+    ]
+    expect(pickCandidates(streams, '1080', undefined, undefined, { ...opts, allowUncached: true })
+      .map((s) => s.url)).toEqual(['cached', 'uncached'])
+  })
+
+  it('decides on "any", where the user declined to name a tier at all', () => {
+    // With Quality on "any" the tier key is inert by construction, so this is the one case where
+    // curation orders across resolutions — and it is the case where the user asked it to.
+    const streams = [row('plain', '2160p'), curated('1080p')]
+    expect(pickBest(streams, 'any', undefined, opts)?.url).toBe('curated-1080p')
+    expect(pickBest(streams, 'any')?.url).toBe('plain')
+  })
+
+  it('matches the hash case-insensitively, as the addons report it', () => {
+    const streams = [row('plain', '1080p', { title: '[Group] Show - 01 (1080p) 👤 900' }), curated('1080p', { infoHash: HASH.toUpperCase() })]
+    expect(pickBest(streams, '1080', undefined, opts)?.url).toBe('curated-1080p')
   })
 })
 

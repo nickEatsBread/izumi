@@ -15,14 +15,16 @@ describe('Subtitles settings page', () => {
       'openSubtitlesStaySignedIn',
       'openSubtitlesCreds',
       'subDlApiKey',
+      'jimakuApiKey',
     ]) {
       expect(src).toContain(s)
     }
   })
 
-  it('renders a provider Toggle for OpenSubtitles and SubDL', () => {
+  it('renders a provider Toggle for OpenSubtitles, SubDL and Jimaku', () => {
     expect(src).toContain("value={hasProvider('opensubtitles')}")
     expect(src).toContain("value={hasProvider('subdl')}")
+    expect(src).toContain("value={hasProvider('jimaku')}")
   })
 
   it('connects via the opensubtitles_login command', () => {
@@ -43,6 +45,18 @@ describe('Subtitles settings page', () => {
   it('has a SubDL API key secret field', () => {
     expect(src).toContain('bind:value={$subDlApiKey}')
     expect(src).toContain('SubDL API key')
+  })
+
+  it('has a Jimaku API key secret field', () => {
+    expect(src).toContain('bind:value={$jimakuApiKey}')
+    expect(src).toContain('Jimaku API key')
+  })
+
+  it('keeps every api key field masked', () => {
+    for (const store of ['$subDlApiKey', '$jimakuApiKey']) {
+      const tag = (src.match(/<input[^>]*>/g) ?? []).find((t) => t.includes(`bind:value={${store}}`))
+      expect(tag).toContain('type="password"')
+    }
   })
 
   it('only writes stored credentials when Stay signed in is on', () => {

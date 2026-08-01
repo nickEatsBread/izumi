@@ -23,6 +23,53 @@ describe('addon', () => {
   })
 })
 
+describe('curated best release', () => {
+  const HASH = 'a'.repeat(40)
+  const opts = { seadexHashes: new Set([HASH]) }
+  const row = (url: string, title: string, infoHash?: string) =>
+    ({ url, infoHash, name: '[RD+] Addon', title }) as any
+
+  it('leads its equally healthy neighbours in the default sort', () => {
+    // A human compared these frame by frame; nothing scoreInfo reads off a filename is better
+    // evidence than that, so within what the harder keys left tied the curated row goes first.
+    const s = rankStreams([
+      row('other', '[Group] Show - 01 (1080p) 👤 900'),
+      row('curated', '[Other] Show - 01 (1080p) 👤 20', HASH),
+    ], 'quality', opts)
+    expect(s.map((x) => x.url)).toEqual(['curated', 'other'])
+  })
+
+  it('never outranks cache state', () => {
+    const s = rankStreams([
+      { url: 'uncached', infoHash: HASH, name: '[RD⬇️] Addon', title: 'Show - 01 (1080p) 👤 5' } as any,
+      { url: 'cached', name: '[RD⚡] Addon', title: 'Show - 01 (720p) 👤 5' } as any,
+    ], 'quality', opts)
+    expect(s.map((x) => x.url)).toEqual(['cached', 'uncached'])
+  })
+
+  it('leads the list from a lower tier too, where the automatic pick would not', () => {
+    // Deliberate, and the reason this is a key here rather than points: the list is a menu a human
+    // is reading, every row states its resolution, and the row is badged. What must NOT cross a
+    // tier is the pick made when nobody is looking — pickCandidates keeps the requested tier as a
+    // hard key ABOVE this one, so choosing the 1080p instead stays one click away.
+    const s = rankStreams([
+      row('fhd', '[Group] Show - 01 (1080p) 👤 900'),
+      row('curated', '[Other] Show - 01 (720p) 👤 20', HASH),
+    ], 'quality', opts)
+    expect(s.map((x) => x.url)).toEqual(['curated', 'fhd'])
+  })
+
+  it('leaves the literal sorts literal', () => {
+    // Sorting by seeders answers a question the user asked in so many words. A curated row jumping
+    // that list would answer a different one.
+    const s = [
+      row('other', '[Group] Show - 01 (1080p) 👤 900'),
+      row('curated', '[Other] Show - 01 (1080p) 👤 20', HASH),
+    ]
+    expect(rankStreams(s, 'seeders', opts).map((x) => x.url)).toEqual(['other', 'curated'])
+  })
+})
+
 describe('describe (Comet vs Torrentio parsing)', () => {
   it('parses a Comet stream (metadata in description, filename in behaviorHints)', () => {
     const info = parseStream({

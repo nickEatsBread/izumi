@@ -9,6 +9,7 @@
     openSubtitlesStaySignedIn,
     openSubtitlesCreds,
     subDlApiKey,
+    jimakuApiKey,
     subtitleStyleEnabled,
     subtitleFont,
     subtitleFontSize,
@@ -166,6 +167,7 @@
     <div class="max-w-2xl space-y-3">
       <Toggle label="OpenSubtitles" desc="Search is free; downloading needs your OpenSubtitles account." value={hasProvider('opensubtitles')} onToggle={() => toggleProvider('opensubtitles')} />
       <Toggle label="SubDL" desc="Bring your own SubDL API key." value={hasProvider('subdl')} onToggle={() => toggleProvider('subdl')} />
+      <Toggle label="Jimaku" desc="Community Japanese subtitles. Bring your own Jimaku API key." value={hasProvider('jimaku')} onToggle={() => toggleProvider('jimaku')} />
     </div>
   </section>
 
@@ -208,6 +210,11 @@
       <span class="text-sm font-bold">SubDL API key</span>
       <input type="password" bind:value={$subDlApiKey} data-focusable class="rounded-md bg-input px-3 py-2 text-sm" />
       <span class="text-xs text-muted-foreground">From your SubDL account panel.</span>
+    </label>
+    <label class="mb-6 flex flex-col gap-1">
+      <span class="text-sm font-bold">Jimaku API key</span>
+      <input type="password" bind:value={$jimakuApiKey} data-focusable class="rounded-md bg-input px-3 py-2 text-sm" />
+      <span class="text-xs text-muted-foreground">From your Jimaku account page. Without it Jimaku is skipped entirely.</span>
     </label>
   </section>
 </div>

@@ -1341,6 +1341,40 @@ async fn fetch_normalize_subtitle(
                 .map_err(|_| "zip read failed".to_string())?;
             unzip_first_subtitle(&zip_bytes)?
         }
+        "jimaku" => {
+            let file_url = url.ok_or("missing file url")?;
+            let mut req = client.get(file_url);
+            // The listing and the file live on the same host and every documented endpoint is
+            // authenticated, so the key rides along here too (raw, not a Bearer token).
+            if let Some(k) = api_key {
+                if !k.is_empty() {
+                    req = req.header("Authorization", k);
+                }
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|_| "file fetch failed".to_string())?;
+            let status = resp.status();
+            if !status.is_success() {
+                // Same `/download <status>:` shape the TS classifier greps for, so a bad key here
+                // surfaces the shared access-denied notice instead of a generic failure.
+                let text = resp.text().await.unwrap_or_default();
+                return Err(format!("jimaku /download {}: {text}", status.as_u16()));
+            }
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|_| "file read failed".to_string())?
+                .to_vec();
+            // Plain subtitles and ZIPs sit in the same listing, so sniff the local-header magic
+            // rather than trusting the extension, and reuse the SubDL unzip path when it is one.
+            if bytes.starts_with(b"PK\x03\x04") {
+                unzip_first_subtitle(&bytes)?
+            } else {
+                bytes
+            }
+        }
         other => return Err(format!("unknown subtitle provider: {other}")),
     };
 
@@ -1356,10 +1390,10 @@ async fn fetch_normalize_subtitle(
     Ok(dest.to_string_lossy().into_owned())
 }
 
-/// Download a picked online subtitle (OpenSubtitles `/download` or a SubDL ZIP), normalize it to
-/// UTF-8, and add it to the LIVE mpv core as a selected track. The async byte work runs first, then
-/// the sync `sub-add` on the reused core; the frontend re-reads `player_tracks` to reflect the new
-/// selected track. Never auto-invoked — only on a manual pick in the subtitle menu.
+/// Download a picked online subtitle (OpenSubtitles `/download`, a SubDL ZIP, or a Jimaku file),
+/// normalize it to UTF-8, and add it to the LIVE mpv core as a selected track. The async byte work
+/// runs first, then the sync `sub-add` on the reused core; the frontend re-reads `player_tracks` to
+/// reflect the new selected track. Never auto-invoked — only on a manual pick in the subtitle menu.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn player_add_subtitle(

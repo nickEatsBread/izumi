@@ -1,6 +1,6 @@
 <script lang="ts">
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
-  import { autoSelectSource, autoSelectCountdown, preferredQuality } from '$lib/settings/ui'
+  import { autoSelectSource, autoSelectCountdown, preferredQuality, seadexAnnotations } from '$lib/settings/ui'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
   import { defaultDiscussionPlatform } from '$lib/comments'
@@ -8,6 +8,7 @@
   import Globe from 'lucide-svelte/icons/globe'
   import Store from 'lucide-svelte/icons/store'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import Toggle from '$lib/components/settings/Toggle.svelte'
 
   // One control over two stores: whether to auto-pick at all, and whether to wait first. They were
   // separate toggles, which read as unrelated settings even though the second only means anything
@@ -97,6 +98,13 @@
         />
       </label>
     {/if}
+
+    <Toggle
+      label="Mark best releases"
+      desc="Check releases.moe for the release its curators rate best for each title, badge it in the source list, and prefer it within your chosen quality. Adds no source — it only annotates what your addons already found."
+      value={$seadexAnnotations}
+      onToggle={() => ($seadexAnnotations = !$seadexAnnotations)}
+    />
   </div>
 
   <div class="max-w-2xl">

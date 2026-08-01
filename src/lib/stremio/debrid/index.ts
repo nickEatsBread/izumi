@@ -5,6 +5,7 @@ import { premiumize } from './providers/premiumize'
 import { torbox } from './providers/torbox'
 import { debridlink } from './providers/debridlink'
 import { offcloud } from './providers/offcloud'
+import { easydebrid } from './providers/easydebrid'
 import { deepbrid } from './providers/deepbrid'
 import { megadebrid } from './providers/megadebrid'
 
@@ -13,7 +14,7 @@ export type { DebridProvider, DebridProviderMeta, DebridInfo, ResolveOpts, Debri
 // Stable providers first, experimental last (Cocoleech/DASAN are omitted — link-only,
 // can't resolve a torrent infoHash).
 const PROVIDERS: DebridProvider[] = [
-  realdebrid, alldebrid, premiumize, torbox, debridlink, offcloud,
+  realdebrid, alldebrid, premiumize, torbox, debridlink, offcloud, easydebrid,
   deepbrid, megadebrid,
 ]
 

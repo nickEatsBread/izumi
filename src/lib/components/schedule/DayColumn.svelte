@@ -3,9 +3,14 @@
   import { title, cover } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import type { MineKind } from '$lib/anilist/my-shows'
+  import { delayLines, type ScheduleInfo } from '$lib/anime/animeschedule'
 
-  let { label, airings, today = false, big = false, badgeOf }:
-    { label: string; airings: Airing[]; today?: boolean; big?: boolean; badgeOf?: (m: Media) => MineKind | null } = $props()
+  let { label, airings, today = false, big = false, badgeOf, infoOf }:
+    { label: string; airings: Airing[]; today?: boolean; big?: boolean
+      badgeOf?: (m: Media) => MineKind | null; infoOf?: (m: Media) => ScheduleInfo | null } = $props()
+
+  // Only the leading delay line fits a schedule row; the detail page carries the full set.
+  const delayOf = (m: Media) => delayLines(infoOf?.(m) ?? null)[0] ?? ''
 </script>
 
 <div class="flex min-w-0 flex-col">
@@ -16,6 +21,7 @@
     {#if airings.length}
       {#each airings as a (a.media.id + '-' + a.episode)}
         {@const mine = badgeOf?.(a.media)}
+        {@const delay = delayOf(a.media)}
         <a
           data-focusable
           href={`/app/anime/${a.media.id}`}
@@ -26,6 +32,9 @@
           <div class="min-w-0 flex-1">
             <p class="line-clamp-2 {big ? 'text-sm' : 'text-xs'} font-bold leading-tight">{title(a.media)}</p>
             <p class="mt-0.5 {big ? 'text-xs' : 'text-[0.7rem]'} text-muted-foreground">EP {a.episode} · {airTime(a.airingAt)}</p>
+            {#if delay}
+              <p class="mt-0.5 text-[0.7rem] font-bold text-amber-400">{delay}</p>
+            {/if}
             {#if mine}
               <span class="mt-0.5 inline-block rounded px-1 py-px text-[0.6rem] font-black uppercase tracking-wide text-theme">{mine === 'watching' ? 'Watching' : 'Planning'}</span>
             {:else if !aired(a.airingAt)}

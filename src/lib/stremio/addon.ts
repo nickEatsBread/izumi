@@ -35,7 +35,19 @@ export interface RankOptions extends ScoreOptions {
   /** Preferred spoken-audio language (ISO-ish 3-letter). A release that NAMES a different one
    *  sorts below; a release that names none is not a mismatch, which is the common case. */
   audioLang?: string
+  /** Lowercased infoHashes of the releases a curated database recommends for this title. Empty or
+   *  absent whenever the annotation is off, uncached or simply unknown, which is the common case. */
+  seadexHashes?: ReadonlySet<string>
 }
+
+// A human compared these releases frame by frame, which is better evidence than anything scoreInfo
+// infers from a filename — but it is evidence about which RELEASE, not about which resolution. So
+// it is a key, not points: as points it would have to outweigh group continuity (12) to decide the
+// case it exists for, and 12 also buys a whole resolution tier (1080p → 720p is 12 points, and
+// 1440p → 1080p is 2). Below the hard keys, so cache state — and, in the auto-pick, the requested
+// quality tier — still decide first; it only reorders rows those left tied.
+const curatedFirst = (i: StreamInfo, opts: RankOptions) =>
+  i.stream.infoHash && opts.seadexHashes?.has(i.stream.infoHash.toLowerCase()) ? 0 : 1
 
 /** Does this release positively declare an audio language the user did not ask for? */
 export function languageMismatch(i: StreamInfo, audioLang?: string): boolean {
@@ -46,9 +58,9 @@ export function languageMismatch(i: StreamInfo, audioLang?: string): boolean {
 }
 
 // Rank into StreamInfo: cache tier first, then language, then the user's preferred within-tier
-// key. `quality` (the default) keeps resolution as a hard key and settles everything inside a
-// resolution tier on the additive score — anime returns a wall of 1080p rows, and the old ladder
-// had nothing but seeders left to separate them. The explicit `seeders` and `size` sorts stay
+// key. `quality` (the default) leads with the curated recommendation and settles the rest on the
+// additive score, resolution included — anime returns a wall of 1080p rows, and the old ladder had
+// nothing but seeders left to separate them. The explicit `seeders` and `size` sorts stay
 // single-key: the user asked a literal question and should get a literal answer.
 export function rankInfos(streams: Stream[], sort: StreamSort = 'quality', opts: RankOptions = {}): StreamInfo[] {
   const scored = new Map<StreamInfo, number>()
@@ -58,9 +70,12 @@ export function rankInfos(streams: Stream[], sort: StreamSort = 'quality', opts:
     return s
   }
   const within = (a: StreamInfo, b: StreamInfo) => {
+    // The explicit sorts stay literal — a curated row must not jump a list the user asked to have
+    // ordered by seeders, which would answer a different question than the one they asked.
     if (sort === 'seeders') return (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
     if (sort === 'size') return (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0) || b.quality - a.quality
-    return scoreOf(b) - scoreOf(a) || (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
+    return curatedFirst(a, opts) - curatedFirst(b, opts)
+      || scoreOf(b) - scoreOf(a) || (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
   }
   return streams
     .map(describe)
@@ -110,6 +125,10 @@ export function pickCandidates(
   const ordered = (preferred.length ? preferred : all).sort((a, b) =>
     cacheFirst(a) - cacheFirst(b)
     || tierRank(a) - tierRank(b)
+    // BELOW the tier the user asked for, so curation can never talk the automatic pick out of it.
+    // With Quality on "any" tierRank is inert by construction and this decides instead of the
+    // score: the user declined to name a tier, so the curators' verdict is the better answer.
+    || curatedFirst(a, opts) - curatedFirst(b, opts)
     || scoreInfo(b, opts).score - scoreInfo(a, opts).score
     || (b.seeders ?? -1) - (a.seeders ?? -1))
   // A remembered failure is a hint, not a verdict — a debrid hiccup and an expired token look the

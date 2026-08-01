@@ -8,9 +8,14 @@
   import { agendaScrollTop, agendaTargetDay, isAgendaScrollKey } from './agenda-scroll'
   import type { Media } from '$lib/anilist/types'
   import type { MineKind } from '$lib/anilist/my-shows'
+  import { delayLines, type ScheduleInfo } from '$lib/anime/animeschedule'
 
-  let { days, start, todayIdx, badgeOf, headerOffset = 0 }:
-    { days: Airing[][]; start: number; todayIdx: number; badgeOf?: (m: Media) => MineKind | null; headerOffset?: number } = $props()
+  let { days, start, todayIdx, badgeOf, infoOf, headerOffset = 0 }:
+    { days: Airing[][]; start: number; todayIdx: number; badgeOf?: (m: Media) => MineKind | null
+      infoOf?: (m: Media) => ScheduleInfo | null; headerOffset?: number } = $props()
+
+  // Only the leading delay line fits a schedule row; the detail page carries the full set.
+  const delayOf = (m: Media) => delayLines(infoOf?.(m) ?? null)[0] ?? ''
 
   const FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
   const dayDate = (i: number) =>
@@ -66,6 +71,7 @@
         <div class="flex flex-col gap-2">
           {#each d as a (a.media.id + '-' + a.episode)}
             {@const mine = badgeOf?.(a.media)}
+            {@const delay = delayOf(a.media)}
             <a
               data-focusable
               href={`/app/anime/${a.media.id}`}
@@ -79,6 +85,9 @@
                   {#if mine}<span class="shrink-0 rounded bg-theme/15 px-1.5 py-0.5 text-[0.6rem] font-black uppercase tracking-wide text-theme">{mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
                 </div>
                 <p class="mt-1 text-sm text-muted-foreground">EP {a.episode} · {airTime(a.airingAt)}</p>
+                {#if delay}
+                  <p class="mt-0.5 text-xs font-bold text-amber-400">{delay}</p>
+                {/if}
               </div>
               {#if !aired(a.airingAt)}
                 <span class="shrink-0 text-sm font-bold text-emerald-400">{until(a.airingAt)}</span>
