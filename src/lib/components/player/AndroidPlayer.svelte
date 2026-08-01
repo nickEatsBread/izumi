@@ -1130,10 +1130,10 @@
       <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); toggleLock() }} class="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2 grid h-14 w-14 place-items-center rounded-full bg-black/50 backdrop-blur" aria-label="Unlock"><Lock size={24} /></button>
     {/if}
   {:else if controlsShown}
-    <div transition:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/75"></div>
+    <div in:fade={{ duration: 180 }} class="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/65 via-transparent to-black/75"></div>
 
     <!-- Top bar -->
-    <div transition:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div in:fade={{ duration: 180 }} class="player-top-bar absolute inset-x-0 top-0 flex items-center gap-2 p-2 landscape:p-3" onclick={(e) => e.stopPropagation()} role="presentation">
       <button onclick={close} class="grid h-10 w-10 shrink-0 place-items-center active:scale-90" aria-label="Close player">
         {#if landscape}<ChevronLeft size={27} />{:else}<ChevronDown size={29} />{/if}
       </button>
@@ -1151,7 +1151,7 @@
     <!-- Center transport (morphing play/pause). While loading the centre glyph becomes a spinner in
          place — the row itself never disappears, so rewind/forward stay usable and the button keeps
          its hit target (you can still pause a stream that is still buffering). -->
-    <div transition:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
+    <div in:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
       <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
       <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={loading ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading}>
         {#if loading}
@@ -1170,7 +1170,7 @@
     </div>
 
     <!-- Timeline sits on the actual bottom edge of the video, matching native mobile players. -->
-    <div transition:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 h-14" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div in:fade={{ duration: 180 }} class="player-timeline absolute inset-x-0 bottom-0 h-14" onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="timeline-controls absolute inset-x-0 bottom-3 flex items-center justify-between px-3 text-xs tabular-nums text-white/90">
         <span class="pointer-events-none">{fmt(pos)} / {fmt(dur)}</span>
         <button
