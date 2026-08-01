@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { banner, title, format, season, totalEpisodes, mediaHref } from '$lib/anilist/media'
+  import { rememberDetail } from '$lib/anilist/detail-hint'
   import { goto } from '$app/navigation'
   import { anilistToken } from '$lib/anilist/auth'
   import { toggleFavourite, setStatus, anyTrackerConnected } from '$lib/trackers'
@@ -25,7 +26,7 @@
   async function favourite(e: Event) { e.stopPropagation(); if (busy) return; busy = true; try { await toggleFavourite(media) } catch { /* ignore */ } finally { busy = false } }
   async function bookmark(e: Event) { e.stopPropagation(); if (busy) return; busy = true; try { await setStatus(media, 'PLANNING') } finally { busy = false } }
   const reading = $derived(media.type === 'MANGA')
-  const openDetail = () => goto(mediaHref(media))
+  const openDetail = () => { rememberDetail(media); goto(mediaHref(media)) }
 </script>
 
 <div class="preview-in w-[17.5rem] cursor-pointer overflow-hidden rounded-lg bg-card shadow-2xl ring-1 ring-border"

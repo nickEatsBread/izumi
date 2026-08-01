@@ -35,6 +35,7 @@
   import RichMetadata from './RichMetadata.svelte'
   import AiringStatus from './AiringStatus.svelte'
   import { reliableImage } from '$lib/util/reliable-image'
+  import { detailHints, rememberDetail } from '$lib/anilist/detail-hint'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -103,6 +104,8 @@
     if (malP <= (base.mediaListEntry?.progress ?? 0)) return base
     return { ...base, mediaListEntry: { ...base.mediaListEntry, progress: malP, status: base.mediaListEntry?.status ?? malEntry?.status } }
   })
+  const detailHint = $derived($detailHints[id])
+  $effect(() => { if (media) rememberDetail(media) })
 
   // Resume target for the hero CTA. Offline = first not-yet-watched DOWNLOADED episode (else the
   // first downloaded) — never resumeEp(), which reads tracker progress and could point at an
@@ -169,8 +172,34 @@
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
 
-{#if !$offlineMode && $store.fetching}
-  <div class="h-[42vh] w-full animate-pulse bg-muted"></div>
+{#if !$offlineMode && $store.fetching && !media}
+  {#if $isMobile}
+    <div class="relative isolate px-4 pb-10 pt-10">
+      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
+        {#if detailHint && banner(detailHint)}<img src={banner(detailHint)} alt="" class="h-full w-full object-cover opacity-35" />{:else}<div class="h-full w-full skeloader"></div>{/if}
+        <div class="absolute inset-0 bg-gradient-to-b from-background/20 via-background/70 to-background"></div>
+      </div>
+      <div class="flex items-end gap-4">
+        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="aspect-[2/3] w-28 shrink-0 rounded-xl bg-muted object-contain shadow-xl" />{:else}<div class="aspect-[2/3] w-28 shrink-0 rounded-xl skeloader"></div>{/if}
+        <div class="min-w-0 flex-1 pb-1">
+          <h1 class="line-clamp-3 text-2xl font-black leading-tight">{detailHint ? title(detailHint) : 'Loading title…'}</h1>
+          <div class="mt-3 flex gap-2"><span class="h-6 w-16 rounded-full skeloader"></span><span class="h-6 w-20 rounded-full skeloader"></span></div>
+        </div>
+      </div>
+      <div class="mt-6 h-12 rounded-xl skeloader"></div>
+      <div class="mt-3 grid grid-cols-3 gap-2">{#each Array(3) as _}<div class="h-11 rounded-xl skeloader"></div>{/each}</div>
+      <div class="mt-8 h-11 w-full rounded-lg skeloader"></div>
+    </div>
+  {:else}
+    <div class="relative min-h-[70vh] overflow-hidden px-8 pb-16 pt-24">
+      {#if detailHint && banner(detailHint)}<img src={banner(detailHint)} alt="" class="absolute inset-0 -z-10 h-[55vh] w-full object-cover opacity-30" />{/if}
+      <div class="absolute inset-x-0 top-0 -z-10 h-[60vh] bg-gradient-to-b from-transparent to-background"></div>
+      <div class="flex items-end gap-7">
+        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="aspect-[2/3] w-48 rounded-xl bg-muted object-contain shadow-xl" />{:else}<div class="aspect-[2/3] w-48 rounded-xl skeloader"></div>{/if}
+        <div class="max-w-2xl flex-1 pb-3"><h1 class="text-3xl font-black">{detailHint ? title(detailHint) : 'Loading title…'}</h1><div class="mt-4 h-4 w-2/3 rounded skeloader"></div><div class="mt-3 h-4 w-1/2 rounded skeloader"></div><div class="mt-6 h-10 w-52 rounded-lg skeloader"></div></div>
+      </div>
+    </div>
+  {/if}
 {:else if !$offlineMode && $store.error}
   <div class="p-8 text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if media}
@@ -180,16 +209,16 @@
     <!-- Mobile: poster-forward header. `isolate` makes this a stacking context so the -z-10
          background-art layer stays BEHIND the cover/title yet ABOVE the opaque page background
          (without it, -z-10 escapes to the root and the banner is hidden by the body bg). -->
-    <div class="relative isolate px-4 pb-6">
+    <div class="relative isolate px-4 pb-8">
       <!-- Background art (banner) behind the cover + title, like desktop: prominent at the top,
            dissolving into the page before the description so text stays legible. -->
-      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-80 overflow-hidden">
+      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
         <img src={banner(m)} alt="" class="h-full w-screen -translate-x-4 object-cover opacity-70" style="object-position:center 20%" />
         <div class="absolute inset-0 bg-gradient-to-b from-background/10 via-background/55 to-background"></div>
       </div>
 
-      <div class="flex gap-4 pt-6">
-        <img use:reliableImage={cover(m)} alt="" class="aspect-[2/3] w-32 shrink-0 rounded-lg object-cover shadow-lg" />
+      <div class="flex gap-4 pt-10">
+        <img use:reliableImage={cover(m)} alt="" class="aspect-[2/3] w-28 shrink-0 rounded-xl bg-black/20 object-contain shadow-xl min-[420px]:w-32" />
         <div class="min-w-0 flex-1 self-end">
           {#if m.title.native || m.title.romaji}
             <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
@@ -276,18 +305,18 @@
       {/if}
 
       <div class="mt-6">
-        <Tabs tabs={['Episodes', 'Relations', 'Cast & Crew', 'Recommended', 'Details']} bind:active />
+        <Tabs tabs={['Episodes', 'Relations', 'Characters', 'Recommended', 'Details']} bind:active />
         {#if active === 'Episodes'}
           <EpisodeList media={m} offline={$offlineMode} />
         {:else if active === 'Relations'}
           {#if m.relations?.edges?.length}
-            <div class="mt-3 flex flex-wrap gap-3">
+            <div class="mt-3 grid grid-cols-2 gap-4">
               {#each m.relations.edges as e (e.node.id)}
-                <div class="w-28"><SmallCard media={e.node} /></div>
+                <div class="min-w-0"><SmallCard media={e.node} fill /></div>
               {/each}
             </div>
           {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
-        {:else if active === 'Cast & Crew'}
+        {:else if active === 'Characters'}
           <div class="mt-3"><RichMetadata media={m} view="people" /></div>
         {:else if active === 'Recommended'}
           <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>

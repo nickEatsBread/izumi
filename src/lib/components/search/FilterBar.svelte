@@ -58,7 +58,7 @@
     placeholder="Search anime…"
     value={filters.search ?? ''}
     oninput={(e) => (filters = { ...filters, search: e.currentTarget.value })}
-    class="w-full rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent sm:min-w-[220px] sm:flex-1"
+    class="h-12 w-full rounded-xl bg-secondary px-4 text-base outline-none focus:ring-2 focus:ring-accent sm:h-auto sm:min-w-[220px] sm:flex-1 sm:rounded-md sm:px-3 sm:py-2 sm:text-sm"
   />
 
   <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:contents sm:overflow-visible sm:px-0 sm:pb-0">

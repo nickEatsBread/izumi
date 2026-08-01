@@ -99,12 +99,12 @@
   onclick={play}
   onkeydown={(e) => { if (released && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); play() } }}
   title={selecting ? (released ? (selectedEp ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play — ${labels.primary}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
-  class="group flex flex-col overflow-hidden rounded-lg text-left
+  class="group overflow-hidden rounded-xl text-left sm:rounded-lg {showThumb && img ? 'grid grid-cols-[42%_1fr] sm:flex sm:flex-col' : 'flex flex-col'}
     {released ? 'cursor-pointer bg-secondary transition-transform hover:scale-[1.02] hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'}
     {selecting && selectedEp ? 'ring-2 ring-theme' : ''}"
 >
   {#if showThumb && img}
-    <div class="relative aspect-video w-full overflow-hidden bg-muted">
+    <div class="relative aspect-video h-full min-h-24 w-full overflow-hidden bg-muted sm:h-auto sm:min-h-0">
       {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <!-- No `transform-gpu`/`will-change-transform` — same reason as SmallCard: they permanently
            promote every one of the (up to 48) thumbnails to its own retained GPU layer. The
@@ -146,9 +146,9 @@
       {/if}
     </div>
 
-    <div class="flex items-center gap-2 p-2">
+    <div class="flex min-w-0 items-center gap-2 p-3 sm:p-2">
       <div class="min-w-0 flex-1">
-        <span class="block truncate text-sm font-bold">{labels.primary}</span>
+        <span class="line-clamp-2 text-sm font-bold sm:block sm:truncate">{labels.primary}</span>
         <!-- Spoiler mode hides the real title (shows only "Episode N") — no blur. -->
         {#if !labels.concealSecondary}
           <span class="block truncate text-[0.7rem] text-muted-foreground">{labels.secondary}{dl?.status === 'done' ? ' · Downloaded' : ''}</span>

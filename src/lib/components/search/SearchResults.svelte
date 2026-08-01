@@ -14,6 +14,7 @@
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { browseLayout } from '$lib/settings/ui'
   import { title, cover, format, season } from '$lib/anilist/media'
+  import { rememberDetail } from '$lib/anilist/detail-hint'
   import type { Media } from '$lib/anilist/types'
   import { isAndroid } from '$lib/platform'
   import * as h from '$lib/haptics'
@@ -87,7 +88,7 @@
   <!-- List: a vertical run of compact rows (small cover + title + meta) — denser, text-forward. -->
   <div class="flex flex-col gap-1.5">
     {#each media as m (m.id)}
-      <a href={`/app/anime/${m.id}`} data-focusable onclick={() => h.tap()}
+      <a href={`/app/anime/${m.id}`} data-focusable onclick={() => { rememberDetail(m); h.tap() }}
          class="load-in flex items-center gap-3 rounded-lg p-2 transition-[color,background-color,transform] active:bg-accent hover:bg-secondary {$isAndroid ? 'android-row-press' : ''}">
         <img src={cover(m)} alt="" loading="lazy" decoding="async"
              class="aspect-[2/3] w-12 shrink-0 rounded-md bg-muted object-cover" />

@@ -4,12 +4,12 @@
   // A press gives a haptic tick + a quick scale-down (the "button" feel of native Material tabs).
   function pick(tab: string) { if (tab !== active) { h.tap(); active = tab } }
 </script>
-<div class="mb-4 flex gap-1 border-b border-border">
+<div class="-mx-4 mb-4 flex gap-1 overflow-x-auto border-b border-border px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
   {#each tabs as tab (tab)}
     <button
       data-focusable
       onclick={() => pick(tab)}
-      class="relative rounded-t-md px-4 py-2 text-sm font-bold transition-all duration-100 active:scale-95
+      class="relative shrink-0 whitespace-nowrap rounded-t-md px-3 py-2.5 text-sm font-bold transition-all duration-100 active:scale-95 sm:px-4 sm:py-2
         {active === tab ? 'text-foreground' : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground active:bg-secondary'}"
     >
       {tab}
