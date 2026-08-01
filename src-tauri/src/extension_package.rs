@@ -157,6 +157,18 @@ mod package {
         archive.by_name("AndroidManifest.xml").is_ok() && archive.by_name("classes.dex").is_ok()
     }
 
+    // Finder and some macOS ZIP tools add bookkeeping entries without changing the packaged
+    // payload. They are never read or extracted by Izumi, so exclude only those well-known
+    // metadata names (and directory markers) from the strict signed-file allowlist below.
+    fn is_ignorable_package_entry(name: &str, is_dir: bool) -> bool {
+        if is_dir {
+            return true;
+        }
+        let normalized = name.replace('\\', "/");
+        let basename = normalized.rsplit('/').next().unwrap_or(&normalized);
+        normalized.starts_with("__MACOSX/") || basename == ".DS_Store" || basename.starts_with("._")
+    }
+
     fn parse_package(bytes: &[u8]) -> Result<(InstalledExtension, Option<Vec<u8>>), String> {
         if bytes.is_empty() || bytes.len() > MAX_PACKAGE_BYTES {
             return Err("Extension package is empty or too large".into());
@@ -181,14 +193,21 @@ mod package {
             "manifest.json",
             "signature.json",
         ];
-        let actual = (0..archive.len())
+        let actual_entries = (0..archive.len())
             .map(|index| {
                 archive
                     .by_index(index)
-                    .map(|file| file.name().to_string())
+                    .map(|file| {
+                        let name = file.name().to_string();
+                        (!is_ignorable_package_entry(&name, file.is_dir())).then_some(name)
+                    })
                     .map_err(|e| e.to_string())
             })
-            .collect::<Result<BTreeSet<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let actual = actual_entries.iter().cloned().collect::<BTreeSet<_>>();
         let mut expected = required
             .into_iter()
             .map(ToOwned::to_owned)
@@ -197,7 +216,9 @@ mod package {
         if has_android_entry {
             expected.insert("extension.apk".to_string());
         }
-        if archive.len() != expected.len() || actual != expected {
+        // Compare both the set and count: a duplicate manifest/payload is still rejected, since
+        // ZipArchive::by_name would otherwise make duplicate-name precedence ambiguous.
+        if actual_entries.len() != expected.len() || actual != expected {
             return Err("Extension package contains unexpected files".into());
         }
 
@@ -521,7 +542,7 @@ mod package {
         use std::io::Write;
         use zip::write::SimpleFileOptions;
 
-        fn fixture(tamper_code: bool, signed: bool) -> Vec<u8> {
+        fn fixture(tamper_code: bool, signed: bool, extra: Option<(&str, &[u8])>) -> Vec<u8> {
             let manifest = br#"{
               "formatVersion":1,
               "runtimeAbi":1,
@@ -586,12 +607,16 @@ mod package {
                 writer.start_file(name, options).unwrap();
                 writer.write_all(bytes).unwrap();
             }
+            if let Some((name, bytes)) = extra {
+                writer.start_file(name, options).unwrap();
+                writer.write_all(bytes).unwrap();
+            }
             writer.finish().unwrap().into_inner()
         }
 
         #[test]
         fn accepts_a_valid_native_package() {
-            let (parsed, jar) = parse_package(&fixture(false, false)).unwrap();
+            let (parsed, jar) = parse_package(&fixture(false, false, None)).unwrap();
             assert_eq!(parsed.id, "example.allanime");
             assert_eq!(parsed.name, "AllAnime");
             assert_eq!(parsed.source_ids, ["1", "2"]);
@@ -601,14 +626,29 @@ mod package {
 
         #[test]
         fn accepts_a_valid_signed_package() {
-            assert!(parse_package(&fixture(false, true)).unwrap().0.signed);
+            assert!(parse_package(&fixture(false, true, None)).unwrap().0.signed);
         }
 
         #[test]
         fn rejects_tampered_extension_code() {
-            assert!(parse_package(&fixture(true, false))
+            assert!(parse_package(&fixture(true, false, None))
                 .unwrap_err()
                 .contains("integrity check failed"));
+        }
+
+        #[test]
+        fn accepts_macos_zip_metadata_but_not_other_extra_files() {
+            assert!(parse_package(&fixture(
+                false,
+                false,
+                Some(("__MACOSX/._manifest.json", b"finder metadata")),
+            ))
+            .is_ok());
+            assert!(
+                parse_package(&fixture(false, false, Some(("extra.txt", b"nope"))))
+                    .unwrap_err()
+                    .contains("unexpected files")
+            );
         }
 
         #[test]
