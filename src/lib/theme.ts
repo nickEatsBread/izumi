@@ -49,6 +49,7 @@ function apply() {
   for (const [name, value] of Object.entries(values)) root.style.setProperty(`--${name}`, value)
   root.style.colorScheme = tokens.scheme
   root.dataset.theme = get(themePreset)
+  root.dataset.scheme = tokens.scheme
   root.classList.toggle('a11y-high-contrast', get(highContrast))
   root.classList.toggle('a11y-large-targets', get(largeInteractionTargets))
   root.classList.toggle('a11y-reduce-motion', get(motionPreference) === 'reduce')

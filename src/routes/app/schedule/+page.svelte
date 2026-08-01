@@ -37,23 +37,29 @@
 {#if $offlineMode}
   <OfflineUnavailable title="Schedule is unavailable offline" subtitle="The airing schedule needs a connection. Your downloads are available on the Downloads page." />
 {:else}
-<div class="p-4 sm:p-8">
-  <div class="mb-6 flex items-center gap-3">
-    <h1 class="text-lg font-black">Schedule</h1>
-    <div class="flex items-center gap-1">
+<div class="px-4 pb-8 pt-5 sm:p-8">
+  <div class="mb-6 sm:flex sm:items-center sm:gap-4">
+    <div class="flex items-center justify-between">
+      <h1 class="text-2xl font-black sm:text-lg">Schedule</h1>
+      {#if offset !== 0}
+        <button data-focusable onclick={() => (offset = 0)}
+          class="rounded-lg bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent sm:hidden">Today</button>
+      {/if}
+    </div>
+    <div class="mt-4 grid grid-cols-[3rem_1fr_3rem] items-center gap-2 sm:mt-0 sm:flex sm:gap-1">
       <button data-focusable onclick={() => (offset -= 1)} title="Previous week"
-        class="grid h-8 w-8 place-items-center rounded-md bg-secondary hover:bg-accent">
-        <ChevronLeft size={18} />
+        class="grid size-12 place-items-center rounded-xl bg-secondary hover:bg-accent sm:size-8 sm:rounded-md">
+        <ChevronLeft size={22} />
       </button>
-      <span class="min-w-[9rem] text-center text-sm text-muted-foreground">{rangeLabel}</span>
+      <span class="min-w-[9rem] text-center text-base font-semibold text-muted-foreground sm:text-sm sm:font-normal">{rangeLabel}</span>
       <button data-focusable onclick={() => (offset += 1)} title="Next week"
-        class="grid h-8 w-8 place-items-center rounded-md bg-secondary hover:bg-accent">
-        <ChevronRight size={18} />
+        class="grid size-12 place-items-center rounded-xl bg-secondary hover:bg-accent sm:size-8 sm:rounded-md">
+        <ChevronRight size={22} />
       </button>
     </div>
     {#if offset !== 0}
       <button data-focusable onclick={() => (offset = 0)}
-        class="rounded-md bg-secondary px-3 py-1 text-xs font-bold hover:bg-accent">Today</button>
+        class="hidden rounded-md bg-secondary px-3 py-1 text-xs font-bold hover:bg-accent sm:block">Today</button>
     {/if}
   </div>
 

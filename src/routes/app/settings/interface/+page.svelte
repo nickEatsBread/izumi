@@ -37,13 +37,13 @@
     { value: 'agenda', label: 'Agenda', hint: 'One long list — each day is a full-width section. Big and easy to read.' },
     { value: 'days', label: 'Day at a time', hint: 'Tabs across the top; one day shown large. Matches the Deck view.' },
   ]
-  const themes: { value: ThemePreset; label: string; swatch: string }[] = [
-    { value: 'izumi', label: 'Izumi', swatch: 'linear-gradient(135deg,#09090b 55%,#e11d48 55%)' },
-    { value: 'midnight', label: 'Midnight', swatch: 'linear-gradient(135deg,#080b18 55%,#8b5cf6 55%)' },
-    { value: 'sakura', label: 'Sakura', swatch: 'linear-gradient(135deg,#13080d 55%,#f472b6 55%)' },
-    { value: 'ocean', label: 'Ocean', swatch: 'linear-gradient(135deg,#061018 55%,#06b6d4 55%)' },
-    { value: 'light', label: 'Light', swatch: 'linear-gradient(135deg,#fafafa 55%,#be123c 55%)' },
-    { value: 'system', label: 'System', swatch: 'linear-gradient(135deg,#09090b 50%,#fafafa 50%)' },
+  const themes: { value: ThemePreset; label: string; background: string; surface: string; foreground: string; accent: string }[] = [
+    { value: 'izumi', label: 'Izumi', background: '#09090b', surface: '#27272a', foreground: '#fafafa', accent: '#e93b69' },
+    { value: 'midnight', label: 'Midnight', background: '#080b18', surface: '#1e2338', foreground: '#f2f5fb', accent: '#9b7bf7' },
+    { value: 'sakura', label: 'Sakura', background: '#13080d', surface: '#302029', foreground: '#faeef3', accent: '#f47bb8' },
+    { value: 'ocean', label: 'Ocean', background: '#061018', surface: '#19303d', foreground: '#eefafa', accent: '#08b6cf' },
+    { value: 'light', label: 'Light', background: '#fafafa', surface: '#e7e7eb', foreground: '#121217', accent: '#be123c' },
+    { value: 'system', label: 'System', background: '#f4f4f5', surface: '#18181b', foreground: '#ffffff', accent: '#e93b69' },
   ]
   const rowLabels: Record<string, string> = {
     continue: 'Continue Watching', list: 'Your List', recommendations: 'Recommended for You',
@@ -86,9 +86,14 @@
     <div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
       {#each themes as theme (theme.value)}
         <button data-focusable onclick={() => ($themePreset = theme.value)} aria-pressed={$themePreset === theme.value}
-          class="flex items-center gap-3 rounded-md border p-3 text-left {$themePreset === theme.value ? 'border-theme bg-theme/10' : 'border-border hover:bg-secondary'}">
-          <span class="size-7 shrink-0 rounded-full border border-black/20" style={`background:${theme.swatch}`}></span>
-          <span class="font-bold">{theme.label}</span>
+          class="flex min-w-0 items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors {$themePreset === theme.value ? 'border-theme ring-1 ring-theme/30' : 'border-border hover:bg-secondary'}">
+          <span class="relative h-10 w-14 shrink-0 overflow-hidden rounded-md border border-black/20 shadow-sm" style={`background:${theme.background}`}>
+            <span class="absolute inset-x-1.5 bottom-1.5 h-4 rounded-sm" style={`background:${theme.surface}`}></span>
+            <span class="absolute left-2 top-2 h-1 w-5 rounded-full" style={`background:${theme.foreground}`}></span>
+            <span class="absolute bottom-2 right-2 size-2.5 rounded-full" style={`background:${theme.accent}`}></span>
+          </span>
+          <span class="min-w-0 flex-1 font-bold">{theme.label}</span>
+          {#if $themePreset === theme.value}<span class="size-2 shrink-0 rounded-full bg-theme" aria-hidden="true"></span>{/if}
         </button>
       {/each}
     </div>
