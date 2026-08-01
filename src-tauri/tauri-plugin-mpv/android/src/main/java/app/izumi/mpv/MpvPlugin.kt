@@ -2,6 +2,7 @@ package app.izumi.mpv
 
 import android.Manifest
 import android.app.Activity
+import android.app.Application
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
 import android.app.RemoteAction
@@ -18,7 +19,9 @@ import android.graphics.drawable.Icon
 import android.media.MediaMetadataRetriever
 import android.content.pm.ActivityInfo
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -214,7 +217,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var contentView: ViewGroup? = null
     private var pipLayoutListener: View.OnLayoutChangeListener? = null
     private var pipReceiver: BroadcastReceiver? = null
+    /** Pre-31 auto-PiP hook, see [installAutoPipHook]. Null on API 31+, where the system does it. */
+    private var autoPipCallbacks: Application.ActivityLifecycleCallbacks? = null
     private var gifSession: GifSession? = null
+    /** The most recent GIF worker thread, kept after its session has been cleared: the worker calls
+     *  into the LIVE core, so teardown still has to wait for it even once nothing owns the session. */
+    private var gifWorker: Thread? = null
     /** User preference: enter the miniplayer automatically when leaving the app while playing. */
     private var autoPipEnabled = true
     /** Mirror of mpv's `pause`, kept from the observer so the UI thread never has to read back into
@@ -393,6 +401,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         container = playerContainer
         contentView = content
         installPipWatcher(content)
+        installAutoPipHook()
         return m
     }
 
@@ -516,7 +525,22 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      * is backgrounded it is too late to ask.
      */
     private fun publishPipParams() {
-        if (Build.VERSION.SDK_INT < 26 || mpv == null) return
+        if (Build.VERSION.SDK_INT < 26) return
+        // With no core there is nothing to shrink into a miniplayer, but the params the system still
+        // holds from the last playback say auto-enter is armed — bailing out here left the WHOLE app
+        // folding into a miniplayer on the next press of home. Disarm rather than return.
+        if (mpv == null) {
+            if (Build.VERSION.SDK_INT >= 31) {
+                try {
+                    activity.setPictureInPictureParams(
+                        PictureInPictureParams.Builder().setAutoEnterEnabled(false).build(),
+                    )
+                } catch (e: Exception) {
+                    Log.w("MpvPlugin", "pip auto-enter disarm failed: ${e.message}")
+                }
+            }
+            return
+        }
         // Keep the shrink-from-the-video animation honest: the rectangle is only meaningful while
         // the video is still laid out on the watch page.
         if (!pipActive && !pipRequested) pipSourceHint = captureSourceHint()
@@ -619,14 +643,52 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     }
 
     /**
-     * Pre-31 auto-PiP. Android 12 introduced `setAutoEnterEnabled`, which the system honours by
-     * itself; before that the only hook is the activity leaving the foreground, so the miniplayer
-     * is requested here instead. Best effort by nature — the window may already be gone, and the
-     * platform is free to refuse.
+     * Watch the player activity's own pause so pre-31 auto-PiP has a hook at all.
+     *
+     * Android 12 introduced `setAutoEnterEnabled`, which the system honours by itself; before that
+     * the only chance to become a miniplayer is the moment the activity leaves the foreground.
+     * Tauri's generated activity never forwards `onPause`/`onUserLeaveHint` to plugins, and the
+     * generated sources are regenerated on every build, so the pause is observed through the
+     * application's lifecycle callbacks instead — that works identically in local dev and CI.
      */
-    override fun onPause() {
+    private fun installAutoPipHook() {
+        if (Build.VERSION.SDK_INT !in 26..30 || autoPipCallbacks != null) return
+        val callbacks = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityPaused(paused: Activity) {
+                if (paused === activity) autoPipOnLeave()
+            }
+
+            override fun onActivityCreated(created: Activity, state: Bundle?) {}
+            override fun onActivityStarted(started: Activity) {}
+            override fun onActivityResumed(resumed: Activity) {}
+            override fun onActivityStopped(stopped: Activity) {}
+            override fun onActivitySaveInstanceState(saved: Activity, state: Bundle) {}
+            override fun onActivityDestroyed(destroyed: Activity) {}
+        }
+        activity.application.registerActivityLifecycleCallbacks(callbacks)
+        autoPipCallbacks = callbacks
+    }
+
+    private fun removeAutoPipHook() {
+        autoPipCallbacks?.let { activity.application.unregisterActivityLifecycleCallbacks(it) }
+        autoPipCallbacks = null
+    }
+
+    /**
+     * Pre-31 auto-PiP, driven by [installAutoPipHook]. Best effort by nature — the window may
+     * already be gone, and the platform is free to refuse.
+     *
+     * A pause is a broader signal than `onUserLeaveHint`: it also fires when the activity is going
+     * away for good, when it is being recreated for a configuration change, and when the screen
+     * simply turns off. None of those are the user stepping out of the app with a video running, so
+     * they are filtered out before the miniplayer is requested.
+     */
+    private fun autoPipOnLeave() {
         if (Build.VERSION.SDK_INT !in 26..30) return
         if (!autoPipEnabled || mpv == null || corePaused || pipActive || pipRequested) return
+        if (activity.isFinishing || activity.isChangingConfigurations) return
+        val power = activity.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        if (power != null && !power.isInteractive) return
         try {
             pipSourceHint = captureSourceHint()
             pipRequested = true
@@ -1121,6 +1183,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }
         session.thread = worker
         gifSession = session
+        gifWorker = worker
         worker.start()
         invoke.resolve()
     }
@@ -1235,40 +1298,66 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun stop(invoke: Invoke) {
         val recording = gifSession
         gifSession = null
-        recording?.let { session ->
-            session.stop = true
-            Thread {
-                try {
-                    session.thread?.join(5_000)
-                } catch (e: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                }
-                session.dir.deleteRecursively()
-            }.start()
+        recording?.stop = true
+        // Stop decoding right now rather than behind the join below. Waiting on a GIF worker can
+        // take the full 5 s on a stalled stream, and until the core stops the user still hears
+        // audio and auto-enter stays armed — pressing home in that window would still shrink the
+        // app into a miniplayer. libmpv's command queue is thread-safe, so this needs no hop.
+        mpv?.command(arrayOf("stop"))
+        // A GIF worker pulls frames out of the LIVE core, so destroying the handle while it sits in
+        // a blocking `screenshot-to-file` (which is exactly what it does on a stalled network
+        // stream) is a use-after-free. Wait for it to exit BEFORE tearing the core down — on a
+        // background thread, because that wait must never block the UI thread. `gifWorker` outlives
+        // the session, so a capture that gifAbort already detached is still waited on here, and it
+        // is cleared only once the wait is over: clearing it up front let a second `stop()` see no
+        // worker and tear the core down underneath the first one's join.
+        val worker = gifWorker?.takeIf { it.isAlive }
+        if (worker == null) {
+            gifWorker = null
+            recording?.dir?.deleteRecursively()
+            activity.runOnUiThread { teardownCore(invoke) }
+            return
         }
-        activity.runOnUiThread {
-            stopLandscapeReleaseListener()
-            unregisterPipReceiver()
-            removePipWatcher()
-            teardownMediaSession()
-            pipActive = false
-            pipRequested = false
-            pipSourceHint = null
-            corePaused = false
-            lastViewport = null
-            setImmersive(false)
-            container?.let { (it.parent as? ViewGroup)?.removeView(it) }
-            mpv?.let {
-                it.command(arrayOf("stop"))
-                it.removeObserver(this)
-                it.destroy()
+        Thread {
+            try {
+                worker.join(5_000)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
             }
-            mpv = null
-            view = null
-            container = null
-            pendingSurfaceLoad = null
-            invoke.resolve()
+            gifWorker = null
+            recording?.dir?.deleteRecursively()
+            activity.runOnUiThread { teardownCore(invoke) }
+        }.start()
+    }
+
+    /** Release everything the core owns. UI thread only, and only once no GIF worker is live. */
+    private fun teardownCore(invoke: Invoke) {
+        stopLandscapeReleaseListener()
+        unregisterPipReceiver()
+        removePipWatcher()
+        removeAutoPipHook()
+        teardownMediaSession()
+        pipActive = false
+        pipRequested = false
+        pipSourceHint = null
+        corePaused = false
+        lastViewport = null
+        setImmersive(false)
+        container?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        mpv?.let {
+            it.command(arrayOf("stop"))
+            it.removeObserver(this)
+            it.destroy()
         }
+        mpv = null
+        view = null
+        container = null
+        pendingSurfaceLoad = null
+        // The system is still holding the last params, which armed auto-enter. Publish once more
+        // with no core so it is disarmed, or pressing home would shrink the whole app into a
+        // miniplayer long after playback ended.
+        publishPipParams()
+        invoke.resolve()
     }
 
     // --- MPVLib.EventObserver → forward to JS (addPluginListener('mpv','progress'|'event', cb)) ---
