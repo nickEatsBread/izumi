@@ -112,6 +112,8 @@ export const autoplayNext = persisted<boolean>('player-autoplay-next', true)
 export const bingePreload = persisted<boolean>('player-binge-preload', true)
 /** Seconds the -N/+N buttons and arrow keys seek. */
 export const seekDuration = persisted<number>('player-seek-seconds', 10)
+/** Show controls that seek playback to the previous, current, or next subtitle cue. */
+export const subtitleLineNavigation = persisted<boolean>('player-subtitle-line-navigation', false)
 /** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
  *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)

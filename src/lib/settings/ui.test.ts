@@ -6,6 +6,7 @@ import {
   androidAutoPip,
   subtitleStyleEnabled,
   secondarySubtitles,
+  subtitleLineNavigation,
   subtitleStripSdh,
   audioProcessing,
   windowsVsr,
@@ -41,6 +42,7 @@ describe('subtitle appearance defaults', () => {
   })
   it('keeps language-learning and cleanup filters opt-in', () => {
     expect(get(secondarySubtitles)).toBe(false)
+    expect(get(subtitleLineNavigation)).toBe(false)
     expect(get(subtitleStripSdh)).toBe(false)
   })
 })
