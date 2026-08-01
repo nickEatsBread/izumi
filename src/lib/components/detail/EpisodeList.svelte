@@ -213,23 +213,23 @@
   {/if}
 
   {#if aired > 0}
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <label class="relative min-w-52 flex-1 sm:max-w-sm">
+    <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+      <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
           bind:value={episodeQuery}
           data-focusable
           placeholder="Find episode number or title…"
-          class="w-full rounded-md bg-input py-2 pl-9 pr-3 text-sm"
+          class="h-12 w-full rounded-xl bg-input pl-10 pr-3 text-base sm:h-auto sm:rounded-md sm:py-2 sm:pl-9 sm:text-sm"
         />
       </label>
       <button data-focusable onclick={randomEpisode}
-              class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">
+              class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
         <Shuffle size={15} /> Random
       </button>
       {#if !trackerLinked}
         <details class="relative">
-          <summary data-focusable class="flex cursor-pointer list-none items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">
+          <summary data-focusable class="flex h-11 cursor-pointer list-none items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
             <ListChecks size={15} /> Progress tools
           </summary>
           <div class="absolute right-0 z-20 mt-2 w-72 rounded-lg border border-border bg-card p-3 shadow-2xl">
@@ -249,25 +249,25 @@
         </details>
       {/if}
     </div>
-    <div class="mb-3 flex flex-wrap items-center gap-2">
+    <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !selecting}
-        <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
+        <div class="flex w-full rounded-xl bg-secondary p-1 text-sm font-bold sm:w-auto sm:rounded-lg sm:p-0.5">
           <button data-focusable onclick={() => toggleSort('asc')}
-                  class="rounded-md px-3 py-1 transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
+                  class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
           <button data-focusable onclick={() => toggleSort('desc')}
-                  class="rounded-md px-3 py-1 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
+                  class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
         {#if absoluteAvailable}
-          <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
+          <div class="flex w-full rounded-xl bg-secondary p-1 text-sm font-bold sm:w-auto sm:rounded-lg sm:p-0.5">
             <button data-focusable onclick={() => (numberMode = 'series')}
-                    class="rounded-md px-3 py-1 {numberMode === 'series' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Series #</button>
+                    class="flex-1 rounded-lg px-3 py-2 sm:rounded-md sm:py-1 {numberMode === 'series' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Series #</button>
             <button data-focusable onclick={() => (numberMode = 'absolute')}
-                    class="rounded-md px-3 py-1 {numberMode === 'absolute' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Absolute #</button>
+                    class="flex-1 rounded-lg px-3 py-2 sm:rounded-md sm:py-1 {numberMode === 'absolute' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Absolute #</button>
           </div>
         {/if}
         {#if !offline}
           <button data-focusable onclick={startSelect}
-                  class="flex items-center gap-1.5 rounded-md bg-secondary px-3 py-1.5 text-sm font-bold transition-colors hover:bg-accent">
+                  class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold transition-colors hover:bg-accent sm:h-auto sm:rounded-md sm:py-1.5">
             <Download size={15} /> Download…
           </button>
         {/if}
@@ -303,11 +303,11 @@
     <!-- Immediate skeleton grid (shape matches the setting) so the list appears at
          once and doesn't flip layouts; real cards then fade their thumbnails in. -->
     {#if $episodeLayout === 'cards'}
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+      <div class="grid grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
         {#each eps as ep (ep)}
-          <div class="overflow-hidden rounded-lg bg-secondary">
-            <div class="aspect-video w-full skeloader"></div>
-            <div class="p-2"><div class="skeloader h-3.5 w-2/3 rounded"></div></div>
+          <div class="grid grid-cols-[42%_1fr] overflow-hidden rounded-xl bg-secondary sm:block sm:rounded-lg">
+            <div class="aspect-video h-full w-full skeloader"></div>
+            <div class="flex items-center p-3 sm:block sm:p-2"><div class="skeloader h-3.5 w-2/3 rounded"></div></div>
           </div>
         {/each}
       </div>
@@ -322,7 +322,7 @@
       </div>
     {/if}
   {:else if $episodeLayout === 'cards'}
-    <div class="grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
+    <div class="grid grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
       {#each rows as ep (ep)}
         <EpisodeCard
           {media}

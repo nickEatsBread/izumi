@@ -57,9 +57,9 @@
     </section>
   </div>
 {:else if recommendations.length}
-  <div class="flex flex-wrap gap-4">
+  <div class="grid grid-cols-2 gap-4 sm:flex sm:flex-wrap">
     {#each recommendations as recommendation (recommendation.id)}
-      <div class="w-28 sm:w-[152px]"><SmallCard media={recommendation} /></div>
+      <div class="min-w-0 sm:w-[152px]"><SmallCard media={recommendation} fill /></div>
     {/each}
   </div>
 {:else}

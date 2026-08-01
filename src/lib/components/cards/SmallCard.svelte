@@ -13,6 +13,7 @@
   import type { Media } from '$lib/anilist/types'
   import { reliableImage } from '$lib/util/reliable-image'
   import { title, cover, season, format, mediaHref } from '$lib/anilist/media'
+  import { rememberDetail } from '$lib/anilist/detail-hint'
   import { fade } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import { get } from 'svelte/store'
@@ -67,7 +68,7 @@
 </script>
 
 <div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
-  <a href={mediaHref(media)} data-focusable onclick={() => h.tap()}
+  <a href={mediaHref(media)} data-focusable onclick={() => { rememberDetail(media); h.tap() }}
      class="group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
