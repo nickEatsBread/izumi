@@ -33,8 +33,15 @@ const PRESETS: Record<Exclude<QualityPreset, 'custom' | 'anime'>, Record<string,
   },
 }
 
-/** The Anime preset runs luma reconstruction first, then the matching chroma pass. */
+/** The Anime shader chain, in mpv apply order: the luma reconstruction pass, then any refinement
+ *  passes. Only the FIRST entry is required — the rest are best-effort (see `applyRenderOpts`),
+ *  because upstream doesn't publish a `.glsl` for every model. Variant names are interpolated into
+ *  a cache filename by the backend, which only accepts `SHADER_VARIANT_RE`; anything outside that
+ *  charset is rejected there, so keep new entries inside it. */
 export const ANIME_SHADER_VARIANTS = ['C4F16', 'C4F16_Chroma'] as const
+
+/** Charset the backend's variant validation accepts (see src-tauri/src/player/shaders.rs). */
+export const SHADER_VARIANT_RE = /^[A-Za-z0-9_]{1,64}$/
 
 export function shaderList(paths: string[]): string {
   if (!paths.length) return ''
@@ -58,14 +65,28 @@ export function parseRawOptions(text: string): [string, string][] {
   return out
 }
 
+/** mpv's filter chains are the one place Custom raw options overlap with the playback-enhancement
+ *  settings (night mode writes `af`, driver upscaling writes `vf`). Both sides used to push the
+ *  WHOLE chain, so whichever landed last silently wiped the other. The enhancement path now owns
+ *  these two keys and composes the user's chain with ours, so this path must leave them alone. */
+const CHAIN_KEYS = new Set(['af', 'vf'])
+
+/** The user's own `af`/`vf` chains from the Custom raw-options textarea, for the enhancement path
+ *  to compose with. Built-in presets never touch filter chains, so they contribute nothing. */
+export function userFilterChains(preset: QualityPreset, raw: string): { af: string; vf: string } {
+  if (preset !== 'custom') return { af: '', vf: '' }
+  const parsed = new Map(parseRawOptions(raw))
+  return { af: parsed.get('af') ?? '', vf: parsed.get('vf') ?? '' }
+}
+
 /** Resolve a preset (+ raw text, + optional downloaded shader path) to the full managed option set.
  *  `shaderPath` is only used by the Anime preset. */
 export function resolvePreset(preset: QualityPreset, raw: string, shaderPath?: string): [string, string][] {
   const merged: Record<string, string> = { ...MANAGED_DEFAULTS }
   if (preset === 'custom') {
     for (const [k, v] of parseRawOptions(raw)) merged[k] = v
-    // raw may set non-managed keys too; include them.
-    return Object.entries(merged)
+    // raw may set non-managed keys too; include them — except the filter chains (see CHAIN_KEYS).
+    return Object.entries(merged).filter(([k]) => !CHAIN_KEYS.has(k))
   }
   const base = preset === 'anime' ? PRESETS.high : PRESETS[preset]
   Object.assign(merged, base)
@@ -79,7 +100,7 @@ export const qualityNotice = writable<string>('')
 /** Managed-key names whose LIVE apply failed — only surfaced in Custom mode (typo, or init-only). */
 export const qualityFailedKeys = writable<string[]>([])
 
-/** Resolve the current preset (downloading the ArtCNN shader first for Anime) and push the option
+/** Resolve the current preset (downloading the upscale shaders first for Anime) and push the option
  *  set to the backend. Shader-download failure falls back to the shader-less High Quality chain. */
 export async function applyRenderOpts(): Promise<void> {
   const preset = get(videoQualityPreset)
@@ -87,8 +108,14 @@ export async function applyRenderOpts(): Promise<void> {
   let shaderPath: string | undefined
   if (preset === 'anime') {
     try {
-      const paths = await Promise.all(ANIME_SHADER_VARIANTS.map((variant) => invoke<string>('ensure_artcnn', { variant })))
-      shaderPath = shaderList(paths)
+      // Fetch the chain in parallel but keep mpv's apply order. Only the first (luma) pass is
+      // required: a refinement pass upstream never published must not take the luma model down with
+      // it, which is what a plain Promise.all did — one rejection dropped the ENTIRE preset.
+      const settled = await Promise.allSettled(
+        ANIME_SHADER_VARIANTS.map((variant) => invoke<string>('ensure_upscale_shader', { variant })),
+      )
+      if (settled[0].status === 'rejected') throw settled[0].reason
+      shaderPath = shaderList(settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : [])))
       qualityNotice.set('')
     } catch {
       qualityNotice.set('Shader download failed — using High Quality.')
