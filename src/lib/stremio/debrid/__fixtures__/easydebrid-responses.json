@@ -1,0 +1,47 @@
+{
+  "lookupCached": { "cached": [true] },
+  "lookupUncached": { "cached": [false] },
+  "unauthenticated": { "message": "Unauthenticated." },
+  "notPremium": { "error": "Account not premium." },
+  "generateEmpty": { "files": [] },
+  "generateBatch": {
+    "files": [
+      {
+        "filename": "[Group] Show - 01 [1080p][AAC].mkv",
+        "directory": ["[Group] Show (01-03) [1080p]"],
+        "size": 1402653184,
+        "url": "https://cdn.easydebrid.example/f/show-01.mkv"
+      },
+      {
+        "filename": "[Group] Show - 02 [1080p][AAC].mkv",
+        "directory": ["[Group] Show (01-03) [1080p]"],
+        "size": 1395864371,
+        "url": "https://cdn.easydebrid.example/f/show-02.mkv"
+      },
+      {
+        "filename": "[Group] Show - 03 [1080p][AAC].mkv",
+        "directory": ["[Group] Show (01-03) [1080p]"],
+        "size": 2147483648,
+        "url": "https://cdn.easydebrid.example/f/show-03.mkv"
+      },
+      {
+        "filename": "[Group] Show - 02 [1080p][AAC].eng.srt",
+        "directory": ["[Group] Show (01-03) [1080p]", "Subs"],
+        "size": 41253,
+        "url": "https://cdn.easydebrid.example/f/show-02.eng.srt"
+      },
+      {
+        "filename": "[Group] Show - 03 [1080p][AAC].eng.srt",
+        "directory": ["[Group] Show (01-03) [1080p]", "Subs"],
+        "size": 39914,
+        "url": "https://cdn.easydebrid.example/f/show-03.eng.srt"
+      },
+      {
+        "filename": "poster.jpg",
+        "directory": ["[Group] Show (01-03) [1080p]"],
+        "size": 310380,
+        "url": "https://cdn.easydebrid.example/f/poster.jpg"
+      }
+    ]
+  }
+}

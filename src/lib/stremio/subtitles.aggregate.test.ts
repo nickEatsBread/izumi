@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   kitsuIdFromMal: vi.fn(),
   osSearch: vi.fn(),
   subdlSearch: vi.fn(),
+  jimakuSearch: vi.fn(),
 }))
 
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
@@ -22,9 +23,10 @@ vi.mock('./subtitles/opensubtitles', () => ({
   OPEN_SUBS_API_KEY: 'TEST_KEY',
 }))
 vi.mock('./subtitles/subdl', () => ({ createSubDL: () => ({ id: 'subdl', search: mocks.subdlSearch }) }))
+vi.mock('./subtitles/jimaku', () => ({ createJimaku: () => ({ id: 'jimaku', search: mocks.jimakuSearch }) }))
 
 import { fetchExternalSubtitles, mergeCandidates } from './subtitles'
-import { subtitleProviders, subDlApiKey, preferredSubLang } from '$lib/settings/ui'
+import { subtitleProviders, subDlApiKey, jimakuApiKey, preferredSubLang } from '$lib/settings/ui'
 import type { SubtitleCandidate } from './subtitles/types'
 import type { Media } from '$lib/anilist/types'
 
@@ -52,8 +54,9 @@ describe('mergeCandidates', () => {
 describe('fetchExternalSubtitles', () => {
   beforeEach(() => {
     for (const m of Object.values(mocks)) m.mockReset()
-    subtitleProviders.set(['opensubtitles', 'subdl'])
+    subtitleProviders.set(['opensubtitles', 'subdl', 'jimaku'])
     subDlApiKey.set('SUBDL_KEY')
+    jimakuApiKey.set('JIMAKU_KEY')
     preferredSubLang.set('eng')
     mocks.getExtensionIds.mockResolvedValue({ imdbId: 'tt0000123', season: 1 })
     mocks.getKitsuId.mockResolvedValue(undefined)
@@ -62,6 +65,7 @@ describe('fetchExternalSubtitles', () => {
     mocks.phttp.mockResolvedValue({ ok: true, status: 200, text: async () => '', json: async () => ({ subtitles: [{ url: 'https://addon/s.srt', lang: 'en', id: 'a1' }] }) })
     mocks.osSearch.mockResolvedValue([{ provider: 'opensubtitles', lang: 'en', release: 'R', download: { needsFetch: true, fileId: 42 } }])
     mocks.subdlSearch.mockResolvedValue([{ provider: 'subdl', lang: 'EN', release: 'Z', download: { needsFetch: true, zipUrl: 'https://dl.subdl.com/z.zip' } }])
+    mocks.jimakuSearch.mockResolvedValue([{ provider: 'jimaku', lang: 'ja', release: 'Show - 05.srt', download: { needsFetch: true, fileUrl: 'https://jimaku.cc/entry/9/download/s.srt' } }])
   })
 
   it('fans out to the addon + enabled external providers and flattens the results', async () => {
@@ -69,6 +73,7 @@ describe('fetchExternalSubtitles', () => {
     expect(out).toContainEqual({ provider: 'addon', url: 'https://addon/s.srt', lang: 'en', id: 'a1' })
     expect(out).toContainEqual({ provider: 'opensubtitles', lang: 'en', release: 'R', download: { needsFetch: true, fileId: 42 } })
     expect(out).toContainEqual({ provider: 'subdl', lang: 'EN', release: 'Z', download: { needsFetch: true, zipUrl: 'https://dl.subdl.com/z.zip' } })
+    expect(out).toContainEqual({ provider: 'jimaku', lang: 'ja', release: 'Show - 05.srt', download: { needsFetch: true, fileUrl: 'https://jimaku.cc/entry/9/download/s.srt' } })
   })
 
   it('builds a SubQuery with the raw tt imdb, season, episode, filename and lowercase languages', async () => {
@@ -92,5 +97,17 @@ describe('fetchExternalSubtitles', () => {
     await fetchExternalSubtitles(['https://addon'], MEDIA, 5, 'Show.S01E05.mkv')
     expect(mocks.subdlSearch).not.toHaveBeenCalled()
     expect(mocks.osSearch).toHaveBeenCalledOnce()
+  })
+
+  it('drops Jimaku from the fan-out when no api key is set', async () => {
+    jimakuApiKey.set('')
+    await fetchExternalSubtitles(['https://addon'], MEDIA, 5, 'Show.S01E05.mkv')
+    expect(mocks.jimakuSearch).not.toHaveBeenCalled()
+    expect(mocks.osSearch).toHaveBeenCalledOnce()
+  })
+
+  it('passes the AniList id through so Jimaku can resolve its entry', async () => {
+    await fetchExternalSubtitles(['https://addon'], MEDIA, 5, 'Show.S01E05.mkv')
+    expect(mocks.jimakuSearch).toHaveBeenCalledWith(expect.objectContaining({ anilistId: MEDIA.id, episode: 5 }))
   })
 })

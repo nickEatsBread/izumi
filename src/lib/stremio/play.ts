@@ -13,9 +13,13 @@ import type { RankOptions } from './addon'
  *  use the same ones the picker does, or "best" means two different things depending on whether a
  *  human was looking. */
 const directP2pEnabled = () => get(torrentPlaybackMode) === 'direct' || !get(debridKey)
-const rankOpts = (): RankOptions => ({
+const rankOpts = (anilistId?: number): RankOptions => ({
   audioLang: get(preferredAudioLang),
   directP2p: directP2pEnabled(),
+  // Synchronous by necessity — this is a settings snapshot, not an async step — so it reads what a
+  // previous lookup already learned rather than starting one. A cold title simply ranks without the
+  // preference, the same way it did before the annotation existed.
+  seadexHashes: get(seadexAnnotations) ? knownBestHashes(anilistId) : undefined,
 })
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
@@ -23,6 +27,7 @@ import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf, type DownloadPreferences } from '$lib/downloads/state'
 import { resolveHash, resolveSidecars, providerName, type EpisodeWant } from './debrid'
 import { resolveOnlineStreams } from './onlinestream'
+import { knownBestHashes } from './seadex'
 import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
 import { normalizeLang } from './sublang'
@@ -49,7 +54,7 @@ import {
 import { markDead } from './dead-sources'
 import { shareableSource } from '$lib/watch-together/source'
 import {
-  preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller,
+  preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
   autoplayNext, autoSelectCountdown, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   torrentDownloadLimitMbps, torrentUploadLimitMode, torrentUpstreamCapacityMbps,
@@ -927,7 +932,7 @@ export async function playEpisode(
       // Season correctness outranks speed: until AniZip has answered we cannot know that the top
       // row is even the right episode, so the confident path stays shut (the same gate the
       // same-release continuation uses).
-      const top = seasonSettled ? pickBest(s, get(preferredQuality), want, rankOpts()) : undefined
+      const top = seasonSettled ? pickBest(s, get(preferredQuality), want, rankOpts(media.id)) : undefined
       let deadline: number
       if (top) {
         const key = top.url ?? top.infoHash ?? ''
@@ -1173,7 +1178,7 @@ async function resolveRememberedSource(media: Media, episode: number, remembered
   if (same && playableNow(same) && !isUncached(same)) return same
   // Same origin remains useful even if that origin renamed/repacked the episode. Within the pinned
   // origin, prefer its best ready source; never auto-start an uncached unrelated torrent.
-  return pickBest(rankStreams(streams, 'quality', rankOpts()), get(preferredQuality), want, rankOpts())
+  return pickBest(rankStreams(streams, 'quality', rankOpts(media.id)), get(preferredQuality), want, rankOpts(media.id))
 }
 
 /** Resume from Continue Watching / the detail Continue button. Refresh the trimmed home-card Media
@@ -1775,7 +1780,7 @@ export async function recoverPlaybackSource(
     get(preferredQuality),
     undefined,
     (stream) => attempted.has(recoveryStreamKey(stream)),
-    { ...rankOpts(), allowUncached: true },
+    { ...rankOpts(context.media.id), allowUncached: true },
   )
     .filter((stream) => !attempted.has(recoveryStreamKey(stream)))
     .slice(0, directP2p ? 2 : 3)
@@ -1923,7 +1928,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
     const preferred = eligible.filter((stream) => patterns[preferences.codec as 'h264' | 'h265' | 'av1'].test(raw(stream)))
     if (preferred.length) eligible = preferred
   }
-  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts()) ?? eligible[0]
+  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(media.id)) ?? eligible[0]
   if (!best) throw new Error('No source found to download.')
   let url = best.url
   let prov: string | undefined

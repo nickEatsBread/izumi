@@ -36,10 +36,13 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'OpenSubtitles account', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'login username password quota' },
   { title: 'Stay signed in', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'remember login' },
   { title: 'SubDL API key', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'token provider' },
+  { title: 'Jimaku', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'provider captions api key japanese', anchored: true },
+  { title: 'Jimaku API key', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'token provider japanese' },
 
   { title: 'Auto-play the best source', category: 'Sources', href: '/app/settings/sources', keywords: 'automatic stream cached countdown timer instant', anchored: true },
   { title: 'Preferred quality', category: 'Sources', href: '/app/settings/sources', keywords: '4k 1080p 720p resolution' },
   { title: 'Stremio addon sources', category: 'Sources', href: '/app/settings/sources', keywords: 'manifest url torrent debrid' },
+  { title: 'Mark best releases', category: 'Sources', href: '/app/settings/sources', keywords: 'seadex releases.moe curated encode quality badge recommended', anchored: true },
   { title: 'Default discussion source', category: 'Sources', href: '/app/settings/sources', keywords: 'comments reddit anilist mal youtube disqus forum', anchored: true },
 
   { title: 'Debrid provider', category: 'Extensions', href: '/app/settings/extensions', keywords: 'Real-Debrid AllDebrid Premiumize TorBox' },

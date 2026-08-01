@@ -15,7 +15,9 @@
   import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
-  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription } from '$lib/settings/ui'
+  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations } from '$lib/settings/ui'
+  import { getSeadexEntry, bestHashes, matchSeadexStreams, type SeadexEntry } from '$lib/stremio/seadex'
+  import { openUrl } from '@tauri-apps/plugin-opener'
   import { providerProblems } from '$lib/stremio/onlinestream'
   import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
@@ -27,16 +29,59 @@
   import Check from 'lucide-svelte/icons/check'
   import Play from 'lucide-svelte/icons/play'
   import Database from 'lucide-svelte/icons/database'
+  import BadgeCheck from 'lucide-svelte/icons/badge-check'
   import { copyToClipboard } from '$lib/util/clipboard'
 
   const pick = $derived($streamPicker)
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
+
+  // Curated best-release annotation. Loaded AFTER first paint and never awaited by anything: the
+  // list, the ranking and the countdown all run on `seadex === null`, and a matched entry simply
+  // re-ranks and re-badges when (if) it lands. A failure is indistinguishable from "no entry".
+  let seadex = $state<SeadexEntry | null>(null)
+  // The id, NOT `pick`, is what the load below may depend on. `pick` is a new object on every
+  // progressive stream update, so an effect reading it directly would re-run (and blank the
+  // annotation) each time an addon landed — a flickering badge and a re-ranking list mid-resolve.
+  // A primitive derived only propagates when the title actually changes.
+  const seadexId = $derived($seadexAnnotations ? pick?.media.id : undefined)
+  $effect(() => {
+    const anilistId = seadexId
+    seadex = null
+    if (!anilistId) return
+    // `seadex` is written but never read in here, so the write cannot re-trigger this effect.
+    // `live` drops a response that arrives after the picker moved to another title.
+    let live = true
+    void getSeadexEntry(anilistId).then((entry) => { if (live) seadex = entry })
+    return () => { live = false }
+  })
+  const seadexHashes = $derived(bestHashes(seadex))
+  // Alternates (curated, but NOT the recommendation) are annotated too — quieter, and with no
+  // ranking weight. Filtered-out rows are matched as well, and deliberately: a release the curators
+  // rate best that our title/season heuristics threw away is the one case where seeing both badges
+  // at once tells the user something true about OUR filtering.
+  const seadexReleases = $derived(
+    new Map(matchSeadexStreams(
+      seadex,
+      [...(pick?.streams ?? []), ...(pick?.rejected ?? []).map((r) => r.stream)],
+    ).map((m) => [(m.stream.infoHash ?? '').toLowerCase(), m.release])),
+  )
+  const curatedOf = (info: StreamInfo) =>
+    info.stream.infoHash ? seadexReleases.get(info.stream.infoHash.toLowerCase()) : undefined
+  // Only worth a strip when it has something to SAY: plenty of entries carry releases and no prose.
+  const seadexInfo = $derived(
+    seadex && (seadex.notes || seadex.theoreticalBest || seadex.incomplete || seadex.comparisons.length)
+      ? seadex
+      : undefined,
+  )
+  let seadexOpen = $state(false)
+
   // Ranking inputs the ordering can't derive from a stream alone: the language the user asked to
-  // hear, and the group the previous episode of THIS title played from.
+  // hear, the group the previous episode of THIS title played from, and the curated recommendation.
   const rankOpts = $derived({
     audioLang: $preferredAudioLang,
     previousGroup: $bingeSource?.mediaId === pick?.media.id ? $bingeSource?.group : undefined,
     directP2p,
+    seadexHashes,
   })
   const all = $derived(pick ? rankInfos(pick.streams, $preferredStreamSort, rankOpts) : ([] as StreamInfo[]))
   const visible = $derived($showDeadSources ? all : all.filter((i) => i.cached !== 'down'))
@@ -99,15 +144,20 @@
   const bestStream = $derived(candidates[autoIdx])
   const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
   // A pick that can't explain itself is indistinguishable from a random one. Strongest signals
-  // first, and only the ones that actually moved it.
+  // first, and only the ones that actually moved it. Curation leads the list because it is a sort
+  // key rather than a score, so it has no delta to sort by and has to be named separately.
   const whyBest = $derived(
     best
-      ? `Picked for: ${scoreInfo(best, rankOpts).reasons
-          .slice()
-          .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
-          .slice(0, 3)
-          .map((r) => `${r.signal} (${r.delta > 0 ? '+' : ''}${r.delta})`)
-          .join(', ') || 'nothing else came close'}`
+      ? `Picked for: ${[
+          // The ranking input, not the badge: an incomplete entry still badges its rows and still
+          // must not claim to have decided anything.
+          ...(seadexHashes.has((best.stream.infoHash ?? '').toLowerCase()) ? ['curated best release'] : []),
+          ...scoreInfo(best, rankOpts).reasons
+            .slice()
+            .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+            .slice(0, 3)
+            .map((r) => `${r.signal} (${r.delta > 0 ? '+' : ''}${r.delta})`),
+        ].join(', ') || 'nothing else came close'}`
       : '',
   )
 
@@ -170,7 +220,7 @@
     const k = pick ? `${pick.media.id}:${pick.episode}` : ''
     if (k !== lastKey) {
       lastKey = k
-      busy = false; error = ''; filter = ''; showAll = false; showFiltered = false
+      busy = false; error = ''; filter = ''; showAll = false; showFiltered = false; seadexOpen = false
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
       autoIdx = 0; failedKeys = []
       focusedBest = false
@@ -385,6 +435,45 @@
         {/if}
       </div>
 
+      <!-- What the curators actually said. Collapsed by default and scroll-capped when open: these
+           notes run to paragraphs on well-documented titles, and the source list is what the modal
+           is for. Rendered whether or not any listed release turned up in the list — "the best one
+           is on a private tracker" is still the most useful thing we can say about a title. -->
+      {#if seadexInfo}
+        <div class="shrink-0 border-b border-border bg-emerald-500/[0.06] px-4 py-2 text-xs">
+          <button data-focusable onclick={() => (seadexOpen = !seadexOpen)} aria-expanded={seadexOpen}
+                  class="flex w-full items-center gap-2 text-left">
+            <BadgeCheck size={13} class="shrink-0 text-emerald-300" />
+            <span class="shrink-0 font-bold text-emerald-300">Best-release notes</span>
+            {#if seadexInfo.incomplete}
+              <span class="shrink-0 rounded bg-amber-400/20 px-1.5 text-[0.6rem] font-black uppercase text-amber-300" title="The recommended release is missing episodes.">Incomplete</span>
+            {/if}
+            {#if !seadexOpen && seadexInfo.notes}
+              <span class="min-w-0 flex-1 truncate text-muted-foreground">{seadexInfo.notes}</span>
+            {/if}
+            <span class="ml-auto shrink-0 text-muted-foreground">{seadexOpen ? '▴' : '▾'}</span>
+          </button>
+          {#if seadexOpen}
+            <div class="mt-1.5 max-h-40 overflow-y-auto pr-1">
+              {#if seadexInfo.notes}
+                <p class="whitespace-pre-line leading-snug text-muted-foreground">{seadexInfo.notes}</p>
+              {/if}
+              {#if seadexInfo.theoreticalBest}
+                <p class="mt-1.5 text-muted-foreground"><span class="font-bold text-foreground">Theoretical best:</span> {seadexInfo.theoreticalBest} <span class="opacity-70">(does not exist yet)</span></p>
+              {/if}
+              {#if seadexInfo.comparisons.length}
+                <p class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span class="font-bold text-foreground">Comparisons:</span>
+                  {#each seadexInfo.comparisons as url, i}
+                    <button data-focusable onclick={() => openUrl(url)} class="text-theme underline-offset-2 hover:underline" title={url}>#{i + 1}</button>
+                  {/each}
+                </p>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
+
       {#if playbackError}
         <p class="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">{playbackError}</p>
       {/if}
@@ -411,6 +500,7 @@
           {@const filteredAs = reasonOf.get(info)}
           {@const knownBad = hasFailed(info.stream)}
           {@const body = descriptionOf(info)}
+          {@const curated = curatedOf(info)}
           <div
             data-focusable
             data-best-source={isBest ? '' : undefined}
@@ -439,6 +529,12 @@
                 {#if isBest}
                   <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white" title={whyBest}>Best</span>
                   {#if autoState === 'counting'}<span class="shrink-0 font-black tabular-nums text-theme" class:text-red-400={autoProgress > 0.4}>[{Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}]</span>{/if}
+                {/if}
+                {#if curated}
+                  <span
+                    class="shrink-0 rounded px-1.5 text-[0.6rem] font-black uppercase {curated.isBest ? 'bg-emerald-400/20 text-emerald-300' : 'bg-emerald-400/10 text-emerald-300/70'}"
+                    title="{curated.isBest ? 'Rated the best available release' : 'A curated alternative, not the top pick'} by releases.moe{curated.releaseGroup ? ` — ${curated.releaseGroup}` : ''}{curated.tracker ? ` on ${curated.tracker}` : ''}{curated.dualAudio ? ' · dual audio' : ''}"
+                  >{curated.isBest ? 'Best release' : 'Curated alt'}</span>
                 {/if}
                 {#if filteredAs}
                   <span class="shrink-0 rounded bg-amber-400/20 px-1.5 text-[0.6rem] font-black uppercase text-amber-300" title="Filtered out: {filteredAs}">{filteredAs}</span>

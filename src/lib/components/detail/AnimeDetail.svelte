@@ -33,6 +33,7 @@
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import RichMetadata from './RichMetadata.svelte'
+  import AiringStatus from './AiringStatus.svelte'
   import { reliableImage } from '$lib/util/reliable-image'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
@@ -205,6 +206,7 @@
       <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
         <span class="rounded-full bg-secondary px-2 py-0.5">{effProgress}/{epsTotal(m) || '?'} Episodes</span>
         {#if season(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{season(m)}</span>{/if}
+        <AiringStatus media={m} compact />
       </div>
 
       {#if m.description}
@@ -325,6 +327,7 @@
           {#if status(m)}<span class="rounded-full bg-secondary px-3 py-1">{status(m)}</span>{/if}
           {#if season(m)}<span class="rounded-full bg-secondary px-3 py-1">{season(m)}</span>{/if}
           {#if m.averageScore}<span class="rounded-full px-3 py-1 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
+          <AiringStatus media={m} />
         </div>
 
         {#if m.description}

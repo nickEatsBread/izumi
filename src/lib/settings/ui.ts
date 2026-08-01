@@ -91,6 +91,10 @@ export const showDeadSources = persisted<boolean>('show-dead-sources', false)
 export const fullStreamDescription = persisted<boolean>('full-stream-description', false)
 /** Within-cache-tier sort order for the source picker. */
 export const preferredStreamSort = persisted<StreamSort>('preferred-stream-sort', 'quality')
+/** Mark sources a curated release database recommends, and prefer them within a quality tier.
+ *  Default on: it adds no source and sends no identity, it only annotates rows the picker already
+ *  found, and it costs one heavily cached request per title. Off stops the lookup entirely. */
+export const seadexAnnotations = persisted<boolean>('seadex-annotations', true)
 
 // --- Player behaviour ---
 /** Auto-play the next episode when one finishes. Default on. */
@@ -278,14 +282,17 @@ export const openSubtitlesStaySignedIn = persisted<boolean>('opensubtitles-stay'
 export const openSubtitlesCreds = persisted<string>('opensubtitles-creds', '')
 /** SubDL API key (bring-your-own; required even to search). Secret. */
 export const subDlApiKey = persisted<string>('subdl-api-key', '')
+/** Jimaku API key (bring-your-own; every endpoint is authenticated). Secret. */
+export const jimakuApiKey = persisted<string>('jimaku-api-key', '')
 
 /** The subtitle providers that can actually run: OpenSubtitles is always searchable (embedded
- *  Api-Key); SubDL needs a key even to search, so it's dropped when the key is empty. */
+ *  Api-Key); SubDL and Jimaku need a key even to search, so they're dropped when the key is empty. */
 export const enabledSubtitleProviders = derived(
-  [subtitleProviders, subDlApiKey],
-  ([$on, $subdl]) => $on.filter((p) =>
+  [subtitleProviders, subDlApiKey, jimakuApiKey],
+  ([$on, $subdl, $jimaku]) => $on.filter((p) =>
     p === 'opensubtitles' ||
-    (p === 'subdl' && !!$subdl)),
+    (p === 'subdl' && !!$subdl) ||
+    (p === 'jimaku' && !!$jimaku)),
 )
 
 // --- Offline downloads ---

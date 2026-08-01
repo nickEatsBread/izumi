@@ -7,6 +7,7 @@ import { kitsuIdFromMal } from './kitsu'
 import { preferredSubLang, enabledSubtitleProviders } from '$lib/settings/ui'
 import { createOpenSubtitles } from './subtitles/opensubtitles'
 import { createSubDL } from './subtitles/subdl'
+import { createJimaku } from './subtitles/jimaku'
 import type { SubQuery, SubtitleCandidate, SubtitleProvider } from './subtitles/types'
 import type { Media } from '$lib/anilist/types'
 
@@ -67,6 +68,7 @@ async function buildSubQuery(media: Media, episode: number | undefined, filename
     parentImdbId: ids.imdbId,
     tmdbId: ids.tmdbId,
     kitsuId: kitsu != null ? String(kitsu) : undefined,
+    anilistId: media.id,
     season: ids.season,
     episode,
     filename,
@@ -110,25 +112,27 @@ export function createAddonProvider(bases: string[]): SubtitleProvider {
   }
 }
 
-/** The enabled direct-REST providers (OpenSubtitles / SubDL) for this search. */
+/** The enabled direct-REST providers (OpenSubtitles / SubDL / Jimaku) for this search. */
 function externalProviders(): SubtitleProvider[] {
   const out: SubtitleProvider[] = []
   for (const id of get(enabledSubtitleProviders)) {
     if (id === 'opensubtitles') out.push(createOpenSubtitles())
     else if (id === 'subdl') out.push(createSubDL())
+    else if (id === 'jimaku') out.push(createJimaku())
   }
   return out
 }
 
 /** Flatten + dedupe candidate lists: url-bearing rows (addons) dedupe on url; needsFetch rows dedupe
- *  on provider + fileId/zipUrl, so the same OpenSubtitles file or SubDL zip never lists twice. */
+ *  on provider + fileId/zipUrl/fileUrl, so the same OpenSubtitles file, SubDL zip or Jimaku file
+ *  never lists twice. */
 export function mergeCandidates(lists: SubtitleCandidate[][]): SubtitleCandidate[] {
   const seen = new Set<string>()
   const out: SubtitleCandidate[] = []
   for (const c of lists.flat()) {
     const key = c.url
       ? `url:${c.url}`
-      : `${c.provider}:${c.download?.fileId ?? c.download?.zipUrl ?? c.id ?? ''}`
+      : `${c.provider}:${c.download?.fileId ?? c.download?.zipUrl ?? c.download?.fileUrl ?? c.id ?? ''}`
     if (seen.has(key)) continue
     seen.add(key)
     out.push(c)

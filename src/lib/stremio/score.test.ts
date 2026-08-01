@@ -1,5 +1,5 @@
 import { describe as suite, it, expect } from 'vitest'
-import { scoreInfo, TRUSTED_GROUPS } from './score'
+import { scoreInfo, RESOLUTION_POINTS, TRUSTED_GROUPS } from './score'
 import { describe } from './parse'
 
 const info = (filename: string, extra: Record<string, unknown> = {}) =>
@@ -150,5 +150,29 @@ suite('scoreInfo', () => {
 
   it('still prefers 4K when health is comparable', () => {
     expect(score('Show - 01 2160p 👤 400')).toBeGreaterThan(score('Show - 01 1080p 👤 400'))
+  })
+
+  suite('adjacent resolution tiers', () => {
+    // The budget a within-tier signal has to fit inside is the ADJACENT gap, never the 25 → 2
+    // spread across the whole ladder — quoting the spread is how a weight that clears four
+    // adjacent tiers reads as safe. Generated from RESOLUTION_POINTS so a new tier cannot quietly
+    // go unasserted; the curated-release ordering these gaps govern is tested in candidates.test.ts.
+    for (const [i, [higher]] of RESOLUTION_POINTS.entries()) {
+      const lower = RESOLUTION_POINTS[i + 1]?.[0]
+      if (!lower) continue
+      it(`scores a plain ${higher}p above a plain ${lower}p`, () => {
+        expect(score(`Show - 01 (${lower}p)`)).toBeLessThan(score(`Show - 01 (${higher}p)`))
+      })
+    }
+
+    it('leaves no room for a within-tier bonus that outranks group continuity', () => {
+      const gaps = RESOLUTION_POINTS.slice(0, -1).map(([, p], i) => p - RESOLUTION_POINTS[i + 1][1])
+      expect(gaps).toEqual([3, 2, 12, 6])
+      // The seeder cap (10) is calibrated against the 12: health may cross the narrow gaps and
+      // must not cross that one. Anything that has to outrank group continuity (12) to decide the
+      // case it exists for cannot be points at all — it would clear every gap on the ladder. That
+      // is why curation is a sort key rather than a weight.
+      expect(Math.min(...gaps)).toBeLessThan(12)
+    })
   })
 })

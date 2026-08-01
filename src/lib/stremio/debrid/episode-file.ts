@@ -11,7 +11,9 @@ import type { EpisodeWant } from './types'
 // Extras that must never win an episode match even when numbered — supersets the shared
 // JUNK regex with the creditless/textless/menu vocabulary (mirrors relevance.ts, which is
 // Stream-typed and release-level, hence the local copy for raw filenames).
-const EXTRA = /\b(?:ncop|nced|ncbd|creditless|textless|non-?credits?|clean\s?(?:op|ed|opening|ending)|op\s?\d{1,2}\b|ed\s?\d{1,2}\b|preview|teaser|trailer|promo|pv|cm|menu|sample)\b/i
+// Exported because the subtitle side needs the same vocabulary: an extras file parses to no episode
+// at all, so it lands in a bucket that is offered for EVERY episode unless it is filtered out first.
+export const EXTRA = /\b(?:ncop|nced|ncbd|creditless|textless|non-?credits?|clean\s?(?:op|ed|opening|ending)|op\s?\d{1,2}\b|ed\s?\d{1,2}\b|preview|teaser|trailer|promo|pv|cm|menu|sample)\b/i
 
 // Noise stripped before number capture, so codec/resolution/audio tokens can't be read
 // as episode numbers. Composite resolutions (720x480) are nothing else in the repo strips.

@@ -12,6 +12,13 @@ describe('settings search', () => {
     expect(searchSettings('4k resolution')[0]?.title).toBe('Preferred quality')
   })
 
+  it('resolves the curated-release row from the words on it and around it', () => {
+    // The row's own words, and the ones a user would reach for instead — the setting is useless if
+    // it can only be found by scrolling to it.
+    expect(searchSettings('mark best releases')[0]?.title).toBe('Mark best releases')
+    expect(searchSettings('curated')[0]?.title).toBe('Mark best releases')
+  })
+
   it('hides controls that do not exist in the Android UI', () => {
     expect(searchSettings('player cache', true)).toHaveLength(0)
     expect(searchSettings('title language', true)[0]?.title).toBe('Title language')

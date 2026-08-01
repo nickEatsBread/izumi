@@ -41,7 +41,7 @@ const TRUSTED = new Set(TRUSTED_GROUPS.map(norm))
  *  how dead it was — so the list led with a 22-seeder 4K file above an 812-seeder 1080p, i.e. with
  *  the thing least likely to actually start playing. As points, the 4K-over-1080p edge is small
  *  enough that health can overturn it and large enough to win when health is comparable. */
-const RESOLUTION_POINTS: [number, number][] = [[2160, 25], [1440, 22], [1080, 20], [720, 8], [480, 2]]
+export const RESOLUTION_POINTS: [number, number][] = [[2160, 25], [1440, 22], [1080, 20], [720, 8], [480, 2]]
 
 export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: number; reasons: ScoreReason[] } {
   const reasons: ScoreReason[] = []
@@ -99,6 +99,11 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
     // Direct P2P keeps a small tie-breaker; debrid/CDN playback retains the strong preference.
     add('same group as last episode', opts.directP2p ? 2 : 12)
   }
+
+  // Curation deliberately scores NOTHING here; it is a sort key in addon.ts instead. What matters
+  // for a within-tier preference is the ADJACENT gap, not the 25 → 2 spread: 1440p → 1080p is 2
+  // points and 1080p → 720p is 12, so any weight big enough to beat group continuity (12) also
+  // buys a whole tier — the exact trade the seeder cap of 10 exists to forbid.
 
   // Nothing to download from and nothing already resolved: not merely worse, effectively unplayable.
   // A penalty rather than a filter, because seeder counts are often stale or simply absent.
