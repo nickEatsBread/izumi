@@ -180,7 +180,7 @@
         <div class="absolute inset-0 bg-gradient-to-b from-background/20 via-background/70 to-background"></div>
       </div>
       <div class="flex items-end gap-4">
-        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="aspect-[2/3] w-28 shrink-0 rounded-xl bg-muted object-contain shadow-xl" />{:else}<div class="aspect-[2/3] w-28 shrink-0 rounded-xl skeloader"></div>{/if}
+        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="aspect-[46/65] w-28 shrink-0 rounded-xl object-cover shadow-xl" />{:else}<div class="aspect-[46/65] w-28 shrink-0 rounded-xl skeloader"></div>{/if}
         <div class="min-w-0 flex-1 pb-1">
           <h1 class="line-clamp-3 text-2xl font-black leading-tight">{detailHint ? title(detailHint) : 'Loading title…'}</h1>
           <div class="mt-3 flex gap-2"><span class="h-6 w-16 rounded-full skeloader"></span><span class="h-6 w-20 rounded-full skeloader"></span></div>
@@ -213,12 +213,12 @@
       <!-- Background art (banner) behind the cover + title, like desktop: prominent at the top,
            dissolving into the page before the description so text stays legible. -->
       <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
-        <img src={banner(m)} alt="" class="h-full w-screen -translate-x-4 object-cover opacity-70" style="object-position:center 20%" />
+        <img src={banner(m)} alt="" class="h-full w-full object-cover opacity-70" style="object-position:center 20%" />
         <div class="absolute inset-0 bg-gradient-to-b from-background/10 via-background/55 to-background"></div>
       </div>
 
       <div class="flex gap-4 pt-10">
-        <img use:reliableImage={cover(m)} alt="" class="aspect-[2/3] w-28 shrink-0 rounded-xl bg-black/20 object-contain shadow-xl min-[420px]:w-32" />
+        <img use:reliableImage={cover(m)} alt="" class="aspect-[46/65] w-28 shrink-0 rounded-xl object-cover shadow-xl min-[420px]:w-32" />
         <div class="min-w-0 flex-1 self-end">
           {#if m.title.native || m.title.romaji}
             <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>

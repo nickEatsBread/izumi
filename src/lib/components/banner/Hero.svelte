@@ -178,7 +178,7 @@
         {#if medias.length > 1}
           <div class="mt-1.5 flex justify-center gap-1.5">
             {#each medias as _, idx (idx)}
-              <button data-focusable onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
+              <button type="button" onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
                       class="pointer-events-auto h-1.5 rounded-full transition-all duration-300 {idx === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}"></button>
             {/each}
           </div>

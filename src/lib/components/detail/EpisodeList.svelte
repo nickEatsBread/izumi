@@ -18,6 +18,7 @@
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
   import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
+  import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import { enqueueMany, downloads, keyFor } from '$lib/downloads/store'
   import {
@@ -223,10 +224,19 @@
           class="h-12 w-full rounded-xl bg-input pl-10 pr-3 text-base sm:h-auto sm:rounded-md sm:py-2 sm:pl-9 sm:text-sm"
         />
       </label>
-      <button data-focusable onclick={randomEpisode}
-              class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
-        <Shuffle size={15} /> Random
-      </button>
+      {#if $isMobile}
+        <div class="flex h-11 w-full rounded-xl bg-secondary p-1 text-sm font-bold">
+          <button data-focusable onclick={() => toggleSort('asc')}
+                  class="flex-1 rounded-lg px-3 py-2 transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
+          <button data-focusable onclick={() => toggleSort('desc')}
+                  class="flex-1 rounded-lg px-3 py-2 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
+        </div>
+      {:else}
+        <button data-focusable onclick={randomEpisode}
+                class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
+          <Shuffle size={15} /> Random
+        </button>
+      {/if}
       {#if !trackerLinked}
         <details class="relative">
           <summary data-focusable class="flex h-11 cursor-pointer list-none items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
@@ -251,12 +261,14 @@
     </div>
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !selecting}
-        <div class="flex w-full rounded-xl bg-secondary p-1 text-sm font-bold sm:w-auto sm:rounded-lg sm:p-0.5">
-          <button data-focusable onclick={() => toggleSort('asc')}
-                  class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
-          <button data-focusable onclick={() => toggleSort('desc')}
-                  class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
-        </div>
+        {#if !$isMobile}
+          <div class="flex w-full rounded-xl bg-secondary p-1 text-sm font-bold sm:w-auto sm:rounded-lg sm:p-0.5">
+            <button data-focusable onclick={() => toggleSort('asc')}
+                    class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
+            <button data-focusable onclick={() => toggleSort('desc')}
+                    class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
+          </div>
+        {/if}
         {#if absoluteAvailable}
           <div class="flex w-full rounded-xl bg-secondary p-1 text-sm font-bold sm:w-auto sm:rounded-lg sm:p-0.5">
             <button data-focusable onclick={() => (numberMode = 'series')}
