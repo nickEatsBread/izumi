@@ -2,8 +2,10 @@
   import { onMount } from 'svelte'
   import {
     enableDoH, doHUrl, torrentAndroidPostSeed, torrentDownloadLimitMbps,
-    torrentUploadLimitMode, torrentUpstreamCapacityMbps, syncRelayMode, syncRelayUrl,
+    torrentUploadLimitMode, torrentUpstreamCapacityMbps, torrentProxyEnabled, torrentProxyUrl,
+    syncRelayMode, syncRelayUrl,
   } from '$lib/settings/ui'
+  import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
   import { getSyncRelayConfig, setSyncRelay } from '$lib/sync/client'
   import { isAndroid } from '$lib/platform'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -13,12 +15,18 @@
   let relayNotice = $state('')
   let relayError = $state('')
 
+  const proxyError = $derived.by(() => {
+    try { torrentProxyEndpoint($torrentProxyEnabled, $torrentProxyUrl); return '' }
+    catch (error) { return error instanceof Error ? error.message : String(error) }
+  })
+
   onMount(() => {
     void getSyncRelayConfig().then((config) => {
       syncRelayMode.set(config.customUrl ? 'custom' : 'public')
       if (config.customUrl) syncRelayUrl.set(config.customUrl)
     }).catch(() => {})
   })
+
 
   async function applyRelay() {
     applyingRelay = true
@@ -88,6 +96,25 @@
       {/if}
 
       <p class="mt-3 text-xs text-muted-foreground">One torrent seeds while you watch. When playback closes, desktop continues for up to 30 minutes or a 0.25 ratio, whichever happens first. Upload is reduced automatically whenever less than one minute is buffered.</p>
+    </section>
+
+    <section class="rounded-md border border-border p-3">
+      <div class="font-bold">Direct P2P SOCKS5 proxy</div>
+      <p class="mt-1 text-xs text-muted-foreground">Route torrent peer connections and HTTP trackers through a SOCKS5 endpoint supplied by your VPN client or proxy provider. This is proxy routing, not qBittorrent-style VPN adapter binding.</p>
+      <div class="mt-3">
+        <Toggle label="Require SOCKS5 proxy" desc="Kill-switch mode: playback fails instead of falling back to the normal connection. Direct DHT and UDP trackers are disabled because they cannot use this proxy safely." value={$torrentProxyEnabled} onToggle={() => ($torrentProxyEnabled = !$torrentProxyEnabled)} />
+      </div>
+      {#if $torrentProxyEnabled}
+        <label class="mt-3 flex flex-col gap-1">
+          <span class="text-sm font-bold">SOCKS5 URL</span>
+          <input type="text" autocomplete="off" spellcheck="false" data-focusable bind:value={$torrentProxyUrl}
+                 placeholder="socks5://127.0.0.1:1080"
+                 class="rounded-md bg-input px-3 py-2 font-mono text-sm" />
+          <span class="text-xs text-muted-foreground">Credentials are optional: <code>socks5://user:password@host:port</code>. Many VPN desktop clients expose a local SOCKS5 port.</span>
+        </label>
+        {#if proxyError}<p class="mt-2 text-xs text-destructive">{proxyError}</p>{/if}
+        <p class="mt-2 text-xs text-muted-foreground">Restart Izumi after changing this setting so the warmed torrent session is recreated on the selected route. Proxy mode may discover fewer peers because UDP-only trackers and DHT are intentionally unavailable.</p>
+      {/if}
     </section>
 
     {#if $isAndroid}

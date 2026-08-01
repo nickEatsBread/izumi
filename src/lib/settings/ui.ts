@@ -246,6 +246,10 @@ export const torrentDownloadLimitMbps = persisted<number>('torrent-download-limi
  * connection's measured upstream and uses at most 70%, leaving headroom for playback ACKs. */
 export const torrentUploadLimitMode = persisted<'auto' | 'capacity'>('torrent-upload-limit-mode', 'auto')
 export const torrentUpstreamCapacityMbps = persisted<number>('torrent-upstream-capacity-mbps', 10)
+/** Optional SOCKS5 tunnel for Direct P2P. Native playback treats this as a kill-switch mode:
+ * peer TCP and HTTP trackers use the proxy, while direct-only DHT/UDP trackers are disabled. */
+export const torrentProxyEnabled = persisted<boolean>('torrent-proxy-enabled', false)
+export const torrentProxyUrl = persisted<string>('torrent-proxy-url', 'socks5://127.0.0.1:1080')
 /** Mobile post-play seeding is opt-in and additionally requires charging + an unmetered network. */
 export const torrentAndroidPostSeed = persisted<boolean>('torrent-android-post-seed', false)
 /** Public n0 relays are the default. Set this to an Iroh relay URL to use a self-hosted relay. */

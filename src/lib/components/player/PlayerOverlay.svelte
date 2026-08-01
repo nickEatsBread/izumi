@@ -11,8 +11,9 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats } from '$lib/player/session'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
+  import { markAlive } from '$lib/stremio/dead-sources'
   import {
     DIRECT_TORRENT_START_TIMEOUT_MS,
     recoveryWatchDecision,
@@ -32,7 +33,7 @@
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
-  import { confirmDirectTorrentFileLoaded, currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
+  import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
@@ -62,9 +63,11 @@
   let seeking = $state(false)
   let eof = $state(false)
   let firstFrame = $state(false)
+  let loadedUrl = ''
   let recoveryWatch: RecoveryWatchState = resetRecoveryWatch(Date.now())
   let recoveryBusy = false
   let directTorrentDownloadedBytes = 0
+  let directTorrentSelectedSize = 0
   let directTorrentHealthBusy = false
   let segments = $state<Segment[]>([])
   let chapters = $state<{ time: number; title: string }[]>([])
@@ -365,7 +368,7 @@
     if (key === loadedKey) return
     loadedKey = key
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
-    coreIdle = true; seeking = false; eof = false; firstFrame = false
+    coreIdle = true; seeking = false; eof = false; firstFrame = false; loadedUrl = ''
     recoveryWatch = resetRecoveryWatch(Date.now())
     directTorrentDownloadedBytes = 0
     autoSkipped = new Set()
@@ -686,14 +689,21 @@
 
   onMount(() => {
     const uns = [
-      listen<string>('player-file-loaded', (e) => confirmDirectTorrentFileLoaded(e.payload)),
       listen<[number, number]>('player-progress', (e) => {
         pos = e.payload[0]
         dur = e.payload[1]
         reportDirectTorrentBuffer(pos, buffer)
         reportWatchPlayback(pos, dur, paused, buffering)
         // First real frame shown → stop treating core-idle as "still loading".
-        if (dur > 0 && !coreIdle) firstFrame = true
+        if (dur > 0 && !coreIdle) {
+          const becameReady = !firstFrame
+          firstFrame = true
+          // FileLoaded identifies the URL this progress belongs to. The equality check prevents a
+          // late event from the previous source rehabilitating the new source during a switch.
+          if (becameReady && loadedUrl && loadedUrl === $nowPlayingStream.url) {
+            markAlive({ infoHash: $nowPlayingStream.infoHash ?? undefined, url: loadedUrl })
+          }
+        }
         // No MAL id gate: AniSkip/AnimeThemes bail out on their own, and chapter-derived skip
         // segments (plus the seekbar's chapter ticks) work on any file that carries chapters.
         if (!metaLoaded && dur > 0) loadMeta()
@@ -707,6 +717,7 @@
       // progress events, so waiting for one would delay the room's buffer gate by the whole stall.
       listen<boolean>('player-buffering', (e) => { buffering = e.payload; reportWatchPlayback(pos, dur, paused, buffering) }),
       listen<boolean>('player-core-idle', (e) => (coreIdle = e.payload)),
+      listen<string>('player-file-loaded', (e) => (loadedUrl = e.payload)),
       listen<boolean>('player-seeking', (e) => (seeking = e.payload)),
       listen<boolean>('player-eof', (e) => (eof = e.payload)),
       listen<NativeMediaAction>('native-media-control', (e) => {
@@ -778,13 +789,20 @@
       if (!$playing || recoveryBusy) return
       const directP2p = !!$nowPlayingStream.infoHash
         && /^http:\/\/127\.0\.0\.1:\d+\/torrents\//.test($nowPlayingStream.url)
+      if (!directP2p) {
+        directTorrentStats.set(null)
+        directTorrentSelectedSize = 0
+      }
       if (directP2p && !directTorrentHealthBusy) {
         const playbackId = currentDirectTorrentPlaybackId()
         directTorrentHealthBusy = true
         void directTorrentHealth()
           .then((health) => {
-            if (health && currentDirectTorrentPlaybackId() === playbackId) {
+            if (currentDirectTorrentPlaybackId() !== playbackId) return
+            directTorrentStats.set(health)
+            if (health) {
               directTorrentDownloadedBytes = health.downloadedBytes
+              directTorrentSelectedSize = health.selectedSize
             }
           })
           .finally(() => { directTorrentHealthBusy = false })
@@ -800,6 +818,9 @@
         firstFrame,
         startTimeoutMs: directP2p ? DIRECT_TORRENT_START_TIMEOUT_MS : undefined,
         networkBytes: directP2p ? directTorrentDownloadedBytes : undefined,
+        minimumStartupBytesPerSecond: directP2p && $nowPlayingMedia?.media.duration && directTorrentSelectedSize > 0
+          ? directTorrentSelectedSize / ($nowPlayingMedia.media.duration * 60) * 0.5
+          : undefined,
       })
       recoveryWatch = decision.state
       if (!decision.recover) return

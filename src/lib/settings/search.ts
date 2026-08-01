@@ -93,6 +93,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'DNS-over-HTTPS URL', category: 'Network', href: '/app/settings/network', keywords: 'endpoint cloudflare resolver' },
   { title: 'Torrent download limit', category: 'Network', href: '/app/settings/network', keywords: 'direct p2p throttle bandwidth mbps uncapped' },
   { title: 'Torrent upload limit', category: 'Network', href: '/app/settings/network', keywords: 'direct p2p seed seeding upstream bandwidth auto capacity' },
+  { title: 'Direct P2P SOCKS5 proxy', category: 'Network', href: '/app/settings/network', keywords: 'torrent vpn bind proxy socks privacy kill switch' },
   { title: 'Continue seeding after playback', category: 'Network', href: '/app/settings/network', keywords: 'android torrent charging unmetered wifi ratio', anchored: true, androidOnly: true },
 
   { title: 'Auto-check for updates', category: 'About', href: '/app/settings/about', keywords: 'upgrade release launch', anchored: true },

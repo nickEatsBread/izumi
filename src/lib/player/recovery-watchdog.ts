@@ -43,6 +43,9 @@ export interface RecoverySignal {
   firstFrame: boolean
   startTimeoutMs?: number
   networkBytes?: number
+  /** Minimum average startup throughput that is worth extending beyond `startTimeoutMs`.
+   * Callers normally pass a conservative fraction of the episode's average byte rate. */
+  minimumStartupBytesPerSecond?: number
 }
 
 export function resetRecoveryWatch(now: number): RecoveryWatchState {
@@ -94,9 +97,17 @@ export function recoveryWatchDecision(
       : START_TIMEOUT_MS
     const startupElapsed = now - previous.loadedAt
     if (startupElapsed < startTimeout) return { state, recover: false }
+    const averageStartupBytesPerSecond = signal.networkBytes != null && startupElapsed > 0
+      ? signal.networkBytes / (startupElapsed / 1_000)
+      : 0
+    const startupThroughputViable = signal.minimumStartupBytesPerSecond == null
+      || !Number.isFinite(signal.minimumStartupBytesPerSecond)
+      || signal.minimumStartupBytesPerSecond <= 0
+      || averageStartupBytesPerSecond >= signal.minimumStartupBytesPerSecond
     if (signal.networkBytes != null
       && startupElapsed < DIRECT_TORRENT_HARD_START_TIMEOUT_MS
-      && now - state.lastNetworkAdvancedAt < DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS) {
+      && now - state.lastNetworkAdvancedAt < DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS
+      && startupThroughputViable) {
       return { state, recover: false }
     }
     return { state, recover: true, reason: 'never-started' }

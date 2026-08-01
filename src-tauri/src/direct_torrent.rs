@@ -44,6 +44,7 @@ pub struct DirectTorrentState {
 struct DirectTorrentEngine {
     session: Arc<Session>,
     port: u16,
+    socks_proxy_url: Option<String>,
 }
 
 struct ActivePlayback {
@@ -56,7 +57,6 @@ struct ActivePlayback {
     uploaded_at_start: u64,
     upload_bps: NonZeroU32,
     upload_reduced: bool,
-    stream_only_scheduled: bool,
     cleanup_task: Option<JoinHandle<()>>,
 }
 
@@ -78,6 +78,23 @@ pub struct DirectTorrentHealth {
     selected_size: u64,
     download_mbps: f64,
     live_peers: usize,
+    /// Everything below is diagnostic only — the startup/stall watchdog uses the four fields
+    /// above. `not_needed_peers` climbing while the player waits is the signature of the engine
+    /// believing it has nothing left to fetch, which is why the selection must stay applied for
+    /// the whole of playback (see `torrent_playback_url`).
+    upload_mbps: f64,
+    queued_peers: usize,
+    connecting_peers: usize,
+    dead_peers: usize,
+    not_needed_peers: usize,
+    seen_peers: usize,
+    fetched_bytes: u64,
+    /// librqbit's own view: "live" / "paused" / "initializing" / "error".
+    state: String,
+    /// True once every SELECTED piece is downloaded. During playback this must stay false, or the
+    /// engine stops treating peers as needed.
+    finished: bool,
+    error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -147,9 +164,82 @@ fn ratio_target_bytes(selected_size: u64) -> u64 {
     selected_size.saturating_add(3) / 4
 }
 
+/// `finished` means every currently selected piece is present, not necessarily that the episode
+/// is complete. An empty/narrowed selection therefore looks successfully finished while an HTTP
+/// reader can still be waiting for a missing byte range forever.
+fn selection_needs_restoring(finished: bool, downloaded_bytes: u64, selected_size: u64) -> bool {
+    selected_size > 0 && finished && downloaded_bytes < selected_size
+}
+
+/// `progress_bytes` means bytes checksum-scanned while librqbit is initializing and later means
+/// aggregate selected progress. Neither is the selected episode's download count. During
+/// initialization `file_progress` is deliberately empty, so report zero until the per-file value
+/// exists instead of making a large batch look fully downloaded.
+fn selected_file_downloaded_bytes(
+    file_progress: &[u64],
+    selected_file_index: usize,
+    selected_size: u64,
+) -> u64 {
+    file_progress
+        .get(selected_file_index)
+        .copied()
+        .unwrap_or(0)
+        .min(selected_size)
+}
+
+fn normalized_socks_proxy(value: Option<String>) -> Result<Option<String>, String> {
+    let Some(value) = value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    let parsed =
+        url::Url::parse(&value).map_err(|_| "The Direct P2P proxy URL is invalid.".to_string())?;
+    if parsed.scheme() != "socks5" {
+        return Err("Direct P2P currently supports SOCKS5 proxies only.".into());
+    }
+    if parsed.host_str().is_none() || parsed.port().is_none() {
+        return Err("The SOCKS5 proxy URL needs a host and port.".into());
+    }
+    if (parsed.path() != "" && parsed.path() != "/")
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err("The SOCKS5 proxy URL cannot contain a path, query, or fragment.".into());
+    }
+    Ok(Some(parsed.to_string().trim_end_matches('/').to_string()))
+}
+
+/// SOCKS5 in librqbit covers HTTP(S) trackers and peer TCP, but not UDP. Remove UDP trackers from
+/// proxy-mode magnets; DHT is disabled at the session level for the same reason. This turns the
+/// setting into a kill switch rather than quietly leaking discovery traffic outside the proxy.
+fn proxy_safe_magnet(magnet: &str, proxy_enabled: bool) -> Result<String, String> {
+    if !proxy_enabled {
+        return Ok(magnet.to_string());
+    }
+    let mut parsed = url::Url::parse(magnet)
+        .map_err(|_| "Direct playback needs a valid magnet link.".to_string())?;
+    let kept = parsed
+        .query_pairs()
+        .filter(|(key, value)| key != "tr" || !value.to_ascii_lowercase().starts_with("udp://"))
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+    parsed.set_query(None);
+    parsed.query_pairs_mut().extend_pairs(kept);
+    Ok(parsed.into())
+}
+
 impl DirectTorrentState {
-    async fn get(&self, app: &AppHandle) -> Result<&Arc<DirectTorrentEngine>, String> {
-        self.engine
+    async fn get(
+        &self,
+        app: &AppHandle,
+        socks_proxy_url: Option<String>,
+    ) -> Result<&Arc<DirectTorrentEngine>, String> {
+        let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
+        let configured_proxy = socks_proxy_url.clone();
+        let engine = self
+            .engine
             .get_or_try_init(|| async {
                 let folder = app
                     .path()
@@ -171,17 +261,20 @@ impl DirectTorrentState {
                     .await
                     .map_err(|e| format!("Could not create the torrent cache: {e}"))?;
 
-                // Direct playback is ephemeral (the folder above is wiped on init), so run with no
-                // session persistence — and, crucially, DISABLE DHT persistence. librqbit's default
-                // persistent DHT asks the `directories` crate for a project dir to store its routing
-                // table; on Android that returns nothing and aborts engine startup with
-                // "cannot determine project directory for com.rqbit.dht". DHT still runs for peer
-                // discovery — it just no longer tries to cache/reload its table from disk.
+                // Episode payloads are ephemeral, but desktop DHT routing is allowed to persist so
+                // the first play after launch is not a completely cold peer-discovery bootstrap.
+                // Android still disables that persistence because it has no librqbit project dir.
                 let session = Session::new_with_opts(
                     folder,
                     SessionOptions {
-                        disable_dht_persistence: true,
+                        // Keep desktop's DHT routing table between launches so the first episode
+                        // does not bootstrap from zero. Android has no compatible persistence dir.
+                        // Proxy mode disables UDP DHT completely to prevent bypassing SOCKS5.
+                        disable_dht: configured_proxy.is_some(),
+                        disable_dht_persistence: cfg!(target_os = "android")
+                            || configured_proxy.is_some(),
                         persistence: None,
+                        socks_proxy_url: configured_proxy.clone(),
                         ..Default::default()
                     },
                 )
@@ -207,10 +300,28 @@ impl DirectTorrentState {
                         eprintln!("direct torrent playback server stopped: {error:#}");
                     }
                 });
-                Ok(Arc::new(DirectTorrentEngine { session, port }))
+                Ok(Arc::new(DirectTorrentEngine {
+                    session,
+                    port,
+                    socks_proxy_url: configured_proxy,
+                }))
             })
-            .await
+            .await?;
+        if engine.socks_proxy_url != socks_proxy_url {
+            return Err("The Direct P2P network binding changed after its session started. Restart Izumi to apply it safely.".into());
+        }
+        Ok(engine)
     }
+}
+
+/// Start session/DHT initialization while the user is still browsing. This never adds a torrent.
+#[tauri::command]
+pub async fn torrent_engine_warmup(
+    app: AppHandle,
+    state: tauri::State<'_, DirectTorrentState>,
+    socks_proxy_url: Option<String>,
+) -> Result<(), String> {
+    state.get(&app, socks_proxy_url).await.map(|_| ())
 }
 
 async fn delete_active(
@@ -244,17 +355,20 @@ pub async fn torrent_playback_url(
     season: Option<u32>,
     download_limit_mbps: Option<f64>,
     upstream_capacity_mbps: Option<f64>,
+    socks_proxy_url: Option<String>,
 ) -> Result<DirectTorrentPlayback, String> {
     let magnet = magnet.trim();
     if !magnet.to_ascii_lowercase().starts_with("magnet:?") {
         return Err("Direct playback needs a valid magnet link.".into());
     }
 
-    let engine = state.get(&app).await?;
+    let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
+    let magnet = proxy_safe_magnet(magnet, socks_proxy_url.is_some())?;
+    let engine = state.get(&app, socks_proxy_url).await?;
     let listing = timeout(
         METADATA_TIMEOUT,
         engine.session.add_torrent(
-            AddTorrent::from_url(magnet),
+            AddTorrent::from_url(&magnet),
             Some(AddTorrentOptions {
                 list_only: true,
                 ..Default::default()
@@ -303,6 +417,14 @@ pub async fn torrent_playback_url(
     // pieces here. The active video HTTP stream retains librqbit's priority; Windows attaches
     // these tracks live once player_embed has returned.
     let subtitle_files = select_subtitles(&files, &selected);
+    // This selection stays applied for the whole of playback and must always contain the video.
+    // librqbit treats a torrent whose every SELECTED piece is present as finished, and a finished
+    // torrent tells its peers "not interested" and drops the ones holding the full torrent — i.e.
+    // the seeders. Streaming reads keep the torrent unfinished only while an HTTP FileStream is
+    // registered, and mpv closes and reopens that stream on every seek, so narrowing the selection
+    // to the sidecars mid-playback opens a window on each seek in which the seeders are purged.
+    // Keeping the episode selected costs at most one episode of ephemeral cache (already bounded
+    // by only_files) and gives the player read-ahead beyond librqbit's 32 MiB stream window.
     let selected_indices = std::iter::once(selected.index)
         .chain(subtitle_files.iter().map(|file| file.index))
         .collect::<HashSet<_>>();
@@ -362,15 +484,19 @@ pub async fn torrent_playback_url(
             .ok_or_else(|| "The torrent did not start.".to_string())?
     };
 
+    // The HTTP stream API rejects reads while a torrent is still initializing. Returning its URL
+    // before this point lets mpv make one failed request and close it permanently while librqbit
+    // goes on downloading the episode in the background. Wait only for checksum/storage setup —
+    // NOT for episode data — so the first URL request is guaranteed to be streamable.
+    timeout(METADATA_TIMEOUT, handle.wait_until_initialized())
+        .await
+        .map_err(|_| "Timed out while preparing the torrent stream.".to_string())?
+        .map_err(|e| format!("Could not prepare the torrent stream: {e:#}"))?;
+
     // A newly-added torrent already received this exact selection through AddTorrentOptions.
-    // Calling update_only_files again before librqbit finishes initialization fails with
-    // "can't update initializing torrent". Only a reused season pack needs its selection changed
-    // to the newly requested episode; its active HTTP stream still receives priority.
+    // Only a reused season pack needs its selection changed to the newly requested episode; its
+    // active HTTP stream still receives priority.
     if reused_torrent {
-        timeout(METADATA_TIMEOUT, handle.wait_until_initialized())
-            .await
-            .map_err(|_| "Timed out while preparing the existing torrent.".to_string())?
-            .map_err(|e| format!("Could not prepare the existing torrent: {e:#}"))?;
         engine
             .session
             .update_only_files(&handle, &selected_indices)
@@ -403,7 +529,6 @@ pub async fn torrent_playback_url(
         uploaded_at_start,
         upload_bps,
         upload_reduced: false,
-        stream_only_scheduled: false,
         cleanup_task: None,
     });
     drop(active);
@@ -454,51 +579,6 @@ pub async fn torrent_playback_add_subtitle(
     player.add_subtitle_auto(&url, &lang, &title)
 }
 
-/// Once a player has accepted the local HTTP URL, stop the background whole-file download. The
-/// active librqbit FileStream continues requesting and prioritising its 32 MiB window, while tiny
-/// external subtitle files remain selected in the background. This keeps large season-pack
-/// episodes from downloading gigabytes unrelated to the player's immediate reads before frame one.
-#[tauri::command]
-pub async fn torrent_playback_streaming(
-    state: tauri::State<'_, DirectTorrentState>,
-    playback_id: u64,
-) -> Result<(), String> {
-    let Some(engine) = state.engine.get().cloned() else {
-        return Ok(());
-    };
-    let (handle, subtitle_indices) = {
-        let mut active = state.active.lock().await;
-        let current = active
-            .as_mut()
-            .filter(|item| item.playback_id == playback_id && item.cleanup_task.is_none())
-            .ok_or("This torrent playback is no longer active.")?;
-        if current.stream_only_scheduled {
-            return Ok(());
-        }
-        current.stream_only_scheduled = true;
-        (current.handle.clone(), current.subtitle_indices.clone())
-    };
-    let active = state.active.clone();
-    tokio::spawn(async move {
-        // `player_embed` queues loadfile rather than waiting for FileLoaded. Give mpv time to open
-        // the HTTP stream before removing the video's background file selection.
-        sleep(Duration::from_secs(2)).await;
-        let still_playing = active
-            .lock()
-            .await
-            .as_ref()
-            .map(|item| item.playback_id == playback_id && item.cleanup_task.is_none())
-            .unwrap_or(false);
-        if still_playing {
-            let _ = engine
-                .session
-                .update_only_files(&handle, &subtitle_indices)
-                .await;
-        }
-    });
-    Ok(())
-}
-
 /// Report actual progress for the selected video. The web player uses this to distinguish a
 /// torrent that is still downloading from a genuinely dead source while mpv waits for its first
 /// frame (Matroska files may require data near the end before playback begins).
@@ -507,29 +587,63 @@ pub async fn torrent_playback_health(
     state: tauri::State<'_, DirectTorrentState>,
     playback_id: u64,
 ) -> Result<DirectTorrentHealth, String> {
+    let engine = state
+        .engine
+        .get()
+        .ok_or("The direct torrent player is not running.")?;
     let active = state.active.lock().await;
     let current = active
         .as_ref()
         .filter(|item| item.playback_id == playback_id && item.cleanup_task.is_none())
         .ok_or("This torrent playback is no longer active.")?;
-    let stats = current.handle.stats();
-    let downloaded_bytes = stats
-        .file_progress
-        .get(current.selected_file_index)
-        .copied()
-        .unwrap_or(stats.progress_bytes)
-        .min(current.selected_size);
-    let (download_mbps, live_peers) = stats
-        .live
-        .as_ref()
-        .map(|live| (live.download_speed.mbps, live.snapshot.peer_stats.live))
-        .unwrap_or((0.0, 0));
+    let mut stats = current.handle.stats();
+    let mut downloaded_bytes = selected_file_downloaded_bytes(
+        &stats.file_progress,
+        current.selected_file_index,
+        current.selected_size,
+    );
+
+    // Self-heal the exact state that used to leave mpv buffering forever: librqbit reports the
+    // torrent as finished because its selection was cleared even though the episode is incomplete,
+    // then moves every seeder to `not_needed`. The ordinary 1 Hz health poll is a safe repair point
+    // and the playback-id/cleanup guards above ensure post-play seeding is never restarted.
+    if selection_needs_restoring(stats.finished, downloaded_bytes, current.selected_size) {
+        let selected_indices = std::iter::once(current.selected_file_index)
+            .chain(current.subtitle_indices.iter().copied())
+            .collect::<HashSet<_>>();
+        if let Err(error) = engine
+            .session
+            .update_only_files(&current.handle, &selected_indices)
+            .await
+        {
+            eprintln!("could not restore direct torrent playback selection: {error:#}");
+        } else {
+            stats = current.handle.stats();
+            downloaded_bytes = selected_file_downloaded_bytes(
+                &stats.file_progress,
+                current.selected_file_index,
+                current.selected_size,
+            );
+        }
+    }
+    let live = stats.live.as_ref();
+    let peers = live.map(|live| &live.snapshot.peer_stats);
 
     Ok(DirectTorrentHealth {
         downloaded_bytes,
         selected_size: current.selected_size,
-        download_mbps,
-        live_peers,
+        download_mbps: live.map(|l| l.download_speed.mbps).unwrap_or(0.0),
+        live_peers: peers.map(|p| p.live).unwrap_or(0),
+        upload_mbps: live.map(|l| l.upload_speed.mbps).unwrap_or(0.0),
+        queued_peers: peers.map(|p| p.queued).unwrap_or(0),
+        connecting_peers: peers.map(|p| p.connecting).unwrap_or(0),
+        dead_peers: peers.map(|p| p.dead).unwrap_or(0),
+        not_needed_peers: peers.map(|p| p.not_needed).unwrap_or(0),
+        seen_peers: peers.map(|p| p.seen).unwrap_or(0),
+        fetched_bytes: live.map(|l| l.snapshot.fetched_bytes).unwrap_or(0),
+        state: stats.state.to_string(),
+        finished: stats.finished,
+        error: stats.error.clone(),
     })
 }
 
@@ -653,7 +767,10 @@ pub async fn torrent_playback_stop(
 
 #[cfg(test)]
 mod tests {
-    use super::{mbps_to_bps, ratio_target_bytes, upload_limit};
+    use super::{
+        mbps_to_bps, normalized_socks_proxy, proxy_safe_magnet, ratio_target_bytes,
+        selected_file_downloaded_bytes, selection_needs_restoring, upload_limit,
+    };
 
     #[test]
     fn automatic_upload_is_one_megabit() {
@@ -673,5 +790,38 @@ mod tests {
     #[test]
     fn ratio_target_rounds_up_to_a_quarter() {
         assert_eq!(ratio_target_bytes(10), 3);
+    }
+
+    #[test]
+    fn restores_an_incomplete_episode_falsely_marked_finished() {
+        assert!(selection_needs_restoring(true, 900, 1_000));
+        assert!(!selection_needs_restoring(false, 900, 1_000));
+        assert!(!selection_needs_restoring(true, 1_000, 1_000));
+        assert!(!selection_needs_restoring(true, 0, 0));
+    }
+
+    #[test]
+    fn initializing_checksum_progress_is_not_episode_download_progress() {
+        assert_eq!(selected_file_downloaded_bytes(&[], 6, 400_000_000), 0);
+        assert_eq!(selected_file_downloaded_bytes(&[0, 125], 1, 100), 100);
+    }
+
+    #[test]
+    fn validates_and_normalizes_socks5_proxy_urls() {
+        assert_eq!(
+            normalized_socks_proxy(Some(" socks5://127.0.0.1:1080 ".into())).unwrap(),
+            Some("socks5://127.0.0.1:1080".into())
+        );
+        assert!(normalized_socks_proxy(Some("http://127.0.0.1:8080".into())).is_err());
+        assert!(normalized_socks_proxy(Some("socks5://127.0.0.1".into())).is_err());
+    }
+
+    #[test]
+    fn proxy_mode_removes_udp_trackers_but_keeps_http_trackers() {
+        let magnet = "magnet:?xt=urn:btih:abc&tr=udp%3A%2F%2Ftracker.example%3A80&tr=https%3A%2F%2Ftracker.example%2Fannounce";
+        let safe = proxy_safe_magnet(magnet, true).unwrap();
+        assert!(!safe.contains("udp%3A"));
+        assert!(safe.contains("https%3A%2F%2Ftracker.example%2Fannounce"));
+        assert!(safe.contains("xt=urn%3Abtih%3Aabc"));
     }
 }

@@ -60,6 +60,7 @@ import {
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   torrentDownloadLimitMbps, torrentUploadLimitMode, torrentUpstreamCapacityMbps,
+  torrentProxyEnabled, torrentProxyUrl,
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
@@ -80,9 +81,10 @@ import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents,
 import type { Media } from '$lib/anilist/types'
 import {
   activateDirectTorrentPlayback, currentDirectTorrentPlaybackId, directTorrentHealth,
-  prioritizeDirectTorrentStream, reportDirectTorrentBuffer, stopDirectTorrentPlayback,
+  reportDirectTorrentBuffer, stopDirectTorrentPlayback,
 } from '$lib/player/direct-torrent'
 import { torrentioResolverInfoHash } from './resolver-url'
+import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
 
@@ -155,6 +157,37 @@ async function attachDirectTorrentSubtitles(playbackId: number, subtitles: Direc
       ? { ...state, status: loaded ? 'ready' : 'error', loaded }
       : state,
   )
+}
+
+/** Direct P2P must not wait for online-subtitle discovery before opening its video stream. Apart
+ * from adding up to four seconds of startup latency, exact-hash discovery reads the torrent URL
+ * while mpv is trying to establish its own initial range. Search without touching the video and
+ * attach URL-bearing addon subtitles once mpv has accepted the episode. */
+async function attachDirectOnlineSubtitles(
+  playbackId: number,
+  candidatesP: Promise<SubtitleCandidate[]>,
+) {
+  const candidates = await candidatesP
+  if (currentDirectTorrentPlaybackId() !== playbackId) return
+
+  onlineSubCandidates.set({
+    status: 'ready',
+    items: candidates.filter((candidate) => candidate.download?.needsFetch),
+  })
+  for (const candidate of candidates) {
+    if (!candidate.url) continue
+    if (currentDirectTorrentPlaybackId() !== playbackId) return
+    try {
+      await invoke('player_attach_subtitle_url', {
+        url: candidate.url,
+        lang: candidate.lang,
+        title: candidate.release,
+      })
+    } catch (error) {
+      if (currentDirectTorrentPlaybackId() !== playbackId) return
+      console.warn('direct torrent online subtitle failed', error)
+    }
+  }
 }
 
 // Finite aired-episode count for player bounds (auto-advance / prefetch) + the in-player Next
@@ -375,6 +408,7 @@ function attachAndroid(
   let latest = get(mpvState)
   let recoveryWatch = resetRecoveryWatch(Date.now())
   let downloadedBytes = 0
+  let selectedSize = 0
   let healthBusy = false
   let recoveryBusy = false
   const onEnded = async () => {
@@ -436,6 +470,7 @@ function attachAndroid(
         .then((health) => {
           if (health && currentDirectTorrentPlaybackId() === playbackId) {
             downloadedBytes = health.downloadedBytes
+            selectedSize = health.selectedSize
           }
         })
         .finally(() => { healthBusy = false })
@@ -451,6 +486,9 @@ function attachAndroid(
       firstFrame: latest.frameReady,
       startTimeoutMs: directP2p ? DIRECT_TORRENT_START_TIMEOUT_MS : undefined,
       networkBytes: directP2p ? downloadedBytes : undefined,
+      minimumStartupBytesPerSecond: directP2p && media.duration && selectedSize > 0
+        ? selectedSize / (media.duration * 60) * 0.5
+        : undefined,
     })
     recoveryWatch = decision.state
     if (!decision.recover) return
@@ -1436,10 +1474,11 @@ export async function playStream(
           upstreamCapacityMbps: get(torrentUploadLimitMode) === 'capacity'
             ? Math.max(0.1, Number(get(torrentUpstreamCapacityMbps)) || 0.1)
             : null,
+          socksProxyUrl: torrentProxyEndpoint(get(torrentProxyEnabled), get(torrentProxyUrl)),
         })
         directPlaybackId = playback.playbackId
         directTorrentSubtitles = playback.subtitles
-        activateDirectTorrentPlayback(playback.playbackId, playback.url)
+        activateDirectTorrentPlayback(playback.playbackId)
         stream = {
           ...stream,
           url: playback.url,
@@ -1521,16 +1560,25 @@ export async function playStream(
     }
   }
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
-  // Wait until the final byte-addressable URL is known. Starting this before debrid/direct-torrent
-  // resolution meant the exact OpenSubtitles Range hash could never run for those sources.
+  // Wait until the final byte-addressable URL is known. Direct P2P is the exception: probing its
+  // loopback stream for an exact subtitle hash would compete with mpv's startup reads, so search by
+  // episode/filename instead and attach the results after player_embed.
   const subsP: Promise<SubtitleCandidate[]> = (get(isAndroid) ? !androidEmbedded : get(enableExternalPlayer)) || get(offlineMode)
     ? Promise.resolve([])
-    : fetchExternalSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename, {
-        url: stream.url,
-        size: stream.behaviorHints?.videoSize,
-        hash: typeof stream.behaviorHints?.videoHash === 'string' ? stream.behaviorHints.videoHash : undefined,
-        headers: stream.__headers,
-      }).catch(() => [])
+    : fetchExternalSubtitles(
+        get(enabledAddonUrls),
+        media,
+        episode,
+        stream.behaviorHints?.filename,
+        directPlaybackId == null
+          ? {
+              url: stream.url,
+              size: stream.behaviorHints?.videoSize,
+              hash: typeof stream.behaviorHints?.videoHash === 'string' ? stream.behaviorHints.videoHash : undefined,
+              headers: stream.__headers,
+            }
+          : undefined,
+      ).catch(() => [])
   // Re-capture the room source from the FINAL stream. For a debrid play this is the resolved,
   // account-bound CDN link, and it is shared as-is: guests play the host's exact URL rather than
   // needing a debrid account each. The host is warned about what that means for their account
@@ -1647,7 +1695,6 @@ export async function playStream(
         isLocalFile,
         directPlaybackId == null ? undefined : () => stopDirectTorrentPlayback(directPlaybackId),
       )
-      if (ok && directPlaybackId != null) prioritizeDirectTorrentStream(directPlaybackId)
       if (!ok && directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)
       if (ok) rememberSuccess()
       return onState(
@@ -1680,7 +1727,6 @@ export async function playStream(
           url: stream.url,
           headers: stream.__headers,
         })
-        if (directPlaybackId != null) prioritizeDirectTorrentStream(directPlaybackId)
       } catch (error) {
         unlistenExit?.()
         throw error
@@ -1713,11 +1759,16 @@ export async function playStream(
     // Await the addon subtitles (bounded — a slow subtitle addon must not hold up playback), and merge
     // them with any the source itself carried (online-stream __subtitles). mpv sub-adds all of them;
     // slang auto-selects the preferred language.
-    const candidates = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 4000))])
+    const candidates = directPlaybackId == null
+      ? await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 4000))])
+      : []
     // Partition: url-bearing candidates (addons) merge into mpv at load exactly as before; needsFetch
     // candidates (OpenSubtitles/SubDL) are menu-only — stashed for manual pick, never sent to
     // player_embed. Set fresh each episode so last episode's rows don't linger.
-    onlineSubCandidates.set({ status: 'ready', items: candidates.filter((s) => s.download?.needsFetch) })
+    onlineSubCandidates.set({
+      status: directPlaybackId == null ? 'ready' : 'searching',
+      items: candidates.filter((s) => s.download?.needsFetch),
+    })
     const subtitles = [
       ...(stream.__stream ? stream.__subtitles ?? [] : []),
       ...candidates.filter((s) => !!s.url).map((s) => ({ url: s.url!, lang: s.lang })),
@@ -1753,6 +1804,9 @@ export async function playStream(
     recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
     if (directPlaybackId != null && directTorrentSubtitles.length) {
       void attachDirectTorrentSubtitles(directPlaybackId, directTorrentSubtitles)
+    }
+    if (directPlaybackId != null) {
+      void attachDirectOnlineSubtitles(directPlaybackId, subsP)
     }
     if (debridSidecarSource) {
       const s = debridSidecarSource

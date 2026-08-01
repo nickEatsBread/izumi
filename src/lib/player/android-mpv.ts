@@ -1,7 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { addPluginListener, type PluginListener } from '@tauri-apps/api/core'
 import { writable, get } from 'svelte/store'
-import { confirmDirectTorrentFileLoaded } from './direct-torrent'
 
 // Embedded libmpv player on Android (the "full" flavor). The plugin (plugin:mpv|*) only exists
 // when the app was built with the `android-mpv` Cargo feature; on the "lite" flavor these invokes
@@ -153,13 +152,6 @@ export async function startMpvEvents(): Promise<void> {
         // property. Treat the event itself as authoritative once the new file has started; an
         // END_FILE from the outgoing entry during `loadfile` replacement belongs to the old load.
         if (!awaitingLoadStart) mpvState.update((s) => ({ ...s, eof: true }))
-      } else if (id === 8) {
-        // Query after the observer callback has returned. Besides avoiding synchronous re-entry
-        // into libmpv's event thread, the exact loaded path proves the direct-torrent HTTP stream
-        // now owns the player before the native engine switches to request-driven priorities.
-        void mpvGet('path').then((path) => {
-          if (path) confirmDirectTorrentFileLoaded(path)
-        })
       } else if (id === 21) {
         // The definitive edge that says a frame is being presented again. Metadata and time-pos
         // updates can arrive first and must not retire the loader.
