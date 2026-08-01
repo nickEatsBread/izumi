@@ -33,8 +33,13 @@ const PRESETS: Record<Exclude<QualityPreset, 'custom' | 'anime'>, Record<string,
   },
 }
 
-/** The ArtCNN variant the Anime preset uses (luma). */
-export const ANIME_SHADER_VARIANT = 'C4F16'
+/** The Anime preset runs luma reconstruction first, then the matching chroma pass. */
+export const ANIME_SHADER_VARIANTS = ['C4F16', 'C4F16_Chroma'] as const
+
+export function shaderList(paths: string[]): string {
+  if (!paths.length) return ''
+  return paths.join(paths.some((path) => /^[A-Za-z]:[\\/]/.test(path)) ? ';' : ':')
+}
 
 /** Parse the Custom raw-options textarea into [key, value] pairs. Tolerates `key=value`,
  *  `--key=value`, `#` comments, blank lines; trims; skips malformed (no `=`) lines. */
@@ -82,7 +87,8 @@ export async function applyRenderOpts(): Promise<void> {
   let shaderPath: string | undefined
   if (preset === 'anime') {
     try {
-      shaderPath = await invoke<string>('ensure_artcnn', { variant: ANIME_SHADER_VARIANT })
+      const paths = await Promise.all(ANIME_SHADER_VARIANTS.map((variant) => invoke<string>('ensure_artcnn', { variant })))
+      shaderPath = shaderList(paths)
       qualityNotice.set('')
     } catch {
       qualityNotice.set('Shader download failed — using High Quality.')

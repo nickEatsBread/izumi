@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePreset, parseRawOptions, MANAGED_KEYS } from './quality'
+import { resolvePreset, parseRawOptions, MANAGED_KEYS, shaderList } from './quality'
 
 describe('resolvePreset', () => {
   it('standard is spline36 + deband off and complete over managed keys', () => {
@@ -22,6 +22,15 @@ describe('resolvePreset', () => {
     expect(opts.get('scale')).toBe('ewa_lanczos')
     expect(opts.get('deband')).toBe('yes')
     expect(opts.get('cscale')).toBe('bilinear')
+  })
+})
+
+describe('shaderList', () => {
+  it('joins Unix shader paths with a colon', () => {
+    expect(shaderList(['/tmp/luma.glsl', '/tmp/chroma.glsl'])).toBe('/tmp/luma.glsl:/tmp/chroma.glsl')
+  })
+  it('joins Windows shader paths with a semicolon', () => {
+    expect(shaderList(['C:\\shaders\\luma.glsl', 'C:\\shaders\\chroma.glsl'])).toBe('C:\\shaders\\luma.glsl;C:\\shaders\\chroma.glsl')
   })
 })
 

@@ -4,6 +4,7 @@
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, androidAutoPip,
+    audioProcessing, windowsVsr,
   } from '$lib/settings/ui'
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -124,6 +125,26 @@
         {/if}
       </label>
     {/if}
+
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-bold">Audio processing</span>
+      <SelectMenu bind:value={$audioProcessing} ariaLabel="Audio processing" options={[
+        { value: 'off', label: 'Off' },
+        { value: 'dialogue', label: 'Dialogue boost' },
+        { value: 'night', label: 'Night mode' },
+      ]} />
+      <span class="text-xs text-muted-foreground">Dialogue boost evens out speech; Night mode reduces loud-to-quiet swings. Disable passthrough in an external receiver when using either filter.</span>
+    </label>
+
+    <label class="flex flex-col gap-1">
+      <span class="text-sm font-bold">Windows driver upscaling</span>
+      <SelectMenu bind:value={$windowsVsr} ariaLabel="Windows driver upscaling" options={[
+        { value: 'off', label: 'Off' },
+        { value: 'nvidia', label: 'NVIDIA RTX VSR' },
+        { value: 'intel', label: 'Intel VSR' },
+      ]} />
+      <span class="text-xs text-muted-foreground">Uses mpv's d3d11vpp path. Windows and a supported driver are required.</span>
+    </label>
     {/if}
   </div>
 

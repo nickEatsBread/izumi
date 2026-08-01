@@ -6,8 +6,9 @@
   import { anilist } from '$lib/anilist/client'
   import { onMount } from 'svelte'
   import { startQualitySync } from '$lib/player/quality'
+  import { startEnhancementSync } from '$lib/player/enhancements'
   setContextClient(anilist)
   let { children } = $props()
-  onMount(() => { startQualitySync() })
+  onMount(() => { startQualitySync(); startEnhancementSync() })
 </script>
 {@render children()}
