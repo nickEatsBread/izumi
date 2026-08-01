@@ -83,11 +83,11 @@ fn create_controls(app: &AppHandle) -> Result<MediaControls, String> {
 }
 
 fn update_discord(state: &mut DiscordState, update: &PresenceUpdate) -> bool {
-    let Some(application_id) = option_env!("IZUMI_DISCORD_APPLICATION_ID").filter(|id| !id.is_empty()) else {
-        state.client = None;
-        state.key.clear();
-        return false;
-    };
+    // The public Discord application ID selects Izumi's Rich Presence assets/branding; it is not
+    // a secret. Packagers can still override it without changing source.
+    let application_id = option_env!("IZUMI_DISCORD_APPLICATION_ID")
+        .filter(|id| !id.is_empty())
+        .unwrap_or("1533074630321897482");
     if !update.discord || update.private {
         if let Some(client) = state.client.as_mut() { let _ = client.clear_activity(); }
         state.key.clear();
