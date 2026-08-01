@@ -21,6 +21,8 @@ import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -30,9 +32,12 @@ import android.util.Base64
 import android.util.Log
 import android.util.Rational
 import android.view.OrientationEventListener
+import android.view.PixelCopy
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -215,6 +220,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      *  `isInPictureInPictureMode` is still false but the portrait geometry must NOT be re-applied. */
     private var pipRequested = false
     private var contentView: ViewGroup? = null
+    /** Kept separately so native PiP can hide every HTML overlay even after Android freezes JS. */
+    private var webView: WebView? = null
     private var pipLayoutListener: View.OnLayoutChangeListener? = null
     private var pipReceiver: BroadcastReceiver? = null
     /** Pre-31 auto-PiP hook, see [installAutoPipHook]. Null on API 31+, where the system does it. */
@@ -358,6 +365,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
         // Make WRY's WebView transparent so the SurfaceView (added behind it) shows through.
         val web = findWebView(content)
+        webView = web
         if (web != null) {
             web.setBackgroundColor(Color.TRANSPARENT)
             web.background = null
@@ -434,9 +442,15 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         contentView = null
     }
 
+    private fun showWebPlayerUi(show: Boolean) {
+        webView?.visibility = if (show) View.VISIBLE else View.INVISIBLE
+    }
+
     /** Fill the (now tiny) PiP window with the video rectangle: no inset margin, no fixed height,
      *  no leftover gesture transform. */
     private fun applyPipLayout() {
+        // PiP contains only the native video. JS may be suspended before its `pip` event arrives.
+        showWebPlayerUi(false)
         container?.let { playerContainer ->
             val params = (playerContainer.layoutParams as? FrameLayout.LayoutParams)
                 ?: FrameLayout.LayoutParams(
@@ -602,6 +616,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         pipRequested = false
         pipSourceHint = null
         unregisterPipReceiver()
+        showWebPlayerUi(true)
         // Restore the watch-page geometry immediately. The web shell also re-syncs on its own resize
         // event; both converge on the same values, so a duplicate call is harmless.
         applyViewport(lastViewport ?: ViewportArgs())
@@ -636,6 +651,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             } else {
                 pipRequested = false
                 pipSourceHint = null
+                showWebPlayerUi(true)
                 applyViewport(lastViewport ?: ViewportArgs())
                 invoke.reject(failure)
             }
@@ -696,11 +712,14 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             if (!activity.enterPictureInPictureMode(pipParams())) {
                 pipRequested = false
                 pipSourceHint = null
+                showWebPlayerUi(true)
                 applyViewport(lastViewport ?: ViewportArgs())
             }
         } catch (e: Exception) {
             pipRequested = false
             pipSourceHint = null
+            showWebPlayerUi(true)
+            applyViewport(lastViewport ?: ViewportArgs())
             Log.w("MpvPlugin", "auto pip failed: ${e.message}")
         }
     }
@@ -1131,6 +1150,50 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     // the palette + LZW encode happens in Rust (`android_gif_encode`) and the finished file is
     // published to the gallery by [gifSave].
 
+    /** Hardware surfaces are not always readable through mpv's screenshot path on Android. When
+     * that path fails, PixelCopy gives us the frame the user can actually see instead of ending a
+     * recording with an empty directory. The destination is bounded because GIF encoding scales to
+     * 480 px anyway; avoiding a full-resolution bitmap matters on memory-constrained phones. */
+    private fun copyVisibleFrame(file: File): Boolean {
+        if (Build.VERSION.SDK_INT < 24) return false
+        val surface = view ?: return false
+        val sourceWidth = surface.width
+        val sourceHeight = surface.height
+        if (sourceWidth <= 0 || sourceHeight <= 0 || !surface.isShown) return false
+        val width = minOf(sourceWidth, 640)
+        val height = max(1, sourceHeight * width / sourceWidth)
+        val bitmap = try {
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        } catch (_: Exception) {
+            return false
+        }
+        val done = CountDownLatch(1)
+        var result = PixelCopy.ERROR_UNKNOWN
+        activity.runOnUiThread {
+            if (view !== surface || !surface.isShown) {
+                done.countDown()
+                return@runOnUiThread
+            }
+            try {
+                PixelCopy.request(surface, bitmap, { code -> result = code; done.countDown() }, Handler(Looper.getMainLooper()))
+            } catch (_: Exception) {
+                done.countDown()
+            }
+        }
+        val completed = try { done.await(1_500L, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        val saved = completed && result == PixelCopy.SUCCESS && try {
+            file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+        } catch (_: Exception) {
+            false
+        }
+        bitmap.recycle()
+        if (!saved) file.delete()
+        return saved && file.isFile && file.length() > 0L
+    }
+
     @Command
     fun gifStart(invoke: Invoke) {
         val a = invoke.parseArgs(GifStartArgs::class.java)
@@ -1156,15 +1219,36 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             // Software readback: the GPU surface is not guaranteed to be readable on Android.
             m.setPropertyString("screenshot-sw", "yes")
             val started = System.currentTimeMillis()
+            var useSurfaceFallback = false
             while (!session.stop &&
                 session.frames < GIF_MAX_FRAMES &&
                 System.currentTimeMillis() - started < GIF_MAX_MS
             ) {
                 val frameStart = System.currentTimeMillis()
                 val file = File(session.dir, String.format(Locale.US, "f%05d.jpg", session.frames))
-                // MPVLib.command has no return value, so the written file is the success signal.
-                m.command(arrayOf("screenshot-to-file", file.absolutePath, mode))
-                if (file.isFile && file.length() > 0) {
+                if (!useSurfaceFallback) {
+                    // The command queues the screenshot. Wait for mpv's encoder instead of deleting
+                    // the destination immediately and racing every frame write.
+                    m.command(arrayOf("screenshot-to-file", file.absolutePath, mode))
+                    val writeDeadline = System.currentTimeMillis() + 1_000L
+                    while (!session.stop && System.currentTimeMillis() < writeDeadline &&
+                        (!file.isFile || file.length() == 0L)
+                    ) {
+                        try {
+                            Thread.sleep(10L)
+                        } catch (e: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            break
+                        }
+                    }
+                }
+                var captured = file.isFile && file.length() > 0L
+                if (!captured && !session.stop) {
+                    useSurfaceFallback = true
+                    file.delete()
+                    captured = copyVisibleFrame(file)
+                }
+                if (captured) {
                     session.frames += 1
                     session.capturedMs = System.currentTimeMillis() - started
                 } else {
@@ -1342,6 +1426,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         pipSourceHint = null
         corePaused = false
         lastViewport = null
+        showWebPlayerUi(true)
         setImmersive(false)
         container?.let { (it.parent as? ViewGroup)?.removeView(it) }
         mpv?.let {
@@ -1352,6 +1437,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         mpv = null
         view = null
         container = null
+        webView = null
         pendingSurfaceLoad = null
         // The system is still holding the last params, which armed auto-enter. Publish once more
         // with no core so it is disarmed, or pressing home would shrink the whole app into a

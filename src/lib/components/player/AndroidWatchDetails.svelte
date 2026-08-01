@@ -17,7 +17,6 @@
   import MessageSquare from 'lucide-svelte/icons/message-square'
   import ListVideo from 'lucide-svelte/icons/list-video'
   import PanelsTopLeft from 'lucide-svelte/icons/panels-top-left'
-  import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
   import SkipBack from 'lucide-svelte/icons/skip-back'
   import SkipForward from 'lucide-svelte/icons/skip-forward'
   import ArrowBigUp from 'lucide-svelte/icons/arrow-big-up'
@@ -32,7 +31,6 @@
     hasNext,
     onPrev,
     onNext,
-    onPip,
     onRelated,
   }: {
     media: Media
@@ -42,7 +40,6 @@
     hasNext: boolean
     onPrev: () => void
     onNext: () => void
-    onPip: () => void
     onRelated: (id: number) => void | Promise<void>
   } = $props()
 
@@ -295,10 +292,8 @@
     {#if media.popularity}<span>{compact.format(media.popularity)} popularity</span>{/if}
   </div>
 
-  <div class="mt-5 grid grid-cols-4 gap-2 border-y border-white/10 py-3">
+  <div class="mt-5 grid grid-cols-2 gap-2 border-y border-white/10 py-3">
     <button onclick={onPrev} disabled={!hasPrev} class="watch-action disabled:opacity-30" aria-label="Previous episode"><SkipBack size={22} /><span>Previous</span></button>
-    <button onclick={() => chooseTab('comments', true)} class="watch-action" aria-label="Comments"><MessageSquare size={22} /><span>Comments</span></button>
-    <button onclick={onPip} class="watch-action" aria-label="Picture in picture"><PictureInPicture size={22} /><span>Miniplayer</span></button>
     <button onclick={onNext} disabled={!hasNext} class="watch-action disabled:opacity-30" aria-label="Next episode"><SkipForward size={22} /><span>Next</span></button>
   </div>
 
@@ -370,7 +365,7 @@
         </div>
       {:else}
         {#if relations.length}
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-2 gap-3 min-[480px]:grid-cols-3">
             {#each relations as relation (relation.node.id)}
               <button onclick={() => onRelated(relation.node.id)} class="min-w-0 text-left active:scale-[0.98]">
                 <img src={cover(relation.node)} alt="" loading="lazy" class="aspect-[2/3] w-full rounded-lg bg-white/[0.05] object-cover" />
