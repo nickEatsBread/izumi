@@ -84,11 +84,19 @@ export const Buffer = BufferShim
 // crypto-js verbatim (AES/enc/mode/pad/MD5/…) — providers use it as-is to decrypt sources.
 export const CryptoJS = CryptoJSLib
 
+// A value `namespace`/`module` block, which the transpiler DELETES outright instead of lowering it.
+// `declare namespace` is deliberately not matched: that one is type-only, so dropping it is correct.
+const TS_NAMESPACE_RE = /^\s*(export\s+)?(namespace|module)\s+[A-Za-z_$]/m
+
 // Strip TypeScript types from a provider payload so it can run in the Worker (some Seanime payloads
 // ship as raw .ts / .js-with-annotations). Type-strip only — payloads are self-contained (no imports).
-// On any failure returns the ORIGINAL code, so plain JS always survives and a genuinely-broken payload
-// still fails at the blob import (where it's caught), exactly as before.
+// THROWS on a payload the transpiler would silently mangle rather than translate: a namespace block
+// is erased whole, so the extension would import cleanly, report "loaded", and only fall over much
+// later with a missing method. Failing the load outright is the honest outcome. Any other transpiler
+// failure still returns the ORIGINAL code, so plain JS survives and a genuinely-broken payload fails
+// at the blob import (where it's caught), exactly as before.
 export function transpileSeanime(code: string): string {
+  if (TS_NAMESPACE_RE.test(code)) throw new Error('extension uses a TypeScript namespace/module block, which cannot be transpiled')
   try { return transform(code, { transforms: ['typescript'], production: true }).code }
   catch { return code }
 }
