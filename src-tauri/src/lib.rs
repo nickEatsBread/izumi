@@ -661,6 +661,75 @@ fn set_doh(enabled: bool, url: String) {
     *http_ext_lock().write().unwrap() = build_ext_client(doh);
 }
 
+const OPENSUBTITLES_CHUNK: u64 = 64 * 1024;
+
+fn opensubtitles_hash(size: u64, head: &[u8], tail: &[u8]) -> Result<String, String> {
+    if size < OPENSUBTITLES_CHUNK * 2
+        || head.len() != OPENSUBTITLES_CHUNK as usize
+        || tail.len() != OPENSUBTITLES_CHUNK as usize
+    {
+        return Err("video-too-small-or-incomplete".into());
+    }
+    let sum = head
+        .chunks_exact(8)
+        .chain(tail.chunks_exact(8))
+        .fold(size, |sum, bytes| {
+            let word: [u8; 8] = bytes.try_into().expect("eight-byte chunk");
+            sum.wrapping_add(u64::from_le_bytes(word))
+        });
+    Ok(format!("{sum:016x}"))
+}
+
+async fn opensubtitles_range(
+    client: reqwest::Client,
+    url: String,
+    start: u64,
+    end: u64,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<Vec<u8>, String> {
+    let mut request = client.get(url).header(reqwest::header::RANGE, format!("bytes={start}-{end}"));
+    for (name, value) in headers.unwrap_or_default() {
+        let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| "invalid-header-name".to_string())?;
+        let value = reqwest::header::HeaderValue::from_str(&value)
+            .map_err(|_| "invalid-header-value".to_string())?;
+        request = request.header(name, value);
+    }
+    let response = request.send().await.map_err(|_| "range-request-failed".to_string())?;
+    if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
+        return Err(format!("range-not-supported-{}", response.status().as_u16()));
+    }
+    let bytes = response.bytes().await.map_err(|_| "range-read-failed".to_string())?;
+    if bytes.len() != OPENSUBTITLES_CHUNK as usize {
+        return Err("range-length-mismatch".into());
+    }
+    Ok(bytes.to_vec())
+}
+
+/// Hash a remote video without downloading it: OpenSubtitles sums the file size and the first and
+/// last 64 KiB interpreted as little-endian u64 words. A server must honor HTTP Range; otherwise
+/// the request is rejected instead of accidentally buffering the full video.
+#[tauri::command]
+async fn opensubtitles_moviehash(
+    url: String,
+    size: u64,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<String, String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("unsupported-video-url".into());
+    }
+    if size < OPENSUBTITLES_CHUNK * 2 {
+        return Err("video-too-small".into());
+    }
+    let client = http_client();
+    let tail_start = size - OPENSUBTITLES_CHUNK;
+    let (head, tail) = tokio::try_join!(
+        opensubtitles_range(client.clone(), url.clone(), 0, OPENSUBTITLES_CHUNK - 1, headers.clone()),
+        opensubtitles_range(client, url, tail_start, size - 1, headers),
+    )?;
+    opensubtitles_hash(size, &head, &tail)
+}
+
 /// Set the player's demuxer cache ceiling (bytes) from the user's setting; applied on the next
 /// file load. Clamped to a sane floor so a mis-set value can't starve the demuxer.
 #[cfg(not(target_os = "android"))]
@@ -3450,6 +3519,7 @@ pub fn run() {
             set_tac_verification_config,
             player_prefetch,
             http_get,
+            opensubtitles_moviehash,
             http_post,
             ext_fetch,
             http_cancel,
@@ -3529,6 +3599,7 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         greet,
         http_get,
+        opensubtitles_moviehash,
         http_post,
         ext_fetch,
         http_cancel,
@@ -3692,6 +3763,25 @@ mod subtitle_zip_tests {
     fn errors_when_no_subtitle() {
         let zip = make_zip(&[("a.txt", b"x"), ("b.nfo", b"y")]);
         assert!(unzip_first_subtitle(&zip).is_err());
+    }
+}
+
+#[cfg(test)]
+mod opensubtitles_hash_tests {
+    use super::*;
+
+    #[test]
+    fn sums_size_head_and_tail_with_wrapping() {
+        let mut head = vec![0u8; OPENSUBTITLES_CHUNK as usize];
+        let mut tail = vec![0u8; OPENSUBTITLES_CHUNK as usize];
+        head[..8].copy_from_slice(&1u64.to_le_bytes());
+        tail[..8].copy_from_slice(&2u64.to_le_bytes());
+        assert_eq!(opensubtitles_hash(131_072, &head, &tail).unwrap(), "0000000000020003");
+    }
+
+    #[test]
+    fn rejects_incomplete_chunks() {
+        assert!(opensubtitles_hash(131_072, &[0; 8], &[0; 8]).is_err());
     }
 }
 

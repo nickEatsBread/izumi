@@ -5,6 +5,7 @@ import { addonOriginId } from './sources'
 import { dedupeStreams } from './dedupe'
 import { scoreInfo, type ScoreOptions } from './score'
 import { resolveAddonLogo } from './addon-logo'
+import { normalizeStreamBehavior } from './stream-behavior'
 
 // Re-export the parse surface so existing importers keep using `$lib/stremio/addon`.
 export {
@@ -242,7 +243,7 @@ export async function fetchAddonStreams(
           return ((await r.json()) as { streams?: Stream[] }).streams ?? []
         } catch { return [] }
       }))
-      const all = responses.flat().map((s) => ({
+      const all = responses.flat().map((s) => normalizeStreamBehavior({
         ...s,
         __logo: resolveAddonLogo(manifest?.logo, b),
         __addonName: manifest?.name,

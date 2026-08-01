@@ -10,6 +10,7 @@ import { createSubDL } from './subtitles/subdl'
 import { createJimaku } from './subtitles/jimaku'
 import type { SubQuery, SubtitleCandidate, SubtitleProvider } from './subtitles/types'
 import type { Media } from '$lib/anilist/types'
+import { invoke } from '@tauri-apps/api/core'
 
 // External subtitles from a Stremio SUBTITLE addon (OpenSubtitles et al). Unlike sibling files inside
 // a torrent, these are fetched from a subtitle provider by the video's id + filename, so they work
@@ -59,9 +60,27 @@ function queryLanguages(): string[] {
 }
 
 /** Resolve the ids for one episode into the shared SubQuery each provider consumes. */
-async function buildSubQuery(media: Media, episode: number | undefined, filename?: string): Promise<SubQuery> {
+export interface SubtitleVideo {
+  url?: string
+  size?: number
+  hash?: string
+  headers?: Record<string, string>
+}
+
+async function movieHashOf(video?: SubtitleVideo): Promise<string | undefined> {
+  if (/^[0-9a-f]{16}$/i.test(video?.hash ?? '')) return video!.hash!.toLowerCase()
+  if (!video?.url || !/^https?:\/\//i.test(video.url) || !Number.isSafeInteger(video.size) || video.size! < 131072) return undefined
+  return invoke<string>('opensubtitles_moviehash', {
+    url: video.url,
+    size: video.size,
+    headers: video.headers,
+  }).catch(() => undefined)
+}
+
+/** Resolve ids and the exact OpenSubtitles byte hash concurrently. */
+async function buildSubQuery(media: Media, episode: number | undefined, filename?: string, video?: SubtitleVideo): Promise<SubQuery> {
   const type = media.format === 'MOVIE' ? 'movie' : 'series'
-  const [ids, kitsu] = await Promise.all([getExtensionIds(media.id, episode), kitsuIdOf(media)])
+  const [ids, kitsu, moviehash] = await Promise.all([getExtensionIds(media.id, episode), kitsuIdOf(media), movieHashOf(video)])
   return {
     type,
     imdbId: ids.imdbId,
@@ -72,6 +91,8 @@ async function buildSubQuery(media: Media, episode: number | undefined, filename
     season: ids.season,
     episode,
     filename,
+    moviehash,
+    moviebytesize: moviehash ? video?.size : undefined,
     languages: queryLanguages(),
   }
 }
@@ -148,8 +169,9 @@ export async function fetchExternalSubtitles(
   media: Media,
   episode: number | undefined,
   filename?: string,
+  video?: SubtitleVideo,
 ): Promise<SubtitleCandidate[]> {
-  const q = await buildSubQuery(media, episode, filename)
+  const q = await buildSubQuery(media, episode, filename, video)
   const providers: SubtitleProvider[] = [createAddonProvider(bases), ...externalProviders()]
   const results = await Promise.all(providers.map((p) => p.search(q).catch((): SubtitleCandidate[] => [])))
   return mergeCandidates(results)

@@ -23,6 +23,8 @@ export interface Stream {
   title?: string
   description?: string // Comet/MediaFusion carry metadata here (Torrentio uses `title`)
   infoHash?: string
+  /** Stremio `sources` entries, most commonly `tracker:<announce-url>` hints. */
+  sources?: string[]
   // Full magnet URI (with trackers) when the source provided one — preferred over a bare-hash
   // magnet for resolving UNCACHED torrents on debrid (the trackers help it find peers).
   __magnet?: string
@@ -30,6 +32,9 @@ export interface Stream {
     filename?: string // clean release name — present on BOTH addons
     videoSize?: number // bytes
     bingeGroup?: string
+    videoHash?: string // OpenSubtitles moviehash, when supplied by the addon
+    proxyHeaders?: { request?: Record<string, string>; response?: Record<string, string> }
+    notWebReady?: boolean
     [k: string]: unknown
   }
   // Stamped by getStreams from the addon's manifest (logo URL + display name),

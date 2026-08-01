@@ -41,6 +41,11 @@ describe('osSearchParams', () => {
   it('emits the params in sorted key order', () => {
     expect(osSearchParams(SERIES).startsWith('episode_number=')).toBe(true)
   })
+  it('adds an exact movie hash and byte size when available', () => {
+    const p = new URLSearchParams(osSearchParams({ ...SERIES, moviehash: 'A1B2C3D4E5F60708', moviebytesize: 987654321 }))
+    expect(p.get('moviehash')).toBe('a1b2c3d4e5f60708')
+    expect(p.get('moviebytesize')).toBe('987654321')
+  })
 })
 
 describe('createOpenSubtitles().search', () => {
@@ -80,5 +85,11 @@ describe('createOpenSubtitles().search', () => {
     mocks.phttp.mockReset()
     expect(await createOpenSubtitles().search({ type: 'series', languages: ['en'] })).toEqual([])
     expect(mocks.phttp).not.toHaveBeenCalled()
+  })
+
+  it('searches by hash even when no imdb id is available', async () => {
+    mocks.phttp.mockResolvedValue({ ok: true, status: 200, json: async () => ({ data: [] }), text: async () => '' })
+    await createOpenSubtitles().search({ type: 'movie', languages: ['en'], moviehash: '0123456789abcdef', moviebytesize: 131072 })
+    expect(mocks.phttp).toHaveBeenCalledOnce()
   })
 })

@@ -32,6 +32,10 @@ export function osSearchParams(q: SubQuery): string {
   if (langs.length) p.languages = langs.join(',')
   const parent = osImdb(q.parentImdbId ?? q.imdbId)
   const own = osImdb(q.imdbId)
+  if (/^[0-9a-f]{16}$/i.test(q.moviehash ?? '') && Number.isSafeInteger(q.moviebytesize) && q.moviebytesize! > 0) {
+    p.moviehash = q.moviehash!.toLowerCase()
+    p.moviebytesize = String(q.moviebytesize)
+  }
   if (q.type === 'series') {
     if (parent && q.season != null && q.episode != null) {
       p.parent_imdb_id = parent
@@ -69,7 +73,7 @@ export function createOpenSubtitles(): SubtitleProvider {
     id: 'opensubtitles',
     async search(q: SubQuery): Promise<SubtitleCandidate[]> {
       const qs = osSearchParams(q)
-      if (!qs.includes('imdb_id')) return [] // no usable id → nothing to search
+      if (!qs.includes('imdb_id') && !qs.includes('moviehash=')) return []
       try {
         const r = await phttp(`${OPEN_SUBS_BASE}/subtitles?${qs}`, {
           headers: { 'Api-Key': OPEN_SUBS_API_KEY, 'User-Agent': USER_AGENT, Accept: 'application/json' },
