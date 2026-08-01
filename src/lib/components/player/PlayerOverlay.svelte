@@ -35,6 +35,7 @@
   import { confirmDirectTorrentFileLoaded, currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
+  import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
@@ -277,26 +278,54 @@
     invoke('desktop_presence_clear').catch(() => {})
   }
 
-  // Coalesce progress ticks before crossing the native boundary. MPRIS/SMTC receives current
-  // position while the Discord backend independently de-duplicates series/episode updates.
+  // Desktop presence throttle. Plain `let`, NOT $state: the effect below both reads and writes it,
+  // and a rune here would re-trigger the very effect that just scheduled the push (the known
+  // self-write teardown hazard).
+  let presenceThrottle: PresenceThrottleState | null = null
+  const pushPresence = (payload: PresencePayload) =>
+    void invoke('desktop_presence_update', { update: payload }).catch(() => {})
+
+  // Publish playback to MPRIS/SMTC + Discord. EVERY field is read synchronously here so Svelte
+  // tracks all of them — reading them inside the timeout instead meant the OS panel got exactly
+  // one snapshot per episode (position frozen, settings toggles ignored mid-episode, Discord still
+  // advertising an episode that was paused). Position moves ~4x/s, so only the playhead is rate
+  // limited; a pause, a new episode or a settings change goes out at once.
   $effect(() => {
     const media = $nowPlayingMedia?.media
+    // Parking on the last frame with auto-play off used to leave a stale "now playing" on the bus
+    // for as long as the player stayed open — nothing else on this path retracts it.
+    if (eof) {
+      presenceThrottle = null
+      void invoke('desktop_presence_clear').catch(() => {})
+      return
+    }
+    const payload: PresencePayload = {
+      title: np.title,
+      series: np.animeTitle,
+      episode: np.episode,
+      duration: dur,
+      position: pos,
+      paused,
+      coverUrl: media?.coverImage?.extraLarge ?? media?.coverImage?.medium ?? null,
+      systemControls: $systemMediaControls,
+      discord: $discordRichPresence,
+      // `nowPlayingMedia` is set at the TOP of playStream() but `nowPlaying` only after the source
+      // has resolved (seconds later, on the debrid path), so while a watch-together host switches
+      // titles this effect can see the OUTGOING title next to the INCOMING isAdult flag. Treat a
+      // mismatched pair as private: the panel shows the placeholder for the second it takes the
+      // two stores to agree instead of publishing the previous (possibly adult) episode name.
+      private: !!media?.isAdult || (media != null && np.id != null && media.id !== np.id),
+      seekSeconds: $seekDuration,
+    }
+    const decision = presenceDecision(presenceThrottle, payload, Date.now())
+    presenceThrottle = decision.state
+    if (decision.send) { pushPresence(payload); return }
+    // Progress ticks normally re-run this effect before the timer fires; it only matters when they
+    // stop, so the final position still lands.
     const timer = setTimeout(() => {
-      invoke('desktop_presence_update', {
-        update: {
-          title: np.title,
-          series: np.animeTitle,
-          episode: np.episode,
-          duration: dur,
-          position: pos,
-          paused,
-          coverUrl: media?.coverImage?.extraLarge ?? media?.coverImage?.medium ?? null,
-          systemControls: $systemMediaControls,
-          discord: $discordRichPresence,
-          private: !!media?.isAdult,
-        },
-      }).catch(() => {})
-    }, 300)
+      presenceThrottle = { signature: decision.state.signature, sentAt: Date.now() }
+      pushPresence(payload)
+    }, decision.waitMs)
     return () => clearTimeout(timer)
   })
 
@@ -572,6 +601,9 @@
     if (gmDynRaf) cancelAnimationFrame(gmDynRaf)
     if (gmDynLastVisible) invoke('player_gm_dynamic_overlay', { state: hiddenGmDynamicState() }).catch(() => {})
     invoke('set_idle_inhibit', { on: false }).catch(() => {})
+    // Retract the OS media panel / Discord entry on EVERY teardown path, not just the ← button —
+    // navigating away unmounts the overlay without ever running close().
+    invoke('desktop_presence_clear').catch(() => {})
   })
 
   // Game mode controller: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1
