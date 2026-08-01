@@ -17,29 +17,21 @@
   {#if !big}
     <h3 class="mb-2 text-sm font-black {today ? 'text-sky-400' : ''}">{label}{#if today} · Today{/if}</h3>
   {/if}
-  <div class={big ? 'flex flex-col' : 'flex flex-col gap-2'}>
+  <div class={big ? 'grid grid-cols-1 gap-2 sm:grid-cols-2' : 'flex flex-col gap-2'}>
     {#if airings.length}
-      {#each airings as a, index (a.media.id + '-' + a.episode)}
+      {#each airings as a (a.media.id + '-' + a.episode)}
         {@const mine = badgeOf?.(a.media)}
         {@const delay = delayOf(a.media)}
-        <div class={big ? 'grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3' : ''}>
-          {#if big}
-            <div class="relative pt-1 text-right">
-              <span class="text-sm font-black tabular-nums">{airTime(a.airingAt)}</span>
-              <span class="absolute -right-[1.15rem] top-2 size-2.5 rounded-full border-2 border-background bg-theme"></span>
-              {#if index < airings.length - 1}<span class="absolute -right-[0.9rem] top-5 h-[calc(100%_-_0.5rem)] w-px bg-border"></span>{/if}
-            </div>
-          {/if}
           <a
             data-focusable
             href={`/app/anime/${a.media.id}`}
-            class="mb-4 flex min-w-0 items-center gap-3 rounded-xl bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-70' : ''} {mine ? 'border border-theme/60' : 'border border-transparent'} {big ? 'min-h-28' : ''}"
+            class="flex min-w-0 items-center gap-3 rounded-xl bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-70' : ''} {mine ? 'border border-theme/60' : 'border border-transparent'}"
           >
             <img src={cover(a.media)} alt="" loading="lazy"
-                 class="{big ? 'h-24 w-[4.5rem]' : 'h-14 w-10'} shrink-0 rounded-lg object-cover" />
+                 class="{big ? 'h-20 w-14' : 'h-14 w-10'} shrink-0 rounded-lg object-cover" />
             <div class="min-w-0 flex-1">
-              <p class="line-clamp-2 {big ? 'text-base' : 'text-xs'} font-bold leading-tight">{title(a.media)}</p>
-              <p class="mt-1 {big ? 'text-sm' : 'text-[0.7rem]'} text-muted-foreground">Episode {a.episode}{#if !big} · {airTime(a.airingAt)}{/if}</p>
+              <p class="line-clamp-2 {big ? 'text-sm' : 'text-xs'} font-bold leading-tight">{title(a.media)}</p>
+              <p class="mt-1 text-[0.7rem] text-muted-foreground">Episode {a.episode} · <span class="font-bold tabular-nums text-foreground">{airTime(a.airingAt)}</span></p>
               {#if delay}<p class="mt-1 text-xs font-bold text-amber-400">{delay}</p>{/if}
               <div class="mt-2 flex items-center gap-2">
                 {#if mine}<span class="rounded-full bg-theme/15 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-theme">{mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
@@ -47,7 +39,6 @@
               </div>
             </div>
           </a>
-          </div>
       {/each}
     {:else}
       <div class="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">Nothing scheduled for this day.</div>

@@ -38,28 +38,22 @@
   <OfflineUnavailable title="Schedule is unavailable offline" subtitle="The airing schedule needs a connection. Your downloads are available on the Downloads page." />
 {:else}
 <div class="px-4 pb-8 pt-5 sm:p-8">
-  <div class="mb-6 sm:flex sm:items-center sm:gap-4">
-    <div class="flex items-center justify-between">
-      <h1 class="text-2xl font-black sm:text-lg">Schedule</h1>
-      {#if offset !== 0}
-        <button data-focusable onclick={() => (offset = 0)}
-          class="rounded-lg bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent sm:hidden">Today</button>
-      {/if}
-    </div>
-    <div class="mt-4 grid grid-cols-[3rem_1fr_3rem] items-center gap-2 sm:mt-0 sm:flex sm:gap-1">
+  <div class="mb-4 flex flex-wrap items-center gap-2 sm:mb-7 sm:gap-4">
+    <h1 class="mr-auto text-2xl font-black sm:text-lg">Schedule</h1>
+    <div class="flex items-center gap-1">
       <button data-focusable onclick={() => (offset -= 1)} title="Previous week"
-        class="grid size-12 place-items-center rounded-xl bg-secondary hover:bg-accent sm:size-8 sm:rounded-md">
-        <ChevronLeft size={22} />
+        class="grid size-9 place-items-center rounded-lg bg-secondary hover:bg-accent sm:size-8 sm:rounded-md">
+        <ChevronLeft size={19} />
       </button>
-      <span class="min-w-[9rem] text-center text-base font-semibold text-muted-foreground sm:text-sm sm:font-normal">{rangeLabel}</span>
+      <span class="min-w-[6.8rem] text-center text-xs font-semibold text-muted-foreground sm:min-w-[9rem] sm:text-sm sm:font-normal">{rangeLabel}</span>
       <button data-focusable onclick={() => (offset += 1)} title="Next week"
-        class="grid size-12 place-items-center rounded-xl bg-secondary hover:bg-accent sm:size-8 sm:rounded-md">
-        <ChevronRight size={22} />
+        class="grid size-9 place-items-center rounded-lg bg-secondary hover:bg-accent sm:size-8 sm:rounded-md">
+        <ChevronRight size={19} />
       </button>
     </div>
     {#if offset !== 0}
       <button data-focusable onclick={() => (offset = 0)}
-        class="hidden rounded-md bg-secondary px-3 py-1 text-xs font-bold hover:bg-accent sm:block">Today</button>
+        class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold hover:bg-accent">Today</button>
     {/if}
   </div>
 
