@@ -5,6 +5,10 @@ import {
   seadexAnnotations,
   androidAutoPip,
   subtitleStyleEnabled,
+  secondarySubtitles,
+  subtitleStripSdh,
+  audioProcessing,
+  windowsVsr,
   subtitleProviders,
   subDlApiKey,
   jimakuApiKey,
@@ -34,6 +38,17 @@ describe('android playback defaults', () => {
 describe('subtitle appearance defaults', () => {
   it('leaves embedded subtitle styling untouched', () => {
     expect(get(subtitleStyleEnabled)).toBe(false)
+  })
+  it('keeps language-learning and cleanup filters opt-in', () => {
+    expect(get(secondarySubtitles)).toBe(false)
+    expect(get(subtitleStripSdh)).toBe(false)
+  })
+})
+
+describe('player enhancement defaults', () => {
+  it('does not alter audio or enable vendor-specific upscaling', () => {
+    expect(get(audioProcessing)).toBe('off')
+    expect(get(windowsVsr)).toBe('off')
   })
 })
 

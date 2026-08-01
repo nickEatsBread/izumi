@@ -19,6 +19,10 @@
     subtitleShadow,
     subtitlePosition,
     subtitleAutoSync,
+    secondarySubtitles,
+    subtitleStripSdh,
+    subtitleStripSdhHarder,
+    subtitleRegexFilter,
   } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
@@ -153,12 +157,22 @@
   {#if !$isAndroid}
   <section class="mb-8 max-w-2xl">
     <h3 class="mb-2 font-bold">Synchronization</h3>
-    <Toggle
+      <Toggle
       label="Automatically sync external subtitles"
       desc="Uses local ffmpeg speech analysis when a text subtitle is selected. Embedded image/ASS tracks are left unchanged."
       value={$subtitleAutoSync}
       onToggle={() => ($subtitleAutoSync = !$subtitleAutoSync)}
-    />
+      />
+      <Toggle label="Dual subtitles" desc="Expose a second subtitle-track picker in the player for language learning." value={$secondarySubtitles} onToggle={() => ($secondarySubtitles = !$secondarySubtitles)} />
+      <Toggle label="Remove SDH annotations" desc="Hide hearing-impaired cues such as speaker labels and sound descriptions." value={$subtitleStripSdh} onToggle={() => ($subtitleStripSdh = !$subtitleStripSdh)} />
+      {#if $subtitleStripSdh}
+        <Toggle label="Stronger SDH removal" desc="Also remove less conventional annotations; may hide intentional dialogue text." value={$subtitleStripSdhHarder} onToggle={() => ($subtitleStripSdhHarder = !$subtitleStripSdhHarder)} />
+      {/if}
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-bold">Subtitle text filter</span>
+        <input type="text" bind:value={$subtitleRegexFilter} data-focusable placeholder="Optional regular expression" class="rounded-md bg-input px-3 py-2 text-sm" />
+        <span class="text-xs text-muted-foreground">Lines matching this mpv regular expression are hidden. Leave empty to disable.</span>
+      </label>
   </section>
   {/if}
 

@@ -54,6 +54,13 @@ export const subtitleShadow = persisted<number>('subtitle-shadow', 1)
 export const subtitlePosition = persisted<number>('subtitle-position', 92)
 /** Analyze speech with ffmpeg and align external text subtitles when a track is selected. */
 export const subtitleAutoSync = persisted<boolean>('subtitle-auto-sync', false)
+/** Show a second subtitle track through mpv's secondary-sid support. */
+export const secondarySubtitles = persisted<boolean>('subtitle-secondary-enabled', false)
+/** Remove hearing-impaired annotations such as [door closes] from rendered subtitles. */
+export const subtitleStripSdh = persisted<boolean>('subtitle-strip-sdh', false)
+export const subtitleStripSdhHarder = persisted<boolean>('subtitle-strip-sdh-harder', false)
+/** Optional mpv subtitle regex filter. Empty leaves subtitle text untouched. */
+export const subtitleRegexFilter = persisted<string>('subtitle-regex-filter', '')
 
 // --- Source extension filtering ---
 /** Content languages (ISO 639-1, as declared by each provider's manifest) worth querying.
@@ -160,6 +167,10 @@ export type QualityPreset = 'performance' | 'standard' | 'high' | 'anime' | 'cus
 export const videoQualityPreset = persisted<QualityPreset>('video-quality-preset', 'standard')
 /** Raw mpv render options (one `key=value` per line) for the Custom preset. */
 export const rawMpvOptions = persisted<string>('video-raw-mpv-options', '')
+export type AudioProcessing = 'off' | 'dialogue' | 'night'
+export const audioProcessing = persisted<AudioProcessing>('player-audio-processing', 'off')
+export type WindowsVsr = 'off' | 'nvidia' | 'intel'
+export const windowsVsr = persisted<WindowsVsr>('player-windows-vsr', 'off')
 /** Play in an external player (mpv/VLC/…) instead of the embedded one. No progress
  *  tracking/resume while external (we get no playback events back). */
 export const enableExternalPlayer = persisted<boolean>('external-player-enabled', false)

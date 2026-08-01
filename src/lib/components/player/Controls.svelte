@@ -29,7 +29,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, gifIncludeSubtitles } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, gifIncludeSubtitles } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
@@ -296,12 +296,13 @@
     external?: boolean; externalFilename?: string
   }
   let tracks = $state<Track[]>([])
+  let secondaryId = $state('no')
   let showTracks = $state(false)
   // Desktop track menu is a two-level drill-down (root [Audio, Subtitles] → the chosen
   // category's list) with a Miller-column slide. `menuLevel`/`detailCat` drive the slide;
   // `rootH`/`detailH` are the measured column heights so the panel morphs to fit.
   let menuLevel = $state<'root' | 'detail'>('root')
-  let detailCat = $state<'audio' | 'subs' | 'dev' | 'online'>('audio')
+  let detailCat = $state<'audio' | 'subs' | 'secondary' | 'dev' | 'online'>('audio')
 
   // Dev-only tools, reached through the track menu (Subtitles/Audio) as a third "Dev tools"
   // category. import.meta.env.DEV is compiled to a literal false in production, so both the row
@@ -319,6 +320,7 @@
     try {
       const raw = await invoke<string>('player_tracks')
       tracks = JSON.parse(raw) as Track[]
+      secondaryId = await invoke<string>('player_get_property', { name: 'secondary-sid' }).catch(() => 'no')
     }
     catch (e) {
       console.warn('track-list unavailable', e)
@@ -345,8 +347,9 @@
   // are only told apart by language, not their identical "Full Subtitles"/codec title). See
   // track-label.ts.
   const label = trackLabel
-  function pick(kind: 'sid' | 'aid', id: number) {
+  function pick(kind: 'sid' | 'aid' | 'secondary-sid', id: number) {
     cmd('set', [kind, String(id)])
+    if (kind === 'secondary-sid') { secondaryId = String(id); return }
     const type = kind === 'sid' ? 'sub' : 'audio'
     tracks = tracks.map((t) => (t.type === type ? { ...t, selected: t.id === id } : t))
     if (kind === 'sid' && $subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
@@ -356,9 +359,9 @@
   // `curLabel` is what shows on the collapsed root row for each category (the active
   // track, or "Off"). `pickLeaf` sets the track then slides back to the root.
   const detailItems = $derived(detailCat === 'audio' ? audios : subs)
-  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : 'Subtitles')
-  const leafKind = $derived<'aid' | 'sid'>(detailCat === 'audio' ? 'aid' : 'sid')
-  const detailOff = $derived(!detailItems.some((t) => t.selected)) // nothing selected ⇒ "Off" is active
+  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : 'Subtitles')
+  const leafKind = $derived<'aid' | 'sid' | 'secondary-sid'>(detailCat === 'audio' ? 'aid' : detailCat === 'secondary' ? 'secondary-sid' : 'sid')
+  const detailOff = $derived(detailCat === 'secondary' ? secondaryId === 'no' : !detailItems.some((t) => t.selected)) // nothing selected ⇒ "Off" is active
   const curLabel = (group: Track[]) => {
     const on = group.find((t) => t.selected)
     return on ? label(on, group) : 'Off'
@@ -369,12 +372,17 @@
       ? 'Loading…'
       : curLabel(subs),
   )
-  function openDetail(cat: 'audio' | 'subs' | 'dev' | 'online') {
+  const curSecondaryLabel = $derived.by(() => {
+    const track = subs.find((item) => String(item.id) === secondaryId)
+    return track ? label(track, subs) : 'Off'
+  })
+  function openDetail(cat: 'audio' | 'subs' | 'secondary' | 'dev' | 'online') {
     detailCat = cat
     menuLevel = 'detail'
   }
   // Disable the category (mpv uses aid/sid = "no"; 0 isn't a valid track id).
   function pickOff() {
+    if (detailCat === 'secondary') { cmd('set', ['secondary-sid', 'no']); secondaryId = 'no'; return }
     const type = detailCat === 'audio' ? 'audio' : 'sub'
     cmd('set', [leafKind, 'no'])
     tracks = tracks.map((t) => (t.type === type ? { ...t, selected: false } : t))
@@ -660,6 +668,15 @@
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
+                      {#if $secondarySubtitles}
+                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('secondary')}>
+                          <span class="min-w-0">
+                            <span class="block text-xs uppercase tracking-wide text-white/45">Secondary subtitles</span>
+                            <span class="block truncate">{curSecondaryLabel}</span>
+                          </span>
+                          <ChevronRight size={18} class="shrink-0 text-white/40" />
+                        </button>
+                      {/if}
                       <!-- Online subtitles (OpenSubtitles / SubDL): searched on play, picked here. -->
                       <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('online')}>
                         <span class="flex min-w-0 items-center gap-2">
@@ -747,7 +764,7 @@
                               {#each detailItems as t (t.id)}
                                 <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => pick(leafKind, t.id)}>
                                   <span class="truncate">{label(t, detailItems)}</span>
-                                  {#if t.selected}<Check size={18} class="shrink-0 text-primary" />{/if}
+                                  {#if detailCat === 'secondary' ? String(t.id) === secondaryId : t.selected}<Check size={18} class="shrink-0 text-primary" />{/if}
                                 </button>
                               {/each}
                             {/if}
@@ -770,6 +787,12 @@
               </div>
             {/if}
           {/if}
+        </div>
+
+        <div class="hidden items-center gap-1 sm:flex" aria-label="Subtitle line navigation">
+          <button data-focusable class="rounded px-2 py-1 text-xs text-white/70 hover:bg-white/10" onclick={() => cmd('sub-seek', ['-1'])}>Previous line</button>
+          <button data-focusable class="rounded px-2 py-1 text-xs text-white/70 hover:bg-white/10" onclick={() => cmd('sub-seek', ['0'])}>Replay line</button>
+          <button data-focusable class="rounded px-2 py-1 text-xs text-white/70 hover:bg-white/10" onclick={() => cmd('sub-seek', ['1'])}>Next line</button>
         </div>
 
         <!-- Screenshot the current frame → Pictures/izumi. Desktop only in Game mode we keep the
