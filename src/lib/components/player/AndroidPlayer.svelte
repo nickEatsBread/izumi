@@ -1046,7 +1046,7 @@
 
 <div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden} class:pulling-fullscreen={fullscreenPullDragging || pullDim > 0}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
-  <section bind:this={rootEl} class="video-frame relative touch-none overflow-hidden bg-transparent"
+  <section bind:this={rootEl} class="video-frame relative touch-none bg-transparent"
     style:transform={`translate3d(0, ${pullTranslateY}px, 0) scale(${pullScale})`}
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture} role="presentation">
   <!-- Loading with the controls hidden (or locked): the spinner is the only thing on screen, so it
@@ -1164,18 +1164,17 @@
       </div>
       <div bind:this={barEl} class="timeline-hitbox absolute inset-x-0 bottom-0 h-5 w-full cursor-pointer touch-none" onpointerdown={onBarDown} onpointermove={onBarMove} onpointerup={onBarUp} onpointercancel={onBarCancel} onlostpointercapture={onBarLostCapture}
              role="slider" tabindex="0" aria-label="Seek" aria-valuemin={0} aria-valuemax={Math.round(dur)} aria-valuenow={Math.round(pos)}>
-        <!-- Lifted off the very bottom edge by the thumb's radius minus half the track. The thumb
-             is centred on this track, and the video frame clips its overflow, so a track flush with
-             the frame's bottom edge sliced the bottom half off the thumb. -->
-        <div class="absolute inset-x-0 bottom-[5px] h-1 overflow-hidden bg-white/25">
+        <!-- YouTube-style edge timeline: the track is flush with the video bottom and the centred
+             thumb crosses that boundary. Portrait video overflow stays visible so it is not cut. -->
+        <div class="absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-white/25">
           <div class="absolute inset-y-0 left-0 bg-white/40" style="width:{cachePct}%"></div>
           {#each segments as s (s.type + s.start)}
             <div class="absolute inset-y-0 {s.type === 'op' ? 'bg-sky-400/60' : s.type === 'ed' ? 'bg-fuchsia-400/60' : 'bg-amber-400/60'}" style="left:{(s.start / dur) * 100}%;width:{((s.end - s.start) / dur) * 100}%"></div>
           {/each}
           <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
         </div>
-        {#each chapters as c (c)}<div class="absolute bottom-[5px] h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
-        <div class="absolute bottom-0 h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:clamp(7px, {playedPct}%, calc(100% - 7px))"></div>
+        {#each chapters as c (c)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
+        <div class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:clamp(7px, {playedPct}%, calc(100% - 7px))"></div>
         {#if scrubbing}
           <div class="pointer-events-none absolute bottom-8 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
             {#if thumbUrl}<img src={thumbUrl} alt="" class="h-20 w-36 rounded-md border border-white/20 object-cover shadow-lg" />{/if}
@@ -1299,7 +1298,7 @@
 
 <style>
   .player-shell { touch-action: none; background: transparent; }
-  .video-frame { width: 100%; height: var(--portrait-player-height); margin-top: var(--player-safe-top); transform-origin: center; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .video-frame { width: 100%; height: var(--portrait-player-height); margin-top: var(--player-safe-top); overflow: visible; z-index: 1; transform-origin: center; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .watch-details { height: calc(100% - var(--player-safe-top) - var(--portrait-player-height)); touch-action: pan-y; background: #0a0a0b; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .pulling-fullscreen .video-frame { will-change: transform; }
   .pulling-fullscreen .video-frame, .pulling-fullscreen .watch-details { transition: none; }
