@@ -42,6 +42,7 @@ tauri-plugin-opener = "2"
 # for all platforms.
 tauri-plugin-os = "2"
 tauri-plugin-notification = "2"
+tauri-plugin-deep-link = "2"
 # In-tree plugin: launch an external Android video player via ACTION_VIEW (no-op on desktop).
 tauri-plugin-extplayer = { path = "tauri-plugin-extplayer" }
 serde = { version = "1", features = ["derive", "rc"] }
@@ -98,6 +99,9 @@ libmpv2 = "6.0.0"
 libmpv2-sys = "4.0.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 tauri-plugin-updater = "2"
+souvlaki = "0.8.3"
+discord-rich-presence = "1.1.0"
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # Direct-API subtitle providers (OpenSubtitles/SubDL). SubDL delivers subtitles as ZIP archives
 # that Rust must unzip (first .srt/.ass), and every downloaded body needs charset detection +
 # decode to UTF-8 before mpv can load it. All pure-Rust: `zip` with the zlib-rs deflate backend

@@ -125,6 +125,10 @@ export const androidAutoPip = persisted<boolean>('android-auto-pip', true)
  *  turning the screen off mid-episode. Released when paused / stopped, so battery-saver still
  *  kicks in when you're not watching. Default on. */
 export const keepAwakeWhilePlaying = persisted<boolean>('player-keep-awake', true)
+/** Publish playback metadata/actions to MPRIS (Linux) and SMTC (Windows). */
+export const systemMediaControls = persisted<boolean>('system-media-controls', true)
+/** Opt-in Discord activity. Adult titles are always suppressed before reaching native IPC. */
+export const discordRichPresence = persisted<boolean>('discord-rich-presence', false)
 /** Player demuxer read-ahead cache in MiB — the main tunable playback RAM cost. Presets:
  *  Low 32 / Balanced 128 / High 256; any value is allowed (Custom); CACHE_UNCAPPED = no ceiling.
  *  The stored value is a BASELINE that auto-scales up with the file's bitrate (see playerCacheBytes)

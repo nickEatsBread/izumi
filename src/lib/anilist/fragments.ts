@@ -14,7 +14,7 @@ export const SCHEDULE_MEDIA_FIELDS = gql`
 
 export const MEDIA_FIELDS = gql`
   fragment MediaFields on Media {
-    id idMal type
+    id idMal type isAdult
     title { romaji english native userPreferred }
     description(asHtml: false)
     season seasonYear format status episodes duration averageScore popularity trending genres
