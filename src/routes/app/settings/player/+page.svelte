@@ -92,7 +92,7 @@
           { value: 'performance', label: 'Performance' },
           { value: 'standard', label: 'Standard' },
           { value: 'high', label: 'High Quality' },
-          { value: 'anime', label: 'Anime (ArtCNN)' },
+          { value: 'anime', label: 'Anime (neural upscale)' },
           { value: 'custom', label: 'Custom…' },
         ]}
       />
@@ -100,7 +100,9 @@
 
     {#if pendingAnime}
       <div class="col-span-full rounded-md bg-input p-3 text-sm">
-        <p class="mb-2">Anime mode downloads the ArtCNN shader (~40 KB) from github.com/Artoriuz/ArtCNN. Download it now?</p>
+        <!-- Size is the real asset size measured against the pinned release (~208 KB today); the
+             download is one-time and cached under the app config dir. -->
+        <p class="mb-2">Anime mode needs a shader file (~200 KB) that isn't bundled with the app. Turning it on downloads that file from the internet once, then keeps using the local copy. Download it now?</p>
         <button class="mr-2 rounded bg-primary px-3 py-1 font-bold" onclick={() => { pendingAnime = false; $videoQualityPreset = 'anime' }}>Download</button>
         <button class="rounded bg-muted px-3 py-1" onclick={() => { pendingAnime = false }}>Cancel</button>
       </div>

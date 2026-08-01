@@ -838,11 +838,24 @@ fn player_set_render_opts(
     player.set_render_opts(opts)
 }
 
-/// Download (if needed) and return the local path of the ArtCNN shader `variant`, for the Anime
-/// preset. Repo is hardcoded upstream. On any failure the frontend falls back to High Quality.
+/// Apply the frontend's playback-enhancement options (audio normalisation `af`, driver upscaling
+/// `vf`, and the `sub-filter-*` subtitle options). Like the render options these are STORED, not
+/// just forwarded: the desktop mpv core is created on the first play and destroyed on stop, so
+/// options that only ever reached a live core were dead on a fresh launch.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-async fn ensure_artcnn(app: tauri::AppHandle, variant: String) -> Result<String, String> {
+fn player_set_enhancement_opts(
+    opts: Vec<(String, String)>,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Vec<String> {
+    player.set_enhancement_opts(opts)
+}
+
+/// Download (if needed) and return the local path of the upscale shader `variant`, for the Anime
+/// preset. The release endpoint is hardcoded. On any failure the frontend falls back to High Quality.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn ensure_upscale_shader(app: tauri::AppHandle, variant: String) -> Result<String, String> {
     player::shaders::ensure(&app, &variant).await
 }
 
@@ -3878,7 +3891,8 @@ pub fn run() {
             set_doh,
             set_player_cache,
             player_set_render_opts,
-            ensure_artcnn,
+            player_set_enhancement_opts,
+            ensure_upscale_shader,
             set_idle_inhibit,
             write_text_file,
             read_subtitle_file,

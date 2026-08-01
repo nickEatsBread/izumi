@@ -24,7 +24,7 @@
 //! [`spawn_event_loop`].
 
 mod headless;
-// On-demand ArtCNN anime-upscaler shader fetch (Anime video-quality preset). Pinned upstream repo,
+// On-demand anime-upscaler shader fetch (Anime video-quality preset). Pinned upstream release,
 // cached under the app config dir; never a user-supplied URL. See shaders.rs.
 pub mod shaders;
 // Playback wakelock: inhibit OS idle/screen-blank while a video plays (per-OS backends). See wakelock.rs.
@@ -710,6 +710,31 @@ impl PlayerHandle {
         failed
     }
 
+    /// Store the frontend's playback-enhancement options (`af`, `vf`, `sub-filter-*`) and, if a
+    /// core is live, apply each one immediately. The stored set is replayed at the next mpv init
+    /// (see [`ENHANCEMENT_OPTS`], which explains why the stash is the load-bearing part). Returns
+    /// the keys whose LIVE apply failed, mirroring [`set_render_opts`](Self::set_render_opts).
+    ///
+    /// No `sub-reload` follows a `sub-filter-*` change: mpv re-runs the subtitle filters over its
+    /// cached packets on its own, so the cue already on screen updates in place (verified against
+    /// the bundled libmpv — a paused, unseeked cue changed within a frame of the toggle).
+    pub fn set_enhancement_opts(&self, opts: Vec<(String, String)>) -> Vec<String> {
+        if let Ok(mut g) = ENHANCEMENT_OPTS.lock() {
+            *g = opts.clone();
+        }
+        let mut failed = Vec::new();
+        if let Ok(guard) = self.mpv.lock() {
+            if let Some(mpv) = guard.as_ref() {
+                for (k, v) in &opts {
+                    if !set_enhancement_opt(mpv, k, v) {
+                        failed.push(k.clone());
+                    }
+                }
+            }
+        }
+        failed
+    }
+
     /// Add an external subtitle file to the LIVE core and select it. Mirrors the load-time
     /// `sub-add` loop in `load_file` but for a subtitle fetched mid-playback via the online-subtitle
     /// menu. mpv's arg order is `sub-add <url> <flags> <title> <lang>`, so `title` (the menu label)
@@ -1001,6 +1026,62 @@ pub(crate) static PLAYER_CACHE_BYTES: std::sync::atomic::AtomicU64 =
 /// is the single source of truth for the values (the preset table lives in TS), so Rust stays dumb.
 pub(crate) static RENDER_OPTS: std::sync::Mutex<Vec<(String, String)>> =
     std::sync::Mutex::new(Vec::new());
+
+/// User-selected playback enhancements: audio normalisation (`af`), the driver-upscaling filter
+/// (`vf`) and the subtitle `sub-filter-*` options. Same contract as [`RENDER_OPTS`] — the FRONTEND
+/// owns the values, Rust only stashes them. The stash is what makes these settings work on a fresh
+/// launch at all: the desktop core is built lazily on the first play and destroyed on stop, so an
+/// option pushed only to a *live* core survived for exactly one playback session and was gone the
+/// moment the player closed.
+pub(crate) static ENHANCEMENT_OPTS: std::sync::Mutex<Vec<(String, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// mpv's subtitle regex-filter option — a string LIST that needs the list API rather than a plain
+/// set. See [`sub_filter_regex_commands`].
+const SUB_FILTER_REGEX: &str = "sub-filter-regex";
+
+/// The `change-list` invocations that write a single user pattern into `sub-filter-regex`.
+///
+/// Verified against the bundled libmpv (v0.41): `set_property("sub-filter-regex", "^[A-Z]{2,}:")`
+/// stores TWO items — `^[A-Z]{2` and `}:` — because the option is a comma-separated string list, so
+/// the comma in an ordinary bounded quantifier cuts the pattern in half. `change-list … append` is
+/// the only write that takes a value verbatim; the `-append` option suffix is not reachable through
+/// `set_option`/`set_property` (they answer OPTION_NOT_FOUND / PROPERTY_NOT_FOUND). Clearing needs
+/// `clr` for the same reason: setting the property to `""` leaves the list holding one EMPTY
+/// pattern, and an empty pattern matches every line — i.e. "no filter" would blank every subtitle.
+fn sub_filter_regex_commands(pattern: &str) -> Vec<[&str; 3]> {
+    let mut cmds = vec![[SUB_FILTER_REGEX, "clr", ""]];
+    if !pattern.is_empty() {
+        cmds.push([SUB_FILTER_REGEX, "append", pattern]);
+    }
+    cmds
+}
+
+/// Apply ONE enhancement option to a live core. Returns false if mpv rejected it.
+fn set_enhancement_opt(mpv: &Mpv, key: &str, value: &str) -> bool {
+    if key == SUB_FILTER_REGEX {
+        sub_filter_regex_commands(value)
+            .into_iter()
+            .all(|args| mpv.command("change-list", &args).is_ok())
+    } else {
+        mpv.set_property(key, value).is_ok()
+    }
+}
+
+/// Replay the stored enhancement options onto a freshly created core.
+///
+/// Unlike [`RENDER_OPTS`] these go on AFTER `mpv_initialize` instead of inside the initializer,
+/// because `sub-filter-regex` can only be written correctly through the `change-list` command and
+/// commands need an initialized core. No file is loaded yet at this point, so a property write is
+/// equivalent to an init option. Best-effort per option, exactly like the render options: one
+/// unknown key must never take the core — and with it playback — down.
+fn apply_enhancement_opts(mpv: &Mpv) {
+    if let Ok(opts) = ENHANCEMENT_OPTS.lock() {
+        for (k, v) in opts.iter() {
+            let _ = set_enhancement_opt(mpv, k, v);
+        }
+    }
+}
 
 fn load_file(
     mpv: &Mpv,
@@ -1339,7 +1420,7 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // glibc: LC_NUMERIC == 1.
         setlocale(1, c"C".as_ptr());
     }
-    Mpv::with_initializer(|init| {
+    let mpv = Mpv::with_initializer(|init| {
         // vo=libmpv is the ONLY MANDATORY option — the render API can't work without
         // it. Every other option is BEST-EFFORT (`let _ =`): mpv option availability
         // drifts across versions/builds (e.g. `demuxer-seekable-cache` was deprecated
@@ -1407,7 +1488,11 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
         );
         Ok(())
-    })
+    })?;
+    // Second half of the init-time replay — the enhancement options can't all go in the
+    // initializer (see apply_enhancement_opts), but nothing is loaded yet, so this is equivalent.
+    apply_enhancement_opts(&mpv);
+    Ok(mpv)
 }
 
 /// Keep a cache key safe as a single directory name (infoHash is hex; a
@@ -1468,7 +1553,7 @@ fn b64(data: &[u8]) -> String {
 /// `force-window` (the handle already is the output surface). If `wid` is
 /// `None`, we ask mpv to create its own window via `force-window`.
 fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
-    Mpv::with_initializer(|init| {
+    let mpv = Mpv::with_initializer(|init| {
         match wid {
             // Embedded: render into the host window. `wid` is an init-time
             // option, exactly like `vo`.
@@ -1641,7 +1726,11 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
             "reconnect=1,reconnect_streamed=1,reconnect_on_network_error=1,reconnect_delay_max=5",
         );
         Ok(())
-    })
+    })?;
+    // Second half of the init-time replay — the enhancement options can't all go in the
+    // initializer (see apply_enhancement_opts), but nothing is loaded yet, so this is equivalent.
+    apply_enhancement_opts(&mpv);
+    Ok(mpv)
 }
 
 #[cfg(test)]
@@ -1673,6 +1762,58 @@ mod tests {
                 ("scale".to_string(), "spline36".to_string()),
                 ("deband".to_string(), "no".to_string()),
             ]
+        );
+    }
+
+    #[test]
+    fn set_enhancement_opts_without_core_stores_and_does_not_panic() {
+        // The stash is the whole fix: with no core alive (the state a fresh launch is in until the
+        // first play) the values still have to be recorded, because apply_enhancement_opts replays
+        // them into the core that gets built later. Dropping them here is the original bug.
+        let h = PlayerHandle::new();
+        let failed = h.set_enhancement_opts(vec![
+            (
+                "af".to_string(),
+                "lavfi=[loudnorm=I=-18:LRA=7:TP=-2]".to_string(),
+            ),
+            ("sub-filter-sdh".to_string(), "yes".to_string()),
+        ]);
+        assert!(failed.is_empty()); // no live core → nothing to fail
+        let stored = ENHANCEMENT_OPTS.lock().unwrap().clone();
+        assert_eq!(
+            stored,
+            vec![
+                (
+                    "af".to_string(),
+                    "lavfi=[loudnorm=I=-18:LRA=7:TP=-2]".to_string()
+                ),
+                ("sub-filter-sdh".to_string(), "yes".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn user_regex_reaches_mpv_as_one_verbatim_list_item() {
+        // `.{2,}` is an ordinary bounded quantifier and one of the commonest patterns there is.
+        // Through a plain `set` mpv splits it into `.{2` and `}` — two patterns, neither of them
+        // what the user typed — so the write has to go through the list API.
+        assert_eq!(
+            sub_filter_regex_commands(".{2,}"),
+            vec![
+                ["sub-filter-regex", "clr", ""],
+                ["sub-filter-regex", "append", ".{2,}"],
+            ]
+        );
+    }
+
+    #[test]
+    fn an_empty_regex_clears_the_list_rather_than_appending_an_empty_pattern() {
+        // "No regex" is the default, so this is the common path. Setting the option to "" leaves
+        // ONE empty pattern in the list, and an empty pattern matches every line — the default
+        // would blank every subtitle.
+        assert_eq!(
+            sub_filter_regex_commands(""),
+            vec![["sub-filter-regex", "clr", ""]]
         );
     }
 
