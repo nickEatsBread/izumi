@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type CwDismissAction } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -32,6 +32,14 @@
     { value: 'agenda', label: 'Agenda', hint: 'One long list — each day is a full-width section. Big and easy to read.' },
     { value: 'days', label: 'Day at a time', hint: 'Tabs across the top; one day shown large. Matches the Deck view.' },
   ]
+  const themes: { value: ThemePreset; label: string; swatch: string }[] = [
+    { value: 'izumi', label: 'Izumi', swatch: 'linear-gradient(135deg,#09090b 55%,#e11d48 55%)' },
+    { value: 'midnight', label: 'Midnight', swatch: 'linear-gradient(135deg,#080b18 55%,#8b5cf6 55%)' },
+    { value: 'sakura', label: 'Sakura', swatch: 'linear-gradient(135deg,#13080d 55%,#f472b6 55%)' },
+    { value: 'ocean', label: 'Ocean', swatch: 'linear-gradient(135deg,#061018 55%,#06b6d4 55%)' },
+    { value: 'light', label: 'Light', swatch: 'linear-gradient(135deg,#fafafa 55%,#be123c 55%)' },
+    { value: 'system', label: 'System', swatch: 'linear-gradient(135deg,#09090b 50%,#fafafa 50%)' },
+  ]
   const rowLabels: Record<string, string> = {
     continue: 'Continue Watching', list: 'Your List', recommendations: 'Recommended for You',
     season: 'Popular This Season', trending: 'Trending Now', popular: 'All Time Popular',
@@ -61,6 +69,29 @@
   <p class="mb-4 text-sm text-muted-foreground">Layout, scale, and content visibility.</p>
 
   <div class="max-w-2xl">
+    <h3 class="mb-1 text-sm font-black">Theme</h3>
+    <p class="mb-2 text-xs text-muted-foreground">Contrast-safe palettes applied across the app and player controls.</p>
+    <div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {#each themes as theme (theme.value)}
+        <button data-focusable onclick={() => ($themePreset = theme.value)} aria-pressed={$themePreset === theme.value}
+          class="flex items-center gap-3 rounded-md border p-3 text-left {$themePreset === theme.value ? 'border-theme bg-theme/10' : 'border-border hover:bg-secondary'}">
+          <span class="size-7 shrink-0 rounded-full border border-black/20" style={`background:${theme.swatch}`}></span>
+          <span class="font-bold">{theme.label}</span>
+        </button>
+      {/each}
+    </div>
+
+    <div class="mb-5 space-y-3">
+      <label class="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+        <span><span class="block font-bold">Motion</span><span class="text-xs text-muted-foreground">Follow the system preference, reduce animation, or always show it.</span></span>
+        <SelectMenu bind:value={$motionPreference} ariaLabel="Motion preference" options={[
+          { value: 'system', label: 'System' }, { value: 'reduce', label: 'Reduced' }, { value: 'full', label: 'Full' },
+        ]} />
+      </label>
+      <Toggle label="High contrast" desc="Strengthen muted text, borders, and the keyboard focus indicator." value={$highContrast} onToggle={() => ($highContrast = !$highContrast)} />
+      <Toggle label="Larger interaction targets" desc="Give keyboard and touch controls a minimum 44 × 44 px target." value={$largeInteractionTargets} onToggle={() => ($largeInteractionTargets = !$largeInteractionTargets)} />
+    </div>
+
     {#if $isAndroid}
       <div class="mb-4">
         <Toggle label="Haptics" desc="Vibrate on taps, toggles, and actions." value={$haptics} onToggle={() => ($haptics = !$haptics)} />

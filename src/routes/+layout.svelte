@@ -7,8 +7,13 @@
   import { onMount } from 'svelte'
   import { startQualitySync } from '$lib/player/quality'
   import { startEnhancementSync } from '$lib/player/enhancements'
+  import { startThemeSync } from '$lib/theme'
   setContextClient(anilist)
   let { children } = $props()
-  onMount(() => { startQualitySync(); startEnhancementSync() })
+  onMount(() => {
+    startQualitySync()
+    startEnhancementSync()
+    return startThemeSync()
+  })
 </script>
 {@render children()}

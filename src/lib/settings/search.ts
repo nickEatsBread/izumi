@@ -59,6 +59,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Download codec', category: 'Downloads', href: '/app/settings/downloads', keywords: 'h264 h265 hevc av1 release matching' },
   { title: 'Automatic downloads', category: 'Downloads', href: '/app/settings/downloads', keywords: 'new episode subscription airing schedule' },
   { title: 'Episode airing notifications', category: 'Interface', href: '/app/settings/interface', keywords: 'notify alert schedule new episode', anchored: true },
+  { title: 'Theme and accessibility', category: 'Interface', href: '/app/settings/interface', keywords: 'light dark contrast motion focus wcag large targets' },
   { title: 'Storage used', category: 'Downloads', href: '/app/settings/downloads', keywords: 'disk space size' },
 
   { title: 'Haptics', category: 'Interface', href: '/app/settings/interface', keywords: 'vibration feedback Android', anchored: true },
