@@ -224,7 +224,16 @@ impl PlayerHandle {
         // If we already have an mpv core, just queue the new file into its
         // existing window.
         if let Some(mpv) = guard.as_ref() {
-            load_file(mpv, url, start_seconds, true, &None, &[], &[], &self.pending_external_tracks)?;
+            load_file(
+                mpv,
+                url,
+                start_seconds,
+                true,
+                &None,
+                &[],
+                &[],
+                &self.pending_external_tracks,
+            )?;
             return Ok(());
         }
 
@@ -235,7 +244,16 @@ impl PlayerHandle {
         spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
             .map_err(|e| e.to_string())?;
 
-        load_file(&mpv, url, start_seconds, true, &None, &[], &[], &self.pending_external_tracks)?;
+        load_file(
+            &mpv,
+            url,
+            start_seconds,
+            true,
+            &None,
+            &[],
+            &[],
+            &self.pending_external_tracks,
+        )?;
 
         *guard = Some(mpv);
         Ok(())
@@ -441,7 +459,15 @@ impl PlayerHandle {
             if jobs.len() > 64 {
                 jobs.clear();
             }
-            jobs.insert(key, TileJob { dir, interval, frames, url });
+            jobs.insert(
+                key,
+                TileJob {
+                    dir,
+                    interval,
+                    frames,
+                    url,
+                },
+            );
         }
     }
 
@@ -456,7 +482,13 @@ impl PlayerHandle {
             let jobs = self.sprite_jobs.lock().map_err(|e| e.to_string())?;
             match jobs.get(key) {
                 Some(j) => (j.dir.clone(), j.interval, j.frames, j.url.clone()),
-                None => return Ok(ThumbTile { status: "none".into(), data_url: None, index: 0 }),
+                None => {
+                    return Ok(ThumbTile {
+                        status: "none".into(),
+                        data_url: None,
+                        index: 0,
+                    })
+                }
             }
         };
         // `start_sprite` snapshots `current_url` at registration time, but the frontend sets
@@ -467,7 +499,11 @@ impl PlayerHandle {
         {
             let live = self.current_url.lock().ok().and_then(|g| g.clone());
             if live.as_deref() != Some(url.as_str()) {
-                return Ok(ThumbTile { status: "none".into(), data_url: None, index: 0 });
+                return Ok(ThumbTile {
+                    status: "none".into(),
+                    data_url: None,
+                    index: 0,
+                });
             }
         }
 
@@ -477,7 +513,11 @@ impl PlayerHandle {
         // Disk-cache hit (EOI-verified so a half-written file reads as not-ready).
         if let Ok(bytes) = std::fs::read(&path) {
             if bytes.len() > 2 && bytes[bytes.len() - 2] == 0xFF && bytes[bytes.len() - 1] == 0xD9 {
-                return Ok(ThumbTile { status: "ready".into(), data_url: Some(format!("data:image/jpeg;base64,{}", b64(&bytes))), index: i });
+                return Ok(ThumbTile {
+                    status: "ready".into(),
+                    data_url: Some(format!("data:image/jpeg;base64,{}", b64(&bytes))),
+                    index: i,
+                });
             }
         }
 
@@ -485,7 +525,11 @@ impl PlayerHandle {
         // headless decoder seeks + software-renders THIS position; we write the tile
         // atomically and the seekbar re-polls until it lands. Returns immediately so
         // hover/skim never stalls the UI or other Tauri commands.
-        if self.thumb_inflight.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+        if self
+            .thumb_inflight
+            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
             let inflight = self.thumb_inflight.clone();
             let headless = self.headless.clone();
             let time_at = i as f64 * interval as f64;
@@ -498,7 +542,11 @@ impl PlayerHandle {
                 inflight.store(0, Ordering::SeqCst);
             });
         }
-        Ok(ThumbTile { status: "pending".into(), data_url: None, index: i })
+        Ok(ThumbTile {
+            status: "pending".into(),
+            data_url: None,
+            index: i,
+        })
     }
 
     /// Geometry for `key` so the seekbar can map hover-time → tile index. `running`
@@ -506,8 +554,16 @@ impl PlayerHandle {
     pub fn thumb_info(&self, key: &str) -> Result<ThumbInfo, String> {
         let jobs = self.sprite_jobs.lock().map_err(|e| e.to_string())?;
         Ok(match jobs.get(key) {
-            Some(j) => ThumbInfo { status: "running".into(), interval: j.interval, frames: j.frames },
-            None => ThumbInfo { status: "none".into(), interval: 0, frames: 0 },
+            Some(j) => ThumbInfo {
+                status: "running".into(),
+                interval: j.interval,
+                frames: j.frames,
+            },
+            None => ThumbInfo {
+                status: "none".into(),
+                interval: 0,
+                frames: 0,
+            },
         })
     }
 
@@ -583,10 +639,8 @@ impl PlayerHandle {
                     .is_ok()
                 {
                     frame += 1;
-                    worker_captured_ms.store(
-                        started.elapsed().as_millis() as u64,
-                        Ordering::Relaxed,
-                    );
+                    worker_captured_ms
+                        .store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
                 }
                 std::thread::sleep(FRAME_INTERVAL);
             }
@@ -623,11 +677,7 @@ impl PlayerHandle {
 
     /// Cancel a live GIF capture and remove its temporary frames.
     pub fn gif_abort(&self) -> Result<(), String> {
-        let session = self
-            .gif_session
-            .lock()
-            .map_err(|e| e.to_string())?
-            .take();
+        let session = self.gif_session.lock().map_err(|e| e.to_string())?.take();
         if let Some(session) = session {
             session
                 .stop
@@ -693,15 +743,27 @@ impl PlayerHandle {
     /// valid + at a stable address until [`overlay_remove`] or the next `overlay_add` for `id`
     /// (mpv reads it each frame, it does not copy). See `overlay-add` in the mpv manual.
     #[cfg(target_os = "linux")]
-    pub fn overlay_add(&self, id: i64, x: i64, y: i64, addr: usize, w: i64, h: i64, stride: i64) -> Result<(), String> {
+    pub fn overlay_add(
+        &self,
+        id: i64,
+        x: i64,
+        y: i64,
+        addr: usize,
+        w: i64,
+        h: i64,
+        stride: i64,
+    ) -> Result<(), String> {
         let guard = self.mpv.lock().map_err(|e| e.to_string())?;
         let mpv = guard.as_ref().ok_or("no player")?;
         let (ids, xs, ys) = (id.to_string(), x.to_string(), y.to_string());
         let file = format!("&{addr}");
         let (ws, hs, ss) = (w.to_string(), h.to_string(), stride.to_string());
         // overlay-add <id> <x> <y> <file> <offset> <fmt> <w> <h> <stride>
-        mpv.command("overlay-add", &[&ids, &xs, &ys, &file, "0", "bgra", &ws, &hs, &ss])
-            .map_err(|e| e.to_string())
+        mpv.command(
+            "overlay-add",
+            &[&ids, &xs, &ys, &file, "0", "bgra", &ws, &hs, &ss],
+        )
+        .map_err(|e| e.to_string())
     }
 
     /// Remove the OSD overlay with the given `id` (Game-mode controls hidden).
@@ -716,7 +778,14 @@ impl PlayerHandle {
     /// Add/update/remove an ASS OSD overlay. This uses mpv's named-argument command API
     /// because `osd-overlay` explicitly requires `mpv_command_node()`.
     #[cfg(target_os = "linux")]
-    pub fn osd_overlay_ass(&self, id: i64, data: &str, res_x: i64, res_y: i64, z: i64) -> Result<(), String> {
+    pub fn osd_overlay_ass(
+        &self,
+        id: i64,
+        data: &str,
+        res_x: i64,
+        res_y: i64,
+        z: i64,
+    ) -> Result<(), String> {
         self.osd_overlay(id, "ass-events", data, res_x, res_y, z)
     }
 
@@ -727,7 +796,15 @@ impl PlayerHandle {
     }
 
     #[cfg(target_os = "linux")]
-    fn osd_overlay(&self, id: i64, format: &str, data: &str, res_x: i64, res_y: i64, z: i64) -> Result<(), String> {
+    fn osd_overlay(
+        &self,
+        id: i64,
+        format: &str,
+        data: &str,
+        res_x: i64,
+        res_y: i64,
+        z: i64,
+    ) -> Result<(), String> {
         use std::ffi::{CStr, CString};
         use std::os::raw::c_char;
         use std::ptr;
@@ -736,7 +813,9 @@ impl PlayerHandle {
 
         fn node_string(s: &CString) -> sys::mpv_node {
             sys::mpv_node {
-                u: sys::mpv_node__bindgen_ty_1 { string: s.as_ptr() as *mut c_char },
+                u: sys::mpv_node__bindgen_ty_1 {
+                    string: s.as_ptr() as *mut c_char,
+                },
                 format: sys::mpv_format_MPV_FORMAT_STRING,
             }
         }
@@ -754,7 +833,10 @@ impl PlayerHandle {
                 if ptr.is_null() {
                     return format!("mpv error {code}");
                 }
-                format!("mpv error {code}: {}", CStr::from_ptr(ptr).to_string_lossy())
+                format!(
+                    "mpv error {code}: {}",
+                    CStr::from_ptr(ptr).to_string_lossy()
+                )
             }
         }
 
@@ -767,7 +849,8 @@ impl PlayerHandle {
             .map(|k| CString::new(*k))
             .collect::<Result<_, _>>()
             .map_err(|e| e.to_string())?;
-        let mut key_ptrs: Vec<*mut c_char> = keys.iter().map(|k| k.as_ptr() as *mut c_char).collect();
+        let mut key_ptrs: Vec<*mut c_char> =
+            keys.iter().map(|k| k.as_ptr() as *mut c_char).collect();
 
         let name = CString::new("osd-overlay").map_err(|e| e.to_string())?;
         let format = CString::new(format).map_err(|e| e.to_string())?;
@@ -809,7 +892,8 @@ impl PlayerHandle {
         let _ = mpv.set_property("screenshot-directory", dir);
         // "subtitles" = the rendered frame including subs (mpv's default screenshot
         // mode), which is what a viewer expects to capture.
-        mpv.command("screenshot", &["subtitles"]).map_err(|e| e.to_string())
+        mpv.command("screenshot", &["subtitles"])
+            .map_err(|e| e.to_string())
     }
 
     /// Return the current track list as a JSON array (`[{id,type,title,lang,
@@ -832,9 +916,7 @@ impl PlayerHandle {
             let ty: String = mpv
                 .get_property(&format!("track-list/{i}/type"))
                 .unwrap_or_default();
-            let id: i64 = mpv
-                .get_property(&format!("track-list/{i}/id"))
-                .unwrap_or(0);
+            let id: i64 = mpv.get_property(&format!("track-list/{i}/id")).unwrap_or(0);
             let title: String = mpv
                 .get_property(&format!("track-list/{i}/title"))
                 .unwrap_or_default();
@@ -910,13 +992,15 @@ impl PlayerHandle {
 /// Demuxer read-ahead cache ceiling in bytes — the main tunable RAM cost of playback. The frontend
 /// writes it from the user's setting via `set_player_cache`; load_file applies it per file, so a
 /// change takes effect on the next video. Default 128 MiB.
-pub(crate) static PLAYER_CACHE_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(134_217_728);
+pub(crate) static PLAYER_CACHE_BYTES: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(134_217_728);
 
 /// User-selected mpv render options (scale/dscale/cscale/deband/dither/glsl-shaders …), pushed from
 /// the frontend's Video-quality preset system. Applied at mpv init and live via set_property. Empty
 /// until the frontend pushes on startup (empty → mpv's own defaults, which are smooth). The FRONTEND
 /// is the single source of truth for the values (the preset table lives in TS), so Rust stays dumb.
-pub(crate) static RENDER_OPTS: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+pub(crate) static RENDER_OPTS: std::sync::Mutex<Vec<(String, String)>> =
+    std::sync::Mutex::new(Vec::new());
 
 fn load_file(
     mpv: &Mpv,
@@ -943,17 +1027,21 @@ fn load_file(
     // Always set it (empty clears any previous file's headers so they don't leak).
     let hdr = headers
         .as_ref()
-        .map(|h| h.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(","))
+        .map(|h| {
+            h.iter()
+                .map(|(k, v)| format!("{k}: {v}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        })
         .unwrap_or_default();
     let _ = mpv.set_property("http-header-fields", hdr.as_str());
 
-    *pending_external_tracks.lock().map_err(|e| e.to_string())? =
-        Some(PendingExternalTracks {
-            url: url.to_string(),
-            autoplay,
-            subtitles: subtitles.to_vec(),
-            audio_tracks: audio_tracks.to_vec(),
-        });
+    *pending_external_tracks.lock().map_err(|e| e.to_string())? = Some(PendingExternalTracks {
+        url: url.to_string(),
+        autoplay,
+        subtitles: subtitles.to_vec(),
+        audio_tracks: audio_tracks.to_vec(),
+    });
 
     if let Err(error) = mpv.command("loadfile", &[url]) {
         *pending_external_tracks.lock().map_err(|e| e.to_string())? = None;
@@ -976,7 +1064,10 @@ fn take_pending_external_tracks(
     loaded_url: &str,
 ) -> Option<PendingExternalTracks> {
     let mut guard = pending.lock().ok()?;
-    if guard.as_ref().is_some_and(|tracks| tracks.url == loaded_url) {
+    if guard
+        .as_ref()
+        .is_some_and(|tracks| tracks.url == loaded_url)
+    {
         guard.take()
     } else {
         None
@@ -995,7 +1086,10 @@ fn attach_external_tracks(mpv: &Mpv, tracks: PendingExternalTracks) -> usize {
             .as_deref()
             .filter(|value| !value.is_empty())
             .unwrap_or(lang);
-        if mpv.command("audio-add", &[track.url.as_str(), "auto", title, lang]).is_err() {
+        if mpv
+            .command("audio-add", &[track.url.as_str(), "auto", title, lang])
+            .is_err()
+        {
             failures += 1;
         }
     }
@@ -1012,9 +1106,16 @@ fn attach_external_tracks(mpv: &Mpv, tracks: PendingExternalTracks) -> usize {
         .chain(tracks.subtitles.iter().filter(|sub| sub.is_default))
     {
         let lang = sub.lang.as_deref().unwrap_or("und");
-        let title = sub.title.as_deref().filter(|t| !t.is_empty()).unwrap_or(lang);
+        let title = sub
+            .title
+            .as_deref()
+            .filter(|t| !t.is_empty())
+            .unwrap_or(lang);
         let flag = if sub.is_default { "select" } else { "auto" };
-        if mpv.command("sub-add", &[sub.url.as_str(), flag, title, lang]).is_err() {
+        if mpv
+            .command("sub-add", &[sub.url.as_str(), flag, title, lang])
+            .is_err()
+        {
             failures += 1;
         }
     }
@@ -1110,7 +1211,9 @@ pub(crate) fn spawn_event_loop(
                             let autoplay = tracks.autoplay;
                             let failures = attach_external_tracks(&client, tracks);
                             if failures > 0 {
-                                eprintln!("mpv could not attach {failures} external media track(s)");
+                                eprintln!(
+                                    "mpv could not attach {failures} external media track(s)"
+                                );
                                 let _ = app.emit("player-track-error", failures);
                             }
                             // Gamescope's reusable X11 core is commonly still under the previous
@@ -1311,7 +1414,13 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
 /// media-episode key like `12345-3` is also safe — this just hardens it).
 fn sanitize_key(key: &str) -> String {
     key.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(80)
         .collect()
 }
@@ -1337,8 +1446,16 @@ fn b64(data: &[u8]) -> String {
             | (*c.get(2).unwrap_or(&0) as u32);
         s.push(T[(n >> 18 & 63) as usize] as char);
         s.push(T[(n >> 12 & 63) as usize] as char);
-        s.push(if c.len() > 1 { T[(n >> 6 & 63) as usize] as char } else { '=' });
-        s.push(if c.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+        s.push(if c.len() > 1 {
+            T[(n >> 6 & 63) as usize] as char
+        } else {
+            '='
+        });
+        s.push(if c.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     s
 }
@@ -1393,7 +1510,11 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // GL-interop hwdec (`auto`) needs mpv's own GL context; a non-GL vo (wlshm/x11)
         // must copy frames back to system memory so it never creates a GL/EGL context
         // (which would clash with webkit's renderer on Linux). `auto-copy` still HW-decodes.
-        let hwdec = if vo.starts_with("gpu") { "auto" } else { "auto-copy" };
+        let hwdec = if vo.starts_with("gpu") {
+            "auto"
+        } else {
+            "auto-copy"
+        };
         let _ = init.set_option("hwdec", hwdec);
         // Direct rendering for the SOFTWARE-decode fallback (a codec/profile the GPU can't do,
         // e.g. some 10-bit HEVC/AV1): lets the decoder write straight into renderer-owned frames,
@@ -1546,10 +1667,13 @@ mod tests {
         ]);
         assert!(failed.is_empty()); // no live core → nothing to fail
         let stored = RENDER_OPTS.lock().unwrap().clone();
-        assert_eq!(stored, vec![
-            ("scale".to_string(), "spline36".to_string()),
-            ("deband".to_string(), "no".to_string()),
-        ]);
+        assert_eq!(
+            stored,
+            vec![
+                ("scale".to_string(), "spline36".to_string()),
+                ("deband".to_string(), "no".to_string()),
+            ]
+        );
     }
 
     #[test]
@@ -1566,18 +1690,14 @@ mod tests {
             audio_tracks: Vec::new(),
         }));
 
-        assert!(take_pending_external_tracks(
-            &pending,
-            "https://video.example/episode-1.m3u8"
-        )
-        .is_none());
+        assert!(
+            take_pending_external_tracks(&pending, "https://video.example/episode-1.m3u8")
+                .is_none()
+        );
         assert!(pending.lock().unwrap().is_some());
 
-        let tracks = take_pending_external_tracks(
-            &pending,
-            "https://video.example/episode-2.m3u8",
-        )
-        .expect("matching file should receive its queued tracks");
+        let tracks = take_pending_external_tracks(&pending, "https://video.example/episode-2.m3u8")
+            .expect("matching file should receive its queued tracks");
         assert!(tracks.autoplay);
         assert_eq!(tracks.subtitles.len(), 1);
         assert!(tracks.subtitles[0].is_default);

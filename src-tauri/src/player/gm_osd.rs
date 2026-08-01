@@ -150,12 +150,20 @@ fn prepare_scrub_display(
         return false;
     }
 
-    let tau = if state.pad_scrub { PAD_SCRUB_TAU } else { TOUCH_SCRUB_TAU };
+    let tau = if state.pad_scrub {
+        PAD_SCRUB_TAU
+    } else {
+        TOUCH_SCRUB_TAU
+    };
     // First frame of the gesture: a trigger scrub begins at the playhead and steps away from it,
     // but a finger lands directly on a point — so touch starts AT the target (no visible slide
     // from the current playback position on the very first touch).
     let current = shown_scrub_time.unwrap_or_else(|| {
-        if state.pad_scrub { state.pos.clamp(0.0, state.dur) } else { target }
+        if state.pad_scrub {
+            state.pos.clamp(0.0, state.dur)
+        } else {
+            target
+        }
     });
     let next = smooth_scrub_time(current, target, dt, tau).clamp(0.0, state.dur);
     let animating = (next - target).abs() > SCRUB_EPSILON;
@@ -184,7 +192,10 @@ fn smooth_scrub_time(current: f64, target: f64, dt: f64, tau: f64) -> f64 {
 }
 
 fn latest_state() -> Option<(GmDynamicOverlay, u64)> {
-    let rt = RUNTIME.get_or_init(|| Mutex::new(Runtime::default())).lock().ok()?;
+    let rt = RUNTIME
+        .get_or_init(|| Mutex::new(Runtime::default()))
+        .lock()
+        .ok()?;
     Some((rt.state.clone(), rt.version))
 }
 
@@ -269,7 +280,12 @@ fn spinner_phase(t0: Instant) -> u32 {
 /// if absent.
 fn scrub_geometry(state: &GmDynamicOverlay, w: f64, h: f64) -> (f64, f64, f64, f64) {
     if state.bar_w > 0.0 {
-        (state.bar_x, state.bar_y, state.bar_w, state.bar_h.clamp(6.0, 18.0))
+        (
+            state.bar_x,
+            state.bar_y,
+            state.bar_w,
+            state.bar_h.clamp(6.0, 18.0),
+        )
     } else {
         let pad = (w * 0.06).clamp(54.0, 96.0);
         (pad, h - 76.0, (w - pad * 2.0).max(1.0), 8.0)
@@ -280,7 +296,15 @@ fn scrub_geometry(state: &GmDynamicOverlay, w: f64, h: f64) -> (f64, f64, f64, f
 /// these move while a finger drags, so the string is byte-stable across a gesture and pushed only
 /// once (the loop content-gates it). Byte-stability matters: jittering coordinates would miss
 /// libass's bitmap cache and re-tessellate the 24 gradient bands every frame.
-fn scrub_static_ass(state: &GmDynamicOverlay, w: f64, h: f64, x: f64, y: f64, bw: f64, bh: f64) -> String {
+fn scrub_static_ass(
+    state: &GmDynamicOverlay,
+    w: f64,
+    h: f64,
+    x: f64,
+    y: f64,
+    bw: f64,
+    bh: f64,
+) -> String {
     let mut lines = Vec::new();
 
     // Soft bottom gradient for legibility over bright frames (matches the HTML controls'
@@ -299,7 +323,18 @@ fn scrub_static_ass(state: &GmDynamicOverlay, w: f64, h: f64, x: f64, y: f64, bw
         let a = ((1.0 - opacity) * 255.0).round().clamp(0.0, 255.0) as i64;
         let by = grad_top + span * (i as f64 / bands as f64);
         // Blur ≈ band height so adjacent bands overlap-blend into a smooth ramp (kills the steps).
-        push(&mut lines, rect_blur(0.0, by, w, band_h + 2.0, "000000", &format!("{a:02X}"), band_h));
+        push(
+            &mut lines,
+            rect_blur(
+                0.0,
+                by,
+                w,
+                band_h + 2.0,
+                "000000",
+                &format!("{a:02X}"),
+                band_h,
+            ),
+        );
     }
 
     let top = y - bh / 2.0;
@@ -307,7 +342,10 @@ fn scrub_static_ass(state: &GmDynamicOverlay, w: f64, h: f64, x: f64, y: f64, bw
     push(&mut lines, rect(x, top, bw, bh, "FFFFFF", "BF"));
     let buffer_pct = pct(state.buffer, state.dur);
     if buffer_pct > 0.0 {
-        push(&mut lines, rect(x, top, bw * buffer_pct, bh, "FFFFFF", "99"));
+        push(
+            &mut lines,
+            rect(x, top, bw * buffer_pct, bh, "FFFFFF", "99"),
+        );
     }
     lines.join("\n")
 }
@@ -326,7 +364,10 @@ fn scrub_dynamic_ass(state: &GmDynamicOverlay, w: f64, x: f64, y: f64, bw: f64, 
     let knob_x = x + bw * scrub_pct;
     push(&mut lines, circle(knob_x, y, 11.0, "FFFFFF", "00"));
     let time = fmt_time(state.scrub_time);
-    push(&mut lines, text(knob_x.clamp(60.0, w - 60.0), y - 42.0, 32.0, &time));
+    push(
+        &mut lines,
+        text(knob_x.clamp(60.0, w - 60.0), y - 42.0, 32.0, &time),
+    );
     lines.join("\n")
 }
 
@@ -349,7 +390,9 @@ fn loading_overlay(phase: u32, w: f64, h: f64, lines: &mut Vec<String>) {
     let cy = h / 2.0;
     let segments = 24usize;
     let head = ((phase % 60) as f64 / 60.0) * PI * 2.0 - PI / 2.0;
-    let alphas = ["00", "0C", "1A", "2A", "40", "58", "74", "92", "B0", "C8", "D8"];
+    let alphas = [
+        "00", "0C", "1A", "2A", "40", "58", "74", "92", "B0", "C8", "D8",
+    ];
 
     for i in 0..segments {
         let theta = (i as f64 / segments as f64) * PI * 2.0 - PI / 2.0;
@@ -357,7 +400,19 @@ fn loading_overlay(phase: u32, w: f64, h: f64, lines: &mut Vec<String>) {
         let age = ((delta / (PI * 2.0)) * segments as f64).round() as usize;
         let alpha = alphas[age.min(alphas.len() - 1)];
         let half = PI / segments as f64 * 0.34;
-        push(lines, ring_segment(cx, cy, 24.0, 31.0, theta - half, theta + half, "FFFFFF", alpha));
+        push(
+            lines,
+            ring_segment(
+                cx,
+                cy,
+                24.0,
+                31.0,
+                theta - half,
+                theta + half,
+                "FFFFFF",
+                alpha,
+            ),
+        );
     }
 }
 
@@ -375,7 +430,11 @@ fn pct(value: f64, duration: f64) -> f64 {
 }
 
 fn fmt_time(seconds: f64) -> String {
-    let seconds = if seconds.is_finite() { seconds.max(0.0) } else { 0.0 };
+    let seconds = if seconds.is_finite() {
+        seconds.max(0.0)
+    } else {
+        0.0
+    };
     let total = seconds.floor() as u64;
     let h = total / 3600;
     let m = (total % 3600) / 60;
@@ -483,7 +542,16 @@ fn circle(cx: f64, cy: f64, r: f64, color: &str, alpha: &str) -> String {
     )
 }
 
-fn ring_segment(cx: f64, cy: f64, inner: f64, outer: f64, a0: f64, a1: f64, color: &str, alpha: &str) -> String {
+fn ring_segment(
+    cx: f64,
+    cy: f64,
+    inner: f64,
+    outer: f64,
+    a0: f64,
+    a1: f64,
+    color: &str,
+    alpha: &str,
+) -> String {
     if inner <= 0.0 || outer <= inner {
         return String::new();
     }
@@ -501,7 +569,9 @@ fn ring_segment(cx: f64, cy: f64, inner: f64, outer: f64, a0: f64, a1: f64, colo
 }
 
 fn ass_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('{', "\\{").replace('}', "\\}")
+    s.replace('\\', "\\\\")
+        .replace('{', "\\{")
+        .replace('}', "\\}")
 }
 
 fn ir(v: f64) -> i64 {

@@ -39,18 +39,32 @@ impl DohResolver {
             .timeout(Duration::from_secs(6))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        Self { doh_url, boot, cache: Arc::new(Mutex::new(HashMap::new())) }
+        Self {
+            doh_url,
+            boot,
+            cache: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     fn clone_shared(&self) -> Self {
-        Self { doh_url: self.doh_url.clone(), boot: self.boot.clone(), cache: self.cache.clone() }
+        Self {
+            doh_url: self.doh_url.clone(),
+            boot: self.boot.clone(),
+            cache: self.cache.clone(),
+        }
     }
 
     /// One DoH JSON query for a record type (1 = A, 28 = AAAA). Returns (ip, ttl)
     /// pairs; empty on any failure (caller decides fallback).
     async fn query(&self, host: &str, qtype: u16) -> Vec<(IpAddr, u32)> {
         let url = format!("{}?name={}&type={}", self.doh_url, host, qtype);
-        let resp = match self.boot.get(&url).header("Accept", "application/dns-json").send().await {
+        let resp = match self
+            .boot
+            .get(&url)
+            .header("Accept", "application/dns-json")
+            .send()
+            .await
+        {
             Ok(r) => r,
             Err(_) => return Vec::new(),
         };
@@ -68,7 +82,11 @@ impl DohResolver {
                 if a.get("type").and_then(|t| t.as_u64()).unwrap_or(0) as u16 != qtype {
                     continue; // skip CNAME/other intermediary records
                 }
-                if let Some(ip) = a.get("data").and_then(|d| d.as_str()).and_then(|d| d.parse::<IpAddr>().ok()) {
+                if let Some(ip) = a
+                    .get("data")
+                    .and_then(|d| d.as_str())
+                    .and_then(|d| d.parse::<IpAddr>().ok())
+                {
                     let ttl = a.get("TTL").and_then(|t| t.as_u64()).unwrap_or(60) as u32;
                     out.push((ip, ttl));
                 }
@@ -101,14 +119,21 @@ impl DohResolver {
             }
             return Ok(addrs);
         }
-        let ttl = recs.iter().map(|(_, t)| *t).min().unwrap_or(60).clamp(30, 3600);
+        let ttl = recs
+            .iter()
+            .map(|(_, t)| *t)
+            .min()
+            .unwrap_or(60)
+            .clamp(30, 3600);
         let ips: Vec<IpAddr> = recs.into_iter().map(|(ip, _)| ip).collect();
         self.store(host, &ips, ttl);
         Ok(with_port(ips))
     }
 
     async fn system(&self, host: &str) -> Result<Vec<SocketAddr>, BoxError> {
-        Ok(tokio::net::lookup_host(format!("{host}:0")).await?.collect())
+        Ok(tokio::net::lookup_host(format!("{host}:0"))
+            .await?
+            .collect())
     }
 
     fn cached(&self, host: &str) -> Option<Vec<IpAddr>> {
@@ -123,7 +148,13 @@ impl DohResolver {
             // currently-live hosts, not every distinct hostname resolved this session.
             let now = Instant::now();
             g.retain(|_, e| e.expires > now);
-            g.insert(host.to_string(), CacheEntry { ips: ips.to_vec(), expires: now + Duration::from_secs(ttl as u64) });
+            g.insert(
+                host.to_string(),
+                CacheEntry {
+                    ips: ips.to_vec(),
+                    expires: now + Duration::from_secs(ttl as u64),
+                },
+            );
         }
     }
 }

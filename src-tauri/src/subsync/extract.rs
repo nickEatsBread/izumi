@@ -52,20 +52,30 @@ pub async fn speech_intervals(
         command.arg("-headers").arg(header_blob);
     }
     command
-        .arg("-ss").arg(start_sec.to_string())
-        .arg("-t").arg(length_sec.to_string())
-        .arg("-i").arg(url)
-        .arg("-vn").arg("-map").arg("0:a:0")
-        .arg("-af").arg(format!(
+        .arg("-ss")
+        .arg(start_sec.to_string())
+        .arg("-t")
+        .arg(length_sec.to_string())
+        .arg("-i")
+        .arg(url)
+        .arg("-vn")
+        .arg("-map")
+        .arg("0:a:0")
+        .arg("-af")
+        .arg(format!(
             "{SPEECH_FILTER},silencedetect=noise={NOISE_DB}:d={MIN_SILENCE}"
         ))
-        .arg("-f").arg("null").arg("-")
+        .arg("-f")
+        .arg("null")
+        .arg("-")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
     #[cfg(windows)]
     command.creation_flags(0x0800_0000 | 0x0000_4000);
 
-    let mut child = command.spawn().map_err(|_| "ffmpeg-unavailable".to_string())?;
+    let mut child = command
+        .spawn()
+        .map_err(|_| "ffmpeg-unavailable".to_string())?;
     let stderr = child.stderr.take().ok_or("ffmpeg-stderr-unavailable")?;
     let mut lines = BufReader::new(stderr).lines();
     let mut silences = Vec::new();

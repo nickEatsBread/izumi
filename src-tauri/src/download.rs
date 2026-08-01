@@ -24,7 +24,13 @@ fn sanitize(name: &str) -> String {
     #[allow(unused_mut)]
     let mut s: String = name
         .chars()
-        .map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c })
+        .map(|c| {
+            if "\\/:*?\"<>|".contains(c) || c.is_control() {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
     // Windows: a name whose stem equals a reserved DEVICE (CON, PRN, AUX, NUL, COM1-9, LPT1-9,
     // CONIN$/CONOUT$) maps to that device REGARDLESS of extension — opening "NUL.mkv" opens the
@@ -37,9 +43,30 @@ fn sanitize(name: &str) -> String {
         let stem = s.split('.').next().unwrap_or("").to_ascii_uppercase();
         let reserved = matches!(
             stem.as_str(),
-            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
-                | "COM1" | "COM2" | "COM3" | "COM4" | "COM5" | "COM6" | "COM7" | "COM8" | "COM9"
-                | "LPT1" | "LPT2" | "LPT3" | "LPT4" | "LPT5" | "LPT6" | "LPT7" | "LPT8" | "LPT9"
+            "CON"
+                | "PRN"
+                | "AUX"
+                | "NUL"
+                | "CONIN$"
+                | "CONOUT$"
+                | "COM1"
+                | "COM2"
+                | "COM3"
+                | "COM4"
+                | "COM5"
+                | "COM6"
+                | "COM7"
+                | "COM8"
+                | "COM9"
+                | "LPT1"
+                | "LPT2"
+                | "LPT3"
+                | "LPT4"
+                | "LPT5"
+                | "LPT6"
+                | "LPT7"
+                | "LPT8"
+                | "LPT9"
         );
         if reserved {
             s.insert(0, '_');
@@ -122,7 +149,11 @@ fn classify_resume_response(
 /// The default download root: `<app_data_dir>/downloads` (created if missing).
 #[tauri::command]
 pub fn download_dir_default(app: AppHandle) -> Result<String, String> {
-    let d = app.path().app_data_dir().map_err(|e| e.to_string())?.join("downloads");
+    let d = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("downloads");
     std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
     Ok(d.to_string_lossy().into_owned())
 }
@@ -170,7 +201,9 @@ async fn run_download(
     cancel: &Arc<AtomicBool>,
 ) -> Result<String, String> {
     let dir = std::path::PathBuf::from(dir);
-    tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .map_err(|e| e.to_string())?;
     let final_path = dir.join(sanitize(filename));
     let part = final_path.with_extension("part");
 
@@ -183,7 +216,10 @@ async fn run_download(
         .open(&part)
         .await
         .map_err(|e| e.to_string())?;
-    let mut received = tokio::fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
+    let mut received = tokio::fs::metadata(&part)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
     let mut total: u64 = 0;
     let mut last_emit = Instant::now();
     let mut last_bytes = received;
@@ -204,7 +240,8 @@ async fn run_download(
             Err(e) => {
                 if attempt < MAX_RETRIES && !cancel.load(Ordering::Relaxed) {
                     attempt += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
                     continue;
                 }
                 return Err(e.to_string());
@@ -295,7 +332,9 @@ async fn run_download(
 
     file.flush().await.map_err(|e| e.to_string())?;
     drop(file);
-    tokio::fs::rename(&part, &final_path).await.map_err(|e| e.to_string())?;
+    tokio::fs::rename(&part, &final_path)
+        .await
+        .map_err(|e| e.to_string())?;
     let fp = final_path.to_string_lossy().into_owned();
     let _ = app.emit("download-done", (id, fp.clone(), received));
     Ok(fp)
@@ -315,7 +354,9 @@ pub fn download_cancel(
         f.store(true, Ordering::Relaxed);
     }
     if delete_part {
-        let p = std::path::PathBuf::from(&dir).join(sanitize(&filename)).with_extension("part");
+        let p = std::path::PathBuf::from(&dir)
+            .join(sanitize(&filename))
+            .with_extension("part");
         let _ = std::fs::remove_file(p);
     }
     Ok(())

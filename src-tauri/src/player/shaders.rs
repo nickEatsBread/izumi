@@ -18,7 +18,9 @@ pub(crate) fn pick_asset<'a>(assets: &'a [(String, String)], variant: &str) -> O
         .iter()
         .find(|(n, _)| {
             let n = n.to_ascii_lowercase();
-            n.ends_with(".glsl") && n.contains(&variant.to_ascii_lowercase()) && !n.contains("chroma")
+            n.ends_with(".glsl")
+                && n.contains(&variant.to_ascii_lowercase())
+                && !n.contains("chroma")
         })
         .map(|(_, url)| url.as_str())
 }
@@ -32,7 +34,11 @@ pub async fn ensure(app: &AppHandle, variant: &str) -> Result<String, String> {
     if variant.is_empty() || !variant.chars().all(|c| c.is_ascii_alphanumeric()) {
         return Err("invalid shader variant".to_string());
     }
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?.join("shaders");
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?
+        .join("shaders");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest: PathBuf = dir.join(format!("ArtCNN_{variant}.glsl"));
     if dest.is_file() {
@@ -52,8 +58,12 @@ pub async fn ensure(app: &AppHandle, variant: &str) -> Result<String, String> {
     }
     // reqwest is built without the `json` feature (Cargo.toml: default-features = false), so parse the
     // body text ourselves — the same pattern the rest of the crate uses (`.text()` + serde_json).
-    let text = resp.text().await.map_err(|_| "shader index read failed".to_string())?;
-    let json: serde_json::Value = serde_json::from_str(&text).map_err(|_| "shader index parse failed".to_string())?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|_| "shader index read failed".to_string())?;
+    let json: serde_json::Value =
+        serde_json::from_str(&text).map_err(|_| "shader index parse failed".to_string())?;
     let assets: Vec<(String, String)> = json["assets"]
         .as_array()
         .map(|a| {
@@ -67,7 +77,8 @@ pub async fn ensure(app: &AppHandle, variant: &str) -> Result<String, String> {
                 .collect()
         })
         .unwrap_or_default();
-    let url = pick_asset(&assets, variant).ok_or_else(|| format!("no ArtCNN_{variant} asset in latest release"))?;
+    let url = pick_asset(&assets, variant)
+        .ok_or_else(|| format!("no ArtCNN_{variant} asset in latest release"))?;
     let bytes = client
         .get(url)
         .header("User-Agent", "izumi")
@@ -99,7 +110,10 @@ mod tests {
     #[test]
     fn picks_exact_luma_variant_over_chroma() {
         let assets = vec![
-            ("ArtCNN_C4F16_Chroma.glsl".to_string(), "u_chroma".to_string()),
+            (
+                "ArtCNN_C4F16_Chroma.glsl".to_string(),
+                "u_chroma".to_string(),
+            ),
             ("ArtCNN_C4F16.glsl".to_string(), "u_luma".to_string()),
             ("ArtCNN_C4F32.glsl".to_string(), "u_32".to_string()),
         ];

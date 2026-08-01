@@ -34,8 +34,15 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, Raw
 #[link(name = "X11")]
 extern "C" {
     fn XCreateSimpleWindow(
-        dpy: *mut c_void, parent: u64, x: i32, y: i32, w: u32, h: u32, bw: u32,
-        border: u64, background: u64,
+        dpy: *mut c_void,
+        parent: u64,
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        bw: u32,
+        border: u64,
+        background: u64,
     ) -> u64;
     fn XDestroyWindow(dpy: *mut c_void, w: u64) -> i32;
     fn XMapWindow(dpy: *mut c_void, w: u64) -> i32;
@@ -67,8 +74,15 @@ const PROP_MODE_REPLACE: c_int = 0;
 #[link(name = "Xext")]
 extern "C" {
     fn XShapeCombineRectangles(
-        dpy: *mut c_void, w: u64, kind: i32, x: i32, y: i32, rects: *const c_void,
-        n_rects: i32, op: i32, ordering: i32,
+        dpy: *mut c_void,
+        w: u64,
+        kind: i32,
+        x: i32,
+        y: i32,
+        rects: *const c_void,
+        n_rects: i32,
+        op: i32,
+        ordering: i32,
     );
 }
 const SHAPE_INPUT: i32 = 2;
@@ -267,12 +281,28 @@ pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result
         }
         unsafe {
             // Empty INPUT shape → pointer/touch pass through to the webview below.
-            XShapeCombineRectangles(dpy, container, SHAPE_INPUT, 0, 0, std::ptr::null(), 0, SHAPE_SET, 0);
+            XShapeCombineRectangles(
+                dpy,
+                container,
+                SHAPE_INPUT,
+                0,
+                0,
+                std::ptr::null(),
+                0,
+                SHAPE_SET,
+                0,
+            );
             XMapWindow(dpy, container);
             XRaiseWindow(dpy, container);
             XSync(dpy, 0);
         }
-        *STATE.lock().map_err(|e| e.to_string())? = Some(X11 { dpy, container, w, h, frac: 0.0 });
+        *STATE.lock().map_err(|e| e.to_string())? = Some(X11 {
+            dpy,
+            container,
+            w,
+            h,
+            frac: 0.0,
+        });
         crate::player::linux_embed::elog(&format!("x11: container {container} created {w}x{h}"));
         Ok(container as i64)
     })

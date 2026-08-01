@@ -16,7 +16,10 @@ fn ratios() -> Vec<f32> {
     let mut values = Vec::new();
     for ratio in [1.0f32, 1.25, 0.8, 1.0427, 1.00092, 1.04167] {
         for candidate in [ratio, 1.0 / ratio] {
-            if !values.iter().any(|value: &f32| (*value - candidate).abs() < 1e-5) {
+            if !values
+                .iter()
+                .any(|value: &f32| (*value - candidate).abs() < 1e-5)
+            {
                 values.push(candidate);
             }
         }
@@ -29,7 +32,11 @@ fn rasterize(intervals: &[(f32, f32)], scale: f32, length: usize) -> Vec<f32> {
     for &(start, end) in intervals {
         let first = (start * scale * GRID_HZ).round().max(0.0) as usize;
         let last = (end * scale * GRID_HZ).round().max(0.0) as usize;
-        for point in mask.iter_mut().take(last.min(length)).skip(first.min(length)) {
+        for point in mask
+            .iter_mut()
+            .take(last.min(length))
+            .skip(first.min(length))
+        {
             *point = 1.0;
         }
     }
@@ -79,7 +86,10 @@ fn peak_stats(correlation: &[f32]) -> (usize, f32, f32) {
         .max_by(|a, b| a.1.total_cmp(&b.1))
         .unwrap_or((0, 0.0));
     let mean = correlation.iter().sum::<f32>() / correlation.len() as f32;
-    let deviation = (correlation.iter().map(|value| (value - mean).powi(2)).sum::<f32>()
+    let deviation = (correlation
+        .iter()
+        .map(|value| (value - mean).powi(2))
+        .sum::<f32>()
         / correlation.len() as f32)
         .sqrt()
         .max(1e-9);
@@ -92,14 +102,27 @@ fn peak_stats(correlation: &[f32]) -> (usize, f32, f32) {
         .map(|(_, value)| value)
         .max_by(f32::total_cmp)
         .unwrap_or(0.0);
-    (index, (peak - mean) / deviation, if second > 1e-6 { peak / second } else { f32::INFINITY })
+    (
+        index,
+        (peak - mean) / deviation,
+        if second > 1e-6 {
+            peak / second
+        } else {
+            f32::INFINITY
+        },
+    )
 }
 
 fn normalized_score(left: &[f32], right: &[f32], lag: isize) -> f32 {
-    let pairs = left.iter().copied().enumerate().filter_map(|(index, value)| {
-        let other = index as isize - lag;
-        (other >= 0 && (other as usize) < right.len()).then_some((value, right[other as usize]))
-    }).collect::<Vec<_>>();
+    let pairs = left
+        .iter()
+        .copied()
+        .enumerate()
+        .filter_map(|(index, value)| {
+            let other = index as isize - lag;
+            (other >= 0 && (other as usize) < right.len()).then_some((value, right[other as usize]))
+        })
+        .collect::<Vec<_>>();
     if pairs.is_empty() {
         return 0.0;
     }
@@ -116,7 +139,11 @@ fn normalized_score(left: &[f32], right: &[f32], lag: isize) -> f32 {
         right_square += b * b;
     }
     let denominator = (left_square * right_square).sqrt();
-    if denominator < 1e-9 { 0.0 } else { product / denominator }
+    if denominator < 1e-9 {
+        0.0
+    } else {
+        product / denominator
+    }
 }
 
 pub fn solve(
@@ -145,7 +172,11 @@ pub fn solve(
         && z >= Z_MIN
         && dominance >= DOMINANCE_MIN
         && offset_sec.abs() <= MAX_LAG_SEC)
-        .then_some(Result { offset_sec, ratio, confidence })
+        .then_some(Result {
+            offset_sec,
+            ratio,
+            confidence,
+        })
 }
 
 #[cfg(test)]
@@ -155,18 +186,23 @@ mod tests {
     fn pattern() -> Vec<(f32, f32)> {
         let gaps = [4.3, 6.1, 3.2, 7.4, 5.0, 3.9, 8.2, 4.7];
         let mut time = 5.0;
-        (0..26).map(|index| {
-            let duration = 1.0 + (index % 4) as f32 * 0.3;
-            let cue = (time, time + duration);
-            time += duration + gaps[index % gaps.len()];
-            cue
-        }).collect()
+        (0..26)
+            .map(|index| {
+                let duration = 1.0 + (index % 4) as f32 * 0.3;
+                let cue = (time, time + duration);
+                time += duration + gaps[index % gaps.len()];
+                cue
+            })
+            .collect()
     }
 
     #[test]
     fn finds_offset() {
         let subtitles = pattern();
-        let audio = subtitles.iter().map(|&(a, b)| (a + 7.3, b + 7.3)).collect::<Vec<_>>();
+        let audio = subtitles
+            .iter()
+            .map(|&(a, b)| (a + 7.3, b + 7.3))
+            .collect::<Vec<_>>();
         let result = solve(&audio, &subtitles, 260.0, 0.55).unwrap();
         assert!((result.offset_sec - 7.3).abs() < 0.05);
     }

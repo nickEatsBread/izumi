@@ -69,12 +69,17 @@ pub async fn sync_subtitle(
         return Err("no-audio-analyzed".into());
     }
 
-    let subtitle_intervals = cues.into_iter().map(|cue| (cue[0], cue[1])).collect::<Vec<_>>();
-    Ok(correlate::solve(&speech, &subtitle_intervals, duration_sec, 0.55).map(|result| {
-        SyncResult {
-            offset_sec: result.offset_sec,
-            ratio: result.ratio,
-            confidence: result.confidence,
-        }
-    }))
+    let subtitle_intervals = cues
+        .into_iter()
+        .map(|cue| (cue[0], cue[1]))
+        .collect::<Vec<_>>();
+    Ok(
+        correlate::solve(&speech, &subtitle_intervals, duration_sec, 0.55).map(|result| {
+            SyncResult {
+                offset_sec: result.offset_sec,
+                ratio: result.ratio,
+                confidence: result.confidence,
+            }
+        }),
+    )
 }
