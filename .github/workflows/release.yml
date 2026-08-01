@@ -150,11 +150,18 @@ jobs:
       - name: libmpv (Windows)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Stop'
           $dir = "$env:RUNNER_TEMP\libmpv"
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
-          $hdr = @{ 'User-Agent' = 'izumi-ci' }
+          # Authenticate requests so shared runner IPs do not hit GitHub's small anonymous limit.
+          $hdr = @{
+            'User-Agent' = 'izumi-ci'
+            'Authorization' = "Bearer $env:GH_TOKEN"
+            'Accept' = 'application/vnd.github+json'
+          }
           $rel = Invoke-RestMethod 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' -Headers $hdr
           $asset = $rel.assets | Where-Object { $_.name -like 'mpv-dev-x86_64-2*' -and $_.name -notlike '*v3*' } | Select-Object -First 1
           if (-not $asset) { throw 'no mpv-dev-x86_64 asset in latest release' }
