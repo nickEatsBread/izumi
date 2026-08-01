@@ -8,7 +8,7 @@ import { invokeNativeHttp } from '$lib/net/http'
 // We only use the local datastore (reservoir / maxConcurrent / minTime / updateSettings), all of
 // which light.js has.
 import Bottleneck from 'bottleneck/light'
-import { getToken } from './auth'
+import { anilistToken, getToken } from './auth'
 import { ANILIST_CACHE_KEYS } from './cache'
 
 // Normalize any HeadersInit (Headers | array | record) to a plain object for the
@@ -94,22 +94,54 @@ async function fetchWithBackoff(input: RequestInfo | URL, init?: RequestInit, at
 const limitedFetch: typeof fetch = (input, init) =>
   limiter.schedule(() => fetchWithBackoff(input as RequestInfo | URL, init)) as Promise<Response>
 
-export const anilist = new Client({
-  url: 'https://graphql.anilist.co',
-  // AniList's GraphQL endpoint only accepts POST. urql v6 defaults
-  // preferGetMethod to 'within-url-limit' (GET for short queries) -> 404.
-  preferGetMethod: false,
-  exchanges: [
-    cacheExchange({ keys: ANILIST_CACHE_KEYS }),
-    authExchange(async (utils) => ({
-      addAuthToOperation(op) {
-        const t = getToken()
-        return t ? utils.appendHeaders(op, { Authorization: `Bearer ${t}` }) : op
-      },
-      didAuthError: () => false,
-      refreshAuth: async () => {},
-    })),
-    fetchExchange,
-  ],
-  fetch: limitedFetch,
+function createAnilistClient() {
+  return new Client({
+    url: 'https://graphql.anilist.co',
+    // AniList's GraphQL endpoint only accepts POST. urql v6 defaults
+    // preferGetMethod to 'within-url-limit' (GET for short queries) -> 404.
+    preferGetMethod: false,
+    exchanges: [
+      cacheExchange({ keys: ANILIST_CACHE_KEYS }),
+      authExchange(async (utils) => ({
+        addAuthToOperation(op) {
+          const t = getToken()
+          return t ? utils.appendHeaders(op, { Authorization: `Bearer ${t}` }) : op
+        },
+        didAuthError: () => false,
+        refreshAuth: async () => {},
+      })),
+      fetchExchange,
+    ],
+    fetch: limitedFetch,
+  })
+}
+
+// The normalized cache holds per-VIEWER fields (the detail query's `mediaListEntry` progress/
+// status/score), so it MUST NOT outlive the account it was filled for — otherwise a disconnect or
+// an account switch keeps serving account A's list entries to account B, and our write-back would
+// then push A's progress into B's list. Graphcache has no public "clear", so the documented reset
+// is to build a whole new Client, which is what the token subscription below does.
+let activeToken = getToken()
+let client = createAnilistClient()
+
+// `subscribe` fires immediately with the persisted token at startup, and svelte-persisted-store
+// also re-emits on cross-tab storage events — so only a CHANGED token may rebuild, or we'd throw
+// away the client (and its warm cache) on every tick.
+anilistToken.subscribe((t) => {
+  if (t === activeToken) return
+  activeToken = t
+  client = createAnilistClient()
+})
+
+// A stable facade over the current client. Module imports are live bindings and would have followed
+// a reassigned export on their own, but `setContextClient` is a plain `setContext` that captures the
+// client BY VALUE at component init — so everything reached through `getContextClient()` would stay
+// pinned to the discarded instance. A facade with one unchanging identity is what keeps those
+// consumers correct. Methods are bound to the live client so they close over its own state, not the
+// facade's.
+export const anilist = new Proxy({} as Client, {
+  get(_target, prop) {
+    const value = Reflect.get(client, prop) as unknown
+    return typeof value === 'function' ? value.bind(client) : value
+  },
 })
