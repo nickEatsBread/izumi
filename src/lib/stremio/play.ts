@@ -1413,9 +1413,6 @@ export async function playStream(
   // Also skipped in offline mode — the external-subtitle addons are network-only, and offline
   // playback is always a local file (any embedded/downloaded subs travel with it).
   const androidEmbedded = get(isAndroid) ? await hasEmbeddedPlayer() : false
-  const subsP: Promise<SubtitleCandidate[]> = (get(isAndroid) ? !androidEmbedded : get(enableExternalPlayer)) || get(offlineMode)
-    ? Promise.resolve([])
-    : fetchExternalSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename).catch(() => [])
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
   // visible in it); auto-next calls this with no picker open.
   // Torrent results carry only an infoHash/magnet. Turn that into a player-openable URL
@@ -1524,6 +1521,16 @@ export async function playStream(
     }
   }
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
+  // Wait until the final byte-addressable URL is known. Starting this before debrid/direct-torrent
+  // resolution meant the exact OpenSubtitles Range hash could never run for those sources.
+  const subsP: Promise<SubtitleCandidate[]> = (get(isAndroid) ? !androidEmbedded : get(enableExternalPlayer)) || get(offlineMode)
+    ? Promise.resolve([])
+    : fetchExternalSubtitles(get(enabledAddonUrls), media, episode, stream.behaviorHints?.filename, {
+        url: stream.url,
+        size: stream.behaviorHints?.videoSize,
+        hash: typeof stream.behaviorHints?.videoHash === 'string' ? stream.behaviorHints.videoHash : undefined,
+        headers: stream.__headers,
+      }).catch(() => [])
   // Re-capture the room source from the FINAL stream. For a debrid play this is the resolved,
   // account-bound CDN link, and it is shared as-is: guests play the host's exact URL rather than
   // needing a debrid account each. The host is warned about what that means for their account
@@ -1667,7 +1674,7 @@ export async function playStream(
         await invoke('spawn_external_player', {
           path,
           url: stream.url,
-          headers: stream.__stream ? stream.__headers : undefined,
+          headers: stream.__headers,
         })
         if (directPlaybackId != null) prioritizeDirectTorrentStream(directPlaybackId)
       } catch (error) {
@@ -1721,7 +1728,7 @@ export async function playStream(
       ...subtitles.map((s) => ('headers' in s && s.headers) || {}),
       ...audioTracks.map((track) => track.headers ?? {}),
     )
-    const mergedHeaders = stream.__stream ? { ...sidecarHeaders, ...(stream.__headers ?? {}) } : undefined
+    const mergedHeaders = { ...sidecarHeaders, ...(stream.__headers ?? {}) }
     nowPlayingStream.set({
       url: stream.url,
       headers: mergedHeaders ?? {},

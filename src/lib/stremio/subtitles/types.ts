@@ -14,6 +14,8 @@ export interface SubQuery {
   season?: number
   episode?: number
   filename?: string        // release filename hint — the primary hashless matching signal
+  moviehash?: string       // 16-char OpenSubtitles hash of the exact video bytes
+  moviebytesize?: number   // exact byte length paired with moviehash
   languages: string[]      // normalized lowercase iso-639-1, e.g. ['en']
 }
 
