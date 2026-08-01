@@ -27,6 +27,7 @@ export const SYNCED_SETTING_KEYS = [
   "player-autoplay-next",
   "player-binge-preload",
   "player-seek-seconds",
+  "player-subtitle-line-navigation",
   "player-scrub-thumbnails",
   "player-cache-mb",
   "video-fit",

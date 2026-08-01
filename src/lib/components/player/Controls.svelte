@@ -29,7 +29,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, gifIncludeSubtitles } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
@@ -170,6 +170,29 @@
   async function screenshot() {
     try { await invoke('player_screenshot'); playerNotice.set('Screenshot saved to Pictures/izumi') }
     catch { playerNotice.set('Screenshot failed') }
+  }
+
+  async function navigateSubtitleLine(skip: -1 | 0 | 1) {
+    const before = parseFloat(await invoke<string>('player_get_property', { name: 'time-pos' }).catch(() => ''))
+    try {
+      await invoke('player_command', { name: 'sub-seek', args: [String(skip)] })
+    } catch {
+      playerNotice.set('Subtitle navigation is unavailable for this track')
+      return
+    }
+
+    // mpv can seek anywhere in a fully-loaded external subtitle file. Embedded tracks are
+    // demuxed with the video, so a cue beyond the rolling cache is unknowable until it loads.
+    // Surface that boundary instead of leaving a click looking broken.
+    if (skip !== 0 && Number.isFinite(before)) {
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      const after = parseFloat(await invoke<string>('player_get_property', { name: 'time-pos' }).catch(() => ''))
+      if (Number.isFinite(after) && Math.abs(after - before) < 0.05) {
+        playerNotice.set(skip > 0
+          ? 'No next subtitle line is available in the loaded range'
+          : 'No previous subtitle line is available')
+      }
+    }
   }
 
   let captureBusy = $state(false)
@@ -789,11 +812,28 @@
           {/if}
         </div>
 
-        <div class="hidden items-center gap-1 sm:flex" aria-label="Subtitle line navigation">
-          <button data-focusable class="rounded px-2 py-1 text-xs text-white/70 hover:bg-white/10" onclick={() => cmd('sub-seek', ['-1'])}>Previous line</button>
-          <button data-focusable class="rounded px-2 py-1 text-xs text-white/70 hover:bg-white/10" onclick={() => cmd('sub-seek', ['0'])}>Replay line</button>
-          <button data-focusable class="rounded px-2 py-1 text-xs text-white/70 hover:bg-white/10" onclick={() => cmd('sub-seek', ['1'])}>Next line</button>
-        </div>
+        {#if $subtitleLineNavigation}
+          <div class="hidden items-center gap-1 sm:flex" aria-label="Subtitle line navigation">
+            <button data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(-1)} aria-label="Previous subtitle line" title="Previous subtitle line">
+              <span class="relative grid place-items-center">
+                <Captions size={icSize} />
+                <ChevronLeft size={11} strokeWidth={3} class="absolute -bottom-1 -left-1 rounded-full bg-black/80" />
+              </span>
+            </button>
+            <button data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(0)} aria-label="Replay subtitle line" title="Replay subtitle line">
+              <span class="relative grid place-items-center">
+                <Captions size={icSize} />
+                <RefreshCw size={10} strokeWidth={3} class="absolute -bottom-1 -right-1 rounded-full bg-black/80" />
+              </span>
+            </button>
+            <button data-focusable class={iconBtn} onclick={() => navigateSubtitleLine(1)} aria-label="Next subtitle line" title="Next subtitle line">
+              <span class="relative grid place-items-center">
+                <Captions size={icSize} />
+                <ChevronRight size={11} strokeWidth={3} class="absolute -bottom-1 -right-1 rounded-full bg-black/80" />
+              </span>
+            </button>
+          </div>
+        {/if}
 
         <!-- Screenshot the current frame → Pictures/izumi. Desktop only in Game mode we keep the
              bar to just Subtitles + options (the Deck has its own Steam screenshot shortcut). -->

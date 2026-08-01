@@ -4,7 +4,7 @@
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, androidAutoPip,
-    audioProcessing, windowsVsr, systemMediaControls, discordRichPresence,
+    audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
   } from '$lib/settings/ui'
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -172,6 +172,7 @@
     <Toggle label="Auto-skip openings & endings" desc="Skip OP/ED/recap segments automatically (AniSkip). Off shows a manual Skip button." value={$autoSkip} onToggle={() => ($autoSkip = !$autoSkip)} />
     <Toggle label="Skip filler episodes" desc="Auto next-episode jumps past filler (AnimeFillerList). Filler is always marked in the episode list." value={$skipFiller} onToggle={() => ($skipFiller = !$skipFiller)} />
     <Toggle label="Scrub preview thumbnails" desc="Show a frame preview while skimming the seek bar. Off shows just the time and chapter (and skips the frame grab — lighter on the Deck)." value={$scrubThumbnails} onToggle={() => ($scrubThumbnails = !$scrubThumbnails)} />
+    <Toggle label="Subtitle line navigation" desc="Show Previous, Replay, and Next subtitle-cue controls in the player. Useful for language learning; off by default." value={$subtitleLineNavigation} onToggle={() => ($subtitleLineNavigation = !$subtitleLineNavigation)} />
     <Toggle label="Include subtitles in GIFs" desc="Burn the currently displayed subtitle track into GIF recordings." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
 
     <!-- Player cache size: the main tunable RAM cost. Presets + Custom. -->

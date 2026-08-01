@@ -22,6 +22,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Auto-skip openings & endings', category: 'Player', href: '/app/settings/player', keywords: 'op ed recap aniskip', anchored: true, desktopOnly: true },
   { title: 'Skip filler episodes', category: 'Player', href: '/app/settings/player', anchored: true, desktopOnly: true },
   { title: 'Scrub preview thumbnails', category: 'Player', href: '/app/settings/player', keywords: 'seek frame preview', anchored: true, desktopOnly: true },
+  { title: 'Subtitle line navigation', category: 'Player', href: '/app/settings/player', keywords: 'captions previous replay next cue language learning', anchored: true, desktopOnly: true },
   { title: 'Include subtitles in GIFs', category: 'Player', href: '/app/settings/player', keywords: 'capture record captions burn in', anchored: true },
   { title: 'Player cache size', category: 'Player', href: '/app/settings/player', keywords: 'buffer ram memory', desktopOnly: true },
   { title: 'Seek duration', category: 'Player', href: '/app/settings/player', keywords: 'skip seconds arrows', desktopOnly: true },
