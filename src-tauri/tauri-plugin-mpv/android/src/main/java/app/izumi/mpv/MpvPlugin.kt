@@ -40,6 +40,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.core.content.ContextCompat
@@ -102,6 +103,11 @@ class SetArgs {
 @InvokeArg
 class BrightnessArgs {
     var value: Double = -1.0
+}
+
+@InvokeArg
+class KeepScreenAwakeArgs {
+    var enabled: Boolean = false
 }
 
 @InvokeArg
@@ -1194,6 +1200,20 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         return saved && file.isFile && file.length() > 0L
     }
 
+    /** Prevent Android's display timeout only while the web player says video is actively playing. */
+    @Command
+    fun keepScreenAwake(invoke: Invoke) {
+        val a = invoke.parseArgs(KeepScreenAwakeArgs::class.java)
+        activity.runOnUiThread {
+            if (a.enabled) {
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+            invoke.resolve()
+        }
+    }
+
     @Command
     fun gifStart(invoke: Invoke) {
         val a = invoke.parseArgs(GifStartArgs::class.java)
@@ -1428,6 +1448,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         lastViewport = null
         showWebPlayerUi(true)
         setImmersive(false)
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         container?.let { (it.parent as? ViewGroup)?.removeView(it) }
         mpv?.let {
             it.command(arrayOf("stop"))

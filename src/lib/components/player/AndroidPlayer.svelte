@@ -36,6 +36,7 @@
     setPlayerFullscreen,
     setPlayerTransform,
     setAndroidAutoPip,
+    setAndroidKeepScreenAwake,
     setAndroidMediaSession,
     setAndroidMediaHandler,
     type MpvTrack,
@@ -58,7 +59,7 @@
     autoSkip, seekDuration, scrubThumbnails, openSubtitlesToken,
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
-    gifIncludeSubtitles, androidAutoPip,
+    gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
   } from '$lib/settings/ui'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
@@ -120,6 +121,10 @@
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
   const paused = $derived($mpvState.paused)
+  $effect(() => {
+    const activelyWatching = $androidMpvActive && $mpvState.frameReady && !$mpvState.paused && !$mpvState.eof
+    void setAndroidKeepScreenAwake($keepAwakeWhilePlaying && activelyWatching)
+  })
   // One loading signal, mirroring the desktop overlay. `paused-for-cache` alone only catches a stall
   // during playback — seeking into unfetched data reports `seeking`/`core-idle` instead, plus our own
   // `seekBusy` for the window before the native command is even picked up. `core-idle` is ALSO true
@@ -1052,6 +1057,7 @@
       orientation.removeEventListener('change', scheduleViewportSync)
       window.removeEventListener('resize', scheduleViewportSync)
       setAndroidMediaHandler(null)
+      void setAndroidKeepScreenAwake(false)
       // `mpv_stop` already drops the session natively; this covers an unmount without a stop
       // (the overlay being torn down while the core is reused for the next episode).
       void setAndroidMediaSession({ enabled: false })
