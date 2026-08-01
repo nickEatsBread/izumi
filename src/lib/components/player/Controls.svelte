@@ -29,12 +29,11 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from 'lucide-svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, subDlApiKey, openSubtitlesToken, subtitleAutoSync, gifIncludeSubtitles } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, gifIncludeSubtitles } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
-  import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
-  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice } from './online-subs'
+  import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
 
   const np = $derived($nowPlaying)
@@ -403,11 +402,11 @@
     try {
       await invoke('player_add_subtitle', {
         provider: c.provider,
-        url: c.download?.zipUrl,
+        url: candidateDownloadUrl(c),
         fileId: c.download?.fileId,
         lang: c.lang ?? 'und',
         title: candidateTitle(c),
-        apiKey: c.provider === 'subdl' ? get(subDlApiKey) : OPEN_SUBS_API_KEY,
+        apiKey: candidateApiKey(c.provider),
         token: get(openSubtitlesToken),
       })
       tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]

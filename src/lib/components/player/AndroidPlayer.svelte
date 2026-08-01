@@ -57,7 +57,7 @@
   import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import {
-    autoSkip, seekDuration, scrubThumbnails, subDlApiKey, openSubtitlesToken,
+    autoSkip, seekDuration, scrubThumbnails, openSubtitlesToken,
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     gifIncludeSubtitles, androidAutoPip,
@@ -67,9 +67,8 @@
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playNext, playPrev, playEpisode, finalizeAndroidWatch, searchOnlineSubtitles } from '$lib/stremio/play'
-  import { OPEN_SUBS_API_KEY } from '$lib/stremio/subtitles/opensubtitles'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
-  import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice } from './online-subs'
+  import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import ChevronDown from 'lucide-svelte/icons/chevron-down'
@@ -785,11 +784,11 @@
     try {
       const path = await invoke<string>('player_add_subtitle', {
         provider: candidate.provider,
-        url: candidate.download?.zipUrl,
+        url: candidateDownloadUrl(candidate),
         fileId: candidate.download?.fileId,
         lang: candidate.lang ?? 'und',
         title: candidateTitle(candidate),
-        apiKey: candidate.provider === 'subdl' ? $subDlApiKey : OPEN_SUBS_API_KEY,
+        apiKey: candidateApiKey(candidate.provider),
         token: $openSubtitlesToken,
       })
       await mpvCommand([
