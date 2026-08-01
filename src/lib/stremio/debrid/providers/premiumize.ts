@@ -1,6 +1,6 @@
 import { jfetch, magnetOf, poll, VIDEO, JUNK, authError } from '../http'
 import { pickVideoFile } from '../episode-file'
-import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridAccountInfo } from '../types'
 
 // Premiumize. apikey query param on every call. FAST PATH: /transfer/directdl
 // returns direct links immediately for cached torrents (no cloud clutter, no
@@ -80,12 +80,26 @@ export function pmCacheBody(hashes: string[]): FormData {
   return fd
 }
 
+export function pmAccountInfo(account: { customer_id?: string | number; premium_until?: number | null; limit_used?: number; booster_points?: number }): DebridAccountInfo {
+  return {
+    username: account.customer_id != null ? String(account.customer_id) : undefined,
+    plan: account.premium_until ? 'premium' : 'free',
+    premiumUntil: account.premium_until ? account.premium_until * 1000 : undefined,
+    quotaUsed: Number.isFinite(account.limit_used) ? Math.max(0, Math.min(1, account.limit_used!)) : undefined,
+    points: account.booster_points,
+  }
+}
+
 export const premiumize: DebridProvider = {
   id: 'premiumize',
   name: 'Premiumize',
   keyHint: 'premiumize.me/account',
   credential: 'apikey',
   cacheCheck: 'native',
+  async accountInfo(key) {
+    if (!key) throw new Error('No Premiumize API key set.')
+    return pmAccountInfo(await pm('GET', '/account/info', key))
+  },
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No Premiumize API key set — add it in Settings → Extensions.')
     const magnet = magnetOf(hashOrMagnet)

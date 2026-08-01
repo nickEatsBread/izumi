@@ -1,4 +1,4 @@
-import type { DebridProvider, DebridProviderMeta, ResolveOpts, DebridItem, DebridFile, DebridSidecar } from './types'
+import type { DebridProvider, DebridProviderMeta, ResolveOpts, DebridItem, DebridFile, DebridSidecar, DebridAccountInfo } from './types'
 import { realdebrid } from './providers/realdebrid'
 import { alldebrid } from './providers/alldebrid'
 import { premiumize } from './providers/premiumize'
@@ -9,7 +9,7 @@ import { easydebrid } from './providers/easydebrid'
 import { deepbrid } from './providers/deepbrid'
 import { megadebrid } from './providers/megadebrid'
 
-export type { DebridProvider, DebridProviderMeta, DebridInfo, ResolveOpts, DebridItem, DebridFile, DebridSidecar, EpisodeWant } from './types'
+export type { DebridProvider, DebridProviderMeta, DebridInfo, ResolveOpts, DebridItem, DebridFile, DebridSidecar, DebridAccountInfo, EpisodeWant } from './types'
 
 // Stable providers first, experimental last (Cocoleech/DASAN are omitted — link-only,
 // can't resolve a torrent infoHash).
@@ -86,6 +86,12 @@ export function deleteItem(providerId: string, key: string, item: DebridItem): P
   const p = providers.get(providerId)
   if (!p?.deleteItem) throw new Error(`${p?.name ?? 'This provider'} doesn't support deleting.`)
   return p.deleteItem(key, item)
+}
+
+export function accountInfo(providerId: string, key: string): Promise<DebridAccountInfo> {
+  const p = providers.get(providerId)
+  if (!p?.accountInfo) throw new Error(`${p?.name ?? 'This provider'} doesn't expose account usage.`)
+  return p.accountInfo(key)
 }
 
 /** How the given provider can answer a cache question. Unknown ids answer 'none'. */
