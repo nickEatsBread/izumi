@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   progress: undefined as ((event: unknown) => void) | undefined,
   event: undefined as ((event: unknown) => void) | undefined,
-  confirmFileLoaded: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -15,10 +14,6 @@ vi.mock('@tauri-apps/api/core', () => ({
     if (event === 'event') mocks.event = listener
     return { unregister: vi.fn() }
   }),
-}))
-
-vi.mock('./direct-torrent', () => ({
-  confirmDirectTorrentFileLoaded: mocks.confirmFileLoaded,
 }))
 
 import { mpvLoad, mpvState, seekRelative, startMpvEvents } from './android-mpv'
@@ -31,7 +26,6 @@ describe('Android mpv seek coordination', () => {
   beforeEach(() => {
     mocks.invoke.mockReset()
     mocks.invoke.mockResolvedValue(undefined)
-    mocks.confirmFileLoaded.mockReset()
     mpvState.set({
       pos: 100,
       dur: 1000,
@@ -78,7 +72,6 @@ describe('Android mpv loading signals', () => {
   beforeEach(() => {
     mocks.invoke.mockReset()
     mocks.invoke.mockResolvedValue(undefined)
-    mocks.confirmFileLoaded.mockReset()
     mpvState.set({
       pos: 100,
       dur: 1000,
@@ -142,18 +135,13 @@ describe('Android mpv loading signals', () => {
     expect(get(mpvState).frameReady).toBe(false)
   })
 
-  it('confirms the exact loaded path after FILE_LOADED returns', async () => {
-    mocks.invoke.mockResolvedValueOnce({ value: 'http://127.0.0.1:1234/playback' })
-
+  // FILE_LOADED used to narrow the direct-torrent file selection to the sidecars. It no longer
+  // touches the engine at all: a torrent whose selected pieces are all present is "finished" and
+  // sheds its seeders, which starved playback whenever mpv was between HTTP requests.
+  it('does not call into the native player when FILE_LOADED arrives', () => {
     mocks.event?.({ id: 8 })
-    expect(mocks.invoke).toHaveBeenCalledWith('plugin:mpv|mpv_get', {
-      payload: { property: 'path' },
-    })
-    expect(mocks.confirmFileLoaded).not.toHaveBeenCalled()
 
-    await vi.waitFor(() => {
-      expect(mocks.confirmFileLoaded).toHaveBeenCalledWith('http://127.0.0.1:1234/playback')
-    })
+    expect(mocks.invoke).not.toHaveBeenCalled()
   })
 
   it('treats END_FILE as EOF when the observed property never changes', () => {

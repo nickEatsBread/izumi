@@ -17,7 +17,7 @@ export const DEAD_MS = 4 * 60 * 60 * 1000
 /** Failed again inside its window — treat it as genuinely broken rather than unlucky. */
 export const DEAD_REPEAT_MS = 7 * 24 * 60 * 60 * 1000
 
-const STORAGE_KEY = 'dead-sources-v5'
+const STORAGE_KEY = 'dead-sources-v6'
 // v1 keyed rows on their raw URL, which for a debrid resolver row embedded the user's API key.
 // Those records are actively deleted rather than merely abandoned — leaving them in place would
 // keep a credential on disk for as long as the browser profile lives.
@@ -26,7 +26,9 @@ const STORAGE_KEY = 'dead-sources-v5'
 // v3 may also contain failures written by a stale recovery task after another anime took over.
 // v4 can contain failures caused by a late progress event from the previous file prematurely
 // transitioning the newly activated torrent into stream-only mode.
-const LEGACY_KEYS = ['dead-sources-v1', 'dead-sources-v2', 'dead-sources-v3', 'dead-sources-v4']
+// v5 contains healthy direct-P2P releases marked failed by the librqbit initialization race: mpv
+// was handed the localhost URL before its HTTP route was ready and never retried the closed request.
+const LEGACY_KEYS = ['dead-sources-v1', 'dead-sources-v2', 'dead-sources-v3', 'dead-sources-v4', 'dead-sources-v5']
 
 interface Entry { until: number; hits: number }
 
@@ -95,6 +97,17 @@ export function markDead(s: Stream, now = Date.now()): void {
   // Still inside its window ⇒ this is a repeat, not a fresh piece of bad luck.
   const repeat = !!prior && prior.until > now
   all[key] = { until: now + (repeat ? DEAD_REPEAT_MS : DEAD_MS), hits: (prior?.hits ?? 0) + 1 }
+  save(now)
+}
+
+/** A real first frame is stronger evidence than a prior startup failure. Rehabilitate the source
+ * immediately so a transient error cannot keep it labelled/sorted as Failed for hours or days. */
+export function markAlive(s: Stream, now = Date.now()): void {
+  const key = fingerprint(s)
+  if (!key) return
+  const all = load()
+  if (!all[key]) return
+  delete all[key]
   save(now)
 }
 

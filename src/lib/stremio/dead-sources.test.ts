@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { markDead, isDead, forgetDead, fingerprint, DEAD_MS, DEAD_REPEAT_MS } from './dead-sources'
+import { markDead, markAlive, isDead, forgetDead, fingerprint, DEAD_MS, DEAD_REPEAT_MS } from './dead-sources'
 
 const t0 = 1_700_000_000_000
 const KEY = 'SUPERSECRETAPIKEY123'
@@ -39,6 +39,13 @@ describe('failed-source memory', () => {
     const s = { url: 'https://host/a.mkv' }
     markDead(s, t0)
     expect(isDead(s, t0 + 1000)).toBe(true)
+  })
+
+  it('rehabilitates a source once it proves it can show a frame', () => {
+    const s = { infoHash: 'ABC123', url: 'http://127.0.0.1/video' }
+    markDead(s, t0)
+    markAlive({ infoHash: 'abc123', url: 'http://127.0.0.1/other' }, t0 + 1000)
+    expect(isDead(s, t0 + 2000)).toBe(false)
   })
 
   it('does not tar a different source with the same brush', () => {

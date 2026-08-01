@@ -9,7 +9,6 @@ vi.mock('$lib/settings/ui', () => ({ torrentAndroidPostSeed: writable(false) }))
 
 import {
   activateDirectTorrentPlayback,
-  confirmDirectTorrentFileLoaded,
   reportDirectTorrentBuffer,
 } from './direct-torrent'
 
@@ -20,7 +19,7 @@ describe('direct torrent buffer governor', () => {
   beforeEach(() => {
     mocks.invoke.mockReset()
     mocks.invoke.mockResolvedValue(undefined)
-    activateDirectTorrentPlayback(101, 'http://127.0.0.1:1234/torrents/1/stream/0')
+    activateDirectTorrentPlayback(101)
   })
 
   it('does not resend an unchanged threshold after a successful update', async () => {
@@ -28,17 +27,17 @@ describe('direct torrent buffer governor', () => {
 
     reportDirectTorrentBuffer(10, 30)
     reportDirectTorrentBuffer(12, 32)
-    confirmDirectTorrentFileLoaded('http://127.0.0.1:1234/torrents/1/stream/0')
-    confirmDirectTorrentFileLoaded('http://127.0.0.1:1234/torrents/1/stream/0')
     await Promise.resolve()
 
     expect(bufferCalls()).toHaveLength(1)
-    expect(mocks.invoke.mock.calls
-      .filter(([command]) => command === 'torrent_playback_streaming')).toHaveLength(1)
   })
 
-  it('ignores a late FileLoaded event from the previous episode', () => {
-    confirmDirectTorrentFileLoaded('http://127.0.0.1:1234/torrents/0/stream/0')
+  // The file selection handed to the engine must never be narrowed once playback owns the stream:
+  // librqbit calls a torrent with every selected piece present "finished" and sheds its seeders.
+  it('never narrows the native file selection during playback', async () => {
+    reportDirectTorrentBuffer(10, 30)
+    await Promise.resolve()
+
     expect(mocks.invoke.mock.calls
       .filter(([command]) => command === 'torrent_playback_streaming')).toHaveLength(0)
   })

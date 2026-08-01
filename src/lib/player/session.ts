@@ -6,6 +6,7 @@ import type { Rejection } from '$lib/stremio/refine'
 import type { DebridInfo } from '$lib/stremio/debrid/types'
 import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
 import type { SharedSourceState } from '$lib/watch-together/source'
+import type { DirectTorrentHealth } from '$lib/player/direct-torrent'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
@@ -109,6 +110,10 @@ export const playbackRecovery = writable<{
 } | null>(null)
 
 export const playerStatsOpen = writable(false)
+/** Last direct-P2P engine sample, refreshed by the overlay's 1 Hz watchdog tick. Null whenever the
+ * current source is not a local torrent stream. Read by the stats overlay so a stuck torrent can be
+ * told apart from a stuck player without a debugger. */
+export const directTorrentStats = writable<DirectTorrentHealth | null>(null)
 export const playerSleep = writable<{ deadline: number | null; atEpisodeEnd: boolean }>({
   deadline: null,
   atEpisodeEnd: false,

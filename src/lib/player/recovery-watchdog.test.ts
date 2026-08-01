@@ -82,6 +82,18 @@ describe('playback recovery watchdog', () => {
     )).recover).toBe(false)
   })
 
+  it('does not mistake an unusably slow trickle for healthy P2P startup', () => {
+    const state = resetRecoveryWatch(1_000)
+    expect(recoveryWatchDecision(state, signal(
+      1_000 + DIRECT_TORRENT_START_TIMEOUT_MS,
+      {
+        startTimeoutMs: DIRECT_TORRENT_START_TIMEOUT_MS,
+        networkBytes: 4_000_000,
+        minimumStartupBytesPerSecond: 500_000,
+      },
+    )).reason).toBe('never-started')
+  })
+
   it('fails direct P2P after download activity stops or the hard deadline is reached', () => {
     let state = resetRecoveryWatch(1_000)
     ;({ state } = recoveryWatchDecision(state, signal(
