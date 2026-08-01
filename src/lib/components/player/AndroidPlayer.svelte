@@ -24,7 +24,6 @@
     seekRelative,
     haptic,
     grabThumb,
-    mpvPip,
     androidPipActive,
     androidGifStart,
     androidGifStop,
@@ -39,7 +38,6 @@
     setAndroidAutoPip,
     setAndroidMediaSession,
     setAndroidMediaHandler,
-    requestAndroidNotifications,
     type MpvTrack,
   } from '$lib/player/android-mpv'
   import {
@@ -71,6 +69,7 @@
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
+  import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import ChevronDown from 'lucide-svelte/icons/chevron-down'
   import Play from 'lucide-svelte/icons/play'
   import Pause from 'lucide-svelte/icons/pause'
@@ -79,8 +78,10 @@
   import Lock from 'lucide-svelte/icons/lock'
   import Ratio from 'lucide-svelte/icons/ratio'
   import Layers from 'lucide-svelte/icons/layers'
-  import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
   import Film from 'lucide-svelte/icons/film'
+  import Gauge from 'lucide-svelte/icons/gauge'
+  import Captions from 'lucide-svelte/icons/captions'
+  import Volume2 from 'lucide-svelte/icons/volume-2'
   import Check from 'lucide-svelte/icons/check'
   import Settings from 'lucide-svelte/icons/settings'
   import Maximize from 'lucide-svelte/icons/maximize'
@@ -416,8 +417,8 @@
   // --- Tap → controls toggle / YouTube-style sticky double-tap seek ---
   // A double-tap on a side enters "seek mode"; while it stays open (SEEK_MODE_MS after the last tap)
   // every FURTHER single tap on that side adds another step (10 → 20 → 30…) — you don't re-double-tap.
-  // Tapping the other side reverses. A lone side tap only toggles controls, and that toggle is delayed
-  // by the double-tap window so rapid taps aren't misread as toggles (the flicker/stuck-state failure).
+  // Tapping the other side reverses. A lone side tap toggles controls immediately; the pairing timer
+  // only decides whether a following tap should seek, so normal show/hide interactions never feel late.
   // Every recognized seek tap is applied immediately; the visual total remains until seek mode closes.
   const SEEK_MODE_MS = 650 // seek mode stays open this long after the last tap (DoubleTapPlayerView default)
   let seekFlash = $state<{ side: 'l' | 'r'; amt: number } | null>(null)
@@ -459,9 +460,10 @@
     if (pendingToggle && firstTapSide === side) { // second tap of a pair → enter seek mode
       clearTimeout(pendingToggle); pendingToggle = undefined; firstTapSide = null
       bumpSeek(side)
-    } else { // first side tap → delay the controls toggle so a second tap can pair into a seek
+    } else { // first side tap → respond now while keeping a short pairing window for seek
       clearTimeout(pendingToggle); firstTapSide = side
-      pendingToggle = setTimeout(() => { pendingToggle = undefined; firstTapSide = null; toggleControls() }, DOUBLE_TAP_MS)
+      toggleControls()
+      pendingToggle = setTimeout(() => { pendingToggle = undefined; firstTapSide = null }, DOUBLE_TAP_MS)
     }
   }
 
@@ -748,7 +750,9 @@
 
   // --- Sheets ---
   type Sheet = null | 'settings'
+  type SettingsPage = 'main' | 'speed' | 'display' | 'subtitles' | 'audio' | 'capture'
   let sheet = $state<Sheet>(null)
+  let settingsPage = $state<SettingsPage>('main')
   let tracks = $state<MpvTrack[]>([])
   const audioTracks = $derived(tracks.filter((t) => t.type === 'audio'))
   const subTracks = $derived(tracks.filter((t) => t.type === 'sub'))
@@ -762,6 +766,7 @@
     sheetDrag = window.innerHeight
     sheetBackdropOpacity = 0
     sheet = 'settings'
+    settingsPage = 'main'
     // Two frames guarantee the off-screen transform is painted before the animated resting state.
     // Landscape uses the same bottom sheet as portrait (the phone-video convention) — it is not a
     // side drawer, so the slide-up/drag-to-dismiss behaviour is orientation-independent.
@@ -775,6 +780,18 @@
     tracks = await getTracks()
   }
   function trackLabel(t: MpvTrack) { return [t.lang?.toUpperCase(), t.title].filter(Boolean).join(' · ') || `Track ${t.id}` }
+  function selectedTrackLabel(type: 'audio' | 'sub'): string {
+    const selected = tracks.find((track) => track.type === type && track.selected)
+    return selected ? trackLabel(selected) : type === 'sub' ? 'Off' : 'Default'
+  }
+  function settingsTitle(): string {
+    return settingsPage === 'speed' ? 'Playback speed'
+      : settingsPage === 'display' ? 'Resize'
+      : settingsPage === 'subtitles' ? 'Subtitles'
+      : settingsPage === 'audio' ? 'Audio track'
+      : settingsPage === 'capture' ? 'Capture'
+      : 'Video settings'
+  }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
   async function pickSub(id: number | 'no') { await setSubTrack(id); tracks = await getTracks() }
   let downloadingSubtitle = $state<string | null>(null)
@@ -1008,8 +1025,6 @@
 
   onMount(() => {
     armHide()
-    // A denial only costs the notification — playback is unaffected — so this never gates anything.
-    void requestAndroidNotifications()
     setAndroidMediaHandler((action) => {
       if (action === 'next') { if (hasNext) void playNext(undefined, !paused) }
       else if (action === 'prev') { if (hasPrev) void playPrev(undefined, !paused) }
@@ -1203,7 +1218,6 @@
           {hasNext}
           onPrev={() => playPrev(undefined, !paused)}
           onNext={() => playNext(undefined, !paused)}
-          onPip={() => { controlsShown = false; void mpvPip().catch(() => flashToast('Miniplayer unavailable on this device')) }}
           onRelated={openRelated}
         />
       {:else}
@@ -1222,82 +1236,77 @@
       <div class="sheet-handle cursor-grab py-4 touch-none active:cursor-grabbing" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleCancel} role="presentation">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>
       </div>
-      <div class="flex items-center justify-between px-5 pb-3">
-        <div><h2 class="text-lg font-extrabold">Video settings</h2><p class="text-xs text-white/45">Everything for this stream, in one place</p></div>
-        <button onclick={dismissSettings} class="grid h-10 w-10 place-items-center rounded-full bg-white/10" aria-label="Close"><X size={21} /></button>
+      <div class="flex items-center gap-2 px-4 pb-3">
+        {#if settingsPage !== 'main'}
+          <button onclick={() => (settingsPage = 'main')} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10" aria-label="Back to video settings"><ChevronLeft size={21} /></button>
+        {/if}
+        <div class="min-w-0 flex-1"><h2 class="truncate text-lg font-extrabold">{settingsTitle()}</h2></div>
+        <button onclick={dismissSettings} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10" aria-label="Close"><X size={21} /></button>
       </div>
-      <div class="settings-body overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
-          <button onclick={changeSource} class="mb-3 flex w-full items-center gap-3 rounded-lg bg-white/10 px-3 py-3 text-left text-sm font-bold hover:bg-white/15"><Layers size={20} /> Change source…</button>
-          <p class="mb-2 mt-4 text-xs font-bold uppercase tracking-wide text-white/50">Playback speed</p>
-          <div class="mb-5 flex flex-wrap gap-2">
+      <div class="settings-body overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+        {#if settingsPage === 'main'}
+          <div class="overflow-hidden rounded-2xl bg-white/[0.07]">
+            <button onclick={changeSource} class="settings-row"><Layers size={20} /><span class="flex-1 font-bold">Change source</span><ChevronRight size={18} class="text-white/35" /></button>
+            <button onclick={() => (settingsPage = 'speed')} class="settings-row"><Gauge size={20} /><span class="flex-1 font-bold">Playback speed</span><span class="text-sm text-white/50">{speed}×</span><ChevronRight size={18} class="text-white/35" /></button>
+            <button onclick={() => (settingsPage = 'display')} class="settings-row"><Ratio size={20} /><span class="flex-1 font-bold">Resize</span><span class="text-sm text-white/50">{FITS[fitIdx]}</span><ChevronRight size={18} class="text-white/35" /></button>
+            <button onclick={() => (settingsPage = 'subtitles')} class="settings-row"><Captions size={20} /><span class="flex-1 font-bold">Subtitles</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('sub')}</span><ChevronRight size={18} class="text-white/35" /></button>
+            <button onclick={() => (settingsPage = 'audio')} class="settings-row"><Volume2 size={20} /><span class="flex-1 font-bold">Audio track</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('audio')}</span><ChevronRight size={18} class="text-white/35" /></button>
+            <button onclick={() => (settingsPage = 'capture')} class="settings-row"><Film size={20} /><span class="flex-1 font-bold">Capture</span><span class="text-sm text-white/50">GIF</span><ChevronRight size={18} class="text-white/35" /></button>
+          </div>
+          <button onclick={toggleLock} class="mt-3 flex w-full items-center gap-3 rounded-2xl bg-white/[0.07] px-4 py-3.5 text-left"><Lock size={20} /><span class="text-sm font-bold">{locked ? 'Unlock controls' : 'Lock controls'}</span></button>
+        {:else if settingsPage === 'speed'}
+          <div class="space-y-1">
             {#each SPEEDS as v (v)}
-              <button onclick={() => setSpeed(v)} class="rounded-full px-4 py-2 text-sm font-bold {speed === v ? 'bg-theme text-white' : 'bg-white/10 text-white/80'}">{v}×</button>
+              <button onclick={() => setSpeed(v)} class="settings-choice {speed === v ? 'settings-choice-selected' : ''}"><span>{v}×</span>{#if speed === v}<Check size={18} />{/if}</button>
             {/each}
           </div>
-          <p class="mb-2 text-xs font-bold uppercase tracking-wide text-white/50">Display</p>
-          <div class="mb-5 grid grid-cols-3 gap-2">
+        {:else if settingsPage === 'display'}
+          <div class="space-y-1">
             {#each FITS as fit, i (fit)}
-              <button onclick={() => setFit(i)} class="flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold {fitIdx === i ? 'bg-theme text-white' : 'bg-white/10 text-white/80'}"><Ratio size={16} /> {fit}</button>
+              <button onclick={() => setFit(i)} class="settings-choice {fitIdx === i ? 'settings-choice-selected' : ''}"><span>{fit}</span>{#if fitIdx === i}<Check size={18} />{/if}</button>
             {/each}
           </div>
-          <p class="mb-2 text-xs font-bold uppercase tracking-wide text-white/50">Subtitles</p>
-          <button onclick={() => pickSub('no')} class="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm {subOff ? 'bg-theme/20 font-bold text-theme' : 'hover:bg-white/10'}">Off {#if subOff}<span>✓</span>{/if}</button>
-          {#each subTracks as t (t.id)}
-            <button onclick={() => pickSub(t.id)} class="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm {t.selected ? 'bg-theme/20 font-bold text-theme' : 'hover:bg-white/10'}">{trackLabel(t)} {#if t.selected}<span>✓</span>{/if}</button>
+        {:else if settingsPage === 'subtitles'}
+          <button onclick={() => pickSub('no')} class="settings-choice {subOff ? 'settings-choice-selected' : ''}"><span>Off</span>{#if subOff}<Check size={18} />{/if}</button>
+          {#each subTracks as track (track.id)}
+            <button onclick={() => pickSub(track.id)} class="settings-choice {track.selected ? 'settings-choice-selected' : ''}"><span>{trackLabel(track)}</span>{#if track.selected}<Check size={18} />{/if}</button>
           {/each}
-          <div class="mb-2 mt-4 flex items-center justify-between">
-            <p class="text-xs font-bold uppercase tracking-wide text-white/50">Online subtitles</p>
-            <button disabled={$onlineSubCandidates.status === 'searching'} onclick={refreshOnlineSubtitles} class="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold disabled:opacity-50">
-              {$onlineSubCandidates.status === 'searching' ? 'Searching…' : 'Search again'}
-            </button>
+          <div class="mb-2 mt-5 flex items-center justify-between gap-3">
+            <p class="text-xs font-bold uppercase tracking-wide text-white/50">Find more subtitles</p>
+            <button disabled={$onlineSubCandidates.status === 'searching'} onclick={refreshOnlineSubtitles} class="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold disabled:opacity-50">{$onlineSubCandidates.status === 'searching' ? 'Searching…' : 'Search again'}</button>
           </div>
-          {#if $subtitleNotice}
-            <p class="mb-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-white/60">{$subtitleNotice}</p>
-          {/if}
+          {#if $subtitleNotice}<p class="mb-2 rounded-lg bg-white/5 px-3 py-2 text-xs text-white/60">{$subtitleNotice}</p>{/if}
           {#each $onlineSubCandidates.items as candidate (candidateKey(candidate))}
-            <button disabled={downloadingSubtitle === candidateKey(candidate)} onclick={() => addOnlineSub(candidate)} class="mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-white/10 disabled:opacity-50">
-              <span class="min-w-0">
-                <span class="block font-bold">{candidate.lang ?? 'und'} · {providerBadge(candidate.provider)}</span>
-                {#if candidate.release}<span class="block truncate text-xs text-white/45">{candidate.release}</span>{/if}
-              </span>
+            <button disabled={downloadingSubtitle === candidateKey(candidate)} onclick={() => addOnlineSub(candidate)} class="mb-1 flex w-full items-center justify-between gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/10 disabled:opacity-50">
+              <span class="min-w-0"><span class="block font-bold">{candidate.lang ?? 'und'} · {providerBadge(candidate.provider)}</span>{#if candidate.release}<span class="block truncate text-xs text-white/45">{candidate.release}</span>{/if}</span>
               <span class="shrink-0 text-xs text-white/50">{downloadingSubtitle === candidateKey(candidate) ? 'Loading…' : 'Add'}</span>
             </button>
           {:else}
-            {#if $onlineSubCandidates.status === 'ready'}
-            <p class="px-3 py-2 text-sm text-white/40">No additional subtitles found.</p>
-            {/if}
+            {#if $onlineSubCandidates.status === 'ready'}<p class="px-3 py-2 text-sm text-white/40">No additional subtitles found.</p>{/if}
           {/each}
-          <p class="mb-2 mt-4 text-xs font-bold uppercase tracking-wide text-white/50">Audio</p>
-          {#each audioTracks as t (t.id)}
-            <button onclick={() => pickAudio(t.id)} class="mb-1 flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm {t.selected ? 'bg-theme/20 font-bold text-theme' : 'hover:bg-white/10'}">{trackLabel(t)} {#if t.selected}<span>✓</span>{/if}</button>
+        {:else if settingsPage === 'audio'}
+          {#each audioTracks as track (track.id)}
+            <button onclick={() => pickAudio(track.id)} class="settings-choice {track.selected ? 'settings-choice-selected' : ''}"><span>{trackLabel(track)}</span>{#if track.selected}<Check size={18} />{/if}</button>
           {:else}
-            <p class="px-3 py-2 text-sm text-white/40">Only one audio track.</p>
+            <p class="rounded-xl bg-white/[0.07] px-4 py-4 text-sm text-white/50">This stream only has its default audio track.</p>
           {/each}
-          <p class="mb-2 mt-4 text-xs font-bold uppercase tracking-wide text-white/50">Capture</p>
-          <button onclick={() => void toggleGifRecording()} disabled={gifBusy}
-                  class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07] disabled:opacity-50">
+        {:else if settingsPage === 'capture'}
+          <button onclick={() => void toggleGifRecording()} disabled={gifBusy} class="flex w-full items-center gap-3 rounded-2xl bg-white/[0.07] px-4 py-4 text-left disabled:opacity-50">
             {#if gifRecording}<span class="grid h-5 w-5 place-items-center"><span class="h-2.5 w-2.5 rounded-full bg-red-500"></span></span>{:else}<Film size={20} />{/if}
             <span class="text-sm font-bold">{gifBusy ? 'Working…' : gifRecording ? `Stop recording (${gifElapsed}s)` : 'Record GIF'}</span>
           </button>
-          <button onclick={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)}
-                  class="mb-2 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07]">
-            <span class="grid h-5 w-5 place-items-center rounded border {$gifIncludeSubtitles ? 'border-theme bg-theme text-white' : 'border-white/30'}">
-              {#if $gifIncludeSubtitles}<Check size={14} />{/if}
-            </span>
-            <span class="min-w-0">
-              <span class="block text-sm font-bold">Include subtitles</span>
-              <span class="block text-xs text-white/45">Burn the displayed subtitle track into the recording. Up to {GIF_MAX_SECONDS}s, saved to your gallery.</span>
-            </span>
+          <button onclick={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} class="mt-2 flex w-full items-center gap-3 rounded-2xl bg-white/[0.07] px-4 py-4 text-left">
+            <span class="grid h-5 w-5 shrink-0 place-items-center rounded border {$gifIncludeSubtitles ? 'border-theme bg-theme text-white' : 'border-white/30'}">{#if $gifIncludeSubtitles}<Check size={14} />{/if}</span>
+            <span class="min-w-0"><span class="block text-sm font-bold">Include subtitles</span><span class="block text-xs text-white/45">Record up to {GIF_MAX_SECONDS}s and save it to your gallery.</span></span>
           </button>
-          <button onclick={toggleLock} class="mb-2 mt-4 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07]"><Lock size={20} /><span class="text-sm font-bold">{locked ? 'Unlock controls' : 'Lock controls'}</span></button>
-          <button onclick={() => { sheet = null; controlsShown = false; void mpvPip().catch(() => flashToast('Miniplayer unavailable on this device')) }} class="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-white/[0.07]"><PictureInPicture size={20} /><span class="text-sm font-bold">Open miniplayer</span></button>
+        {/if}
       </div>
     </div>
   {/if}
 </div>
 
 <style>
-  .player-shell { touch-action: none; background: transparent; }
+  .player-shell { touch-action: auto; background: transparent; }
   .video-frame { width: 100%; height: var(--portrait-player-height); margin-top: var(--player-safe-top); overflow: visible; z-index: 1; transform-origin: center; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .watch-details { height: calc(100% - var(--player-safe-top) - var(--portrait-player-height)); touch-action: pan-y; background: #0a0a0b; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .pulling-fullscreen .video-frame { will-change: transform; }
@@ -1306,6 +1315,11 @@
   .settings-sheet { left: 0; right: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
   .settings-sheet.sheet-dragging { transition: none; }
   .settings-body { max-height: calc(86vh - 5.25rem); touch-action: pan-y; }
+  .settings-row { display: flex; width: 100%; align-items: center; gap: 0.75rem; border-bottom: 1px solid rgb(255 255 255 / 0.08); padding: 0.9rem 1rem; text-align: left; font-size: 0.875rem; }
+  .settings-row:last-child { border-bottom: 0; }
+  .settings-row:active, .settings-choice:active { background: rgb(255 255 255 / 0.1); }
+  .settings-choice { display: flex; width: 100%; align-items: center; justify-content: space-between; border-radius: 0.75rem; padding: 0.8rem 1rem; text-align: left; font-size: 0.875rem; }
+  .settings-choice-selected { background: rgb(var(--theme-rgb, 239 42 89) / 0.18); color: var(--theme, #ef2a59); font-weight: 700; }
 
   @media (orientation: landscape) {
     .video-frame { width: 100%; height: 100%; margin-top: 0; aspect-ratio: auto; overflow: hidden; }
