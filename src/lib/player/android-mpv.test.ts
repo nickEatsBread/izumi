@@ -21,7 +21,7 @@ vi.mock('./direct-torrent', () => ({
   confirmDirectTorrentFileLoaded: mocks.confirmFileLoaded,
 }))
 
-import { mpvState, seekRelative, startMpvEvents } from './android-mpv'
+import { mpvLoad, mpvState, seekRelative, startMpvEvents } from './android-mpv'
 
 describe('Android mpv seek coordination', () => {
   beforeAll(async () => {
@@ -162,5 +162,22 @@ describe('Android mpv loading signals', () => {
     mocks.event?.({ id: 7 })
 
     expect(get(mpvState).eof).toBe(true)
+  })
+
+  it('ignores the outgoing file tail while replacing it with the next episode', async () => {
+    await mpvLoad({ url: 'https://example.com/episode-2.mkv' })
+
+    // `loadfile` is accepted before libmpv drains the old file's final observations/events.
+    mocks.progress?.({ property: 'duration', value: 1000 })
+    mocks.progress?.({ property: 'eof-reached', value: true })
+    mocks.event?.({ id: 7 })
+    expect(get(mpvState)).toMatchObject({ pos: 0, dur: 0, eof: false, buffering: true })
+
+    // START_FILE hands event ownership to the replacement. Its own immediate failure must still
+    // reach the recovery path, including sources that never update eof-reached.
+    mocks.event?.({ id: 6 })
+    mocks.progress?.({ property: 'duration', value: 1400 })
+    mocks.event?.({ id: 7 })
+    expect(get(mpvState)).toMatchObject({ dur: 1400, eof: true })
   })
 })

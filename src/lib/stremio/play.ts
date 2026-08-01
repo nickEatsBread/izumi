@@ -356,13 +356,17 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
 // property stream (mpvState) instead of the desktop player-* events. No scrub-prefetch (that's a
 // desktop-only command). Re-attaches per episode; the previous episode's subscription is torn down.
 let stopAndroid: (() => void) | null = null
+function detachAndroid() {
+  stopAndroid?.()
+  stopAndroid = null
+}
 function attachAndroid(
   media: Media,
   episode: number,
   onState: (s: PlayState) => void,
   directP2p: boolean,
 ) {
-  stopAndroid?.()
+  detachAndroid()
   resetPrefetchMiss()
   let marked = false
   let lastSave = 0
@@ -484,8 +488,7 @@ export function finalizeAndroidWatch(pos: number, dur: number) {
       if (currentMedia && watched(pos, dur)) markWatched(currentMedia, np.episode)
     }
   }
-  stopAndroid?.()
-  stopAndroid = null
+  detachAndroid()
 }
 
 // Enforce the season the user is on (hard-drop). Addons return
@@ -1612,6 +1615,10 @@ export async function playStream(
           ...(stream.__stream ? stream.__headers ?? {} : {}),
         }
         await startMpvEvents()
+        // The reusable Android core emits the outgoing file's teardown while `loadfile` queues the
+        // replacement. Stop its episode tracker first so those events cannot recover/advance the
+        // previous episode during a manual Next transition.
+        detachAndroid()
         await mpvLoad({
           url: stream.url,
           title: label,

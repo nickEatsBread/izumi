@@ -103,12 +103,17 @@ let progressSub: PluginListener | undefined
 let eventSub: PluginListener | undefined
 let pipSub: PluginListener | undefined
 let mediaSub: PluginListener | undefined
+// `loadfile` replaces the current entry asynchronously. libmpv reports the outgoing file's
+// property changes + END_FILE before START_FILE for the replacement, even though `mpv_load` has
+// already resolved. Ignore that tail so it cannot make the new episode look failed at time 0.
+let awaitingLoadStart = false
 /** Start the single observed-property subscription that keeps `mpvState` current. Idempotent;
  *  lives for the app session (the plugin core is recreated per play, the JS listener persists). */
 export async function startMpvEvents(): Promise<void> {
   if (!progressSub) {
     progressSub = await addPluginListener('mpv', 'progress', (e: unknown) => {
       const { property, value } = e as { property: string; value: unknown }
+      if (awaitingLoadStart) return
       mpvState.update((s) => {
         if (property === 'time-pos' && typeof value === 'number') {
           if (pendingSeekTarget != null) {
@@ -136,12 +141,18 @@ export async function startMpvEvents(): Promise<void> {
       const { id } = e as { id: unknown }
       // Stable mpv_event_id values: START_FILE=6, END_FILE=7, FILE_LOADED=8, SEEK=20,
       // PLAYBACK_RESTART=21.
-      if (id === 6 || id === 20) {
+      if (id === 6) {
+        awaitingLoadStart = false
+        // START_FILE is the ownership boundary between the outgoing file and this load. Clear any
+        // values delivered by the old file after mpvLoad's optimistic reset.
+        mpvState.set({ ...IDLE_STATE, buffering: true })
+      } else if (id === 20) {
         mpvState.update((s) => (s.frameReady ? { ...s, frameReady: false } : s))
       } else if (id === 7) {
         // Failed HLS inputs can emit END_FILE without ever changing the observed eof-reached
-        // property. Treat the event itself as authoritative so empty-source recovery runs.
-        mpvState.update((s) => ({ ...s, eof: true }))
+        // property. Treat the event itself as authoritative once the new file has started; an
+        // END_FILE from the outgoing entry during `loadfile` replacement belongs to the old load.
+        if (!awaitingLoadStart) mpvState.update((s) => ({ ...s, eof: true }))
       } else if (id === 8) {
         // Query after the observer callback has returned. Besides avoiding synchronous re-entry
         // into libmpv's event thread, the exact loaded path proves the direct-torrent HTTP stream
@@ -182,6 +193,7 @@ export async function startMpvEvents(): Promise<void> {
 export async function mpvLoad(p: MpvLoad): Promise<void> {
   seekGeneration++
   clearPendingSeekTimers()
+  awaitingLoadStart = true
   // Reset UI state for the new file (fresh time-pos/duration events will repopulate it).
   // buffering starts true — the spinner shows until the first frame's duration/time-pos lands.
   mpvState.set({ ...IDLE_STATE, buffering: true })
