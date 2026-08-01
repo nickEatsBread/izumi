@@ -226,7 +226,7 @@
     const k = pick ? `${pick.media.id}:${pick.episode}` : ''
     if (k !== lastKey) {
       lastKey = k
-      busy = false; error = ''; filter = ''; showAll = false; showFiltered = false; seadexOpen = false
+      busy = false; error = ''; filter = ''; chosenLabel = ''; showAll = false; showFiltered = false; seadexOpen = false
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
       autoIdx = 0; failedKeys = []
       focusedBest = false
