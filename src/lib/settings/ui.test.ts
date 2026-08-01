@@ -10,6 +10,7 @@ import {
   subtitleStripSdh,
   audioProcessing,
   windowsVsr,
+  discordRichPresence,
   subtitleProviders,
   subDlApiKey,
   jimakuApiKey,
@@ -51,6 +52,12 @@ describe('player enhancement defaults', () => {
   it('does not alter audio or enable vendor-specific upscaling', () => {
     expect(get(audioProcessing)).toBe('off')
     expect(get(windowsVsr)).toBe('off')
+  })
+})
+
+describe('desktop presence defaults', () => {
+  it('shares Discord Rich Presence unless the user turns it off', () => {
+    expect(get(discordRichPresence)).toBe(true)
   })
 })
 
