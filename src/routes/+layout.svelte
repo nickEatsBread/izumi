@@ -8,9 +8,12 @@
   import { startQualitySync } from '$lib/player/quality'
   import { startEnhancementSync } from '$lib/player/enhancements'
   import { startThemeSync } from '$lib/theme'
+  import { getLocale, getTextDirection } from '$lib/paraglide/runtime.js'
   setContextClient(anilist)
   let { children } = $props()
   onMount(() => {
+    document.documentElement.lang = getLocale()
+    document.documentElement.dir = getTextDirection()
     startQualitySync()
     startEnhancementSync()
     return startThemeSync()

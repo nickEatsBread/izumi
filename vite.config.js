@@ -1,12 +1,21 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import { paraglideVitePlugin } from "@inlang/paraglide-js";
 
 // @ts-ignore process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [sveltekit()],
+  plugins: [
+    paraglideVitePlugin({
+      project: "./project.inlang",
+      outdir: "./src/lib/paraglide",
+      strategy: ["localStorage", "preferredLanguage", "baseLocale"],
+      emitTsDeclarations: true,
+    }),
+    sveltekit(),
+  ],
 
   // lucide-svelte ships a ~3.4KB ISC header in EVERY icon module, which Vite inlines by default:
   // measured at 277KB across the built JS (15.8% of the total), 94KB of it in the /app layout chunk

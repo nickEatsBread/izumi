@@ -4,12 +4,17 @@
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import { m } from '$lib/paraglide/messages.js'
+  import { getLocale, setLocale, type Locale } from '$lib/paraglide/runtime.js'
+
+  const locale = getLocale()
+  const changeLocale = (value: string) => setLocale(value as Locale)
 
   let notificationError = $state('')
   async function toggleAiringNotifications() {
     notificationError = ''
     const enabled = await setAiringNotificationsEnabled(!$airingNotifications)
-    if (!enabled) notificationError = 'Notification permission was not granted.'
+    if (!enabled) notificationError = m.settings_notification_permission_error()
   }
 
   const cwActions: { value: CwDismissAction; label: string; hint: string }[] = [
@@ -65,12 +70,19 @@
 </script>
 
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Interface</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Layout, scale, and content visibility.</p>
+  <h2 class="mb-1 text-xl font-black">{m.settings_interface()}</h2>
+  <p class="mb-4 text-sm text-muted-foreground">{m.settings_interface_intro()}</p>
 
   <div class="max-w-2xl">
-    <h3 class="mb-1 text-sm font-black">Theme</h3>
-    <p class="mb-2 text-xs text-muted-foreground">Contrast-safe palettes applied across the app and player controls.</p>
+    <label class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-3">
+      <span><span class="block font-bold">{m.settings_language()}</span><span class="text-xs text-muted-foreground">{m.settings_language_hint()}</span></span>
+      <SelectMenu value={locale} onChange={changeLocale} ariaLabel={m.settings_language()} options={[
+        { value: 'en', label: m.language_english() }, { value: 'ja', label: m.language_japanese() },
+      ]} />
+    </label>
+
+    <h3 class="mb-1 text-sm font-black">{m.settings_theme()}</h3>
+    <p class="mb-2 text-xs text-muted-foreground">{m.settings_theme_hint()}</p>
     <div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
       {#each themes as theme (theme.value)}
         <button data-focusable onclick={() => ($themePreset = theme.value)} aria-pressed={$themePreset === theme.value}
@@ -83,22 +95,22 @@
 
     <div class="mb-5 space-y-3">
       <label class="flex items-center justify-between gap-3 rounded-md border border-border p-3">
-        <span><span class="block font-bold">Motion</span><span class="text-xs text-muted-foreground">Follow the system preference, reduce animation, or always show it.</span></span>
-        <SelectMenu bind:value={$motionPreference} ariaLabel="Motion preference" options={[
-          { value: 'system', label: 'System' }, { value: 'reduce', label: 'Reduced' }, { value: 'full', label: 'Full' },
+        <span><span class="block font-bold">{m.settings_motion()}</span><span class="text-xs text-muted-foreground">{m.settings_motion_hint()}</span></span>
+        <SelectMenu bind:value={$motionPreference} ariaLabel={m.settings_motion()} options={[
+          { value: 'system', label: m.settings_system() }, { value: 'reduce', label: m.settings_reduced() }, { value: 'full', label: m.settings_full() },
         ]} />
       </label>
-      <Toggle label="High contrast" desc="Strengthen muted text, borders, and the keyboard focus indicator." value={$highContrast} onToggle={() => ($highContrast = !$highContrast)} />
-      <Toggle label="Larger interaction targets" desc="Give keyboard and touch controls a minimum 44 × 44 px target." value={$largeInteractionTargets} onToggle={() => ($largeInteractionTargets = !$largeInteractionTargets)} />
+      <Toggle label={m.settings_high_contrast()} desc={m.settings_high_contrast_hint()} value={$highContrast} onToggle={() => ($highContrast = !$highContrast)} />
+      <Toggle label={m.settings_large_targets()} desc={m.settings_large_targets_hint()} value={$largeInteractionTargets} onToggle={() => ($largeInteractionTargets = !$largeInteractionTargets)} />
     </div>
 
     {#if $isAndroid}
       <div class="mb-4">
-        <Toggle label="Haptics" desc="Vibrate on taps, toggles, and actions." value={$haptics} onToggle={() => ($haptics = !$haptics)} />
+        <Toggle label={m.settings_haptics()} desc={m.settings_haptics_hint()} value={$haptics} onToggle={() => ($haptics = !$haptics)} />
       </div>
     {/if}
 
-    <p class="mb-1 text-sm font-bold">Episode list layout</p>
+    <p class="mb-1 text-sm font-bold">{m.settings_episode_layout()}</p>
     <div class="mb-4 grid gap-2 sm:grid-cols-2">
       {#each layouts as opt (opt.value)}
         <button
@@ -110,14 +122,14 @@
         >
           <div class="flex items-center justify-between">
             <span class="font-bold">{opt.label}</span>
-            {#if $episodeLayout === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
+            {#if $episodeLayout === opt.value}<span class="text-xs font-bold text-primary">{m.settings_selected()}</span>{/if}
           </div>
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>
       {/each}
     </div>
 
-    <p class="mb-1 text-sm font-bold">Browse layout</p>
+    <p class="mb-1 text-sm font-bold">{m.settings_browse_layout()}</p>
     <div class="mb-4 grid gap-2 sm:grid-cols-2">
       {#each browseLayouts as opt (opt.value)}
         <button
@@ -129,14 +141,14 @@
         >
           <div class="flex items-center justify-between">
             <span class="font-bold">{opt.label}</span>
-            {#if $browseLayout === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
+            {#if $browseLayout === opt.value}<span class="text-xs font-bold text-primary">{m.settings_selected()}</span>{/if}
           </div>
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>
       {/each}
     </div>
 
-    <p class="mb-1 text-sm font-bold">Schedule layout <span class="font-normal text-muted-foreground">(desktop)</span></p>
+    <p class="mb-1 text-sm font-bold">{m.settings_schedule_layout()} <span class="font-normal text-muted-foreground">({m.settings_desktop()})</span></p>
     <div class="mb-4 grid gap-2 sm:grid-cols-2">
       {#each scheduleLayouts as opt (opt.value)}
         <button
@@ -148,7 +160,7 @@
         >
           <div class="flex items-center justify-between">
             <span class="font-bold">{opt.label}</span>
-            {#if $scheduleLayout === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
+            {#if $scheduleLayout === opt.value}<span class="text-xs font-bold text-primary">{m.settings_selected()}</span>{/if}
           </div>
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>
@@ -159,7 +171,7 @@
       <Toggle label="Pin schedule header" desc="Keep the My Shows / All toggle and Next-up strip stuck to the top while scrolling the schedule. Off = the header scrolls away with the list (default on Android)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
     </div>
 
-    <p class="mb-1 text-sm font-bold">Home rows</p>
+    <p class="mb-1 text-sm font-bold">{m.settings_home_rows()}</p>
     <p class="mb-2 text-xs text-muted-foreground">Reorder or hide carousel rows. Recommendations use the shows on your connected AniList account.</p>
     <div class="mb-4 divide-y divide-border overflow-hidden rounded-md border border-border">
       {#each orderedRows as id, index (id)}
@@ -169,7 +181,7 @@
           <button data-focusable disabled={index === orderedRows.length - 1} onclick={() => moveRow(id, 1)} aria-label={`Move ${rowLabels[id]} down`} class="rounded px-2 py-1 font-bold disabled:opacity-25 hover:bg-secondary">↓</button>
           <span class="min-w-0 flex-1 font-semibold" class:opacity-50={hidden}>{rowLabels[id]}</span>
           <button data-focusable onclick={() => toggleRow(id)} aria-pressed={!hidden} class="rounded-md border border-border px-3 py-1 text-xs font-bold hover:bg-secondary">
-            {hidden ? 'Show' : 'Hide'}
+            {hidden ? m.settings_show() : m.settings_hide()}
           </button>
         </div>
       {/each}
@@ -190,7 +202,7 @@
         >
           <div class="flex items-center justify-between">
             <span class="font-bold">{opt.label}</span>
-            {#if $cwDismissAction === opt.value}<span class="text-xs font-bold text-primary">Selected</span>{/if}
+            {#if $cwDismissAction === opt.value}<span class="text-xs font-bold text-primary">{m.settings_selected()}</span>{/if}
           </div>
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>
@@ -199,15 +211,15 @@
 
     <div class="space-y-3">
       <div data-setting-key="airing-notifications">
-        <Toggle label="Episode airing notifications" desc="Notify you when an episode in your watch history airs. Off by default; enabling asks for system permission." value={$airingNotifications} onToggle={toggleAiringNotifications} />
+        <Toggle label={m.settings_notifications()} desc={m.settings_notifications_hint()} value={$airingNotifications} onToggle={toggleAiringNotifications} />
         {#if $airingNotifications}
           <label class="mt-2 flex items-center justify-between gap-3 pl-3 text-sm">
-            <span class="font-bold">Notify me</span>
-            <SelectMenu value={String($airingNotificationLeadMinutes)} onChange={(value) => ($airingNotificationLeadMinutes = Number(value))} ariaLabel="Airing notification timing" options={[
-              { value: '0', label: 'When it airs' },
-              { value: '10', label: '10 minutes before' },
-              { value: '30', label: '30 minutes before' },
-              { value: '60', label: '1 hour before' },
+            <span class="font-bold">{m.settings_notify_me()}</span>
+            <SelectMenu value={String($airingNotificationLeadMinutes)} onChange={(value) => ($airingNotificationLeadMinutes = Number(value))} ariaLabel={m.settings_notify_me()} options={[
+              { value: '0', label: m.settings_when_it_airs() },
+              { value: '10', label: m.settings_minutes_before({ minutes: 10 }) },
+              { value: '30', label: m.settings_minutes_before({ minutes: 30 }) },
+              { value: '60', label: m.settings_hour_before() },
             ]} />
           </label>
         {/if}
@@ -215,8 +227,8 @@
       </div>
       <label class="flex items-center justify-between rounded-md border border-border p-3">
         <div>
-          <div class="font-bold">UI scale</div>
-          <p class="mt-1 text-xs text-muted-foreground">Zoom the whole interface.</p>
+          <div class="font-bold">{m.settings_ui_scale()}</div>
+          <p class="mt-1 text-xs text-muted-foreground">{m.settings_ui_scale_hint()}</p>
         </div>
         <span class="flex items-center gap-3">
           <input type="range" min="0.5" max="2" step="0.1" data-focusable bind:value={$uiScale} class="ui-range h-2 w-40 cursor-pointer" />
@@ -224,8 +236,8 @@
         </span>
       </label>
 
-      <Toggle label="Hide spoilers" desc="Blur thumbnails, titles and ratings of aired-but-unwatched episodes." value={$hideSpoilers} onToggle={() => ($hideSpoilers = !$hideSpoilers)} />
-      <Toggle label="Show 18+ content" desc="Include adult titles in browse and search results." value={$showAdult} onToggle={() => ($showAdult = !$showAdult)} />
+      <Toggle label={m.settings_hide_spoilers()} desc={m.settings_hide_spoilers_hint()} value={$hideSpoilers} onToggle={() => ($hideSpoilers = !$hideSpoilers)} />
+      <Toggle label={m.settings_show_adult()} desc={m.settings_show_adult_hint()} value={$showAdult} onToggle={() => ($showAdult = !$showAdult)} />
       <Toggle label="Wheel-scroll carousels" desc="Let the mouse wheel scroll home rows sideways. Off = use the row's ‹ › arrows." value={$wheelScrollAcross} onToggle={() => ($wheelScrollAcross = !$wheelScrollAcross)} />
     </div>
   </div>

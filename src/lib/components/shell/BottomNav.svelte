@@ -5,6 +5,12 @@
   import { page } from '$app/state'
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META, HOME_META } from '$lib/settings/nav'
+  import { m } from '$lib/paraglide/messages.js'
+
+  const labels = {
+    schedule: m.nav_schedule, downloads: m.nav_downloads, watch: m.nav_watch_together,
+    settings: m.nav_settings, mylist: () => 'My List', search: m.nav_search,
+  }
 
   const bottom = $derived($effectiveNav.filter((c) => c.placement === 'bottom'))
   const active = (href: string) => page.url.pathname.startsWith(href)
@@ -40,7 +46,7 @@
       {active(HOME_META.href) ? 'text-theme' : 'text-muted-foreground'}"
   >
     <HomeIcon size={20} />
-    Home
+    {m.nav_home()}
   </a>
   {#each bottom as c (c.id)}
     {@const meta = NAV_META[c.id]}
@@ -53,7 +59,7 @@
         {active(meta.href) ? 'text-theme' : 'text-muted-foreground'}"
     >
       <Icon size={20} />
-      {meta.label}
+      {labels[c.id]()}
     </a>
   {/each}
 </nav>
