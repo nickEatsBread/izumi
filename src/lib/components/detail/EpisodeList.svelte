@@ -225,11 +225,11 @@
         />
       </label>
       {#if $isMobile}
-        <div class="flex h-11 w-full rounded-xl bg-secondary p-1 text-sm font-bold">
+        <div class="flex min-h-11 w-full items-stretch rounded-xl bg-secondary p-1 text-sm font-bold">
           <button data-focusable onclick={() => toggleSort('asc')}
-                  class="flex-1 rounded-lg px-3 py-2 transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
+                  class="flex min-h-9 flex-1 items-center justify-center rounded-lg px-3 leading-none transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
           <button data-focusable onclick={() => toggleSort('desc')}
-                  class="flex-1 rounded-lg px-3 py-2 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
+                  class="flex min-h-9 flex-1 items-center justify-center rounded-lg px-3 leading-none transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
         </div>
       {:else}
         <button data-focusable onclick={randomEpisode}

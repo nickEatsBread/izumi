@@ -11,7 +11,7 @@
   import { resumeEpisode, playEpisode, type PlayState } from '$lib/stremio/play'
   import { offlineMode } from '$lib/stores/offline'
   import { downloads, downloadedMedia } from '$lib/downloads/state'
-  import { localHistory, manualProgressOverrides } from '$lib/player/history'
+  import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
   import { seriesTitle } from '$lib/downloads/library'
   import { readable } from 'svelte/store'
   import { focusOnMount } from '$lib/nav'
@@ -107,6 +107,16 @@
   const detailHint = $derived($detailHints[id])
   $effect(() => { if (media) rememberDetail(media) })
 
+  // Match the episode list's progress ownership. Tracker queries can still be stale when Android
+  // returns from the player, while session/local history has already recorded the completed episode.
+  const watchedThrough = $derived(
+    $manualProgressOverrides[id] ?? Math.max(
+      media?.mediaListEntry?.progress ?? 0,
+      $localHistory[id]?.progress ?? 0,
+      $sessionProgress[id] ?? 0,
+    ),
+  )
+
   // Resume target for the hero CTA. Offline = first not-yet-watched DOWNLOADED episode (else the
   // first downloaded) — never resumeEp(), which reads tracker progress and could point at an
   // episode that isn't on disk. `playCta` also routes offline through playEpisode (the local swap)
@@ -118,11 +128,12 @@
     const prog = $localHistory[m.id]?.progress ?? 0
     return doneEps.find((e) => e > prog) ?? doneEps[0]
   }
-  const ctaEp = (m: Media) => ($offlineMode ? offlineResumeEp(m) : resumeEp(m))
+  const ctaEp = (m: Media) => ($offlineMode ? offlineResumeEp(m) : resumeEp(m, watchedThrough))
+  const ctaHasProgress = (m: Media) => ($offlineMode ? (m.mediaListEntry?.progress ?? 0) : watchedThrough) > 0
   function playCta(m: Media) {
     h.impact('medium')
     if ($offlineMode) playEpisode(m, offlineResumeEp(m), (s) => (heroPlay = s))
-    else resumeEpisode(m, resumeEp(m), (s) => (heroPlay = s))
+    else resumeEpisode(m, ctaEp(m), (s) => (heroPlay = s))
   }
 
   let active = $state('Episodes')
@@ -249,7 +260,7 @@
       <button data-focusable use:focusOnMount
               onclick={() => playCta(m)}
               class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
-        <Play size={18} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
+        <Play size={18} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
       </button>
 
       <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
@@ -373,7 +384,7 @@
         <div class="flex flex-wrap items-center gap-2">
           <button data-focusable use:focusOnMount onclick={() => playCta(m)}
                   class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">
-            <Play size={16} />{(m.mediaListEntry?.progress ?? 0) > 0 ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
+            <Play size={16} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
 
           {#if trackerConnected}
