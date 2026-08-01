@@ -77,12 +77,44 @@ async function importModule(code: string): Promise<any> {
   finally { URL.revokeObjectURL(blobUrl) }
 }
 
+/** A SyntaxError, which a module raises when it fails to PARSE — but also when its body throws one
+ * while running (`JSON.parse('{oops')`, `new RegExp('[')`). The class alone cannot tell those apart,
+ * so the parse marker in `importSeanimeProvider` is what actually separates them. */
+function isSyntaxError(err: unknown): boolean {
+  return err instanceof SyntaxError || (err as { name?: string } | null)?.name === 'SyntaxError'
+}
+
+let parseProbe = 0
+
+// Load a Seanime-shaped payload, whose bare `class Provider {}` we expose as the module's default.
+// The payload is imported VERBATIM first and only type-stripped if that is what the parse choked on:
+// the transpiler is a TypeScript parser, and on the JS-only constructs it doesn't model it rewrites
+// silently rather than erroring (`f < a > (b)` becomes the call `f(b)`, decorators vanish), so a
+// plain-JS provider — which never needed transpiling — must not be run through it at all. Only a
+// payload that never PARSED may be retried: a module whose body already started running can have left
+// side effects behind, and a SyntaxError thrown from that body looks identical to a parse failure. The
+// marker below is the module's first statement, so it can only have run if the whole module parsed;
+// it is kept on line 1 so the payload's own line numbers stay intact in stack traces.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function importSeanimeProvider(code: string): Promise<any> {
+  const withDefault = (src: string) => `${src}\n;export default (typeof Provider !== 'undefined' ? new Provider() : {});`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const g = globalThis as any
+  const marker = `__izumiParsed${++parseProbe}`
+  try { return await importModule(`;globalThis[${JSON.stringify(marker)}]=1;${withDefault(code)}`) }
+  catch (err) {
+    if (g[marker] === 1 || !isSyntaxError(err)) throw err
+    return await importModule(withDefault(transpileSeanime(code)))
+  }
+  finally { delete g[marker] }
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 self.onmessage = async (e: MessageEvent<any>) => {
   const msg = e.data
   try {
     if (msg.type === 'load') {
-      let code: string = msg.code
+      const code: string = msg.code
       extensionName = typeof msg.name === 'string' && msg.name ? msg.name : undefined
       // A second community format, detected from the payload's own banner rather than from catalog
       // metadata — the same file is valid whether it arrived via a catalog or a direct URL, and the
@@ -105,6 +137,8 @@ self.onmessage = async (e: MessageEvent<any>) => {
         postMessage({ type: 'loaded', id: msg.id })
         return
       }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let mod: any
       // Seanime providers are a bare `class Provider {}` (no export) using a global `fetch`
       // (already overridden above) + occasionally `$sleep`. Instantiate it + provide $sleep.
       if (msg.kind === 'seanime' || msg.kind === 'atp') {
@@ -118,10 +152,10 @@ self.onmessage = async (e: MessageEvent<any>) => {
           g.$habari = ShimHabari
           g.$getUserPreference = ShimGetUserPreference
         }
-        code = transpileSeanime(code) // strip TS types so raw-TS payloads load
-        code = `${code}\n;export default (typeof Provider !== 'undefined' ? new Provider() : {});`
+        mod = await importSeanimeProvider(code)
+      } else {
+        mod = await importModule(code)
       }
-      const mod = await importModule(code)
       source = mod.default ?? mod
       if (source && msg.settings) source.settings = msg.settings
       postMessage({ type: 'loaded', id: msg.id })

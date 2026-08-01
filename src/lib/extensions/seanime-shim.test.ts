@@ -107,6 +107,16 @@ class Provider {
     expect(() => transpileSeanime(bad)).not.toThrow()
     expect(transpileSeanime(bad)).toBe(bad)
   })
+  it('refuses a value namespace/module block instead of silently deleting it', () => {
+    expect(() => transpileSeanime('namespace Util { export function pad(n: number) { return n } }\nclass Provider {}')).toThrow(/namespace/)
+    expect(() => transpileSeanime('export module Util { export const a = 1 }')).toThrow(/namespace/)
+  })
+  it('still strips a type-only `declare namespace`', () => {
+    const js = transpileSeanime('declare namespace Api { const a: number }\nclass Provider { hi() { return 1 } }')
+    expect(js).not.toContain('declare')
+    // eslint-disable-next-line no-eval
+    expect(new ((0, eval)(js + '\n; Provider'))().hi()).toBe(1)
+  })
 })
 
 import { habari, getUserPreference } from './seanime-shim'
