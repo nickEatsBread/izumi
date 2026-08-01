@@ -12,6 +12,7 @@
     "opener:default",
     "dialog:allow-open",
     "os:default",
+    "notification:default",
     "extplayer:default",
     {
       "identifier": "http:default",

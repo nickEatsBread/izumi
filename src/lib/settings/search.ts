@@ -58,6 +58,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Download audio', category: 'Downloads', href: '/app/settings/downloads', keywords: 'sub dub release matching' },
   { title: 'Download codec', category: 'Downloads', href: '/app/settings/downloads', keywords: 'h264 h265 hevc av1 release matching' },
   { title: 'Automatic downloads', category: 'Downloads', href: '/app/settings/downloads', keywords: 'new episode subscription airing schedule' },
+  { title: 'Episode airing notifications', category: 'Interface', href: '/app/settings/interface', keywords: 'notify alert schedule new episode', anchored: true },
   { title: 'Storage used', category: 'Downloads', href: '/app/settings/downloads', keywords: 'disk space size' },
 
   { title: 'Haptics', category: 'Interface', href: '/app/settings/interface', keywords: 'vibration feedback Android', anchored: true },
