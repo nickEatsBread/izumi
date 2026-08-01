@@ -23,12 +23,17 @@ const API_TYPE: sys::mpv_render_param_type = sys::mpv_render_param_type_MPV_REND
 const SW_SIZE: sys::mpv_render_param_type = sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_SIZE;
 const SW_FORMAT: sys::mpv_render_param_type = sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_FORMAT;
 const SW_STRIDE: sys::mpv_render_param_type = sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_STRIDE;
-const SW_POINTER: sys::mpv_render_param_type = sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_POINTER;
+const SW_POINTER: sys::mpv_render_param_type =
+    sys::mpv_render_param_type_MPV_RENDER_PARAM_SW_POINTER;
 const UPDATE_FRAME: u64 = sys::mpv_render_update_flag_MPV_RENDER_UPDATE_FRAME as u64;
 const TILE_W: i32 = 240;
 
 enum Msg {
-    Shot { url: String, time: f64, resp: Sender<Result<Vec<u8>, String>> },
+    Shot {
+        url: String,
+        time: f64,
+        resp: Sender<Result<Vec<u8>, String>>,
+    },
     Stop,
 }
 
@@ -73,7 +78,9 @@ pub fn version() -> String {
 
 impl HeadlessMpv {
     pub fn new() -> Self {
-        HeadlessMpv { tx: Mutex::new(None) }
+        HeadlessMpv {
+            tx: Mutex::new(None),
+        }
     }
 
     fn ensure(&self) -> Result<Sender<Msg>, String> {
@@ -95,8 +102,12 @@ impl HeadlessMpv {
     pub fn screenshot(&self, url: &str, time: f64) -> Result<Vec<u8>, String> {
         let tx = self.ensure()?;
         let (rtx, rrx) = channel();
-        tx.send(Msg::Shot { url: url.to_string(), time, resp: rtx })
-            .map_err(|_| "headless thread gone".to_string())?;
+        tx.send(Msg::Shot {
+            url: url.to_string(),
+            time,
+            resp: rtx,
+        })
+        .map_err(|_| "headless thread gone".to_string())?;
         // Exceed grab()'s worst-case internal budget (~12s open + 6s seek + 3s render ≈ 21s) so a
         // slow cold stream can't trip a spurious caller timeout that releases the concurrency-1
         // guard while the worker is still busy (which would queue a second grab behind it).
@@ -140,7 +151,9 @@ fn worker(rx: Receiver<Msg>) {
             // Init failed — reply to every request so callers don't hang.
             for msg in rx.iter() {
                 match msg {
-                    Msg::Shot { resp, .. } => { let _ = resp.send(Err("headless init failed".into())); }
+                    Msg::Shot { resp, .. } => {
+                        let _ = resp.send(Err("headless init failed".into()));
+                    }
                     Msg::Stop => break,
                 }
             }
@@ -149,7 +162,9 @@ fn worker(rx: Receiver<Msg>) {
     };
     for msg in rx.iter() {
         match msg {
-            Msg::Shot { url, time, resp } => { let _ = resp.send(grab(&mut core, &url, time)); }
+            Msg::Shot { url, time, resp } => {
+                let _ = resp.send(grab(&mut core, &url, time));
+            }
             Msg::Stop => break,
         }
     }
@@ -157,7 +172,11 @@ fn worker(rx: Receiver<Msg>) {
 }
 
 unsafe fn set_opt(mpv: *mut sys::mpv_handle, name: &[u8], val: &[u8]) {
-    sys::mpv_set_option_string(mpv, name.as_ptr() as *const c_char, val.as_ptr() as *const c_char);
+    sys::mpv_set_option_string(
+        mpv,
+        name.as_ptr() as *const c_char,
+        val.as_ptr() as *const c_char,
+    );
 }
 
 fn create_core() -> Result<Core, String> {
@@ -203,8 +222,14 @@ fn create_core() -> Result<Core, String> {
         }
         // Create the software render context.
         let mut params = [
-            sys::mpv_render_param { type_: API_TYPE, data: b"sw\0".as_ptr() as *mut c_void },
-            sys::mpv_render_param { type_: 0, data: std::ptr::null_mut() },
+            sys::mpv_render_param {
+                type_: API_TYPE,
+                data: b"sw\0".as_ptr() as *mut c_void,
+            },
+            sys::mpv_render_param {
+                type_: 0,
+                data: std::ptr::null_mut(),
+            },
         ];
         let mut rctx: *mut sys::mpv_render_context = std::ptr::null_mut();
         let err = sys::mpv_render_context_create(&mut rctx, mpv, params.as_mut_ptr());
@@ -212,7 +237,11 @@ fn create_core() -> Result<Core, String> {
             sys::mpv_terminate_destroy(mpv);
             return Err("render context create failed".into());
         }
-        Ok(Core { mpv, rctx, cur_url: String::new() })
+        Ok(Core {
+            mpv,
+            rctx,
+            cur_url: String::new(),
+        })
     }
 }
 
@@ -221,7 +250,11 @@ fn grab(core: &mut Core, url: &str, time: f64) -> Result<Vec<u8>, String> {
         // (Re)load the stream if it changed, then wait for it to become seekable.
         if core.cur_url != url {
             let curl = CString::new(url).map_err(|_| "bad url")?;
-            let mut cmd = [b"loadfile\0".as_ptr() as *const c_char, curl.as_ptr(), std::ptr::null()];
+            let mut cmd = [
+                b"loadfile\0".as_ptr() as *const c_char,
+                curl.as_ptr(),
+                std::ptr::null(),
+            ];
             if sys::mpv_command(core.mpv, cmd.as_mut_ptr()) < 0 {
                 return Err("loadfile failed".into());
             }
@@ -251,18 +284,27 @@ fn grab(core: &mut Core, url: &str, time: f64) -> Result<Vec<u8>, String> {
         // Wait for the seek to settle, then for a fresh frame to be ready to render.
         let start = Instant::now();
         while get_flag(core.mpv, b"seeking\0") {
-            if start.elapsed() > Duration::from_secs(6) { break; }
+            if start.elapsed() > Duration::from_secs(6) {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(15));
         }
         let start = Instant::now();
         while sys::mpv_render_context_update(core.rctx) & UPDATE_FRAME == 0 {
-            if start.elapsed() > Duration::from_secs(3) { break; }
+            if start.elapsed() > Duration::from_secs(3) {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(15));
         }
         // Target size: 240px wide, height from the video's display aspect (fallback 16:9).
-        let (dw, dh) = (get_double(core.mpv, b"dwidth\0"), get_double(core.mpv, b"dheight\0"));
+        let (dw, dh) = (
+            get_double(core.mpv, b"dwidth\0"),
+            get_double(core.mpv, b"dheight\0"),
+        );
         let h = match (dw, dh) {
-            (Some(w), Some(h)) if w > 0.0 && h > 0.0 => ((TILE_W as f64 * h / w).round() as i32).clamp(60, 400),
+            (Some(w), Some(h)) if w > 0.0 && h > 0.0 => {
+                ((TILE_W as f64 * h / w).round() as i32).clamp(60, 400)
+            }
             _ => 135,
         };
         render_sw(core.rctx, TILE_W, h)
@@ -275,11 +317,26 @@ unsafe fn render_sw(rctx: *mut sys::mpv_render_context, w: i32, h: i32) -> Resul
     let mut stride_v: usize = stride;
     let mut buf = vec![0u8; stride * h as usize];
     let mut params = [
-        sys::mpv_render_param { type_: SW_SIZE, data: size.as_mut_ptr() as *mut c_void },
-        sys::mpv_render_param { type_: SW_FORMAT, data: b"rgb0\0".as_ptr() as *mut c_void },
-        sys::mpv_render_param { type_: SW_STRIDE, data: &mut stride_v as *mut usize as *mut c_void },
-        sys::mpv_render_param { type_: SW_POINTER, data: buf.as_mut_ptr() as *mut c_void },
-        sys::mpv_render_param { type_: 0, data: std::ptr::null_mut() },
+        sys::mpv_render_param {
+            type_: SW_SIZE,
+            data: size.as_mut_ptr() as *mut c_void,
+        },
+        sys::mpv_render_param {
+            type_: SW_FORMAT,
+            data: b"rgb0\0".as_ptr() as *mut c_void,
+        },
+        sys::mpv_render_param {
+            type_: SW_STRIDE,
+            data: &mut stride_v as *mut usize as *mut c_void,
+        },
+        sys::mpv_render_param {
+            type_: SW_POINTER,
+            data: buf.as_mut_ptr() as *mut c_void,
+        },
+        sys::mpv_render_param {
+            type_: 0,
+            data: std::ptr::null_mut(),
+        },
     ];
     if sys::mpv_render_context_render(rctx, params.as_mut_ptr()) < 0 {
         return Err("render failed".into());

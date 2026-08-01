@@ -118,7 +118,10 @@ pub fn play(
 /// Stop playback: quit mpv (over IPC, then kill as a fallback) and drop the handle.
 pub fn stop() {
     if let Some(mut p) = PROC.lock().unwrap().take() {
-        ipc_send(&p.sock, &serde_json::json!({ "command": ["quit"] }).to_string());
+        ipc_send(
+            &p.sock,
+            &serde_json::json!({ "command": ["quit"] }).to_string(),
+        );
         std::thread::sleep(Duration::from_millis(60));
         let _ = p.child.kill();
         let _ = p.child.wait();
@@ -160,7 +163,10 @@ fn spawn_event_loop(app: AppHandle, sock: String) {
         let Some(mut s) = stream else { return };
 
         // Observe the properties that drive progress + end-of-file.
-        for (id, prop) in ["time-pos", "duration", "eof-reached", "mute"].iter().enumerate() {
+        for (id, prop) in ["time-pos", "duration", "eof-reached", "mute"]
+            .iter()
+            .enumerate()
+        {
             let c = serde_json::json!({ "command": ["observe_property", id + 1, prop] });
             let _ = s.write_all(c.to_string().as_bytes());
             let _ = s.write_all(b"\n");
@@ -170,7 +176,9 @@ fn spawn_event_loop(app: AppHandle, sock: String) {
         let reader = BufReader::new(s);
         let mut duration = 0.0f64;
         for line in reader.lines().map_while(Result::ok) {
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+                continue;
+            };
             match v.get("event").and_then(|e| e.as_str()) {
                 Some("property-change") => {
                     let name = v.get("name").and_then(|n| n.as_str()).unwrap_or("");

@@ -101,7 +101,7 @@ fn schedule_native_touch_restore(app: &AppHandle) {
 /// the frontend gets one clean up/down/left/right stream regardless of which the user uses.
 #[derive(Default)]
 struct Dirs {
-    dpad: [bool; 4],  // up, down, left, right
+    dpad: [bool; 4], // up, down, left, right
     stick: [bool; 4],
     out: [bool; 4],
 }
@@ -115,7 +115,10 @@ impl Dirs {
             let now = self.dpad[i] || self.stick[i];
             if now != self.out[i] {
                 self.out[i] = now;
-                changed.push(Input { name: NAMES[i], pressed: now });
+                changed.push(Input {
+                    name: NAMES[i],
+                    pressed: now,
+                });
             }
         }
         changed
@@ -177,11 +180,20 @@ pub fn start(app: AppHandle) {
                 while let Some(ev) = gilrs.next_event() {
                     match ev.event {
                         EventType::Connected => {
-                            crate::player::linux_embed::elog(&format!("gamepad: connected id={:?}", ev.id));
+                            crate::player::linux_embed::elog(&format!(
+                                "gamepad: connected id={:?}",
+                                ev.id
+                            ));
                         }
                         // D-pad → merged directions.
                         EventType::ButtonPressed(b, _) | EventType::ButtonReleased(b, _)
-                            if matches!(b, Button::DPadUp | Button::DPadDown | Button::DPadLeft | Button::DPadRight) =>
+                            if matches!(
+                                b,
+                                Button::DPadUp
+                                    | Button::DPadDown
+                                    | Button::DPadLeft
+                                    | Button::DPadRight
+                            ) =>
                         {
                             let pressed = matches!(ev.event, EventType::ButtonPressed(_, _));
                             let i = match b {
@@ -191,23 +203,67 @@ pub fn start(app: AppHandle) {
                                 _ => 3,
                             };
                             dirs.dpad[i] = pressed;
-                            for c in dirs.resolve() { emit(&app, &c); }
+                            for c in dirs.resolve() {
+                                emit(&app, &c);
+                            }
                         }
                         // Analog triggers report as ButtonChanged (0..1); everything else as press/release.
                         // Only emit on a boolean edge (with hysteresis) — see l2_on/r2_on above.
                         EventType::ButtonChanged(Button::LeftTrigger2, v, _) => {
-                            let now = if l2_on { v > TRIGGER_OFF } else { v > TRIGGER_ON };
-                            if now != l2_on { l2_on = now; emit(&app, &Input { name: "l2", pressed: now }); }
+                            let now = if l2_on {
+                                v > TRIGGER_OFF
+                            } else {
+                                v > TRIGGER_ON
+                            };
+                            if now != l2_on {
+                                l2_on = now;
+                                emit(
+                                    &app,
+                                    &Input {
+                                        name: "l2",
+                                        pressed: now,
+                                    },
+                                );
+                            }
                         }
                         EventType::ButtonChanged(Button::RightTrigger2, v, _) => {
-                            let now = if r2_on { v > TRIGGER_OFF } else { v > TRIGGER_ON };
-                            if now != r2_on { r2_on = now; emit(&app, &Input { name: "r2", pressed: now }); }
+                            let now = if r2_on {
+                                v > TRIGGER_OFF
+                            } else {
+                                v > TRIGGER_ON
+                            };
+                            if now != r2_on {
+                                r2_on = now;
+                                emit(
+                                    &app,
+                                    &Input {
+                                        name: "r2",
+                                        pressed: now,
+                                    },
+                                );
+                            }
                         }
                         EventType::ButtonPressed(b, _) => {
-                            if let Some(n) = btn_name(b) { emit(&app, &Input { name: n, pressed: true }); }
+                            if let Some(n) = btn_name(b) {
+                                emit(
+                                    &app,
+                                    &Input {
+                                        name: n,
+                                        pressed: true,
+                                    },
+                                );
+                            }
                         }
                         EventType::ButtonReleased(b, _) => {
-                            if let Some(n) = btn_name(b) { emit(&app, &Input { name: n, pressed: false }); }
+                            if let Some(n) = btn_name(b) {
+                                emit(
+                                    &app,
+                                    &Input {
+                                        name: n,
+                                        pressed: false,
+                                    },
+                                );
+                            }
                         }
                         // Left stick → merged directions with hysteresis.
                         EventType::AxisChanged(axis, v, _)
@@ -215,14 +271,22 @@ pub fn start(app: AppHandle) {
                         {
                             let (neg, pos) = match axis {
                                 Axis::LeftStickX => (2usize, 3usize), // left, right
-                                _ => (1usize, 0usize),                // down, up (stick up = +Y in gilrs)
+                                _ => (1usize, 0usize), // down, up (stick up = +Y in gilrs)
                             };
                             // Hysteresis per half-axis.
-                            if v > STICK_ON { dirs.stick[pos] = true; }
-                            else if v < STICK_OFF { dirs.stick[pos] = false; }
-                            if v < -STICK_ON { dirs.stick[neg] = true; }
-                            else if v > -STICK_OFF { dirs.stick[neg] = false; }
-                            for c in dirs.resolve() { emit(&app, &c); }
+                            if v > STICK_ON {
+                                dirs.stick[pos] = true;
+                            } else if v < STICK_OFF {
+                                dirs.stick[pos] = false;
+                            }
+                            if v < -STICK_ON {
+                                dirs.stick[neg] = true;
+                            } else if v > -STICK_OFF {
+                                dirs.stick[neg] = false;
+                            }
+                            for c in dirs.resolve() {
+                                emit(&app, &c);
+                            }
                         }
                         _ => {}
                     }

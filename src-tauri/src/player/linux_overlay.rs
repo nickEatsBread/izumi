@@ -66,7 +66,11 @@ pub fn start(app: AppHandle, window: tauri::WebviewWindow, fast: bool) {
                 return glib::ControlFlow::Break;
             }
 
-            let fps = if FAST.load(Ordering::Relaxed) { SCRUB_FPS } else { IDLE_FPS };
+            let fps = if FAST.load(Ordering::Relaxed) {
+                SCRUB_FPS
+            } else {
+                IDLE_FPS
+            };
             let interval = Duration::from_millis(1000 / fps);
             let now = Instant::now();
             if now.duration_since(last_tick) < interval {
@@ -96,7 +100,12 @@ pub fn stop(app: AppHandle) {
     }
 }
 
-fn alpha_bounds(data: &[u8], w: usize, h: usize, stride: usize) -> Option<(usize, usize, usize, usize)> {
+fn alpha_bounds(
+    data: &[u8],
+    w: usize,
+    h: usize,
+    stride: usize,
+) -> Option<(usize, usize, usize, usize)> {
     if w == 0 || h == 0 || stride < w.checked_mul(4)? {
         return None;
     }
@@ -203,7 +212,8 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
                 let force = FORCE.swap(false, Ordering::SeqCst);
                 if changed || geom_changed || force {
                     let ph = app.try_state::<PlayerHandle>()?;
-                    let _ = ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);
+                    let _ =
+                        ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);
                 }
                 // Only now is the pre-resize buffer unreferenced: overlay_add is a synchronous mpv
                 // command, so mpv has switched to the new address before this drop. (On the early-?
@@ -219,7 +229,8 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
             if n % 20 == 0 {
                 if let Ok(mut last) = PROF_LAST.lock() {
                     let now = Instant::now();
-                    let fps = last.map(|t| 20_000.0 / now.duration_since(t).as_millis().max(1) as f64);
+                    let fps =
+                        last.map(|t| 20_000.0 / now.duration_since(t).as_millis().max(1) as f64);
                     *last = Some(now);
                     crate::player::linux_embed::elog(&format!(
                         "overlay-prof: raster={}ms proc={}ms ~{:.0}fps fast={}",

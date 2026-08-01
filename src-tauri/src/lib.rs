@@ -1,12 +1,12 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-mod doh;
-mod download;
 mod direct_torrent;
 mod direct_torrent_select;
+mod doh;
+mod download;
 mod extension_package;
-mod http_lifecycle;
 #[cfg(not(target_os = "android"))]
 mod hls_proxy;
+mod http_lifecycle;
 #[cfg(not(target_os = "android"))]
 mod jvm_extensions;
 #[cfg(target_os = "android")]
@@ -16,11 +16,11 @@ mod sync;
 mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
+mod desktop_presence;
+#[cfg(not(target_os = "android"))]
 mod player;
 #[cfg(not(target_os = "android"))]
 mod subsync;
-#[cfg(not(target_os = "android"))]
-mod desktop_presence;
 // Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
 #[cfg(target_os = "linux")]
 mod steam_osk;
@@ -48,8 +48,7 @@ struct PipWindowState(std::sync::Mutex<Option<PipSnapshot>>);
 
 // Unique labels for webview popups created from discussion embeds. Tauri requires each live
 // webview window to have a distinct label, and Disqus can open more than one OAuth hop.
-static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(1);
+static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// One-shot TAC configuration prepared immediately before the Deck opens the first-party
 /// verification window. Keeping it in native state survives Cloudflare's top-level navigations;
@@ -136,11 +135,29 @@ async fn player_embed(
         // window/zoomed render). Fall back to the main window if the container is missing.
         // Do NOT create a window here: this is an async command thread (no message pump).
         let container = MPV_CONTAINER.load(std::sync::atomic::Ordering::Relaxed);
-        (m, if container != 0 { container as i64 } else { m as i64 })
+        (
+            m,
+            if container != 0 {
+                container as i64
+            } else {
+                m as i64
+            },
+        )
     };
     #[cfg(windows)]
     {
-        player.play_embedded(&url, wid, app.clone(), start_seconds, autoplay, alang, slang, headers.clone(), subtitles.clone(), audio_tracks.clone())?;
+        player.play_embedded(
+            &url,
+            wid,
+            app.clone(),
+            start_seconds,
+            autoplay,
+            alang,
+            slang,
+            headers.clone(),
+            subtitles.clone(),
+            audio_tracks.clone(),
+        )?;
         resize_mpv_child(main_raw);
     }
     // Linux/Wayland: embed mpv into a wl_subsurface placed BELOW the (transparent)
@@ -154,19 +171,53 @@ async fn player_embed(
         if player::linux_embed::is_wayland(&main) {
             // Desktop / KWin (native Wayland): mpv in a wl_subsurface below the transparent
             // webview, HTML controls floating over it.
-            player.play_embedded_render(&url, app.clone(), start_seconds, autoplay, alang, slang, &main, headers.clone(), subtitles.clone(), audio_tracks.clone())?;
+            player.play_embedded_render(
+                &url,
+                app.clone(),
+                start_seconds,
+                autoplay,
+                alang,
+                slang,
+                &main,
+                headers.clone(),
+                subtitles.clone(),
+                audio_tracks.clone(),
+            )?;
         } else {
             // Game mode / gamescope (XWayland X11): no wl_subsurface — embed mpv via `--wid`
             // into a fullscreen X11 CONTAINER window we own (so it can be shown/hidden for the
             // touch-controls swap + made input-transparent). Fullscreen; no windowed layout.
             let size = main.inner_size().map_err(|e| e.to_string())?;
             let xid = player::linux_x11::ensure_container(&main, size.width, size.height)?;
-            player.play_embedded(&url, xid, app.clone(), start_seconds, autoplay, alang, slang, headers.clone(), subtitles.clone(), audio_tracks.clone())?;
+            player.play_embedded(
+                &url,
+                xid,
+                app.clone(),
+                start_seconds,
+                autoplay,
+                alang,
+                slang,
+                headers.clone(),
+                subtitles.clone(),
+                audio_tracks.clone(),
+            )?;
         }
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
-        let _ = (&player, &main, &app, &start_seconds, &autoplay, &alang, &slang, &url, &headers, &subtitles, &audio_tracks);
+        let _ = (
+            &player,
+            &main,
+            &app,
+            &start_seconds,
+            &autoplay,
+            &alang,
+            &slang,
+            &url,
+            &headers,
+            &subtitles,
+            &audio_tracks,
+        );
     }
     Ok(())
 }
@@ -332,7 +383,11 @@ fn player_sprite_start(
     duration: f64,
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
-    let cache_root = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("thumbs");
+    let cache_root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("thumbs");
     player.start_sprite(key, duration, cache_root);
     Ok(())
 }
@@ -342,8 +397,11 @@ fn dir_size(p: &std::path::Path) -> u64 {
     if let Ok(rd) = std::fs::read_dir(p) {
         for e in rd.flatten() {
             let path = e.path();
-            if path.is_dir() { total += dir_size(&path); }
-            else if let Ok(m) = e.metadata() { total += m.len(); }
+            if path.is_dir() {
+                total += dir_size(&path);
+            } else if let Ok(m) = e.metadata() {
+                total += m.len();
+            }
         }
     }
     total
@@ -358,7 +416,11 @@ async fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
     // `async` matters: tauri-macros only picks `ExecutionContext::Async` when the fn is async, so
     // the sync version ran the recursive stat walk + `remove_dir_all` inline on the event-loop
     // thread and froze the UI for the duration. Do the blocking FS work on the blocking pool.
-    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("thumbs");
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("thumbs");
     tauri::async_runtime::spawn_blocking(move || {
         let freed = dir_size(&dir);
         if dir.exists() {
@@ -425,9 +487,7 @@ fn steam_show_osk(app: AppHandle, x: i32, y: i32, w: i32, h: i32, mode: i32) -> 
             .opener()
             .open_url("steam://open/keyboard", None::<String>)
             .is_ok();
-        player::linux_embed::elog(&format!(
-            "steam_osk: overlay URI requested={requested}"
-        ));
+        player::linux_embed::elog(&format!("steam_osk: overlay URI requested={requested}"));
         requested
     }
     #[cfg(not(target_os = "linux"))]
@@ -446,10 +506,7 @@ fn discussion_log(message: &str) {
 }
 
 #[cfg(not(target_os = "android"))]
-fn finish_discussion_popup(
-    window: &tauri::WebviewWindow,
-    app: &AppHandle,
-) -> Result<(), String> {
+fn finish_discussion_popup(window: &tauri::WebviewWindow, app: &AppHandle) -> Result<(), String> {
     if !window.label().starts_with("discussion-popup-") {
         return Err("not a discussion popup".into());
     }
@@ -468,10 +525,7 @@ fn finish_discussion_popup(
 
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn discussion_popup_complete(
-    window: tauri::WebviewWindow,
-    app: AppHandle,
-) -> Result<(), String> {
+fn discussion_popup_complete(window: tauri::WebviewWindow, app: AppHandle) -> Result<(), String> {
     finish_discussion_popup(&window, &app)
 }
 
@@ -506,7 +560,10 @@ fn set_tac_verification_config(
     if !present("MAL_ID") && !present("AniList_ID") {
         return Err("TAC configuration has no MAL_ID or AniList_ID".into());
     }
-    *pending.0.lock().map_err(|_| "TAC configuration lock poisoned")? = Some(config);
+    *pending
+        .0
+        .lock()
+        .map_err(|_| "TAC configuration lock poisoned")? = Some(config);
     Ok(())
 }
 
@@ -579,17 +636,22 @@ fn player_thumb_info(
 // rebuilds the client (with or without the DoH resolver) and swaps it in. Callers take
 // a cheap clone (reqwest::Client is Arc-backed) rather than a borrow.
 static HTTP: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> = std::sync::OnceLock::new();
-static HTTP_DL: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> = std::sync::OnceLock::new();
+static HTTP_DL: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> =
+    std::sync::OnceLock::new();
 // Source extensions get their OWN client + cookie jar. Separate from `HTTP` on purpose: many
 // sites hand out a session cookie on the first GET and reject the follow-up POST without it
 // (CSRF/session flows), so extension traffic needs a jar — but that jar must never mingle with
 // the app's own AniList/AniZip/addon requests. The jar is a standalone Arc so `set_doh`'s client
 // rebuild swaps the transport WITHOUT dropping live sessions.
-static HTTP_EXT: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> = std::sync::OnceLock::new();
-static HTTP_EXT_JAR: std::sync::OnceLock<std::sync::Arc<reqwest::cookie::Jar>> = std::sync::OnceLock::new();
+static HTTP_EXT: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> =
+    std::sync::OnceLock::new();
+static HTTP_EXT_JAR: std::sync::OnceLock<std::sync::Arc<reqwest::cookie::Jar>> =
+    std::sync::OnceLock::new();
 
 fn ext_cookie_jar() -> std::sync::Arc<reqwest::cookie::Jar> {
-    HTTP_EXT_JAR.get_or_init(|| std::sync::Arc::new(reqwest::cookie::Jar::default())).clone()
+    HTTP_EXT_JAR
+        .get_or_init(|| std::sync::Arc::new(reqwest::cookie::Jar::default()))
+        .clone()
 }
 
 fn build_http_client(doh: Option<String>, download: bool) -> reqwest::Client {
@@ -657,7 +719,11 @@ pub(crate) fn download_http_client() -> reqwest::Client {
 /// prefetch); AniList/MAL browse fetches and mpv playback keep their own resolvers.
 #[tauri::command]
 fn set_doh(enabled: bool, url: String) {
-    let doh = if enabled && url.trim().starts_with("http") { Some(url.trim().to_string()) } else { None };
+    let doh = if enabled && url.trim().starts_with("http") {
+        Some(url.trim().to_string())
+    } else {
+        None
+    };
     *http_lock().write().unwrap() = build_http_client(doh.clone(), false);
     *http_dl_lock().write().unwrap() = build_http_client(doh.clone(), true);
     *http_ext_lock().write().unwrap() = build_ext_client(doh);
@@ -689,7 +755,9 @@ async fn opensubtitles_range(
     end: u64,
     headers: Option<std::collections::HashMap<String, String>>,
 ) -> Result<Vec<u8>, String> {
-    let mut request = client.get(url).header(reqwest::header::RANGE, format!("bytes={start}-{end}"));
+    let mut request = client
+        .get(url)
+        .header(reqwest::header::RANGE, format!("bytes={start}-{end}"));
     for (name, value) in headers.unwrap_or_default() {
         let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
             .map_err(|_| "invalid-header-name".to_string())?;
@@ -697,11 +765,20 @@ async fn opensubtitles_range(
             .map_err(|_| "invalid-header-value".to_string())?;
         request = request.header(name, value);
     }
-    let response = request.send().await.map_err(|_| "range-request-failed".to_string())?;
+    let response = request
+        .send()
+        .await
+        .map_err(|_| "range-request-failed".to_string())?;
     if response.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-        return Err(format!("range-not-supported-{}", response.status().as_u16()));
+        return Err(format!(
+            "range-not-supported-{}",
+            response.status().as_u16()
+        ));
     }
-    let bytes = response.bytes().await.map_err(|_| "range-read-failed".to_string())?;
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|_| "range-read-failed".to_string())?;
     if bytes.len() != OPENSUBTITLES_CHUNK as usize {
         return Err("range-length-mismatch".into());
     }
@@ -726,7 +803,13 @@ async fn opensubtitles_moviehash(
     let client = http_client();
     let tail_start = size - OPENSUBTITLES_CHUNK;
     let (head, tail) = tokio::try_join!(
-        opensubtitles_range(client.clone(), url.clone(), 0, OPENSUBTITLES_CHUNK - 1, headers.clone()),
+        opensubtitles_range(
+            client.clone(),
+            url.clone(),
+            0,
+            OPENSUBTITLES_CHUNK - 1,
+            headers.clone()
+        ),
         opensubtitles_range(client, url, tail_start, size - 1, headers),
     )?;
     opensubtitles_hash(size, &head, &tail)
@@ -737,7 +820,10 @@ async fn opensubtitles_moviehash(
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn set_player_cache(bytes: u64) {
-    player::PLAYER_CACHE_BYTES.store(bytes.max(8 * 1024 * 1024), std::sync::atomic::Ordering::Relaxed);
+    player::PLAYER_CACHE_BYTES.store(
+        bytes.max(8 * 1024 * 1024),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// Apply the frontend's resolved mpv render options (from the Video-quality preset / Custom raw
@@ -745,7 +831,10 @@ fn set_player_cache(bytes: u64) {
 /// whose LIVE set_property failed (typo / init-only) so the frontend can flag them in Custom mode.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn player_set_render_opts(opts: Vec<(String, String)>, player: tauri::State<'_, player::PlayerHandle>) -> Vec<String> {
+fn player_set_render_opts(
+    opts: Vec<(String, String)>,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Vec<String> {
     player.set_render_opts(opts)
 }
 
@@ -824,7 +913,10 @@ fn emit_update_progress(
         *last_pct = p;
     }
     *last_emit = std::time::Instant::now();
-    let _ = app.emit("update-download-progress", UpdateProgress { downloaded, total });
+    let _ = app.emit(
+        "update-download-progress",
+        UpdateProgress { downloaded, total },
+    );
 }
 
 /// Encode the JPEG frames the Android mpv plugin captured (`mpv_gif_start`/`mpv_gif_stop`) into an
@@ -879,7 +971,9 @@ fn encode_android_gif(dir: &std::path::Path, captured_ms: u64) -> Result<String,
 
     for path in &files {
         // A frame torn by the capture stopping mid-write is skipped, not fatal.
-        let Ok(image) = image::open(path) else { continue };
+        let Ok(image) = image::open(path) else {
+            continue;
+        };
         let rgb = image.to_rgb8();
         let (width, height) = (rgb.width(), rgb.height());
         if width == 0 || height == 0 {
@@ -894,7 +988,12 @@ fn encode_android_gif(dir: &std::path::Path, captured_ms: u64) -> Result<String,
         let frame_rgb = if (target_w, target_h) == (width, height) {
             rgb
         } else {
-            image::imageops::resize(&rgb, target_w, target_h, image::imageops::FilterType::Triangle)
+            image::imageops::resize(
+                &rgb,
+                target_w,
+                target_h,
+                image::imageops::FilterType::Triangle,
+            )
         };
 
         let encoder = match encoder.as_mut() {
@@ -960,12 +1059,21 @@ async fn updater_download_apk(app: AppHandle, url: String) -> Result<String, Str
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join("izumi-update.apk");
-    let resp = download_http_client().get(&url).send().await.map_err(|e| e.to_string())?;
+    let resp = download_http_client()
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
-        return Err(format!("Update download failed (HTTP {})", resp.status().as_u16()));
+        return Err(format!(
+            "Update download failed (HTTP {})",
+            resp.status().as_u16()
+        ));
     }
     let total = resp.content_length();
-    let mut file = tokio::fs::File::create(&dest).await.map_err(|e| e.to_string())?;
+    let mut file = tokio::fs::File::create(&dest)
+        .await
+        .map_err(|e| e.to_string())?;
     let mut stream = resp.bytes_stream();
     let mut downloaded: u64 = 0;
     let mut last_pct: i64 = -1;
@@ -981,7 +1089,10 @@ async fn updater_download_apk(app: AppHandle, url: String) -> Result<String, Str
     // Final tick with a known total, so the bar lands on 100% even for a length-less response.
     let _ = app.emit(
         "update-download-progress",
-        UpdateProgress { downloaded, total: Some(downloaded) },
+        UpdateProgress {
+            downloaded,
+            total: Some(downloaded),
+        },
     );
     Ok(dest.to_string_lossy().into_owned())
 }
@@ -1074,7 +1185,8 @@ async fn http_post(
     timeout_ms: Option<u64>,
     max_bytes: Option<u64>,
 ) -> Result<HttpFullReply, String> {
-    let limit = http_lifecycle::body_limit(max_bytes, HTTP_POST_BODY_LIMIT, HTTP_POST_BODY_HARD_MAX);
+    let limit =
+        http_lifecycle::body_limit(max_bytes, HTTP_POST_BODY_LIMIT, HTTP_POST_BODY_HARD_MAX);
     http_lifecycle::run(
         request_id,
         http_lifecycle::timeout_ms(timeout_ms, 30_000),
@@ -1095,7 +1207,11 @@ async fn http_post(
                 }
             }
             let body = http_lifecycle::read_limited_text(resp, limit).await?;
-            Ok(HttpFullReply { status, headers: hdrs, body })
+            Ok(HttpFullReply {
+                status,
+                headers: hdrs,
+                body,
+            })
         },
     )
     .await
@@ -1119,41 +1235,49 @@ async fn ext_fetch(
     timeout_ms: Option<u64>,
     max_bytes: Option<u64>,
 ) -> Result<ExtFetchReply, String> {
-    let limit = http_lifecycle::body_limit(max_bytes, EXT_FETCH_BODY_LIMIT, EXT_FETCH_BODY_HARD_MAX);
+    let limit =
+        http_lifecycle::body_limit(max_bytes, EXT_FETCH_BODY_LIMIT, EXT_FETCH_BODY_HARD_MAX);
     http_lifecycle::run(
         request_id,
         http_lifecycle::timeout_ms(timeout_ms, 30_000),
         http_lifecycle::RequestClass::Extension,
         async move {
-    let verb = method.unwrap_or_else(|| "GET".into()).to_ascii_uppercase();
-    let verb = reqwest::Method::from_bytes(verb.as_bytes()).map_err(|_| "bad method".to_string())?;
-    let mut req = ext_http_client().request(verb, &url);
-    if let Some(h) = headers {
-        for (k, v) in h {
-            req = req.header(k, v);
-        }
-    }
-    if let Some(b) = body {
-        req = req.body(b);
-    }
-    let resp = req.send().await.map_err(|_| "request failed".to_string())?;
-    let status = resp.status().as_u16();
-    let final_url = resp.url().to_string();
-    let mut hdrs = std::collections::HashMap::new();
-    // A response carries one `Set-Cookie` line PER cookie, and a HashMap keeps only the last —
-    // which silently dropped every cookie but one for session/CSRF flows. Collect them in order
-    // alongside the flat map (which stays for the single-valued headers extensions read).
-    let mut set_cookie = Vec::new();
-    for (k, v) in resp.headers() {
-        if let Ok(vs) = v.to_str() {
-            if k.as_str().eq_ignore_ascii_case("set-cookie") {
-                set_cookie.push(vs.to_string());
+            let verb = method.unwrap_or_else(|| "GET".into()).to_ascii_uppercase();
+            let verb = reqwest::Method::from_bytes(verb.as_bytes())
+                .map_err(|_| "bad method".to_string())?;
+            let mut req = ext_http_client().request(verb, &url);
+            if let Some(h) = headers {
+                for (k, v) in h {
+                    req = req.header(k, v);
+                }
             }
-            hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
-        }
-    }
-    let body = http_lifecycle::read_limited_text(resp, limit).await?;
-    Ok(ExtFetchReply { status, url: final_url, headers: hdrs, set_cookie, body })
+            if let Some(b) = body {
+                req = req.body(b);
+            }
+            let resp = req.send().await.map_err(|_| "request failed".to_string())?;
+            let status = resp.status().as_u16();
+            let final_url = resp.url().to_string();
+            let mut hdrs = std::collections::HashMap::new();
+            // A response carries one `Set-Cookie` line PER cookie, and a HashMap keeps only the last —
+            // which silently dropped every cookie but one for session/CSRF flows. Collect them in order
+            // alongside the flat map (which stays for the single-valued headers extensions read).
+            let mut set_cookie = Vec::new();
+            for (k, v) in resp.headers() {
+                if let Ok(vs) = v.to_str() {
+                    if k.as_str().eq_ignore_ascii_case("set-cookie") {
+                        set_cookie.push(vs.to_string());
+                    }
+                    hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
+                }
+            }
+            let body = http_lifecycle::read_limited_text(resp, limit).await?;
+            Ok(ExtFetchReply {
+                status,
+                url: final_url,
+                headers: hdrs,
+                set_cookie,
+                body,
+            })
         },
     )
     .await
@@ -1276,7 +1400,8 @@ async fn opensubtitles_login(
 /// Prefers the first `.srt`; falls back to the first `.ass`/`.ssa`. SubDL always returns a ZIP (a
 /// non-`unpack` response is never a bare `.srt`). Two-pass so a later `.srt` beats an earlier `.ass`.
 fn unzip_first_subtitle(zip_bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).map_err(|e| e.to_string())?;
+    let mut zip =
+        zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).map_err(|e| e.to_string())?;
     let mut srt_idx: Option<usize> = None;
     let mut ass_idx: Option<usize> = None;
     for i in 0..zip.len() {
@@ -1370,7 +1495,10 @@ async fn fetch_normalize_subtitle(
                 .map_err(|_| "download read failed".to_string())?;
             if !status.is_success() {
                 // Body surfaced verbatim so the TS classifier can tell quota (401 + quota body) from a bad token.
-                return Err(format!("opensubtitles /download {}: {text}", status.as_u16()));
+                return Err(format!(
+                    "opensubtitles /download {}: {text}",
+                    status.as_u16()
+                ));
             }
             let meta: serde_json::Value =
                 serde_json::from_str(&text).map_err(|_| "bad download json".to_string())?;
@@ -1542,7 +1670,12 @@ fn player_prefetch(url: String) -> Result<(), String> {
         return Ok(());
     }
     tauri::async_runtime::spawn(async move {
-        if let Ok(resp) = http_client().get(&url).header("Range", "bytes=0-6291455").send().await {
+        if let Ok(resp) = http_client()
+            .get(&url)
+            .header("Range", "bytes=0-6291455")
+            .send()
+            .await
+        {
             use futures_util::StreamExt;
             let mut stream = resp.bytes_stream();
             let mut pulled: u64 = 0;
@@ -1590,7 +1723,12 @@ fn set_webview_transparent(win: &tauri::WebviewWindow) {
         use windows::core::Interface;
         if let Ok(c2) = webview.controller().cast::<ICoreWebView2Controller2>() {
             unsafe {
-                let _ = c2.SetDefaultBackgroundColor(COREWEBVIEW2_COLOR { A: 0, R: 0, G: 0, B: 0 });
+                let _ = c2.SetDefaultBackgroundColor(COREWEBVIEW2_COLOR {
+                    A: 0,
+                    R: 0,
+                    G: 0,
+                    B: 0,
+                });
             }
         }
     });
@@ -1625,7 +1763,10 @@ fn set_webview_dark(win: &tauri::WebviewWindow) {
         unsafe {
             let core = match webview.controller().CoreWebView2() {
                 Ok(c) => c,
-                Err(e) => { eprintln!("[dark] CoreWebView2() failed: {e:?}"); return; }
+                Err(e) => {
+                    eprintln!("[dark] CoreWebView2() failed: {e:?}");
+                    return;
+                }
             };
             // Top-document preference (harmless; the injected script handles the cross-origin iframe).
             if let Ok(profile) = core.cast::<ICoreWebView2_13>().and_then(|w| w.Profile()) {
@@ -1635,18 +1776,24 @@ fn set_webview_dark(win: &tauri::WebviewWindow) {
             // including the archive iframe opened later).
             if !DARK_SCRIPT_ADDED.swap(true, Ordering::SeqCst) {
                 let js = HSTRING::from(DARK_FRAME_SCRIPT);
-                let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(Box::new(|hr, _id| {
-                    eprintln!("[dark] AddScriptToExecuteOnDocumentCreated → {hr:?}");
-                    Ok(())
-                }));
-                if let Err(e) = core.AddScriptToExecuteOnDocumentCreated(PCWSTR(js.as_ptr()), &handler) {
+                let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(
+                    Box::new(|hr, _id| {
+                        eprintln!("[dark] AddScriptToExecuteOnDocumentCreated → {hr:?}");
+                        Ok(())
+                    }),
+                );
+                if let Err(e) =
+                    core.AddScriptToExecuteOnDocumentCreated(PCWSTR(js.as_ptr()), &handler)
+                {
                     DARK_SCRIPT_ADDED.store(false, Ordering::SeqCst);
                     eprintln!("[dark] AddScriptToExecuteOnDocumentCreated failed: {e:?}");
                 }
             }
         }
     });
-    if let Err(e) = r { eprintln!("[dark] with_webview failed: {e:?}"); }
+    if let Err(e) = r {
+        eprintln!("[dark] with_webview failed: {e:?}");
+    }
 }
 
 /// Left inset (physical px) for the mpv child — the sidebar-rail width while
@@ -1719,7 +1866,10 @@ fn ensure_container(main_raw: isize) -> isize {
             w!("STATIC"),
             w!(""),
             WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_DISABLED,
-            x, y, w, h,
+            x,
+            y,
+            w,
+            h,
             Some(main),
             None,
             None,
@@ -1761,10 +1911,22 @@ fn resize_mpv_child(parent_raw: isize) {
         // Container → player area (mpv, embedded via --wid=container, fills it). Keep it
         // beneath the WebView2 so the overlay composites on top.
         let _ = MoveWindow(container, x, y, w, h, true);
-        let _ = SetWindowPos(container, Some(HWND_BOTTOM), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        let _ = SetWindowPos(
+            container,
+            Some(HWND_BOTTOM),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
         // Ensure mpv's own child fills the container (0,0,w,h) + is click-through.
         let target = (0i32, 0i32, w, h);
-        let _ = EnumChildWindows(Some(container), Some(move_mpv_child), LPARAM(&target as *const _ as isize));
+        let _ = EnumChildWindows(
+            Some(container),
+            Some(move_mpv_child),
+            LPARAM(&target as *const _ as isize),
+        );
     }
 }
 
@@ -1790,13 +1952,26 @@ unsafe extern "system" fn move_mpv_child(
         // so a synchronous cross-thread MoveWindow blocks our UI/message-pump thread until mpv
         // pumps WM_WINDOWPOSCHANGING — janky if it's mid-4K-frame. SWP_ASYNCWINDOWPOS posts the
         // request to mpv's queue instead, decoupling our resize from mpv's render thread.
-        let _ = SetWindowPos(hwnd, None, x, y, w, h, SWP_ASYNCWINDOWPOS | SWP_NOZORDER | SWP_NOACTIVATE);
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            x,
+            y,
+            w,
+            h,
+            SWP_ASYNCWINDOWPOS | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
         // Explicitly notify mpv of the new client size so its video output / D3D11
         // swapchain reconfigures to the inset child (an external MoveWindow can leave
         // mpv rendering at the initial full-parent size → the video looks zoomed/cropped).
         // Posted (not sent) so a busy render thread can't deadlock us. lparam = (h<<16)|w.
         let lp = (((h as u32) & 0xFFFF) << 16 | ((w as u32) & 0xFFFF)) as isize;
-        let _ = PostMessageW(Some(hwnd), WM_SIZE, WPARAM(SIZE_RESTORED as usize), LPARAM(lp));
+        let _ = PostMessageW(
+            Some(hwnd),
+            WM_SIZE,
+            WPARAM(SIZE_RESTORED as usize),
+            LPARAM(lp),
+        );
         // Turn mpv's child into a pure render surface: WS_EX_TRANSPARENT makes it
         // click-through (hit-testing skips it) and WS_DISABLED disables all input —
         // mpv's own EnableWindow(false) is not enough, so clicks over the video were
@@ -1807,7 +1982,15 @@ unsafe extern "system" fn move_mpv_child(
         let st = GetWindowLongPtrW(hwnd, GWL_STYLE);
         SetWindowLongPtrW(hwnd, GWL_STYLE, st | WS_DISABLED.0 as isize);
         // Keep it at the bottom of the sibling z-order, beneath the WebView2.
-        let _ = SetWindowPos(hwnd, Some(HWND_BOTTOM), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_BOTTOM),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
     }
     windows::core::BOOL(1)
 }
@@ -1844,16 +2027,31 @@ fn mpv_version() -> String {
 /// not actually inset to the player area, or (b) a panscan/zoom setting. Temporary.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn player_diag(app: AppHandle, player: tauri::State<'_, player::PlayerHandle>) -> Result<String, String> {
+fn player_diag(
+    app: AppHandle,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<String, String> {
     let props = [
-        "osd-width", "osd-height", "dwidth", "dheight",
-        "current-window-scale", "display-hidpi-scale",
-        "video-out-params/dw", "video-out-params/dh",
-        "panscan", "keepaspect", "video-zoom", "video-scale-x", "video-scale-y",
+        "osd-width",
+        "osd-height",
+        "dwidth",
+        "dheight",
+        "current-window-scale",
+        "display-hidpi-scale",
+        "video-out-params/dw",
+        "video-out-params/dh",
+        "panscan",
+        "keepaspect",
+        "video-zoom",
+        "video-scale-x",
+        "video-scale-y",
     ];
     let mut m = serde_json::Map::new();
     for p in props {
-        m.insert(p.to_string(), serde_json::Value::String(player.get_property(p).unwrap_or_default()));
+        m.insert(
+            p.to_string(),
+            serde_json::Value::String(player.get_property(p).unwrap_or_default()),
+        );
     }
     #[cfg(windows)]
     {
@@ -1869,12 +2067,22 @@ fn player_diag(app: AppHandle, player: tauri::State<'_, player::PlayerHandle>) -
                     m.insert("clientW".into(), serde_json::json!(cr.right - cr.left));
                     m.insert("clientH".into(), serde_json::json!(cr.bottom - cr.top));
                     let mut child: (i32, i32) = (-1, -1);
-                    let _ = EnumChildWindows(Some(parent), Some(diag_mpv_child), LPARAM(&mut child as *mut _ as isize));
+                    let _ = EnumChildWindows(
+                        Some(parent),
+                        Some(diag_mpv_child),
+                        LPARAM(&mut child as *mut _ as isize),
+                    );
                     m.insert("mpvChildW".into(), serde_json::json!(child.0));
                     m.insert("mpvChildH".into(), serde_json::json!(child.1));
                 }
-                m.insert("insetL".into(), serde_json::json!(MPV_INSET_LEFT.load(Ordering::Relaxed)));
-                m.insert("insetT".into(), serde_json::json!(MPV_INSET_TOP.load(Ordering::Relaxed)));
+                m.insert(
+                    "insetL".into(),
+                    serde_json::json!(MPV_INSET_LEFT.load(Ordering::Relaxed)),
+                );
+                m.insert(
+                    "insetT".into(),
+                    serde_json::json!(MPV_INSET_TOP.load(Ordering::Relaxed)),
+                );
             }
         }
     }
@@ -2014,10 +2222,7 @@ fn gif_frames_ffmpeg(
 }
 
 #[cfg(not(target_os = "android"))]
-async fn encode_gif_frames(
-    app: &AppHandle,
-    frames: &player::GifFrames,
-) -> Result<String, String> {
+async fn encode_gif_frames(app: &AppHandle, frames: &player::GifFrames) -> Result<String, String> {
     let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&frames.dir)
         .map_err(|e| e.to_string())?
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
@@ -2119,16 +2324,24 @@ fn capture_ffmpeg_command(
 ) -> tokio::process::Command {
     let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
     let mut command = tokio::process::Command::new(executable);
-    command.kill_on_drop(true).arg("-hide_banner").arg("-loglevel").arg("error").arg("-y");
+    command
+        .kill_on_drop(true)
+        .arg("-hide_banner")
+        .arg("-loglevel")
+        .arg("error")
+        .arg("-y");
     if !headers.is_empty() {
         command.arg("-headers").arg(headers.replace(',', "\r\n"));
     }
     command
-        .arg("-ss").arg(format!("{start:.3}"))
-        .arg("-i").arg(source)
+        .arg("-ss")
+        .arg(format!("{start:.3}"))
+        .arg("-i")
+        .arg(source)
         // Output `-t` is only a safety net for GIFs. `palettegen` buffers until its INPUT reaches
         // EOF, so the filter's `trim` below is what prevents it scanning the rest of an episode.
-        .arg("-t").arg(format!("{duration:.3}"));
+        .arg("-t")
+        .arg(format!("{duration:.3}"));
     if kind == "gif" {
         if palette {
             command.arg("-filter_complex").arg(format!(
@@ -2148,14 +2361,21 @@ fn capture_ffmpeg_command(
         command.arg("-an");
     } else {
         command
-            .arg("-c:v").arg("libx264")
-            .arg("-preset").arg("veryfast")
-            .arg("-crf").arg("20")
-            .arg("-c:a").arg("aac")
-            .arg("-movflags").arg("+faststart");
+            .arg("-c:v")
+            .arg("libx264")
+            .arg("-preset")
+            .arg("veryfast")
+            .arg("-crf")
+            .arg("20")
+            .arg("-c:a")
+            .arg("aac")
+            .arg("-movflags")
+            .arg("+faststart");
     }
     command.arg(output);
-    command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::piped());
+    command
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
     #[cfg(windows)]
     command.creation_flags(0x0800_0000 | 0x0000_4000);
     command
@@ -2166,10 +2386,13 @@ async fn run_capture_ffmpeg(
     command: &mut tokio::process::Command,
     timeout_secs: u64,
 ) -> Result<std::process::Output, String> {
-    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), command.output())
-        .await
-        .map_err(|_| "capture-timeout".to_string())?
-        .map_err(|_| "ffmpeg-unavailable".to_string())
+    tokio::time::timeout(
+        std::time::Duration::from_secs(timeout_secs),
+        command.output(),
+    )
+    .await
+    .map_err(|_| "capture-timeout".to_string())?
+    .map_err(|_| "ffmpeg-unavailable".to_string())
 }
 
 #[cfg(not(target_os = "android"))]
@@ -2177,7 +2400,11 @@ fn capture_failure(output: &std::process::Output) -> String {
     let error = String::from_utf8_lossy(&output.stderr);
     format!(
         "capture-failed: {}",
-        error.lines().rev().find(|line| !line.trim().is_empty()).unwrap_or("ffmpeg error")
+        error
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("ffmpeg error")
     )
 }
 
@@ -2203,7 +2430,9 @@ async fn player_capture_segment(
     if source.is_empty() {
         return Err("no-player-source".into());
     }
-    let headers = player.get_property("http-header-fields").unwrap_or_default();
+    let headers = player
+        .get_property("http-header-fields")
+        .unwrap_or_default();
     let dir = app
         .path()
         .picture_dir()
@@ -2215,9 +2444,13 @@ async fn player_capture_segment(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let output = dir.join(format!("izumi-{kind}-{stamp}.{}", if kind == "gif" { "gif" } else { "mp4" }));
+    let output = dir.join(format!(
+        "izumi-{kind}-{stamp}.{}",
+        if kind == "gif" { "gif" } else { "mp4" }
+    ));
 
-    let mut primary = capture_ffmpeg_command(&source, &headers, &output, &kind, start, duration, true);
+    let mut primary =
+        capture_ffmpeg_command(&source, &headers, &output, &kind, start, duration, true);
     let first = run_capture_ffmpeg(&mut primary, if kind == "gif" { 90 } else { 180 }).await;
     let result = match first {
         Ok(result) if result.status.success() => result,
@@ -2231,9 +2464,8 @@ async fn player_capture_segment(
                     Err(error) => error.clone(),
                 }
             );
-            let mut fallback = capture_ffmpeg_command(
-                &source, &headers, &output, &kind, start, duration, false,
-            );
+            let mut fallback =
+                capture_ffmpeg_command(&source, &headers, &output, &kind, start, duration, false);
             run_capture_ffmpeg(&mut fallback, 90).await?
         }
         Ok(result) => return Err(capture_failure(&result)),
@@ -2260,7 +2492,10 @@ async fn player_capture_segment(
 /// maximized→fullscreen offset bug — see [`FsWasMax`].
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn player_toggle_fullscreen(app: AppHandle, wasmax: tauri::State<'_, FsWasMax>) -> Result<bool, String> {
+fn player_toggle_fullscreen(
+    app: AppHandle,
+    wasmax: tauri::State<'_, FsWasMax>,
+) -> Result<bool, String> {
     let w = app.get_webview_window("main").ok_or("no main window")?;
     let target = !w.is_fullscreen().map_err(|e| e.to_string())?;
     if target {
@@ -2287,7 +2522,10 @@ fn player_toggle_fullscreen(app: AppHandle, wasmax: tauri::State<'_, FsWasMax>) 
 /// window was maximized before it went fullscreen.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn player_exit_fullscreen(app: AppHandle, wasmax: tauri::State<'_, FsWasMax>) -> Result<(), String> {
+fn player_exit_fullscreen(
+    app: AppHandle,
+    wasmax: tauri::State<'_, FsWasMax>,
+) -> Result<(), String> {
     let w = app.get_webview_window("main").ok_or("no main window")?;
     if w.is_fullscreen().map_err(|e| e.to_string())? {
         w.set_fullscreen(false).map_err(|e| e.to_string())?;
@@ -2355,7 +2593,10 @@ fn player_toggle_pip(
 
     // Dock inside the current monitor's lower-right corner. Physical coordinates account for a
     // mixed-DPI desktop; a small margin leaves the OS resize edge reachable.
-    if let Some(monitor) = window.current_monitor().map_err(|error| error.to_string())? {
+    if let Some(monitor) = window
+        .current_monitor()
+        .map_err(|error| error.to_string())?
+    {
         let pip = window.outer_size().map_err(|error| error.to_string())?;
         let bounds = monitor.size();
         let origin = monitor.position();
@@ -2412,8 +2653,22 @@ fn player_play_embedded(
     #[cfg(windows)]
     let wid: i64 = window.hwnd().map_err(|e| e.to_string())?.0 as isize as i64;
     #[cfg(not(windows))]
-    let wid: i64 = { let _ = &window; 0 };
-    player.play_embedded(&url, wid, app, start_seconds, true, None, None, None, None, None)
+    let wid: i64 = {
+        let _ = &window;
+        0
+    };
+    player.play_embedded(
+        &url,
+        wid,
+        app,
+        start_seconds,
+        true,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
 }
 
 /// Open the provider's auth URL in a dedicated in-app webview window, then poll
@@ -2427,7 +2682,9 @@ async fn oauth_capture(
     auth_url: String,
     redirect_prefix: String,
 ) -> Result<String, String> {
-    let url = auth_url.parse().map_err(|_| "invalid auth url".to_string())?;
+    let url = auth_url
+        .parse()
+        .map_err(|_| "invalid auth url".to_string())?;
     // reuse/replace any existing "oauth" window
     if let Some(w) = app.get_webview_window("oauth") {
         let _ = w.close();
@@ -2473,43 +2730,69 @@ async fn read_cookies(window: tauri::WebviewWindow, uri: String) -> String {
     let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
     let slot_err = slot.clone();
     let wv = window.with_webview(move |pw| unsafe {
-        let fail = |s: &std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>| {
-            if let Some(t) = s.lock().unwrap().take() { let _ = t.send(String::new()); }
+        let fail =
+            |s: &std::sync::Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>| {
+                if let Some(t) = s.lock().unwrap().take() {
+                    let _ = t.send(String::new());
+                }
+            };
+        let core = match pw.controller().CoreWebView2() {
+            Ok(c) => c,
+            Err(_) => return fail(&slot_err),
         };
-        let core = match pw.controller().CoreWebView2() { Ok(c) => c, Err(_) => return fail(&slot_err) };
-        let cm = match core.cast::<ICoreWebView2_2>().and_then(|w2| w2.CookieManager()) {
+        let cm = match core
+            .cast::<ICoreWebView2_2>()
+            .and_then(|w2| w2.CookieManager())
+        {
             Ok(c) => c,
             Err(_) => return fail(&slot_err),
         };
         let uri_h = HSTRING::from(uri);
         let slot_ok = slot_err.clone();
-        let handler = GetCookiesCompletedHandler::create(Box::new(move |_hr, list: Option<ICoreWebView2CookieList>| {
-            let mut pairs: Vec<String> = Vec::new();
-            if let Some(list) = list {
-                let mut count: u32 = 0;
-                if list.Count(&mut count).is_ok() {
-                    for i in 0..count {
-                        if let Ok(cookie) = list.GetValueAtIndex(i) {
-                            let mut np = PWSTR::null();
-                            let nm = if cookie.Name(&mut np).is_ok() && !np.is_null() {
-                                np.to_string().unwrap_or_default()
-                            } else { String::new() };
-                            let mut vp = PWSTR::null();
-                            let vl = if cookie.Value(&mut vp).is_ok() && !vp.is_null() {
-                                vp.to_string().unwrap_or_default()
-                            } else { String::new() };
-                            if !nm.is_empty() { pairs.push(format!("{nm}={vl}")); }
+        let handler = GetCookiesCompletedHandler::create(Box::new(
+            move |_hr, list: Option<ICoreWebView2CookieList>| {
+                let mut pairs: Vec<String> = Vec::new();
+                if let Some(list) = list {
+                    let mut count: u32 = 0;
+                    if list.Count(&mut count).is_ok() {
+                        for i in 0..count {
+                            if let Ok(cookie) = list.GetValueAtIndex(i) {
+                                let mut np = PWSTR::null();
+                                let nm = if cookie.Name(&mut np).is_ok() && !np.is_null() {
+                                    np.to_string().unwrap_or_default()
+                                } else {
+                                    String::new()
+                                };
+                                let mut vp = PWSTR::null();
+                                let vl = if cookie.Value(&mut vp).is_ok() && !vp.is_null() {
+                                    vp.to_string().unwrap_or_default()
+                                } else {
+                                    String::new()
+                                };
+                                if !nm.is_empty() {
+                                    pairs.push(format!("{nm}={vl}"));
+                                }
+                            }
                         }
                     }
                 }
-            }
-            if let Some(t) = slot_ok.lock().unwrap().take() { let _ = t.send(pairs.join("; ")); }
-            Ok(())
-        }));
-        if cm.GetCookies(PCWSTR(uri_h.as_ptr()), &handler).is_err() { fail(&slot_err); }
+                if let Some(t) = slot_ok.lock().unwrap().take() {
+                    let _ = t.send(pairs.join("; "));
+                }
+                Ok(())
+            },
+        ));
+        if cm.GetCookies(PCWSTR(uri_h.as_ptr()), &handler).is_err() {
+            fail(&slot_err);
+        }
     });
-    if wv.is_err() { return String::new(); }
-    match tokio::time::timeout(std::time::Duration::from_secs(6), rx).await { Ok(Ok(v)) => v, _ => String::new() }
+    if wv.is_err() {
+        return String::new();
+    }
+    match tokio::time::timeout(std::time::Duration::from_secs(6), rx).await {
+        Ok(Ok(v)) => v,
+        _ => String::new(),
+    }
 }
 
 #[cfg(not(windows))]
@@ -2541,9 +2824,13 @@ static DA_COOKIES: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None
 /// Best-effort discussanime cookie header: the cached jar if present, else a live read (cached only
 /// when it carries an auth cookie).
 async fn da_cookies(window: tauri::WebviewWindow, base: &str) -> String {
-    if let Some(v) = DA_COOKIES.lock().unwrap().clone() { return v; }
+    if let Some(v) = DA_COOKIES.lock().unwrap().clone() {
+        return v;
+    }
     let v = read_cookies(window, format!("{base}/")).await;
-    if has_auth_cookie(&v) { *DA_COOKIES.lock().unwrap() = Some(v.clone()); }
+    if has_auth_cookie(&v) {
+        *DA_COOKIES.lock().unwrap() = Some(v.clone());
+    }
     v
 }
 
@@ -2561,11 +2848,15 @@ async fn da_reaction_state(
     let cookie = da_cookies(window, &base).await;
     let url = format!("{base}/api/threads/by-identifier/{identifier}/reaction");
     let mut req = http_client().get(&url);
-    if !cookie.is_empty() { req = req.header("cookie", cookie); }
+    if !cookie.is_empty() {
+        req = req.header("cookie", cookie);
+    }
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let status = resp.status();
     let text = resp.text().await.map_err(|e| e.to_string())?;
-    if !status.is_success() { return Err(format!("reaction state HTTP {}", status.as_u16())); }
+    if !status.is_success() {
+        return Err(format!("reaction state HTTP {}", status.as_u16()));
+    }
     serde_json::from_str(&text).map_err(|e| e.to_string())
 }
 
@@ -2585,7 +2876,11 @@ async fn da_react(
     let cookie = da_cookies(window, &base).await;
     if !has_auth_cookie(&cookie) {
         eprintln!("[da_react] no auth cookie in the jar → needsLogin");
-        return Ok(ReactReply { ok: false, needs_login: true, counts: None });
+        return Ok(ReactReply {
+            ok: false,
+            needs_login: true,
+            counts: None,
+        });
     }
     let url = format!("{base}/api/threads/by-identifier/{identifier}/reaction");
     let body = serde_json::json!({ "reaction": key }).to_string();
@@ -2602,14 +2897,26 @@ async fn da_react(
     eprintln!("[da_react] POST {url} reaction={key:?} → HTTP {st}");
     if st == 401 {
         *DA_COOKIES.lock().unwrap() = None; // stale session — force a fresh read/login next time
-        return Ok(ReactReply { ok: false, needs_login: true, counts: None });
+        return Ok(ReactReply {
+            ok: false,
+            needs_login: true,
+            counts: None,
+        });
     }
     if !(200..300).contains(&st) {
-        return Ok(ReactReply { ok: false, needs_login: false, counts: None });
+        return Ok(ReactReply {
+            ok: false,
+            needs_login: false,
+            counts: None,
+        });
     }
     let text = resp.text().await.map_err(|e| e.to_string())?;
     let json: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
-    Ok(ReactReply { ok: true, needs_login: false, counts: json.get("counts").cloned() })
+    Ok(ReactReply {
+        ok: true,
+        needs_login: false,
+        counts: json.get("counts").cloned(),
+    })
 }
 
 /// Open discussanime's Disqus-OAuth login in a dedicated window; resolve true once the `da_session`
@@ -2620,7 +2927,9 @@ async fn da_login(app: tauri::AppHandle, base: String) -> Result<bool, String> {
     let base = base.trim_end_matches('/').to_string();
     // Already signed in (cached, or a persisted cookie from a prior run)? Skip the window entirely —
     // this is what avoids the login window flashing open+closed when a session already exists.
-    if DA_COOKIES.lock().unwrap().is_some() { return Ok(true); }
+    if DA_COOKIES.lock().unwrap().is_some() {
+        return Ok(true);
+    }
     if let Some(w) = app.get_webview_window("main") {
         let c = read_cookies(w, format!("{base}/")).await;
         if has_auth_cookie(&c) {
@@ -2630,8 +2939,12 @@ async fn da_login(app: tauri::AppHandle, base: String) -> Result<bool, String> {
         }
     }
     eprintln!("[da_login] opening discussanime login window");
-    let url = format!("{base}/auth/disqus/login").parse().map_err(|_| "bad url".to_string())?;
-    if let Some(w) = app.get_webview_window("da-login") { let _ = w.close(); }
+    let url = format!("{base}/auth/disqus/login")
+        .parse()
+        .map_err(|_| "bad url".to_string())?;
+    if let Some(w) = app.get_webview_window("da-login") {
+        let _ = w.close();
+    }
     let win = WebviewWindowBuilder::new(&app, "da-login", WebviewUrl::External(url))
         .title("Sign in — Discuss Anime")
         .inner_size(520.0, 760.0)
@@ -2642,7 +2955,9 @@ async fn da_login(app: tauri::AppHandle, base: String) -> Result<bool, String> {
     loop {
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
         waited += 800;
-        if win.url().is_err() { break; } // user closed the window
+        if win.url().is_err() {
+            break;
+        } // user closed the window
         let c = read_cookies(win.clone(), format!("{base}/")).await;
         if has_auth_cookie(&c) {
             eprintln!("[da_login] session cookie appeared — signed in");
@@ -2650,7 +2965,9 @@ async fn da_login(app: tauri::AppHandle, base: String) -> Result<bool, String> {
             let _ = win.close();
             return Ok(true);
         }
-        if waited > 300_000 { break; }
+        if waited > 300_000 {
+            break;
+        }
     }
     let _ = win.close();
     eprintln!("[da_login] window closed with no session");
@@ -2697,7 +3014,10 @@ fn updater_endpoints(channel: &str) -> Vec<url::Url> {
         format!("https://github.com/{REPO}/releases/latest/download/latest.json")
     };
     let failover = format!("{FAILOVER}/{channel}/latest.json");
-    [github, failover].iter().filter_map(|s| url::Url::parse(s).ok()).collect()
+    [github, failover]
+        .iter()
+        .filter_map(|s| url::Url::parse(s).ok())
+        .collect()
 }
 
 /// True when running inside a Flatpak sandbox (the Steam Deck build). Flatpaks are read-only
@@ -2720,7 +3040,10 @@ fn is_flatpak() -> bool {
 // headers the failover checks — `repository: izumi` and `key: <channel>` (matching the
 // requested URL). Headers are sent to every endpoint; GitHub ignores unknown ones.
 #[cfg(not(target_os = "android"))]
-fn build_updater(app: &tauri::AppHandle, channel: &str) -> Result<tauri_plugin_updater::Updater, String> {
+fn build_updater(
+    app: &tauri::AppHandle,
+    channel: &str,
+) -> Result<tauri_plugin_updater::Updater, String> {
     use tauri_plugin_updater::UpdaterExt;
     app.updater_builder()
         .endpoints(updater_endpoints(channel))
@@ -2745,7 +3068,10 @@ pub struct UpdateInfo {
 /// Check the given channel ("stable"/"beta") for a newer signed build. `None` = up to date.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-async fn updater_check(app: tauri::AppHandle, channel: String) -> Result<Option<UpdateInfo>, String> {
+async fn updater_check(
+    app: tauri::AppHandle,
+    channel: String,
+) -> Result<Option<UpdateInfo>, String> {
     let channel = if channel == "beta" { "beta" } else { "stable" };
     let updater = build_updater(&app, channel)?;
     match updater.check().await {
@@ -2788,8 +3114,9 @@ async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), S
     update
         .download_and_install(
             move |chunk: usize, total: Option<u64>| {
-                let downloaded =
-                    chunk_seen.fetch_add(chunk as u64, std::sync::atomic::Ordering::Relaxed) + chunk as u64;
+                let downloaded = chunk_seen
+                    .fetch_add(chunk as u64, std::sync::atomic::Ordering::Relaxed)
+                    + chunk as u64;
                 emit_update_progress(&chunk_app, downloaded, total, &mut last_pct, &mut last_emit);
             },
             move || {
@@ -2798,7 +3125,10 @@ async fn updater_install(app: tauri::AppHandle, channel: String) -> Result<(), S
                 let downloaded = done_seen.load(std::sync::atomic::Ordering::Relaxed);
                 let _ = done_app.emit(
                     "update-download-progress",
-                    UpdateProgress { downloaded, total: Some(downloaded) },
+                    UpdateProgress {
+                        downloaded,
+                        total: Some(downloaded),
+                    },
                 );
             },
         )
@@ -2838,17 +3168,13 @@ async fn flatpak_update_check() -> Result<Option<String>, String> {
             .receive_update_available()
             .await
             .map_err(|e| e.to_string())?;
-        let available = match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            updates.next(),
-        )
-        .await
-        {
-            // `remote_commit` is the OSTree commit that WOULD be installed (the actual update);
-            // `running_commit` is what we're on now. We want the former.
-            Ok(Some(info)) => Some(info.remote_commit().to_string()),
-            _ => None,
-        };
+        let available =
+            match tokio::time::timeout(std::time::Duration::from_secs(10), updates.next()).await {
+                // `remote_commit` is the OSTree commit that WOULD be installed (the actual update);
+                // `running_commit` is what we're on now. We want the former.
+                Ok(Some(info)) => Some(info.remote_commit().to_string()),
+                _ => None,
+            };
         let _ = monitor.close().await;
         return Ok(available);
     }
@@ -3766,7 +4092,10 @@ mod subtitle_zip_tests {
         let zip = make_zip(&[
             ("readme.txt", b"hi"),
             ("Subs/movie.ass", b"[Script Info]"),
-            ("Subs/movie.srt", b"1\n00:00:01,000 --> 00:00:02,000\nHello\n"),
+            (
+                "Subs/movie.srt",
+                b"1\n00:00:01,000 --> 00:00:02,000\nHello\n",
+            ),
         ]);
         assert_eq!(
             unzip_first_subtitle(&zip).unwrap(),
@@ -3797,7 +4126,10 @@ mod opensubtitles_hash_tests {
         let mut tail = vec![0u8; OPENSUBTITLES_CHUNK as usize];
         head[..8].copy_from_slice(&1u64.to_le_bytes());
         tail[..8].copy_from_slice(&2u64.to_le_bytes());
-        assert_eq!(opensubtitles_hash(131_072, &head, &tail).unwrap(), "0000000000020003");
+        assert_eq!(
+            opensubtitles_hash(131_072, &head, &tail).unwrap(),
+            "0000000000020003"
+        );
     }
 
     #[test]

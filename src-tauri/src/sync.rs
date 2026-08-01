@@ -118,7 +118,11 @@ enum DiscoveryControl {
 impl NearbyDiscovery {
     async fn stop_advertising(&self) {
         let (done_tx, done_rx) = oneshot::channel();
-        if self.control_tx.send(DiscoveryControl::Stop(done_tx)).is_ok() {
+        if self
+            .control_tx
+            .send(DiscoveryControl::Stop(done_tx))
+            .is_ok()
+        {
             let _ = tokio::time::timeout(Duration::from_secs(1), done_rx).await;
         }
     }
@@ -565,10 +569,7 @@ async fn start_nearby_discovery(
             }
         }
     });
-    Ok(NearbyDiscovery {
-        task,
-        control_tx,
-    })
+    Ok(NearbyDiscovery { task, control_tx })
 }
 
 impl ProtocolHandler for PairingProtocol {
@@ -647,8 +648,8 @@ impl SyncRuntime {
         tokio::fs::create_dir_all(&root).await?;
         let key = load_secret_key(&root.join("endpoint-key")).await?;
         let relay = load_relay_settings(&root).await?;
-        let mut endpoint_builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
-            .secret_key(key);
+        let mut endpoint_builder =
+            iroh::Endpoint::builder(iroh::endpoint::presets::N0).secret_key(key);
         if let Some(url) = relay.custom_url {
             let relay_url = RelayUrl::from_str(&url).context("invalid custom relay URL")?;
             endpoint_builder = endpoint_builder.relay_mode(RelayMode::custom([relay_url]));
@@ -778,7 +779,11 @@ fn relay_settings(custom_url: Option<String>) -> Result<RelaySettings> {
 
 async fn save_relay_settings(root: &Path, settings: &RelaySettings) -> Result<()> {
     tokio::fs::create_dir_all(root).await?;
-    tokio::fs::write(root.join(RELAY_CONFIG_FILE), serde_json::to_vec_pretty(settings)?).await?;
+    tokio::fs::write(
+        root.join(RELAY_CONFIG_FILE),
+        serde_json::to_vec_pretty(settings)?,
+    )
+    .await?;
     Ok(())
 }
 
@@ -875,8 +880,14 @@ pub async fn sync_status(state: tauri::State<'_, SyncState>) -> Result<Status, S
 
 #[tauri::command]
 pub async fn sync_relay_config(app: AppHandle) -> Result<RelaySettings, String> {
-    let root = app.path().app_data_dir().map_err(|error| error.to_string())?.join("iroh-sync");
-    load_relay_settings(&root).await.map_err(|error| error.to_string())
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("iroh-sync");
+    load_relay_settings(&root)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -886,22 +897,36 @@ pub async fn sync_set_relay(
     state: tauri::State<'_, SyncState>,
 ) -> Result<(), String> {
     let settings = relay_settings(custom_url).map_err(|error| error.to_string())?;
-    let root = app.path().app_data_dir().map_err(|error| error.to_string())?.join("iroh-sync");
-    save_relay_settings(&root, &settings).await.map_err(|error| error.to_string())?;
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("iroh-sync");
+    save_relay_settings(&root, &settings)
+        .await
+        .map_err(|error| error.to_string())?;
 
     let runtime = {
         let mut guard = state.inner.lock().await;
         match std::mem::replace(&mut *guard, RuntimeState::Starting) {
             RuntimeState::Ready(runtime) => Some(runtime),
-            RuntimeState::Disabled => { *guard = RuntimeState::Disabled; None }
-            RuntimeState::Failed(error) => { *guard = RuntimeState::Failed(error); None }
+            RuntimeState::Disabled => {
+                *guard = RuntimeState::Disabled;
+                None
+            }
+            RuntimeState::Failed(error) => {
+                *guard = RuntimeState::Failed(error);
+                None
+            }
             RuntimeState::Starting => {
                 *guard = RuntimeState::Starting;
                 return Err("sync is still starting".into());
             }
         }
     };
-    let Some(runtime) = runtime else { return Ok(()); };
+    let Some(runtime) = runtime else {
+        return Ok(());
+    };
     runtime.nearby_discovery.stop_advertising().await;
     drop(runtime);
 
@@ -1127,10 +1152,12 @@ pub async fn sync_disable(
             RuntimeState::Ready(runtime) if runtime.doc.is_some() => {
                 return Err("Leave the sync group before disabling device sync".into());
             }
-            RuntimeState::Ready(_) => match std::mem::replace(&mut *guard, RuntimeState::Disabled) {
-                RuntimeState::Ready(runtime) => Some(runtime),
-                _ => unreachable!("state was checked while locked"),
-            },
+            RuntimeState::Ready(_) => {
+                match std::mem::replace(&mut *guard, RuntimeState::Disabled) {
+                    RuntimeState::Ready(runtime) => Some(runtime),
+                    _ => unreachable!("state was checked while locked"),
+                }
+            }
             RuntimeState::Failed(_) => {
                 *guard = RuntimeState::Disabled;
                 None
@@ -1147,10 +1174,7 @@ pub async fn sync_disable(
 }
 
 #[tauri::command]
-pub async fn sync_leave(
-    app: AppHandle,
-    state: tauri::State<'_, SyncState>,
-) -> Result<(), String> {
+pub async fn sync_leave(app: AppHandle, state: tauri::State<'_, SyncState>) -> Result<(), String> {
     let mut runtime = {
         let mut guard = state.inner.lock().await;
         match std::mem::replace(&mut *guard, RuntimeState::Disabled) {
@@ -1263,9 +1287,15 @@ mod tests {
     #[test]
     fn relay_settings_select_public_or_custom() {
         assert!(relay_settings(None).unwrap().custom_url.is_none());
-        assert!(relay_settings(Some("   ".into())).unwrap().custom_url.is_none());
+        assert!(relay_settings(Some("   ".into()))
+            .unwrap()
+            .custom_url
+            .is_none());
         assert_eq!(
-            relay_settings(Some(" https://relay.example.com. ".into())).unwrap().custom_url.as_deref(),
+            relay_settings(Some(" https://relay.example.com. ".into()))
+                .unwrap()
+                .custom_url
+                .as_deref(),
             Some("https://relay.example.com.")
         );
         assert!(relay_settings(Some("not a relay".into())).is_err());

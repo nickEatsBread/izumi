@@ -97,7 +97,9 @@ fn init() -> Option<Steam> {
             false
         };
         if !ok {
-            crate::player::linux_embed::elog("steam_osk: SteamAPI_Init failed (Steam not reachable)");
+            crate::player::linux_embed::elog(
+                "steam_osk: SteamAPI_Init failed (Steam not reachable)",
+            );
             return None;
         }
 

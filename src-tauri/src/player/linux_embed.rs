@@ -46,15 +46,13 @@ use libmpv2::{
     render::{mpv_render_update, OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType},
     Mpv,
 };
-use raw_window_handle::{
-    HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle,
-};
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
 use wayland_client::{
     backend::{Backend, ObjectId},
     globals::{registry_queue_init, GlobalListContents},
     protocol::{
-        wl_compositor::WlCompositor, wl_registry::WlRegistry,
-        wl_subcompositor::WlSubcompositor, wl_subsurface::WlSubsurface, wl_surface::WlSurface,
+        wl_compositor::WlCompositor, wl_registry::WlRegistry, wl_subcompositor::WlSubcompositor,
+        wl_subsurface::WlSubsurface, wl_surface::WlSurface,
     },
     Connection, Dispatch, EventQueue, Proxy, QueueHandle,
 };
@@ -171,7 +169,12 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for LayerDispatch {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let zwlr_layer_surface_v1::Event::Configure { serial, width, height } = event {
+        if let zwlr_layer_surface_v1::Event::Configure {
+            serial,
+            width,
+            height,
+        } = event
+        {
             surf.ack_configure(serial);
             state.configured = Some((width, height));
         }
@@ -498,7 +501,9 @@ pub fn attach(mpv: &Mpv, window: &tauri::WebviewWindow) -> Result<(), String> {
         // capturing this attach's `inner`, so it follows re-attaches and no-ops after `detach`.
         if !ALLOC_CONNECTED.swap(true, Ordering::SeqCst) {
             gtk_win.connect_size_allocate(move |_w, rect| {
-                let Some(inner) = EMBED.lock().ok().and_then(|g| g.clone()) else { return };
+                let Some(inner) = EMBED.lock().ok().and_then(|g| g.clone()) else {
+                    return;
+                };
                 let nw = rect.width().max(1);
                 let nh = rect.height().max(1);
                 if let Ok(mut st) = inner.state.lock() {
@@ -659,7 +664,11 @@ fn render_frame(inner: &Inner) {
     }
 
     // flip=true: GL is Y-up, video is Y-down. FBO 0 = the EGL back buffer.
-    if inner.render_ctx.render::<*mut c_void>(0, w, h, true).is_err() {
+    if inner
+        .render_ctx
+        .render::<*mut c_void>(0, w, h, true)
+        .is_err()
+    {
         return;
     }
     if egl.swap_buffers(display, surface).is_err() {
@@ -795,14 +804,22 @@ fn build_wayland(
     }
 
     let config_attribs = [
-        egl::RED_SIZE, 8,
-        egl::GREEN_SIZE, 8,
-        egl::BLUE_SIZE, 8,
-        egl::ALPHA_SIZE, 8,
-        egl::DEPTH_SIZE, 0,
-        egl::STENCIL_SIZE, 0,
-        egl::RENDERABLE_TYPE, egl::OPENGL_BIT,
-        egl::SURFACE_TYPE, egl::WINDOW_BIT,
+        egl::RED_SIZE,
+        8,
+        egl::GREEN_SIZE,
+        8,
+        egl::BLUE_SIZE,
+        8,
+        egl::ALPHA_SIZE,
+        8,
+        egl::DEPTH_SIZE,
+        0,
+        egl::STENCIL_SIZE,
+        0,
+        egl::RENDERABLE_TYPE,
+        egl::OPENGL_BIT,
+        egl::SURFACE_TYPE,
+        egl::WINDOW_BIT,
         egl::NONE,
     ];
     let config = egl
@@ -827,9 +844,12 @@ fn build_wayland(
     .map_err(|e| format!("eglCreateWindowSurface: {e:?}"))?;
 
     let context_attribs = [
-        egl::CONTEXT_MAJOR_VERSION, 3,
-        egl::CONTEXT_MINOR_VERSION, 2,
-        egl::CONTEXT_OPENGL_PROFILE_MASK, egl::CONTEXT_OPENGL_CORE_PROFILE_BIT,
+        egl::CONTEXT_MAJOR_VERSION,
+        3,
+        egl::CONTEXT_MINOR_VERSION,
+        2,
+        egl::CONTEXT_OPENGL_PROFILE_MASK,
+        egl::CONTEXT_OPENGL_CORE_PROFILE_BIT,
         egl::NONE,
     ];
     let egl_context = egl
@@ -920,7 +940,8 @@ fn build_wayland_layer(
     layer_surface.set_exclusive_zone(-1);
     layer_surface.set_size(0, 0);
     child_surface.commit(); // initial commit (no buffer) → triggers the first configure
-    conn.flush().map_err(|e| format!("wayland flush (layer): {e}"))?;
+    conn.flush()
+        .map_err(|e| format!("wayland flush (layer): {e}"))?;
 
     // A layer surface must ack its Configure (which also carries the fullscreen size) BEFORE
     // the first buffer. LayerDispatch acks + records the size.
@@ -946,14 +967,22 @@ fn build_wayland_layer(
             .map_err(|e| format!("eglInitialize: {e:?}"))?;
     }
     let config_attribs = [
-        egl::RED_SIZE, 8,
-        egl::GREEN_SIZE, 8,
-        egl::BLUE_SIZE, 8,
-        egl::ALPHA_SIZE, 8,
-        egl::DEPTH_SIZE, 0,
-        egl::STENCIL_SIZE, 0,
-        egl::RENDERABLE_TYPE, egl::OPENGL_BIT,
-        egl::SURFACE_TYPE, egl::WINDOW_BIT,
+        egl::RED_SIZE,
+        8,
+        egl::GREEN_SIZE,
+        8,
+        egl::BLUE_SIZE,
+        8,
+        egl::ALPHA_SIZE,
+        8,
+        egl::DEPTH_SIZE,
+        0,
+        egl::STENCIL_SIZE,
+        0,
+        egl::RENDERABLE_TYPE,
+        egl::OPENGL_BIT,
+        egl::SURFACE_TYPE,
+        egl::WINDOW_BIT,
         egl::NONE,
     ];
     let config = egl
@@ -977,9 +1006,12 @@ fn build_wayland_layer(
     .map_err(|e| format!("eglCreateWindowSurface: {e:?}"))?;
 
     let context_attribs = [
-        egl::CONTEXT_MAJOR_VERSION, 3,
-        egl::CONTEXT_MINOR_VERSION, 2,
-        egl::CONTEXT_OPENGL_PROFILE_MASK, egl::CONTEXT_OPENGL_CORE_PROFILE_BIT,
+        egl::CONTEXT_MAJOR_VERSION,
+        3,
+        egl::CONTEXT_MINOR_VERSION,
+        2,
+        egl::CONTEXT_OPENGL_PROFILE_MASK,
+        egl::CONTEXT_OPENGL_CORE_PROFILE_BIT,
         egl::NONE,
     ];
     let egl_context = egl
@@ -1009,8 +1041,7 @@ fn wayland_egl_display(
     wl_display_ptr: *mut c_void,
     platform_enum: u32,
 ) -> Result<egl::Display, String> {
-    type GetPlatformDisplayExt =
-        unsafe extern "C" fn(u32, *mut c_void, *const i32) -> *mut c_void;
+    type GetPlatformDisplayExt = unsafe extern "C" fn(u32, *mut c_void, *const i32) -> *mut c_void;
 
     if let Some(get_fn) = egl.get_proc_address("eglGetPlatformDisplayEXT") {
         // SAFETY: documented signature EGLDisplay(EGLenum, void*, const EGLint*).
@@ -1101,8 +1132,13 @@ pub fn probe_compositor(window: &tauri::WebviewWindow) {
     elog(&format!("window handle: {kind}"));
 
     for k in [
-        "WAYLAND_DISPLAY", "GAMESCOPE_WAYLAND_DISPLAY", "DISPLAY", "XDG_RUNTIME_DIR",
-        "XDG_SESSION_TYPE", "GDK_BACKEND", "STEAM_GAMESCOPE",
+        "WAYLAND_DISPLAY",
+        "GAMESCOPE_WAYLAND_DISPLAY",
+        "DISPLAY",
+        "XDG_RUNTIME_DIR",
+        "XDG_SESSION_TYPE",
+        "GDK_BACKEND",
+        "STEAM_GAMESCOPE",
     ] {
         elog(&format!("env {k}={:?}", std::env::var(k).ok()));
     }
@@ -1169,8 +1205,7 @@ fn wayland_globals_for(name: &str) -> Result<Vec<String>, String> {
     std::env::set_var("WAYLAND_DISPLAY", name);
     let res = (|| -> Result<Vec<String>, String> {
         let conn = Connection::connect_to_env().map_err(|e| e.to_string())?;
-        let (globals, _q) =
-            registry_queue_init::<WlGlobals>(&conn).map_err(|e| e.to_string())?;
+        let (globals, _q) = registry_queue_init::<WlGlobals>(&conn).map_err(|e| e.to_string())?;
         let mut out = Vec::new();
         globals
             .contents()

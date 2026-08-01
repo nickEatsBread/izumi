@@ -445,7 +445,14 @@ mod linux {
                         .ok()?;
                 let surface = WlSurface::from_id(&conn, id).ok()?;
 
-                Some(Idle { conn, qh, mgr, surface, inhibitor: None, _queue: queue })
+                Some(Idle {
+                    conn,
+                    qh,
+                    mgr,
+                    surface,
+                    inhibitor: None,
+                    _queue: queue,
+                })
             }
 
             fn set(&mut self, on: bool) {
