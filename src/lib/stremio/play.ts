@@ -66,9 +66,11 @@ import { isAndroid } from '$lib/platform'
 import { offlineMode } from '$lib/stores/offline'
 import {
   beginPlaybackOwner,
+  currentPlaybackIdentity,
   currentPlaybackOwner,
   invalidatePlaybackOwner,
   ownsPlayback,
+  recordPlaybackIdentity,
   type PlaybackOwner,
 } from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
@@ -1541,6 +1543,8 @@ export async function playStream(
           headers,
           autoplay,
         })
+        // This episode+source is now the one on screen, so the watchdog may recover against it.
+        recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
         // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
         androidStreamInfo.set({ url: stream.url, headers })
         androidMpvActive.set(true)
@@ -1662,6 +1666,8 @@ export async function playStream(
       subtitles: subtitles.length ? subtitles : undefined,
       audioTracks: audioTracks.length ? audioTracks : undefined,
     })
+    // This episode+source is now the one on screen, so the watchdog may recover against it.
+    recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
     if (directPlaybackId != null && directTorrentSubtitles.length) {
       void attachDirectTorrentSubtitles(directPlaybackId, directTorrentSubtitles)
     }
@@ -1740,6 +1746,23 @@ export async function recoverPlaybackSource(
   const stillOwnsPlayback = () => ownsPlayback(owner)
   let context = get(playbackRecovery)
   if (!context || context.recovering) return false
+  // The retained pool follows whatever the PICKER last resolved, which is not necessarily what is
+  // on screen: opening the picker for another episode and backing out of it leaves the pool
+  // pointing at that episode while the old one keeps playing. Recovering into it would swap the
+  // file under the user and start saving progress against the wrong episode, so fall back to the
+  // file actually loaded and let the re-resolve below rebuild a pool for the right one.
+  const loaded = currentPlaybackIdentity()
+  if (!loaded) return false
+  if (loaded.media.id !== context.media.id || loaded.episode !== context.episode) {
+    context = {
+      media: loaded.media,
+      episode: loaded.episode,
+      streams: [],
+      current: loaded.stream,
+      attempted: [],
+      recovering: false,
+    }
+  }
 
   const failed = context.current
   const attempted = new Set(context.attempted)
@@ -1874,6 +1897,9 @@ export async function playRawUrl(url: string, label: string, onState: (s: PlaySt
     spriteKey.set(null)   // no per-file scrub sprites for cloud items
     bingeSource.set(null) // no release-continuity chain
     await invoke('player_embed', { url, alang: get(preferredAudioLang), slang: get(preferredSubLang) })
+    // No episode identity at all — and the watchdog is live from here, so the previous episode's
+    // identity has to go with it or a stall would recover onto that episode's sources.
+    recordPlaybackIdentity(null)
     playing.set(true)
     onState({ status: 'playing' })
   }
