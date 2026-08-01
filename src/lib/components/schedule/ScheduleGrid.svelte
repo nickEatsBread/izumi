@@ -168,22 +168,25 @@
   </div>
 {/snippet}
 
-{#snippet dayView(showHint: boolean)}
-  <div bind:this={dayRow} class="mb-4 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] snap-x sm:overflow-visible">
+{#snippet dayTabs(showHint: boolean)}
+  <div bind:this={dayRow} class="-mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] snap-x sm:mx-0 sm:overflow-visible sm:px-0">
     {#each SHORT as d, i (d)}
       <button data-focusable onclick={() => { if (i !== selected) h.tap(); selected = i }}
-        class="relative w-20 shrink-0 snap-center rounded-lg py-2.5 text-center text-sm font-black transition-colors sm:w-auto sm:flex-1 sm:shrink
-               {i === selected ? 'bg-primary text-primary-foreground' : 'bg-secondary hover:bg-accent'}">
+        class="relative h-[5.25rem] w-[7.75rem] shrink-0 snap-center rounded-2xl border text-center text-lg font-black transition-colors sm:h-auto sm:w-auto sm:flex-1 sm:shrink sm:rounded-lg sm:py-3 sm:text-sm
+               {i === selected ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-border/70 bg-secondary hover:bg-accent'}">
         {d}
-        <span class="block text-[0.65rem] font-normal opacity-70">{dayDate(i)}</span>
-        {#if i === todayIdx}<span class="absolute left-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-sky-400" title="Today"></span>{/if}
-        {#if hasUnaired(i)}<span class="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" title="Episodes still to air"></span>{/if}
+        <span class="mt-1 block text-sm font-medium opacity-65 sm:text-[0.65rem]">{dayDate(i)}</span>
+        {#if i === todayIdx}<span class="absolute left-2.5 top-2.5 size-2 rounded-full bg-sky-400" title="Today"></span>{/if}
+        {#if hasUnaired(i)}<span class="absolute right-2.5 top-2.5 size-2 rounded-full bg-emerald-400" title="Episodes still to air"></span>{/if}
       </button>
     {/each}
   </div>
   {#if showHint}
     <p class="mb-3 text-xs text-muted-foreground">L1 / R1 to switch days · <span class="text-sky-400">●</span> today · <span class="text-emerald-400">●</span> still to air</p>
   {/if}
+{/snippet}
+
+{#snippet selectedDay()}
   <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={shownDays[selected]} {badgeOf} {infoOf} big />
 {/snippet}
 
@@ -202,29 +205,39 @@
 {/snippet}
 
 {#if loading}
-  <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
-    {#each Array.from({ length: 7 }) as _}
-      <div class="h-64 animate-pulse rounded-md bg-muted"></div>
+  <div class="-mx-4 flex gap-3 overflow-hidden px-4 sm:mx-0 sm:px-0">
+    {#each Array.from({ length: 4 }) as _}
+      <div class="skeloader h-[5.25rem] w-[7.75rem] shrink-0 rounded-2xl sm:flex-1"></div>
+    {/each}
+  </div>
+  <div class="mt-6 space-y-4">
+    {#each Array.from({ length: 4 }) as _}
+      <div class="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3"><div class="skeloader mt-2 h-4 rounded"></div><div class="skeloader h-28 rounded-xl"></div></div>
     {/each}
   </div>
 {:else if error}
   <p class="text-muted-foreground">Failed to load schedule: {error}</p>
 {:else}
-  <!-- Header: the My Shows/All toggle + Next-up. Pinned to the top while scrolling when the
-       "Pin schedule header" setting is on (default off on Android — it scrolls away with the list). -->
-  <div class="{$scheduleStickyHeader ? 'sticky top-0' : ''} z-20 bg-background pb-1" bind:clientHeight={headerH}>
-    {@render toggle()}
-    {#if isCurrentWeek}
-      <ScheduleNextUp airings={shownDays.flat()} {sets} {now} />
-    {/if}
-  </div>
   {#if view === 'mine' && mineCount === 0}
+    {@render dayTabs(false)}
+    {@render toggle()}
     {@render mineEmpty()}
   {:else if gm}
-    {@render dayView(true)}
+    {@render dayTabs(true)}
+    {@render toggle()}
+    {@render selectedDay()}
   {:else if layout === 'days' || $isMobile}
-    {@render dayView(false)}
+    {@render dayTabs(false)}
+    <div class="{$scheduleStickyHeader ? 'sticky top-0' : ''} z-20 bg-background pb-1" bind:clientHeight={headerH}>
+      {@render toggle()}
+    </div>
+    {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
+    {@render selectedDay()}
   {:else}
+    <div class="{$scheduleStickyHeader ? 'sticky top-0' : ''} z-20 bg-background pb-1" bind:clientHeight={headerH}>
+      {@render toggle()}
+      {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
+    </div>
     <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} {infoOf} headerOffset={$scheduleStickyHeader ? headerH : 0} />
   {/if}
 {/if}

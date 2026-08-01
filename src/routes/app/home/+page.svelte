@@ -98,7 +98,7 @@
   <div class="flex items-center justify-between px-4 pb-3 pt-3">
     <a href="/app/home" aria-label="Home" class="flex items-center gap-2">
       <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
-      <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="h-5" draggable="false" />
+      <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
     </a>
     {#if topNav.length}
       <div class="flex items-center gap-1">
@@ -114,6 +114,12 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  :global(html[data-scheme='light']) .home-wordmark {
+    filter: brightness(0) saturate(100%);
+  }
+</style>
 
 {#if $offlineMode}
   <!-- Offline: local-first Continue Watching + the downloaded-series library. No network fired. -->

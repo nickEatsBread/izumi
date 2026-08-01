@@ -67,12 +67,12 @@
     <button type="button" class="absolute inset-0 bg-black/70 backdrop-blur-sm" aria-label="Close settings search" onclick={close}></button>
     <div role="dialog" aria-modal="true" aria-label="Search settings"
       class="relative z-10 flex max-h-[min(75vh,42rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-      <div class="flex items-center gap-2 border-b border-border px-3 transition-colors focus-within:border-theme/70">
+      <div class="flex items-center gap-2 border-b border-border px-3">
         <Search size={20} class="shrink-0 text-muted-foreground" />
-        <input bind:this={input} bind:value={query} data-focusable type="search"
+        <input bind:this={input} bind:value={query} type="search"
           placeholder="Search settings…" aria-label="Search settings"
           style="box-shadow:none"
-          class="min-w-0 flex-1 bg-transparent py-4 text-base outline-none placeholder:text-muted-foreground" />
+          class="settings-search-input min-w-0 flex-1 bg-transparent py-4 text-base outline-none placeholder:text-muted-foreground" />
         <button type="button" data-focusable onclick={close} aria-label="Close"
           class="grid size-9 place-items-center rounded-full text-muted-foreground transition-colors active:bg-accent hover:bg-secondary">
           <X size={20} />
@@ -100,3 +100,11 @@
     </div>
   </div>
 {/if}
+
+<style>
+  .settings-search-input:focus,
+  .settings-search-input:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+</style>
