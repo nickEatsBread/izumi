@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: only dark;
+  color-scheme: dark;
   --background: 240 10% 3.9%;   --foreground: 0 0% 98%;
   --muted: 240 3.7% 15.9%;      --muted-foreground: 240 5% 64.9%;
   --primary: 0 0% 98%;          --primary-foreground: 240 5.9% 10%;
@@ -116,7 +116,35 @@ body { overflow-x: clip; }
 @keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-12deg); } 75% { transform: rotate(12deg); } }
 @keyframes bounce-sm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes swing { 0%, 100% { transform: rotate(0); } 30% { transform: rotate(-10deg); } 60% { transform: rotate(6deg); } }
-*:focus-visible { outline: none; box-shadow: 0 0 0 2px hsl(var(--ring)); border-radius: var(--radius); }
+*:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: var(--radius); }
+
+/* WCAG 2.2 user preferences. Large targets are opt-in because forcing 44px on every compact row
+   changes information density; coarse-pointer devices already get touch-sized controls. */
+.a11y-large-targets [data-focusable] { min-width: 44px; min-height: 44px; }
+.a11y-high-contrast {
+  --muted-foreground: 0 0% 82%;
+  --border: 0 0% 48%;
+  --ring: 52 100% 55%;
+}
+.a11y-high-contrast [data-focusable] { border-color: hsl(var(--border)); }
+.a11y-reduce-motion *, .a11y-reduce-motion *::before, .a11y-reduce-motion *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root:not(.a11y-full-motion) *, :root:not(.a11y-full-motion) *::before, :root:not(.a11y-full-motion) *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+@media (forced-colors: active) {
+  *:focus-visible { outline: 3px solid Highlight; }
+  [data-focusable] { forced-color-adjust: auto; }
+}
 
 /* Steam Deck (Game mode): touchscreen + controller — never show a mouse cursor, and make
    controller focus obvious. The focused tile pops + gets a bright ring (VacuumTube /
