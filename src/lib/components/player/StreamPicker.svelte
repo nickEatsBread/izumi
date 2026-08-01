@@ -197,11 +197,9 @@
   // Backdrop for the resolve screen.
   const backdrop = $derived(pick ? (banner(pick.media) || cover(pick.media)) : '')
   let chosenLabel = $state('')
-  /** Abandon the pick and return to the list — the same contract as the debrid screen's Cancel. */
+  /** Cancel in automatic mode is a real dismissal, not a route back into the same auto picker. */
   function cancelChoice() {
-    cancelResolve()
-    busy = false
-    error = ''
+    close()
   }
   let busy = $state(false)
   let error = $state('')
@@ -336,9 +334,16 @@
     copiedKey = k
     setTimeout(() => { if (copiedKey === k) copiedKey = null }, 1200)
   }
-  // Close = abort the in-flight source resolve too, so its stuck 'resolving' state doesn't block
-  // the next episode click while the orphaned fetches finish in the background.
-  function close() { if (!busy) { cancelResolve(); streamPicker.set(null) } }
+  // Dismissal is always authoritative, including while automatic selection is resolving. Leaving
+  // the picker mounted here caused its automatic effect to start again immediately after Cancel.
+  function close() {
+    cancelAuto()
+    cancelResolve()
+    connecting.set(null)
+    busy = false
+    error = ''
+    streamPicker.set(null)
+  }
 
   const badgeClass = (b: string) =>
     /^(?:4K|1440p|1080p|720p|480p|360p|240p|SD)$/.test(b) ? 'bg-lime-500/15 text-lime-300'
@@ -400,7 +405,7 @@
               {#if resolving}<span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
-          <button data-focusable onclick={close} disabled={busy} class="grid size-10 shrink-0 place-items-center rounded-lg bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white disabled:opacity-40 sm:size-8" aria-label="Close">✕</button>
+          <button data-focusable onclick={close} class="grid size-10 shrink-0 place-items-center rounded-lg bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white sm:size-8" aria-label="Close">✕</button>
         </div>
       </div>
 
@@ -633,13 +638,20 @@
   <!-- Only the source-LIST phase: once a stream is chosen, playStream owns the connecting screen
        app-wide (SourceConnecting), so rendering it here too would stack two of them. -->
   {#if autoImmediate && resolving && !busy && !$connecting && !$debridCaching && !playbackError}
-    <div class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black" transition:fade={{ duration: $gameMode ? 0 : 160 }}>
+    <div
+      class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
+      onclick={close}
+      onkeydown={(e) => e.key === 'Escape' && close()}
+      role="presentation"
+      transition:fade={{ duration: $gameMode ? 0 : 160 }}
+    >
       {#if backdrop}
         <!-- Desktop blurs this static image; Game mode removes the filter via loading-backdrop so
              the loader cannot trigger a full-screen filtered repaint on every frame. -->
         <img src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
       {/if}
-      <div class="relative">
+      <button data-focusable onclick={(e) => { e.stopPropagation(); close() }} class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white" aria-label="Close">✕</button>
+      <div class="relative" onclick={(e) => e.stopPropagation()} role="presentation">
         <SourceLoader
           title={pick ? title(pick.media) : ''}
           caption={directP2p ? 'Preparing download' : 'Connecting'}
