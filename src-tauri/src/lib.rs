@@ -19,6 +19,8 @@ mod watch_room;
 mod player;
 #[cfg(not(target_os = "android"))]
 mod subsync;
+#[cfg(not(target_os = "android"))]
+mod desktop_presence;
 // Steam Deck on-screen keyboard via Steamworks (Linux/Game mode); no-op elsewhere.
 #[cfg(target_os = "linux")]
 mod steam_osk;
@@ -3074,10 +3076,20 @@ pub fn run() {
     // `gdk_seat_get_keyboard` assertion — and no visible window; the session even tore down).
     // So the app stays an XWayland X11 client (visible), and the controls-over-video overlay
     // is solved a different way (self-composite), not by routing through gamescope's compositor.
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+    let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_extplayer::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
@@ -3092,6 +3104,11 @@ pub fn run() {
     #[cfg(not(target_os = "android"))]
     let builder = builder.manage(jvm_extensions::Runtime::default());
     let builder = builder.setup(|app| {
+            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                app.deep_link().register_all()?;
+            }
             // Restore iroh only for devices that already opted into a sync group. Fresh
             // installs remain fully offline until the user enables Device Sync explicitly.
             let sync_app = app.handle().clone();
@@ -3493,6 +3510,7 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(player::PlayerHandle::new())
+        .manage(desktop_presence::DesktopPresence::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             player_play,
@@ -3557,6 +3575,8 @@ pub fn run() {
             player_diag,
             mpv_version,
             player_command,
+            desktop_presence::desktop_presence_update,
+            desktop_presence::desktop_presence_clear,
             player_add_subtitle,
             player_attach_subtitle_url,
             subsync::sync_subtitle,

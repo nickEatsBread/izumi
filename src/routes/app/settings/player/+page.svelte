@@ -4,7 +4,7 @@
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, androidAutoPip,
-    audioProcessing, windowsVsr,
+    audioProcessing, windowsVsr, systemMediaControls, discordRichPresence,
   } from '$lib/settings/ui'
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -163,6 +163,10 @@
   {:else}
   <div class="max-w-2xl space-y-3">
     <Toggle label="Auto-play next episode" desc="Play the next episode automatically when one finishes." value={$autoplayNext} onToggle={() => ($autoplayNext = !$autoplayNext)} />
+    {#if !$isAndroid}
+      <Toggle label="System media controls" desc="Show playback metadata and Play, Pause, Previous, Next, and seek actions in Windows SMTC or Linux MPRIS controls." value={$systemMediaControls} onToggle={() => ($systemMediaControls = !$systemMediaControls)} />
+      <Toggle label="Discord Rich Presence" desc="Share the current series and episode with Discord. Off by default; adult titles are never shared. Requires an Izumi build configured with a Discord application ID." value={$discordRichPresence} onToggle={() => ($discordRichPresence = !$discordRichPresence)} />
+    {/if}
     <Toggle label="Keep screen awake while playing" desc="Stop the screen dimming or sleeping during playback (fixes the Steam Deck screen turning off mid-episode). Releases when paused, so battery-saver still works when you're not watching." value={$keepAwakeWhilePlaying} onToggle={() => ($keepAwakeWhilePlaying = !$keepAwakeWhilePlaying)} />
     <Toggle label="Binge next episode (preload)" desc="Keep the same release across episodes and pre-resolve + warm-buffer the next one near the end, so Next / auto-play starts instantly." value={$bingePreload} onToggle={() => ($bingePreload = !$bingePreload)} />
     <Toggle label="Auto-skip openings & endings" desc="Skip OP/ED/recap segments automatically (AniSkip). Off shows a manual Skip button." value={$autoSkip} onToggle={() => ($autoSkip = !$autoSkip)} />

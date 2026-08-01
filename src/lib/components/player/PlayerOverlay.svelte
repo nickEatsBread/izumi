@@ -11,7 +11,7 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart } from '$lib/player/session'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import {
     DIRECT_TORRENT_START_TIMEOUT_MS,
@@ -24,7 +24,7 @@
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     subtitleAutoSync, gifIncludeSubtitles,
-    hotkeyBindings,
+    hotkeyBindings, systemMediaControls, discordRichPresence,
   } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
@@ -48,6 +48,7 @@
   // top. No separate window. Playback events come from the Rust mpv event loop
   // (broadcast to this webview); the title/ids come from the `nowPlaying` store.
   const np = $derived($nowPlaying)
+  type NativeMediaAction = { action: string; value?: number }
 
   let pos = $state(0)
   let dur = $state(0)
@@ -273,7 +274,31 @@
     spriteKey.set(null)
     bingeSource.set(null)
     invoke('close_player').catch(() => {})
+    invoke('desktop_presence_clear').catch(() => {})
   }
+
+  // Coalesce progress ticks before crossing the native boundary. MPRIS/SMTC receives current
+  // position while the Discord backend independently de-duplicates series/episode updates.
+  $effect(() => {
+    const media = $nowPlayingMedia?.media
+    const timer = setTimeout(() => {
+      invoke('desktop_presence_update', {
+        update: {
+          title: np.title,
+          series: np.animeTitle,
+          episode: np.episode,
+          duration: dur,
+          position: pos,
+          paused,
+          coverUrl: media?.coverImage?.extraLarge ?? media?.coverImage?.medium ?? null,
+          systemControls: $systemMediaControls,
+          discord: $discordRichPresence,
+          private: !!media?.isAdult,
+        },
+      }).catch(() => {})
+    }, 300)
+    return () => clearTimeout(timer)
+  })
 
   async function loadMeta() {
     metaLoaded = true
@@ -652,6 +677,17 @@
       listen<boolean>('player-core-idle', (e) => (coreIdle = e.payload)),
       listen<boolean>('player-seeking', (e) => (seeking = e.payload)),
       listen<boolean>('player-eof', (e) => (eof = e.payload)),
+      listen<NativeMediaAction>('native-media-control', (e) => {
+        const value = Number(e.payload.value ?? 0)
+        if (e.payload.action === 'play') cmd('set', ['pause', 'no'])
+        else if (e.payload.action === 'pause') cmd('set', ['pause', 'yes'])
+        else if (e.payload.action === 'toggle') cmd('cycle', ['pause'])
+        else if (e.payload.action === 'next') playNext(undefined, !paused)
+        else if (e.payload.action === 'previous') playPrev(undefined, !paused)
+        else if (e.payload.action === 'stop') void close()
+        else if (e.payload.action === 'seekBy') cmd('seek', [String(value), 'relative+exact'])
+        else if (e.payload.action === 'setPosition') cmd('seek', [String(value), 'absolute+exact'])
+      }),
     ]
     // Safety net: end any active scrub on a window-level pointer release. If a seekbar drag
     // runs off the element/screen edge, its own pointerup can be missed — leaving the scrub

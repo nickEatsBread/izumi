@@ -38,6 +38,7 @@
   import { initAutoDownloads } from '$lib/downloads/rules'
   import { initWatchTogether } from '$lib/watch-together/client'
   import { initAiringNotifications } from '$lib/notifications/airing'
+  import { initDeepLinks } from '$lib/deep-links'
   import { startUpdateChecks } from '$lib/updater'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
@@ -77,6 +78,8 @@
     const stopAutoDownloads = initAutoDownloads()
     const stopWatchTogether = initWatchTogether()
     const stopAiringNotifications = initAiringNotifications()
+    let stopDeepLinks: () => void = () => {}
+    initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
     // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
     // (persisted to idb after), so a fresh install's FIRST play doesn't eat it on the
     // click-to-play path. Fire-and-forget; getIndex is cached/idempotent.
@@ -104,7 +107,7 @@
     // connected. Fire-and-forget.
     refreshAniListAvatar().catch(() => {})
     refreshMalViewer().catch(() => {})
-    return () => { stopUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications() }
+    return () => { stopUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopDeepLinks() }
   })
 
   // Push the DNS-over-HTTPS setting into the Rust HTTP client. Reactive: runs on
