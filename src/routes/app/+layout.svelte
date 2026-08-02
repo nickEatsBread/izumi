@@ -38,7 +38,7 @@
   import { initAutoDownloads } from '$lib/downloads/rules'
   import { initWatchTogether } from '$lib/watch-together/client'
   import { initAiringNotifications } from '$lib/notifications/airing'
-  import { initDeepLinks } from '$lib/deep-links'
+  import { deepLinkNotice, initDeepLinks } from '$lib/deep-links'
   import { startUpdateChecks } from '$lib/updater'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
@@ -225,6 +225,13 @@
   <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
     <span class="truncate">{$watchToast.text}</span>
     <button data-focusable onclick={() => $watchToast?.undo()} class="shrink-0 font-bold text-theme">Undo</button>
+  </div>
+{/if}
+<!-- Why a link from outside the app landed where it did — including links we couldn't read, which
+     would otherwise look like the app ignoring the click. -->
+{#if $deepLinkNotice}
+  <div role="status" class="fixed inset-x-0 bottom-20 z-[60] mx-auto w-fit max-w-[92vw] truncate rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
+    {$deepLinkNotice}
   </div>
 {/if}
 <!-- Cross-platform update toast (available → downloading → ready); opt-in to apply. -->
