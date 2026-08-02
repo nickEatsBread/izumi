@@ -143,7 +143,9 @@
               {/await}
             {/if}
           {/await}
-          <button data-focusable onclick={() => toggle(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
+          <!-- `data-switch`: fixed-geometry pill — the large-target a11y mode grows its pointer
+               target, not its box, so the slider never squares off into a circle (app.css). -->
+          <button data-focusable data-switch onclick={() => toggle(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
             class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
             <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
           </button>

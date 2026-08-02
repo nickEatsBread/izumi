@@ -140,7 +140,7 @@ fn subtitle_title(video: &TorrentFile, subtitle: &TorrentFile) -> String {
     }
 }
 
-fn mbps_to_bps(value: f64) -> Option<NonZeroU32> {
+pub(crate) fn mbps_to_bps(value: f64) -> Option<NonZeroU32> {
     if !value.is_finite() || value <= 0.0 {
         return None;
     }
@@ -150,7 +150,7 @@ fn mbps_to_bps(value: f64) -> Option<NonZeroU32> {
     NonZeroU32::new(bytes_per_second)
 }
 
-fn upload_limit(upstream_capacity_mbps: Option<f64>) -> NonZeroU32 {
+pub(crate) fn upload_limit(upstream_capacity_mbps: Option<f64>) -> NonZeroU32 {
     mbps_to_bps(
         upstream_capacity_mbps
             .filter(|value| value.is_finite() && *value > 0.0)
@@ -187,7 +187,7 @@ fn selected_file_downloaded_bytes(
         .min(selected_size)
 }
 
-fn normalized_socks_proxy(value: Option<String>) -> Result<Option<String>, String> {
+pub(crate) fn normalized_socks_proxy(value: Option<String>) -> Result<Option<String>, String> {
     let Some(value) = value
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -214,7 +214,7 @@ fn normalized_socks_proxy(value: Option<String>) -> Result<Option<String>, Strin
 /// SOCKS5 in librqbit covers HTTP(S) trackers and peer TCP, but not UDP. Remove UDP trackers from
 /// proxy-mode magnets; DHT is disabled at the session level for the same reason. This turns the
 /// setting into a kill switch rather than quietly leaking discovery traffic outside the proxy.
-fn proxy_safe_magnet(magnet: &str, proxy_enabled: bool) -> Result<String, String> {
+pub(crate) fn proxy_safe_magnet(magnet: &str, proxy_enabled: bool) -> Result<String, String> {
     if !proxy_enabled {
         return Ok(magnet.to_string());
     }

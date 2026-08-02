@@ -120,7 +120,22 @@ body { overflow-x: clip; }
 
 /* WCAG 2.2 user preferences. Large targets are opt-in because forcing 44px on every compact row
    changes information density; coarse-pointer devices already get touch-sized controls. */
-.a11y-large-targets [data-focusable] { min-width: 44px; min-height: 44px; }
+.a11y-large-targets [data-focusable]:not([data-switch]) { min-width: 44px; min-height: 44px; }
+/* Switch tracks are fixed-geometry pills (a 36 x 20 track with a round knob inside). A box
+   minimum on BOTH axes squares them into a 44 x 44 `rounded-full` box — the slider becomes a
+   solid accent-coloured circle. They opt out with `data-switch` and get the same target as a
+   centred, invisible ::after overlay instead: WCAG 2.5.8 measures the POINTER TARGET, not the
+   painted control, and generated content hit-tests as part of its originating element. */
+.a11y-large-targets [data-focusable][data-switch] { position: relative; }
+.a11y-large-targets [data-focusable][data-switch]::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
 .a11y-high-contrast {
   --muted-foreground: 0 0% 82%;
   --border: 0 0% 48%;

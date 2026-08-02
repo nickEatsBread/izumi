@@ -2,6 +2,7 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { resolveDownloadUrl } from '$lib/stremio/play'
+import { torrentEngineNetworkOptions } from '$lib/player/direct-torrent'
 import { downloadDir, downloadConcurrency } from '$lib/settings/ui'
 import { downloads, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem, type DownloadPreferences } from './state'
 import { getEpisodeMeta } from '$lib/anizip'
@@ -66,9 +67,23 @@ async function runJob(item: DownloadItem) {
   try {
     const dir = await ensureDir()
     const r = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences)
-    setItem(item.id, { url: r.url, filename: r.filename, infoHash: r.infoHash, provider: r.provider, quality: r.quality })
-    // Resolves when the file is fully written OR paused; progress/done come via events.
-    await invoke('download_start', { id: item.id, url: r.url, dir, filename: r.filename })
+    setItem(item.id, {
+      kind: r.kind, url: r.kind === 'http' ? r.url : undefined,
+      filename: r.filename, infoHash: r.infoHash, provider: r.provider, quality: r.quality,
+    })
+    // Both resolve when the file is fully written OR paused; progress/done come via events.
+    // A torrent pick goes to the local P2P engine — the same one playback uses under Direct P2P —
+    // so downloading works with no debrid credential at all.
+    if (r.kind === 'torrent') {
+      await invoke('torrent_download_start', {
+        id: item.id, magnet: r.magnet, dir, filename: r.filename,
+        preferredFilename: r.preferredFilename,
+        episode: r.episode, absoluteEpisode: r.absoluteEpisode, season: r.season,
+        ...torrentEngineNetworkOptions(),
+      })
+    } else {
+      await invoke('download_start', { id: item.id, url: r.url, dir, filename: r.filename })
+    }
   } catch (e) {
     if (get(downloads)[item.id]?.status === 'paused') return // benign — user paused it
     setItem(item.id, { status: 'error', error: e instanceof Error ? e.message : String(e) })
@@ -77,15 +92,24 @@ async function runJob(item: DownloadItem) {
   }
 }
 
+/** Stop an in-flight job through the engine that owns it. `discard` throws the partial data away
+ *  (cancel); otherwise it is kept so a later resume continues from it (pause). */
+async function stopJob(id: string, it: DownloadItem | undefined, discard: boolean) {
+  if (it?.kind === 'torrent') {
+    await invoke('torrent_download_cancel', { id, deleteFiles: discard, dir: get(downloadDir) })
+    return
+  }
+  await invoke('download_cancel', { id, deletePart: discard, dir: get(downloadDir), filename: filenameOf(it) })
+}
+
 export async function pauseDownload(id: string) {
   const it = get(downloads)[id]; if (!it) return
-  await invoke('download_cancel', { id, deletePart: false, dir: get(downloadDir), filename: filenameOf(it) })
+  await stopJob(id, it, false)
   setItem(id, { status: 'paused' }); setSpeed(id, undefined)
 }
 export function resumeDownload(id: string) { setItem(id, { status: 'queued' }); pump() }
 export async function cancelDownload(id: string) {
-  const it = get(downloads)[id]
-  await invoke('download_cancel', { id, deletePart: true, dir: get(downloadDir), filename: filenameOf(it) })
+  await stopJob(id, get(downloads)[id], true)
   removeItem(id); setSpeed(id, undefined)
 }
 export async function deleteDownload(id: string) {

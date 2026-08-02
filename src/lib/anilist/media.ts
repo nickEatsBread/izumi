@@ -25,8 +25,17 @@ const FORMATS: Record<string, string> = {
 }
 export const format = (m: Media) => (m.format ? FORMATS[m.format] ?? m.format : '')
 
+// AniList formats that only ever belong to a reading title. They stand in for `type` on the
+// trimmed projections that don't ask for it (the player's related-title strip is one), where an
+// unrecognised manga would otherwise be sent to the anime route and come back "Not Found".
+const READING_FORMATS = new Set(['MANGA', 'NOVEL', 'ONE_SHOT'])
+/** Whether this is a manga/light novel rather than something playable. A declared `type` always
+ *  wins; the format is only consulted when the record didn't carry one. */
+export const isReadingMedia = (m: Media) =>
+  m.type ? m.type === 'MANGA' : READING_FORMATS.has(m.format ?? '')
+
 /** Reading media deliberately uses a separate information-only route. */
-export const mediaHref = (m: Media) => m.type === 'MANGA' ? `/app/manga/${m.id}` : `/app/anime/${m.id}`
+export const mediaHref = (m: Media) => isReadingMedia(m) ? `/app/manga/${m.id}` : `/app/anime/${m.id}`
 
 const STATUS: Record<string, string> = { RELEASING: 'Releasing', NOT_YET_RELEASED: 'Not Yet Released', FINISHED: 'Finished', CANCELLED: 'Cancelled', HIATUS: 'Hiatus' }
 export const status = (m: Media) => (m.status ? STATUS[m.status] ?? m.status : '')

@@ -40,7 +40,9 @@
     hasNext: boolean
     onPrev: () => void
     onNext: () => void
-    onRelated: (id: number) => void | Promise<void>
+    // Takes the whole node, not its id: a relation can be a manga or light novel, and only the
+    // node carries the type/format that decides which detail route it belongs on.
+    onRelated: (media: Media) => void | Promise<void>
   } = $props()
 
   let episodeMeta = $state<Record<number, EpMeta>>({})
@@ -367,7 +369,7 @@
         {#if relations.length}
           <div class="grid grid-cols-2 gap-3 min-[480px]:grid-cols-3">
             {#each relations as relation (relation.node.id)}
-              <button onclick={() => onRelated(relation.node.id)} class="min-w-0 text-left active:scale-[0.98]">
+              <button onclick={() => onRelated(relation.node)} class="min-w-0 text-left active:scale-[0.98]">
                 <img src={cover(relation.node)} alt="" loading="lazy" class="aspect-[2/3] w-full rounded-lg bg-white/[0.05] object-cover" />
                 <span class="mt-1 block line-clamp-2 text-xs font-bold leading-tight">{mediaTitle(relation.node)}</span>
                 <span class="mt-0.5 block truncate text-[0.65rem] capitalize text-white/40">{relation.relationType.replaceAll('_', ' ').toLowerCase()}</span>

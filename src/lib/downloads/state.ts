@@ -21,6 +21,9 @@ export interface DownloadItem {
   filename?: string
   path?: string
   url?: string
+  /** Which engine is fetching this item. Absent on items queued by older builds, which were all
+   *  HTTP (debrid) downloads — pause/cancel must keep routing those to the HTTP job. */
+  kind?: 'http' | 'torrent'
   infoHash?: string
   provider?: string
   quality?: string

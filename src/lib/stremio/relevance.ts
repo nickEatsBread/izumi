@@ -25,12 +25,64 @@ const RELEASE_JUNK = /^(?:\d{3,4}p|4k|uhd|x26[45]|h26[45]|hevc|avc|av1|xvid|10bi
 // {subsplease,stone,s04e25} → only 1/3 title match → wrongly dropped).
 const SCENE_CODE = /^(?:s\d{1,2}e\d{1,3}|e\d{1,3}|\d{1,3}x\d{1,3})$/i
 
+// An episode/season marker: S01E01, 1x01, "- 067" (absolute), "Episode/EP 3". Zero-padding + a
+// leading [Group] tag are fine. NOT resolutions (1x → season ≤ 99; a bare NNNN is skipped).
+// Declared up here because releaseTitleTokens cuts a release name at it as well.
+const EPISODE_MARKER = /\bS\d{1,2}E\d{1,3}\b|\b\d{1,2}x\d{1,3}\b|\s[-–]\s?\d{1,4}(?:v\d)?(?:\b|_)|\bepisode\s?\d+\b|\bep\s?\d{1,3}\b/i
+
+// Metadata words that can sit INSIDE a release's title run, before any episode marker or bracket.
+// Only the creditless-extra family: "Dr. Stone NCOP 2" has to stay title-relevant so refineStreams
+// reports it as an opening rather than as a different show (an extra is never restored by the
+// empty-picker safety net, a title mismatch is).
+const HEAD_JUNK = /^(?:nc(?:op|ed|bd)\d*|creditless|textless|preview|teaser|trailer|promo)$/i
+
+/** The release's OWN claimed title, as tokens: everything before its bracketed metadata (or a
+ *  bracketed alternate title), before the episode/season marker, and before the first
+ *  quality/codec/number token.
+ *
+ *  "[Erai-raws] One Piece - 1071 [1080p][Multiple Subtitle]" → [one, piece]
+ *  "[SubsPlease] One Piece Fan Letter - 01 (1080p)"          → [one, piece, fan, letter]
+ *
+ *  This is what anchors the title test. Counting tokens anywhere in the name only ever answered
+ *  "does this release mention the show", which every spin-off of a long-running series does. */
+export function releaseTitleTokens(name: string): string[] {
+  const bare = name.replace(/^\s*\[[^\]]*\]\s*/, '') // drop a leading [Group] tag
+  const head = bare.split(/[[({]/)[0] // bracketed metadata / alternate title is not the title
+  const end = head.search(EPISODE_MARKER)
+  const out: string[] = []
+  for (const t of titleTokens(end >= 0 ? head.slice(0, end) : head)) {
+    // First metadata token ends the title run: everything after it is release description
+    // ("One Piece 1071 1080p Multi Subs"), never more of the title.
+    if (RELEASE_JUNK.test(t) || HEAD_JUNK.test(t) || SCENE_CODE.test(t) || /^\d+$/.test(t)) break
+    out.push(t)
+  }
+  return out
+}
+
 // Does a release filename plausibly belong to THIS anime? Guards against cross-title
 // matches on a shared id. Keeps unknowns (never drop on uncertainty).
 export function relevant(stream: Stream, wanted: string[]): boolean {
   const name = nameOf(stream)
   const toks = new Set(titleTokens(name))
   if (!toks.size) return true
+  // ANCHOR. Both tests below measure how much of the REQUESTED title a release carries, and
+  // neither can see a release that carries ALL of it and then names something else: every
+  // long-running series has spin-offs whose titles START with the base title ("One Piece Fan
+  // Letter", "Detective Conan: The Culprit Hanzawa", "Dragon Ball Super: Super Hero"). Those
+  // scored a perfect 100% against the base title, survived, and — being modern, well-seeded
+  // releases against a decades-old episode 1 — won the auto-pick outright.
+  // So once the release's title starts, it must introduce no word the request has never heard of.
+  // Compared against the UNION of the requested titles, so a release naming both the romaji and the
+  // English title ("Kusuriya no Hitorigoto - The Apothecary Diaries - 01") is still anchored.
+  // Words BEFORE the title starts are skipped — some indexers prefix their own site name without
+  // bracketing it ("www.example.org - One Piece - 001"); it is what comes after the title that
+  // names a different production. A head with nothing recognisable in it at all (a CJK or Cyrillic
+  // release name, or an empty one) anchors vacuously — never drop on uncertainty, and the tests
+  // below still have to find evidence.
+  const known = new Set(wanted.flatMap((w) => titleTokens(w)))
+  const head = releaseTitleTokens(name)
+  const titleStart = head.findIndex((t) => known.has(t))
+  if (titleStart >= 0 && !head.slice(titleStart).every((t) => known.has(t))) return false
   // The release's OWN title words: its tokens minus quality/codec/hash junk, bare
   // numbers, the leading [Group] tag, and scene episode codes. A short-title release
   // ("[SubsPlease] Dr STONE S04E25 NF WEB-DL") must reduce to just {stone} — NOT
@@ -104,9 +156,8 @@ export function likelyOtherProduction(stream: Stream, animeYear?: number, absolu
   return years.some((y) => y < animeYear - 1 || y > animeYear + 1)
 }
 
-// An episode/season marker: S01E01, 1x01, "- 067" (absolute), "Episode/EP 3". Zero-padding + a
-// leading [Group] tag are fine. NOT resolutions (1x → season ≤ 99; a bare NNNN is skipped).
-const EPISODE_MARKER = /\bS\d{1,2}E\d{1,3}\b|\b\d{1,2}x\d{1,3}\b|\s[-–]\s?\d{1,4}(?:v\d)?(?:\b|_)|\bepisode\s?\d+\b|\bep\s?\d{1,3}\b/i
+// EPISODE_MARKER (the S01E01 / "- 067" / "EP 3" shapes) is declared at the top of this file,
+// because releaseTitleTokens cuts a release name at it too.
 // A season/complete/range PACK marker — one definition, shared with the picker's "Batch" pill.
 // They were separate regexes with different ideas of what a pack looks like, so a release could
 // be treated as a pack by one and a single episode by the other.

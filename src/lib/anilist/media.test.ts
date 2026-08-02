@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { title, banner, format, mediaHref, ratingBg, airedCount, totalEpisodes, resumeEp, hasAiredEpisodeToWatch } from './media'
+import { title, banner, format, mediaHref, isReadingMedia, ratingBg, airedCount, totalEpisodes, resumeEp, hasAiredEpisodeToWatch } from './media'
 
 describe('media helpers', () => {
   it('title prefers userPreferred, falls back to TBA', () => {
@@ -21,6 +21,22 @@ describe('media helpers', () => {
     expect(mediaHref({ id: 1, type: 'ANIME', title: {} })).toBe('/app/anime/1')
     expect(mediaHref({ id: 2, type: 'MANGA', format: 'MANGA', title: {} })).toBe('/app/manga/2')
     expect(mediaHref({ id: 3, type: 'MANGA', format: 'NOVEL', title: {} })).toBe('/app/manga/3')
+  })
+  it('recognises reading media from its format when a trimmed projection omits `type`', () => {
+    // Related-title nodes reach the player through a slim query that has historically not asked for
+    // `type`. Sending such a node to the anime route asks AniList for `Media(id, type: ANIME)`, which
+    // answers "Not Found" — the detail page then renders a bare load failure instead of the title.
+    expect(mediaHref({ id: 4, format: 'MANGA', title: {} })).toBe('/app/manga/4')
+    expect(mediaHref({ id: 5, format: 'NOVEL', title: {} })).toBe('/app/manga/5')
+    expect(mediaHref({ id: 6, format: 'ONE_SHOT', title: {} })).toBe('/app/manga/6')
+    expect(isReadingMedia({ id: 7, format: 'MANGA', title: {} })).toBe(true)
+  })
+  it('never re-routes a declared anime, whatever its format says', () => {
+    expect(mediaHref({ id: 8, type: 'ANIME', format: 'TV', title: {} })).toBe('/app/anime/8')
+    expect(mediaHref({ id: 9, type: 'ANIME', format: 'MANGA', title: {} })).toBe('/app/anime/9')
+    expect(mediaHref({ id: 10, format: 'OVA', title: {} })).toBe('/app/anime/10')
+    expect(mediaHref({ id: 11, title: {} })).toBe('/app/anime/11')
+    expect(isReadingMedia({ id: 12, format: 'TV', title: {} })).toBe(false)
   })
   it('ratingBg buckets by score', () => {
     expect(ratingBg(80)).toContain('green'); expect(ratingBg(70)).toContain('orange'); expect(ratingBg(50)).toContain('red')

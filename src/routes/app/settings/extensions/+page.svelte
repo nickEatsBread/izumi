@@ -348,7 +348,9 @@
             <!-- No source-level switch for a catalog: nothing of it runs, so it would toggle
                  nothing. Its packages carry their own switches inside. -->
             {#if !pkgs}
-              <button data-focusable onclick={() => toggleExt(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
+              <!-- `data-switch`: fixed-geometry pill — the large-target a11y mode grows its pointer
+                   target, not its box, so the slider never squares off into a circle (app.css). -->
+              <button data-focusable data-switch onclick={() => toggleExt(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
                 class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                 <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
               </button>
@@ -424,7 +426,7 @@
                           <p class="truncate text-[0.65rem] text-muted-foreground">{(p.sources ?? []).map((source) => source.name).join(' · ') || p.id}</p>
                         </div>
                         {#if inst}
-                          <button data-focusable onclick={() => togglePlugin(p.id)} aria-pressed={!pOff}
+                          <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff}
                             title={pOff ? 'Enable' : 'Disable'}
                             class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                             <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
@@ -469,7 +471,7 @@
                         {/if}
                         <span class="min-w-0 flex-1 truncate text-sm">{p.name}</span>
                         {#if p.lang}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}
-                        <button data-focusable onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
+                        <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
                           class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                           <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
                         </button>

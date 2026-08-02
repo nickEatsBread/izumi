@@ -11,11 +11,12 @@
   import type { EpMeta } from '$lib/anizip/types'
   import {
     episodeLayout, hideSpoilers, downloadQuality, downloadAudio, downloadCodec, downloadCachedOnly,
+    absoluteEpisodeNumbers,
   } from '$lib/settings/ui'
   import { localHistory, sessionProgress, manualProgressOverrides, setLocalProgress } from '$lib/player/history'
   import { updateProgress } from '$lib/trackers'
   import { anilistToken, malToken } from '$lib/trackers/config'
-  import { episodeLabels } from '$lib/anilist/episode-labels'
+  import { episodeLabels, episodeNumberLabel } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
   import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
   import { isMobile } from '$lib/platform'
@@ -104,7 +105,6 @@
   // Oldest/Newest toggle: reorders the current page's episodes for display. Pagination itself
   // still pages ascending (startIdx/PER above are unchanged) — see the note near the toggle.
   let sortDir = $state<SortDir>('asc')
-  let numberMode = $state<'series' | 'absolute'>('series')
   const rows = $derived(orderEpisodes(eps, sortDir))
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
 
@@ -140,10 +140,10 @@
   let playState = $state<PlayState>({ status: 'idle' })
   const resolving = $derived(playState.status === 'resolving')
   function play(ep: number) { if (!resolving) playEpisode(media, ep, (s) => (playState = s)) }
-  const absoluteAvailable = $derived(Object.entries(meta).some(([episode, value]) =>
-    value.abs != null && value.abs !== Number(episode)))
-  const numberLabel = (episode: number) =>
-    numberMode === 'absolute' && meta[episode]?.abs != null ? `A${meta[episode].abs}` : String(episode)
+  // Series-wide numbering is a Settings → Interface preference, not a control on this page. The
+  // per-episode `abs` mapping is still loaded and still available to everything that needs it —
+  // this only decides which number the badge prints.
+  const numberLabel = (episode: number) => episodeNumberLabel(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
 
   let progressTarget = $state(0)
   let progressStatus = $state('')
@@ -267,14 +267,6 @@
                     class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
             <button data-focusable onclick={() => toggleSort('desc')}
                     class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
-          </div>
-        {/if}
-        {#if absoluteAvailable}
-          <div class="flex w-full rounded-xl bg-secondary p-1 text-sm font-bold sm:w-auto sm:rounded-lg sm:p-0.5">
-            <button data-focusable onclick={() => (numberMode = 'series')}
-                    class="flex-1 rounded-lg px-3 py-2 sm:rounded-md sm:py-1 {numberMode === 'series' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Series #</button>
-            <button data-focusable onclick={() => (numberMode = 'absolute')}
-                    class="flex-1 rounded-lg px-3 py-2 sm:rounded-md sm:py-1 {numberMode === 'absolute' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Absolute #</button>
           </div>
         {/if}
         {#if !offline}

@@ -28,6 +28,19 @@ describe('fetchMediaById', () => {
     expect((query.match(/\{/g) ?? []).length).toBe((query.match(/\}/g) ?? []).length)
   })
 
+  it('asks for the media type of every relation so reading titles can be told apart', () => {
+    // Without it, a manga/light-novel relation is indistinguishable from an anime one and gets sent
+    // to the anime detail route, where AniList answers `Not Found` for the id.
+    httpFetch.mockResolvedValue({ json: async () => ({ data: { Media: { id: 1, title: {} } } }) })
+    return fetchMediaById(1).then(() => {
+      const query = (JSON.parse(httpFetch.mock.calls[0][1].body) as { query: string }).query.replace(/\s+/g, ' ')
+      const marker = 'relations{edges{relationType node{'
+      const node = query.slice(query.indexOf(marker) + marker.length)
+      expect(node).toContain('type')
+      expect(node).toContain('format')
+    })
+  })
+
   it('can bypass the session cache for automatic airing checks', async () => {
     const id = 987655
     const first = { id, title: { userPreferred: 'First' } }

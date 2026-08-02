@@ -15,6 +15,7 @@ import {
   subDlApiKey,
   jimakuApiKey,
   enabledSubtitleProviders,
+  absoluteEpisodeNumbers,
 } from './ui'
 
 describe('source autoplay defaults', () => {
@@ -34,6 +35,12 @@ describe('source picker defaults', () => {
 describe('android playback defaults', () => {
   it('shrinks into the miniplayer when leaving the app, like every other mobile video app', () => {
     expect(get(androidAutoPip)).toBe(true)
+  })
+})
+
+describe('episode list defaults', () => {
+  it('keeps series-wide episode numbering out of the way until it is asked for', () => {
+    expect(get(absoluteEpisodeNumbers)).toBe(false)
   })
 })
 
