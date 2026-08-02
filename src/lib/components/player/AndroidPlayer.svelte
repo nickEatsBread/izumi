@@ -69,6 +69,8 @@
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
+  import { mediaHref } from '$lib/anilist/media'
+  import type { Media } from '$lib/anilist/types'
   import ChevronLeft from 'lucide-svelte/icons/chevron-left'
   import ChevronRight from 'lucide-svelte/icons/chevron-right'
   import ChevronDown from 'lucide-svelte/icons/chevron-down'
@@ -994,9 +996,12 @@
     if (orientationForced) await setPlayerFullscreen(false).catch(() => {})
     androidMpvActive.set(false)
   }
-  async function openRelated(id: number) {
+  // Related titles are not all playable — a series' source manga or light novel is a relation like
+  // any other — so the destination comes from the node itself. Hardcoding the anime route sent
+  // every reading title to a query for `Media(id, type: ANIME)`, which AniList answers "Not Found".
+  async function openRelated(media: Media) {
     await close()
-    await goto(`/app/anime/${id}`)
+    await goto(mediaHref(media))
   }
 
   let viewportGeneration = 0

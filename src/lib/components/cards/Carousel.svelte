@@ -9,8 +9,8 @@
   // Game mode (Deck): controller/touch scrolls the row directly, so the mouse-only
   // page arrows are hidden.
   const gm = $derived($gameMode)
-  // Mobile: touch drag-scrolls the row (no arrows), and there's no hover to reveal the
-  // "View more" link, so keep it always visible there.
+  // Mobile: touch drag-scrolls the row (so the mouse-only page arrows are not rendered),
+  // and there's no hover to reveal the "View more" link, so keep it always visible there.
   const mob = $derived($isMobile)
   // `viewMoreHref` (optional): renders a "View more" link by the title.
   let { title, viewMoreHref, children }: { title: string; viewMoreHref?: string; children: Snippet } = $props()
@@ -76,14 +76,18 @@
     <!-- Edge arrows: appear on hover, only when there's more to scroll that way.
          z-[60] sits ABOVE the card hover-preview (z-50) so the preview can't intercept
          the click; entering an arrow dismisses any open preview so it doesn't pop the
-         card underneath. -->
-    {#if canLeft && !gm}
+         card underneath.
+         Mouse-only, hence `!mob`: a touch WebView latches :hover on the last-tapped
+         subtree, so on a phone `group-hover/carousel:opacity-100` stayed on after tapping
+         a card — and z-[60] then painted the arrows over the source picker (z-40) that the
+         same tap opened. Touch drag-scrolls the row, so there is nothing to render. -->
+    {#if canLeft && !gm && !mob}
       <button aria-label="Scroll left" onclick={() => page(-1)} onpointerenter={dismissPreview}
               class="absolute left-2 top-[45%] z-[60] grid size-9 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-black/70 text-white opacity-0 shadow-lg backdrop-blur transition hover:bg-black/90 group-hover/carousel:opacity-100">
         <ChevronLeft size={20} />
       </button>
     {/if}
-    {#if canRight && !gm}
+    {#if canRight && !gm && !mob}
       <button aria-label="Scroll right" onclick={() => page(1)} onpointerenter={dismissPreview}
               class="absolute right-2 top-[45%] z-[60] grid size-9 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-black/70 text-white opacity-0 shadow-lg backdrop-blur transition hover:bg-black/90 group-hover/carousel:opacity-100">
         <ChevronRight size={20} />

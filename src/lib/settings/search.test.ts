@@ -34,6 +34,11 @@ describe('settings search', () => {
     expect(searchSettings('continue seeding', true)[0]?.title).toBe('Continue seeding after playback')
   })
 
+  it('finds the series-wide numbering toggle now that it left the series page', () => {
+    expect(searchSettings('absolute episode numbers')[0]?.title).toBe('Series-wide episode numbers')
+    expect(searchSettings('absolute')[0]?.category).toBe('Interface')
+  })
+
   it('uses the same stable keys as Toggle rows', () => {
     expect(settingKey('Auto-skip openings & endings')).toBe('auto-skip-openings-endings')
   })

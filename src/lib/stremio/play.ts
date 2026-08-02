@@ -59,8 +59,6 @@ import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
-  torrentDownloadLimitMbps, torrentUploadLimitMode, torrentUpstreamCapacityMbps,
-  torrentProxyEnabled, torrentProxyUrl,
 } from '$lib/settings/ui'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
@@ -81,10 +79,9 @@ import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents,
 import type { Media } from '$lib/anilist/types'
 import {
   activateDirectTorrentPlayback, currentDirectTorrentPlaybackId, directTorrentHealth,
-  reportDirectTorrentBuffer, stopDirectTorrentPlayback,
+  reportDirectTorrentBuffer, stopDirectTorrentPlayback, torrentEngineNetworkOptions,
 } from '$lib/player/direct-torrent'
 import { torrentioResolverInfoHash } from './resolver-url'
-import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
 
 export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
 
@@ -1471,11 +1468,7 @@ export async function playStream(
           episode: want?.episode,
           absoluteEpisode: want?.abs,
           season: want?.season,
-          downloadLimitMbps: Math.max(0, Number(get(torrentDownloadLimitMbps)) || 0),
-          upstreamCapacityMbps: get(torrentUploadLimitMode) === 'capacity'
-            ? Math.max(0.1, Number(get(torrentUpstreamCapacityMbps)) || 0.1)
-            : null,
-          socksProxyUrl: torrentProxyEndpoint(get(torrentProxyEnabled), get(torrentProxyUrl)),
+          ...torrentEngineNetworkOptions(),
         })
         directPlaybackId = playback.playbackId
         directTorrentSubtitles = playback.subtitles
@@ -2065,12 +2058,26 @@ export function playNext(onState: (s: PlayState) => void = noticeState, autoplay
   resolveAndPlayBest(currentMedia, ep + 1, onState, autoplay)
 }
 
-export interface ResolvedDownload { url: string; filename: string; quality?: string; provider?: string; infoHash?: string }
+interface ResolvedDownloadBase { filename: string; quality?: string; provider?: string; infoHash?: string }
+/** A byte-addressable link (a plain addon url, or a debrid resolve) streamed to disk over HTTP. */
+export interface ResolvedHttpDownload extends ResolvedDownloadBase { kind: 'http'; url: string }
+/** A torrent fetched from peers by the local P2P engine. Carries the episode identity so the
+ *  native side can pick the right file out of a season pack, exactly as playback does. */
+export interface ResolvedTorrentDownload extends ResolvedDownloadBase {
+  kind: 'torrent'
+  magnet: string
+  preferredFilename?: string
+  episode?: number
+  absoluteEpisode?: number
+  season?: number
+}
+export type ResolvedDownload = ResolvedHttpDownload | ResolvedTorrentDownload
 
-// Resolve a single episode to a DIRECT downloadable url — no player, no mpv. Reuses
-// the same resolveStreams+pickBest path as playback; resolves an uncached/extension
-// pick through debrid when nothing is cached. Fetches the Media by id so it works
-// even for a persisted download resumed after an app restart.
+// Resolve a single episode to something downloadable — no player, no mpv. Reuses the same
+// resolveStreams+pickBest path as playback, and honours the SAME torrent-source preference:
+// a torrent-only pick goes to the local P2P engine under Direct P2P (or with no debrid
+// credential at all), and through debrid otherwise. Fetches the Media by id so it works even
+// for a persisted download resumed after an app restart.
 export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences): Promise<ResolvedDownload> {
   const media = await fetchMediaById(mediaId)
   const { streams, want } = await resolveStreams(media, episode)
@@ -2094,20 +2101,40 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   }
   const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(media.id)) ?? eligible[0]
   if (!best) throw new Error('No source found to download.')
-  let url = best.url
-  let prov: string | undefined
-  if (!url && best.infoHash) {
-    const p = get(debridProvider), key = get(debridKey)
-    if (!key) throw new Error(`Add a ${providerName(p)} key in Settings → Extensions.`)
-    url = await resolveHash(p, key, best.__magnet ?? best.infoHash, {
+  const info = describe(best)
+  // The saved name follows the release when it has one; otherwise the title/episode. The extension
+  // is only ever guessed for an HTTP link — a torrent's real one is known natively and applied there.
+  const named = (url?: string) => {
+    const ext = url?.split('?')[0].match(/\.(mkv|mp4|avi|mov|webm)$/i)?.[1]?.toLowerCase() ?? 'mkv'
+    const base = best.behaviorHints?.filename || `${title(media)} - E${episode}`
+    return /\.(?:mkv|mp4|avi|mov|webm)$/i.test(base) ? base : `${base}.${ext}`
+  }
+  const common = { quality: info.quality ? `${info.quality}p` : undefined, infoHash: best.infoHash }
+
+  if (best.url) {
+    return { kind: 'http', url: best.url, filename: named(best.url), provider: info.provider, ...common }
+  }
+  if (best.infoHash) {
+    // Same rule as playback (directP2pEnabled): Direct P2P, or no credential to resolve with.
+    if (directP2pEnabled()) {
+      return {
+        kind: 'torrent',
+        magnet: best.__magnet ?? `magnet:?xt=urn:btih:${best.infoHash}`,
+        filename: named(),
+        preferredFilename: best.behaviorHints?.filename,
+        episode,
+        absoluteEpisode: want?.abs,
+        season: want?.season,
+        provider: info.provider,
+        ...common,
+      }
+    }
+    const p = get(debridProvider)
+    const url = await resolveHash(p, get(debridKey), best.__magnet ?? best.infoHash, {
       want: { episode, abs: want?.abs, season: want?.season, filename: best.behaviorHints?.filename },
     })
-    prov = providerName(p)
+    if (!url) throw new Error(`${providerName(p)} returned no link for that source.`)
+    return { kind: 'http', url, filename: named(url), provider: providerName(p), ...common }
   }
-  if (!url) throw new Error('That source has no downloadable link.')
-  const info = describe(best)
-  const ext = url.split('?')[0].match(/\.(mkv|mp4|avi|mov|webm)$/i)?.[1]?.toLowerCase() ?? 'mkv'
-  const base = best.behaviorHints?.filename || `${title(media)} - E${episode}`
-  const filename = /\.(?:mkv|mp4|avi|mov|webm)$/i.test(base) ? base : `${base}.${ext}`
-  return { url, filename, quality: info.quality ? `${info.quality}p` : undefined, provider: prov ?? info.provider, infoHash: best.infoHash }
+  throw new Error('That source has no downloadable link.')
 }

@@ -1,7 +1,24 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
 import { isAndroid } from '$lib/platform'
-import { torrentAndroidPostSeed } from '$lib/settings/ui'
+import {
+  torrentAndroidPostSeed, torrentDownloadLimitMbps, torrentProxyEnabled, torrentProxyUrl,
+  torrentUploadLimitMode, torrentUpstreamCapacityMbps,
+} from '$lib/settings/ui'
+import { torrentProxyEndpoint } from './torrent-proxy'
+
+/** The network/limit snapshot every native torrent job takes. Single-sourced so streaming and
+ * offline downloads cannot drift — above all the proxy kill switch, which THROWS on a bad endpoint
+ * rather than quietly falling back to an unproxied connection. */
+export function torrentEngineNetworkOptions() {
+  return {
+    downloadLimitMbps: Math.max(0, Number(get(torrentDownloadLimitMbps)) || 0),
+    upstreamCapacityMbps: get(torrentUploadLimitMode) === 'capacity'
+      ? Math.max(0.1, Number(get(torrentUpstreamCapacityMbps)) || 0.1)
+      : null,
+    socksProxyUrl: torrentProxyEndpoint(get(torrentProxyEnabled), get(torrentProxyUrl)),
+  }
+}
 
 type AndroidDeviceStatus = { unmetered: boolean; charging: boolean }
 export type DirectTorrentHealth = {

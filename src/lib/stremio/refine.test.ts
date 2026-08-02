@@ -6,6 +6,7 @@ vi.mock('$lib/anilist/media', () => ({
 }))
 
 const { refineStreams } = await import('./refine')
+const { pickBest } = await import('./addon')
 
 const media = {
   title: { romaji: 'Dr. Stone', english: 'Dr. Stone' },
@@ -114,6 +115,119 @@ describe('refineStreams', () => {
     const pack = (n: number) => ({ infoHash: 'deadbeef', behaviorHints: { filename: `Dr Stone S01E${n} 1080p` } })
     const r = refineStreams(media, [pack(1), pack(2), pack(3)] as never)
     expect(r.kept).toHaveLength(1)
+  })
+
+  // Reported: "One Piece Episode 1 chooses One Piece Fan Letter or one of the other OVAs."
+  // Title-searching sources answer a query for a long-running series with its whole family of
+  // spin-offs, all of which carry the base title in full. Nothing downstream could tell them
+  // apart — the season verifier sees a matching episode 1, the ranker sees a modern well-seeded
+  // 1080p release against a 1999 one — so the spin-off won the auto-pick.
+  const onePiece = {
+    title: { romaji: 'One Piece', english: 'One Piece' },
+    format: 'TV',
+    episodes: 1122,
+    duration: 24,
+    startDate: { year: 1999 },
+  } as never
+
+  it('keeps only the main series for a long-running series episode 1', () => {
+    const r = refineStreams(onePiece, [
+      named('[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv', {
+        behaviorHints: { filename: '[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv', videoSize: 1_400_000_000 },
+      }),
+      named('[Erai-raws] One Piece - 001 [1080p][Multiple Subtitle][ENG][POR-BR].mkv', {
+        behaviorHints: { filename: '[Erai-raws] One Piece - 001 [1080p][Multiple Subtitle][ENG][POR-BR].mkv', videoSize: 1_100_000_000 },
+      }),
+      named('One Piece Episode of Luffy - 01 [1080p].mkv', {
+        behaviorHints: { filename: 'One Piece Episode of Luffy - 01 [1080p].mkv', videoSize: 1_300_000_000 },
+      }),
+    ] as never)
+
+    expect(r.kept.map((s) => s.behaviorHints?.filename)).toEqual([
+      '[Erai-raws] One Piece - 001 [1080p][Multiple Subtitle][ENG][POR-BR].mkv',
+    ])
+    expect(r.rejected.map((x) => x.reason)).toEqual(['title-mismatch', 'title-mismatch'])
+  })
+
+  it('the auto-pick lands on the main series, not the better-seeded spin-off', () => {
+    const rows = [
+      named('[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv', {
+        title: '[SubsPlease] One Piece Fan Letter - 01 (1080p)\n👤 4210 💾 1.40 GB',
+        behaviorHints: { filename: '[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv', videoSize: 1_400_000_000 },
+      }),
+      named('[Erai-raws] One Piece - 001 [480p].mkv', {
+        title: '[Erai-raws] One Piece - 001 [480p]\n👤 31 💾 0.35 GB',
+        behaviorHints: { filename: '[Erai-raws] One Piece - 001 [480p].mkv', videoSize: 350_000_000 },
+      }),
+    ] as never
+    // Unfiltered, the spin-off wins on resolution and seeders.
+    expect(pickBest(rows, 'any')?.behaviorHints?.filename)
+      .toBe('[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv')
+    // Through the title gate, only the requested series is auto-playable.
+    expect(pickBest(refineStreams(onePiece, rows).kept, 'any')?.behaviorHints?.filename)
+      .toBe('[Erai-raws] One Piece - 001 [480p].mkv')
+  })
+
+  it('keeps the spin-off when the spin-off IS what was requested', () => {
+    const fanLetter = {
+      title: { romaji: 'One Piece Fan Letter', english: 'One Piece Fan Letter' },
+      format: 'SPECIAL',
+      episodes: 1,
+      duration: 24,
+      startDate: { year: 2024 },
+    } as never
+    const r = refineStreams(fanLetter, [
+      named('[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv', {
+        behaviorHints: { filename: '[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv', videoSize: 1_400_000_000 },
+      }),
+    ] as never)
+    expect(r.kept).toHaveLength(1)
+    expect(r.rejected).toHaveLength(0)
+  })
+
+  it('keeps only the requested arc of a long-running detective series', () => {
+    const conan = {
+      title: { romaji: 'Meitantei Conan', english: 'Detective Conan' },
+      format: 'TV',
+      episodes: 1150,
+      duration: 24,
+      startDate: { year: 1996 },
+    } as never
+    const r = refineStreams(conan, [
+      named('[Group] Detective Conan The Culprit Hanzawa - 01 [1080p].mkv', {
+        behaviorHints: { filename: '[Group] Detective Conan The Culprit Hanzawa - 01 [1080p].mkv', videoSize: 1_400_000_000 },
+      }),
+      named('[Group] Meitantei Conan - 0001 [1080p].mkv', {
+        behaviorHints: { filename: '[Group] Meitantei Conan - 0001 [1080p].mkv', videoSize: 900_000_000 },
+      }),
+      named('Meitantei Conan Zero no Tea Time - 01 (1080p).mkv', {
+        behaviorHints: { filename: 'Meitantei Conan Zero no Tea Time - 01 (1080p).mkv', videoSize: 1_200_000_000 },
+      }),
+    ] as never)
+    expect(r.kept.map((s) => s.behaviorHints?.filename)).toEqual(['[Group] Meitantei Conan - 0001 [1080p].mkv'])
+  })
+
+  it('keeps only the requested entry of a long-running shounen franchise', () => {
+    const dbSuper = {
+      title: { romaji: 'Dragon Ball Super', english: 'Dragon Ball Super' },
+      format: 'TV',
+      episodes: 131,
+      duration: 24,
+      startDate: { year: 2015 },
+    } as never
+    const r = refineStreams(dbSuper, [
+      named('[Group] Dragon Ball Super Super Hero - 01 [1080p].mkv', {
+        behaviorHints: { filename: '[Group] Dragon Ball Super Super Hero - 01 [1080p].mkv', videoSize: 1_400_000_000 },
+      }),
+      named('[Group] Dragon Ball Super - 001 [1080p][Multiple Subtitle].mkv', {
+        behaviorHints: { filename: '[Group] Dragon Ball Super - 001 [1080p][Multiple Subtitle].mkv', videoSize: 1_000_000_000 },
+      }),
+      named('Dragon Ball Super Broly - 01 (BD 1080p).mkv', {
+        behaviorHints: { filename: 'Dragon Ball Super Broly - 01 (BD 1080p).mkv', videoSize: 3_000_000_000 },
+      }),
+    ] as never)
+    expect(r.kept.map((s) => s.behaviorHints?.filename))
+      .toEqual(['[Group] Dragon Ball Super - 001 [1080p][Multiple Subtitle].mkv'])
   })
 
   it('marks same-hash addon rows as a pack before applying the standalone-movie rule', () => {

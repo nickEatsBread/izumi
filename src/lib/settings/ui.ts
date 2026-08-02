@@ -193,6 +193,10 @@ export const saveLocalHistory = persisted<boolean>('save-local-history', true)
 // --- Interface ---
 /** Blur thumbnails/titles/ratings of UNWATCHED episodes on shows you're watching. */
 export const hideSpoilers = persisted<boolean>('hide-spoilers', false)
+/** Label episodes with the series-wide (absolute) number instead of the per-season one, where the
+ *  two differ. Display only — every other part of the app keeps using the per-season number. Off by
+ *  default: the numbering choice used to sit on the series page itself, where it was just clutter. */
+export const absoluteEpisodeNumbers = persisted<boolean>('absolute-episode-numbers', false)
 /** Let the mouse wheel scroll carousel rows horizontally (vertical wheel → sideways).
  *  Off by default: use the row's ‹ › arrow buttons instead. */
 export const wheelScrollAcross = persisted<boolean>('carousel-wheel-scroll', false)

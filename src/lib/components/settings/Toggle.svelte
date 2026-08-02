@@ -1,7 +1,9 @@
 <script lang="ts">
   // Shared settings toggle row (label + description + switch). The switch uses the
   // pink `theme` accent (the app's `--primary` is near-white, so a white knob on a
-  // primary track would be invisible).
+  // primary track would be invisible). `data-switch` marks the track as a fixed-geometry
+  // pill so the "Larger interaction targets" a11y mode grows its TARGET, not its box
+  // (a 44px floor on both axes would square the pill into a circle) — see app.css.
   import * as h from '$lib/haptics'
   import { settingKey as keyForSetting } from '$lib/settings/search'
   let { label, desc, value, onToggle }: {
@@ -24,7 +26,7 @@
     <div class="font-bold">{label}</div>
     <p class="mt-1 text-xs text-muted-foreground">{desc}</p>
   </div>
-  <span class="relative ml-4 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {value ? 'bg-theme' : 'bg-white/30 ring-1 ring-inset ring-white/20'}">
+  <span data-switch class="relative ml-4 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors {value ? 'bg-theme' : 'bg-white/30 ring-1 ring-inset ring-white/20'}">
     <span class="inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform {value ? 'translate-x-5' : 'translate-x-0.5'}"></span>
   </span>
 </button>

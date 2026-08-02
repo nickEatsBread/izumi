@@ -13,6 +13,7 @@ mod jvm_extensions;
 #[path = "jvm_extensions_android.rs"]
 mod jvm_extensions;
 mod sync;
+mod torrent_download;
 mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
@@ -3476,6 +3477,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(download::Downloads::default())
         .manage(direct_torrent::DirectTorrentState::default())
+        .manage(torrent_download::TorrentDownloads::default())
         .manage(sync::SyncState::default())
         .manage(watch_room::WatchRoomState::default())
         .manage(TacVerificationConfig::default())
@@ -3998,6 +4000,8 @@ pub fn run() {
             direct_torrent::torrent_playback_health,
             direct_torrent::torrent_playback_buffer,
             direct_torrent::torrent_playback_stop,
+            torrent_download::torrent_download_start,
+            torrent_download::torrent_download_cancel,
             sync::sync_status,
             sync::sync_relay_config,
             sync::sync_set_relay,
@@ -4053,6 +4057,8 @@ pub fn run() {
         direct_torrent::torrent_playback_health,
         direct_torrent::torrent_playback_buffer,
         direct_torrent::torrent_playback_stop,
+        torrent_download::torrent_download_start,
+        torrent_download::torrent_download_cancel,
         sync::sync_status,
         sync::sync_relay_config,
         sync::sync_set_relay,

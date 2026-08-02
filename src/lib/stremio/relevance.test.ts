@@ -96,6 +96,56 @@ describe('relevant', () => {
   })
 })
 
+describe('relevant (a spin-off whose release name EXTENDS the requested title)', () => {
+  // Long-running series have siblings whose names begin with the whole base title and then add a
+  // subtitle. Rule (a) only measured how much of the REQUESTED title the release carries, so any
+  // such release scored 100% and survived — then out-ranked the real (older, lower-seeded) episode
+  // and auto-played. Episode 1 of the 1999 series played a 2024 side story instead.
+  const onePiece = ['One Piece', 'One Piece', 'One Piece']
+
+  it('keeps the main series episode', () => {
+    expect(relevant(s('[SubsPlease] One Piece - 001 (1080p) [F00DBEEF].mkv'), onePiece)).toBe(true)
+    expect(relevant(s('[Erai-raws] One Piece - 1071 [1080p][Multiple Subtitle][ENG][POR-BR][SPA-LA].mkv'), onePiece)).toBe(true)
+    expect(relevant(s('One Piece - 001 [DVD 480p][Dual Audio].mkv'), onePiece)).toBe(true)
+    expect(relevant(s('[Judas] One Piece (Complete Batch) [1080p].mkv'), onePiece)).toBe(true)
+    // A dual-titled release: the alternate title sits in brackets, not in the release's own title.
+    expect(relevant(s('[Group] One Piece (Wan Pisu) - 001 [1080p].mkv'), onePiece)).toBe(true)
+    // An indexer that prefixes its own site name without bracketing it.
+    expect(relevant(s('www.example.org - One Piece - 001 [1080p].mkv'), onePiece)).toBe(true)
+  })
+
+  it('drops the specials/side stories that merely start with the same words', () => {
+    expect(relevant(s('[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv'), onePiece)).toBe(false)
+    expect(relevant(s('[Erai-raws] One Piece Fan Letter - 01 [1080p][Multiple Subtitle].mkv'), onePiece)).toBe(false)
+    expect(relevant(s('One Piece Episode of Luffy - 01 [1080p].mkv'), onePiece)).toBe(false)
+    expect(relevant(s('[Judas] One Piece Heart of Gold - 01 (BD 1080p).mkv'), onePiece)).toBe(false)
+    expect(relevant(s('One Piece Adventure of Nebulandia - 01 [720p].mkv'), onePiece)).toBe(false)
+  })
+
+  it('keeps the spin-off for a request that IS the spin-off', () => {
+    const fanLetter = ['One Piece Fan Letter', 'One Piece Fan Letter', 'One Piece Fan Letter']
+    expect(relevant(s('[SubsPlease] One Piece Fan Letter - 01 (1080p) [ABCD1234].mkv'), fanLetter)).toBe(true)
+    expect(relevant(s('One Piece Fan Letter - 01 [1080p].mkv'), fanLetter)).toBe(true)
+  })
+
+  it('drops the arc spin-offs of a long-running detective series', () => {
+    const conan = ['Meitantei Conan', 'Detective Conan', 'Case Closed']
+    expect(relevant(s('[Group] Detective Conan - 1120 [1080p].mkv'), conan)).toBe(true)
+    expect(relevant(s('[Judas] Meitantei Conan - 0995 (1080p) [DEADBEEF].mkv'), conan)).toBe(true)
+    expect(relevant(s('[Group] Detective Conan The Culprit Hanzawa - 01 [1080p].mkv'), conan)).toBe(false)
+    expect(relevant(s('Meitantei Conan Zero no Tea Time - 01 (1080p).mkv'), conan)).toBe(false)
+    expect(relevant(s('[Group] Detective Conan Police Academy Arc Wild Police Story - 01.mkv'), conan)).toBe(false)
+  })
+
+  it('drops the sibling entries of a long-running shounen franchise', () => {
+    const dbSuper = ['Dragon Ball Super', 'Dragon Ball Super', 'Dragon Ball Super']
+    expect(relevant(s('[Group] Dragon Ball Super - 131 [1080p][Multiple Subtitle].mkv'), dbSuper)).toBe(true)
+    expect(relevant(s('Dragon Ball Super - 001 (1080p) [BAADF00D].mkv'), dbSuper)).toBe(true)
+    expect(relevant(s('[Group] Dragon Ball Super Super Hero - 01 [1080p].mkv'), dbSuper)).toBe(false)
+    expect(relevant(s('Dragon Ball Super Broly - 01 (BD 1080p).mkv'), dbSuper)).toBe(false)
+  })
+})
+
 describe('isEpisodeExtra (openings/endings/creditless clips indexed under an episode)', () => {
   it('drops a creditless OP that would win the 4K auto-pick (Death Note bug)', () => {
     expect(isEpisodeExtra(s('Death Note OP 2 [4K 60FPS Creditless].mp4'))).toBe(true)

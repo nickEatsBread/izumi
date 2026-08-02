@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { fetchFranchise, sortFranchiseMedia } from '$lib/anilist/franchise'
-  import { title, cover } from '$lib/anilist/media'
+  import { title, cover, isReadingMedia, mediaHref } from '$lib/anilist/media'
   import { reliableImage } from '$lib/util/reliable-image'
   import Clapperboard from 'lucide-svelte/icons/clapperboard'
 
@@ -11,10 +11,13 @@
 
   $effect(() => {
     const id = media.id
+    // Seed from the edges we already hold while the full walk runs. Reading titles are dropped for
+    // the same reason the walk itself drops them: this strip is the watch order of a franchise, and
+    // a manga has no place in it (nor on the anime route these cards point at).
     items = sortFranchiseMedia([
       media,
       ...(media.relations?.edges ?? [])
-        .filter((edge) => edge.relationType !== 'SOURCE')
+        .filter((edge) => edge.relationType !== 'SOURCE' && !isReadingMedia(edge.node))
         .map((edge) => edge.node),
     ])
     let stale = false
@@ -40,7 +43,7 @@
     <div class="flex snap-x gap-2.5 overflow-x-auto pb-1">
       {#each items as item (item.id)}
         <a
-          href="/app/anime/{item.id}"
+          href={mediaHref(item)}
           data-focusable
           aria-current={item.id === media.id ? 'page' : undefined}
           class="flex w-48 shrink-0 snap-start items-center gap-2.5 rounded-lg border p-2 transition-colors

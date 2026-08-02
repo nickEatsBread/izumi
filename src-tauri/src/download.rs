@@ -20,7 +20,7 @@ use tokio::io::AsyncWriteExt;
 #[derive(Default)]
 pub struct Downloads(pub Mutex<HashMap<String, Arc<AtomicBool>>>);
 
-fn sanitize(name: &str) -> String {
+pub(crate) fn sanitize(name: &str) -> String {
     #[allow(unused_mut)]
     let mut s: String = name
         .chars()

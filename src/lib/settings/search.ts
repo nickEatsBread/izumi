@@ -66,6 +66,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
 
   { title: 'Haptics', category: 'Interface', href: '/app/settings/interface', keywords: 'vibration feedback Android', anchored: true },
   { title: 'Episode list layout', category: 'Interface', href: '/app/settings/interface', keywords: 'cards compact' },
+  { title: 'Series-wide episode numbers', category: 'Interface', href: '/app/settings/interface', keywords: 'absolute numbering season episode number continuous count', anchored: true },
   { title: 'Browse layout', category: 'Interface', href: '/app/settings/interface', keywords: 'grid list covers' },
   { title: 'Schedule layout', category: 'Interface', href: '/app/settings/interface', keywords: 'agenda days' },
   { title: 'Pin schedule header', category: 'Interface', href: '/app/settings/interface', keywords: 'sticky', anchored: true },
