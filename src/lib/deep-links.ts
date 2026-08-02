@@ -1,15 +1,32 @@
 import { goto } from '$app/navigation'
+import { invoke } from '@tauri-apps/api/core'
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link'
-import { parseDeepLink } from '$lib/deep-link-target'
+import { writable } from 'svelte/store'
+import { resolveDeepLinks } from '$lib/deep-link-target'
+
+/** One-line feedback for the last handled link (rendered as a toast by the app shell). Set for
+ *  anything the user would otherwise experience as "nothing happened". */
+export const deepLinkNotice = writable('')
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
+
+function notify(text: string) {
+  deepLinkNotice.set(text)
+  clearTimeout(noticeTimer)
+  noticeTimer = setTimeout(() => deepLinkNotice.set(''), 4000)
+}
 
 async function openUrls(urls: string[] | null) {
-  for (const raw of urls ?? []) {
-    const target = parseDeepLink(raw)
-    if (target) { await goto(target.path); break }
-  }
+  const outcome = resolveDeepLinks(urls)
+  if (!outcome) return
+  if (outcome.path) await goto(outcome.path)
+  if (outcome.notice) notify(outcome.notice)
 }
 
 export async function initDeepLinks(): Promise<() => void> {
-  await openUrls(await getCurrent().catch(() => null))
+  // `magnet:` is never registered by Izumi. If the user/OS explicitly launches the executable
+  // with one anyway, the native argv bridge lets us handle that one request passively.
+  const launchUrls = await getCurrent().catch(() => null)
+  const magnet = await invoke<string | null>('take_pending_magnet').catch(() => null)
+  await openUrls([...(launchUrls ?? []), ...(magnet ? [magnet] : [])])
   return onOpenUrl((urls) => { void openUrls(urls) }).catch(() => () => {})
 }

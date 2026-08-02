@@ -3393,6 +3393,42 @@ unsafe fn disable_webkit_damage(settings: *mut std::ffi::c_void) {
     webkit_feature_list_unref(list);
 }
 
+/// A `magnet:` URL the OS handed us on the command line, waiting for the frontend to pick it up.
+///
+/// `magnet` is deliberately absent from the deep-link plugin's scheme list: that list also drives
+/// the Windows installer and the Linux .desktop MimeType entry, so leaving it in would make izumi
+/// the system default magnet handler behind the user's back and displace their torrent client.
+/// Izumi has no runtime registration path for `magnet:`. This argv bridge is passive only: if the
+/// user explicitly launches the executable with a magnet, it may handle that single request.
+static PENDING_MAGNET: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Extract a magnet URL from a process argument list (argv, including the binary name).
+///
+/// Mirrors the deep-link plugin's own heuristic: a launch-by-link passes the URL as the *only*
+/// argument, so anything else (normal startup, CLI flags) must be left alone.
+// Android launches through an Activity intent, never argv — the command below still answers there
+// (with None) so the shared frontend bootstrap needs no per-platform branch.
+#[cfg_attr(target_os = "android", allow(dead_code))]
+fn magnet_from_args<S: AsRef<str>, I: IntoIterator<Item = S>>(args: I) -> Option<String> {
+    let mut args = args.into_iter();
+    args.next()?; // binary name
+    let arg = args.next()?;
+    if args.next().is_some() {
+        return None;
+    }
+    let arg = arg.as_ref().trim();
+    // Case-insensitive: Windows hands the scheme back exactly as the source page wrote it.
+    let scheme = arg.get(..7)?;
+    (scheme.eq_ignore_ascii_case("magnet:") && arg.len() > 7).then(|| arg.to_string())
+}
+
+/// Hand the frontend the magnet URL izumi was launched with, once. Returns `None` on a normal
+/// launch, which is the overwhelmingly common case.
+#[tauri::command]
+fn take_pending_magnet() -> Option<String> {
+    PENDING_MAGNET.lock().ok().and_then(|mut slot| slot.take())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Linux: the embedded player composites mpv (a wl_subsurface) BELOW the webview,
@@ -3423,6 +3459,12 @@ pub fn run() {
             let _ = window.show();
             let _ = window.set_focus();
         }
+        // The single-instance plugin forwards argv to the deep-link plugin for us, but that only
+        // covers *configured* schemes. Magnet is never registered, but if the user explicitly
+        // launches Izumi with one, relay that single request ourselves.
+        if let Some(url) = magnet_from_args(_args.iter().map(String::as_str)) {
+            let _ = app.emit("deep-link://new-url", vec![url]);
+        }
     }));
     let builder = builder
         .plugin(tauri_plugin_opener::init())
@@ -3443,10 +3485,29 @@ pub fn run() {
     #[cfg(not(target_os = "android"))]
     let builder = builder.manage(jvm_extensions::Runtime::default());
     let builder = builder.setup(|app| {
+            // Stash a magnet URL only when the OS/user explicitly launched this executable with
+            // one. Izumi never registers or claims the magnet scheme itself.
+            #[cfg(not(target_os = "android"))]
+            if let Some(url) = magnet_from_args(std::env::args()) {
+                if let Ok(mut slot) = PENDING_MAGNET.lock() {
+                    *slot = Some(url);
+                }
+            }
+            // Claim izumi:// — ours alone, so registering it needs no consent — but NEVER let that
+            // abort startup: on Linux the plugin shells out to update-desktop-database/xdg-mime,
+            // which can be missing or fail on a locked-down system, and `setup` errors panic the
+            // process. Also skip the work entirely when we already hold the scheme, so a normal
+            // launch doesn't spawn those two processes every single time.
+            // `magnet:` is deliberately not touched here — see PENDING_MAGNET.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                app.deep_link().register_all()?;
+                let deep_link = app.deep_link();
+                if !deep_link.is_registered("izumi").unwrap_or(false) {
+                    if let Err(error) = deep_link.register("izumi") {
+                        eprintln!("[izumi] izumi:// handler registration skipped: {error}");
+                    }
+                }
             }
             // Restore iroh only for devices that already opted into a sync group. Fresh
             // installs remain fully offline until the user enables Device Sync explicitly.
@@ -3852,6 +3913,7 @@ pub fn run() {
         .manage(desktop_presence::DesktopPresence::default())
         .invoke_handler(tauri::generate_handler![
             greet,
+            take_pending_magnet,
             player_play,
             player_play_embedded,
             player_embed,
@@ -3959,6 +4021,9 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         greet,
+        // Always answers None on Android (no argv), but keeping it registered means the shared
+        // deep-link bootstrap doesn't have to branch per platform.
+        take_pending_magnet,
         http_get,
         opensubtitles_moviehash,
         http_post,
@@ -4182,5 +4247,53 @@ mod subtitle_login_tests {
     #[test]
     fn rejects_login_without_token() {
         assert!(parse_opensubtitles_login("{}", 0).is_err());
+    }
+}
+
+#[cfg(test)]
+mod deep_link_tests {
+    use super::*;
+
+    #[test]
+    fn picks_up_a_magnet_launch_argument() {
+        let url = "magnet:?xt=urn:btih:abc&dn=Some+Release";
+        assert_eq!(magnet_from_args(["izumi.exe", url]).as_deref(), Some(url));
+        // Windows hands the scheme back with whatever casing the source page used.
+        assert!(magnet_from_args(["izumi", "MAGNET:?xt=urn:btih:abc"]).is_some());
+    }
+
+    #[test]
+    fn ignores_everything_that_is_not_a_lone_magnet_argument() {
+        assert_eq!(magnet_from_args(["izumi"]), None);
+        assert_eq!(magnet_from_args(["izumi", "--flag"]), None);
+        assert_eq!(magnet_from_args(["izumi", "izumi://anime/21"]), None);
+        assert_eq!(magnet_from_args(["izumi", "magnet:"]), None);
+        // More than one argument means a normal CLI invocation, not a link launch.
+        assert_eq!(
+            magnet_from_args(["izumi", "magnet:?xt=urn:btih:abc", "extra"]),
+            None
+        );
+    }
+
+    /// The user-hostile default this guards against: a `magnet` entry in the plugin's desktop
+    /// scheme list makes the Windows installer and the Linux .desktop file claim the scheme with
+    /// no consent, displacing whatever torrent client the user already chose.
+    #[test]
+    fn config_never_claims_the_magnet_scheme_automatically() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let deep_link = &config["plugins"]["deep-link"];
+        let desktop = deep_link["desktop"]["schemes"].as_array().unwrap();
+        assert!(desktop.iter().any(|s| s == "izumi"));
+        assert!(
+            !desktop.iter().any(|s| s == "magnet"),
+            "magnet must never be registered"
+        );
+        // Android intent filters are generated from `mobile` only; an absent block means izumi://
+        // links silently do nothing there.
+        let mobile = deep_link["mobile"].as_array().unwrap();
+        assert!(mobile.iter().any(|d| d["scheme"]
+            .as_array()
+            .is_some_and(|s| s.iter().any(|s| s == "izumi"))));
     }
 }
