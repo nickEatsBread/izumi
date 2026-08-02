@@ -1760,7 +1760,18 @@ fn set_webview_transparent(win: &tauri::WebviewWindow) {
 // <html>/.dq-archive, so in that frame we set it to "dark": the transparent archive then shows a dark
 // body + dark cards. A MutationObserver keeps it dark if the archive's own hydration resets it. Only
 // runs in the /embed/discussion frame; every other frame returns immediately.
-#[cfg(windows)]
+//
+// Setting <html data-theme="dark"> is also what fixes the frame's CANVAS, not just its tokens: the
+// archive pins a cross-origin embed's root to `color-scheme: normal`, izumi's embedder side is
+// `color-scheme: dark` (app.css), and mismatched schemes make Chromium paint the iframe on an OPAQUE
+// canvas in the frame's own scheme — normal ⇒ WHITE, i.e. the "light" archive embed. The attribute
+// flips the archive root to `color-scheme: dark`, schemes match, and the canvas turns transparent.
+// Windows adds the script natively below (AddScriptToExecuteOnDocumentCreated runs in all frames);
+// Android registers it as a plugin init script in `run()` — wry feeds those through
+// WebViewCompat.addDocumentStartJavaScript with origin rule "*", which also runs in cross-origin
+// subframes. (The Android `isLightTheme=false` theme patch cannot fix this: it only flips
+// `prefers-color-scheme`, and a `normal` root mismatches a dark embedder regardless.)
+#[cfg(any(windows, target_os = "android"))]
 const DARK_FRAME_SCRIPT: &str = "(function(){try{if(location.pathname.indexOf('/embed/discussion')!==0)return;var set=function(){var r=document.documentElement;if(!r)return;if(r.getAttribute('data-theme')!=='dark')r.setAttribute('data-theme','dark');var a=document.getElementsByClassName('dq-archive');for(var i=0;i<a.length;i++){if(a[i].getAttribute('data-theme')!=='dark')a[i].setAttribute('data-theme','dark');}};set();new MutationObserver(set).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['data-theme']});document.addEventListener('DOMContentLoaded',set);}catch(e){}})();";
 
 #[cfg(windows)]
@@ -3488,6 +3499,19 @@ pub fn run() {
     let builder = builder.manage(PipWindowState::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder.manage(jvm_extensions::Runtime::default());
+    // Android's main window is config-defined (tauri.android.conf.json — no WebviewWindowBuilder to
+    // hang an initialization_script on), so the discussion embeds' dark-canvas script ships as a
+    // plugin init script instead: wry passes those to addDocumentStartJavaScript(script, ["*"]),
+    // which runs at document start in EVERY frame — including the cross-origin discussanime archive
+    // iframe, which otherwise renders on an opaque white canvas (see DARK_FRAME_SCRIPT). Android-only:
+    // Windows already injects the same script natively in set_webview_dark, so registering this
+    // plugin there would run it twice per frame.
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(
+        tauri::plugin::Builder::<tauri::Wry>::new("embed-dark")
+            .js_init_script(DARK_FRAME_SCRIPT.to_string())
+            .build(),
+    );
     let builder = builder.setup(|app| {
             // Stash a magnet URL only when the OS/user explicitly launched this executable with
             // one. Izumi never registers or claims the magnet scheme itself.

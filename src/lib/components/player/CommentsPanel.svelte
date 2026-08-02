@@ -108,8 +108,9 @@
     return `/disqus-embed.html?${out.toString()}`
   }
   function withDark(url: string): string {
-    // First-paint hint: the archive server-seeds .dq-archive[data-theme] from ?theme, so this darkens
-    // the SSR HTML before JS runs. The live/authoritative signal is the postMessage below.
+    // The archive server-seeds .dq-archive[data-theme="dark"] from ?theme and KEEPS it through
+    // hydration, so the embed's content tokens are dark everywhere. The frame's white-canvas
+    // problem is a separate layer — see the note below embedActive.
     try { const u = new URL(url); u.searchParams.set('theme', 'dark'); return u.toString() }
     catch { return url }
   }
@@ -135,11 +136,17 @@
   const embedActive = $derived(!loading && !!embedSrc && filter !== 'All' && embedThread?.source === filter)
   const embedMounted = $derived(!!embedSrc && (!embedThread?.scriptEmbed || embedEverShown))
   $effect(() => { if (embedActive) embedEverShown = true })
-  // Note on the archive embed's dark mode: `.dq-archive` is dark-by-default and forced LIGHT only by
-  // `@media (prefers-color-scheme: light)`. So the cross-origin lever is the WEBVIEW's color scheme —
-  // forced dark in Rust (set_webview_dark → WebView2 SetPreferredColorScheme). The archive's own
-  // postMessage theme channel is same-origin-only (rejects our origin), and ?theme (above) only helps
-  // the SSR first paint, so neither is sufficient alone.
+  // Note on the archive embed's dark mode — two independent layers:
+  //   TOKENS: `?theme=dark` (withDark above) server-seeds `.dq-archive[data-theme=dark]` and the
+  //   archive keeps it through hydration, so cards/text are dark on every platform. (Its postMessage
+  //   theme channel is same-origin-only — rejects our origin — so it can't help or hurt.)
+  //   CANVAS: the archive pins a cross-origin embed's ROOT to `color-scheme: normal`; izumi's side is
+  //   `color-scheme: dark` (app.css), and mismatched schemes make Chromium paint the iframe on an
+  //   OPAQUE WHITE canvas behind the archive's transparent surface — the whole embed reads light.
+  //   DARK_FRAME_SCRIPT (lib.rs) fixes that inside the frame by setting `data-theme="dark"` on the
+  //   archive's <html> (root flips to dark → schemes match → canvas transparent): injected natively
+  //   on Windows (set_webview_dark) and as a plugin init script on Android, where
+  //   addDocumentStartJavaScript reaches cross-origin subframes.
 
   // Reaction bridge: the Disqus loader page (same-origin) can't post reactions itself (CORS blocks
   // POST + it has no forum session), so it postMessages a request here. We post it through the native
