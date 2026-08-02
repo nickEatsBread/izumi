@@ -69,6 +69,17 @@ describe('normalizeEntry', () => {
     expect(e).toMatchObject({ notes: '', comparisons: [], incomplete: false, theoreticalBest: '', releases: [] })
   })
 
+  it('keeps only real web links among the comparisons', () => {
+    // Every comparison is handed to the OS opener on click, which is the one place a field from
+    // someone else's database turns into an action on this machine. A scheme the shell would
+    // launch — or a webview would evaluate — is dropped rather than rendered as a dead link.
+    const e = normalizeEntry({
+      ...RECORD,
+      comparison: 'https://slow.pics/c/ok,javascript:alert(1),file:///etc/passwd,  HTTP://slow.pics/c/two  ,steam://run/440',
+    })!
+    expect(e.comparisons).toEqual(['https://slow.pics/c/ok', 'HTTP://slow.pics/c/two'])
+  })
+
   it('tolerates junk inside the torrent list', () => {
     const e = normalizeEntry({ alID: 5, expand: { trs: [null, { infoHash: 123 }, {}] } })!
     expect(e.releases).toHaveLength(3)
