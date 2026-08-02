@@ -238,7 +238,22 @@ pub(crate) fn select_file(
                 || name.ends_with(&format!("/{preferred}"))
                 || basename == preferred_basename
         }) {
-            return Some(found.clone());
+            // The add-on filename is a hint, not permission to violate the episode request. A
+            // malformed Torrentio row previously made an Episode 7 switch open explicit S01E03
+            // because this exact-name shortcut ran before the episode-aware pack selection.
+            let parsed = parsed_file_episode(&found.name);
+            let number_conflicts = parsed.episode.is_some_and(|found_episode| {
+                (episode.is_some() || absolute_episode.is_some())
+                    && episode != Some(found_episode)
+                    && absolute_episode != Some(found_episode)
+            });
+            let season_conflicts = matches!(
+                (season, parsed.season),
+                (Some(wanted), Some(found_season)) if wanted != found_season
+            );
+            if !number_conflicts && !season_conflicts {
+                return Some(found.clone());
+            }
         }
     }
 
@@ -308,6 +323,34 @@ mod tests {
             select_file(&files, Some("Episode 02.mkv"), Some(2), None, None)
                 .unwrap()
                 .index,
+            1
+        );
+    }
+
+    #[test]
+    fn ignores_a_preferred_filename_that_names_the_wrong_episode() {
+        let files = vec![
+            file(
+                0,
+                "Season 1/Demon Slayer - S01E03 - Sabito And Makomo.mkv",
+                900,
+            ),
+            file(
+                1,
+                "Season 1/Demon Slayer - S01E07 - Muzan Kibutsuji.mkv",
+                800,
+            ),
+        ];
+        assert_eq!(
+            select_file(
+                &files,
+                Some("Season 1/Demon Slayer - S01E03 - Sabito And Makomo.mkv"),
+                Some(7),
+                None,
+                Some(1),
+            )
+            .unwrap()
+            .index,
             1
         );
     }

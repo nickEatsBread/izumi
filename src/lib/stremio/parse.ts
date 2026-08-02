@@ -462,11 +462,16 @@ export function parseSeasonEp(s: Stream): { season?: number; episode?: number; a
 // differs from the wanted absolute. Unknown/absent parses are NOT confident (we
 // never drop on uncertainty), and with no ground truth (no season AND no abs) this
 // is always false — so the season gate is a no-op when AniZip lacks the data.
-// `episode` is intentionally ignored: a season pack legitimately spans many eps.
-export function isWrongSeason(s: Stream, want: { season?: number; abs?: number }): boolean {
-  if (want.season == null && want.abs == null) return false
+// An explicit episode is checked, while a season pack with no episode token remains eligible.
+export function isWrongSeason(s: Stream, want: { season?: number; episode?: number; abs?: number }): boolean {
+  if (want.season == null && want.episode == null && want.abs == null) return false
   const p = parseSeasonEp(s)
   if (want.season != null && p.season != null && p.season !== want.season) return true
+  // A season pack (`Title S01`) has no explicit episode and remains eligible. A row/file that
+  // actually says S01E03 is confidently wrong when the user requested Episode 7.
+  if (want.episode != null && p.episode != null && p.episode !== want.episode) return true
   if (want.abs != null && p.abs != null && p.abs !== want.abs) return true
+  // Without an absolute mapping, the common `Title - 07` form is the per-title episode number.
+  if (want.abs == null && want.episode != null && p.abs != null && p.abs !== want.episode) return true
   return false
 }

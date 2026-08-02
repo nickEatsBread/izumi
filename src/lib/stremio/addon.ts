@@ -98,8 +98,8 @@ export function rankStreams(streams: Stream[], sort: StreamSort = 'quality', opt
 // Auto-select order for a preferred quality: every source we would be willing to start on
 // automatically, best first. Cached sources lead, and only they are eligible at all unless
 // `allowUncached` is set — we never silently drop the user into a debrid download or a
-// wrong-season file. `want` (the requested episode's season/abs)
-// hard-drops confident wrong-season files BEFORE ranking, so a high-seeder off-season batch can't
+// wrong-season file. `want` (the requested episode/season/absolute number)
+// hard-drops confident mismatches BEFORE ranking, so a high-seeder wrong episode/season can't
 // win. `isFailed` sinks (never removes) sources a previous attempt could not play.
 //
 // Returning the whole ordered list, rather than just the winner, is what lets a failed automatic
@@ -107,7 +107,7 @@ export function rankStreams(streams: Stream[], sort: StreamSort = 'quality', opt
 export function pickCandidates(
   streams: Stream[],
   quality: string,
-  want?: { season?: number; abs?: number },
+  want?: { season?: number; episode?: number; abs?: number },
   isFailed?: (s: Stream) => boolean,
   opts: RankOptions = {},
 ): Stream[] {
@@ -150,7 +150,7 @@ export function pickCandidates(
 export function pickBest(
   streams: Stream[],
   quality: string,
-  want?: { season?: number; abs?: number },
+  want?: { season?: number; episode?: number; abs?: number },
   opts: RankOptions | 'native' | 'library' | 'none' = {},
 ): Stream | undefined {
   const options = typeof opts === 'string' ? { cacheCheck: opts } : opts

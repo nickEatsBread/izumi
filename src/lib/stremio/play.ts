@@ -535,15 +535,16 @@ export function finalizeAndroidWatch(pos: number, dur: number) {
 // request gets both correct S04E01 files AND wrong S01 batches, and a season-blind
 // ranker can auto-play the wrong one. We DROP confident wrong-season files (parsed
 // season/abs present and contradicting the ground truth), then float confident
-// matches above unknown parses. Unknown parses are kept (never drop on
-// uncertainty); if AniZip has no season/abs, `want` gates nothing.
-function verifySeason(streams: Stream[], want: { season?: number; abs?: number }): Stream[] {
+// matches above unknown parses. Unknown parses are kept (never drop on uncertainty).
+function verifySeason(streams: Stream[], want: EpisodeWant): Stream[] {
   const kept = streams.filter((s) => !isWrongSeason(s, want))
   if (!kept.length) return streams // safety net: never empty the list on over-eager parsing
   const good: Stream[] = [], unknown: Stream[] = []
   for (const s of kept) {
     const p = parseSeasonEp(s)
-    const matches = (want.season != null && p.season === want.season) || (want.abs != null && p.abs === want.abs)
+    const matches = (want.season != null && p.season === want.season)
+      || (want.episode != null && p.episode === want.episode)
+      || (want.abs != null && p.abs === want.abs)
     ;(matches ? good : unknown).push(s)
   }
   return [...good, ...unknown]
@@ -569,7 +570,7 @@ async function resolveKitsu(media: Media): Promise<number | undefined> {
   return kitsu
 }
 
-async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: { season?: number; abs?: number }; kitsu?: number }> {
+async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: EpisodeWant; kitsu?: number }> {
   const bases = get(enabledAddonUrls)
   if (!bases.length) {
     if (await hasConfiguredExtensions()) return { streams: [], cachedCount: 0 }
@@ -590,10 +591,11 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   // Season enforcement: pair the requested episode with its AniZip season/absolute
   // number, then hard-drop returned files that contradict it. `want` is threaded to
   // pickBest so auto-select can't re-promote a wrong-season file either.
-  let want: { season?: number; abs?: number } | undefined
+  let want: EpisodeWant | undefined
   if (episode != null) {
     const w = (await seasonP)[episode]
-    if (w && (w.season != null || w.abs != null)) { want = w; streams = verifySeason(streams, want) }
+    want = { episode, ...(w ?? {}) }
+    streams = verifySeason(streams, want)
   }
 
   // Only hard-fail when there's nothing playable AND no extensions to fall back on;
@@ -711,7 +713,7 @@ const playableNow = (s: Stream) => !!(s.__stream || s.url || isCached(s))
 // The SAME-release source for this episode, ready-to-play only (never a debrid download or
 // a wrong-season file). undefined when continuity is off or nothing matches — the caller
 // then opens the picker instead of auto-playing an unrelated best-quality file.
-function pickSameRelease(media: Media, streams: Stream[], want?: { season?: number; abs?: number }): Stream | undefined {
+function pickSameRelease(media: Media, streams: Stream[], want?: EpisodeWant): Stream | undefined {
   const c = continueHint(media)
   if (!c) return undefined
   return streams.find((s) => matchesRelease(s, c) && playableNow(s) && !isUncached(s) && !(want && isWrongSeason(s, want)))
@@ -994,7 +996,7 @@ export async function playEpisode(
     // rather than waiting on the slowest. `want` (season) applies as soon as AniZip
     // answers, concurrent with the addon fetches.
     let acc: Stream[] = []
-    let want: { season?: number; abs?: number } | undefined
+    let want: EpisodeWant | undefined
     let totalRaw = 0
     // A remembered release may be tried automatically, but a matching source is not proof that
     // playback can actually start (the URL/debrid entry/player can still fail). Keep the picker
@@ -1064,7 +1066,7 @@ export async function playEpisode(
     const paint = (resolving: boolean) => {
       const refined = refineStreams(media, acc)
       let s = refined.kept
-      if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
+      if (want) s = verifySeason(s, want)
       s = annotateCache(s, cacheAnswers, cacheMode === 'library' ? 'library' : 'native')
       retainRecoveryCandidates(media, episode, s)
       if (resolving) scheduleReady(s)
@@ -1124,8 +1126,7 @@ export async function playEpisode(
     // Resolve the season target, then unblock + re-run auto-continue. `.finally` so a title with
     // no AniZip season data still flips seasonSettled (nothing to wrong-season against).
     const seasonReady = seasonP.then((m) => {
-      const w = episode != null ? m[episode] : undefined
-      if (w && (w.season != null || w.abs != null)) want = w
+      if (episode != null) want = { episode, ...(m[episode] ?? {}) }
     }).catch(() => {}).finally(() => { seasonSettled = true; refresh(true) })
 
     // Each SOURCE (every addon + the extensions as one wave) folds into the picker as
@@ -1221,7 +1222,7 @@ export async function playEpisode(
     // stillCurrent() alone wouldn't catch it).
     if (cont && !continuationAttempted && stillCurrent() && !get(debridCaching)) {
       let s = refineStreams(media, acc).kept
-      if (want && (want.season != null || want.abs != null)) s = verifySeason(s, want)
+      if (want) s = verifySeason(s, want)
       const hit = s.find((x) => matchesRelease(x, cont))
       if (hit) {
         tryContinuation(hit)
@@ -1277,8 +1278,8 @@ async function resolveRememberedSource(media: Media, episode: number, remembered
 
   streams = refineStreams(media, streams).kept
   const map = await getEpisodeSeasonMap(media.id).catch(() => ({} as Record<number, { season?: number; abs?: number }>))
-  const want = map[episode]
-  if (want && (want.season != null || want.abs != null)) streams = verifySeason(streams, want)
+  const want: EpisodeWant = { episode, ...(map[episode] ?? {}) }
+  streams = verifySeason(streams, want)
   if (!streams.length) return undefined
 
   const release = remembered.release
