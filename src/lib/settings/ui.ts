@@ -127,7 +127,8 @@ export const androidAutoPip = persisted<boolean>('android-auto-pip', true)
  *  turning the screen off mid-episode. Released when paused / stopped, so battery-saver still
  *  kicks in when you're not watching. Default on. */
 export const keepAwakeWhilePlaying = persisted<boolean>('player-keep-awake', true)
-/** Publish playback metadata/actions to MPRIS (Linux) and SMTC (Windows). */
+/** Publish playback metadata/actions to MPRIS (Linux) and SMTC (Windows). On by default, so adult
+ *  titles publish a placeholder name and no artwork — the transport controls stay live. */
 export const systemMediaControls = persisted<boolean>('system-media-controls', true)
 /** Discord activity is on by default and can be disabled at any time. Adult titles are always
  *  suppressed before reaching native IPC. */
