@@ -39,6 +39,7 @@
   import { initWatchTogether } from '$lib/watch-together/client'
   import { initAiringNotifications } from '$lib/notifications/airing'
   import { deepLinkNotice, initDeepLinks } from '$lib/deep-links'
+  import { initTorrentVpnToasts, torrentVpnNotice } from '$lib/player/direct-torrent'
   import { startUpdateChecks } from '$lib/updater'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
@@ -78,6 +79,7 @@
     const stopAutoDownloads = initAutoDownloads()
     const stopWatchTogether = initWatchTogether()
     const stopAiringNotifications = initAiringNotifications()
+    const stopVpnToasts = initTorrentVpnToasts()
     let stopDeepLinks: () => void = () => {}
     initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
     // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
@@ -107,7 +109,7 @@
     // connected. Fire-and-forget.
     refreshAniListAvatar().catch(() => {})
     refreshMalViewer().catch(() => {})
-    return () => { stopUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopDeepLinks() }
+    return () => { stopUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
   })
 
   // Push the DNS-over-HTTPS setting into the Rust HTTP client. Reactive: runs on
@@ -232,6 +234,13 @@
 {#if $deepLinkNotice}
   <div role="status" class="fixed inset-x-0 bottom-20 z-[60] mx-auto w-fit max-w-[92vw] truncate rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
     {$deepLinkNotice}
+  </div>
+{/if}
+<!-- Direct P2P VPN kill switch state — without this, a VPN drop reads as a broken source while
+     the native engine quietly holds every torrent until the adapter returns. -->
+{#if $torrentVpnNotice}
+  <div role="status" class="fixed inset-x-0 bottom-20 z-[60] mx-auto w-fit max-w-[92vw] truncate rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
+    {$torrentVpnNotice}
   </div>
 {/if}
 <!-- Cross-platform update toast (available → downloading → ready); opt-in to apply. -->

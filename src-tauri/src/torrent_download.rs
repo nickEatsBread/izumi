@@ -34,7 +34,7 @@ use tokio::{
 };
 
 use crate::direct_torrent::{
-    mbps_to_bps, normalized_socks_proxy, proxy_safe_magnet, upload_limit,
+    mbps_to_bps, normalized_bind_interface, normalized_socks_proxy, proxy_safe_magnet, upload_limit,
 };
 use crate::direct_torrent_select::{select_file, TorrentFile};
 use crate::download::sanitize;
@@ -55,6 +55,7 @@ pub struct TorrentDownloads {
 struct Engine {
     session: Arc<Session>,
     socks_proxy_url: Option<String>,
+    bind_interface: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -100,12 +101,20 @@ impl TorrentDownloads {
         &self,
         app: &AppHandle,
         socks_proxy_url: Option<String>,
+        bind_interface: Option<String>,
     ) -> Result<&Arc<Engine>, String> {
         let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
+        let bind_interface = normalized_bind_interface(bind_interface);
         let configured = socks_proxy_url.clone();
+        let configured_bind = bind_interface.clone();
         let engine = self
             .engine
             .get_or_try_init(|| async {
+                // Same fail-closed rule as playback: a configured VPN binding with its adapter
+                // absent must block the session from starting at all.
+                if let Some(name) = &configured_bind {
+                    crate::net_interfaces::ensure_bound_iface_ready(name).await?;
+                }
                 // Every job overrides `output_folder`, so this root only ever holds librqbit's own
                 // bookkeeping — no episode data.
                 let folder = app
@@ -132,14 +141,20 @@ impl TorrentDownloads {
                 )
                 .await
                 .map_err(|e| format!("Could not start the torrent downloader: {e:#}"))?;
+                // Register with the shared kill switch so a VPN drop pauses in-flight downloads
+                // exactly like playback. No-op without a binding.
+                app.state::<crate::net_interfaces::VpnGuard>()
+                    .attach(app, configured_bind.clone(), &session)
+                    .await?;
                 Ok::<_, String>(Arc::new(Engine {
                     session,
                     socks_proxy_url: configured.clone(),
+                    bind_interface: configured_bind,
                 }))
             })
             .await?;
-        if engine.socks_proxy_url != socks_proxy_url {
-            return Err("The Direct P2P network binding changed after its session started. Restart Izumi to apply it safely.".into());
+        if engine.socks_proxy_url != socks_proxy_url || engine.bind_interface != bind_interface {
+            return Err(crate::net_interfaces::BINDING_CHANGED_ERROR.into());
         }
         Ok(engine)
     }
@@ -163,6 +178,7 @@ pub async fn torrent_download_start(
     download_limit_mbps: Option<f64>,
     upstream_capacity_mbps: Option<f64>,
     socks_proxy_url: Option<String>,
+    bind_interface: Option<String>,
 ) -> Result<String, String> {
     // Same guard as the HTTP path: a re-pump must never run two jobs for one id, which would have
     // two torrents writing the same staging file.
@@ -189,6 +205,7 @@ pub async fn torrent_download_start(
         download_limit_mbps,
         upstream_capacity_mbps,
         socks_proxy_url,
+        bind_interface,
     )
     .await;
     state.jobs.lock().await.remove(&id);
@@ -211,6 +228,7 @@ async fn run(
     download_limit_mbps: Option<f64>,
     upstream_capacity_mbps: Option<f64>,
     socks_proxy_url: Option<String>,
+    bind_interface: Option<String>,
 ) -> Result<String, String> {
     let magnet = magnet.trim();
     if !magnet.to_ascii_lowercase().starts_with("magnet:?") {
@@ -218,7 +236,10 @@ async fn run(
     }
     let proxy = normalized_socks_proxy(socks_proxy_url.clone())?;
     let magnet = proxy_safe_magnet(magnet, proxy.is_some())?;
-    let engine = state.engine(app, socks_proxy_url).await?;
+    let engine = state.engine(app, socks_proxy_url, bind_interface).await?;
+    // Kill switch engaged: fail the job now with the real reason rather than sitting on a paused
+    // session until the metadata timeout blames the seeders.
+    app.state::<crate::net_interfaces::VpnGuard>().ensure_up()?;
 
     let listing = timeout(
         METADATA_TIMEOUT,
@@ -350,6 +371,11 @@ async fn run(
             }
             if total > 0 && received >= total {
                 break Outcome::Done(received);
+            }
+            if app.state::<crate::net_interfaces::VpnGuard>().is_down() {
+                // The VPN kill switch paused this torrent. It resumes by itself when the adapter
+                // returns — don't let the no-seeders stall timeout cancel the job meanwhile.
+                last_progress_at = Instant::now();
             }
             if last_progress_at.elapsed() >= STALL_TIMEOUT {
                 return Err(

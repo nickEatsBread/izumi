@@ -16,6 +16,7 @@ import {
   jimakuApiKey,
   enabledSubtitleProviders,
   absoluteEpisodeNumbers,
+  torrentBindInterface,
 } from './ui'
 
 describe('source autoplay defaults', () => {
@@ -59,6 +60,12 @@ describe('player enhancement defaults', () => {
   it('does not alter audio or enable vendor-specific upscaling', () => {
     expect(get(audioProcessing)).toBe('off')
     expect(get(windowsVsr)).toBe('off')
+  })
+})
+
+describe('direct p2p defaults', () => {
+  it('binds to no network interface until the user picks a VPN adapter', () => {
+    expect(get(torrentBindInterface)).toBe('')
   })
 })
 

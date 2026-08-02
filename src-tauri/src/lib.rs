@@ -12,6 +12,7 @@ mod jvm_extensions;
 #[cfg(target_os = "android")]
 #[path = "jvm_extensions_android.rs"]
 mod jvm_extensions;
+mod net_interfaces;
 mod sync;
 mod torrent_download;
 mod watch_room;
@@ -3478,6 +3479,7 @@ pub fn run() {
         .manage(download::Downloads::default())
         .manage(direct_torrent::DirectTorrentState::default())
         .manage(torrent_download::TorrentDownloads::default())
+        .manage(net_interfaces::VpnGuard::default())
         .manage(sync::SyncState::default())
         .manage(watch_room::WatchRoomState::default())
         .manage(TacVerificationConfig::default())
@@ -4002,6 +4004,7 @@ pub fn run() {
             direct_torrent::torrent_playback_stop,
             torrent_download::torrent_download_start,
             torrent_download::torrent_download_cancel,
+            net_interfaces::list_network_interfaces,
             sync::sync_status,
             sync::sync_relay_config,
             sync::sync_set_relay,
@@ -4059,6 +4062,7 @@ pub fn run() {
         direct_torrent::torrent_playback_stop,
         torrent_download::torrent_download_start,
         torrent_download::torrent_download_cancel,
+        net_interfaces::list_network_interfaces,
         sync::sync_status,
         sync::sync_relay_config,
         sync::sync_set_relay,

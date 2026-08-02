@@ -65,6 +65,9 @@ iroh-gossip = { version = "0.101", default-features = false, features = ["net"] 
 # swarm-discovery directly so multi-homed PCs also query their Wi-Fi/LAN adapters.
 swarm-discovery = "0.6"
 netwatch = "0.19"
+# Adapter enumeration for the Direct P2P VPN binding (friendly names, interface types). Same
+# crate + version netwatch already builds, promoted to a direct dependency.
+netdev = "0.45"
 data-encoding = "2.11"
 n0-future = "0.3"
 # Offline downloads: stream a resolved debrid URL to disk (pure reqwest GET — no

@@ -45,6 +45,7 @@ struct DirectTorrentEngine {
     session: Arc<Session>,
     port: u16,
     socks_proxy_url: Option<String>,
+    bind_interface: Option<String>,
 }
 
 struct ActivePlayback {
@@ -187,6 +188,14 @@ fn selected_file_downloaded_bytes(
         .min(selected_size)
 }
 
+/// Empty/whitespace means "no binding". The value is an OS interface name picked from
+/// `list_network_interfaces` and treated as opaque — existence is checked at session start.
+pub(crate) fn normalized_bind_interface(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 pub(crate) fn normalized_socks_proxy(value: Option<String>) -> Result<Option<String>, String> {
     let Some(value) = value
         .map(|value| value.trim().to_string())
@@ -235,12 +244,20 @@ impl DirectTorrentState {
         &self,
         app: &AppHandle,
         socks_proxy_url: Option<String>,
+        bind_interface: Option<String>,
     ) -> Result<&Arc<DirectTorrentEngine>, String> {
         let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
+        let bind_interface = normalized_bind_interface(bind_interface);
         let configured_proxy = socks_proxy_url.clone();
+        let configured_bind = bind_interface.clone();
         let engine = self
             .engine
             .get_or_try_init(|| async {
+                // Fail closed BEFORE any socket exists: with a binding configured and the VPN
+                // adapter absent, the engine must refuse to start rather than run unprotected.
+                if let Some(name) = &configured_bind {
+                    crate::net_interfaces::ensure_bound_iface_ready(name).await?;
+                }
                 let folder = app
                     .path()
                     .app_cache_dir()
@@ -300,15 +317,21 @@ impl DirectTorrentState {
                         eprintln!("direct torrent playback server stopped: {error:#}");
                     }
                 });
+                // Register with the kill switch that pauses/resumes this session as the bound
+                // adapter disappears/returns. No-op without a binding.
+                app.state::<crate::net_interfaces::VpnGuard>()
+                    .attach(app, configured_bind.clone(), &session)
+                    .await?;
                 Ok(Arc::new(DirectTorrentEngine {
                     session,
                     port,
                     socks_proxy_url: configured_proxy,
+                    bind_interface: configured_bind,
                 }))
             })
             .await?;
-        if engine.socks_proxy_url != socks_proxy_url {
-            return Err("The Direct P2P network binding changed after its session started. Restart Izumi to apply it safely.".into());
+        if engine.socks_proxy_url != socks_proxy_url || engine.bind_interface != bind_interface {
+            return Err(crate::net_interfaces::BINDING_CHANGED_ERROR.into());
         }
         Ok(engine)
     }
@@ -320,8 +343,12 @@ pub async fn torrent_engine_warmup(
     app: AppHandle,
     state: tauri::State<'_, DirectTorrentState>,
     socks_proxy_url: Option<String>,
+    bind_interface: Option<String>,
 ) -> Result<(), String> {
-    state.get(&app, socks_proxy_url).await.map(|_| ())
+    state
+        .get(&app, socks_proxy_url, bind_interface)
+        .await
+        .map(|_| ())
 }
 
 async fn delete_active(
@@ -356,6 +383,7 @@ pub async fn torrent_playback_url(
     download_limit_mbps: Option<f64>,
     upstream_capacity_mbps: Option<f64>,
     socks_proxy_url: Option<String>,
+    bind_interface: Option<String>,
 ) -> Result<DirectTorrentPlayback, String> {
     let magnet = magnet.trim();
     if !magnet.to_ascii_lowercase().starts_with("magnet:?") {
@@ -364,7 +392,10 @@ pub async fn torrent_playback_url(
 
     let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
     let magnet = proxy_safe_magnet(magnet, socks_proxy_url.is_some())?;
-    let engine = state.get(&app, socks_proxy_url).await?;
+    let engine = state.get(&app, socks_proxy_url, bind_interface).await?;
+    // With the kill switch engaged, the metadata fetch below would sit on a paused session until
+    // its 60 s timeout and then blame the seeders. Fail fast with the real reason instead.
+    app.state::<crate::net_interfaces::VpnGuard>().ensure_up()?;
     let listing = timeout(
         METADATA_TIMEOUT,
         engine.session.add_torrent(

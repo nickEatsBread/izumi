@@ -29,6 +29,12 @@ describe('settings search', () => {
     expect(searchSettings('discord rpc')[0]?.title).toBe('Discord Rich Presence')
   })
 
+  it('finds the VPN adapter binding by provider names, desktop only', () => {
+    expect(searchSettings('nordlynx')[0]?.title).toBe('VPN adapter binding')
+    expect(searchSettings('mullvad')[0]?.title).toBe('VPN adapter binding')
+    expect(searchSettings('nordlynx', true)).toHaveLength(0)
+  })
+
   it('hides Android-only controls on desktop', () => {
     expect(searchSettings('continue seeding', false)).toHaveLength(0)
     expect(searchSettings('continue seeding', true)[0]?.title).toBe('Continue seeding after playback')
