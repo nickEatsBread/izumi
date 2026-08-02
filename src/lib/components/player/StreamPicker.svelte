@@ -18,7 +18,7 @@
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
-  import { getSeadexEntry, bestHashes, matchSeadexStreams, type SeadexEntry } from '$lib/stremio/seadex'
+  import { getSeadexEntry, bestHashes, isWebLink, matchSeadexStreams, type SeadexEntry } from '$lib/stremio/seadex'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { providerProblems } from '$lib/stremio/onlinestream'
   import { rejectLabel } from '$lib/stremio/refine'
@@ -477,6 +477,10 @@
             <span class="ml-auto shrink-0 text-muted-foreground">{seadexOpen ? '▴' : '▾'}</span>
           </button>
           {#if seadexOpen}
+            <!-- Normalization already drops anything that is not an http(s) link; entries cached
+                 before it did are re-checked here, because clicking one of these hands a string
+                 from a third-party record to the OS opener. -->
+            {@const comparisons = seadexInfo.comparisons.filter(isWebLink)}
             <div class="mt-1.5 max-h-40 overflow-y-auto pr-1">
               {#if seadexInfo.notes}
                 <p class="whitespace-pre-line leading-snug text-muted-foreground">{seadexInfo.notes}</p>
@@ -484,10 +488,10 @@
               {#if seadexInfo.theoreticalBest}
                 <p class="mt-1.5 text-muted-foreground"><span class="font-bold text-foreground">Theoretical best:</span> {seadexInfo.theoreticalBest} <span class="opacity-70">(does not exist yet)</span></p>
               {/if}
-              {#if seadexInfo.comparisons.length}
+              {#if comparisons.length}
                 <p class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span class="font-bold text-foreground">Comparisons:</span>
-                  {#each seadexInfo.comparisons as url, i}
+                  {#each comparisons as url, i}
                     <button data-focusable onclick={() => openUrl(url)} class="text-theme underline-offset-2 hover:underline" title={url}>#{i + 1}</button>
                   {/each}
                 </p>

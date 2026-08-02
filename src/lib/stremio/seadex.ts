@@ -41,6 +41,14 @@ const HASH = /^[0-9a-f]{40}$/i
 
 const str = (v: unknown) => (typeof v === 'string' ? v : '')
 
+/** Is this a link that may be handed to the OS opener?
+ *
+ *  Comparison links are free text in someone else's database, and clicking one launches it through
+ *  the shell — the single point where a third-party record becomes an action on this machine. Only
+ *  the two schemes a screenshot comparison can legitimately use are allowed through; a
+ *  `javascript:`, `file:` or app-scheme string is dropped rather than rendered as a live button. */
+export const isWebLink = (url: string) => /^https?:\/\/\S/i.test(url.trim())
+
 /** Normalize one PocketBase record. Returns undefined for anything that isn't an entry with a
  *  usable AniList id, so a shape change upstream degrades to "no annotation" instead of throwing
  *  inside the picker's render path. */
@@ -54,7 +62,7 @@ export function normalizeEntry(raw: unknown): SeadexEntry | undefined {
     notes: str(entry.notes),
     // One comma-joined STRING upstream, not an array. Individual links carry query strings of
     // their own (`?image-position=top+left`), so comma is the only safe separator.
-    comparisons: str(entry.comparison).split(',').map((u) => u.trim()).filter(Boolean),
+    comparisons: str(entry.comparison).split(',').map((u) => u.trim()).filter(isWebLink),
     incomplete: entry.incomplete === true,
     theoreticalBest: str(entry.theoreticalBest),
     releases: (Array.isArray(trs) ? trs : []).map((raw): SeadexRelease => {
