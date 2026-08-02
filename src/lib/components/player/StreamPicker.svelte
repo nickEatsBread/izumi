@@ -152,8 +152,9 @@
   const bestStream = $derived(candidates[autoIdx])
   const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
   // A pick that can't explain itself is indistinguishable from a random one. Strongest signals
-  // first, and only the ones that actually moved it. Curation leads the list because it is a sort
-  // key rather than a score, so it has no delta to sort by and has to be named separately.
+  // first, and only the ones that actually moved it. Curation is named first and without a number:
+  // it is a promotion applied to the score within one resolution, not a term inside it, so it has
+  // no delta to sort by.
   const whyBest = $derived(
     best
       ? `Picked for: ${[

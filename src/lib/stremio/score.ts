@@ -100,7 +100,8 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
     add('same group as last episode', opts.directP2p ? 2 : 12)
   }
 
-  // Curation deliberately scores NOTHING here; it is a sort key in addon.ts instead. What matters
+  // Curation deliberately scores NOTHING here; addon.ts promotes a curated row within its own
+  // resolution instead, which is a thing points cannot express. What matters
   // for a within-tier preference is the ADJACENT gap, not the 25 → 2 spread: 1440p → 1080p is 2
   // points and 1080p → 720p is 12, so any weight big enough to beat group continuity (12) also
   // buys a whole tier — the exact trade the seeder cap of 10 exists to forbid.

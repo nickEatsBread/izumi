@@ -101,7 +101,7 @@
 
     <Toggle
       label="Mark best releases"
-      desc="Check releases.moe for the release its curators rate best for each title, badge it in the source list, and prefer it within your chosen quality. Adds no source — it only annotates what your addons already found."
+      desc="Check releases.moe for the release its curators rate best for each title, badge it in the source list, and put it first among the sources of the same resolution. Never picks a lower resolution than you would have got without it. Adds no source — it only annotates what your addons already found."
       value={$seadexAnnotations}
       onToggle={() => ($seadexAnnotations = !$seadexAnnotations)}
     />
