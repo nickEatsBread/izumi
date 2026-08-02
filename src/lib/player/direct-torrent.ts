@@ -1,11 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
-import { get } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import { isAndroid } from '$lib/platform'
 import {
-  torrentAndroidPostSeed, torrentDownloadLimitMbps, torrentProxyEnabled, torrentProxyUrl,
-  torrentUploadLimitMode, torrentUpstreamCapacityMbps,
+  torrentAndroidPostSeed, torrentBindInterface, torrentDownloadLimitMbps, torrentProxyEnabled,
+  torrentProxyUrl, torrentUploadLimitMode, torrentUpstreamCapacityMbps,
 } from '$lib/settings/ui'
 import { torrentProxyEndpoint } from './torrent-proxy'
+import { listenSafe } from '$lib/util/listen'
 
 /** The network/limit snapshot every native torrent job takes. Single-sourced so streaming and
  * offline downloads cannot drift — above all the proxy kill switch, which THROWS on a bad endpoint
@@ -17,7 +18,41 @@ export function torrentEngineNetworkOptions() {
       ? Math.max(0.1, Number(get(torrentUpstreamCapacityMbps)) || 0.1)
       : null,
     socksProxyUrl: torrentProxyEndpoint(get(torrentProxyEnabled), get(torrentProxyUrl)),
+    bindInterface: get(torrentBindInterface).trim() || null,
   }
+}
+
+export type NetInterfaceInfo = {
+  name: string
+  label: string
+  ips: string[]
+  isUp: boolean
+  isVpnLike: boolean
+  isDefaultRoute: boolean
+}
+
+/** Adapters for the Settings → Network binding dropdown, VPN-looking ones first. */
+export async function listNetworkInterfaces(): Promise<NetInterfaceInfo[]> {
+  return await invoke<NetInterfaceInfo[]>('list_network_interfaces')
+}
+
+/** Kill-switch state toast: without it, a VPN drop reads as "the source died" — playback just
+ * stalls while the native engine quietly holds every torrent until the adapter returns. */
+export const torrentVpnNotice = writable('')
+let vpnNoticeTimer: ReturnType<typeof setTimeout> | undefined
+
+function vpnNotify(text: string) {
+  torrentVpnNotice.set(text)
+  clearTimeout(vpnNoticeTimer)
+  vpnNoticeTimer = setTimeout(() => torrentVpnNotice.set(''), 6000)
+}
+
+export function initTorrentVpnToasts(): () => void {
+  const unDown = listenSafe<string>('torrent-vpn-down', (event) =>
+    vpnNotify(`VPN disconnected — torrenting is paused until ${event.payload} returns`))
+  const unUp = listenSafe<string>('torrent-vpn-up', (event) =>
+    vpnNotify(`VPN reconnected — torrenting resumed on ${event.payload}`))
+  return () => { unDown(); unUp() }
 }
 
 type AndroidDeviceStatus = { unmetered: boolean; charging: boolean }

@@ -12,7 +12,7 @@
   import { startThemeSync } from '$lib/theme'
   import { getLocale, getTextDirection } from '$lib/paraglide/runtime.js'
   import {
-    debridKey, torrentPlaybackMode, torrentProxyEnabled, torrentProxyUrl,
+    debridKey, torrentBindInterface, torrentPlaybackMode, torrentProxyEnabled, torrentProxyUrl,
   } from '$lib/settings/ui'
   import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
   setContextClient(anilist)
@@ -27,7 +27,8 @@
     if (get(torrentPlaybackMode) === 'direct' || !get(debridKey)) {
       try {
         const socksProxyUrl = torrentProxyEndpoint(get(torrentProxyEnabled), get(torrentProxyUrl))
-        void invoke('torrent_engine_warmup', { socksProxyUrl }).catch(() => {})
+        const bindInterface = get(torrentBindInterface).trim() || null
+        void invoke('torrent_engine_warmup', { socksProxyUrl, bindInterface }).catch(() => {})
       } catch { /* invalid proxy is shown in Settings and playback fails closed */ }
     }
     return startThemeSync()

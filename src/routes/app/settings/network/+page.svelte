@@ -1,11 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { get } from 'svelte/store'
   import {
-    enableDoH, doHUrl, torrentAndroidPostSeed, torrentDownloadLimitMbps,
+    enableDoH, doHUrl, torrentAndroidPostSeed, torrentBindInterface, torrentDownloadLimitMbps,
     torrentUploadLimitMode, torrentUpstreamCapacityMbps, torrentProxyEnabled, torrentProxyUrl,
     syncRelayMode, syncRelayUrl,
   } from '$lib/settings/ui'
   import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
+  import { listNetworkInterfaces, type NetInterfaceInfo } from '$lib/player/direct-torrent'
   import { getSyncRelayConfig, setSyncRelay } from '$lib/sync/client'
   import { isAndroid } from '$lib/platform'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -14,13 +16,44 @@
   let applyingRelay = $state(false)
   let relayNotice = $state('')
   let relayError = $state('')
+  let ifaces = $state<NetInterfaceInfo[]>([])
+  let ifaceError = $state('')
 
   const proxyError = $derived.by(() => {
     try { torrentProxyEndpoint($torrentProxyEnabled, $torrentProxyUrl); return '' }
     catch (error) { return error instanceof Error ? error.message : String(error) }
   })
 
+  async function refreshInterfaces() {
+    try {
+      ifaces = await listNetworkInterfaces()
+      ifaceError = ''
+    } catch (error) {
+      ifaceError = error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  const ifaceOptions = $derived.by(() => {
+    const options = [{ value: '', label: 'Any interface (no binding)' }]
+    for (const iface of ifaces) {
+      const ip = iface.ips[0] ? ` — ${iface.ips[0]}` : ''
+      options.push({
+        value: iface.name,
+        label: `${iface.label}${ip}${iface.isVpnLike ? ' (VPN)' : ''}${iface.isUp ? '' : ' (down)'}`,
+      })
+    }
+    // Keep a vanished adapter selectable so the dropdown doesn't silently jump off the binding —
+    // VPN clients recreate their adapter under a new id on reinstall/protocol switches.
+    const bound = $torrentBindInterface
+    if (bound && !ifaces.some((iface) => iface.name === bound)) {
+      options.push({ value: bound, label: `${bound} (not found)` })
+    }
+    return options
+  })
+  const boundIface = $derived(ifaces.find((iface) => iface.name === $torrentBindInterface) ?? null)
+
   onMount(() => {
+    if (!get(isAndroid)) void refreshInterfaces()
     void getSyncRelayConfig().then((config) => {
       syncRelayMode.set(config.customUrl ? 'custom' : 'public')
       if (config.customUrl) syncRelayUrl.set(config.customUrl)
@@ -97,6 +130,34 @@
 
       <p class="mt-3 text-xs text-muted-foreground">One torrent seeds while you watch. When playback closes, desktop continues for up to 30 minutes or a 0.25 ratio, whichever happens first. Upload is reduced automatically whenever less than one minute is buffered.</p>
     </section>
+
+    {#if !$isAndroid}
+      <section class="rounded-md border border-border p-3">
+        <div class="font-bold">VPN adapter binding</div>
+        <p class="mt-1 text-xs text-muted-foreground">Tie Direct P2P to one network adapter, the way qBittorrent binds to a VPN interface. Torrenting refuses to start while the adapter is missing, and the instant it drops every torrent is paused until it returns — a crashed VPN can't quietly continue on your normal connection.</p>
+
+        <label class="mt-3 flex items-center justify-between gap-4">
+          <span>
+            <span class="block text-sm font-bold">Bind to network interface</span>
+            <span class="block text-xs text-muted-foreground">Connect your VPN first, then pick its adapter.</span>
+          </span>
+          <span class="flex items-center gap-2">
+            <SelectMenu bind:value={$torrentBindInterface} className="max-w-72 min-w-44" ariaLabel="Bind to network interface" options={ifaceOptions} />
+            <button data-focusable onclick={refreshInterfaces} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">Refresh</button>
+          </span>
+        </label>
+        {#if ifaceError}<p class="mt-2 text-xs text-destructive">{ifaceError}</p>{/if}
+
+        {#if $torrentBindInterface}
+          {#if boundIface && boundIface.isUp}
+            <p class="mt-2 text-xs text-green-500">Bound to {boundIface.label}{boundIface.ips[0] ? ` (${boundIface.ips[0]})` : ''}. Torrenting stops the moment this adapter disconnects and resumes when it's back.</p>
+          {:else}
+            <p class="mt-2 text-xs text-destructive">The bound adapter is not connected right now — Direct P2P won't start until it is (or the binding is cleared).</p>
+          {/if}
+          <p class="mt-2 text-xs text-muted-foreground">Restart Izumi after changing this so the torrent session is recreated with the binding. While the VPN is connected its own route carries the traffic; this binding is the fail-safe for when it isn't. Keep the VPN app's kill switch on too, and combine with the SOCKS5 proxy below for defense in depth.</p>
+        {/if}
+      </section>
+    {/if}
 
     <section class="rounded-md border border-border p-3">
       <div class="font-bold">Direct P2P SOCKS5 proxy</div>
