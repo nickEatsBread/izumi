@@ -117,9 +117,26 @@
     new Date((start + i * 24 * 3600) * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
   const hasUnaired = (i: number) => shownDays[i]?.some((a) => a.airingAt * 1000 > Date.now()) ?? false
 
-  // Measured height of the sticky header (toggle + Next-up) so the agenda's auto-scroll-to-today
-  // lands BELOW it instead of under it.
+  // Measured height of the sticky filter bar so the agenda's auto-scroll-to-today lands BELOW it
+  // instead of under it. Only the My Shows/All toggle is pinned — "Next up" is browse content, not a
+  // control, and pinning it held ~230px of viewport hostage for the whole scroll.
   let headerH = $state(0)
+
+  // The desktop window titlebar is a 32px `fixed` bar whose drag region spans the FULL width, so a
+  // `top-0` sticky bar pinned underneath it: the toggle sat behind the window controls (visually out
+  // of line with minimize/maximize/close) and its clicks were swallowed by the drag region. Park it
+  // just below instead — the same offset the online banner uses. Mobile has no titlebar, only the
+  // status-bar inset. Game mode never reaches these branches (it renders the toggle unpinned).
+  const TITLEBAR_H = 32
+  const stickyTop = $derived($isMobile ? 'top-[env(safe-area-inset-top)]' : 'top-8')
+  // Full-bleed to the page's own padding so the divider + blur read as a real toolbar row under the
+  // titlebar, rather than a floating rectangle that stops short of the content edges.
+  const barCls = $derived(
+    ($scheduleStickyHeader ? `sticky ${stickyTop} ` : '') +
+      'z-20 -mx-4 mb-6 border-b border-border/60 bg-background/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8',
+  )
+  // What the bar actually occludes at the top of the viewport: itself plus the titlebar above it.
+  const headerOffset = $derived($scheduleStickyHeader ? headerH + ($isMobile ? 0 : TITLEBAR_H) : 0)
 
   // Live-ish clock so the "Next up" countdowns tick without each card owning a timer.
   let now = $state(Date.now())
@@ -152,19 +169,17 @@
 </script>
 
 {#snippet toggle()}
-  <div class="mb-4 flex items-center gap-3">
-    <div class="inline-flex rounded-lg bg-secondary p-0.5">
-      <button data-focusable onclick={() => pick('mine')}
-        class="flex items-center rounded-md px-3 py-1 text-sm font-bold transition-colors
-               {view === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
-        <span>My Shows</span>{#if mineCount}<span class="ml-1.5 opacity-70">· {mineCount}</span>{/if}
-      </button>
-      <button data-focusable onclick={() => pick('all')}
-        class="rounded-md px-3 py-1 text-sm font-bold transition-colors
-               {view === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
-        All
-      </button>
-    </div>
+  <div class="inline-flex rounded-lg bg-secondary p-0.5">
+    <button data-focusable onclick={() => pick('mine')}
+      class="flex items-center rounded-md px-3 py-1.5 text-sm font-bold transition-colors
+             {view === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
+      <span>My Shows</span>{#if mineCount}<span class="ml-1.5 opacity-70">· {mineCount}</span>{/if}
+    </button>
+    <button data-focusable onclick={() => pick('all')}
+      class="rounded-md px-3 py-1.5 text-sm font-bold transition-colors
+             {view === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
+      All
+    </button>
   </div>
 {/snippet}
 
@@ -220,24 +235,24 @@
 {:else}
   {#if view === 'mine' && mineCount === 0}
     {@render dayTabs(false)}
-    {@render toggle()}
+    <div class="mb-4">{@render toggle()}</div>
     {@render mineEmpty()}
   {:else if gm}
     {@render dayTabs(true)}
-    {@render toggle()}
+    <div class="mb-4">{@render toggle()}</div>
     {@render selectedDay()}
   {:else if layout === 'days' || $isMobile}
     {@render dayTabs(false)}
-    <div class="{$scheduleStickyHeader ? 'sticky top-0' : ''} z-20 bg-background pb-1" bind:clientHeight={headerH}>
+    <div class={barCls} bind:clientHeight={headerH}>
       {@render toggle()}
     </div>
     {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
     {@render selectedDay()}
   {:else}
-    <div class="{$scheduleStickyHeader ? 'sticky top-0' : ''} z-20 bg-background pb-1" bind:clientHeight={headerH}>
+    <div class={barCls} bind:clientHeight={headerH}>
       {@render toggle()}
-      {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
     </div>
-    <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} {infoOf} headerOffset={$scheduleStickyHeader ? headerH : 0} />
+    {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
+    <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} {infoOf} {headerOffset} />
   {/if}
 {/if}
