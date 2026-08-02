@@ -13,6 +13,34 @@ export function safeProxyHeaders(value: unknown): Record<string, string> | undef
   return Object.keys(out).length ? out : undefined
 }
 
+/** Append tracker entries to a magnet, skipping any it already carries.
+ *  Assembled by string concatenation on purpose. A magnet is an opaque URI, not a hierarchical
+ *  URL, so round-tripping one through the URL class re-serialises the whole query: `xt=urn:btih:x`
+ *  comes back as `xt=urn%3Abtih%3Ax` (which every downstream infoHash extraction then fails to
+ *  match) and `dn=Some Show` becomes `dn=Some+Show`. Everything already in the magnet is left
+ *  byte-for-byte, and only the new `tr` values we add are encoded. */
+export function appendMagnetTrackers(magnet: string, trackers: string[]): string {
+  const query = magnet.indexOf('?')
+  if (!trackers.length || !/^magnet:/i.test(magnet) || query < 0) return magnet
+
+  // Compare decoded, since an existing `tr` arrives percent-encoded but our candidates do not.
+  const existing = new Set<string>()
+  for (const pair of magnet.slice(query + 1).split('&')) {
+    const eq = pair.indexOf('=')
+    if (eq < 0 || pair.slice(0, eq).toLowerCase() !== 'tr') continue
+    const value = pair.slice(eq + 1)
+    try { existing.add(decodeURIComponent(value)) } catch { existing.add(value) }
+  }
+
+  let out = magnet
+  for (const tracker of trackers) {
+    if (existing.has(tracker)) continue
+    existing.add(tracker)
+    out += `${out.endsWith('?') || out.endsWith('&') ? '' : '&'}tr=${encodeURIComponent(tracker)}`
+  }
+  return out
+}
+
 /** Map standard addon playback hints into Izumi's internal fields at the ingestion boundary. */
 export function normalizeStreamBehavior(stream: Stream): Stream {
   const proxyHeaders = safeProxyHeaders(stream.behaviorHints?.proxyHeaders?.request)
@@ -23,19 +51,7 @@ export function normalizeStreamBehavior(stream: Stream): Stream {
 
   let magnet = stream.__magnet
   if (!magnet && stream.infoHash) magnet = `magnet:?xt=urn:btih:${stream.infoHash}`
-  if (magnet && trackers.length) {
-    const existing = new Set<string>()
-    try {
-      const parsed = new URL(magnet)
-      for (const tracker of parsed.searchParams.getAll('tr')) existing.add(tracker)
-      for (const tracker of trackers) {
-        if (existing.has(tracker)) continue
-        parsed.searchParams.append('tr', tracker)
-        existing.add(tracker)
-      }
-      magnet = parsed.toString()
-    } catch { /* malformed magnets remain untouched */ }
-  }
+  if (magnet) magnet = appendMagnetTrackers(magnet, trackers)
 
   return {
     ...stream,
