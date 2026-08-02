@@ -37,7 +37,9 @@
 {#if $offlineMode}
   <OfflineUnavailable title="Schedule is unavailable offline" subtitle="The airing schedule needs a connection. Your downloads are available on the Downloads page." />
 {:else}
-<div class="px-4 pb-8 pt-5 sm:p-8">
+<!-- Extra desktop top padding: `p-8` put the title flush against the bottom edge of the 32px window
+     titlebar, so the page's top-left content read as a continuation of the window-control row. -->
+<div class="px-4 pb-8 pt-5 sm:px-8 sm:pb-8 sm:pt-10">
   <div class="mb-4 flex flex-wrap items-center gap-2 sm:mb-7 sm:gap-4">
     <h1 class="mr-auto text-2xl font-black sm:text-lg">Schedule</h1>
     <div class="flex items-center gap-1">
