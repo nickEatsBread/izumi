@@ -47,13 +47,52 @@ export interface RankOptions extends ScoreOptions {
 }
 
 // A human compared these releases frame by frame, which is better evidence than anything scoreInfo
-// infers from a filename — but it is evidence about which RELEASE, not about which resolution. So
-// it is a key, not points: as points it would have to outweigh group continuity (12) to decide the
-// case it exists for, and 12 also buys a whole resolution tier (1080p → 720p is 12 points, and
-// 1440p → 1080p is 2). Below the hard keys, so cache state — and, in the auto-pick, the requested
-// quality tier — still decide first; it only reorders rows those left tied.
-const curatedFirst = (i: StreamInfo, opts: RankOptions) =>
-  i.stream.infoHash && opts.seadexHashes?.has(i.stream.infoHash.toLowerCase()) ? 0 : 1
+// infers from a filename — but it is evidence about which RELEASE is best, not about which
+// RESOLUTION is. So it can be neither points nor an outer key: as points it would have to outweigh
+// group continuity (12) to decide the case it exists for, and 12 also buys a whole resolution tier
+// (1080p → 720p is 12 points, 1440p → 1080p is 2); as the leading key it did the very thing it is
+// meant to be subordinate to, putting a curated 480p above a plain 2160p.
+const isCurated = (i: StreamInfo, opts: RankOptions) =>
+  !!i.stream.infoHash && !!opts.seadexHashes?.has(i.stream.infoHash.toLowerCase())
+const curatedFirst = (i: StreamInfo, opts: RankOptions) => (isCurated(i, opts) ? 0 : 1)
+
+/** The value the default sort compares, with the curated promotion folded in.
+ *
+ *  Curation has to clear the within-tier score to decide the case it exists for — the recommended
+ *  release is routinely the twenty-seeder row beside a wall of nine-hundred-seeder ones — while
+ *  never lifting a release past a better resolution. Those two rules cannot be applied pairwise:
+ *  "curation wins within a resolution, the score wins across one" is not an ordering at all
+ *  (curated 1080p > plain 1080p > plain 1440p > curated 1080p) and Array.sort may return anything
+ *  for a comparator that contradicts itself. So the promotion is folded into the number already
+ *  being compared: a curated row carries the best score its OWN resolution reached, capped below
+ *  the weakest row of any better resolution, and never below what it scored by itself. Turning the
+ *  annotation on can therefore only move a release up past equal-or-lower resolutions — never past
+ *  a higher one, and never down (a preference that demotes the release it recommends is a bug too).
+ *
+ *  `block` names the rows that can actually end up adjacent, since the harder keys separate the
+ *  rest: an uncached 1440p must not cap a curated row sitting in the cached half of the list. */
+function curatedScoreOf(
+  infos: StreamInfo[],
+  scoreOf: (i: StreamInfo) => number,
+  block: (i: StreamInfo) => string,
+  opts: RankOptions,
+): (i: StreamInfo) => number {
+  const lifted = new Map<StreamInfo, number>()
+  for (const row of infos) {
+    if (!isCurated(row, opts)) continue
+    const own = scoreOf(row)
+    let tierBest = own
+    let better = Infinity
+    for (const other of infos) {
+      if (other === row || block(other) !== block(row)) continue
+      if (other.quality === row.quality) tierBest = Math.max(tierBest, scoreOf(other))
+      else if (other.quality > row.quality) better = Math.min(better, scoreOf(other))
+    }
+    // Every term in the score is an integer, so `better - 1` is a strict cap rather than a tie.
+    lifted.set(row, Math.max(own, Math.min(tierBest, better - 1)))
+  }
+  return (i) => lifted.get(i) ?? scoreOf(i)
+}
 
 /** Does this release positively declare an audio language the user did not ask for? */
 export function languageMismatch(i: StreamInfo, audioLang?: string): boolean {
@@ -64,29 +103,37 @@ export function languageMismatch(i: StreamInfo, audioLang?: string): boolean {
 }
 
 // Rank into StreamInfo: cache tier first, then language, then the user's preferred within-tier
-// key. `quality` (the default) leads with the curated recommendation and settles the rest on the
-// additive score, resolution included — anime returns a wall of 1080p rows, and the old ladder had
-// nothing but seeders left to separate them. The explicit `seeders` and `size` sorts stay
-// single-key: the user asked a literal question and should get a literal answer.
+// key. `quality` (the default) settles on the additive score, resolution included — anime returns a
+// wall of 1080p rows, and the old ladder had nothing but seeders left to separate them — with the
+// curated recommendation promoted inside its own resolution. The explicit `seeders` and `size`
+// sorts stay single-key: the user asked a literal question and should get a literal answer.
 export function rankInfos(streams: Stream[], sort: StreamSort = 'quality', opts: RankOptions = {}): StreamInfo[] {
+  const infos = streams.map(describe)
   const scored = new Map<StreamInfo, number>()
   const scoreOf = (i: StreamInfo) => {
     let s = scored.get(i)
     if (s == null) { s = scoreInfo(i, opts).score; scored.set(i, s) }
     return s
   }
+  const mismatch = (i: StreamInfo) => (languageMismatch(i, opts.audioLang) ? 1 : 0)
+  const rankOf = sort === 'quality'
+    ? curatedScoreOf(infos, scoreOf, (i) => `${cacheRank(i.cached)}:${mismatch(i)}`, opts)
+    : scoreOf
   const within = (a: StreamInfo, b: StreamInfo) => {
     // The explicit sorts stay literal — a curated row must not jump a list the user asked to have
     // ordered by seeders, which would answer a different question than the one they asked.
     if (sort === 'seeders') return (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
     if (sort === 'size') return (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0) || b.quality - a.quality
-    return curatedFirst(a, opts) - curatedFirst(b, opts)
-      || scoreOf(b) - scoreOf(a) || (b.seeders ?? -1) - (a.seeders ?? -1) || b.quality - a.quality
+    // Resolution ABOVE the curated key, not below it: the promotion already refuses to cross a
+    // resolution, and this settles the case where it lands exactly on one. Curation then separates
+    // what the score left tied, which is the whole of what a tie-break may do.
+    return rankOf(b) - rankOf(a) || b.quality - a.quality
+      || curatedFirst(a, opts) - curatedFirst(b, opts)
+      || scoreOf(b) - scoreOf(a) || (b.seeders ?? -1) - (a.seeders ?? -1)
   }
-  return streams
-    .map(describe)
+  return infos
     .sort((a, b) => cacheRank(a.cached) - cacheRank(b.cached)
-      || (languageMismatch(a, opts.audioLang) ? 1 : 0) - (languageMismatch(b, opts.audioLang) ? 1 : 0)
+      || mismatch(a) - mismatch(b)
       || within(a, b)
       || (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0))
 }
@@ -131,14 +178,29 @@ export function pickCandidates(
   const cacheFirst = (i: StreamInfo) => cacheRank(i.cached)
   const tierRank = (i: StreamInfo) =>
     !Number.isFinite(target) ? 0 : i.quality === target ? 0 : i.quality < target ? 1 : 2
-  const ordered = (preferred.length ? preferred : all).sort((a, b) =>
+  const eligible = preferred.length ? preferred : all
+  const scored = new Map<StreamInfo, number>()
+  const scoreOf = (i: StreamInfo) => {
+    let s = scored.get(i)
+    if (s == null) { s = scoreInfo(i, opts).score; scored.set(i, s) }
+    return s
+  }
+  // Same promotion the list uses, so the row wearing the "Best" pill is the row the list leads
+  // with. Blocked by the keys above it: only rows the tier preference already grouped together
+  // can be reordered by curation.
+  const rankOf = curatedScoreOf(eligible, scoreOf, (i) => `${cacheFirst(i)}:${tierRank(i)}`, opts)
+  const ordered = eligible.sort((a, b) =>
     cacheFirst(a) - cacheFirst(b)
     || tierRank(a) - tierRank(b)
-    // BELOW the tier the user asked for, so curation can never talk the automatic pick out of it.
-    // With Quality on "any" tierRank is inert by construction and this decides instead of the
-    // score: the user declined to name a tier, so the curators' verdict is the better answer.
+    // BELOW the tier the user asked for, so curation can never talk the automatic pick out of it,
+    // and below resolution within that tier. With Quality on "any" tierRank is inert by
+    // construction, so curation used to decide there outright — which handed back a curated 480p
+    // over a plain 2160p, the opposite of a tie-break. "Any" means highest available; the curators'
+    // verdict settles which release at that resolution, not which resolution.
+    || rankOf(b) - rankOf(a)
+    || b.quality - a.quality
     || curatedFirst(a, opts) - curatedFirst(b, opts)
-    || scoreInfo(b, opts).score - scoreInfo(a, opts).score
+    || scoreOf(b) - scoreOf(a)
     || (b.seeders ?? -1) - (a.seeders ?? -1))
   // A remembered failure is a hint, not a verdict — a debrid hiccup and an expired token look the
   // same from here, so failed sources go last rather than away.

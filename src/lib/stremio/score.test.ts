@@ -171,7 +171,7 @@ suite('scoreInfo', () => {
       // The seeder cap (10) is calibrated against the 12: health may cross the narrow gaps and
       // must not cross that one. Anything that has to outrank group continuity (12) to decide the
       // case it exists for cannot be points at all — it would clear every gap on the ladder. That
-      // is why curation is a sort key rather than a weight.
+      // is why curation is a promotion inside one resolution rather than a weight.
       expect(Math.min(...gaps)).toBeLessThan(12)
     })
   })

@@ -49,16 +49,27 @@ describe('curated best release', () => {
     expect(s.map((x) => x.url)).toEqual(['cached', 'uncached'])
   })
 
-  it('leads the list from a lower tier too, where the automatic pick would not', () => {
-    // Deliberate, and the reason this is a key here rather than points: the list is a menu a human
-    // is reading, every row states its resolution, and the row is badged. What must NOT cross a
-    // tier is the pick made when nobody is looking — pickCandidates keeps the requested tier as a
-    // hard key ABOVE this one, so choosing the 1080p instead stays one click away.
+  it('does not lead the list from a lower tier', () => {
+    // The list is what the user actually reads, so the invariant has to hold here first: curation
+    // is evidence about which RELEASE is best, never about which resolution is, and a recommended
+    // 720p leading a 1080p reads as the app quietly downgrading the picture on someone's behalf.
     const s = rankStreams([
       row('fhd', '[Group] Show - 01 (1080p) 👤 900'),
       row('curated', '[Other] Show - 01 (720p) 👤 20', HASH),
     ], 'quality', opts)
-    expect(s.map((x) => x.url)).toEqual(['curated', 'fhd'])
+    expect(s.map((x) => x.url)).toEqual(['fhd', 'curated'])
+  })
+
+  it('is not held back by a row the harder keys already separated', () => {
+    // "No better resolution" is asked of the rows this one can actually end up next to, not of the
+    // whole list: an uncached 2160p sits below every cached row anyway, so letting it hold the
+    // promotion down would switch the annotation off for the cached half whenever one showed up.
+    const s = rankStreams([
+      row('fhd', '[Group] Show - 01 (1080p) 👤 900'),
+      row('curated', '[Other] Show - 01 (1080p) 👤 20', HASH),
+      { url: 'uhd', name: '[RD⬇️] Addon', title: 'Show - 01 (2160p) 👤 5' } as any,
+    ], 'quality', opts)
+    expect(s.map((x) => x.url)).toEqual(['curated', 'fhd', 'uhd'])
   })
 
   it('leaves the literal sorts literal', () => {
