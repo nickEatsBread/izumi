@@ -1,7 +1,7 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 
-// Filler-episode numbers per AniList media id, from ThaUnknown's pre-scraped
-// AnimeFillerList dump. Loaded once, cached for the
+// Filler-episode numbers per AniList media id, from a pre-scraped AnimeFillerList
+// dump. Loaded once, cached for the
 // session. Via the Tauri HTTP plugin so it isn't blocked by the webview.
 let fillerMap: Record<number, number[]> | null = null
 let loading: Promise<Record<number, number[]>> | null = null
