@@ -194,6 +194,21 @@ describe('isWrongSeason (S4E1 must not play S1E1)', () => {
     expect(isWrongSeason({ behaviorHints: { filename: '[SubsPlease] Tensei Slime - 01 (1080p)' } } as any, want)).toBe(true))
   it('keeps everything when there is no ground truth', () =>
     expect(isWrongSeason({ behaviorHints: { filename: 'Whatever S01E01' } } as any, {})).toBe(false))
+  it('drops an explicit S01E03 file when Episode 7 was requested', () =>
+    expect(isWrongSeason(
+      { behaviorHints: { filename: 'Season 1/Demon Slayer - S01E03 - Sabito And Makomo.mkv' } } as any,
+      { season: 1, episode: 7 },
+    )).toBe(true))
+  it('drops an explicit dash-numbered Episode 3 when Episode 7 was requested', () =>
+    expect(isWrongSeason(
+      { behaviorHints: { filename: '[Group] Demon Slayer - 03 (1080p).mkv' } } as any,
+      { episode: 7 },
+    )).toBe(true))
+  it('keeps a season batch whose filename does not claim a different episode', () =>
+    expect(isWrongSeason(
+      { behaviorHints: { filename: '[Trix] Demon Slayer S01 [BD 1080p AV1]' } } as any,
+      { season: 1, episode: 7 },
+    )).toBe(false))
   it('keeps an unknown-parse file (never drop on uncertainty)', () =>
     expect(isWrongSeason({ name: '[RD⚡] Comet 1080p' } as any, want)).toBe(false))
 })
