@@ -1,7 +1,7 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
-vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+vi.mock('$lib/net/http', () => ({ invokeNativeHttp: httpFetch }))
 
 import { serveJson, called, urlsOf } from '../../../../test/debrid-http'
 import { rdStatus, rdListItem, rdFile, rdSelectFileIds, rdLinkFor, rdShouldRetrySingleFile, rdPickBestDownloaded, rdMatchesSingleFile, rdOwnedHashes, rdForgetLists, realdebrid } from './realdebrid'
@@ -289,9 +289,9 @@ describe('real-debrid round trips on a first play', () => {
     // `stage !== 'ready'` guard means poll is never entered on this path, so its first probe adds
     // no third read — this pins that, since removing the guard would be an invisible regression.
     let infoCalls = 0
-    httpFetch.mockImplementation(async (url: string) => {
-      const u = String(url)
-      const json = (v: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(v) })
+    httpFetch.mockImplementation(async (_cmd: string, args: { url: string }) => {
+      const u = String(args?.url)
+      const json = (v: unknown) => ({ status: 200, body: JSON.stringify(v) })
       if (u.includes('/torrents?limit')) return json([])
       if (u.includes('/torrents/addMagnet')) return json({ id: '9' })
       if (u.includes('/torrents/selectFiles/')) return json({})
@@ -303,7 +303,7 @@ describe('real-debrid round trips on a first play', () => {
           : { status: 'downloaded', files: [{ id: 1, path: '/Show_01.mkv', bytes: 500, selected: 1 }], links: ['LINK'] })
       }
       if (u.includes('/unrestrict/link')) return json({ download: 'https://cdn.rd/Show_01.mkv', filename: 'Show_01.mkv', filesize: 500 })
-      return { ok: false, status: 404, text: async () => '{}' }
+      return { status: 404, body: '{}' }
     })
 
     await expect(realdebrid.resolveHash('key', HASH)).resolves.toBe('https://cdn.rd/Show_01.mkv')
@@ -320,9 +320,9 @@ describe('real-debrid magnet conversion window', () => {
     // there is nothing to select is a 404 that killed the whole resolve.
     let infoCalls = 0
     const order: string[] = []
-    httpFetch.mockImplementation(async (url: string) => {
-      const u = String(url)
-      const json = (v: unknown) => ({ ok: true, status: 200, text: async () => JSON.stringify(v) })
+    httpFetch.mockImplementation(async (_cmd: string, args: { url: string }) => {
+      const u = String(args?.url)
+      const json = (v: unknown) => ({ status: 200, body: JSON.stringify(v) })
       if (u.includes('/torrents?limit')) return json([])
       if (u.includes('/torrents/addMagnet')) { order.push('add'); return json({ id: '9' }) }
       if (u.includes('/torrents/selectFiles/')) {
@@ -337,7 +337,7 @@ describe('real-debrid magnet conversion window', () => {
           : { status: 'downloaded', files: [{ id: 1, path: '/Show_01.mkv', bytes: 500, selected: 1 }], links: ['LINK'] })
       }
       if (u.includes('/unrestrict/link')) return json({ download: 'https://cdn.rd/Show_01.mkv', filename: 'Show_01.mkv', filesize: 500 })
-      return { ok: false, status: 404, text: async () => '{}' }
+      return { status: 404, body: '{}' }
     })
 
     await expect(realdebrid.resolveHash('key', HASH)).resolves.toBe('https://cdn.rd/Show_01.mkv')

@@ -377,6 +377,11 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
       return
     }
     if (!get(autoplayNext) && !get(bingePreload)) return
+    // A picker on screen means the user is mid-choice — most commonly "Change source" for THIS
+    // very episode, whose old file can run to EOF while the replacement is still resolving.
+    // Auto-advancing here would race the user's pick with the next episode and land the session
+    // one episode off. Their choice (or the picker's own continuation) owns what plays next.
+    if (get(streamPicker)) return
     const airedTotal = airedTotalOf(media)
     let next = episode + 1
     // Optionally skip past filler episodes (AnimeFillerList).
@@ -420,6 +425,9 @@ function attachAndroid(
   const onEnded = async () => {
     clearPosition(media.id, episode)
     if (!get(autoplayNext) && !get(bingePreload)) return
+    // Same guard as the desktop handler: an open picker means the user is mid-choice (Change
+    // source), and the outgoing file reaching EOF must not race their pick with an auto-advance.
+    if (get(streamPicker)) return
     const airedTotal = airedTotalOf(media)
     let next = episode + 1
     if (get(skipFiller)) {
@@ -802,12 +810,25 @@ async function prefetchNext(media: Media, episode: number) {
 /** Consume a matching prefetched stream, if one is ready for this exact episode. */
 function takePrefetched(mediaId: number, episode: number): Stream | null {
   const pf = prefetched
-  if (pf && pf.mediaId === mediaId && pf.episode === episode && pf.stream.url) {
+  if (!pf || pf.mediaId !== mediaId || pf.episode !== episode || !pf.stream.url) return null
+  // Consumption-time same-release check, in case the playStream invalidation raced or never ran
+  // (e.g. the source change failed after resetting bingeSource): the release actually on screen is
+  // bingeSource, and a prefetch that doesn't continue IT would replay the pre-change release. The
+  // comparison is the same predicate pickSameRelease used to select the prefetch, so an unchanged
+  // release always passes.
+  const b = get(bingeSource)
+  if (
+    b && b.mediaId === mediaId
+    && (b.bingeGroup || b.infoHash || b.group || b.originId)
+    && !matchesRelease(pf.stream, { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group, originId: b.originId })
+  ) {
     prefetched = null
     nextEpisodeReady.set(null)
-    return pf.stream
+    return null
   }
-  return null
+  prefetched = null
+  nextEpisodeReady.set(null)
+  return pf.stream
 }
 
 function retainRecoveryCandidates(media: Media, episode: number | undefined, streams: Stream[]) {
@@ -1619,6 +1640,23 @@ export async function playStream(
     // release identity so Continue Watching can resume the SAME release later. Progress bumps on watch.
     recordPlay(media, episode, { group: describe(stream).group, bingeGroup: stream.behaviorHints?.bingeGroup })
 
+    // Remember this stream's release identity so the next episode can continue from the SAME
+    // release without re-picking — by pack infoHash / Stremio bingeGroup, or the parsed release
+    // group (fansub author) for extension content that has neither. Set in the COMMON section on
+    // purpose: the Android and external-player paths return before the desktop embed, and skipping
+    // them left `bingeSource` pointing at whatever release a previous playStream set — so on those
+    // paths "Next" continued the pre-change release after a manual source change.
+    const releaseIdentity = { bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group, originId: stream.__origin?.id }
+    bingeSource.set({ mediaId: media.id, ...releaseIdentity })
+    // A prefetched next episode continues the release that was playing when the prefetch ran.
+    // Starting a DIFFERENT release now (manual source change) makes that stored stream — and its
+    // lit "next is ready" dot — a trap: Next/auto-advance would silently drag the binge back onto
+    // the release from BEFORE the change. Drop it the moment the release identity changes.
+    if (prefetched && prefetched.mediaId === media.id && !matchesRelease(prefetched.stream, releaseIdentity)) {
+      prefetched = null
+      nextEpisodeReady.set(null)
+    }
+
     // Android full: play through embedded mpv. Android lite falls back to an external player. This
     // returns before the desktop embed below, so nothing libmpv-related runs and `playing` stays
     // false (browse UI stays up, no overlay). The episode is marked watched when the user returns.
@@ -1744,11 +1782,6 @@ export async function playStream(
     // duration. Set BEFORE embed so the seekbar sees it as soon as the overlay mounts.
     spriteKey.set(stream.infoHash ?? `${media.id}-${episode ?? 0}`)
 
-    // Remember this stream's release identity so the next episode can continue from
-    // the SAME release without re-picking — by pack infoHash / Stremio bingeGroup, or the
-    // parsed release group (fansub author) for extension content that has neither.
-    bingeSource.set({ mediaId: media.id, bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group, originId: stream.__origin?.id })
-
     // Embed mpv FIRST — it renders behind the still-opaque webview — THEN reveal the
     // overlay + punch the transparent hole. Otherwise the window is briefly
     // transparent with nothing behind it and the desktop flashes through.
@@ -1761,15 +1794,20 @@ export async function playStream(
     }).catch(() => {})
     // Await the addon subtitles (bounded — a slow subtitle addon must not hold up playback), and merge
     // them with any the source itself carried (online-stream __subtitles). mpv sub-adds all of them;
-    // slang auto-selects the preferred language.
+    // slang auto-selects the preferred language. The bound used to be 4s, which was the single
+    // biggest fixed cost on click-to-video whenever a subtitle addon was having a slow day; late
+    // results now attach to the live player below instead of being dropped, so the gate only needs
+    // to cover the COMMON fast case (subs land during the debrid resolve and cost nothing here).
     const candidates = directPlaybackId == null
-      ? await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 4000))])
+      ? await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 1500))])
       : []
     // Partition: url-bearing candidates (addons) merge into mpv at load exactly as before; needsFetch
     // candidates (OpenSubtitles/SubDL) are menu-only — stashed for manual pick, never sent to
-    // player_embed. Set fresh each episode so last episode's rows don't linger.
+    // player_embed. Set fresh each episode so last episode's rows don't linger. An empty result at
+    // this point means the search may still be running (we raced it), so stay 'searching' — the
+    // late-attach handler below always settles it to 'ready'.
     onlineSubCandidates.set({
-      status: directPlaybackId == null ? 'ready' : 'searching',
+      status: directPlaybackId == null && candidates.length ? 'ready' : 'searching',
       items: candidates.filter((s) => s.download?.needsFetch),
     })
     const subtitles = [
@@ -1820,6 +1858,22 @@ export async function playStream(
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
     if (episode != null) attach(media, episode, onState)
+    // Late online subtitles: when the embed's short race above lost to a slow subtitle addon, fold
+    // the results in once they land — menu entries plus URL tracks attached to the live player —
+    // instead of dropping them for the whole episode. `playGen` pins the results to THIS play.
+    if (directPlaybackId == null && !candidates.length) {
+      const subGen = playGen
+      void subsP.then(async (cands) => {
+        if (subGen !== playGen) return
+        onlineSubCandidates.set({ status: 'ready', items: cands.filter((s) => s.download?.needsFetch) })
+        for (const s of cands) {
+          if (!s.url) continue
+          if (subGen !== playGen) return
+          try { await invoke('player_attach_subtitle_url', { url: s.url, lang: s.lang, title: s.release ?? s.lang ?? 'Online subtitles' }) }
+          catch { /* a missing subtitle must never disturb playback */ }
+        }
+      })
+    }
   }
   catch (e) {
     if (directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)

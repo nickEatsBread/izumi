@@ -836,7 +836,8 @@
   function changeSource() {
     sheet = null
     const m = $nowPlayingMedia
-    if (m) playEpisode(m.media, m.episode, () => {}, { forceManual: true, autoplay: !paused })
+    // autoplay always: picking a replacement source is an explicit "play this" (see Controls).
+    if (m) playEpisode(m.media, m.episode, () => {}, { forceManual: true, autoplay: true })
   }
 
   let speed = $state(1)

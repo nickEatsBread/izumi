@@ -1,7 +1,7 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
-vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+vi.mock('$lib/net/http', () => ({ invokeNativeHttp: httpFetch }))
 
 import { serveJson, called, urlsOf } from '../../../../test/debrid-http'
 import fixture from '../__fixtures__/easydebrid-responses.json'
@@ -13,7 +13,7 @@ const EP3 = 'https://cdn.easydebrid.example/f/show-03.mkv'
 
 /** One canned response for every request, so a specific status/body can be asserted on. */
 const serveOnce = (status: number, json: unknown) =>
-  httpFetch.mockImplementation(async () => ({ ok: status < 400, status, text: async () => JSON.stringify(json) }))
+  httpFetch.mockImplementation(async () => ({ status, body: JSON.stringify(json) }))
 
 describe('edFiles', () => {
   it('folds the directory chain onto the filename and keeps size/url', () => {

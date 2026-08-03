@@ -1280,6 +1280,14 @@ pub(crate) fn spawn_event_loop(
             // Block up to 1s waiting for the next event on this client's queue.
             match client.wait_event(1.0) {
                 Some(Ok(Event::FileLoaded)) => {
+                    // A replacement file (Change source) can have the same duration as the one it
+                    // replaces, so the duration-change reset below never fires — leaving both
+                    // throttle buckets pointing at the old file's last values. The first
+                    // time-pos/cache sample of the new file then gets swallowed as "unchanged",
+                    // which starves the overlay of its first-frame signal. A load is always a
+                    // fresh stream: force both to emit immediately.
+                    last_pos_bucket = i64::MIN;
+                    last_buf = f64::MIN;
                     let loaded_url: Result<String, _> = client.get_property("path");
                     if let Ok(loaded_url) = loaded_url {
                         // Include the path so the frontend can associate this event with the exact
@@ -1305,6 +1313,15 @@ pub(crate) fn spawn_event_loop(
                             if let Err(error) = client.set_property("pause", !autoplay) {
                                 eprintln!("mpv could not apply autoplay after file load: {error}");
                             }
+                        }
+                        // observe_property is silent when a write repeats the current value, and
+                        // the overlay RESETS its mirrored pause state on every load — so loading a
+                        // new file with the same pause value it guessed leaves that guess wrong
+                        // forever. (Change source while paused: pause stays true, no event, the
+                        // overlay assumes false → its spinner condition holds while read-ahead
+                        // visibly buffers the whole file.) State the real value on every load.
+                        if let Ok(paused) = client.get_property::<bool>("pause") {
+                            let _ = app.emit("player-paused", paused);
                         }
                     }
                 }

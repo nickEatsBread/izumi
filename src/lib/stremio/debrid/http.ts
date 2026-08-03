@@ -1,8 +1,8 @@
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { invokeNativeHttp } from '$lib/net/http'
 import type { DebridInfo, ResolveOpts } from './types'
 
-// Shared helpers across debrid providers. All HTTP goes through the Tauri plugin
-// (bypasses webview CORS). Never log the credential.
+// Shared helpers across debrid providers. All HTTP goes through the process-wide POOLED Rust
+// client (bypasses webview CORS, keeps TLS warm). Never log the credential.
 
 export const VIDEO = /\.(?:mkv|mp4|avi|mov|webm|flv|wmv|m4v|ts)$/i
 export const JUNK = /\b(?:sample|trailer|extras?|ncop|nced|preview|pv)\b/i
@@ -52,14 +52,27 @@ export function pickLargestVideo<T extends { name: string; bytes: number }>(file
   return [...pool].sort((a, b) => b.bytes - a.bytes)[0]
 }
 
-/** httpFetch + parse JSON. Returns {ok,status,json}. Never throws on non-2xx. */
+/** Pooled fetch + parse JSON. Returns {ok,status,json}. Never throws on non-2xx.
+ *
+ *  Routed through the shared Rust reqwest client rather than `@tauri-apps/plugin-http`, which
+ *  builds a FRESH client per request and so paid the full ~200-300ms TCP+TLS handshake on every
+ *  single call. A debrid resolve is a CHAIN of these (account list → info → select → poll…), and
+ *  the poll ramp starts at 250ms — so the handshake alone used to halve the effective poll rate
+ *  and add over a second to the cached-source click-to-video path. GET/POST ride the metadata
+ *  commands; anything else (RD's DELETE) goes through the method-agnostic ext_fetch. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; status: number; json: any }> {
-  const r = await httpFetch(url, init)
-  const txt = await r.text()
+  const method = String(init?.method ?? 'GET').toUpperCase()
+  const headers = init?.headers as Record<string, string> | undefined
+  const body = typeof init?.body === 'string' ? init.body : undefined
+  const r = method === 'GET' && body == null
+    ? await invokeNativeHttp<{ status: number; body: string }>('http_get', { url, headers })
+    : method === 'POST'
+      ? await invokeNativeHttp<{ status: number; body: string }>('http_post', { url, body: body ?? '', headers })
+      : await invokeNativeHttp<{ status: number; body: string }>('ext_fetch', { url, method, headers, body })
   let json: unknown = {}
-  try { json = txt ? JSON.parse(txt) : {} } catch { json = {} }
-  return { ok: r.ok, status: r.status, json }
+  try { json = r.body ? JSON.parse(r.body) : {} } catch { json = {} }
+  return { ok: r.status >= 200 && r.status < 300, status: r.status, json }
 }
 
 /** Standard poll loop. `probe` returns DebridInfo; resolves when stage==='ready'.

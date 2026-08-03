@@ -157,7 +157,10 @@
     if (np) {
       playEpisode(np.media, np.episode, () => {}, {
         forceManual: true,
-        autoplay: !paused,
+        // Picking a replacement source is an explicit "play this": always start it. Carrying the
+        // old pause state over meant a source changed while paused loaded a file that just sat
+        // there — read-ahead filling the buffer bar while nothing ever started.
+        autoplay: true,
       })
     }
   }
