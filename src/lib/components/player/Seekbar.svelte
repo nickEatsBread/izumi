@@ -275,12 +275,16 @@
     const t = timeAt(e.clientX)
     hoverT = t
     requestTile(t)
-    el?.setPointerCapture(e.pointerId)
+    // Capture can fail for a pointer that died between hit-test and here; a failed capture must
+    // not abort starting the scrub.
+    try { el?.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
     if (gm) beginScrub(t, 'touch')
     else seeking = true
   }
   function onup(e: PointerEvent) {
-    el?.releasePointerCapture(e.pointerId)
+    // NotFoundError for an id that's no longer active (WebKitGTK >= 2.52 gives every touch its
+    // own pointerId that dies with the sequence) — releasing is best-effort.
+    try { el?.releasePointerCapture(e.pointerId) } catch { /* already released */ }
     if (gm) {
       if ($scrub.active) endScrub()
     } else if (seeking) {
@@ -303,6 +307,7 @@
   onpointerup={onup}
   onpointerleave={() => (hovering = false)}
   onpointercancel={onup}
+  onlostpointercapture={onup}
 >
   <!-- Per-chapter segments. Each is its % of the duration with a small gap;
        the hovered chapter's fill bars grow (h-0.5 → h-1) — the popout. Fills are

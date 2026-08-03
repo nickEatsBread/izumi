@@ -3679,6 +3679,7 @@ dependencies = [
  "iroh-docs",
  "iroh-gossip",
  "khronos-egl",
+ "libc",
  "libmpv2",
  "libmpv2-sys",
  "librqbit",

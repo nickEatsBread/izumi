@@ -149,6 +149,8 @@ webview2-com = "0.38"
 # raw-window-handle pulls the toplevel wl_surface/wl_display out of the Tauri window;
 # the `gl` crate is used for the clear/viewport around mpv's render.
 [target.'cfg(target_os = "linux")'.dependencies]
+# dlsym for XSetIOErrorExitHandler (libX11 >= 1.7) — resolved at runtime so older linkers still build.
+libc = "0.2"
 gtk = { version = "0.18", features = ["v3_24"] }
 gdk = "0.18"
 glib = "0.18"
