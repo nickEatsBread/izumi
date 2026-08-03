@@ -1,7 +1,7 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest'
 
 const { httpFetch } = vi.hoisted(() => ({ httpFetch: vi.fn() }))
-vi.mock('@tauri-apps/plugin-http', () => ({ fetch: httpFetch }))
+vi.mock('$lib/net/http', () => ({ invokeNativeHttp: httpFetch }))
 
 import { serveJson, called } from '../../../../test/debrid-http'
 import { ocFiles, ocStatus, offcloud } from './offcloud'

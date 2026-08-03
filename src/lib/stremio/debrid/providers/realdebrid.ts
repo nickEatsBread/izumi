@@ -137,10 +137,12 @@ export function rdPickBestDownloaded(entries: RdListRow[], hash: string): { id: 
 const LIST_TTL_MS = 5 * 60 * 1000
 const listCache = new Map<string, { at: number; rows: RdListRow[] }>()
 
-/** Drop the cached account list. Called when an entry is REMOVED, and a test seam. */
+/** Drop the cached account lists (both the resolve-path pages and the badge snapshot — they
+ *  mirror each other now). Called when an entry is REMOVED, and a test seam. */
 export function rdForgetLists(key?: string): void {
   if (key) listCache.delete(key)
   else listCache.clear()
+  if (!key || rdOwnedCache?.key === key) rdOwnedCache = undefined
 }
 
 /** Record a torrent we just added, without throwing away everything else we know.
@@ -159,6 +161,17 @@ function rdNoteAdded(key: string, id: string, hash: string): void {
 async function loadTorrentList(key: string, now = Date.now()): Promise<RdListRow[]> {
   const hit = listCache.get(key)
   if (hit && now - hit.at < LIST_TTL_MS) return hit.rows
+  // The cache-badge path (checkCached) usually pulled the ENTIRE account list into its own
+  // snapshot moments before the user clicked a source. Reuse that snapshot instead of re-paying a
+  // full /torrents round-trip on the click path — both caches answer the same question from the
+  // same endpoint, and this one sat directly on click-to-video latency.
+  if (rdOwnedCache && rdOwnedCache.key === key && now - rdOwnedCache.at < RD_OWNED_TTL) {
+    const rows = rdOwnedCache.entries.filter(
+      (t): t is RdListRow => typeof t.id === 'string' && typeof t.status === 'string',
+    )
+    listCache.set(key, { at: rdOwnedCache.at, rows })
+    return rows
+  }
   // The default page size is 100, but the endpoint documents a limit anywhere in 0..5000, so a
   // 400-torrent account can be scanned in ONE request instead of four sequential ones — each of
   // which sat on the click path. The page loop is kept: it still bounds a very large account, and
@@ -184,7 +197,11 @@ async function loadTorrentList(key: string, now = Date.now()): Promise<RdListRow
     rows.push(...list)
     if (list.length < LIMIT) { complete = true; break } // last page reached
   }
-  if (complete) listCache.set(key, { at: now, rows })
+  if (complete) {
+    listCache.set(key, { at: now, rows })
+    // Feed the badge snapshot too, so whichever path scans first spares the other its fetch.
+    rdOwnedCache = { at: now, key, entries: rows }
+  }
   return rows
 }
 
