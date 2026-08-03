@@ -26,7 +26,7 @@ import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
 import { downloadOf, type DownloadPreferences } from '$lib/downloads/state'
-import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, type EpisodeWant } from './debrid'
+import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
 import { annotateCache } from './cache-state'
 import { resolveOnlineStreams } from './onlinestream'
 import { knownBestHashes } from './seadex'
@@ -83,7 +83,13 @@ import {
 } from '$lib/player/direct-torrent'
 import { torrentioResolverInfoHash } from './resolver-url'
 
-export type PlayState = { status: 'idle' | 'resolving' | 'playing' | 'error'; message?: string }
+export type PlayState = {
+  status: 'idle' | 'resolving' | 'playing' | 'error'
+  message?: string
+  /** The debrid service refused this release (DMCA/content filter) — the torrent itself may still
+   * be fine, so the picker can offer a direct-P2P retry of the same stream. */
+  debridBlocked?: boolean
+}
 
 export type PlayEpisodeOptions = {
   continuation?: ContinueHint
@@ -93,6 +99,9 @@ export type PlayEpisodeOptions = {
 
 export type PlayStreamOptions = {
   autoplay?: boolean
+  /** Play this torrent through the local P2P engine even when a debrid key is configured — the
+   * picker's "Watch this P2P?" retry after the debrid service blocked the release. */
+  forceDirect?: boolean
   /** Override history resume when replacing a failed source in-place. */
   startSeconds?: number
   /** Internal: a watchdog replacement may retain ownership, but can never claim it after a newer
@@ -1458,7 +1467,7 @@ export async function playStream(
     const key = get(debridKey)
     const torrent = stream.__magnet ?? stream.infoHash
     const want = await episodeWant(media, episode, stream)
-    const direct = get(torrentPlaybackMode) === 'direct' || !key
+    const direct = options.forceDirect || get(torrentPlaybackMode) === 'direct' || !key
     if (direct) {
       onState({ status: 'resolving' })
       try {
@@ -1549,7 +1558,7 @@ export async function playStream(
         debridCaching.set(null)
         // User-initiated cancel: quietly return to the picker, no error toast.
         if (e instanceof Error && e.name === 'AbortError') return onState({ status: 'idle' })
-        return onState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
+        return onState({ status: 'error', message: e instanceof Error ? e.message : String(e), debridBlocked: isDebridBlocked(e) })
       }
     }
   }

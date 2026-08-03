@@ -10,6 +10,7 @@ import { deepbrid } from './providers/deepbrid'
 import { megadebrid } from './providers/megadebrid'
 
 export type { DebridProvider, DebridProviderMeta, DebridInfo, ResolveOpts, DebridItem, DebridFile, DebridSidecar, DebridAccountInfo, EpisodeWant } from './types'
+export { isDebridBlocked } from './http'
 
 // Stable providers first, experimental last (Cocoleech/DASAN are omitted — link-only,
 // can't resolve a torrent infoHash).

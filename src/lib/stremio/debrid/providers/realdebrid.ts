@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError, isArchiveName, isDecoy } from '../http'
+import { jfetch, form, magnetOf, hashOf, VIDEO, JUNK, poll, authError, isArchiveName, isDecoy, debridBlocked } from '../http'
 import { pickEpisodeVideo } from '../episode-file'
 import { selectSidecars, sidecarLanguage, sidecarTitle } from '../sidecar-subs'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridSidecar, ResolveOpts, DebridAccountInfo } from '../types'
@@ -21,12 +21,12 @@ async function rd(method: string, path: string, key: string, body?: string): Pro
   })
   // 451 = Real-Debrid has this exact torrent/infohash blocked for legal reasons
   // (DMCA). It is per-file, not your account/IP — a different release usually works.
-  if (status === 451) throw new Error('Real-Debrid blocked this release (DMCA/legal) — pick a different source.')
+  if (status === 451) throw debridBlocked('Real-Debrid blocked this release (DMCA/legal) — pick a different source.')
   // error_code 35 = `infringing_file`: RD's content filter (May 2026) rejected this file by
   // name/pattern. Same user-facing meaning as 451 — a different release usually works.
   if (!ok) {
     const code = json && typeof json === 'object' ? (json as { error_code?: number }).error_code : undefined
-    if (code === 35) throw new Error('Real-Debrid blocked this release (infringing file) — pick a different source.')
+    if (code === 35) throw debridBlocked('Real-Debrid blocked this release (infringing file) — pick a different source.')
     const auth = authError('Real-Debrid', { status, code: code != null ? String(code) : undefined, message: (json as { error?: string })?.error })
     throw new Error(auth ?? `Real-Debrid request failed (${status}).`)
   }
