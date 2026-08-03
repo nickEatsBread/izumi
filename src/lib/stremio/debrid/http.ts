@@ -119,6 +119,16 @@ const TOKEN_RE = /api[\s_-]?key|bad[\s_-]?token|badtoken|no[\s_-]?auth|auth_erro
 // in classifyAuth. The caller must thread the response body into `message` for it to fire.
 const QUOTA_RE = /you have downloaded your allowed|download (?:limit|quota)|quota[\s_-]?exceeded|too many downloads|remaining[\s_-]?downloads?\W+0\b/i
 
+/** Content-block (DMCA/legal/content-filter) error. Carried as a NAME on the Error because the
+ *  message is user-facing prose: the picker matches the name to offer a direct-P2P retry of the
+ *  same torrent — the block is the service's, not the swarm's. */
+export function debridBlocked(message: string): Error {
+  const e = new Error(message)
+  e.name = 'DebridBlocked'
+  return e
+}
+export const isDebridBlocked = (e: unknown): boolean => e instanceof Error && e.name === 'DebridBlocked'
+
 /** Classify an auth/subscription failure from any mix of HTTP status, provider error
  *  code, and human message. Returns undefined when it is NOT an auth/subscription
  *  problem, so the caller keeps its own specific/generic message. */

@@ -204,6 +204,10 @@
   }
   let busy = $state(false)
   let error = $state('')
+  // The stream whose debrid resolve was refused for legal/content reasons (RD 451 etc). The block
+  // is the service's, not the swarm's, so the error row offers a one-off direct-P2P retry of
+  // exactly this stream. Set only together with `error`, cleared wherever `error` is.
+  let blockedRetry = $state<StreamInfo | null>(null)
   const playbackError = $derived(error || pick?.playbackError || '')
 
   // Autoplay countdown: once the resolve reports a trustworthy pick, fill the Auto button then
@@ -227,7 +231,7 @@
     const k = pick ? `${pick.media.id}:${pick.episode}` : ''
     if (k !== lastKey) {
       lastKey = k
-      busy = false; error = ''; filter = ''; chosenLabel = ''; showAll = false; showFiltered = false; seadexOpen = false
+      busy = false; error = ''; blockedRetry = null; filter = ''; chosenLabel = ''; showAll = false; showFiltered = false; seadexOpen = false
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
       autoIdx = 0; failedKeys = []
       focusedBest = false
@@ -281,7 +285,7 @@
     // Picking a source supersedes the in-flight resolve: stop it folding in more sources (and, for
     // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
     cancelResolve()
-    busy = true; error = ''
+    busy = true; error = ''; blockedRetry = null
     chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
     streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
@@ -293,9 +297,25 @@
         // behalf, since they may well want to retry it.
         if ((fromAuto || autoImmediate) && advanceAuto(info)) return
         error = s.message ?? 'Playback failed.'
+        blockedRetry = s.debridBlocked ? info : null
       }
       else if (s.status === 'idle') { busy = false } // caching canceled — re-enable the list
     }, { autoplay: pick.autoplay })
+  }
+  /** Retry the debrid-blocked stream over the local P2P engine — one-off, mode setting untouched. */
+  async function watchP2p() {
+    const info = blockedRetry
+    if (!info || busy || !pick) return
+    cancelAuto()
+    cancelResolve()
+    busy = true; error = ''; blockedRetry = null
+    chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
+    streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
+    await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
+      if (s.status === 'playing') streamPicker.set(null)
+      else if (s.status === 'error') { busy = false; error = s.message ?? 'Playback failed.' }
+      else if (s.status === 'idle') { busy = false }
+    }, { autoplay: pick.autoplay, forceDirect: true })
   }
   /** Remember the failure and move to the next candidate. False when the chain is exhausted. */
   function advanceAuto(info: StreamInfo): boolean {
@@ -502,7 +522,13 @@
       {/if}
 
       {#if playbackError}
-        <p class="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">{playbackError}</p>
+        <p class="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          {playbackError}
+          {#if blockedRetry}
+            <button data-focusable onclick={watchP2p}
+                    class="ml-1 font-semibold underline underline-offset-2 transition-opacity hover:opacity-75">Watch this P2P?</button>
+          {/if}
+        </p>
       {/if}
 
       <!-- Results — reveal sources the instant each addon/extension lands;

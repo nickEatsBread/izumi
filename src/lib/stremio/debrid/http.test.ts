@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { classifyAuth, authError, isArchiveName, isDecoy, poll } from './http'
+import { classifyAuth, authError, isArchiveName, isDecoy, poll, debridBlocked, isDebridBlocked } from './http'
 
 describe('classifyAuth', () => {
   // Real-Debrid — HTTP status only
@@ -82,6 +82,19 @@ describe('authError', () => {
   it('returns undefined for a non-auth failure so the caller keeps its own message', () => {
     expect(authError('Real-Debrid', { status: 451 })).toBeUndefined()
     expect(authError('Premiumize', { status: 200, message: 'not cached' })).toBeUndefined()
+  })
+})
+
+describe('debridBlocked', () => {
+  it('tags the error so the picker can offer a direct-P2P retry', () => {
+    const e = debridBlocked('Real-Debrid blocked this release (DMCA/legal) — pick a different source.')
+    expect(e).toBeInstanceOf(Error)
+    expect(isDebridBlocked(e)).toBe(true)
+  })
+  it('does not flag ordinary errors or non-errors', () => {
+    expect(isDebridBlocked(new Error('Real-Debrid request failed (500).'))).toBe(false)
+    expect(isDebridBlocked('blocked')).toBe(false)
+    expect(isDebridBlocked(undefined)).toBe(false)
   })
 })
 
