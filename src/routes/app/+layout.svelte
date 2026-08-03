@@ -41,6 +41,7 @@
   import { deepLinkNotice, initDeepLinks } from '$lib/deep-links'
   import { initTorrentVpnToasts, torrentVpnNotice } from '$lib/player/direct-torrent'
   import { startUpdateChecks } from '$lib/updater'
+  import { startExtensionUpdateChecks, extensionUpdateNotice } from '$lib/extensions/auto-update'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
   import { get } from 'svelte/store'
@@ -70,6 +71,11 @@
     // The facade dispatches per platform (desktop/android/flatpak); the toast is still opt-in to APPLY.
     let stopUpdates: (() => void) | null = null
     if (!import.meta.env.DEV) stopUpdates = startUpdateChecks()
+    // Same cadence for installed .izumi-ext packages: catalogs are fetched live everywhere else,
+    // but an INSTALLED package is a local copy that goes stale until someone reinstalls it. The
+    // check reuses the sha-pinned catalog install path and skips itself during playback.
+    let stopExtensionUpdates: (() => void) | null = null
+    if (!import.meta.env.DEV) stopExtensionUpdates = startExtensionUpdateChecks()
     initInput()
     initDpadNav()
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
@@ -109,7 +115,7 @@
     // connected. Fire-and-forget.
     refreshAniListAvatar().catch(() => {})
     refreshMalViewer().catch(() => {})
-    return () => { stopUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
+    return () => { stopUpdates?.(); stopExtensionUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
   })
 
   // Push the DNS-over-HTTPS setting into the Rust HTTP client. Reactive: runs on
@@ -241,6 +247,12 @@
 {#if $torrentVpnNotice}
   <div role="status" class="fixed inset-x-0 bottom-20 z-[60] mx-auto w-fit max-w-[92vw] truncate rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
     {$torrentVpnNotice}
+  </div>
+{/if}
+<!-- Background extension auto-update result ("Updated X …"); self-clears after a few seconds. -->
+{#if $extensionUpdateNotice}
+  <div role="status" class="fixed inset-x-0 bottom-20 z-[60] mx-auto w-fit max-w-[92vw] truncate rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
+    {$extensionUpdateNotice}
   </div>
 {/if}
 <!-- Cross-platform update toast (available → downloading → ready); opt-in to apply. -->
