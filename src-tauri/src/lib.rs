@@ -470,6 +470,32 @@ fn restore_native_touch(window: tauri::WebviewWindow) -> Result<(), String> {
     }
 }
 
+/// Hold the Game-mode touch keepalive while a finger is physically on the screen (the webview
+/// reports the down/up edges). A STEAM_TOUCH_CLICK_MODE write landing mid-gesture makes gamescope
+/// reroute the gesture's remaining motion, so the drag freezes or warps; keeping OUR writes out of
+/// the gesture window removes izumi's half of those transitions. The Rust side expires the hold on
+/// a deadline, so a lost pointerup can never silence the keepalive permanently.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn native_touch_hold(held: bool) {
+    #[cfg(target_os = "linux")]
+    player::linux_x11::set_touch_hold(held);
+    #[cfg(not(target_os = "linux"))]
+    let _ = held;
+}
+
+/// Game-mode input diagnostics from the webview, persisted through the same file+stderr channel
+/// as native logs — the Flatpak sandbox swallows webview console output and the Game-mode session
+/// has no devtools, so this is the only way frontend incident reports survive to be read.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn gm_log(message: String) {
+    #[cfg(target_os = "linux")]
+    player::linux_embed::elog(&format!("gm: {message}"));
+    #[cfg(not(target_os = "linux"))]
+    eprintln!("[izumi] gm: {message}");
+}
+
 /// Show the Steam Deck floating on-screen keyboard over a focused field (window-pixel rect).
 /// Returns true if the Steam OSK was shown; false → the frontend uses its built-in HTML keyboard.
 /// `mode`: 0 single-line, 1 multi-line, 2 email, 3 numeric.
@@ -3960,6 +3986,8 @@ pub fn run() {
             clear_video_cache,
             set_webview_zoom,
             restore_native_touch,
+            native_touch_hold,
+            gm_log,
             set_webview_accel,
             steam_show_osk,
             discussion_popup_complete,

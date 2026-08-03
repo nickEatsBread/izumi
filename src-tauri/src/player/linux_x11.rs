@@ -21,6 +21,7 @@
 use std::ffi::c_void;
 use std::os::raw::{c_char, c_int, c_uchar, c_ulong};
 use std::sync::{
+    atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering},
     mpsc::{self, SyncSender, TrySendError},
     Mutex, OnceLock,
 };
@@ -63,7 +64,16 @@ extern "C" {
         data: *const c_uchar,
         nelements: c_int,
     ) -> c_int;
+    fn XSetIOErrorHandler(handler: Option<XIOErrorHandler>) -> Option<XIOErrorHandler>;
 }
+
+// Xlib IO-error plumbing (see install_io_guard). The classic handler is PROCESS-GLOBAL; the
+// per-display exit handler is the libX11 >= 1.7 addition that makes surviving a dead private
+// connection possible at all.
+type XIOErrorHandler = unsafe extern "C" fn(*mut c_void) -> c_int;
+type XIOErrorExitHandler = unsafe extern "C" fn(*mut c_void, *mut c_void);
+type XSetIOErrorExitHandlerFn =
+    unsafe extern "C" fn(*mut c_void, Option<XIOErrorExitHandler>, *mut c_void);
 
 // X11's predefined XA_CARDINAL atom and PropModeReplace value.
 const XA_CARDINAL: c_ulong = 6;
@@ -118,9 +128,89 @@ static STATE: Mutex<Option<X11>> = Mutex::new(None);
 // A bounded wake channel gives focus/navigation/controller edges an immediate reassertion. The
 // worker also writes every 50ms so a later Steam write cannot leave touch dead until another UI
 // event. One tiny XChangeProperty + XFlush at 20Hz is negligible.
-static TOUCH_WORKER: OnceLock<SyncSender<()>> = OnceLock::new();
-static TOUCH_WORKER_START: Mutex<()> = Mutex::new(());
+//
+// The sender lives in a Mutex<Option<..>>, NOT a OnceLock: a worker that wedges or whose Display
+// dies must be REPLACEABLE, or Steam's next mode write sticks for the rest of the session with no
+// symptom other than "touch stopped working". touch_worker() judges liveness by the heartbeat.
+static TOUCH_WORKER: Mutex<Option<SyncSender<()>>> = Mutex::new(None);
 const TOUCH_KEEPALIVE: Duration = Duration::from_millis(50);
+/// Worker heartbeat (epoch ms), stored every loop tick — including held/skipped ones, so a
+/// legitimate write-hold is never mistaken for a dead worker.
+static TOUCH_ALIVE_MS: AtomicU64 = AtomicU64::new(0);
+const TOUCH_STALE_MS: u64 = 2_000;
+/// Keepalive writes are HELD while a finger is physically down (reported by the webview): a mode
+/// write landing mid-gesture makes gamescope reroute that gesture's remaining MOTION (the release
+/// itself is safe — gamescope pairs it with how the down was delivered), so the drag freezes or
+/// warps. Deadline-based so a lost pointerup can never silence the keepalive for good.
+static TOUCH_HOLD_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+const TOUCH_HOLD_MAX_MS: u64 = 10_000;
+/// Set by the IO handlers when the worker's private Display dies (XWayland restart). The worker
+/// exits on seeing it; the next enable_native_touch respawns with a fresh connection.
+static TOUCH_DPY_DEAD: AtomicBool = AtomicBool::new(false);
+/// The worker's current Display*, so the process-global IO handler can filter to OUR connection.
+static TOUCH_DPY_PTR: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static PREV_IO_HANDLER: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+static IO_HANDLER_INSTALLED: OnceLock<()> = OnceLock::new();
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Webview-reported "a finger is physically on the screen" edge (see native_touch_hold).
+pub fn set_touch_hold(held: bool) {
+    let deadline = if held { now_ms() + TOUCH_HOLD_MAX_MS } else { 0 };
+    TOUCH_HOLD_UNTIL_MS.store(deadline, Ordering::Relaxed);
+}
+
+unsafe extern "C" fn touch_io_exit(_dpy: *mut c_void, _data: *mut c_void) {
+    TOUCH_DPY_DEAD.store(true, Ordering::Relaxed);
+}
+
+unsafe extern "C" fn touch_io_error(dpy: *mut c_void) -> c_int {
+    if dpy == TOUCH_DPY_PTR.load(Ordering::Relaxed) {
+        TOUCH_DPY_DEAD.store(true, Ordering::Relaxed);
+        // Returning is only survivable because touch_io_exit is registered for this display —
+        // without it libX11 falls through to its per-display default, which exit(1)s.
+        return 0;
+    }
+    let prev = PREV_IO_HANDLER.load(Ordering::Relaxed);
+    if !prev.is_null() {
+        let prev: XIOErrorHandler = std::mem::transmute(prev);
+        return prev(dpy);
+    }
+    0
+}
+
+/// Survive OUR private touch connection dying instead of taking the app with it.
+///
+/// GTK3 installs a process-global XSetIOErrorHandler (`gdk_x_io_error`) that `_exit(1)`s for an IO
+/// error on ANY display — including this private one, so an XWayland hiccup used to be fatal.
+/// Survival needs BOTH pieces (libX11 semantics): a filtering global handler that returns for our
+/// display (forwarding every other display to GTK's), AND the per-display
+/// `XSetIOErrorExitHandler` (libX11 >= 1.7) so libX11's own exit(1) default is bypassed too.
+/// The symbol is resolved at runtime; where it doesn't exist we install NOTHING and keep the old
+/// behavior rather than half of it.
+fn install_io_guard(dpy: *mut c_void) {
+    unsafe {
+        let sym = libc::dlsym(
+            libc::RTLD_DEFAULT,
+            b"XSetIOErrorExitHandler\0".as_ptr().cast(),
+        );
+        if sym.is_null() {
+            return;
+        }
+        let set_exit: XSetIOErrorExitHandlerFn = std::mem::transmute(sym);
+        set_exit(dpy, Some(touch_io_exit), std::ptr::null_mut());
+        IO_HANDLER_INSTALLED.get_or_init(|| {
+            if let Some(prev) = XSetIOErrorHandler(Some(touch_io_error)) {
+                PREV_IO_HANDLER.store(prev as *mut c_void, Ordering::Relaxed);
+            }
+        });
+    }
+}
 
 fn raw_x11(win: &tauri::WebviewWindow) -> Result<(*mut c_void, u64), String> {
     let rw = win
@@ -161,33 +251,51 @@ pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> 
     if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
         return Ok(());
     }
-    let sender = touch_worker()?;
-    match sender.try_send(()) {
-        Ok(()) | Err(TrySendError::Full(())) => {}
-        Err(TrySendError::Disconnected(())) => {
-            return Err("native-touch keepalive stopped unexpectedly".into());
+    // Two attempts: a Disconnected sender means the worker died (its Display died, or it wedged
+    // and was replaced) — drop it and spawn a fresh one instead of reporting a dead end.
+    for attempt in 0..2 {
+        let sender = touch_worker()?;
+        match sender.try_send(()) {
+            Ok(()) | Err(TrySendError::Full(())) => {
+                crate::player::linux_embed::elog(
+                    "x11: requested Gamescope native touch passthrough (mode 4)",
+                );
+                return Ok(());
+            }
+            Err(TrySendError::Disconnected(())) => {
+                let mut guard = TOUCH_WORKER.lock().unwrap_or_else(|p| p.into_inner());
+                *guard = None;
+                if attempt == 1 {
+                    return Err("native-touch keepalive stopped and could not be restarted".into());
+                }
+            }
         }
     }
-    crate::player::linux_embed::elog("x11: requested Gamescope native touch passthrough (mode 4)");
     Ok(())
 }
 
-fn touch_worker() -> Result<&'static SyncSender<()>, String> {
-    if let Some(sender) = TOUCH_WORKER.get() {
-        return Ok(sender);
+fn touch_worker() -> Result<SyncSender<()>, String> {
+    // unwrap_or_else(into_inner): a panic on this path once poisoned the mutex and every later
+    // retry errored forever — un-poisoning is safe here, the Option is always coherent.
+    let mut guard = TOUCH_WORKER.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(sender) = guard.as_ref() {
+        // Liveness, not mere existence: a wedged or dead worker holding the slot forever is
+        // exactly how a Steam mode rewrite becomes permanent. The heartbeat updates every 50ms
+        // tick (held ones included), so 2s of silence means the worker is genuinely gone.
+        let age = now_ms().saturating_sub(TOUCH_ALIVE_MS.load(Ordering::Relaxed));
+        if age <= TOUCH_STALE_MS {
+            return Ok(sender.clone());
+        }
+        crate::player::linux_embed::elog(&format!(
+            "x11: native-touch keepalive silent for {age}ms — respawning worker"
+        ));
+        *guard = None;
     }
     // Do not cache a transient XOpenDisplay/startup failure for the entire session. A later focus,
     // navigation, or controller edge can retry once Gamescope's XWayland socket is ready.
-    let _start_guard = TOUCH_WORKER_START
-        .lock()
-        .map_err(|error| error.to_string())?;
-    if TOUCH_WORKER.get().is_none() {
-        let sender = start_touch_worker()?;
-        let _ = TOUCH_WORKER.set(sender);
-    }
-    TOUCH_WORKER
-        .get()
-        .ok_or_else(|| "native-touch keepalive was not initialized".into())
+    let sender = start_touch_worker()?;
+    *guard = Some(sender.clone());
+    Ok(sender)
 }
 
 fn start_touch_worker() -> Result<SyncSender<()>, String> {
@@ -215,17 +323,39 @@ fn start_touch_worker() -> Result<SyncSender<()>, String> {
                 return;
             }
 
-            write_native_touch(dpy, root, atom, true);
+            // Fresh connection: publish it for the IO filter, clear any stale death flag from a
+            // previous incarnation, and register the per-display survival handlers.
+            TOUCH_DPY_PTR.store(dpy, Ordering::Relaxed);
+            TOUCH_DPY_DEAD.store(false, Ordering::Relaxed);
+            install_io_guard(dpy);
+
+            TOUCH_ALIVE_MS.store(now_ms(), Ordering::Relaxed);
+            write_native_touch(dpy, root, atom);
             if ready_tx.send(Ok(())).is_err() {
                 return;
             }
             loop {
-                let sync = match wake_rx.recv_timeout(TOUCH_KEEPALIVE) {
-                    Ok(()) => true,
-                    Err(mpsc::RecvTimeoutError::Timeout) => false,
+                match wake_rx.recv_timeout(TOUCH_KEEPALIVE) {
+                    Ok(()) | Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                };
-                write_native_touch(dpy, root, atom, sync);
+                }
+                TOUCH_ALIVE_MS.store(now_ms(), Ordering::Relaxed);
+                if TOUCH_DPY_DEAD.load(Ordering::Relaxed) {
+                    crate::player::linux_embed::elog(
+                        "x11: native-touch display connection died — exiting for respawn",
+                    );
+                    // Deliberately NOT XCloseDisplay: the connection is flagged dead inside
+                    // libX11 and further calls no-op; closing a dead display double-frees on
+                    // some libX11 versions. One leaked Display per XWayland death is fine.
+                    return;
+                }
+                // A finger is on the screen: stay quiet so OUR write is never the mid-gesture
+                // mode transition. Steam's own writes may still land; the fallout is bounded by
+                // gamescope pairing every release with its down. Deadline expires on its own.
+                if now_ms() < TOUCH_HOLD_UNTIL_MS.load(Ordering::Relaxed) {
+                    continue;
+                }
+                write_native_touch(dpy, root, atom);
             }
         })
         .map_err(|error| format!("could not start native-touch keepalive: {error}"))?;
@@ -242,7 +372,11 @@ fn start_touch_worker() -> Result<SyncSender<()>, String> {
     }
 }
 
-fn write_native_touch(dpy: *mut c_void, root: u64, atom: c_ulong, sync: bool) {
+// XFlush only, never XSync: XChangeProperty is reply-less, so a flushed write reaches the server
+// whenever it reads — while XSync blocks in _XReply with NO timeout, so an alive-but-unresponsive
+// server (gamescope stall) could wedge this worker forever. The heartbeat/respawn design assumes
+// nothing here can block indefinitely.
+fn write_native_touch(dpy: *mut c_void, root: u64, atom: c_ulong) {
     let value: c_ulong = 4; // TouchClickModes::Passthrough
     unsafe {
         XChangeProperty(
@@ -255,11 +389,7 @@ fn write_native_touch(dpy: *mut c_void, root: u64, atom: c_ulong, sync: bool) {
             (&value as *const c_ulong).cast(),
             1,
         );
-        if sync {
-            XSync(dpy, 0);
-        } else {
-            XFlush(dpy);
-        }
+        XFlush(dpy);
     }
 }
 
@@ -267,8 +397,39 @@ fn write_native_touch(dpy: *mut c_void, root: u64, atom: c_ulong, sync: bool) {
 /// input-transparent (touch falls through to the webview). Returns its X11 window id for
 /// mpv `--wid`. Idempotent — returns the existing container's id if already created.
 pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result<i64, String> {
-    if let Some(st) = STATE.lock().map_err(|e| e.to_string())?.as_ref() {
-        return Ok(st.container as i64);
+    // Bound BEFORE the if-let: an if-let scrutinee's guard temporary lives for the whole block,
+    // and the closure below re-locks STATE from the glib main thread — holding it here deadlocks.
+    let existing = STATE
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .map(|st| st.container);
+    if let Some(container) = existing {
+        // Re-assert the empty INPUT shape on every reuse. It used to be applied exactly once at
+        // creation; if that async request failed (or anything reset the shape), the fullscreen
+        // raised container silently swallowed every touch over the video for the whole session.
+        // Idempotent and nearly free.
+        crate::player::linux_embed::run_on_glib_main(move || {
+            if let Ok(guard) = STATE.lock() {
+                if let Some(st) = guard.as_ref() {
+                    unsafe {
+                        XShapeCombineRectangles(
+                            st.dpy,
+                            st.container,
+                            SHAPE_INPUT,
+                            0,
+                            0,
+                            std::ptr::null(),
+                            0,
+                            SHAPE_SET,
+                            0,
+                        );
+                        XFlush(st.dpy);
+                    }
+                }
+            }
+        });
+        return Ok(container as i64);
     }
     let win = window.clone();
     crate::player::linux_embed::run_on_glib_main(move || -> Result<i64, String> {

@@ -47,12 +47,19 @@
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
+  import { initGmTouchWatchdog } from '$lib/player/gm-touch-watchdog'
   let { children } = $props()
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
   // re-sizes it per file by bitrate in play.ts). Handles the Uncapped sentinel. Picked up next file.
   $effect(() => { invoke('set_player_cache', { bytes: playerCacheBytes(Number($playerCacheMb)) }).catch(() => {}) })
   // Game mode (Deck): start the backend controller reader + the app-wide gamepad→nav
   // translator once gamescope/Deck mode is resolved. Reacts to the async gameMode store.
+  $effect(() => {
+    if (!$gameMode) return
+    // Gamescope touch survival: gesture-aware keepalive hold + stuck-pointer recovery (a lost
+    // touch-up strands the pointer forever on this WebKitGTK — no pointercancel exists there).
+    return initGmTouchWatchdog()
+  })
   $effect(() => {
     if (!$gameMode) return
     suppressNativeTooltips() // no native `title` hover popups under controller/touch
