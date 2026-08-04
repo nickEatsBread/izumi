@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { listen } from '@tauri-apps/api/event'
-  import Keyboard from 'lucide-svelte/icons/keyboard'
+  import Keyboard from '@lucide/svelte/icons/keyboard'
   import {
     acknowledgeDeckKeyboardWarning,
     deckKeyboardWarning,

@@ -2,8 +2,8 @@
   import { onMount } from 'svelte'
   import { playing } from '$lib/player/session'
   import { lofiTrack, lofiUrl, nextTrack, prevTrack } from '$lib/stores/lofi'
-  import Volume2 from 'lucide-svelte/icons/volume-2'
-  import VolumeX from 'lucide-svelte/icons/volume-x'
+  import Volume2 from '@lucide/svelte/icons/volume-2'
+  import VolumeX from '@lucide/svelte/icons/volume-x'
 
   // Lo-fi background music. OFF by default and never auto-plays (the browser's
   // autoplay policy blocks sound without a gesture anyway) — the user clicks the

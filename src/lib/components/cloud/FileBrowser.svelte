@@ -1,7 +1,7 @@
 <script lang="ts">
   import { cloudFiles, playFile } from '$lib/stremio/debrid/cloud'
-  import Play from 'lucide-svelte/icons/play'
-  import X from 'lucide-svelte/icons/x'
+  import Play from '@lucide/svelte/icons/play'
+  import X from '@lucide/svelte/icons/x'
   import type { DebridFile } from '$lib/stremio/debrid/types'
 
   const fmtBytes = (n?: number) => {

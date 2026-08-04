@@ -27,9 +27,9 @@ embedded player's subtitle renderer can use it — Android has no Nunito of its 
 from the upstream Google Fonts repository at build time by `scripts/fetch-subtitle-font.mjs`, which
 stages the OFL text next to it inside the APK.
 
-## lucide-svelte — ISC (icons)
+## @lucide/svelte — ISC (icons)
 
-izumi's interface icons come from [lucide-svelte](https://lucide.dev/). The build strips the
+izumi's interface icons come from [@lucide/svelte](https://lucide.dev/). The build strips the
 per-module license banners that lucide ships inside its source (they accounted for ~15% of all
 shipped JavaScript), so the required notice is reproduced here in full instead.
 
@@ -53,7 +53,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 A subset of Lucide's icons are derived from the Feather project and additionally carry the MIT
 license, Copyright (c) 2013-present Cole Bemis. The full text and the list of affected icons are in
-`node_modules/lucide-svelte/LICENSE` and at
+`node_modules/@lucide/svelte/LICENSE` and at
 https://github.com/lucide-icons/lucide/blob/main/LICENSE.
 
 ## Other dependencies

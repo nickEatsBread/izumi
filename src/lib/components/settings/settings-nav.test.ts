@@ -6,7 +6,7 @@ const src = readFileSync(fileURLToPath(new URL('./SettingsNav.svelte', import.me
 
 describe('SettingsNav', () => {
   it('imports the Captions icon from lucide', () => {
-    expect(src).toContain("import Captions from 'lucide-svelte/icons/captions'")
+    expect(src).toContain("import Captions from '@lucide/svelte/icons/captions'")
   })
 
   it('has a Subtitles nav entry pointing at the subtitles route', () => {

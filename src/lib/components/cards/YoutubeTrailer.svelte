@@ -6,8 +6,8 @@
   // Works on Chromium webviews (WebView2); Linux/WebKitGTK falls back to still image
   // (guarded by the caller) since it lacks `credentialless`.
   import { onMount } from 'svelte'
-  import VolumeX from 'lucide-svelte/icons/volume-x'
-  import Volume2 from 'lucide-svelte/icons/volume-2'
+  import VolumeX from '@lucide/svelte/icons/volume-x'
+  import Volume2 from '@lucide/svelte/icons/volume-2'
   import { trailerMuted } from '$lib/stores/trailer'
   let { id }: { id: string } = $props()
 

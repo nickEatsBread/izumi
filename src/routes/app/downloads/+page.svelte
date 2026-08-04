@@ -4,15 +4,15 @@
   import { playEpisode } from '$lib/stremio/play'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
   import { heroMedia } from '$lib/stores/hero'
-  import Search from 'lucide-svelte/icons/search'
-  import Cloud from 'lucide-svelte/icons/cloud'
+  import Search from '@lucide/svelte/icons/search'
+  import Cloud from '@lucide/svelte/icons/cloud'
   import { isMobile } from '$lib/platform'
-  import Play from 'lucide-svelte/icons/play'
-  import Pause from 'lucide-svelte/icons/pause'
-  import RotateCw from 'lucide-svelte/icons/rotate-cw'
-  import X from 'lucide-svelte/icons/x'
-  import Trash2 from 'lucide-svelte/icons/trash-2'
-  import FolderOpen from 'lucide-svelte/icons/folder-open'
+  import Play from '@lucide/svelte/icons/play'
+  import Pause from '@lucide/svelte/icons/pause'
+  import RotateCw from '@lucide/svelte/icons/rotate-cw'
+  import X from '@lucide/svelte/icons/x'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
+  import FolderOpen from '@lucide/svelte/icons/folder-open'
 
   heroMedia.set(null)
 

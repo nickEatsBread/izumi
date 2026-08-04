@@ -5,7 +5,7 @@
   import SettingsSearch from '$lib/components/settings/SettingsSearch.svelte'
   import { isMobile } from '$lib/platform'
   import { heroMedia } from '$lib/stores/hero'
-  import ChevronLeft from 'lucide-svelte/icons/chevron-left'
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import * as h from '$lib/haptics'
   import { fly } from 'svelte/transition'
   import { m } from '$lib/paraglide/messages.js'

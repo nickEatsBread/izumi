@@ -5,7 +5,7 @@
   import { showAdult } from '$lib/settings/ui'
   import MultiSelect from './MultiSelect.svelte'
   import AdvancedFilters from './AdvancedFilters.svelte'
-  import SlidersHorizontal from 'lucide-svelte/icons/sliders-horizontal'
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
 
   let { filters = $bindable() }: { filters: SearchFilters } = $props()
 

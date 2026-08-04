@@ -7,7 +7,7 @@
   // the host's link is fetched from every guest's IP address. The wording below follows what the
   // providers' own terms say, so the host can make an informed call.
   import { fade } from 'svelte/transition'
-  import TriangleAlert from 'lucide-svelte/icons/triangle-alert'
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import { debridRoomNoticeAck } from '$lib/settings/ui'
 
   let { onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void } = $props()

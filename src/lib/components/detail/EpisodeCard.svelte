@@ -10,10 +10,10 @@
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { episodeBarPercent, positions, progressKey } from '$lib/player/progress'
   import { hideSpoilers } from '$lib/settings/ui'
-  import Download from 'lucide-svelte/icons/download'
-  import Loader from 'lucide-svelte/icons/loader-circle'
-  import Pause from 'lucide-svelte/icons/pause'
-  import Check from 'lucide-svelte/icons/check'
+  import Download from '@lucide/svelte/icons/download'
+  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Pause from '@lucide/svelte/icons/pause'
+  import Check from '@lucide/svelte/icons/check'
 
   let {
     media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay,

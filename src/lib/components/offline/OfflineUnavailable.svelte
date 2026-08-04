@@ -1,5 +1,5 @@
 <script lang="ts">
-  import WifiOff from 'lucide-svelte/icons/wifi-off'
+  import WifiOff from '@lucide/svelte/icons/wifi-off'
   // Shown in place of a network-only page (Search, Schedule, Cloud, My List) while in offline mode.
   let {
     title = 'Unavailable offline',

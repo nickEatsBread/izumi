@@ -27,6 +27,7 @@
   "dependencies": {
     "@fontsource-variable/nunito": "^5.2.7",
     "@fontsource/geist-mono": "^5.2.8",
+    "@lucide/svelte": "^1.28.0",
     "@nicholasyoannou/hayami-sdk": "github:nicholasyoannou/hayami-sdk",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-deep-link": "^2.4.9",
@@ -44,7 +45,6 @@
     "crypto-js": "^4.2.0",
     "idb-keyval": "^6.2.6",
     "lottie-web": "^5.13.0",
-    "lucide-svelte": "^1.0.1",
     "sucrase": "^3.35.1",
     "svelte-persisted-store": "^0.12.0",
     "urql": "^5.0.3",

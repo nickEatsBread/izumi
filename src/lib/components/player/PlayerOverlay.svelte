@@ -39,10 +39,10 @@
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
-  import PictureInPicture from 'lucide-svelte/icons/picture-in-picture-2'
-  import X from 'lucide-svelte/icons/x'
-  import PlayIcon from 'lucide-svelte/icons/play'
-  import PauseIcon from 'lucide-svelte/icons/pause'
+  import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
+  import X from '@lucide/svelte/icons/x'
+  import PlayIcon from '@lucide/svelte/icons/play'
+  import PauseIcon from '@lucide/svelte/icons/pause'
   import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
 
   // In-app player overlay. mpv is embedded into the MAIN window (behind the

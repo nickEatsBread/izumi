@@ -1,9 +1,9 @@
 <script lang="ts">
   import { navConfig, effectiveNav, resetNav, NAV_META, HOME_META, type NavPlacement } from '$lib/settings/nav'
   import * as h from '$lib/haptics'
-  import ChevronUp from 'lucide-svelte/icons/chevron-up'
-  import ChevronDown from 'lucide-svelte/icons/chevron-down'
-  import RotateCcw from 'lucide-svelte/icons/rotate-ccw'
+  import ChevronUp from '@lucide/svelte/icons/chevron-up'
+  import ChevronDown from '@lucide/svelte/icons/chevron-down'
+  import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
 
   const HomeIcon = HOME_META.icon
   const placements: { value: NavPlacement; label: string }[] = [

@@ -17,7 +17,7 @@ export default defineConfig(async () => ({
     sveltekit(),
   ],
 
-  // lucide-svelte ships a ~3.4KB ISC header in EVERY icon module, which Vite inlines by default:
+  // @lucide/svelte ships a ~3.4KB ISC header in EVERY icon module, which Vite inlines by default:
   // measured at 277KB across the built JS (15.8% of the total), 94KB of it in the /app layout chunk
   // that is parsed before first paint. `external` moves them to sidecar .LEGAL.txt files, which
   // keeps the ISC notice shipped (it is not optional — and lucide has no THIRD-PARTY-NOTICES.md

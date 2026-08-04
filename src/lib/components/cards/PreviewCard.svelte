@@ -6,10 +6,10 @@
   import { anilistToken } from '$lib/anilist/auth'
   import { toggleFavourite, setStatus, anyTrackerConnected } from '$lib/trackers'
   import YoutubeTrailer from './YoutubeTrailer.svelte'
-  import Play from 'lucide-svelte/icons/play'
-  import Heart from 'lucide-svelte/icons/heart'
-  import Plus from 'lucide-svelte/icons/plus'
-  import BookOpen from 'lucide-svelte/icons/book-open'
+  import Play from '@lucide/svelte/icons/play'
+  import Heart from '@lucide/svelte/icons/heart'
+  import Plus from '@lucide/svelte/icons/plus'
+  import BookOpen from '@lucide/svelte/icons/book-open'
   let { media }: { media: Media } = $props()
 
   // YouTube trailers only; WebKitGTK (no `credentialless`) will just show the still.

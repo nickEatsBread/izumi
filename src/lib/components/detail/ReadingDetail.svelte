@@ -8,8 +8,8 @@
   import Tabs from './Tabs.svelte'
   import RichMetadata from './RichMetadata.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import ExternalLink from 'lucide-svelte/icons/external-link'
-  import BookOpen from 'lucide-svelte/icons/book-open'
+  import ExternalLink from '@lucide/svelte/icons/external-link'
+  import BookOpen from '@lucide/svelte/icons/book-open'
 
   let { id }: { id: number } = $props()
   const client = getContextClient()

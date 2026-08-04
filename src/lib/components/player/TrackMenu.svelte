@@ -10,8 +10,8 @@
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel, langName } from '$lib/player/track-label'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
-  import ChevronRight from 'lucide-svelte/icons/chevron-right'
-  import Check from 'lucide-svelte/icons/check'
+  import ChevronRight from '@lucide/svelte/icons/chevron-right'
+  import Check from '@lucide/svelte/icons/check'
 
   // Game-mode (Deck) audio/subtitle picker: a controller-navigable CASCADING column menu.
   // Opens on the ☰ (start) button; d-pad up/down moves within a column, →/A descends into the

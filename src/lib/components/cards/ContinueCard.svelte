@@ -14,8 +14,8 @@
   import { resumeEpisode, type PlayState } from '$lib/stremio/play'
   import type { Media } from '$lib/anilist/types'
   import type { EpMeta } from '$lib/anizip/types'
-  import Play from 'lucide-svelte/icons/play'
-  import Loader from 'lucide-svelte/icons/loader-circle'
+  import Play from '@lucide/svelte/icons/play'
+  import Loader from '@lucide/svelte/icons/loader-circle'
   import { isAndroid } from '$lib/platform'
   import * as h from '$lib/haptics'
 

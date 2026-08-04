@@ -3,19 +3,23 @@
 // header, or be hidden — and can be reordered. Persisted so it survives restarts.
 import { persisted } from 'svelte-persisted-store'
 import { derived } from 'svelte/store'
-import type { ComponentType } from 'svelte'
-import Home from 'lucide-svelte/icons/house'
-import Calendar from 'lucide-svelte/icons/calendar'
-import Download from 'lucide-svelte/icons/download'
-import Settings from 'lucide-svelte/icons/settings'
-import Search from 'lucide-svelte/icons/search'
-import Bookmark from 'lucide-svelte/icons/bookmark'
-import Users from 'lucide-svelte/icons/users'
+import Home from '@lucide/svelte/icons/house'
+import Calendar from '@lucide/svelte/icons/calendar'
+import Download from '@lucide/svelte/icons/download'
+import Settings from '@lucide/svelte/icons/settings'
+import Search from '@lucide/svelte/icons/search'
+import Bookmark from '@lucide/svelte/icons/bookmark'
+import Users from '@lucide/svelte/icons/users'
+
+// Lucide icons are Svelte 5 function components. Taken off an icon we already import rather than
+// from `@lucide/svelte`'s `LucideIcon`, because that root export is a barrel over every icon and
+// pulling it in for one type more than triples the files svelte-check has to walk (1436 -> 5110).
+type LucideIcon = typeof Home
 
 export type NavPlacement = 'bottom' | 'top' | 'hidden'
 export type NavItemId = 'schedule' | 'downloads' | 'watch' | 'settings' | 'mylist' | 'search'
 
-export interface NavMeta { label: string; href: string; icon: ComponentType }
+export interface NavMeta { label: string; href: string; icon: LucideIcon }
 
 /** Metadata for every movable destination. */
 export const NAV_META: Record<NavItemId, NavMeta> = {

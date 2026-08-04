@@ -14,8 +14,8 @@
     autoDownloadRules, autoDownloadRunning, removeAutoDownloadRule, runAutoDownloadRules,
     updateAutoDownloadRule,
   } from '$lib/downloads/rules'
-  import Trash2 from 'lucide-svelte/icons/trash-2'
-  import RefreshCw from 'lucide-svelte/icons/refresh-cw'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   // Desktop: native folder picker → an absolute filesystem path the reqwest downloader can write to.

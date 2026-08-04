@@ -7,10 +7,10 @@
   import { offlineMode } from '$lib/stores/offline'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import type { DebridItem } from '$lib/stremio/debrid/types'
-  import Search from 'lucide-svelte/icons/search'
-  import Play from 'lucide-svelte/icons/play'
-  import Trash2 from 'lucide-svelte/icons/trash-2'
-  import RotateCw from 'lucide-svelte/icons/rotate-cw'
+  import Search from '@lucide/svelte/icons/search'
+  import Play from '@lucide/svelte/icons/play'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
+  import RotateCw from '@lucide/svelte/icons/rotate-cw'
 
   heroMedia.set(null)
 

@@ -2,8 +2,8 @@
   // A compact multi-select dropdown: a labelled button showing the selection count, opening a
   // checklist panel. Closes on outside-click / Escape. On mobile the panel is viewport-anchored
   // (fixed, full width minus margins) so a right-edge trigger's list can't overflow off-screen.
-  import ChevronDown from 'lucide-svelte/icons/chevron-down'
-  import Check from 'lucide-svelte/icons/check'
+  import ChevronDown from '@lucide/svelte/icons/chevron-down'
+  import Check from '@lucide/svelte/icons/check'
   import { isMobile } from '$lib/platform'
 
   let {

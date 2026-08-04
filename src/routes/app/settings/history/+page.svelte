@@ -4,10 +4,10 @@
   import { exportJson, exportMalXml, importJson, saveTextFile } from '$lib/player/history-io'
   import { title as mediaTitle } from '$lib/anilist/media'
   import Toggle from '$lib/components/settings/Toggle.svelte'
-  import Download from 'lucide-svelte/icons/download'
-  import Upload from 'lucide-svelte/icons/upload'
-  import Trash2 from 'lucide-svelte/icons/trash-2'
-  import X from 'lucide-svelte/icons/x'
+  import Download from '@lucide/svelte/icons/download'
+  import Upload from '@lucide/svelte/icons/upload'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
+  import X from '@lucide/svelte/icons/x'
 
   const entries = $derived(historyEntries($localHistory))
   let msg = $state('')

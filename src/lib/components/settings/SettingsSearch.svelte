@@ -1,9 +1,9 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import { tick } from 'svelte'
-  import Search from 'lucide-svelte/icons/search'
-  import X from 'lucide-svelte/icons/x'
-  import ChevronRight from 'lucide-svelte/icons/chevron-right'
+  import Search from '@lucide/svelte/icons/search'
+  import X from '@lucide/svelte/icons/x'
+  import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import { isAndroid } from '$lib/platform'
   import * as h from '$lib/haptics'
   import { searchSettings, settingKey, type SettingSearchItem } from '$lib/settings/search'

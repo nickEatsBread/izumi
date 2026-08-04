@@ -3,7 +3,7 @@
   import { MEDIA_TAG_COLLECTION } from '$lib/anilist/detail-queries'
   import { cycleTag, tagState, groupTags, type MediaTag } from '$lib/anilist/tags'
   import { showAdult } from '$lib/settings/ui'
-  import Search from 'lucide-svelte/icons/search'
+  import Search from '@lucide/svelte/icons/search'
 
   let {
     include = [],

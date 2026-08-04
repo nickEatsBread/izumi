@@ -3,7 +3,7 @@
   import { fetchFranchise, sortFranchiseMedia } from '$lib/anilist/franchise'
   import { title, cover, isReadingMedia, mediaHref } from '$lib/anilist/media'
   import { reliableImage } from '$lib/util/reliable-image'
-  import Clapperboard from 'lucide-svelte/icons/clapperboard'
+  import Clapperboard from '@lucide/svelte/icons/clapperboard'
 
   let { media }: { media: Media } = $props()
   let items = $state<Media[]>([])
