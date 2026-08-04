@@ -40,7 +40,7 @@ jobs:
         run: gh release delete beta --repo "${{ github.repository }}" --yes --cleanup-tag || true
 
       # Full history + tags so the notes can list every commit since the previous release.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -74,7 +74,7 @@ jobs:
 
       - name: Create draft release
         id: create
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           # Passed via env (not string-interpolated into the script) so commit messages with
           # quotes/backticks can't break the JS.
@@ -110,7 +110,7 @@ jobs:
             args: ''
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -121,9 +121,9 @@ jobs:
           workspaces: './src-tauri -> target'
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       # libmpv2-sys links `-l mpv`, so libmpv must be on the linker path.
@@ -286,7 +286,7 @@ jobs:
     needs: create-release
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install flatpak + flatpak-builder
         run: |
@@ -296,7 +296,7 @@ jobs:
       # Cache the built runtime/SDK downloads + the module build tree so reruns skip the ~15min
       # mpv/libplacebo/libass compile. Keyed on the manifest — a dep bump invalidates it.
       - name: Cache flatpak build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             flatpak/.flatpak-builder
@@ -417,7 +417,7 @@ jobs:
       NDK_VERSION: "27.0.12077973"
       BUILD_TOOLS: "35.0.0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Resolve release tag
         id: meta
@@ -429,13 +429,13 @@ jobs:
           fi
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install NDK + platform + build-tools
         run: |
@@ -444,9 +444,9 @@ jobs:
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install Rust + Android target
@@ -574,7 +574,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release (un-draft)
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.repos.updateRelease({
