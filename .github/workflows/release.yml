@@ -143,9 +143,12 @@ jobs:
       # Windows: libmpv2-sys links `-l mpv` (needs mpv.lib) and the app needs
       # libmpv-2.dll at runtime. Set up MSVC (lib.exe), fetch the latest libmpv dev
       # build from shinchiro, make mpv.lib from the def, put it on LIB, stage the DLL.
+      # A maintained fork of ilammy/msvc-dev-cmd, which stalled on the Node 20 runtime (last
+      # release 2024-01, open node24 issue, several unmerged PRs). Input names differ from the
+      # original, but this call site passes none, so the swap is behaviour-identical.
       - name: Setup MSVC (lib.exe)
         if: matrix.platform == 'windows-latest'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: TheMrMilchmann/setup-msvc-dev@v4
 
       - name: libmpv (Windows)
         if: matrix.platform == 'windows-latest'
