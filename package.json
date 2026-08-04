@@ -58,7 +58,7 @@
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tauri-apps/cli": "^2",
     "@types/crypto-js": "^4.2.2",
-    "@types/node": "^22.20.1",
+    "@types/node": "^26.1.2",
     "autoprefixer": "^10.5.2",
     "postcss": "^8.5.16",
     "svelte": "^5.0.0",
