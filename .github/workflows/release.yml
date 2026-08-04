@@ -229,7 +229,7 @@ jobs:
         run: npm ci
 
       - name: Build + upload to release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # From `npm run tauri signer generate`; store as repo secrets.
@@ -237,7 +237,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
           # macOS injects the dynamically-built frameworks list (MAC_ARGS) from the bundling step.
           args: ${{ startsWith(matrix.platform, 'macos') && env.MAC_ARGS || matrix.args }}
 
