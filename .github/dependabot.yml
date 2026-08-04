@@ -1,0 +1,64 @@
+version: 2
+
+# Version updates for the three ecosystems this repo actually ships from: the SvelteKit
+# frontend (npm), the Tauri backend + its in-tree plugins (cargo, all resolved through
+# src-tauri/Cargo.lock), and the workflows themselves.
+#
+# Everything is GROUPED and weekly on purpose. This repo lands changes as direct commits, so
+# an ungrouped Dependabot would turn a quiet branch into a wall of single-dependency PRs.
+# Minor + patch bumps arrive as ONE PR per ecosystem; majors come separately because they are
+# the ones that need reading (the Node 20 runtime deprecation is exactly what routine action
+# bumps would have prevented).
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Tauri's JS APIs are version-locked to the Rust crates in src-tauri/Cargo.toml. A major
+      # here without the matching crate bump breaks the IPC contract, so those move together
+      # in a deliberate migration, never as an automatic PR.
+      - dependency-name: "@tauri-apps/api"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@tauri-apps/cli"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@tauri-apps/plugin-*"
+        update-types: [version-update:semver-major]
+
+  # Covers the in-tree plugin crates too: they are path dependencies of this manifest, so
+  # their external deps resolve through this same lockfile.
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # libmpv2/-sys are pinned against the libmpv the CI Windows job fetches and the Flatpak
+      # runtime provides; a bump has to be validated against both before it can land.
+      - dependency-name: libmpv2
+        update-types: [version-update:semver-major]
+      - dependency-name: libmpv2-sys
+        update-types: [version-update:semver-major]
