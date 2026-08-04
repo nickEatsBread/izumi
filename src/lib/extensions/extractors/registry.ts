@@ -231,7 +231,7 @@ const okRu: Extractor = {
   },
 }
 
-function base64Bytes(value: string): Uint8Array {
+function base64Bytes(value: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0))
 }
 
@@ -241,7 +241,12 @@ function bytesBase64(value: ArrayBuffer): string {
   return btoa(binary)
 }
 
-async function aesCbc(value: string, key: Uint8Array, iv: Uint8Array, encrypt: boolean): Promise<string> {
+async function aesCbc(
+  value: string,
+  key: Uint8Array<ArrayBuffer>,
+  iv: Uint8Array<ArrayBuffer>,
+  encrypt: boolean,
+): Promise<string> {
   const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, [encrypt ? 'encrypt' : 'decrypt'])
   if (encrypt) {
     return bytesBase64(await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, cryptoKey, new TextEncoder().encode(value)))

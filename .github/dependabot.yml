@@ -33,6 +33,12 @@ updates:
       npm-minor-patch:
         update-types: [minor, patch]
     ignore:
+      # Keep compiler/runtime typings aligned with the versions this repo can actually execute.
+      # TypeScript 7 is not yet accepted by SvelteKit, and every workflow runs Node 24.
+      - dependency-name: "typescript"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
       # Tauri's JS APIs are version-locked to the Rust crates in src-tauri/Cargo.toml. A major
       # here without the matching crate bump breaks the IPC contract, so those move together
       # in a deliberate migration, never as an automatic PR.
