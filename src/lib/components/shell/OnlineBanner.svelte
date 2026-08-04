@@ -4,8 +4,8 @@
   //  2. in offline mode (connected or not) → "showing your downloads" + "Go online"
   //  3. just reconnected (not in offline mode) → transient "Back online"
   //  4. otherwise hidden
-  import CloudOff from 'lucide-svelte/icons/cloud-off'
-  import Wifi from 'lucide-svelte/icons/wifi'
+  import CloudOff from '@lucide/svelte/icons/cloud-off'
+  import Wifi from '@lucide/svelte/icons/wifi'
   import { online } from '$lib/stores/online'
   import { offlineMode, enterOfflineMode, exitOfflineMode } from '$lib/stores/offline'
   import { slide } from 'svelte/transition'

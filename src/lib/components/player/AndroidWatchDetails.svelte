@@ -14,12 +14,12 @@
   import { localHistory, sessionProgress } from '$lib/player/history'
   import { getMalProgress } from '$lib/trackers'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
-  import MessageSquare from 'lucide-svelte/icons/message-square'
-  import ListVideo from 'lucide-svelte/icons/list-video'
-  import PanelsTopLeft from 'lucide-svelte/icons/panels-top-left'
-  import SkipBack from 'lucide-svelte/icons/skip-back'
-  import SkipForward from 'lucide-svelte/icons/skip-forward'
-  import ArrowBigUp from 'lucide-svelte/icons/arrow-big-up'
+  import MessageSquare from '@lucide/svelte/icons/message-square'
+  import ListVideo from '@lucide/svelte/icons/list-video'
+  import PanelsTopLeft from '@lucide/svelte/icons/panels-top-left'
+  import SkipBack from '@lucide/svelte/icons/skip-back'
+  import SkipForward from '@lucide/svelte/icons/skip-forward'
+  import ArrowBigUp from '@lucide/svelte/icons/arrow-big-up'
 
   type Tab = 'comments' | 'episodes' | 'related'
 

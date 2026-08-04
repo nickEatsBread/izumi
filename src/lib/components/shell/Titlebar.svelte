@@ -1,10 +1,10 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import { onMount } from 'svelte'
-  import Minus from 'lucide-svelte/icons/minus'
-  import Square from 'lucide-svelte/icons/square'
-  import Copy from 'lucide-svelte/icons/copy'
-  import X from 'lucide-svelte/icons/x'
+  import Minus from '@lucide/svelte/icons/minus'
+  import Square from '@lucide/svelte/icons/square'
+  import Copy from '@lucide/svelte/icons/copy'
+  import X from '@lucide/svelte/icons/x'
   import { commentsOpen } from '$lib/player/session'
 
   const win = getCurrentWindow()

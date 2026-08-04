@@ -1,8 +1,8 @@
 <script lang="ts">
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { onMount } from 'svelte'
-  import ExternalLink from 'lucide-svelte/icons/external-link'
-  import RefreshCw from 'lucide-svelte/icons/refresh-cw'
+  import ExternalLink from '@lucide/svelte/icons/external-link'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import { fetchManifest, type AddonManifest } from '$lib/stremio/manifest'
   import { normalizeBase } from '$lib/stremio/sources'
 

@@ -5,8 +5,8 @@
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
   import { defaultDiscussionPlatform } from '$lib/comments'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
-  import Globe from 'lucide-svelte/icons/globe'
-  import Store from 'lucide-svelte/icons/store'
+  import Globe from '@lucide/svelte/icons/globe'
+  import Store from '@lucide/svelte/icons/store'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 

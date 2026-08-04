@@ -1,6 +1,6 @@
 <script lang="ts">
   import { watchParty, partyParticipants, type PartyParticipant } from '$lib/watch-together/client'
-  import Users from 'lucide-svelte/icons/users'
+  import Users from '@lucide/svelte/icons/users'
 
   let { floating = false }: { floating?: boolean } = $props()
   const text = (participant: PartyParticipant) => {

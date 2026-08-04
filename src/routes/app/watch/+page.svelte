@@ -4,17 +4,17 @@
     watchParty, partyParticipants, partyError, partySyncing, partyNotice,
     createWatchParty, joinWatchParty, leaveWatchParty, refreshWatchParty,
   } from '$lib/watch-together/client'
-  import Copy from 'lucide-svelte/icons/copy'
-  import Users from 'lucide-svelte/icons/users'
-  import LogOut from 'lucide-svelte/icons/log-out'
-  import RefreshCw from 'lucide-svelte/icons/refresh-cw'
+  import Copy from '@lucide/svelte/icons/copy'
+  import Users from '@lucide/svelte/icons/users'
+  import LogOut from '@lucide/svelte/icons/log-out'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { torrentPlaybackMode, debridKey, debridRoomNoticeAck } from '$lib/settings/ui'
   import DebridRoomNotice from '$lib/components/watch/DebridRoomNotice.svelte'
   import { isEffectiveDebridMode, shouldWarnBeforeHosting } from '$lib/watch-together/debrid-warning'
-  import LoaderCircle from 'lucide-svelte/icons/loader-circle'
-  import CircleCheck from 'lucide-svelte/icons/circle-check'
-  import Clock3 from 'lucide-svelte/icons/clock-3'
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
+  import CircleCheck from '@lucide/svelte/icons/circle-check'
+  import Clock3 from '@lucide/svelte/icons/clock-3'
 
   heroMedia.set(null)
   let code = $state('')

@@ -26,13 +26,13 @@
     autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
   } from '$lib/downloads/rules'
   import EpisodeCard from './EpisodeCard.svelte'
-  import Download from 'lucide-svelte/icons/download'
-  import Loader from 'lucide-svelte/icons/loader-circle'
-  import Pause from 'lucide-svelte/icons/pause'
-  import Check from 'lucide-svelte/icons/check'
-  import Search from 'lucide-svelte/icons/search'
-  import Shuffle from 'lucide-svelte/icons/shuffle'
-  import ListChecks from 'lucide-svelte/icons/list-checks'
+  import Download from '@lucide/svelte/icons/download'
+  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Pause from '@lucide/svelte/icons/pause'
+  import Check from '@lucide/svelte/icons/check'
+  import Search from '@lucide/svelte/icons/search'
+  import Shuffle from '@lucide/svelte/icons/shuffle'
+  import ListChecks from '@lucide/svelte/icons/list-checks'
   let { media, offline = false }: { media: Media; offline?: boolean } = $props()
 
   // Offline: the playable set is exactly the DOWNLOADED episodes (the download keys carry the

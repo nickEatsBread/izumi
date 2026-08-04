@@ -8,11 +8,11 @@
   import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR, scoreLabel } from '$lib/trackers/status'
   import { listEditorOpen } from '$lib/player/session'
   import * as h from '$lib/haptics'
-  import X from 'lucide-svelte/icons/x'
-  import Trash2 from 'lucide-svelte/icons/trash-2'
-  import Check from 'lucide-svelte/icons/check'
-  import Minus from 'lucide-svelte/icons/minus'
-  import Plus from 'lucide-svelte/icons/plus'
+  import X from '@lucide/svelte/icons/x'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
+  import Check from '@lucide/svelte/icons/check'
+  import Minus from '@lucide/svelte/icons/minus'
+  import Plus from '@lucide/svelte/icons/plus'
 
   let {
     media, initStatus, initProgress, initScore0to100, total, hasEntry, onclose, onsaved,

@@ -6,7 +6,7 @@
   import { getScheduleInfo, delayLines, slotLines, scheduleTitles, type ScheduleInfo } from '$lib/anime/animeschedule'
   import type { Media } from '$lib/anilist/types'
   import { offlineMode } from '$lib/stores/offline'
-  import CalendarClock from 'lucide-svelte/icons/calendar-clock'
+  import CalendarClock from '@lucide/svelte/icons/calendar-clock'
 
   let { media, compact = false }: { media: Media; compact?: boolean } = $props()
 

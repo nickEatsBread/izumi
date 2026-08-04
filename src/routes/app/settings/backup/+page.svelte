@@ -1,7 +1,7 @@
 <script lang="ts">
-  import Download from 'lucide-svelte/icons/download'
-  import Upload from 'lucide-svelte/icons/upload'
-  import ShieldAlert from 'lucide-svelte/icons/shield-alert'
+  import Download from '@lucide/svelte/icons/download'
+  import Upload from '@lucide/svelte/icons/upload'
+  import ShieldAlert from '@lucide/svelte/icons/shield-alert'
   import { parseBackup, restoreBackup, stringifyBackup, type AppBackup } from '$lib/backup'
   import { saveTextFile } from '$lib/player/history-io'
   import Toggle from '$lib/components/settings/Toggle.svelte'

@@ -6,7 +6,7 @@
   import { advancedFiltersOpen } from '$lib/player/session'
   import TagPicker from './TagPicker.svelte'
   import MultiSelect from './MultiSelect.svelte'
-  import X from 'lucide-svelte/icons/x'
+  import X from '@lucide/svelte/icons/x'
 
   let { filters, onApply, onClose }: {
     filters: SearchFilters

@@ -5,7 +5,7 @@
   import { type Airing, airTime, until } from '$lib/anilist/schedule'
   import { title, cover } from '$lib/anilist/media'
   import { classifyMine, type MySets } from '$lib/anilist/my-shows'
-  import Radio from 'lucide-svelte/icons/radio'
+  import Radio from '@lucide/svelte/icons/radio'
 
   let { airings, sets, now }: { airings: Airing[]; sets: MySets; now: number } = $props()
 

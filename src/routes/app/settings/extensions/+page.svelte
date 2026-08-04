@@ -14,10 +14,10 @@
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
   import { accountInfo, providerList, providerMeta, type DebridAccountInfo } from '$lib/stremio/debrid'
-  import Boxes from 'lucide-svelte/icons/boxes'
-  import Puzzle from 'lucide-svelte/icons/puzzle'
-  import Search from 'lucide-svelte/icons/search'
-  import Trash2 from 'lucide-svelte/icons/trash-2'
+  import Boxes from '@lucide/svelte/icons/boxes'
+  import Puzzle from '@lucide/svelte/icons/puzzle'
+  import Search from '@lucide/svelte/icons/search'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   const current = $derived(providerMeta($debridProvider))

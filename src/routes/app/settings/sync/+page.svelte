@@ -1,12 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { listen } from '@tauri-apps/api/event'
-  import Copy from 'lucide-svelte/icons/copy'
-  import Download from 'lucide-svelte/icons/download'
-  import Link from 'lucide-svelte/icons/link'
-  import RefreshCw from 'lucide-svelte/icons/refresh-cw'
-  import Unlink from 'lucide-svelte/icons/unlink'
-  import Upload from 'lucide-svelte/icons/upload'
+  import Copy from '@lucide/svelte/icons/copy'
+  import Download from '@lucide/svelte/icons/download'
+  import Link from '@lucide/svelte/icons/link'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Unlink from '@lucide/svelte/icons/unlink'
+  import Upload from '@lucide/svelte/icons/upload'
   import { copyToClipboard } from '$lib/util/clipboard'
   import {
     createSyncGroup, disableDeviceSync, enableDeviceSync, getSyncStatus, joinSyncGroup, leaveSyncGroup,

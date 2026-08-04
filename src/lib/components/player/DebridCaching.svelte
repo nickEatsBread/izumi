@@ -1,9 +1,9 @@
 <script lang="ts">
   import { debridCaching } from '$lib/player/session'
   import { formatBytes, formatSpeed } from '$lib/util/format'
-  import Loader from 'lucide-svelte/icons/loader-circle'
-  import Users from 'lucide-svelte/icons/users'
-  import Gauge from 'lucide-svelte/icons/gauge'
+  import Loader from '@lucide/svelte/icons/loader-circle'
+  import Users from '@lucide/svelte/icons/users'
+  import Gauge from '@lucide/svelte/icons/gauge'
 
   const c = $derived($debridCaching)
   // Show the EXACT percent the provider reports — no rounding — so a torrent at 99.x% never

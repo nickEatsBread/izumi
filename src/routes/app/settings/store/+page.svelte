@@ -19,11 +19,11 @@
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { disabledPlugins, extensionUrls } from '$lib/settings/ui'
-  import Search from 'lucide-svelte/icons/search'
-  import Star from 'lucide-svelte/icons/star'
-  import Puzzle from 'lucide-svelte/icons/puzzle'
-  import RefreshCw from 'lucide-svelte/icons/refresh-cw'
-  import Check from 'lucide-svelte/icons/check'
+  import Search from '@lucide/svelte/icons/search'
+  import Star from '@lucide/svelte/icons/star'
+  import Puzzle from '@lucide/svelte/icons/puzzle'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Check from '@lucide/svelte/icons/check'
 
   let tab = $state<'addons' | 'extensions' | 'installed'>('addons')
   let query = $state('')
