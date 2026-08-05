@@ -232,6 +232,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var pipReceiver: BroadcastReceiver? = null
     /** Pre-31 auto-PiP hook, see [installAutoPipHook]. Null on API 31+, where the system does it. */
     private var autoPipCallbacks: Application.ActivityLifecycleCallbacks? = null
+    private var resumeGuardCallbacks: Application.ActivityLifecycleCallbacks? = null
+    /** Last applied FLAG_KEEP_SCREEN_ON state, so repeat requests skip the window relayout. */
+    private var keepScreenAwakeOn = false
     private var gifSession: GifSession? = null
     /** The most recent GIF worker thread, kept after its session has been cleared: the worker calls
      *  into the LIVE core, so teardown still has to wait for it even once nothing owns the session. */
@@ -416,6 +419,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         contentView = content
         installPipWatcher(content)
         installAutoPipHook()
+        installResumeGuard()
         return m
     }
 
@@ -694,6 +698,40 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private fun removeAutoPipHook() {
         autoPipCallbacks?.let { activity.application.unregisterActivityLifecycleCallbacks(it) }
         autoPipCallbacks = null
+    }
+
+    /**
+     * Belt-and-braces visibility restore. [applyPipLayout] hides the WebView for the PiP window and
+     * the layout listener's [onLeftPip] is what normally shows it again — but a missed PiP-exit
+     * edge (system dismissed the miniplayer while the activity was stopped, listener saw no layout
+     * pass) left the WebView INVISIBLE after the app came back to the foreground. An invisible view
+     * receives no touch dispatch, which presents as "the whole app stopped responding". Whenever
+     * the activity resumes NOT in PiP, the web UI must be visible; showing an already-visible view
+     * is free.
+     */
+    private fun installResumeGuard() {
+        if (resumeGuardCallbacks != null) return
+        val callbacks = object : Application.ActivityLifecycleCallbacks {
+            override fun onActivityResumed(resumed: Activity) {
+                if (resumed !== activity) return
+                val inPip = Build.VERSION.SDK_INT >= 24 && activity.isInPictureInPictureMode
+                if (!inPip) showWebPlayerUi(true)
+            }
+
+            override fun onActivityCreated(created: Activity, state: Bundle?) {}
+            override fun onActivityStarted(started: Activity) {}
+            override fun onActivityPaused(paused: Activity) {}
+            override fun onActivityStopped(stopped: Activity) {}
+            override fun onActivitySaveInstanceState(saved: Activity, state: Bundle) {}
+            override fun onActivityDestroyed(destroyed: Activity) {}
+        }
+        activity.application.registerActivityLifecycleCallbacks(callbacks)
+        resumeGuardCallbacks = callbacks
+    }
+
+    private fun removeResumeGuard() {
+        resumeGuardCallbacks?.let { activity.application.unregisterActivityLifecycleCallbacks(it) }
+        resumeGuardCallbacks = null
     }
 
     /**
@@ -1205,10 +1243,18 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun keepScreenAwake(invoke: Invoke) {
         val a = invoke.parseArgs(KeepScreenAwakeArgs::class.java)
         activity.runOnUiThread {
-            if (a.enabled) {
-                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            } else {
-                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            // Skip repeats: Window.addFlags/clearFlags dispatch a window relayout (a binder
+            // round-trip to WindowManagerService) even when the flag value is UNCHANGED, and the
+            // web side used to re-request this per video frame — a relayout storm that kept the
+            // main looper saturated for entire episodes. The web effect is fixed too; this guard
+            // makes the command safe against any future chatty caller.
+            if (a.enabled != keepScreenAwakeOn) {
+                keepScreenAwakeOn = a.enabled
+                if (a.enabled) {
+                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
             }
             invoke.resolve()
         }
@@ -1440,6 +1486,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         unregisterPipReceiver()
         removePipWatcher()
         removeAutoPipHook()
+        removeResumeGuard()
         teardownMediaSession()
         pipActive = false
         pipRequested = false
@@ -1448,6 +1495,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         lastViewport = null
         showWebPlayerUi(true)
         setImmersive(false)
+        keepScreenAwakeOn = false
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         container?.let { (it.parent as? ViewGroup)?.removeView(it) }
         mpv?.let {

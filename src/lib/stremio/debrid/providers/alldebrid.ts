@@ -99,6 +99,7 @@ export function adOwnedHashes(
 // Memoised ready-magnet snapshot for checkCached, same rationale as RD's rdOwnedCache: the scan
 // is O(account size), so unmemoised checks would re-fetch the whole account on every hash batch.
 let adOwnedCache: { at: number; key: string; magnets: unknown } | undefined
+let adOwnedFetch: Promise<void> | null = null
 const AD_OWNED_TTL = 5 * 60_000
 
 export function adAccountInfo(user: { username?: string; isPremium?: boolean; isTrial?: boolean; premiumUntil?: number | string; fidelityPoints?: number }): DebridAccountInfo {
@@ -175,11 +176,17 @@ export const alldebrid: DebridProvider = {
   async checkCached(key, hashes) {
     if (!key || !hashes.length) return new Map()
     try {
-      const fresh = adOwnedCache && adOwnedCache.key === key
+      const isFresh = () => !!adOwnedCache && adOwnedCache.key === key
         && Date.now() - adOwnedCache.at < AD_OWNED_TTL
-      if (!fresh) {
-        const data = await ad('/v4.1/magnet/status', key, form({ status: 'ready' }))
-        adOwnedCache = { at: Date.now(), key, magnets: data?.magnets ?? null }
+      if (!isFresh()) {
+        // Single-flight, same reason as Real-Debrid's: the picker probes on every paint tick and
+        // each miss used to launch another full account listing while one was already in flight.
+        adOwnedFetch ??= (async () => {
+          const data = await ad('/v4.1/magnet/status', key, form({ status: 'ready' }))
+          adOwnedCache = { at: Date.now(), key, magnets: data?.magnets ?? null }
+        })().finally(() => { adOwnedFetch = null })
+        await adOwnedFetch
+        if (!isFresh()) return new Map()
       }
       return adOwnedHashes(adOwnedCache!.magnets as never, hashes)
     } catch { return new Map() }

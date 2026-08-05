@@ -15,15 +15,20 @@ use tokio::sync::{watch, Semaphore};
 
 const GLOBAL_CONCURRENCY: usize = 12;
 const EXTENSION_CONCURRENCY: usize = 6;
+const BACKGROUND_CONCURRENCY: usize = 8;
 
 static GLOBAL_GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static EXTENSION_GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+static BACKGROUND_GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static ACTIVE: OnceLock<Mutex<HashMap<String, watch::Sender<bool>>>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
 pub(crate) enum RequestClass {
     Metadata,
     Extension,
+    /// Bulk/long-lived traffic (debrid resolves, cache probes): its own pool, NEVER a global
+    /// permit — however oversubscribed it gets, the UI's metadata lane keeps its full capacity.
+    Background,
 }
 
 fn global_gate() -> Arc<Semaphore> {
@@ -35,6 +40,12 @@ fn global_gate() -> Arc<Semaphore> {
 fn extension_gate() -> Arc<Semaphore> {
     EXTENSION_GATE
         .get_or_init(|| Arc::new(Semaphore::new(EXTENSION_CONCURRENCY)))
+        .clone()
+}
+
+fn background_gate() -> Arc<Semaphore> {
+    BACKGROUND_GATE
+        .get_or_init(|| Arc::new(Semaphore::new(BACKGROUND_CONCURRENCY)))
         .clone()
 }
 
@@ -92,17 +103,33 @@ where
 {
     let (_registration, mut cancel) = Registration::new(request_id)?;
     let guarded = async move {
-        let _global = global_gate()
-            .acquire_owned()
-            .await
-            .map_err(|_| "request gate closed".to_string())?;
-        let _extension = match class {
+        // Acquisition order is load-bearing. Extension requests take THEIR class permit first and
+        // only then a global one: the old order (global → extension) let every queued extension
+        // request dead-hold a global permit, so 12 in-flight ext_fetch calls consumed the entire
+        // global pool while only 6 did any work — and metadata requests got nothing. Background
+        // requests never touch the global gate at all.
+        let _class_permit = match class {
             RequestClass::Metadata => None,
             RequestClass::Extension => Some(
                 extension_gate()
                     .acquire_owned()
                     .await
                     .map_err(|_| "extension request gate closed".to_string())?,
+            ),
+            RequestClass::Background => Some(
+                background_gate()
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| "background request gate closed".to_string())?,
+            ),
+        };
+        let _global = match class {
+            RequestClass::Background => None,
+            _ => Some(
+                global_gate()
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| "request gate closed".to_string())?,
             ),
         };
         work.await

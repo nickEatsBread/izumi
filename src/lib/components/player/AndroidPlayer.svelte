@@ -123,8 +123,16 @@
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
   const paused = $derived($mpvState.paused)
+  const frameReady = $derived($mpvState.frameReady)
+  const atEof = $derived($mpvState.eof)
+  // Depend on the four MEMOIZED booleans, never on `$mpvState` itself: the store emits a fresh
+  // object per time-pos event (24-60Hz), so an effect reading it directly re-ran — and re-invoked
+  // the native keep-awake command — once per video frame. The Kotlin side dispatches a window
+  // relayout per call, so that was a main-looper-saturating relayout storm for entire episodes
+  // (the "everything gets slower until force-quit" report). Deriveds only propagate on value
+  // change, so this now fires on play/pause/EOF edges alone.
+  const activelyWatching = $derived($androidMpvActive && frameReady && !paused && !atEof)
   $effect(() => {
-    const activelyWatching = $androidMpvActive && $mpvState.frameReady && !$mpvState.paused && !$mpvState.eof
     void setAndroidKeepScreenAwake($keepAwakeWhilePlaying && activelyWatching)
   })
   // One loading signal, mirroring the desktop overlay. `paused-for-cache` alone only catches a stall
@@ -989,13 +997,33 @@
     sheetBackdropOpacity = 1
   }
 
+  // Cap a teardown await: the promise's outcome stops mattering after the deadline (the native op
+  // finishes whenever it finishes), but close() must never be strandable by one wedged bridge call.
+  const bounded = (p: Promise<unknown>, ms: number) =>
+    Promise.race([p.catch(() => {}), new Promise<void>((r) => setTimeout(r, ms))])
+  let closing = false
   async function close() {
-    if (gifRecording) { gifRecording = false; await androidGifAbort() }
-    finalizeAndroidWatch($mpvState.pos, $mpvState.dur)
-    await mpvStop().catch(() => {})
-    await stopDirectTorrentPlayback()
-    if (orientationForced) await setPlayerFullscreen(false).catch(() => {})
-    androidMpvActive.set(false)
+    // Re-entrancy guard: a second tap on the close chevron used to launch a concurrent teardown
+    // (two mpv stops, two torrent stops) against the same core.
+    if (closing) return
+    closing = true
+    try {
+      if (gifRecording) { gifRecording = false; await bounded(androidGifAbort(), 6000) }
+      // Tracker/history writes must never block or abort the close path.
+      try { finalizeAndroidWatch($mpvState.pos, $mpvState.dur) } catch { /* best-effort */ }
+      // Independent teardowns, concurrently, each with a deadline. mpv_stop can legitimately take
+      // seconds (it joins a live GIF worker, and its teardown queues behind the main looper), and
+      // the torrent stop performs its own bridge round-trips.
+      await Promise.all([bounded(mpvStop(), 7000), bounded(stopDirectTorrentPlayback(), 4000)])
+      if (orientationForced) await bounded(setPlayerFullscreen(false), 2000)
+    } finally {
+      // UNCONDITIONAL: this is the only `androidMpvActive.set(false)` in the app, and while the
+      // flag is true the shell renders nothing (transparent body, <main> hidden, BottomNav
+      // unmounted) over a black native container. Any teardown failure above used to strand that
+      // state until a force-quit — the "black app with dead navigation" bug.
+      closing = false
+      androidMpvActive.set(false)
+    }
   }
   // Related titles are not all playable — a series' source manga or light novel is a relation like
   // any other — so the destination comes from the node itself. Hardcoding the anime route sent

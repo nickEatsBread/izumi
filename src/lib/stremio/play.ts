@@ -75,7 +75,7 @@ import {
   type PlaybackOwner,
 } from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
-import { hasEmbeddedPlayer, mpvLoad, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
+import { hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
 import {
   activateDirectTorrentPlayback, currentDirectTorrentPlaybackId, directTorrentHealth,
@@ -294,6 +294,12 @@ function pushListen<T>(event: string, handler: EventCallback<T>) {
 let resolveAbort: AbortController | null = null
 /** Abort the in-flight source resolve — called when the picker is closed (X / click-off / Esc). */
 export function cancelResolve() { resolveAbort?.abort(); resolveAbort = null }
+
+// The in-flight DEBRID resolve (playStream's add/select/poll chain). Owned by the newest
+// playStream: starting another play aborts the previous chain so a superseded uncached pick
+// cannot keep polling in the background. Distinct from `resolveAbort` (the picker's source
+// LISTING), which deliberately lets its fetches finish for reuse.
+let activeDebridResolve: AbortController | null = null
 
 // Wire the mpv event stream (emitted from Rust) to progress tracking, resume,
 // and auto next-episode. Called once per play, after playback has started.
@@ -1424,6 +1430,12 @@ export async function playStream(
 ) {
   const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
   if (!playbackOwner) return
+  // A newer play supersedes whatever debrid resolve a previous playStream still has in flight.
+  // Without this, an abandoned uncached pick kept polling the provider every <=3s for up to 30
+  // minutes (its timeout below) — each probe now occupies a pooled-HTTP slot, so zombie resolves
+  // were competing with the episode the user actually asked for.
+  activeDebridResolve?.abort()
+  activeDebridResolve = null
   const autoplay = options.autoplay ?? true
   const recoveryOriginal = stream
   playbackRecovery.update((current) => {
@@ -1522,6 +1534,7 @@ export async function playStream(
       // downloading. The AbortController lets Cancel stop the poll (the torrent keeps caching at
       // the service, so a later retry is instant).
       const controller = new AbortController()
+      activeDebridResolve = controller
       let overlayShown = false
       const showCaching = () => {
         if (overlayShown) return
@@ -1574,9 +1587,11 @@ export async function playStream(
         stream = { ...stream, url }
         debridSidecarSource = { provider, key, torrent, want }
         debridCaching.set(null)
+        if (activeDebridResolve === controller) activeDebridResolve = null
       }
       catch (e) {
         debridCaching.set(null)
+        if (activeDebridResolve === controller) activeDebridResolve = null
         // User-initiated cancel: quietly return to the picker, no error toast.
         if (e instanceof Error && e.name === 'AbortError') return onState({ status: 'idle' })
         return onState({ status: 'error', message: e instanceof Error ? e.message : String(e), debridBlocked: isDebridBlocked(e) })
@@ -1665,8 +1680,14 @@ export async function playStream(
       // app was built with the `android-mpv` feature; on the "lite" build hasEmbeddedPlayer() is
       // false and we fall through to the external-player intent below.
       if (androidEmbedded) {
-        const addonSubs = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 4000))])
-        onlineSubCandidates.set({ status: 'ready', items: addonSubs.filter((s) => s.download?.needsFetch) })
+        // Same short gate as the desktop embed (it was 4s here — pure added latency on every
+        // Android episode transition whenever a subtitle addon was slow); late results attach to
+        // the live player below instead of being dropped.
+        const addonSubs = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 1500))])
+        onlineSubCandidates.set({
+          status: addonSubs.length ? 'ready' : 'searching',
+          items: addonSubs.filter((s) => s.download?.needsFetch),
+        })
         const sourceSubs = stream.__stream ? stream.__subtitles ?? [] : []
         const preferred = get(preferredSubLang)
         let selectedPreferred = false
@@ -1723,6 +1744,23 @@ export async function playStream(
         rememberSuccess()
         onState({ status: 'playing' })
         if (episode != null) attachAndroid(media, episode, onState, directPlaybackId != null)
+        // Late online subtitles (Android mirror of the desktop path): if the short race above lost
+        // to a slow subtitle addon, fold results in once they land. `androidStreamInfo.url` pins
+        // the results to THIS load — a newer episode replaces it before its own mpvLoad.
+        if (!addonSubs.length) {
+          const loadUrl = stream.url
+          void subsP.then(async (cands) => {
+            if (get(androidStreamInfo)?.url !== loadUrl || !get(androidMpvActive)) return
+            onlineSubCandidates.set({ status: 'ready', items: cands.filter((s) => s.download?.needsFetch) })
+            for (const s of cands) {
+              if (!s.url) continue
+              if (get(androidStreamInfo)?.url !== loadUrl || !get(androidMpvActive)) return
+              const lang = normalizeLang(s.lang) ?? s.lang ?? 'und'
+              await mpvCommand(['sub-add', s.url, 'auto', s.release ?? s.lang ?? 'Online subtitles', lang])
+                .catch(() => { /* a missing subtitle must never disturb playback */ })
+            }
+          })
+        }
         return
       }
       // A completed download resolves to an absolute on-disk path (not an http URL); flag it so the

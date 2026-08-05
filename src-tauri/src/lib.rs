@@ -1170,12 +1170,19 @@ async fn http_get(
     request_id: Option<String>,
     timeout_ms: Option<u64>,
     max_bytes: Option<u64>,
+    background: Option<bool>,
 ) -> Result<HttpReply, String> {
     let limit = http_lifecycle::body_limit(max_bytes, HTTP_GET_BODY_LIMIT, HTTP_GET_BODY_HARD_MAX);
     http_lifecycle::run(
         request_id,
         http_lifecycle::timeout_ms(timeout_ms, 30_000),
-        http_lifecycle::RequestClass::Metadata,
+        // Background = bulk traffic (debrid) on its own lane, so it can never starve the
+        // metadata lane the UI's queries ride. See http_lifecycle.rs.
+        if background.unwrap_or(false) {
+            http_lifecycle::RequestClass::Background
+        } else {
+            http_lifecycle::RequestClass::Metadata
+        },
         async move {
             let mut req = http_client().get(&url);
             if let Some(h) = headers {
@@ -1225,13 +1232,19 @@ async fn http_post(
     request_id: Option<String>,
     timeout_ms: Option<u64>,
     max_bytes: Option<u64>,
+    background: Option<bool>,
 ) -> Result<HttpFullReply, String> {
     let limit =
         http_lifecycle::body_limit(max_bytes, HTTP_POST_BODY_LIMIT, HTTP_POST_BODY_HARD_MAX);
     http_lifecycle::run(
         request_id,
         http_lifecycle::timeout_ms(timeout_ms, 30_000),
-        http_lifecycle::RequestClass::Metadata,
+        // Same lane split as http_get: `background: true` = bulk debrid traffic.
+        if background.unwrap_or(false) {
+            http_lifecycle::RequestClass::Background
+        } else {
+            http_lifecycle::RequestClass::Metadata
+        },
         async move {
             let mut req = http_client().post(&url).body(body);
             if let Some(h) = headers {
