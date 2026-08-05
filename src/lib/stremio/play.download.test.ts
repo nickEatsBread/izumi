@@ -21,7 +21,9 @@ vi.mock('./sources', () => ({
 }))
 vi.mock('./idmap', () => ({ getIndex: async () => ({}), lookupKitsu: () => undefined }))
 vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
-vi.mock('./onlinestream', () => ({ resolveOnlineStreams: () => new Promise<never>(() => {}) }))
+// Resolves empty (not pending): resolveDownloadUrl now awaits the online wave (with a budget),
+// so a never-settling mock would stall every test to its own timeout.
+vi.mock('./onlinestream', () => ({ resolveOnlineStreams: async () => [] }))
 vi.mock('./debrid', () => ({
   resolveHash: (...a: unknown[]) => resolveHash(...a),
   resolveSidecars: async () => [],

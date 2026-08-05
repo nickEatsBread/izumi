@@ -83,7 +83,14 @@ async fn ensure_runtime_file(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 async fn runtime_request(app: &AppHandle) -> Result<AniyomiRuntimeRequest, String> {
-    let runtime = ensure_runtime_file(app).await?;
+    // Bounded: `reqwest::get` has no default timeout, so a stalled runtime download used to hang
+    // this (and everything awaiting it) indefinitely.
+    let runtime = tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        ensure_runtime_file(app),
+    )
+    .await
+    .map_err(|_| "Downloading the Android extension runtime timed out.".to_string())??;
     let extensions = crate::extension_package::android_runtime_root(app)?;
     tokio::fs::create_dir_all(extensions.join("exts"))
         .await
@@ -99,13 +106,32 @@ fn parse_response(response: JsonResponse) -> Result<Value, String> {
         .map_err(|error| format!("Android extension runtime returned invalid JSON: {error}"))
 }
 
+// `run_mobile_plugin` (inside every `aniyomi_*` bridge call) parks its thread on a channel until
+// Kotlin answers — a genuinely BLOCKING wait. Run on tauri's blocking pool, never on the shared
+// async workers: a wedged extension call used to permanently occupy one core-sized async worker
+// per attempt, and once the pool was gone even mpv's own commands could no longer be dispatched
+// (Android's "player controls stopped responding" report). The deadline is a belt on top of the
+// Kotlin side's own (the timeout abandons the blocking thread; Kotlin's watchdog settles it).
+async fn call_bridge<T: Send + 'static>(
+    seconds: u64,
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let handle = tauri::async_runtime::spawn_blocking(work);
+    tokio::time::timeout(std::time::Duration::from_secs(seconds), handle)
+        .await
+        .map_err(|_| "The extension runtime did not answer in time.".to_string())?
+        .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 pub async fn jvm_extension_sources(app: AppHandle) -> Result<Value, String> {
     let payload = runtime_request(&app).await?;
-    let response = app
-        .extplayer()
-        .aniyomi_sources(payload)
-        .map_err(|error| error.to_string())?;
+    let response = call_bridge(70, move || {
+        app.extplayer()
+            .aniyomi_sources(payload)
+            .map_err(|error| error.to_string())
+    })
+    .await?;
     parse_response(response)
 }
 
@@ -116,15 +142,18 @@ pub async fn jvm_extension_call(
     args: Value,
 ) -> Result<Value, String> {
     let paths = runtime_request(&app).await?;
-    let response = app
-        .extplayer()
-        .aniyomi_call(AniyomiCallRequest {
-            runtime_path: paths.runtime_path,
-            extensions_path: paths.extensions_path,
-            method,
-            args_json: serde_json::to_string(&args).map_err(|error| error.to_string())?,
-        })
-        .map_err(|error| error.to_string())?;
+    let args_json = serde_json::to_string(&args).map_err(|error| error.to_string())?;
+    let response = call_bridge(85, move || {
+        app.extplayer()
+            .aniyomi_call(AniyomiCallRequest {
+                runtime_path: paths.runtime_path,
+                extensions_path: paths.extensions_path,
+                method,
+                args_json,
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await?;
     parse_response(response)
 }
 
@@ -133,8 +162,13 @@ pub async fn jvm_extension_reload(app: AppHandle) -> Result<(), String> {
     // Prepare the verified host during installation so the first source search does not pay a
     // surprise 15 MB runtime download. The Kotlin side is then reset and will enumerate the newly
     // installed APK on demand.
-    ensure_runtime_file(&app).await?;
-    app.extplayer()
-        .aniyomi_reload()
-        .map_err(|error| error.to_string())
+    tokio::time::timeout(std::time::Duration::from_secs(120), ensure_runtime_file(&app))
+        .await
+        .map_err(|_| "Downloading the Android extension runtime timed out.".to_string())??;
+    call_bridge(30, move || {
+        app.extplayer()
+            .aniyomi_reload()
+            .map_err(|error| error.to_string())
+    })
+    .await
 }

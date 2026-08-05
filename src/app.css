@@ -120,7 +120,10 @@ body { overflow-x: clip; }
 
 /* WCAG 2.2 user preferences. Large targets are opt-in because forcing 44px on every compact row
    changes information density; coarse-pointer devices already get touch-sized controls. */
-.a11y-large-targets [data-focusable]:not([data-switch]) { min-width: 44px; min-height: 44px; }
+/* Checkboxes/radios are excluded like switches are: forcing the min-size onto the INPUT blows the
+   box itself up to 44px (the "massive checkboxes" bug) — the enlarged tap target belongs to the
+   wrapping <label>, which is already the click surface for every checkbox row in the app. */
+.a11y-large-targets [data-focusable]:not([data-switch]):not([type="checkbox"]):not([type="radio"]) { min-width: 44px; min-height: 44px; }
 /* Switch tracks are fixed-geometry pills (a 36 x 20 track with a round knob inside). A box
    minimum on BOTH axes squares them into a 44 x 44 `rounded-full` box — the slider becomes a
    solid accent-coloured circle. They opt out with `data-switch` and get the same target as a
