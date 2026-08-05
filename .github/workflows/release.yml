@@ -144,11 +144,14 @@ jobs:
       # libmpv-2.dll at runtime. Set up MSVC (lib.exe), fetch the latest libmpv dev
       # build from shinchiro, make mpv.lib from the def, put it on LIB, stage the DLL.
       # A maintained fork of ilammy/msvc-dev-cmd, which stalled on the Node 20 runtime (last
-      # release 2024-01, open node24 issue, several unmerged PRs). Input names differ from the
-      # original, but this call site passes none, so the swap is behaviour-identical.
+      # release 2024-01, open node24 issue, several unmerged PRs). Unlike the original it has no
+      # implicit host arch: without `arch` it exports nothing and fails the step, so pass x64
+      # explicitly to match the x86_64 libmpv build fetched below.
       - name: Setup MSVC (lib.exe)
         if: matrix.platform == 'windows-latest'
         uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
 
       - name: libmpv (Windows)
         if: matrix.platform == 'windows-latest'
