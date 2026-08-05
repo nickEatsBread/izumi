@@ -238,6 +238,11 @@ export function rdOwnedHashes(
 // burn through it fast. Keyed on the API key so switching accounts can't serve stale results.
 let rdOwnedCache: { at: number; key: string; entries: Array<{ id?: string; hash?: string; status?: string }> } | undefined
 const RD_OWNED_TTL = 5 * 60_000
+// Single-flight guard for the snapshot fetch: the picker calls checkCached on every paint tick
+// while sources fold in, and each cache miss used to start ANOTHER full /torrents listing (2-3 MB)
+// while the first was still in flight — up to a dozen concurrent copies on a large account, all
+// materialized through the IPC bridge at once. Concurrent callers now share one request.
+let rdOwnedFetch: Promise<void> | null = null
 
 interface RdUnrestricted { download: string; filename?: string; filesize?: number }
 
@@ -533,19 +538,25 @@ export const realdebrid: DebridProvider = {
   async checkCached(key, hashes) {
     if (!key || !hashes.length) return new Map()
     try {
-      const fresh = rdOwnedCache && rdOwnedCache.key === key
+      const isFresh = () => !!rdOwnedCache && rdOwnedCache.key === key
         && Date.now() - rdOwnedCache.at < RD_OWNED_TTL
-      if (!fresh) {
-        // limit=5000 is the documented maximum — one request covers essentially any account.
-        const { status, json } = await jfetch(`${BASE}/torrents?limit=5000`, {
-          headers: { Authorization: `Bearer ${key}` },
-        })
-        if (!Array.isArray(json)) {
-          const auth = authError('Real-Debrid', { status })
-          if (auth) console.warn(auth)
-          return new Map()
-        }
-        rdOwnedCache = { at: Date.now(), key, entries: json }
+      if (!isFresh()) {
+        // Single-flight (see rdOwnedFetch): all concurrent callers await the same listing.
+        rdOwnedFetch ??= (async () => {
+          // limit=5000 is the documented maximum — one request covers essentially any account.
+          const { status, json } = await jfetch(`${BASE}/torrents?limit=5000`, {
+            headers: { Authorization: `Bearer ${key}` },
+          })
+          if (!Array.isArray(json)) {
+            const auth = authError('Real-Debrid', { status })
+            if (auth) console.warn(auth)
+            return // leave the cache untouched; the freshness re-check below answers "unknown"
+          }
+          rdOwnedCache = { at: Date.now(), key, entries: json }
+        })().finally(() => { rdOwnedFetch = null })
+        await rdOwnedFetch
+        // Re-check rather than trust: the fetch may have failed, or been started for another key.
+        if (!isFresh()) return new Map()
       }
       return rdOwnedHashes(rdOwnedCache!.entries, hashes)
     } catch { return new Map() }

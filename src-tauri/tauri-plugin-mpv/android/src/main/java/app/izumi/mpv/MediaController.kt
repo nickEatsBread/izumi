@@ -84,11 +84,18 @@ object MediaController {
     private var art: Bitmap? = null
     private var artLoadedFor: String? = null
     private var durationMs = 0L
+
+    // Written from the mpv observer thread by setPosition's pre-filter and from the main thread by
+    // the posted body; @Volatile for cross-thread visibility (and to rule out 32-bit long tearing).
+    @Volatile
     private var positionMs = 0L
     private var playing = false
     private var hasPrev = false
     private var hasNext = false
     private var lastPublishedPositionMs = -1L
+
+    // Read from the mpv observer thread by setPosition's pre-filter; written on the main thread.
+    @Volatile
     private var lastPublishedAt = 0L
 
     /** True between [start] and [stop] — the session exists and the notification is live. */
@@ -207,14 +214,27 @@ object MediaController {
         publishState(force = true)
     }
 
-    fun setPosition(seconds: Double) = onMain {
-        if (!seconds.isFinite() || seconds < 0) return@onMain
+    fun setPosition(seconds: Double) {
+        if (!seconds.isFinite() || seconds < 0) return
         val ms = (seconds * 1000.0).toLong()
-        val jumped = abs(ms - positionMs) > SEEK_EPSILON_MS
-        positionMs = ms
-        if (!active) return@onMain
-        val stale = android.os.SystemClock.elapsedRealtime() - lastPublishedAt > POSITION_REFRESH_MS
-        if (jumped || stale) publishState(force = true)
+        // Pre-filter on the CALLER's thread: the mpv observer feeds this per frame, and posting a
+        // main-thread runnable per frame (the old unconditional onMain wrapper — its throttle sat
+        // INSIDE the posted block) kept the main queue permanently busy. The fields are read
+        // slightly racily here; the posted body re-checks with authoritative main-thread state, so
+        // a stale read costs at most one extra or one deferred post — never a wrong publish.
+        val jumpedEarly = abs(ms - positionMs) > SEEK_EPSILON_MS
+        val staleEarly = android.os.SystemClock.elapsedRealtime() - lastPublishedAt > POSITION_REFRESH_MS
+        if (!jumpedEarly && !staleEarly) {
+            positionMs = ms
+            return
+        }
+        onMain {
+            val jumped = abs(ms - positionMs) > SEEK_EPSILON_MS
+            positionMs = ms
+            if (!active) return@onMain
+            val stale = android.os.SystemClock.elapsedRealtime() - lastPublishedAt > POSITION_REFRESH_MS
+            if (jumped || stale) publishState(force = true)
+        }
     }
 
     // --- Notification -------------------------------------------------------------------------

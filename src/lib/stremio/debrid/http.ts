@@ -58,18 +58,31 @@ export function pickLargestVideo<T extends { name: string; bytes: number }>(file
  *  builds a FRESH client per request and so paid the full ~200-300ms TCP+TLS handshake on every
  *  single call. A debrid resolve is a CHAIN of these (account list → info → select → poll…), and
  *  the poll ramp starts at 250ms — so the handshake alone used to halve the effective poll rate
- *  and add over a second to the cached-source click-to-video path. GET/POST ride the metadata
- *  commands; anything else (RD's DELETE) goes through the method-agnostic ext_fetch. */
+ *  and add over a second to the cached-source click-to-video path.
+ *
+ *  `background: true` puts these on the BACKGROUND concurrency lane, not the metadata lane the
+ *  UI's own queries (AniList, AniZip) ride: debrid is the app's fattest, longest-lived traffic
+ *  (multi-MB account listings, minute-long poll chains), and sharing one pool let an episode
+ *  resolve starve the home screen outright. GET/POST ride the pooled metadata commands; anything
+ *  else (RD's DELETE) goes through the method-agnostic ext_fetch.
+ *
+ *  `init.signal`/`init.timeoutMs` are threaded through to the native side, which cancels the
+ *  in-flight reqwest future — an aborted caller frees its lane slot instead of occupying it to
+ *  completion. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; status: number; json: any }> {
   const method = String(init?.method ?? 'GET').toUpperCase()
   const headers = init?.headers as Record<string, string> | undefined
   const body = typeof init?.body === 'string' ? init.body : undefined
+  const opts = {
+    signal: init?.signal as AbortSignal | undefined,
+    timeoutMs: init?.timeoutMs as number | undefined,
+  }
   const r = method === 'GET' && body == null
-    ? await invokeNativeHttp<{ status: number; body: string }>('http_get', { url, headers })
+    ? await invokeNativeHttp<{ status: number; body: string }>('http_get', { url, headers, background: true }, opts)
     : method === 'POST'
-      ? await invokeNativeHttp<{ status: number; body: string }>('http_post', { url, body: body ?? '', headers })
-      : await invokeNativeHttp<{ status: number; body: string }>('ext_fetch', { url, method, headers, body })
+      ? await invokeNativeHttp<{ status: number; body: string }>('http_post', { url, body: body ?? '', headers, background: true }, opts)
+      : await invokeNativeHttp<{ status: number; body: string }>('ext_fetch', { url, method, headers, body }, opts)
   let json: unknown = {}
   try { json = r.body ? JSON.parse(r.body) : {} } catch { json = {} }
   return { ok: r.status >= 200 && r.status < 300, status: r.status, json }
