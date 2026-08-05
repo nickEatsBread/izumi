@@ -82,7 +82,7 @@ async function runJob(item: DownloadItem) {
         ...torrentEngineNetworkOptions(),
       })
     } else {
-      await invoke('download_start', { id: item.id, url: r.url, dir, filename: r.filename })
+      await invoke('download_start', { id: item.id, url: r.url, dir, filename: r.filename, headers: r.headers })
     }
   } catch (e) {
     if (get(downloads)[item.id]?.status === 'paused') return // benign — user paused it

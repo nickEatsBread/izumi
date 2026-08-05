@@ -475,7 +475,10 @@ function attachAndroid(
         ).catch((error) => {
           console.warn('automatic Android empty-source recovery', error)
           playerNotice.set('Automatic source recovery failed')
-        })
+        // Always re-arm. This used to latch true on failure, so the FIRST failed recovery
+        // permanently disabled the watchdog for the rest of the episode; the watch state machine
+        // re-arms with fresh timestamps, so the next attempt is a full timeout window away.
+        }).finally(() => { recoveryBusy = false })
       } else {
         onEnded()
       }
@@ -522,7 +525,8 @@ function attachAndroid(
     ).catch((error) => {
       console.warn('automatic Android playback recovery', error)
       playerNotice.set('Automatic source recovery failed')
-    })
+    // Same re-arm as the premature-EOF path: a failed attempt must not latch the watchdog off.
+    }).finally(() => { recoveryBusy = false })
   }, 1_000)
   stopAndroid = () => {
     unsub()
@@ -2014,9 +2018,15 @@ export async function recoverPlaybackSource(
       const base = await resolveStreams(context.media, context.episode)
       streams = [...base.streams]
       const fold = (batch: Stream[]) => { streams = [...streams, ...batch] }
-      await Promise.all([
-        extToStreams(context.media, context.episode, base.kitsu, fold),
-        resolveOnlineStreams(context.media, context.episode, undefined, fold).then(fold),
+      // Bounded: this runs while a broken source is ON SCREEN, and a wedged extension provider
+      // used to pin `recovering: true` forever (the resets below never ran), permanently
+      // disabling recovery. Whatever folded in before the budget is what the retry works with.
+      await Promise.race([
+        Promise.all([
+          extToStreams(context.media, context.episode, base.kitsu, fold),
+          resolveOnlineStreams(context.media, context.episode, undefined, fold).then(fold),
+        ]),
+        new Promise<void>((resolve) => setTimeout(resolve, 25_000)),
       ])
       if (!stillOwnsPlayback()) return false
       const refined = refineStreams(context.media, streams).kept
@@ -2160,8 +2170,9 @@ export function playNext(onState: (s: PlayState) => void = noticeState, autoplay
 }
 
 interface ResolvedDownloadBase { filename: string; quality?: string; provider?: string; infoHash?: string }
-/** A byte-addressable link (a plain addon url, or a debrid resolve) streamed to disk over HTTP. */
-export interface ResolvedHttpDownload extends ResolvedDownloadBase { kind: 'http'; url: string }
+/** A byte-addressable link (a plain addon url, or a debrid resolve) streamed to disk over HTTP.
+ *  `headers` carries an extension source's gate (Referer/Origin) — absent for debrid links. */
+export interface ResolvedHttpDownload extends ResolvedDownloadBase { kind: 'http'; url: string; headers?: Record<string, string> }
 /** A torrent fetched from peers by the local P2P engine. Carries the episode identity so the
  *  native side can pick the right file out of a season pack, exactly as playback does. */
 export interface ResolvedTorrentDownload extends ResolvedDownloadBase {
@@ -2181,8 +2192,34 @@ export type ResolvedDownload = ResolvedHttpDownload | ResolvedTorrentDownload
 // for a persisted download resumed after an app restart.
 export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences): Promise<ResolvedDownload> {
   const media = await fetchMediaById(mediaId)
-  const { streams, want } = await resolveStreams(media, episode)
-  let eligible = streams
+  const { streams, want, kitsu } = await resolveStreams(media, episode)
+  let all = streams
+  // Extensions are a first-class playback source but were never consulted here, so an
+  // extension-only setup played episodes fine and then reported "no source found" the moment a
+  // download was queued. Fold both extension flavours in exactly like playback does, then put the
+  // merged list through the same refine + season gates.
+  if (await hasConfiguredExtensions()) {
+    let extra: Stream[] = []
+    // Bounded: a download is a queued background job and must survive one wedged provider —
+    // whatever folded in before the budget expires is what gets considered.
+    const EXT_BUDGET_MS = 25_000
+    await Promise.race([
+      Promise.all([
+        extToStreams(media, episode, kitsu, (batch) => { extra = [...extra, ...batch] }),
+        resolveOnlineStreams(media, episode).then((s) => { extra = [...extra, ...s] }),
+      ]),
+      new Promise<void>((resolve) => setTimeout(resolve, EXT_BUDGET_MS)),
+    ])
+    if (extra.length) {
+      let merged = refineStreams(media, [...all, ...extra]).kept
+      if (want) merged = verifySeason(merged, want)
+      all = merged
+    }
+  }
+  // HLS manifests are playable but not saveable — the byte-stream downloader would write the
+  // playlist text, not the video. Torrent rows (no url) pass through untouched.
+  let eligible = all.filter((s) => !/\.m3u8(?:$|\?)/i.test(s.url ?? ''))
+  if (!eligible.length) eligible = all
   if (preferences?.cachedOnly) eligible = eligible.filter((stream) => !isUncached(stream))
   const raw = (stream: Stream) => `${stream.name ?? ''} ${stream.title ?? ''} ${stream.behaviorHints?.filename ?? ''}`.toLowerCase()
   if (preferences?.audio && preferences.audio !== 'any') {
@@ -2213,7 +2250,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   const common = { quality: info.quality ? `${info.quality}p` : undefined, infoHash: best.infoHash }
 
   if (best.url) {
-    return { kind: 'http', url: best.url, filename: named(best.url), provider: info.provider, ...common }
+    return { kind: 'http', url: best.url, headers: best.__headers, filename: named(best.url), provider: info.provider, ...common }
   }
   if (best.infoHash) {
     // Same rule as playback (directP2pEnabled): Direct P2P, or no credential to resolve with.

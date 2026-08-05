@@ -229,7 +229,10 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun aniyomiSources(invoke: Invoke) {
         val args = invoke.parseArgs(AniyomiRuntimeArgs::class.java)
-        Thread {
+        // Same deadline discipline as aniyomiCall: a pending invoke blocks a Rust bridge thread,
+        // so it must always settle. First-one-wins via `settled`; daemon threads throughout.
+        val settled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val worker = Thread {
             try {
                 loadAniyomiRuntime(args.runtimePath)
                 val context = activity.applicationContext
@@ -244,18 +247,40 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                     val map = source as? Map<String, Any?> ?: return@mapNotNull null
                     map.toMutableMap().apply { put("type", "anime") }
                 }
-                resolveJson(invoke, sources)
+                if (settled.compareAndSet(false, true)) resolveJson(invoke, sources)
             } catch (error: Throwable) {
                 Log.e("IzumiAniyomi", "Could not enumerate sources", error)
-                invoke.reject(error.message ?: "Could not load Aniyomi sources")
+                if (settled.compareAndSet(false, true)) {
+                    invoke.reject(error.message ?: "Could not load Aniyomi sources")
+                }
             }
-        }.start()
+        }
+        worker.isDaemon = true
+        worker.start()
+        Thread {
+            try {
+                worker.join(60_000)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            if (settled.compareAndSet(false, true)) {
+                Log.e("IzumiAniyomi", "Source enumeration timed out after 60s")
+                invoke.reject("The extension runtime did not answer in time.")
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     @Command
     fun aniyomiCall(invoke: Invoke) {
         val args = invoke.parseArgs(AniyomiCallArgs::class.java)
-        Thread {
+        // The extension's network code runs with whatever (lack of) timeouts the source APK chose,
+        // and the Rust bridge blocks a thread until this invoke settles. A worker wedged inside a
+        // dead TLS read therefore used to leave the invoke pending FOREVER — the caller's resolve
+        // never finished and the picker spun for good. The deadline thread answers on the worker's
+        // behalf; `settled` makes resolve/reject first-one-wins. Both threads are daemons so a
+        // wedged extension can never pin the process at exit.
+        val settled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val worker = Thread {
             try {
                 loadAniyomiRuntime(args.runtimePath)
                 @Suppress("UNCHECKED_CAST")
@@ -292,12 +317,27 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                     )
                     else -> error("Unsupported Aniyomi method: ${args.method}")
                 }
-                resolveJson(invoke, result)
+                if (settled.compareAndSet(false, true)) resolveJson(invoke, result)
             } catch (error: Throwable) {
                 Log.e("IzumiAniyomi", "Runtime call ${args.method} failed", error)
-                invoke.reject(error.message ?: "Aniyomi extension call failed")
+                if (settled.compareAndSet(false, true)) {
+                    invoke.reject(error.message ?: "Aniyomi extension call failed")
+                }
             }
-        }.start()
+        }
+        worker.isDaemon = true
+        worker.start()
+        Thread {
+            try {
+                worker.join(75_000)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+            if (settled.compareAndSet(false, true)) {
+                Log.e("IzumiAniyomi", "Runtime call ${args.method} timed out after 75s")
+                invoke.reject("The extension did not answer in time — try another source.")
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     @Command

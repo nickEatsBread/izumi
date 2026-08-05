@@ -466,6 +466,19 @@ function mediaType(url: string): 'm3u8' | 'dash' | 'mp4' {
   return 'mp4'
 }
 
+// Every other extension path caps its calls at 20s; the JVM bridge had NO cap at any layer, so a
+// wedged extension network call held the resolve open forever (the "stuck on Preparing download"
+// report). The native side has its own deadlines now; this race keeps the UI honest even if a
+// bridge response goes missing entirely.
+const JVM_CALL_TIMEOUT_MS = 20_000
+function jvmInvoke<T>(method: string, args: Record<string, unknown>): Promise<T> {
+  return Promise.race([
+    invoke<T>('jvm_extension_call', { method, args }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`The extension did not answer in time (${method}).`)), JVM_CALL_TIMEOUT_MS)),
+  ])
+}
+
 async function jvmProviderCall(source: JvmSource, method: string, callArgs: unknown[]): Promise<unknown> {
   if (method === 'getSettings') {
     // JVM getVideoList already returns every server and audio flavour in one response. Marking this
@@ -475,9 +488,8 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
   }
   if (method === 'search') {
     const input = (callArgs[0] ?? {}) as { query?: unknown }
-    const response = await invoke<{ list?: Record<string, unknown>[] }>('jvm_extension_call', {
-      method: 'search',
-      args: { sourceId: source.id, query: String(input.query ?? ''), page: 1, isAnime: true },
+    const response = await jvmInvoke<{ list?: Record<string, unknown>[] }>('search', {
+      sourceId: source.id, query: String(input.query ?? ''), page: 1, isAnime: true,
     })
     return (response.list ?? []).map((item) => ({
       id: JSON.stringify({ url: item.url, title: item.title, cover: item.cover }),
@@ -487,17 +499,14 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
   }
   if (method === 'findEpisodes') {
     const identity = JSON.parse(String(callArgs[0] ?? '{}')) as { url?: string; title?: string; cover?: string }
-    const detail = await invoke<{ title?: unknown; episodes?: Record<string, unknown>[] }>('jvm_extension_call', {
-      method: 'getDetail',
-      args: {
-        sourceId: source.id,
-        media: {
-          url: identity.url ?? '',
-          title: identity.title ?? '',
-          thumbnail_url: identity.cover ?? '',
-        },
-        isAnime: true,
+    const detail = await jvmInvoke<{ title?: unknown; episodes?: Record<string, unknown>[] }>('getDetail', {
+      sourceId: source.id,
+      media: {
+        url: identity.url ?? '',
+        title: identity.title ?? '',
+        thumbnail_url: identity.cover ?? '',
       },
+      isAnime: true,
     })
     return (detail.episodes ?? [])
       .map((episode) => ({
@@ -515,12 +524,9 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
     const raw = callArgs[0] as { id?: unknown } | string
     const encoded = typeof raw === 'string' ? raw : raw?.id
     const episode = JSON.parse(String(encoded ?? '{}')) as { url?: string; name?: string }
-    const videos = await invoke<Record<string, unknown>[]>('jvm_extension_call', {
-      method: 'getVideoList',
-      args: {
-        sourceId: source.id,
-        episode: { url: episode.url ?? '', name: episode.name ?? '' },
-      },
+    const videos = await jvmInvoke<Record<string, unknown>[]>('getVideoList', {
+      sourceId: source.id,
+      episode: { url: episode.url ?? '', name: episode.name ?? '' },
     })
     const mapped = videos
       .filter((video) => /^https?:\/\//i.test(String(video.url ?? '')))

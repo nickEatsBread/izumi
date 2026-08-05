@@ -168,6 +168,9 @@ pub async fn download_start(
     url: String,
     dir: String,
     filename: String,
+    // Extension-sourced files can be gated on request headers (Referer/Origin); a headerless GET
+    // gets a 403 for a URL the player streams fine. Optional — debrid links need none.
+    headers: Option<std::collections::HashMap<String, String>>,
     state: tauri::State<'_, Downloads>,
 ) -> Result<String, String> {
     // Guard: never run two streams for the same id. A second call (e.g. a re-pump
@@ -185,7 +188,7 @@ pub async fn download_start(
     // Run the transfer, then ALWAYS drop the job from the registry — done, paused, OR error — so a
     // failed download can be retried. (The old code left the id registered on a stream error, and
     // the guard above then silently swallowed every retry as "already-running".)
-    let out = run_download(&app, &id, &url, &dir, &filename, &cancel).await;
+    let out = run_download(&app, &id, &url, &dir, &filename, &headers, &cancel).await;
     if let Ok(mut map) = state.0.lock() {
         map.remove(&id);
     }
@@ -198,6 +201,7 @@ async fn run_download(
     url: &str,
     dir: &str,
     filename: &str,
+    headers: &Option<std::collections::HashMap<String, String>>,
     cancel: &Arc<AtomicBool>,
 ) -> Result<String, String> {
     let dir = std::path::PathBuf::from(dir);
@@ -232,6 +236,11 @@ async fn run_download(
     let mut attempt: u32 = 0;
     loop {
         let mut req = crate::download_http_client().get(url);
+        if let Some(h) = headers {
+            for (k, v) in h {
+                req = req.header(k, v);
+            }
+        }
         if received > 0 {
             req = req.header("Range", format!("bytes={received}-"));
         }
