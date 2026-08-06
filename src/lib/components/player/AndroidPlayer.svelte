@@ -48,6 +48,7 @@
     fullscreenPullTransform,
     shouldEnterFullscreen,
     shouldDismissSheet,
+    sheetGestureIntent,
     landscapeExitProgress,
     shouldExitFullscreen,
     MOVE_PX,
@@ -93,7 +94,6 @@
   import Settings from '@lucide/svelte/icons/settings'
   import Maximize from '@lucide/svelte/icons/maximize'
   import Minimize from '@lucide/svelte/icons/minimize'
-  import X from '@lucide/svelte/icons/x'
   import AndroidWatchDetails from './AndroidWatchDetails.svelte'
   import BufferSpinner from './BufferSpinner.svelte'
 
@@ -1005,6 +1005,11 @@
   })
 
   // Pull-down sheet: follow the finger exactly, then animate either home or fully off-screen.
+  // The gesture lives on the WHOLE sheet, not just the grab handle — every other app on the phone
+  // lets you flick a sheet away from anywhere on it, and aiming for a 4px pill was the complaint.
+  // The list still scrolls: a touch only becomes a pull once it clears the slop going DOWN with the
+  // scroller already at the top (sheetGestureIntent), and the pointer is captured only at that
+  // moment, so up to that point the native scroller owns the touch untouched.
   let sheetDrag = $state(0)
   let sheetBackdropOpacity = $state(1)
   let sheetDragging = $state(false)
@@ -1016,6 +1021,11 @@
   let sheetVelocityY = 0
   let sheetCloseTimer: ReturnType<typeof setTimeout> | undefined
   let sheetOpenFrame = 0
+  // Scroller the touch started in (null = handle/header), and what the touch resolved to.
+  let sheetScroller: HTMLElement | null = null
+  let sheetIntent: 'drag' | 'scroll' | null = null
+  // A pull that passes over a settings row still fires a click on release; swallow exactly one.
+  let sheetSuppressClick = false
   function resetSheetState() {
     sheetDrag = 0
     sheetBackdropOpacity = 1
@@ -1024,6 +1034,8 @@
     sheetPointerId = null
     sheetStartY = 0
     sheetVelocityY = 0
+    sheetScroller = null
+    sheetIntent = null
   }
   function finishSheetClose() { sheet = null; resetSheetState() }
   function dismissSettings() {
@@ -1037,19 +1049,38 @@
     sheetCloseTimer = setTimeout(finishSheetClose, 280)
   }
   function handleDown(e: PointerEvent) {
-    if (!e.isPrimary || sheetClosing) return
     e.stopPropagation()
+    if (!e.isPrimary || sheetClosing) return
     sheetPointerId = e.pointerId
     sheetStartY = e.clientY
     sheetLastY = e.clientY
     sheetLastTime = e.timeStamp
     sheetVelocityY = 0
-    sheetDragging = true
-    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    sheetIntent = null
+    sheetDragging = false
+    sheetSuppressClick = false
+    const target = e.target as Element | null
+    sheetScroller = (target?.closest?.('.settings-body') as HTMLElement | null) ?? null
   }
   function handleMove(e: PointerEvent) {
-    if (sheetPointerId !== e.pointerId) return
+    // Unconditionally swallowed: once the sheet is up, NOTHING under it may see a pointer, including
+    // the moves of a gesture we decided is a list scroll (that leak is the "interferes with the
+    // video" bug), so this must run before any early return.
     e.stopPropagation()
+    if (sheetPointerId !== e.pointerId) return
+    if (sheetIntent === null) {
+      const intent = sheetGestureIntent(e.clientY - sheetStartY, sheetScroller ? sheetScroller.scrollTop : null)
+      if (!intent) return
+      if (intent === 'scroll') { sheetPointerId = null; sheetIntent = 'scroll'; return }
+      sheetIntent = 'drag'
+      // Rebase to where the pull was recognized so the sheet doesn't jump by the slop distance.
+      sheetStartY = e.clientY
+      sheetLastY = e.clientY
+      sheetLastTime = e.timeStamp
+      sheetDragging = true
+      try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
+      return
+    }
     const dt = Math.max(1, e.timeStamp - sheetLastTime)
     const instantaneousVelocity = (e.clientY - sheetLastY) / dt
     sheetVelocityY = sheetVelocityY * 0.65 + instantaneousVelocity * 0.35
@@ -1066,22 +1097,34 @@
     } catch { /* ignore */ }
   }
   function handleUp(e: PointerEvent) {
-    if (sheetPointerId !== e.pointerId) return
     e.stopPropagation()
+    if (sheetPointerId !== e.pointerId) return
     const idleMs = Math.max(0, e.timeStamp - sheetLastTime)
     const releaseVelocity = sheetVelocityY * Math.max(0, 1 - idleMs / 160)
     releaseSheetPointer(e)
+    const dragged = sheetIntent === 'drag'
+    sheetIntent = null
     sheetDragging = false
+    if (!dragged) return
+    sheetSuppressClick = true
     if (shouldDismissSheet(sheetDrag, releaseVelocity, window.innerHeight)) dismissSettings()
     else { sheetDrag = 0; sheetBackdropOpacity = 1 }
   }
   function handleCancel(e: PointerEvent) {
-    if (sheetPointerId !== e.pointerId) return
     e.stopPropagation()
+    if (sheetPointerId !== e.pointerId) return
     releaseSheetPointer(e)
+    sheetIntent = null
     sheetDragging = false
     sheetDrag = 0
     sheetBackdropOpacity = 1
+  }
+  // Capture phase: a pull that started on a row must not also activate that row on release.
+  function handleSheetClick(e: MouseEvent) {
+    if (!sheetSuppressClick) return
+    sheetSuppressClick = false
+    e.preventDefault()
+    e.stopPropagation()
   }
 
   // Cap a teardown await: the promise's outcome stops mattering after the deadline (the native op
@@ -1367,11 +1410,12 @@
   <!-- Sheets -->
   {#if sheet}
     <div class="settings-backdrop absolute inset-0 z-30 bg-black/60" style:opacity={sheetBackdropOpacity} onpointerdown={(e) => e.stopPropagation()} onpointermove={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); dismissSettings() }} role="presentation"></div>
-    <!-- stopPropagation on move+up too (not just down) so swiping the sheet / scrolling the list never
+    <!-- The pointer handlers sit on the sheet ROOT so a pull anywhere on it dismisses. They also
+         stopPropagation on move+up (not just down) so swiping the sheet / scrolling the list never
          leaks to the video's gesture layer underneath (the "interferes with the video" bug). -->
-    <div class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={(e) => e.stopPropagation()} onpointermove={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
-      <!-- drag handle (only this dismisses on swipe, so the list scrolls normally) -->
-      <div class="sheet-handle cursor-grab py-4 touch-none active:cursor-grabbing" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleCancel} role="presentation">
+    <div class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleCancel} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
+      <!-- Grab affordance only — the whole sheet is draggable, so this is decoration, not the target. -->
+      <div class="sheet-handle py-4 touch-none">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>
       </div>
       <div class="flex items-center gap-2 px-4 pb-3">
@@ -1379,7 +1423,6 @@
           <button onclick={() => (settingsPage = 'main')} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10" aria-label="Back to video settings"><ChevronLeft size={21} /></button>
         {/if}
         <div class="min-w-0 flex-1"><h2 class="truncate text-lg font-extrabold">{settingsTitle()}</h2></div>
-        <button onclick={dismissSettings} class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10" aria-label="Close"><X size={21} /></button>
       </div>
       <div class="settings-body overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
         {#if settingsPage === 'main'}

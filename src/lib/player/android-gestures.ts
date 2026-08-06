@@ -129,3 +129,21 @@ export function shouldDismissSheet(distance: number, velocityY: number, viewport
   const distanceThreshold = Math.min(160, Math.max(80, viewportHeight * 0.15))
   return distance >= distanceThreshold || velocityY >= 0.5
 }
+
+/** Slop before a sheet touch commits to being a pull or a list scroll. */
+export const SHEET_SLOP_PX = 8
+
+/** Which gesture a touch anywhere on a bottom sheet turns into, once it clears the slop.
+ *  `scrollTop` is the enclosing scroller's position, or null when the touch started outside any
+ *  scroller (the handle/header). Pulling down wins only when the list has nothing left to scroll
+ *  up into — the same rule every native bottom sheet uses, so the whole surface is draggable
+ *  without stealing scrolls. Returns null while the movement is still ambiguous. */
+export function sheetGestureIntent(
+  dy: number,
+  scrollTop: number | null,
+  slop: number = SHEET_SLOP_PX,
+): 'drag' | 'scroll' | null {
+  if (Math.abs(dy) < slop) return null
+  if (dy <= 0) return 'scroll'
+  return scrollTop != null && scrollTop > 0 ? 'scroll' : 'drag'
+}
