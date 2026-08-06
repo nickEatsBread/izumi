@@ -1314,14 +1314,30 @@ pub(crate) fn spawn_event_loop(
                                 eprintln!("mpv could not apply autoplay after file load: {error}");
                             }
                         }
-                        // observe_property is silent when a write repeats the current value, and
-                        // the overlay RESETS its mirrored pause state on every load — so loading a
-                        // new file with the same pause value it guessed leaves that guess wrong
-                        // forever. (Change source while paused: pause stays true, no event, the
-                        // overlay assumes false → its spinner condition holds while read-ahead
-                        // visibly buffers the whole file.) State the real value on every load.
-                        if let Ok(paused) = client.get_property::<bool>("pause") {
-                            let _ = app.emit("player-paused", paused);
+                        // Re-state EVERY mirrored flag on each load, not just `pause`.
+                        //
+                        // observe_property is silent when a value repeats, and the overlay resets
+                        // its whole mirror (coreIdle=true, seeking/eof=false, …) when the load id
+                        // changes. Those two facts race: a file that starts playing BEFORE the
+                        // overlay's reset effect runs has already sent its `core-idle=false`, the
+                        // reset then puts `coreIdle` back to true, and mpv never speaks again
+                        // because nothing changed on its side. The overlay is left spinning over a
+                        // stream that is playing perfectly — exactly the "stuck on the loading
+                        // indicator even though it's fine" report, and worst on a source switch
+                        // where the replacement often loads fast.
+                        //
+                        // Ordering matters: this runs after the pending-track attach above, so the
+                        // values published here are the ones the new file settled on.
+                        for (event, property) in [
+                            ("player-paused", "pause"),
+                            ("player-core-idle", "core-idle"),
+                            ("player-seeking", "seeking"),
+                            ("player-eof", "eof-reached"),
+                            ("player-buffering", "paused-for-cache"),
+                        ] {
+                            if let Ok(value) = client.get_property::<bool>(property) {
+                                let _ = app.emit(event, value);
+                            }
                         }
                     }
                 }
