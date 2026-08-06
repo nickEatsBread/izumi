@@ -20,7 +20,7 @@
   import { malToken } from '$lib/trackers/config'
   import { getMalProgress } from '$lib/trackers'
   import type { AniStatus } from '$lib/trackers'
-  import { malToAni, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
+  import { malToAni, mergedProgress, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
   import ListEditor from '$lib/components/detail/ListEditor.svelte'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
@@ -154,12 +154,12 @@
     if (listOpt.status) return listOpt.status
     return (rawEntry?.status as AniStatus | undefined) ?? malToAni(malEntry?.status)
   })
+  // Explicit user actions (optimistic edit, manual override) win outright; between the trackers
+  // take the max — an AniList entry at 0 must not `??`-shadow real MAL progress.
   const effProgress = $derived(listOpt.removed ? 0 : (
     listOpt.progress
     ?? $manualProgressOverrides[id]
-    ?? rawEntry?.progress
-    ?? malEntry?.progress
-    ?? 0
+    ?? mergedProgress(rawEntry?.progress, malEntry?.progress)
   ))
   const effScore100 = $derived(listOpt.removed ? 0 : (listOpt.score ?? rawEntry?.score ?? (malEntry?.score ?? 0) * 10))
   const hasEntry = $derived(!!effStatus)

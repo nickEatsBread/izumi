@@ -39,6 +39,13 @@ export function malToAni(s?: string | null): AniStatus | undefined {
   }
 }
 
+/** Effective watch progress across trackers: the max of AniList and MAL. Never chain these with
+ *  `??` — an AniList entry at progress 0 is a real value, and letting it short-circuit silently
+ *  hides higher MAL progress (MAL is the canonical tracker for MAL-first users). */
+export function mergedProgress(anilist?: number | null, mal?: number | null): number {
+  return Math.max(anilist ?? 0, mal ?? 0)
+}
+
 /** Descriptive 0-10 score labels (the canonical izumi score is 0-100 → /10 here). Index 0 = unrated. */
 export const SCORE_LABELS: readonly string[] = [
   'Not rated', 'Appalling', 'Horrible', 'Very Bad', 'Bad',
