@@ -937,8 +937,17 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             args.headers.entries.joinToString(",") { "${it.key}: ${it.value}" },
         )
         pendingSubtitles = PendingSubtitles(args.url, args.subtitles)
+        // Resume position via mpv's `start` option, set BEFORE loadfile — the same rule the
+        // desktop backends follow. The old post-loadfile `seek` was silently rejected: mpv
+        // refuses seeks until the file's playback is initialized (hundreds of ms away for a
+        // network stream), the ignored return code hid the failure, playback began at 0:00 —
+        // and the throttled progress loop then overwrote the real saved position with ~0.
+        // Every Continue Watching tap is a cold open through the deferred-surface path, so the
+        // reported "doesn't go to where you last watched" was deterministic.
+        // Always set it ("none" clears): `start` is sticky, and a resumed file must not leak
+        // its offset into the next episode loaded on the reused core.
+        m.setPropertyString("start", if (args.startPos > 0) args.startPos.toString() else "none")
         m.command(arrayOf("loadfile", args.url))
-        if (args.startPos > 0) m.command(arrayOf("seek", args.startPos.toString(), "absolute"))
         if (slang.equals("none", ignoreCase = true)) {
             m.setPropertyString("sid", "no")
         }
