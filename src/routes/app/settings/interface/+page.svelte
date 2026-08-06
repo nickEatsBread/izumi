@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleStickyHeader, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -36,6 +36,11 @@
   const scheduleLayouts: { value: ScheduleLayout; label: string; hint: string }[] = [
     { value: 'agenda', label: 'Agenda', hint: 'One long list — each day is a full-width section. Big and easy to read.' },
     { value: 'days', label: 'Day at a time', hint: 'Tabs across the top; one day shown large. Matches the Deck view.' },
+  ]
+
+  const scheduleTabs: { value: ScheduleTab; label: string; hint: string }[] = [
+    { value: 'schedule', label: 'Schedule', hint: 'The weekly airing calendar.' },
+    { value: 'watchlist', label: 'Watchlist', hint: 'Your watching list — shows with new episodes first.' },
   ]
   const themes: { value: ThemePreset; label: string; background: string; surface: string; foreground: string; accent: string }[] = [
     { value: 'izumi', label: 'Izumi', background: '#09090b', surface: '#27272a', foreground: '#fafafa', accent: '#e93b69' },
@@ -166,6 +171,25 @@
           <div class="flex items-center justify-between">
             <span class="font-bold">{opt.label}</span>
             {#if $scheduleLayout === opt.value}<span class="text-xs font-bold text-primary">{m.settings_selected()}</span>{/if}
+          </div>
+          <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
+        </button>
+      {/each}
+    </div>
+
+    <p class="mb-1 text-sm font-bold">{m.settings_schedule_default_tab()}</p>
+    <div class="mb-4 grid gap-2 sm:grid-cols-2">
+      {#each scheduleTabs as opt (opt.value)}
+        <button
+          data-focusable
+          onclick={() => ($scheduleDefaultTab = opt.value)}
+          aria-pressed={$scheduleDefaultTab === opt.value}
+          class="rounded-md border p-3 text-left transition-colors
+            {$scheduleDefaultTab === opt.value ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}"
+        >
+          <div class="flex items-center justify-between">
+            <span class="font-bold">{opt.label}</span>
+            {#if $scheduleDefaultTab === opt.value}<span class="text-xs font-bold text-primary">{m.settings_selected()}</span>{/if}
           </div>
           <p class="mt-1 text-xs text-muted-foreground">{opt.hint}</p>
         </button>
