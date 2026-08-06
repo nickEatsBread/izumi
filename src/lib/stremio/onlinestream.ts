@@ -7,6 +7,12 @@ import { runningStreamExtensions } from '$lib/extensions/manager'
 import { normalizeLang, subtitleTitle } from './sublang'
 import { memo, cacheableList } from './online-cache'
 
+// Serial alias-search bounds (see findEp). A provider answers or it doesn't — walking every
+// synonym only multiplies a dead provider's timeout, and it used to do so per episode.
+const MAX_SEARCH_ALIASES = 5
+const SEARCH_FAILURE_COOLDOWN_MS = 90_000
+const searchFailures = new Map<string, number>()
+
 /** Why a provider contributed no rows, when it said so out loud.
  *
  *  Every provider call is best-effort — one dead source must never fail the whole resolve — but
@@ -362,20 +368,39 @@ export async function resolveOnlineStreams(
     ext: (typeof exts)[number],
     dub: boolean,
   ): Promise<{ episode: SnEpisode; matchedTitle: string } | null> => {
+    // Failure cooldown: memo deliberately does NOT cache a null (timed-out/errored) search, so a
+    // dead provider used to re-pay its full serial alias sweep — each query up to the 20s cap — on
+    // EVERY episode transition. A provider whose searches all failed for this title sits out for a
+    // while instead; a provider that merely doesn't CARRY the title is unaffected (empty arrays
+    // memo-cache normally).
+    const failKey = `${ext.id}|${media.id}`
+    const failedAt = searchFailures.get(failKey)
+    if (failedAt && Date.now() - failedAt < SEARCH_FAILURE_COOLDOWN_MS) return null
     let best: SnSearchResult | undefined
+    let sawFailure = false
+    let sawAnswer = false
     // Most providers match the primary title, so this is still one request in the normal case.
     // Only a failed/weak match falls back through the media's romaji, English and synonym titles.
-    for (const query of queries) {
+    // The sweep is capped: aliases are ordered closest-to-canonical first, and a provider that
+    // matched none of the first few will not match the tenth — while a dead provider would burn
+    // its 20s timeout PER alias, serially.
+    for (const query of queries.slice(0, MAX_SEARCH_ALIASES)) {
       const results = await memo(
         `search|${ext.id}|${dub}|${JSON.stringify(query)}|${media.seasonYear ?? ''}`,
         () => ext.call('search', { query, dub, year: media.seasonYear ?? undefined })
           .catch((error: unknown) => { noteProblem(ext, error); return null }),
         cacheableList,
       ) as SnSearchResult[] | null
+      if (results === null) sawFailure = true
+      else sawAnswer = true
       best = pickSearchResult(results ?? [], identityTitles)
       if (best) break
     }
-    if (!best) return null
+    if (!best) {
+      if (sawFailure && !sawAnswer) searchFailures.set(failKey, Date.now())
+      return null
+    }
+    searchFailures.delete(failKey)
     const eps = await memo(
       `episodes|${ext.id}|${best.id}`,
       // Where a login-gated source fails: the detail page is what fetches the episode list, so this

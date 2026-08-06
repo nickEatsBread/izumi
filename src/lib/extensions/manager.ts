@@ -575,6 +575,12 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
   return null
 }
 
+// One enumeration per install-set: `jvm_extension_sources` spins the whole Java runtime up, and it
+// was re-invoked on EVERY resolve (every episode transition paid it — and its Rust budget allows
+// minutes when the runtime APK needs re-downloading). The source list only changes when a package
+// is (un)installed, which is exactly what `installedRevision` counts.
+let jvmSourcesCache: { revision: number; sources: JvmSource[] } | null = null
+
 async function runningJvmExtensions(onlyId?: string): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
@@ -587,7 +593,17 @@ async function runningJvmExtensions(onlyId?: string): Promise<
   const packageBySource = liveJvmSources(installed, get(disabledPlugins))
   if (!packageBySource.size) return []
   try {
-    const sources = await invoke<JvmSource[]>('jvm_extension_sources')
+    const sources = jvmSourcesCache?.revision === installedRevision
+      ? jvmSourcesCache.sources
+      // The last uncapped jvm* await the UI sat behind: the Rust side legally takes ~190s worst
+      // case (runtime download + bridge budget), and this call gates EVERY source resolve. The
+      // resolve must fail fast instead — a slow first enumeration retries on the next resolve.
+      : await Promise.race([
+          invoke<JvmSource[]>('jvm_extension_sources'),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('The extension runtime did not answer in time.')), 15_000)),
+        ])
+    jvmSourcesCache = { revision: installedRevision, sources }
     return dedupeJvmSources(sources)
       .filter((source) =>
         source.type === 'anime'

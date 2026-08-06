@@ -502,7 +502,12 @@ function attachAndroid(
       now: Date.now(),
       position: latest.pos,
       duration: latest.dur,
-      paused: latest.paused,
+      // "Paused" only counts once a frame exists: the watchdog deliberately holds off while
+      // paused, but a load that never started can BE paused (a ghost tap on the spinner, or a
+      // previous episode's pause carried into the replacement) — and that disarmed the
+      // never-started clock entirely. That was the "black screen until pause/play is toggled"
+      // report: the manual toggle was what re-armed the watchdog.
+      paused: latest.paused && latest.frameReady,
       buffering: latest.buffering || latest.coreIdle,
       seeking: latest.seeking || latest.seekBusy,
       eof: latest.eof,
@@ -710,7 +715,7 @@ async function extToStreams(
 // shares the Stremio bingeGroup, the exact pack infoHash, OR the parsed release group
 // (fansub author) — the group match is what continues extension/fansub content, which
 // carries no bingeGroup. `describe(s).group` is the same parse the picker heading uses.
-export interface ContinueHint { bingeGroup?: string; infoHash?: string; group?: string; originId?: string }
+export interface ContinueHint { bingeGroup?: string; infoHash?: string; group?: string; originId?: string; online?: boolean }
 export function matchesRelease(s: Stream, c: ContinueHint): boolean {
   return !!(
     (c.bingeGroup && s.behaviorHints?.bingeGroup === c.bingeGroup)
@@ -729,7 +734,7 @@ function continueHint(media: Media): ContinueHint | undefined {
   if (!get(bingePreload) && !get(autoplayNext)) return undefined
   const b = get(bingeSource)
   if (!b || b.mediaId !== media.id || !(b.bingeGroup || b.infoHash || b.group || b.originId)) return undefined
-  return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group, originId: b.originId }
+  return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group, originId: b.originId, online: b.online }
 }
 // A stream mpv can start without a multi-minute debrid cache: a direct online stream, an
 // already-resolved url, or a debrid-cached torrent (⚡ — resolves in ~1s).
@@ -757,7 +762,7 @@ async function episodeWant(media: Media, episode: number | undefined, stream?: S
 
 // Next episode resolved ahead of time (near the end of the current one) so Next /
 // auto-advance starts instantly — no addon query or debrid round-trip at the cut.
-let prefetched: { mediaId: number; episode: number; stream: Stream } | null = null
+let prefetched: { mediaId: number; episode: number; stream: Stream; at?: number } | null = null
 let prefetching = false
 // Negative cache for prefetchNext. `prefetched` is only ever assigned on SUCCESS, so a miss (no
 // cached same-release, or a throw) left every guard below false — and the progress handler calls
@@ -789,6 +794,23 @@ async function prefetchNext(media: Media, episode: number) {
   prefetching = true
   let hit = false
   try {
+    // Online-extension binge: the addon path below cannot see these sources at all
+    // (resolveStreams is addon-only), so the next episode used to start COLD every time — a full
+    // picker resolve per transition. Same-origin pre-resolve instead: search + episode list are
+    // memo hits from THIS episode, so this is one background video-list call against the provider
+    // already playing. Generated at 85%, consumed at the episode cut — comfortably inside the
+    // lifetime of these tokenized URLs; takePrefetched enforces a max age regardless.
+    const b = get(bingeSource)
+    if (b && b.mediaId === media.id && b.online && b.originId) {
+      const rows = await resolveOnlineStreams(media, next, b.originId)
+      const s = rows.find((r) => r.__origin?.id === b.originId && !!r.url) ?? rows.find((r) => !!r.url)
+      if (s?.url) {
+        prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
+        nextEpisodeReady.set({ mediaId: media.id, episode: next })
+        hit = true
+      }
+      return
+    }
     const { streams, want } = await resolveStreams(media, next)
     const best = pickSameRelease(media, streams, want)
     if (!best) return // no cached same-release — leave it to the picker rather than force a download
@@ -805,7 +827,7 @@ async function prefetchNext(media: Media, episode: number) {
       }) }
     }
     if (s.url) {
-      prefetched = { mediaId: media.id, episode: next, stream: s }
+      prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
       nextEpisodeReady.set({ mediaId: media.id, episode: next })
       hit = true
     }
@@ -821,6 +843,14 @@ async function prefetchNext(media: Media, episode: number) {
 function takePrefetched(mediaId: number, episode: number): Stream | null {
   const pf = prefetched
   if (!pf || pf.mediaId !== mediaId || pf.episode !== episode || !pf.stream.url) return null
+  // Tokenized/time-limited URLs (online extensions, debrid CDN links) must not be replayed long
+  // after they were minted — a paused-overnight binge would otherwise consume a dead link and
+  // look like a broken player instead of just resolving fresh.
+  if (pf.at != null && Date.now() - pf.at > 10 * 60_000) {
+    prefetched = null
+    nextEpisodeReady.set(null)
+    return null
+  }
   // Consumption-time same-release check, in case the playStream invalidation raced or never ran
   // (e.g. the source change failed after resetting bingeSource): the release actually on screen is
   // bingeSource, and a prefetch that doesn't continue IT would replay the pre-change release. The
@@ -1219,16 +1249,22 @@ export async function playEpisode(
           .catch(() => {})
           .finally(done)
       }
+      // Umbrella budget on both extension waves: the per-call caps BOUND each hop, but a provider
+      // with many aliases (or several slow providers) still stacks them serially — recovery and
+      // downloads already carry exactly this budget, and the picker (the most user-visible wait of
+      // the three) was the only resolve without one. Late results still fold in via the callbacks;
+      // the budget only stops the WAIT.
+      const EXT_WAVE_BUDGET_MS = 30_000
+      const budget = (work: Promise<unknown>) =>
+        Promise.race([work.catch(() => {}), new Promise<void>((resolve) => setTimeout(resolve, EXT_WAVE_BUDGET_MS))])
       if (hasExt) {
-        extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })
-          .catch(() => {})
+        budget(extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }))
           .finally(done)
       }
       if (hasExt) {
         // Fold each provider in as it settles, exactly like the torrent wave above — otherwise one
         // slow (or wedged, 20s-capped) provider hides every fast one's results until it gives up.
-        resolveOnlineStreams(media, episode, undefined, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } })
-          .catch(() => {})
+        budget(resolveOnlineStreams(media, episode, undefined, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }))
           .finally(done)
       }
     })
@@ -1417,8 +1453,14 @@ async function resolveAndPlayBest(
   // episode, carrying the continuity hint so a same-release source auto-continues when it
   // lands (extension/fansub content), and otherwise the user picks. This replaces the old
   // dead-end "no cached source" toast — the next episode always goes somewhere.
+  //
+  // Direct-P2P blocks TORRENT continuations on purpose (Next must not silently commit to another
+  // multi-gigabyte release without the health/size ranking) — but that rationale has nothing to
+  // say about ONLINE streaming sources, and blocking those forced extension binges through the
+  // full visible picker on every single episode. A hint marked `online` continues in every mode.
+  const hint = continueHint(media)
   return await playEpisode(media, episode, onState, {
-    continuation: directP2pEnabled() ? undefined : continueHint(media),
+    continuation: directP2pEnabled() && !hint?.online ? undefined : hint,
     autoplay,
   })
 }
@@ -1665,7 +1707,10 @@ export async function playStream(
     // purpose: the Android and external-player paths return before the desktop embed, and skipping
     // them left `bingeSource` pointing at whatever release a previous playStream set — so on those
     // paths "Next" continued the pre-change release after a manual source change.
-    const releaseIdentity = { bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group, originId: stream.__origin?.id }
+    // `online` marks a DIRECT streaming source (no torrent behind it) — the flag that lets
+    // same-origin continuation stay on in Direct-P2P mode, where torrent continuations are
+    // deliberately blocked (see resolveAndPlayBest).
+    const releaseIdentity = { bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group, originId: stream.__origin?.id, online: !!stream.__stream }
     bingeSource.set({ mediaId: media.id, ...releaseIdentity })
     // A prefetched next episode continues the release that was playing when the prefetch ran.
     // Starting a DIFFERENT release now (manual source change) makes that stored stream — and its

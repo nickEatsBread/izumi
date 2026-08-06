@@ -105,14 +105,29 @@ let mediaSub: PluginListener | undefined
 // `loadfile` replaces the current entry asynchronously. libmpv reports the outgoing file's
 // property changes + END_FILE before START_FILE for the replacement, even though `mpv_load` has
 // already resolved. Ignore that tail so it cannot make the new episode look failed at time 0.
+//
+// The latch is DEADLINED: START_FILE can genuinely never arrive (surface never attached, a
+// swallowed loadfile failure, an event lost while Android froze the WebView), and an un-deadlined
+// latch then dropped every later event — the player sat on an optimistic spinner forever and even
+// the pause button looked dead. Past the deadline the stream is let through again: stale-tail
+// misattribution is a lesser evil than a permanently frozen store.
 let awaitingLoadStart = false
+let awaitingLoadStartAt = 0
+const LOAD_START_LATCH_MAX_MS = 8_000
+// The outgoing file's END_FILE arrives almost immediately after `loadfile`; one arriving well
+// after that belongs to OUR load dying before START_FILE (bad URL, failed open) and must surface
+// as eof so the premature-EOF recovery reacts now instead of the 60s never-started clock.
+const OUTGOING_TAIL_MS = 2_000
 /** Start the single observed-property subscription that keeps `mpvState` current. Idempotent;
  *  lives for the app session (the plugin core is recreated per play, the JS listener persists). */
 export async function startMpvEvents(): Promise<void> {
   if (!progressSub) {
     progressSub = await addPluginListener('mpv', 'progress', (e: unknown) => {
       const { property, value } = e as { property: string; value: unknown }
-      if (awaitingLoadStart) return
+      if (awaitingLoadStart) {
+        if (Date.now() - awaitingLoadStartAt < LOAD_START_LATCH_MAX_MS) return
+        awaitingLoadStart = false
+      }
       mpvState.update((s) => {
         if (property === 'time-pos' && typeof value === 'number') {
           if (pendingSeekTarget != null) {
@@ -150,8 +165,15 @@ export async function startMpvEvents(): Promise<void> {
       } else if (id === 7) {
         // Failed HLS inputs can emit END_FILE without ever changing the observed eof-reached
         // property. Treat the event itself as authoritative once the new file has started; an
-        // END_FILE from the outgoing entry during `loadfile` replacement belongs to the old load.
-        if (!awaitingLoadStart) mpvState.update((s) => ({ ...s, eof: true }))
+        // END_FILE from the outgoing entry during `loadfile` replacement belongs to the old load
+        // — but only in the brief replacement window. A late END_FILE while still latched is OUR
+        // load dying before START_FILE: clear the latch and let eof drive recovery immediately.
+        if (!awaitingLoadStart) {
+          mpvState.update((s) => ({ ...s, eof: true }))
+        } else if (Date.now() - awaitingLoadStartAt > OUTGOING_TAIL_MS) {
+          awaitingLoadStart = false
+          mpvState.update((s) => ({ ...s, eof: true, buffering: false }))
+        }
       } else if (id === 21) {
         // The definitive edge that says a frame is being presented again. Metadata and time-pos
         // updates can arrive first and must not retire the loader.
@@ -186,6 +208,7 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
   seekGeneration++
   clearPendingSeekTimers()
   awaitingLoadStart = true
+  awaitingLoadStartAt = Date.now()
   // Reset UI state for the new file (fresh time-pos/duration events will repopulate it).
   // buffering starts true — the spinner shows until the first frame's duration/time-pos lands.
   mpvState.set({ ...IDLE_STATE, buffering: true })
@@ -430,19 +453,18 @@ function requestExactSeek(sec: number) {
   const generation = ++seekGeneration
   clearTimeout(pendingSeekTimer)
   pendingSeekTarget = target
-  return mpvCommand(['seek', target.toFixed(3), 'absolute+exact']).then(() => {
+  // Armed BEFORE the command is awaited: when the bridge itself wedges (the command promise never
+  // settles), the old then()-armed timer never existed, so `seekBusy` stayed true forever — which
+  // both froze the seek UI and disarmed the recovery watchdog (it skips checks mid-seek).
+  pendingSeekTimer = setTimeout(async () => {
     if (generation !== seekGeneration || pendingSeekTarget == null) return
-    // A failed/missing native observation must not pin the optimistic position forever. Reconcile
-    // after a generous window; normal seeks clear this from their time-pos event almost instantly.
-    pendingSeekTimer = setTimeout(async () => {
-      if (generation !== seekGeneration || pendingSeekTarget == null) return
-      const rawActual = await mpvGet('time-pos')
-      const actual = rawActual == null ? Number.NaN : Number(rawActual)
-      if (generation !== seekGeneration) return
-      clearPendingSeek(generation)
-      if (Number.isFinite(actual)) mpvState.update((s) => ({ ...s, pos: actual }))
-    }, 2000)
-  }).catch((error) => {
+    const rawActual = await mpvGet('time-pos')
+    const actual = rawActual == null ? Number.NaN : Number(rawActual)
+    if (generation !== seekGeneration) return
+    clearPendingSeek(generation)
+    if (Number.isFinite(actual)) mpvState.update((s) => ({ ...s, pos: actual }))
+  }, 2000)
+  return mpvCommand(['seek', target.toFixed(3), 'absolute+exact']).catch((error) => {
     clearPendingSeek(generation)
     throw error
   })

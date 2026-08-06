@@ -8,6 +8,7 @@
   import { onDestroy } from 'svelte'
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
+  import { pushState } from '$app/navigation'
   import { streamPicker, gameMode, bingeSource, debridCaching, connecting } from '$lib/player/session'
   import { rankInfos, pickCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead } from '$lib/stremio/dead-sources'
@@ -18,11 +19,12 @@
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
-  import { getSeadexEntry, bestHashes, isWebLink, matchSeadexStreams, type SeadexEntry } from '$lib/stremio/seadex'
+  import { getSeadexEntry, bestHashes, isWebLink, matchSeadexStreams, type SeadexEntry, type SeadexRelease } from '$lib/stremio/seadex'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { providerProblems } from '$lib/stremio/onlinestream'
   import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
+  import { isMobile } from '$lib/platform'
   import Search from '@lucide/svelte/icons/search'
   import Zap from '@lucide/svelte/icons/zap'
   import ArrowDownWideNarrow from '@lucide/svelte/icons/arrow-down-wide-narrow'
@@ -366,6 +368,30 @@
     streamPicker.set(null)
   }
 
+  // Android's hardware Back arrives as webView.goBack() (WryActivity installs exactly that
+  // callback), i.e. plain SPA history. With the picker open that paged the route UNDERNEATH
+  // backwards while the picker stayed on screen — and on a launch with no history to go back to it
+  // quit the app outright. Shallow routing gives Back an entry of ours to pop, so on this screen it
+  // means "close this", like every other Android sheet.
+  //
+  // The guard is a primitive on purpose: `pick` is a new object on every progressive stream update
+  // (see the seadex note above), so an effect depending on it would push one history entry per
+  // addon that lands.
+  const backTrapOpen = $derived($isMobile && !!pick && !pick.hidden)
+  $effect(() => {
+    if (!backTrapOpen) return
+    let pushed = true
+    pushState('', { sourcePicker: true })
+    const onPop = () => { pushed = false; close() }
+    window.addEventListener('popstate', onPop)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      // Dismissed some other way (✕, a chosen source, Escape): drop our entry too, or the next
+      // Back gets swallowed by a modal that is no longer there.
+      if (pushed) history.back()
+    }
+  })
+
   const badgeClass = (b: string) =>
     /^(?:4K|1440p|1080p|720p|480p|360p|240p|SD)$/.test(b) ? 'bg-lime-500/15 text-lime-300'
     : /^(?:HEVC|AV1|H264|XviD|10bit|8bit)$/.test(b) ? 'bg-sky-500/15 text-sky-300'
@@ -382,17 +408,50 @@
   // Four honest states. A LIBRARY hit gets its own glyph and wording on purpose: it only proves
   // the torrent is already in THIS user's debrid account, not that the provider is holding it
   // cached for everyone — calling that "Cached" would overstate what we actually know.
+  //
+  // `w`/`pill` exist because the glyph column explains itself through a `title` tooltip, and a
+  // touch screen has no hover: on mobile the single most important fact about a row was readable
+  // only to someone who already knew what ✖ meant. Mobile drops the glyph column and states it.
   const cacheGlyph = (info: StreamInfo) =>
     info.cached === 'instant'
       ? (info.cacheSource === 'library'
-          ? { i: '📁', cls: 'text-green-400', t: 'Already in your debrid library — instant play' }
-          : { i: '⚡', cls: 'text-green-400', t: 'Cached — instant play' })
+          ? { i: '📁', w: 'In your library', cls: 'text-green-400', pill: 'bg-green-500/15 text-green-300', t: 'Already in your debrid library — instant play' }
+          : { i: '⚡', w: 'Cached', cls: 'text-green-400', pill: 'bg-green-500/15 text-green-300', t: 'Cached — instant play' })
     : info.cached === 'unknown'
-      ? { i: '?', cls: 'text-muted-foreground', t: directP2p ? 'Cache state unknown — streams from peers' : "Cache state unknown — this provider can't be checked" }
+      ? { i: '?', w: 'Cache unknown', cls: 'text-muted-foreground', pill: 'bg-secondary text-muted-foreground', t: directP2p ? 'Cache state unknown — streams from peers' : "Cache state unknown — this provider can't be checked" }
     : info.cached === 'uncached'
-      ? { i: '⬇', cls: 'text-amber-400', t: directP2p ? 'Direct P2P — streams from peers' : 'Not cached — will download to debrid' }
-    : { i: '✖', cls: 'text-red-400', t: directP2p ? 'No reported seeders — direct playback may stall' : 'Dead — no seeders on debrid' }
+      ? { i: '⬇', w: directP2p ? 'Direct P2P' : 'Will download', cls: 'text-amber-400', pill: 'bg-amber-500/15 text-amber-300', t: directP2p ? 'Direct P2P — streams from peers' : 'Not cached — will download to debrid' }
+    : { i: '✖', w: directP2p ? 'No seeders' : 'Dead', cls: 'text-red-400', pill: 'bg-red-500/15 text-red-300', t: directP2p ? 'No reported seeders — direct playback may stall' : 'Dead — no seeders on debrid' }
+
+  // Mobile control strip. The desktop bar is `flex-wrap` over seven controls of four different
+  // heights — on a phone it wrapped into a four-row block of 13px checkboxes above the list it was
+  // meant to filter. Mobile gets one uniform pill height in a single scrolling row instead, and the
+  // three checkboxes become pressed-state toggles with a real touch target.
+  const CHIP = 'flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-xs font-bold transition-colors'
+  const CHIP_ON = 'bg-theme/20 text-theme'
+  const CHIP_OFF = 'bg-secondary text-muted-foreground'
 </script>
+
+<!-- The row's qualifier badges. A snippet because they live on DIFFERENT LINES per platform: the
+     heading row has ~300px on a phone once the logo, the 48px copy rail and the padding are taken
+     out, and four uppercase chips on it truncated the release name — the one thing you are reading
+     the row for — down to a few characters. Mobile lets them wrap in the meta row instead. -->
+{#snippet qualifiers(curated: SeadexRelease | undefined, filteredAs: string | undefined, knownBad: boolean, batch: boolean)}
+  {@const size = $isMobile ? 'text-[0.68rem]' : 'text-[0.6rem]'}
+  {#if curated}
+    <span
+      class="shrink-0 rounded px-1.5 font-black uppercase {size} {curated.isBest ? 'bg-emerald-400/20 text-emerald-300' : 'bg-emerald-400/10 text-emerald-300/70'}"
+      title="{curated.isBest ? 'Rated the best available release' : 'A curated alternative, not the top pick'} by releases.moe{curated.releaseGroup ? ` — ${curated.releaseGroup}` : ''}{curated.tracker ? ` on ${curated.tracker}` : ''}{curated.dualAudio ? ' · dual audio' : ''}"
+    >{curated.isBest ? 'Best release' : 'Curated alt'}</span>
+  {/if}
+  {#if filteredAs}
+    <span class="shrink-0 rounded bg-amber-400/20 px-1.5 font-black uppercase text-amber-300 {size}" title="Filtered out: {filteredAs}">{filteredAs}</span>
+  {/if}
+  {#if knownBad}
+    <span class="shrink-0 rounded bg-red-400/20 px-1.5 font-black uppercase text-red-300 {size}" title="This source failed to play recently. Still selectable — it may have been a temporary failure.">Failed</span>
+  {/if}
+  {#if batch}<Database size={13} class="shrink-0 text-indigo-300" />{/if}
+{/snippet}
 
 <!-- `hidden` renders nothing while the entry stays live: with a single configured source there is
      nothing to choose, but the resolve flow still needs the picker to exist to recognise its own
@@ -402,35 +461,93 @@
        Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
        instead of letting WebKit cache one snapshot — at the exact moment the app is busiest
        resolving sources. Same call DebridCaching.svelte:22 already documents. -->
+  <!-- Mobile is a full-screen dialog, not a centred card. A phone has no room for a floating
+       3xl-wide panel with 1rem of backdrop showing on every side, and `85vh` ignores both the
+       Android system bars and the IME. It also opens OVER the Android player (AndroidPlayer hides
+       its whole shell while `streamPicker` is set), so it has to survive a ~360px-tall landscape
+       viewport — hence the short-viewport rules in the style block. -->
   <div
-    class="fixed inset-0 z-40 grid place-items-center bg-black/70 p-4"
-    class:backdrop-blur-sm={!$gameMode}
+    class="fixed inset-0 z-40 grid bg-black/70 {$isMobile ? '' : 'place-items-center p-4'}"
+    class:backdrop-blur-sm={!$gameMode && !$isMobile}
     onclick={close}
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
   >
-    <div data-nav-trap class="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div data-nav-trap class="flex flex-col overflow-hidden bg-card shadow-2xl {$isMobile ? 'sp-mobile h-full w-full' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border'}" onclick={(e) => e.stopPropagation()} role="presentation">
       <!-- Banner-headed title (shrink-0 so a tall list never squeezes it) -->
       <div class="relative shrink-0 overflow-hidden border-b border-border">
         {#if banner(pick.media)}
           <img src={banner(pick.media)} alt="" class="absolute inset-0 h-full w-full object-cover opacity-30" />
           <div class="absolute inset-0 bg-gradient-to-t from-card via-card/70 to-card/30"></div>
         {/if}
-        <div class="relative flex min-h-[4.5rem] items-start gap-3 px-5 pb-4 pt-5">
+        <div class="sp-head relative flex gap-3 {$isMobile ? 'items-center px-4 pb-3 pt-4' : 'min-h-[4.5rem] items-start px-5 pb-4 pt-5'}">
           {#if cover(pick.media)}
-            <img src={cover(pick.media)} alt="" class="h-16 w-11 shrink-0 rounded-md object-cover shadow-lg" />
+            <img src={cover(pick.media)} alt="" class="sp-cover shrink-0 rounded-md object-cover shadow-lg {$isMobile ? 'h-12 w-8' : 'h-16 w-11'}" />
           {/if}
           <div class="min-w-0 flex-1">
-            <h2 class="line-clamp-2 text-xl font-black leading-tight drop-shadow">{title(pick.media)}</h2>
+            <h2 class="sp-title font-black leading-tight drop-shadow {$isMobile ? 'line-clamp-1 text-base' : 'line-clamp-2 text-xl'}">{title(pick.media)}</h2>
             <p class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
               {#if resolving}<span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
-          <button data-focusable onclick={close} class="grid size-10 shrink-0 place-items-center rounded-lg bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white sm:size-8" aria-label="Close">✕</button>
+          <button data-focusable onclick={close} class="grid shrink-0 place-items-center bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white {$isMobile ? 'size-11 rounded-full text-lg' : 'size-10 rounded-lg sm:size-8'}" aria-label="Close">✕</button>
         </div>
       </div>
 
-      <!-- Controls -->
+      <!-- Controls — mobile: a full-width search + Auto row, then one scrolling strip of uniform
+           pills. Deliberately NOT flex-wrap: every control being the same height is what stops the
+           bar reading as debris, and a single horizontal strip costs one row instead of three. -->
+      {#if $isMobile}
+        <div class="sp-controls shrink-0 border-b border-border">
+          <div class="sp-inset flex items-center gap-2 pt-2.5">
+            <label class="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-xl bg-secondary px-3">
+              <Search size={16} class="shrink-0 text-muted-foreground" />
+              <input bind:value={filter} oninput={cancelAuto} data-focusable placeholder="Filter sources…" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+            </label>
+            <button data-focusable onclick={autoBest} disabled={busy || !best} onfocus={cancelAuto}
+                    class="relative flex h-11 shrink-0 items-center overflow-hidden rounded-xl bg-theme/20 px-4 text-sm font-bold text-theme transition-colors disabled:opacity-40 {autoState === 'counting' ? 'ring-1 ring-theme' : ''}">
+              {#if autoState === 'counting' && animate}
+                <span class="absolute inset-y-0 left-0 bg-theme/40" style="width:{autoProgress * 100}%"></span>
+              {/if}
+              <span class="relative z-10 flex items-center gap-1.5">
+                <Zap size={15} fill="currentColor" />
+                {autoState === 'counting' ? `${Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}s` : 'Auto'}
+              </span>
+            </button>
+          </div>
+          <!-- Scrollbars are hidden app-wide, so the strip signals itself by clipping the last pill
+               at the edge rather than by a bar. Sort/Quality lead because they are the two that
+               change what you see; the three toggles are occasional. -->
+          <div class="sp-inset sp-chips flex items-center gap-2 overflow-x-auto overscroll-x-contain py-2.5">
+            <label class="{CHIP} {CHIP_OFF}">
+              <ArrowDownWideNarrow size={13} class="shrink-0" />
+              <select data-focusable bind:value={$preferredStreamSort} aria-label="Sort within cache tier" class="bg-transparent font-bold text-foreground outline-none">
+                <option value="quality">Quality</option>
+                <option value="seeders">Seeders</option>
+                <option value="size">Size</option>
+              </select>
+            </label>
+            <label class="{CHIP} {CHIP_OFF}">
+              <MonitorCog size={13} class="shrink-0" />
+              <select data-focusable bind:value={$preferredQuality} aria-label="Quality the Auto pick targets" class="bg-transparent font-bold text-foreground outline-none">
+                <option value="2160">4K</option>
+                <option value="1080">1080p</option>
+                <option value="720">720p</option>
+                <option value="480">480p</option>
+                <option value="any">Any</option>
+              </select>
+            </label>
+            <button data-focusable aria-pressed={$showDeadSources} onclick={() => ($showDeadSources = !$showDeadSources)}
+                    class="{CHIP} {$showDeadSources ? CHIP_ON : CHIP_OFF}">Dead{deadCount ? ` (${deadCount})` : ''}</button>
+            <button data-focusable aria-pressed={$fullStreamDescription} onclick={() => ($fullStreamDescription = !$fullStreamDescription)}
+                    class="{CHIP} {$fullStreamDescription ? CHIP_ON : CHIP_OFF}">Full text</button>
+            {#if rejected.length}
+              <button data-focusable aria-pressed={showFiltered} onclick={() => (showFiltered = !showFiltered)}
+                      class="{CHIP} {showFiltered ? CHIP_ON : CHIP_OFF}">Filtered ({rejected.length})</button>
+            {/if}
+          </div>
+        </div>
+      {:else}
       <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
         <label class="flex min-w-48 flex-1 items-center gap-2 rounded-lg bg-secondary px-3 py-1.5">
           <Search size={15} class="shrink-0 text-muted-foreground" />
@@ -477,15 +594,16 @@
           </label>
         {/if}
       </div>
+      {/if}
 
       <!-- What the curators actually said. Collapsed by default and scroll-capped when open: these
            notes run to paragraphs on well-documented titles, and the source list is what the modal
            is for. Rendered whether or not any listed release turned up in the list — "the best one
            is on a private tracker" is still the most useful thing we can say about a title. -->
       {#if seadexInfo}
-        <div class="shrink-0 border-b border-border bg-emerald-500/[0.06] px-4 py-2 text-xs">
+        <div class="sp-inset shrink-0 border-b border-border bg-emerald-500/[0.06] px-4 py-2 text-xs">
           <button data-focusable onclick={() => (seadexOpen = !seadexOpen)} aria-expanded={seadexOpen}
-                  class="flex w-full items-center gap-2 text-left">
+                  class="flex w-full items-center gap-2 text-left {$isMobile ? 'min-h-10' : ''}">
             <BadgeCheck size={13} class="shrink-0 text-emerald-300" />
             <span class="shrink-0 font-bold text-emerald-300">Best-release notes</span>
             {#if seadexInfo.incomplete}
@@ -512,7 +630,7 @@
                 <p class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span class="font-bold text-foreground">Comparisons:</span>
                   {#each comparisons as url, i}
-                    <button data-focusable onclick={() => openUrl(url)} class="text-theme underline-offset-2 hover:underline" title={url}>#{i + 1}</button>
+                    <button data-focusable onclick={() => openUrl(url)} class="font-bold text-theme underline-offset-2 hover:underline {$isMobile ? 'min-h-9 min-w-9 rounded-lg bg-secondary px-2' : ''}" title={url}>#{i + 1}</button>
                   {/each}
                 </p>
               {/if}
@@ -522,22 +640,26 @@
       {/if}
 
       {#if playbackError}
-        <p class="border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">
+        <p class="sp-inset shrink-0 border-b border-border bg-destructive/10 px-4 py-2 text-sm text-destructive">
           {playbackError}
           {#if blockedRetry}
+            <!-- The one recovery from a debrid block. As an inline underline it was a ~14px-tall
+                 target inside a wrapping paragraph; on mobile it gets its own row. -->
             <button data-focusable onclick={watchP2p}
-                    class="ml-1 font-semibold underline underline-offset-2 transition-opacity hover:opacity-75">Watch this P2P?</button>
+                    class="{$isMobile ? 'mt-2 flex h-10 w-full items-center justify-center rounded-lg bg-destructive/20 font-bold active:bg-destructive/30' : 'ml-1 font-semibold underline underline-offset-2 transition-opacity hover:opacity-75'}">Watch this P2P?</button>
           {/if}
         </p>
       {/if}
 
       <!-- Results — reveal sources the instant each addon/extension lands;
            skeletons only until the FIRST results arrive. -->
-      <div class="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2.5">
+      <div class="sp-list min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain p-2.5">
         {#if resolving && rendered.length === 0}
           {#each Array(6) as _}
-            <div class="flex items-start gap-3 rounded-xl bg-secondary/40 px-3 py-2.5">
-              <div class="skeloader mt-0.5 size-5 shrink-0 rounded-full"></div>
+            <div class="flex items-start gap-3 rounded-xl bg-secondary/40 px-3 {$isMobile ? 'py-3' : 'py-2.5'}">
+              <!-- Matches the real row: mobile has no glyph column, so a skeleton with one would
+                   shift every line sideways the moment the first source lands. -->
+              {#if !$isMobile}<div class="skeloader mt-0.5 size-5 shrink-0 rounded-full"></div>{/if}
               <div class="min-w-0 flex-1 space-y-2">
                 <div class="skeloader h-4 w-1/3 rounded"></div>
                 <div class="skeloader h-3 w-2/3 rounded"></div>
@@ -554,6 +676,19 @@
           {@const knownBad = hasFailed(info.stream)}
           {@const body = descriptionOf(info)}
           {@const curated = curatedOf(info)}
+          <!-- The row body and the copy action are SIBLINGS, not nested: a <button> inside a
+               role="button" is ambiguous to a screen reader, and on a phone the 14px copy icon sat
+               inline in the heading row — directly under the thumb aiming at the row, so a mis-tap
+               copied a magnet instead of playing. Mobile moves it to a separated 48px rail. -->
+          <div
+            class="group flex w-full items-stretch overflow-hidden rounded-xl border border-transparent bg-secondary/40 transition-colors"
+            class:opacity-40={info.cached === 'down' || !!filteredAs || knownBad}
+            class:!border-theme={isBest}
+            class:!border-red-400={isBest && autoState === 'counting' && autoProgress > 0.4}
+            class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4 && animate}
+            animate:flip={{ duration: resolving ? 0 : 220 }}
+            in:fade={{ duration: 150 }}
+          >
           <div
             data-focusable
             data-best-source={isBest ? '' : undefined}
@@ -564,15 +699,14 @@
             onpointerenter={cancelAuto}
             onfocus={cancelAuto}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
-            class="group flex w-full items-start gap-3 rounded-xl border border-transparent bg-secondary/40 px-3 py-2.5 text-left transition-colors hover:bg-accent {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
-            class:opacity-40={info.cached === 'down' || !!filteredAs || knownBad}
-            class:!border-theme={isBest}
-            class:!border-red-400={isBest && autoState === 'counting' && autoProgress > 0.4}
-            class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4 && animate}
-            animate:flip={{ duration: resolving ? 0 : 220 }}
-            in:fade={{ duration: 150 }}
+            class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
           >
-            <span class="mt-0.5 shrink-0 text-lg leading-none {g.cls}" title={g.t} aria-hidden="true">{g.i}</span>
+            <!-- Mobile has no hover, so this tooltip-only glyph told a touch user nothing. It states
+                 itself as a worded pill in the meta row down there instead, and the reclaimed ~30px
+                 goes to the release name — the scarcest thing on a 375px screen. -->
+            {#if !$isMobile}
+              <span class="mt-0.5 shrink-0 text-lg leading-none {g.cls}" title={g.t} aria-hidden="true">{g.i}</span>
+            {/if}
 
             <span class="min-w-0 flex-1">
               <!-- heading row -->
@@ -583,41 +717,41 @@
                   <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white" title={whyBest}>Best</span>
                   {#if autoState === 'counting'}<span class="shrink-0 font-black tabular-nums text-theme" class:text-red-400={autoProgress > 0.4}>[{Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}]</span>{/if}
                 {/if}
-                {#if curated}
-                  <span
-                    class="shrink-0 rounded px-1.5 text-[0.6rem] font-black uppercase {curated.isBest ? 'bg-emerald-400/20 text-emerald-300' : 'bg-emerald-400/10 text-emerald-300/70'}"
-                    title="{curated.isBest ? 'Rated the best available release' : 'A curated alternative, not the top pick'} by releases.moe{curated.releaseGroup ? ` — ${curated.releaseGroup}` : ''}{curated.tracker ? ` on ${curated.tracker}` : ''}{curated.dualAudio ? ' · dual audio' : ''}"
-                  >{curated.isBest ? 'Best release' : 'Curated alt'}</span>
+                {#if !$isMobile}
+                  {@render qualifiers(curated, filteredAs, knownBad, !!info.batch)}
+                  <span class="ml-auto flex shrink-0 items-center gap-2">
+                    <!-- Unconditional. Suppressing the name whenever a logo EXISTED meant a logo that
+                         failed to load left the row with a broken box and no name — no provenance at all. -->
+                    {#if info.addon}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
+                    <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
+                    <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
+                  </span>
                 {/if}
-                {#if filteredAs}
-                  <span class="shrink-0 rounded bg-amber-400/20 px-1.5 text-[0.6rem] font-black uppercase text-amber-300" title="Filtered out: {filteredAs}">{filteredAs}</span>
-                {/if}
-                {#if knownBad}
-                  <span class="shrink-0 rounded bg-red-400/20 px-1.5 text-[0.6rem] font-black uppercase text-red-300" title="This source failed to play recently. Still selectable — it may have been a temporary failure.">Failed</span>
-                {/if}
-                {#if info.batch}<Database size={13} class="shrink-0 text-indigo-300" />{/if}
-                <span class="ml-auto flex shrink-0 items-center gap-2">
-                  <!-- Unconditional. Suppressing the name whenever a logo EXISTED meant a logo that
-                       failed to load left the row with a broken box and no name — no provenance at all. -->
-                  {#if info.addon}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
-                  <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
-                  <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
-                </span>
               </span>
+
+              <!-- Why the Best row won, on the row itself. Desktop hides this behind the badge's
+                   `title`; on touch that reasoning was simply unreachable. One row carries it. -->
+              {#if isBest && $isMobile && whyBest}
+                <span class="mt-1 block text-[0.75rem] font-semibold leading-snug text-theme">{whyBest}</span>
+              {/if}
 
               <!-- The addon's OWN text, verbatim. It writes real detail in here — tracker, languages,
                    per-file notes, its own formatting — and the row used to show a single parsed
                    filename instead, discarding everything we hadn't explicitly extracted. -->
               <span
-                class="mt-0.5 block whitespace-pre-line text-[0.72rem] leading-snug text-muted-foreground {$fullStreamDescription ? '' : 'line-clamp-3'}"
+                class="mt-0.5 block whitespace-pre-line leading-snug text-muted-foreground {$isMobile ? 'text-[0.8rem]' : 'text-[0.72rem]'} {$fullStreamDescription ? '' : ($isMobile ? 'line-clamp-2' : 'line-clamp-3')}"
                 title={body}
               >{body}</span>
 
               <!-- meta + badges. Seeders/size are suppressed when the addon already wrote them into
                    the text above, so the row states each fact once. -->
-              <span class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.7rem]">
+              <span class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 {$isMobile ? 'text-[0.75rem]' : 'text-[0.7rem]'}">
+                {#if $isMobile}
+                  <span class="rounded px-1.5 py-0.5 font-bold {g.pill}">{g.i} {g.w}</span>
+                  {@render qualifiers(curated, filteredAs, knownBad, !!info.batch)}
+                {/if}
                 {#if info.provider}<span class="font-bold text-theme">{info.provider}</span>{/if}
-                {#if info.cached === 'uncached'}<span class="text-amber-400">{directP2p ? 'direct P2P' : 'will download'}</span>{/if}
+                {#if info.cached === 'uncached' && !$isMobile}<span class="text-amber-400">{directP2p ? 'direct P2P' : 'will download'}</span>{/if}
                 {#if info.seeders != null && !statedSeeders(body)}<span class={seedClass(info.seeders)}>👤 {info.seeders}</span>{/if}
                 {#if info.sizeLabel && !statedSize(body, info.sizeLabel)}<span class="text-muted-foreground">💾 {info.sizeLabel}</span>{/if}
                 {#each info.badges as b}
@@ -626,8 +760,18 @@
                     title={/^(?:CC \d+|HARDSUB)$/.test(b) ? info.subtitleLabel : undefined}
                   >{b}</span>
                 {/each}
+                <!-- Provenance, demoted to the end of the wrapping row: on desktop it sits in the
+                     heading's right gutter, which a phone doesn't have to spare. -->
+                {#if $isMobile && info.addon}<span class="font-semibold text-muted-foreground/70">{info.addon}</span>{/if}
               </span>
             </span>
+          </div>
+          {#if $isMobile}
+            <button type="button" data-focusable onclick={(e) => copyLink(e, info)} aria-label="Copy link"
+                    class="grid w-12 shrink-0 place-items-center border-l border-border/60 transition-colors active:bg-accent {copiedKey === keyOf(info) ? 'text-green-400' : 'text-muted-foreground'}">
+              {#if copiedKey === keyOf(info)}<Check size={17} />{:else}<Copy size={17} />{/if}
+            </button>
+          {/if}
           </div>
         {/each}
         {#if resolving}
@@ -638,7 +782,7 @@
         {/if}
         {#if hiddenCount > 0}
           <button data-focusable onclick={() => (showAll = true)}
-                  class="w-full rounded-xl border border-dashed border-border py-2.5 text-center text-sm font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+                  class="w-full rounded-xl border border-dashed border-border text-center font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:bg-accent {$isMobile ? 'py-3.5 text-base' : 'py-2.5 text-sm'}">
             Show {hiddenCount} more source{hiddenCount === 1 ? '' : 's'}
           </button>
         {/if}
@@ -681,7 +825,7 @@
              the loader cannot trigger a full-screen filtered repaint on every frame. -->
         <img src={backdrop} alt="" class="loading-backdrop pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />
       {/if}
-      <button data-focusable onclick={(e) => { e.stopPropagation(); close() }} class="absolute right-4 top-4 z-10 grid size-10 place-items-center rounded-full bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white" aria-label="Close">✕</button>
+      <button data-focusable onclick={(e) => { e.stopPropagation(); close() }} class="absolute z-10 grid place-items-center rounded-full bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white {$isMobile ? 'right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] size-11' : 'right-4 top-4 size-10'}" aria-label="Close">✕</button>
       <div class="relative" onclick={(e) => e.stopPropagation()} role="presentation">
         <SourceLoader
           title={pick ? title(pick.media) : ''}
@@ -693,3 +837,35 @@
     </div>
   {/if}
 {/if}
+
+<style>
+  /* Mobile-only geometry, in CSS rather than Tailwind because two of its three inputs have no
+     utility: the Android display cutout (`env()` inside `max()`, on four sides) and a SHORT
+     viewport. Short means the picker was opened from the player's "Change source" — the phone is
+     in landscape with ~360px of height, and the chrome has to give the list back what it can. */
+  :global(.sp-mobile .sp-inset) {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  /* Once the phone is rotated the cutout sits on a LONG edge — i.e. straight down the side of
+     this list, not above it. Portrait resolves these to the plain fallback. */
+  :global(.sp-mobile .sp-head) {
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  :global(.sp-mobile .sp-list) {
+    padding-left: max(0.625rem, env(safe-area-inset-left));
+    padding-right: max(0.625rem, env(safe-area-inset-right));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+    touch-action: pan-y;
+  }
+  :global(.sp-mobile .sp-chips) { scrollbar-width: none; }
+
+  @media (max-height: 560px) {
+    :global(.sp-mobile .sp-cover) { display: none; }
+    :global(.sp-mobile .sp-head) { padding-top: max(0.5rem, env(safe-area-inset-top)); padding-bottom: 0.5rem; }
+    :global(.sp-mobile .sp-title) { font-size: 0.95rem; }
+    :global(.sp-mobile .sp-controls .sp-inset) { padding-top: 0.4rem; padding-bottom: 0.4rem; }
+  }
+</style>

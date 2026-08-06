@@ -30,10 +30,22 @@ fn runtime_path(app: &AppHandle) -> Result<PathBuf, String> {
         })
 }
 
+// The verified runtime path, remembered per process. Every bridge hop used to re-read and
+// re-SHA256 the ~15-20 MB APK (100-400ms of pure overhead per call, on a phone, while resolving).
+// The file is verified ONCE; afterwards only its existence is checked. The pinned version is a
+// compile-time constant, so a new runtime version means a new binary and a fresh cache.
+static RUNTIME_VERIFIED: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 async fn ensure_runtime_file(app: &AppHandle) -> Result<PathBuf, String> {
     let path = runtime_path(app)?;
+    if let Some(verified) = RUNTIME_VERIFIED.get() {
+        if verified == &path && path.exists() {
+            return Ok(path);
+        }
+    }
     if let Ok(bytes) = tokio::fs::read(&path).await {
         if digest(&bytes) == RUNTIME_SHA256 {
+            let _ = RUNTIME_VERIFIED.set(path.clone());
             return Ok(path);
         }
     }
@@ -79,6 +91,7 @@ async fn ensure_runtime_file(app: &AppHandle) -> Result<PathBuf, String> {
     tokio::fs::rename(temporary, &path)
         .await
         .map_err(|error| error.to_string())?;
+    let _ = RUNTIME_VERIFIED.set(path.clone());
     Ok(path)
 }
 
