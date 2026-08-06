@@ -4,6 +4,7 @@
     fetchExtensionInfo,
     installCatalogPackage,
     installedExtensionPackages,
+    jvmExtensionIcons,
     removeInstalledExtension,
     type ExtensionCatalogPackage,
     type ExtensionSourceInfo,
@@ -19,6 +20,7 @@
   import Search from '@lucide/svelte/icons/search'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
 
   const current = $derived(providerMeta($debridProvider))
   let account = $state<DebridAccountInfo | null>(null)
@@ -44,12 +46,19 @@
   let packageStatus = $state<{ url: string; text: string; ok: boolean } | null>(null)
   let packageBusy = $state(false)
   const installedById = $derived(new Map(localPackages.map((extension) => [extension.id, extension])))
+  // Real launcher icons for INSTALLED Aniyomi extensions, keyed by Android package name — which is
+  // the same string a catalog entry uses as its id. The catalog itself ships no icons, so anything
+  // not installed (and every JS extension without one) falls through to AddonLogo's generated tile.
+  let jvmIcons = $state(new Map<string, string>())
   const installedIn = (packages: ExtensionCatalogPackage[]) => packages.filter((p) => installedById.has(p.id))
   const enabledInstalledIn = (packages: ExtensionCatalogPackage[]) =>
     installedIn(packages).filter((extension) => !pluginOff(extension.id))
 
   async function refreshPackages() {
     localPackages = await installedExtensionPackages()
+    // After the list, never blocking it: enumerating sources can spin the JVM runtime, and an icon
+    // arriving a moment late just swaps a tile for the real logo.
+    void jvmExtensionIcons().then((icons) => { jvmIcons = icons })
   }
   async function installFromCatalog(url: string, extension: ExtensionCatalogPackage) {
     packageBusy = true
@@ -81,7 +90,6 @@
   function addExt() { const u = extInput.trim(); if (u) { $extensionUrls = [...$extensionUrls, u]; extInput = '' } }
   function toggleExt(url: string) { $disabledExtensions = $disabledExtensions.includes(url) ? $disabledExtensions.filter((u) => u !== url) : [...$disabledExtensions, url] }
   function removeExt(i: number) { const url = $extensionUrls[i]; $extensionUrls = $extensionUrls.filter((_, j) => j !== i); $disabledExtensions = $disabledExtensions.filter((u) => u !== url) }
-  const iconSrc = (l: string) => l.startsWith('http') || l.startsWith('data:image') ? l : `data:image/png;base64,${l}`
   // A GitHub spec (gh:owner/repo or bare owner/repo/sub) — shown with a GitHub icon +
   // the repo path as the title.
   const isGh = (u: string) => u.startsWith('gh:') || (/^[A-Za-z0-9][A-Za-z0-9-]*\/[^\s:]+$/.test(u) && !/^https?:/.test(u))
@@ -303,8 +311,10 @@
               <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-foreground">
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.2 3.44 9.61 8.2 11.17.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.7-4.04-1.58-4.04-1.58-.55-1.36-1.33-1.73-1.33-1.73-1.09-.73.08-.71.08-.71 1.2.08 1.83 1.21 1.83 1.21 1.07 1.79 2.81 1.27 3.5.97.11-.76.42-1.27.76-1.56-2.67-.3-5.47-1.29-5.47-5.75 0-1.27.47-2.31 1.24-3.12-.12-.3-.54-1.52.12-3.16 0 0 1.01-.32 3.3 1.19a11.6 11.6 0 0 1 3-.39c1.02 0 2.05.13 3 .39 2.29-1.51 3.3-1.19 3.3-1.19.66 1.64.24 2.86.12 3.16.77.81 1.24 1.85 1.24 3.12 0 4.47-2.81 5.45-5.49 5.74.43.36.81 1.08.81 2.18 0 1.57-.01 2.84-.01 3.23 0 .31.22.68.83.56A12.02 12.02 0 0 0 24 12.29C24 5.78 18.63.5 12 .5Z"/></svg>
               </div>
-            {:else if m?.icon}
-              <img src={iconSrc(m.icon)} alt="" class="size-10 shrink-0 rounded-md bg-neutral-900 object-contain" />
+            {:else if m}
+              <!-- Single-plugin source: its own icon, or a tile keyed on the plugin so the row
+                   stays identifiable when the manifest ships none / the icon host is down. -->
+              <AddonLogo logo={m.icon} name={m.name} id={m.id} size={40} />
             {:else}
               <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Puzzle size={18} /></div>
             {/if}
@@ -406,6 +416,10 @@
                       {@const inst = installedById.get(p.id)}
                       {@const pOff = !!inst && pluginOff(p.id)}
                       <li class="flex items-center gap-2 rounded-md bg-background/45 px-2 py-1.5" class:opacity-50={pOff}>
+                        <!-- Real launcher icon once the extension is installed; otherwise a
+                             deterministic tile, so every row in the store reads as a distinct
+                             source instead of an identical grey glyph. -->
+                        <AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={24} />
                         <div class="min-w-0 flex-1">
                           <div class="flex items-center gap-1.5">
                             <span class="truncate text-xs font-bold">{p.name}</span>
@@ -464,11 +478,9 @@
                     {#each metas as p (p.id)}
                       {@const pOff = pluginOff(p.id)}
                       <li class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50" class:opacity-50={pOff}>
-                        {#if p.icon}
-                          <img src={iconSrc(p.icon)} alt="" class="size-6 shrink-0 rounded bg-neutral-900 object-contain" />
-                        {:else}
-                          <div class="grid size-6 shrink-0 place-items-center rounded bg-secondary text-muted-foreground"><Puzzle size={12} /></div>
-                        {/if}
+                        <!-- Manifest icon when the plugin ships one, its Aniyomi launcher icon when
+                             it is an installed JVM package, else the generated tile. -->
+                        <AddonLogo logo={p.icon ?? jvmIcons.get(p.id)} name={p.name} id={p.id} size={24} />
                         <span class="min-w-0 flex-1 truncate text-sm">{p.name}</span>
                         {#if p.lang}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}
                         <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}

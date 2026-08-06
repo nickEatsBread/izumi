@@ -58,6 +58,10 @@ interface JvmSource {
   baseUrl?: string
   pkgName: string
   className?: string
+  /** The extension APK's launcher icon as base64 PNG. The bridge extracts it to a file and returns
+   *  a path; the Rust command inlines it (see inline_source_icons) because a webview cannot load a
+   *  bare filesystem path. Null when the extension has no readable icon. */
+  iconUrl?: string | null
 }
 
 function resetRunning(): void {
@@ -581,6 +585,40 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
 // is (un)installed, which is exactly what `installedRevision` counts.
 let jvmSourcesCache: { revision: number; sources: JvmSource[] } | null = null
 
+/** Installed Aniyomi extension icons, keyed by ANDROID PACKAGE NAME — which is exactly the `id` a
+ *  catalog entry carries for an aniyomi-jvm package, so the settings list can match them directly.
+ *  Android-only and best-effort: any failure (no JVM runtime, no sources, a slow bridge) yields an
+ *  empty map and the UI falls back to its generated tile. Never spins the runtime on its own — it
+ *  reuses the enumeration cache when one exists and otherwise pays the same capped call a resolve
+ *  would. */
+export async function jvmExtensionIcons(): Promise<Map<string, string>> {
+  const icons = new Map<string, string>()
+  try {
+    const installed = await installedExtensionPackages()
+    if (!installed.some((p) => p.backend === 'aniyomi-jvm')) return icons
+    const sources = await jvmSources()
+    for (const source of sources) {
+      if (source.pkgName && source.iconUrl) icons.set(source.pkgName, source.iconUrl)
+    }
+  } catch { /* best-effort — the tile fallback covers it */ }
+  return icons
+}
+
+/** The enumeration itself, memoized per install revision (see jvmSourcesCache). */
+async function jvmSources(): Promise<JvmSource[]> {
+  if (jvmSourcesCache?.revision === installedRevision) return jvmSourcesCache.sources
+  // The last uncapped jvm* await the UI sat behind: the Rust side legally takes ~190s worst case
+  // (runtime download + bridge budget), and this call gates EVERY source resolve. The resolve must
+  // fail fast instead — a slow first enumeration retries on the next resolve.
+  const sources = await Promise.race([
+    invoke<JvmSource[]>('jvm_extension_sources'),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('The extension runtime did not answer in time.')), 15_000)),
+  ])
+  jvmSourcesCache = { revision: installedRevision, sources }
+  return sources
+}
+
 async function runningJvmExtensions(onlyId?: string): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
@@ -593,17 +631,7 @@ async function runningJvmExtensions(onlyId?: string): Promise<
   const packageBySource = liveJvmSources(installed, get(disabledPlugins))
   if (!packageBySource.size) return []
   try {
-    const sources = jvmSourcesCache?.revision === installedRevision
-      ? jvmSourcesCache.sources
-      // The last uncapped jvm* await the UI sat behind: the Rust side legally takes ~190s worst
-      // case (runtime download + bridge budget), and this call gates EVERY source resolve. The
-      // resolve must fail fast instead — a slow first enumeration retries on the next resolve.
-      : await Promise.race([
-          invoke<JvmSource[]>('jvm_extension_sources'),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('The extension runtime did not answer in time.')), 15_000)),
-        ])
-    jvmSourcesCache = { revision: installedRevision, sources }
+    const sources = await jvmSources()
     return dedupeJvmSources(sources)
       .filter((source) =>
         source.type === 'anime'

@@ -136,6 +136,42 @@ async fn call_bridge<T: Send + 'static>(
         .map_err(|error| error.to_string())?
 }
 
+/// Largest extension icon we will inline. These are launcher icons (tens of KB); the cap only
+/// stops a pathological file from being base64'd across the IPC bridge.
+const MAX_ICON_BYTES: u64 = 512 * 1024;
+
+/// Turn each source's `iconUrl` into something the webview can actually render.
+///
+/// The bridge decodes the extension APK's launcher icon and writes it into ITS cache dir, then
+/// hands back a bare filesystem path — which an `<img src>` cannot load (no asset protocol is
+/// configured, and the path is outside any scope we would want to open). Read the PNG here and
+/// replace the path with base64, matching the convention the rest of the extension UI already
+/// uses (`iconSrc` treats a bare string as base64 PNG). Values that are already an http(s) or
+/// data URL are left alone, so a future bridge that returns those keeps working.
+fn inline_source_icons(sources: &mut Value) {
+    use base64::Engine;
+    let Some(list) = sources.as_array_mut() else { return };
+    for source in list {
+        let Some(path) = source.get("iconUrl").and_then(Value::as_str) else {
+            continue;
+        };
+        if path.is_empty() || path.starts_with("http") || path.starts_with("data:") {
+            continue;
+        }
+        let encoded = std::fs::metadata(path)
+            .ok()
+            .filter(|meta| meta.is_file() && meta.len() > 0 && meta.len() <= MAX_ICON_BYTES)
+            .and_then(|_| std::fs::read(path).ok())
+            .map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes));
+        // A missing/oversized icon becomes null rather than a dangling path the UI would try to
+        // load: the frontend already falls back to a generated tile.
+        source["iconUrl"] = match encoded {
+            Some(data) => Value::String(data),
+            None => Value::Null,
+        };
+    }
+}
+
 #[tauri::command]
 pub async fn jvm_extension_sources(app: AppHandle) -> Result<Value, String> {
     let payload = runtime_request(&app).await?;
@@ -145,7 +181,9 @@ pub async fn jvm_extension_sources(app: AppHandle) -> Result<Value, String> {
             .map_err(|error| error.to_string())
     })
     .await?;
-    parse_response(response)
+    let mut sources = parse_response(response)?;
+    inline_source_icons(&mut sources);
+    Ok(sources)
 }
 
 #[tauri::command]
