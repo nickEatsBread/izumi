@@ -35,6 +35,10 @@
   import { trackLabel } from '$lib/player/track-label'
   import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
+  import { captureFromExtradata } from '$lib/player/ass-style-capture'
+  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset } from '$lib/settings/subtitle-presets'
+  import { bingeSource } from '$lib/player/session'
+  import Brush from '@lucide/svelte/icons/brush'
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
@@ -328,7 +332,31 @@
   // category's list) with a Miller-column slide. `menuLevel`/`detailCat` drive the slide;
   // `rootH`/`detailH` are the measured column heights so the panel morphs to fit.
   let menuLevel = $state<'root' | 'detail'>('root')
-  let detailCat = $state<'audio' | 'subs' | 'secondary' | 'dev' | 'online'>('audio')
+  let detailCat = $state<'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style'>('audio')
+
+  // Subtitle style presets: capture the active ASS track's fonting (mpv sub-ass-extradata) and
+  // save it under the release group's name; picking a saved preset overrides styling for THIS
+  // session only (PlayerOverlay's style effect prefers `sessionSubtitleStyle`; settings untouched).
+  let styleSaveName = $state('')
+  let capturedStyle = $state<ReturnType<typeof captureFromExtradata>>(null)
+  async function openStyleDetail() {
+    openDetail('style')
+    capturedStyle = null
+    try {
+      capturedStyle = captureFromExtradata(await invoke<string>('player_get_property', { name: 'sub-ass-extradata' }))
+    }
+    catch { capturedStyle = null }
+    styleSaveName = get(bingeSource)?.group ?? get(nowPlayingMedia)?.media.title?.userPreferred ?? ''
+  }
+  function saveCapturedStyle() {
+    if (!capturedStyle) return
+    const preset = saveSubtitlePreset(styleSaveName, capturedStyle, {
+      group: get(bingeSource)?.group,
+      title: get(nowPlayingMedia)?.media.title?.userPreferred ?? undefined,
+    })
+    sessionSubtitleStyle.set(preset) // hearing is believing — show the saved look right away
+    playerNotice.set(`Saved subtitle style “${preset.name}”`)
+  }
 
   // Dev-only tools, reached through the track menu (Subtitles/Audio) as a third "Dev tools"
   // category. import.meta.env.DEV is compiled to a literal false in production, so both the row
@@ -385,7 +413,7 @@
   // `curLabel` is what shows on the collapsed root row for each category (the active
   // track, or "Off"). `pickLeaf` sets the track then slides back to the root.
   const detailItems = $derived(detailCat === 'audio' ? audios : subs)
-  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : 'Subtitles')
+  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : 'Subtitles')
   const leafKind = $derived<'aid' | 'sid' | 'secondary-sid'>(detailCat === 'audio' ? 'aid' : detailCat === 'secondary' ? 'secondary-sid' : 'sid')
   const detailOff = $derived(detailCat === 'secondary' ? secondaryId === 'no' : !detailItems.some((t) => t.selected)) // nothing selected ⇒ "Off" is active
   const curLabel = (group: Track[]) => {
@@ -402,7 +430,7 @@
     const track = subs.find((item) => String(item.id) === secondaryId)
     return track ? label(track, subs) : 'Off'
   })
-  function openDetail(cat: 'audio' | 'subs' | 'secondary' | 'dev' | 'online') {
+  function openDetail(cat: 'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style') {
     detailCat = cat
     menuLevel = 'detail'
   }
@@ -711,6 +739,17 @@
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
+                      <!-- Saved fonting presets: capture this release's look / override this session. -->
+                      <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={openStyleDetail}>
+                        <span class="flex min-w-0 items-center gap-2">
+                          <Brush size={15} class="shrink-0 text-white/45" />
+                          <span class="block truncate text-white/80">Subtitle style</span>
+                        </span>
+                        <span class="flex min-w-0 items-center gap-1">
+                          <span class="max-w-24 truncate text-xs text-white/45">{$sessionSubtitleStyle?.name ?? 'Default'}</span>
+                          <ChevronRight size={18} class="shrink-0 text-white/40" />
+                        </span>
+                      </button>
                       {#if dev}
                         <!-- Dev-only (tree-shaken from release): tools like Copy URL. -->
                         <button data-focusable class="mt-1 flex w-full items-center justify-between gap-2 rounded-lg border-t border-white/10 px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('dev')}>
@@ -771,6 +810,34 @@
                           {:else}
                             <p class="px-3 py-2 text-white/40">No online subtitles found</p>
                           {/if}
+                        </div>
+                      {:else if detailCat === 'style'}
+                        <div class="max-h-64 overflow-y-auto">
+                          {#if capturedStyle}
+                            <!-- Capture row: name (prefilled with the release group) + save. -->
+                            <label class="mb-1 flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5">
+                              <input data-focusable bind:value={styleSaveName} placeholder="Preset name" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
+                            </label>
+                            <button data-focusable class="mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-primary transition hover:bg-white/10" onclick={saveCapturedStyle}>
+                              <span class="truncate">Save this release’s fonting ({capturedStyle.font})</span>
+                            </button>
+                          {:else}
+                            <p class="px-3 py-2 text-xs text-white/45">The current subtitle track has no readable ASS styling to capture.</p>
+                          {/if}
+                          <!-- Session override picker: "Your settings" = no override. -->
+                          <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => sessionSubtitleStyle.set(null)}>
+                            <span class="truncate text-white/70">Your settings</span>
+                            {#if !$sessionSubtitleStyle}<Check size={18} class="shrink-0 text-primary" />{/if}
+                          </button>
+                          {#each $savedSubtitleStyles as p (p.id)}
+                            <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => sessionSubtitleStyle.set(p)}>
+                              <span class="min-w-0">
+                                <span class="block truncate">{p.name}</span>
+                                <span class="block truncate text-xs text-white/45">{p.style.font}</span>
+                              </span>
+                              {#if $sessionSubtitleStyle?.id === p.id}<Check size={18} class="shrink-0 text-primary" />{/if}
+                            </button>
+                          {/each}
                         </div>
                       {:else}
                         <div class="max-h-64 overflow-y-auto">
