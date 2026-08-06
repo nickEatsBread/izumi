@@ -36,6 +36,7 @@
   import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
+  import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -229,10 +230,11 @@
   })
 
   // Keep subtitle appearance live: settings changes apply to the current track immediately and
-  // the same values are re-applied after every new player session.
+  // the same values are re-applied after every new player session. A session style preset picked
+  // in the track menu takes precedence over the settings until the player closes.
   $effect(() => {
     if (!$playing) return
-    for (const [property, value] of subtitleStyleProps({
+    for (const [property, value] of subtitleStyleProps(effectiveSubtitleStyle($sessionSubtitleStyle, {
       enabled: $subtitleStyleEnabled,
       font: $subtitleFont,
       fontSize: $subtitleFontSize,
@@ -241,7 +243,7 @@
       borderSize: $subtitleBorderSize,
       shadow: $subtitleShadow,
       position: $subtitlePosition,
-    })) cmd('set', [property, value])
+    }))) cmd('set', [property, value])
   })
   // Exact absolute seek so auto-skip/skip land past the segment (a keyframe seek could
   // snap back into it and re-skip forever).
@@ -607,6 +609,8 @@
     // Retract the OS media panel / Discord entry on EVERY teardown path, not just the ← button —
     // navigating away unmounts the overlay without ever running close().
     invoke('desktop_presence_clear').catch(() => {})
+    // A style preset picked in the track menu is session-scoped by contract.
+    sessionSubtitleStyle.set(null)
   })
 
   // Game mode controller: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1
