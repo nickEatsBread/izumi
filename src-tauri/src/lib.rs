@@ -675,6 +675,11 @@ static HTTP_EXT: std::sync::OnceLock<std::sync::RwLock<reqwest::Client>> =
     std::sync::OnceLock::new();
 static HTTP_EXT_JAR: std::sync::OnceLock<std::sync::Arc<reqwest::cookie::Jar>> =
     std::sync::OnceLock::new();
+// Applied DoH endpoint; `None` = no DoH, which is ALSO what the lazily-built clients default to.
+// So a boot set_doh(off) — the frontend fires this reactive effect on every launch, DoH off by
+// default — matches this initial state and rebuilds nothing, preserving the connections the
+// addon/AniZip warm just opened.
+static HTTP_DOH_STATE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 fn ext_cookie_jar() -> std::sync::Arc<reqwest::cookie::Jar> {
     HTTP_EXT_JAR
@@ -752,6 +757,14 @@ fn set_doh(enabled: bool, url: String) {
     } else {
         None
     };
+    // No-op when the endpoint is unchanged from what's applied (initial = None = the lazy default).
+    {
+        let mut state = HTTP_DOH_STATE.lock().unwrap();
+        if *state == doh {
+            return;
+        }
+        *state = doh.clone();
+    }
     *http_lock().write().unwrap() = build_http_client(doh.clone(), false);
     *http_dl_lock().write().unwrap() = build_http_client(doh.clone(), true);
     *http_ext_lock().write().unwrap() = build_ext_client(doh);

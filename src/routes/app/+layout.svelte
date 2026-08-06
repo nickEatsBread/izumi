@@ -4,18 +4,25 @@
   import Background from '$lib/components/shell/Background.svelte'
   import Titlebar from '$lib/components/shell/Titlebar.svelte'
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
-  import PlayerOverlay from '$lib/components/player/PlayerOverlay.svelte'
-  import AndroidPlayer from '$lib/components/player/AndroidPlayer.svelte'
-  import CommentsPanel from '$lib/components/player/CommentsPanel.svelte'
   import { androidMpvActive } from '$lib/player/android-mpv'
-  import StreamPicker from '$lib/components/player/StreamPicker.svelte'
-  import DebridCaching from '$lib/components/player/DebridCaching.svelte'
-  import SourceConnecting from '$lib/components/player/SourceConnecting.svelte'
-  import ExitPrompt from '$lib/components/shell/ExitPrompt.svelte'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
-  import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
-  import LofiPlayer from '$lib/components/shell/LofiPlayer.svelte'
+  // Lazy-mounted: the player stack + its source-resolve overlays (which drag in lottie-web) are
+  // ~30% of the app JS but never render until playback/resolve starts. Loading them on demand
+  // keeps first home paint off that code entirely. See Lazy.svelte.
+  import Lazy from '$lib/components/Lazy.svelte'
+  const loadPlayerOverlay = () => import('$lib/components/player/PlayerOverlay.svelte')
+  const loadAndroidPlayer = () => import('$lib/components/player/AndroidPlayer.svelte')
+  const loadCommentsPanel = () => import('$lib/components/player/CommentsPanel.svelte')
+  const loadPartyPresence = () => import('$lib/components/watch/PartyPresence.svelte')
+  const loadStreamPicker = () => import('$lib/components/player/StreamPicker.svelte')
+  const loadDebridCaching = () => import('$lib/components/player/DebridCaching.svelte')
+  const loadSourceConnecting = () => import('$lib/components/player/SourceConnecting.svelte')
+  const loadExitPrompt = () => import('$lib/components/shell/ExitPrompt.svelte')
+  const loadDeckKeyboardWarning = () => import('$lib/components/shell/DeckKeyboardWarning.svelte')
+  const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
+  import { streamPicker, connecting, exitPrompt } from '$lib/player/session'
+  import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
@@ -43,7 +50,6 @@
   import { startUpdateChecks } from '$lib/updater'
   import { startExtensionUpdateChecks, extensionUpdateNotice } from '$lib/extensions/auto-update'
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
-  import PartyPresence from '$lib/components/watch/PartyPresence.svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
@@ -117,6 +123,13 @@
     // while the shell is still painting is the single most contended moment on the Deck. Idle is
     // still far earlier than any realistic first Play click, so the warm contract is unchanged.
     idle(() => warmExtensions(), 5000)
+    // Warm the lazily-split player chunk once boot is quiet, so the FIRST Play / source pick pays
+    // no module-load delay — the bytes are just off the first-paint critical path, not off the
+    // device. Browser-cached, so these resolve instantly when the real mount happens.
+    idle(() => {
+      void loadStreamPicker(); void loadSourceConnecting()
+      void (get(isAndroid) ? loadAndroidPlayer() : loadPlayerOverlay())
+    }, 6000)
     // Refresh the signed-in profile (name + avatar) for an already-connected session,
     // so the sidebar shows the real picture without needing a re-login. No-op if not
     // connected. Fire-and-forget.
@@ -216,25 +229,27 @@
 {/if}
 <!-- Lo-fi speaker: only while an uncached torrent is caching at the debrid service
      (the loading screen). Sits above the caching overlay (z-[60]). Desktop only. -->
-{#if $debridCaching && !$gameMode && !$isMobile}<LofiPlayer />{/if}
+{#if $debridCaching && !$gameMode && !$isMobile}<Lazy load={loadLofiPlayer} />{/if}
 <!-- No `overflow-x-clip` here: it would clip the Hero banner's full-bleed
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
 <main class="relative min-h-screen {$isMobile ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : 'ml-14'}" class:hidden={$playing || $androidMpvActive}>{@render children()}</main>
-{#if $playing}<PlayerOverlay />{/if}
+{#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- Touch overlay for the embedded Android libmpv player + its discussion panel (self-gates on
      commentsOpen; the desktop mounts its own inside PlayerOverlay). -->
-{#if $androidMpvActive}<AndroidPlayer />{/if}
-{#if $androidMpvActive}<CommentsPanel />{/if}
-{#if $androidMpvActive}<PartyPresence floating />{/if}
-<StreamPicker />
-<SourceConnecting />
-<DebridCaching />
-<ExitPrompt />
+{#if $androidMpvActive}<Lazy load={loadAndroidPlayer} />{/if}
+{#if $androidMpvActive}<Lazy load={loadCommentsPanel} />{/if}
+{#if $androidMpvActive}<Lazy load={loadPartyPresence} props={{ floating: true }} />{/if}
+<!-- Player-flow overlays: self-gated on their trigger store here so the module (and lottie-web,
+     which SourceLoader pulls in) loads only when a resolve/cache/picker actually starts. -->
+{#if $streamPicker}<Lazy load={loadStreamPicker} />{/if}
+{#if $connecting}<Lazy load={loadSourceConnecting} />{/if}
+{#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}
+{#if $exitPrompt}<Lazy load={loadExitPrompt} />{/if}
 <GlobalSearch />
 <OnScreenKeyboard />
-<DeckKeyboardWarning />
+{#if $deckKeyboardWarning}<Lazy load={loadDeckKeyboardWarning} />{/if}
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->
 {#if $watchToast}
   <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
