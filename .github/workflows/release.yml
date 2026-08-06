@@ -16,6 +16,14 @@ on:
   # GitHub's push-event webhooks are throttled/dropped (which has swallowed tag builds before).
   workflow_dispatch:
 
+# One release build at a time. A beta run STARTS by deleting the rolling `beta` release, so two
+# concurrent runs destroy each other's uploads (every attach dies with "release not found") — seen
+# 2026-08-06 when throttled tag-push events drained late on top of a manual dispatch. Queuing
+# (not cancelling) means a duplicate event just rebuilds the same release afterwards, harmlessly.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
