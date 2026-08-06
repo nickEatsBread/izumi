@@ -7,6 +7,7 @@
   import { offlineMode } from '$lib/stores/offline'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { page } from '$app/state'
+  import { replaceState } from '$app/navigation'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
   heroMedia.set(null)
@@ -38,6 +39,33 @@
   // Serialized key: re-creates SearchResults (and its query store) on any change,
   // including the 18+ toggle (which swaps the query variant).
   const key = $derived(JSON.stringify(debounced) + '|' + $showAdult)
+
+  // Mirror the settled filters into the URL so the search SURVIVES leaving the page. Opening a
+  // result pushes a history entry; coming back (browser Back, Android back, B on the Deck)
+  // remounts this page, which seeds itself from the URL — and with nothing written there, every
+  // return landed on an empty search after the user had just typed one.
+  //
+  // replaceState, never pushState: the query is already debounced, but pushing would still stack a
+  // history entry per edit, so Back would crawl backwards through the query letter-group by
+  // letter-group instead of leaving the page. Only the quick-bar fields are round-tripped, matching
+  // exactly what `seed` above reads — writing params the seed ignores would silently drop them on
+  // the return trip and look like the filters had been mangled.
+  $effect(() => {
+    const f = debounced
+    const params = new URLSearchParams()
+    if (f.search) params.set('search', f.search)
+    if (f.sort) params.set('sort', f.sort)
+    if (f.genres?.[0]) params.set('genre', f.genres[0])
+    if (f.season) params.set('season', f.season)
+    if (f.year != null) params.set('year', String(f.year))
+    const query = params.toString()
+    const next = query ? `${page.url.pathname}?${query}` : page.url.pathname
+    // Compare against the live URL so this settles instead of re-writing every run.
+    if (next === page.url.pathname + page.url.search) return
+    // Guarded: replaceState throws if the router has not finished initialising (an effect can run
+    // during the first navigation), and a failed URL sync must never break the search itself.
+    try { replaceState(next, page.state) } catch { /* URL stays as-is; results are unaffected */ }
+  })
 </script>
 
 {#if $offlineMode}

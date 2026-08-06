@@ -257,6 +257,27 @@
   })
   function skipSegment() { if (currentSeg) seekAbsolute(currentSeg.end) }
 
+  // The manual Skip button shows for ~5s after entering a segment, then hides itself unless the
+  // controls happen to be up — the same rule the desktop overlay follows. Without the timer the
+  // button simply tracked `currentSeg`, and an ED band runs to the end of the episode, so it sat
+  // pinned over the video for minutes with no way to dismiss it. Tapping to raise the controls
+  // brings it back (that is the `controlsShown` arm below).
+  let skipTimer = $state(false)
+  let skipT: ReturnType<typeof setTimeout>
+  const autoSkipCurrent = $derived(!!currentSeg && willSkip(currentSeg) && !autoSkipped.has(currentSeg.start))
+  $effect(() => {
+    if (currentSeg && !autoSkipCurrent) {
+      skipTimer = true
+      clearTimeout(skipT)
+      skipT = setTimeout(() => (skipTimer = false), 5000)
+    } else {
+      skipTimer = false
+      clearTimeout(skipT)
+    }
+    return () => clearTimeout(skipT)
+  })
+  const showSkip = $derived(!!currentSeg && !autoSkipCurrent && (skipTimer || controlsShown))
+
   function fmt(s: number) {
     if (!isFinite(s) || s < 0) s = 0
     const h = Math.floor(s / 3600)
@@ -1204,7 +1225,7 @@
     </button>
   {/if}
 
-  {#if currentSeg && !(willSkip(currentSeg) && !autoSkipped.has(currentSeg.start))}
+  {#if showSkip && currentSeg}
     <button transition:fade={{ duration: 180 }} onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skipSegment() }} class="absolute bottom-14 right-3 z-10 rounded-lg bg-white/90 px-4 py-2 text-sm font-bold text-black shadow-lg">Skip {currentSeg.label}</button>
   {/if}
 
