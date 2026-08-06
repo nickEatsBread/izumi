@@ -120,7 +120,10 @@ fn normalized_score(left: &[f32], right: &[f32], lag: isize) -> f32 {
         .enumerate()
         .filter_map(|(index, value)| {
             let other = index as isize - lag;
-            (other >= 0 && (other as usize) < right.len()).then_some((value, right[other as usize]))
+            // `then` (lazy), NOT `then_some`: then_some evaluates its argument before the
+            // condition is consulted, so the out-of-range `right[...]` index would panic on
+            // any negative lag instead of being filtered out.
+            (other >= 0 && (other as usize) < right.len()).then(|| (value, right[other as usize]))
         })
         .collect::<Vec<_>>();
     if pairs.is_empty() {

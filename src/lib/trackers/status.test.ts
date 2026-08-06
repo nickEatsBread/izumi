@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR, malToAni, scoreLabel } from './status'
+import { STATUS_ORDER, STATUS_LABEL, STATUS_COLOR, malToAni, mergedProgress, scoreLabel } from './status'
 import { malStatus, type AniStatus } from './index'
 
 describe('status maps', () => {
@@ -31,6 +31,24 @@ describe('malToAni', () => {
     expect(malToAni('')).toBeUndefined()
     expect(malToAni(undefined)).toBeUndefined()
     expect(malToAni('nonsense')).toBeUndefined()
+  })
+})
+
+describe('mergedProgress', () => {
+  it('takes the higher tracker when both report progress', () => {
+    expect(mergedProgress(7, 3)).toBe(7)
+    expect(mergedProgress(3, 7)).toBe(7)
+  })
+  it('does NOT let an AniList progress of 0 hide MAL progress', () => {
+    // Regression: `rawEntry?.progress ?? malEntry?.progress` — 0 is not nullish, so a fresh
+    // AniList entry at 0 silently swallowed real MAL progress. MAL is canonical; take the max.
+    expect(mergedProgress(0, 12)).toBe(12)
+  })
+  it('falls back to whichever tracker has a value', () => {
+    expect(mergedProgress(undefined, 4)).toBe(4)
+    expect(mergedProgress(2, undefined)).toBe(2)
+    expect(mergedProgress(null, null)).toBe(0)
+    expect(mergedProgress(undefined, undefined)).toBe(0)
   })
 })
 
