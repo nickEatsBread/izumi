@@ -11,7 +11,19 @@ import { memo, cacheableList } from './online-cache'
 // synonym only multiplies a dead provider's timeout, and it used to do so per episode.
 const MAX_SEARCH_ALIASES = 5
 const SEARCH_FAILURE_COOLDOWN_MS = 90_000
+// Capped: one entry per (provider, title) the user browsed, and entries are only useful for their
+// 90s window — an uncapped Map would accumulate for the life of the process. Evicting the oldest
+// half at the ceiling keeps this O(1)-amortized and needs no timers.
+const SEARCH_FAILURE_MAX = 300
 const searchFailures = new Map<string, number>()
+function noteSearchFailure(key: string): void {
+  if (searchFailures.size >= SEARCH_FAILURE_MAX) {
+    // Insertion-ordered, so the first half of the keys are the oldest recorded failures.
+    const stale = [...searchFailures.keys()].slice(0, Math.floor(SEARCH_FAILURE_MAX / 2))
+    for (const k of stale) searchFailures.delete(k)
+  }
+  searchFailures.set(key, Date.now())
+}
 
 /** Why a provider contributed no rows, when it said so out loud.
  *
@@ -397,7 +409,7 @@ export async function resolveOnlineStreams(
       if (best) break
     }
     if (!best) {
-      if (sawFailure && !sawAnswer) searchFailures.set(failKey, Date.now())
+      if (sawFailure && !sawAnswer) noteSearchFailure(failKey)
       return null
     }
     searchFailures.delete(failKey)
