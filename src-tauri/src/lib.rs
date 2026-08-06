@@ -1826,6 +1826,58 @@ fn set_webview_transparent(win: &tauri::WebviewWindow) {
 #[cfg(any(windows, target_os = "android"))]
 const DARK_FRAME_SCRIPT: &str = "(function(){try{if(location.pathname.indexOf('/embed/discussion')!==0)return;var set=function(){var r=document.documentElement;if(!r)return;if(r.getAttribute('data-theme')!=='dark')r.setAttribute('data-theme','dark');var a=document.getElementsByClassName('dq-archive');for(var i=0;i<a.length;i++){if(a[i].getAttribute('data-theme')!=='dark')a[i].setAttribute('data-theme','dark');}};set();new MutationObserver(set).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['data-theme']});document.addEventListener('DOMContentLoaded',set);}catch(e){}})();";
 
+// Routes Disqus profile links inside the live discussanime embed through the forum's own
+// profile-redirect endpoint: `disqus.com/by/<user>` → `discussanime.moe/api/profile-redirect/<user>`,
+// so a tapped username lands on the forum's profile instead of dropping the viewer on disqus.com.
+// Injected into every frame like DARK_FRAME_SCRIPT, but self-gates to the cross-origin
+// `disqus.com/embed/comments` inner iframe of the `f=discussanime` forum — other forums' embeds are
+// untouched, because the redirect endpoint only knows discussanime accounts.
+//
+// Rewriting hrefs alone fixes hover/copy-link but not clicks: Disqus's delegated click handler
+// opens profiles from its own data model and ignores the anchor. The capture-phase listener
+// (registered at document start, so it precedes Disqus's) stops that handler. `window.open` is a
+// dead end from this frame — Android's WebView has no multi-window support, and a WebView2 popup
+// is an app window, not the user's browser — so the frame posts `izumi-open-external` to the top
+// document, which validates the sender origin + URL prefix and opens the system browser (see
+// CommentsPanel.svelte / AndroidWatchDetails.svelte). Malformed percent-escapes keep the raw
+// segment (`100%` → `100%25`); already-encoded usernames are decoded first so they are not
+// double-encoded. The `data-izumi-disqus-href` breadcrumb marks rewritten anchors (a rewritten
+// href no longer matches `/by/`, keeping the pass idempotent) and lets the click handler
+// recognize them without recomputing.
+#[cfg(any(windows, target_os = "android"))]
+const DISQUS_PROFILE_SCRIPT: &str = r#"(function(){try{
+if(location.hostname!=='disqus.com'||location.pathname.indexOf('/embed/comments')!==0)return;
+if(new URLSearchParams(location.search).get('f')!=='discussanime')return;
+if(window.__izumiDisqusProfile)return;window.__izumiDisqusProfile=1;
+var ATTR='data-izumi-disqus-href';
+var RE=/^\/by\/([^/]+)\/?$/;
+function redirectFor(href){
+  var u;try{u=new URL(href,location.href)}catch(e){return null}
+  if(u.protocol!=='https:'&&u.protocol!=='http:')return null;
+  if(u.hostname!=='disqus.com')return null;
+  var m=RE.exec(u.pathname);if(!m)return null;
+  var s=m[1];try{s=decodeURIComponent(s)}catch(e){}
+  if(!s)return null;
+  return 'https://discussanime.moe/api/profile-redirect/'+encodeURIComponent(s);
+}
+function apply(a,to){a.setAttribute(ATTR,a.href);a.href=to;}
+function pass(){var as=document.querySelectorAll('a[href*="/by/"]');for(var i=0;i<as.length;i++){var to=redirectFor(as[i].href);if(to)apply(as[i],to);}}
+var queued=false;
+function schedule(){if(queued)return;queued=true;requestAnimationFrame(function(){queued=false;pass();});}
+document.addEventListener('click',function(ev){
+  var t=ev.target;var a=t&&t.closest?t.closest('a[href]'):null;
+  if(!a)return;
+  var to=redirectFor(a.href);
+  if(to)apply(a,to);else if(!a.hasAttribute(ATTR))return;
+  ev.stopPropagation();
+  ev.preventDefault();
+  try{(window.top||window).postMessage({type:'izumi-open-external',url:a.href},'*')}catch(e){}
+},true);
+pass();
+document.addEventListener('DOMContentLoaded',pass);
+new MutationObserver(schedule).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['href']});
+}catch(e){}})();"#;
+
 #[cfg(windows)]
 static DARK_SCRIPT_ADDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -1850,21 +1902,25 @@ fn set_webview_dark(win: &tauri::WebviewWindow) {
             if let Ok(profile) = core.cast::<ICoreWebView2_13>().and_then(|w| w.Profile()) {
                 let _ = profile.SetPreferredColorScheme(COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK);
             }
-            // Add the per-frame dark-forcing script ONCE (it persists + applies to future documents,
-            // including the archive iframe opened later).
+            // Add the per-frame scripts ONCE (they persist + apply to future documents, including
+            // the embed iframes opened later): dark-forcing plus the Disqus profile-redirect
+            // rewrite. Both self-gate on their frame, so a duplicate add after a partial failure
+            // is harmless (the profile script also latches on window.__izumiDisqusProfile).
             if !DARK_SCRIPT_ADDED.swap(true, Ordering::SeqCst) {
-                let js = HSTRING::from(DARK_FRAME_SCRIPT);
-                let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(
-                    Box::new(|hr, _id| {
-                        eprintln!("[dark] AddScriptToExecuteOnDocumentCreated → {hr:?}");
-                        Ok(())
-                    }),
-                );
-                if let Err(e) =
-                    core.AddScriptToExecuteOnDocumentCreated(PCWSTR(js.as_ptr()), &handler)
-                {
-                    DARK_SCRIPT_ADDED.store(false, Ordering::SeqCst);
-                    eprintln!("[dark] AddScriptToExecuteOnDocumentCreated failed: {e:?}");
+                for script in [DARK_FRAME_SCRIPT, DISQUS_PROFILE_SCRIPT] {
+                    let js = HSTRING::from(script);
+                    let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(
+                        Box::new(|hr, _id| {
+                            eprintln!("[dark] AddScriptToExecuteOnDocumentCreated → {hr:?}");
+                            Ok(())
+                        }),
+                    );
+                    if let Err(e) =
+                        core.AddScriptToExecuteOnDocumentCreated(PCWSTR(js.as_ptr()), &handler)
+                    {
+                        DARK_SCRIPT_ADDED.store(false, Ordering::SeqCst);
+                        eprintln!("[dark] AddScriptToExecuteOnDocumentCreated failed: {e:?}");
+                    }
                 }
             }
         }
@@ -3562,6 +3618,15 @@ pub fn run() {
     let builder = builder.plugin(
         tauri::plugin::Builder::<tauri::Wry>::new("embed-dark")
             .js_init_script(DARK_FRAME_SCRIPT.to_string())
+            .build(),
+    );
+    // Same per-frame delivery for the Disqus profile-redirect rewrite (see DISQUS_PROFILE_SCRIPT):
+    // it must run inside the cross-origin disqus.com inner iframe, which only the
+    // addDocumentStartJavaScript path reaches on Android. Windows injects it in set_webview_dark.
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(
+        tauri::plugin::Builder::<tauri::Wry>::new("disqus-profile")
+            .js_init_script(DISQUS_PROFILE_SCRIPT.to_string())
             .build(),
     );
     let builder = builder.setup(|app| {
