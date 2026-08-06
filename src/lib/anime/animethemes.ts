@@ -18,8 +18,11 @@ export async function firstOccurrences(
 ): Promise<{ op: boolean; ed: boolean }> {
   const fallback = { op: episode === 1, ed: episode === 1 }
   if (!anilistId || !episode) return fallback
-  const url = `https://api.animethemes.moe/anime/?fields[anime]=id&filter[external_id]=${anilistId}`
-    + `&filter[site]=AniList&include=animethemes.animethemeentries`
+  // `filter[has]=resources` is load-bearing: without it the API ignores the resource-scoped
+  // external_id/site filters entirely and returns page 1 of the whole database, so the debut
+  // check would read ~15 unrelated shows.
+  const url = `https://api.animethemes.moe/anime/?fields[anime]=id&filter[has]=resources`
+    + `&filter[external_id]=${anilistId}&filter[site]=AniList&include=animethemes.animethemeentries`
   try {
     const r = await httpFetch(url)
     if (!r.ok) return fallback
