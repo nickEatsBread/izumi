@@ -26,6 +26,28 @@
   } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
+  import { savedSubtitleStyles, applyPresetGlobally, deleteSubtitlePreset, saveSubtitlePreset, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
+
+  // Saved fonting presets (captured in the player). Applying one writes the appearance stores
+  // above — from then on the sliders edit it like any hand-made style. Renames re-save under the
+  // new name via the same replace-by-name path the player uses.
+  let renamingId = $state<string | null>(null)
+  let renameText = $state('')
+  function applyPreset(preset: SubtitleStylePreset) {
+    applyPresetGlobally(preset)
+  }
+  function startRename(preset: SubtitleStylePreset) {
+    renamingId = preset.id
+    renameText = preset.name
+  }
+  function commitRename(preset: SubtitleStylePreset) {
+    const name = renameText.trim()
+    if (name && name.toLowerCase() !== preset.name.toLowerCase()) {
+      deleteSubtitlePreset(preset.id)
+      saveSubtitlePreset(name, preset.style, preset.source)
+    }
+    renamingId = null
+  }
 
   // Font names libass can actually resolve. Nunito travels with the app on every platform (the
   // Android player registers it through the plugin's bundled fonts directory); the rest are the
@@ -149,6 +171,38 @@
         <span class="flex justify-between font-bold"><span>Vertical position</span><span>{$subtitlePosition}%</span></span>
         <input type="range" min="10" max="100" step="1" bind:value={$subtitlePosition} data-focusable disabled={!$subtitleStyleEnabled} class="w-full accent-primary disabled:opacity-50" />
       </label>
+    </div>
+  </section>
+
+  <section class="mb-8 max-w-2xl">
+    <h3 class="mb-2 font-bold">Saved styles</h3>
+    <div class="rounded-md border border-border p-4">
+      {#if $savedSubtitleStyles.length}
+        <div class="space-y-2">
+          {#each $savedSubtitleStyles as preset (preset.id)}
+            <div class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-sm">
+              {#if renamingId === preset.id}
+                <input
+                  bind:value={renameText} data-focusable class="min-w-0 flex-1 rounded bg-input px-2 py-1 text-sm"
+                  onkeydown={(e) => { if (e.key === 'Enter') commitRename(preset); else if (e.key === 'Escape') renamingId = null }}
+                />
+                <button onclick={() => commitRename(preset)} data-focusable class="shrink-0 font-bold text-primary">Done</button>
+              {:else}
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate font-bold">{preset.name}</span>
+                  <span class="block truncate text-xs text-muted-foreground">{preset.style.font}{preset.source?.title ? ` · from ${preset.source.title}` : ''}</span>
+                </span>
+                <button onclick={() => applyPreset(preset)} data-focusable class="shrink-0 rounded-md bg-primary px-2.5 py-1 text-xs font-bold text-primary-foreground">Apply</button>
+                <button onclick={() => startRename(preset)} data-focusable class="shrink-0 text-xs text-muted-foreground hover:text-foreground">Rename</button>
+                <button onclick={() => deleteSubtitlePreset(preset.id)} data-focusable class="shrink-0 text-xs text-destructive">Delete</button>
+              {/if}
+            </div>
+          {/each}
+        </div>
+        <p class="mt-2 text-xs text-muted-foreground">Apply copies the preset into the custom style above and turns the override on — the whole client uses it until you change it.</p>
+      {:else}
+        <p class="text-sm text-muted-foreground">No saved styles yet. While watching, open the player's subtitle style menu and save the release's fonting — it shows up here.</p>
+      {/if}
     </div>
   </section>
 
