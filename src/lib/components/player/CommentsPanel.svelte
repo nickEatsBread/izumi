@@ -211,7 +211,15 @@
   $effect(() => { void embedSrc; archiveHeight = null })
   $effect(() => {
     function onMsg(e: MessageEvent) {
-      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number } | null
+      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number; url?: string } | null
+      // Profile links in the live Disqus embed are rewritten to the forum's profile-redirect
+      // endpoint by a frame init script (DISQUS_PROFILE_SCRIPT, lib.rs). The INNER disqus.com
+      // frame asks us to open them — window.open in that sandboxed frame has nowhere good to go.
+      // Origin + fixed URL prefix bound what can be opened.
+      if (e.origin === 'https://disqus.com' && m?.type === 'izumi-open-external') {
+        if (typeof m.url === 'string' && m.url.startsWith('https://discussanime.moe/api/profile-redirect/')) void openUrl(m.url)
+        return
+      }
       if (e.origin === TAC_ORIGIN && m?.type === 'izumi-tac-verified') {
         if (tacPopupPoll != null) window.clearInterval(tacPopupPoll)
         tacPopupPoll = undefined
