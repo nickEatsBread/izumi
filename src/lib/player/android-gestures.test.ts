@@ -7,6 +7,7 @@ import {
   shouldEnterFullscreen,
   fullscreenPullTransform,
   shouldDismissSheet,
+  sheetGestureIntent,
   landscapeExitProgress,
   shouldExitFullscreen,
 } from './android-gestures'
@@ -72,6 +73,30 @@ describe('shouldDismissSheet', () => {
 
   it('snaps back after a short, slow pull', () => {
     expect(shouldDismissSheet(30, 0.1, 800)).toBe(false)
+  })
+})
+
+describe('sheetGestureIntent', () => {
+  it('stays undecided inside the slop', () => {
+    expect(sheetGestureIntent(4, 0)).toBeNull()
+    expect(sheetGestureIntent(-4, 0)).toBeNull()
+  })
+
+  it('pulls the sheet when dragging down from the top of the list', () => {
+    expect(sheetGestureIntent(20, 0)).toBe('drag')
+  })
+
+  it('pulls the sheet when the touch started outside any scroller', () => {
+    expect(sheetGestureIntent(20, null)).toBe('drag')
+  })
+
+  it('leaves a scrolled list alone', () => {
+    expect(sheetGestureIntent(20, 120)).toBe('scroll')
+  })
+
+  it('never pulls on an upward drag', () => {
+    expect(sheetGestureIntent(-20, 0)).toBe('scroll')
+    expect(sheetGestureIntent(-20, null)).toBe('scroll')
   })
 })
 

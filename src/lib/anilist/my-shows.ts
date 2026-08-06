@@ -12,26 +12,41 @@ import type { Media } from './types'
 //     no MAL→AniList id mapping is needed)
 //   - Local watch history (keyed by media.id) — covers "something you're watching right now" with no
 //     tracker linked.
+// Dropped lists are loaded too, but only as a VETO on the local-history source: dropping a show is a
+// tracker edit, and local history has no way to learn about it, so a dropped title used to keep
+// airing on the schedule forever just because it had been played on this device once.
 export type MineKind = 'watching' | 'planning'
 
 export interface MySets {
   aniWatching: Set<number>   // AniList media ids
   aniPlanning: Set<number>
+  aniDropped: Set<number>
   malWatching: Set<number>   // MAL idMals
   malPlanning: Set<number>
+  malDropped: Set<number>
   local: Set<number>         // media ids from on-device history
 }
 
 export const emptyMySets = (): MySets => ({
-  aniWatching: new Set(), aniPlanning: new Set(), malWatching: new Set(), malPlanning: new Set(), local: new Set(),
+  aniWatching: new Set(), aniPlanning: new Set(), aniDropped: new Set(),
+  malWatching: new Set(), malPlanning: new Set(), malDropped: new Set(),
+  local: new Set(),
 })
 
+/** Is this title on a tracker's Dropped list? */
+export function isDropped(m: Media, s: MySets): boolean {
+  return s.aniDropped.has(m.id) || (m.idMal != null && s.malDropped.has(m.idMal))
+}
+
 /** How a title relates to the viewer, or null if it isn't one of their shows. Local history counts as
- *  "watching" (you're actively watching it here). */
+ *  "watching" (you're actively watching it here) unless a tracker says you dropped it. An explicit
+ *  Watching/Planning entry always wins over a Dropped one on the OTHER tracker — the drop only vetoes
+ *  the implicit local-history signal, so a stale list on one service can't hide a live show. */
 export function classifyMine(m: Media, s: MySets): MineKind | null {
   const { id, idMal } = m
-  if (s.aniWatching.has(id) || s.local.has(id) || (idMal != null && s.malWatching.has(idMal))) return 'watching'
+  if (s.aniWatching.has(id) || (idMal != null && s.malWatching.has(idMal))) return 'watching'
   if (s.aniPlanning.has(id) || (idMal != null && s.malPlanning.has(idMal))) return 'planning'
+  if (s.local.has(id) && !isDropped(m, s)) return 'watching'
   return null
 }
 
@@ -56,12 +71,18 @@ async function aniIds(userName: string | undefined, status: string): Promise<Set
 /** Load every "my shows" source concurrently. Best-effort — a failing/absent source just contributes
  *  an empty set. `userName` is the linked AniList handle (empty ⇒ AniList sources skipped). */
 export async function loadMySets(userName: string | undefined): Promise<MySets> {
-  const [aniWatching, aniPlanning, malW, malP] = await Promise.all([
+  const [aniWatching, aniPlanning, aniDropped, malW, malP, malD] = await Promise.all([
     aniIds(userName, 'CURRENT'),
     aniIds(userName, 'PLANNING'),
+    aniIds(userName, 'DROPPED'),
     getMalAnimeIds('watching', 500),
     getMalAnimeIds('plan_to_watch', 500),
+    getMalAnimeIds('dropped', 500),
   ])
   const local = new Set(Object.keys(get(localHistory)).map(Number))
-  return { aniWatching, aniPlanning, malWatching: new Set(malW), malPlanning: new Set(malP), local }
+  return {
+    aniWatching, aniPlanning, aniDropped,
+    malWatching: new Set(malW), malPlanning: new Set(malP), malDropped: new Set(malD),
+    local,
+  }
 }
