@@ -231,6 +231,10 @@ export const scheduleLayout = persisted<ScheduleLayout>('schedule-layout', 'agen
 // reads as un-native on a phone, where the header should scroll away with the list.
 const scheduleStickyDefault = !(typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent))
 export const scheduleStickyHeader = persisted<boolean>('schedule-sticky-header', scheduleStickyDefault)
+/** Which tab the Schedule page opens on: the weekly airing 'schedule' (default) or
+ *  'watchlist' — the viewer's watching list ordered by aired-but-unwatched episodes. */
+export type ScheduleTab = 'schedule' | 'watchlist'
+export const scheduleDefaultTab = persisted<ScheduleTab>('schedule-default-tab', 'schedule')
 
 // --- Updates ---
 /** Auto-updater release channel: 'stable' (normal GitHub releases) or 'beta'
