@@ -19,6 +19,7 @@
     androidMpvActive,
     mpvStop,
     mpvCommand,
+    mpvGet,
     togglePause,
     seekAbsolute,
     seekRelative,
@@ -62,6 +63,9 @@
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
   } from '$lib/settings/ui'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
+  import { captureFromExtradata } from '$lib/player/ass-style-capture'
+  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
+  import { bingeSource } from '$lib/player/session'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
@@ -170,9 +174,10 @@
   // it, so every control on Settings → Subtitles was inert here. Re-keyed on the loaded file as well
   // as on the settings themselves: the core is reused across episodes, but a fresh core (player
   // closed and reopened) starts from mpv's defaults.
+  // A session style preset picked in the sheet wins over the settings until the player closes.
   $effect(() => {
     void np.id, np.episode
-    for (const [property, value] of subtitleStyleProps({
+    for (const [property, value] of subtitleStyleProps(effectiveSubtitleStyle($sessionSubtitleStyle, {
       enabled: $subtitleStyleEnabled,
       font: $subtitleFont,
       fontSize: $subtitleFontSize,
@@ -181,7 +186,7 @@
       borderSize: $subtitleBorderSize,
       shadow: $subtitleShadow,
       position: $subtitlePosition,
-    })) void mpvCommand(['set', property, value]).catch(() => {})
+    }))) void mpvCommand(['set', property, value]).catch(() => {})
   })
   const playedPct = $derived(dur > 0 ? Math.min(100, (pos / dur) * 100) : 0)
   const cachePct = $derived(dur > 0 ? Math.min(100, ($mpvState.cacheEnd / dur) * 100) : 0)
@@ -871,6 +876,26 @@
   }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
   async function pickSub(id: number | 'no') { await setSubTrack(id); tracks = await getTracks() }
+  // Subtitle style presets: capture the active ASS track's fonting when the subtitles page opens,
+  // save it under the release group's name, or apply a saved preset for this session only.
+  let styleSaveName = $state('')
+  let capturedStyle = $state<ReturnType<typeof captureFromExtradata>>(null)
+  $effect(() => {
+    if (settingsPage !== 'subtitles') return
+    void mpvGet('sub-ass-extradata').then((extradata) => {
+      capturedStyle = captureFromExtradata(extradata)
+      styleSaveName = get(bingeSource)?.group ?? np.animeTitle ?? np.title ?? ''
+    })
+  })
+  function saveCapturedStyle() {
+    if (!capturedStyle) return
+    const preset = saveSubtitlePreset(styleSaveName, capturedStyle, {
+      group: get(bingeSource)?.group,
+      title: np.animeTitle ?? np.title ?? undefined,
+    })
+    sessionSubtitleStyle.set(preset)
+  }
+
   let downloadingSubtitle = $state<string | null>(null)
   async function addOnlineSub(candidate: SubtitleCandidate) {
     const key = candidateKey(candidate)
@@ -1085,6 +1110,8 @@
       // state until a force-quit — the "black app with dead navigation" bug.
       closing = false
       androidMpvActive.set(false)
+      // Session-scoped by contract: the user's settings style returns on the next play.
+      sessionSubtitleStyle.set(null)
     }
   }
   // Related titles are not all playable — a series' source manga or light novel is a relation like
@@ -1381,6 +1408,22 @@
           <button onclick={() => pickSub('no')} class="settings-choice {subOff ? 'settings-choice-selected' : ''}"><span>Off</span>{#if subOff}<Check size={18} />{/if}</button>
           {#each subTracks as track (track.id)}
             <button onclick={() => pickSub(track.id)} class="settings-choice {track.selected ? 'settings-choice-selected' : ''}"><span>{trackLabel(track)}</span>{#if track.selected}<Check size={18} />{/if}</button>
+          {/each}
+          <p class="mb-2 mt-5 text-xs font-bold uppercase tracking-wide text-white/50">Subtitle style</p>
+          {#if capturedStyle}
+            <div class="mb-1 flex items-center gap-2">
+              <input bind:value={styleSaveName} placeholder="Preset name" class="min-w-0 flex-1 rounded-xl bg-white/10 px-3 py-2.5 text-sm outline-none placeholder:text-white/40" />
+              <button onclick={saveCapturedStyle} class="shrink-0 rounded-full bg-white/10 px-3 py-2 text-xs font-bold">Save fonting</button>
+            </div>
+          {:else}
+            <p class="mb-1 px-1 text-xs text-white/45">This track has no readable ASS styling to capture.</p>
+          {/if}
+          <button onclick={() => sessionSubtitleStyle.set(null)} class="settings-choice {!$sessionSubtitleStyle ? 'settings-choice-selected' : ''}"><span>Your settings</span>{#if !$sessionSubtitleStyle}<Check size={18} />{/if}</button>
+          {#each $savedSubtitleStyles as p (p.id)}
+            <button onclick={() => sessionSubtitleStyle.set(p)} class="settings-choice {$sessionSubtitleStyle?.id === p.id ? 'settings-choice-selected' : ''}">
+              <span class="min-w-0"><span class="block truncate">{p.name}</span><span class="block truncate text-xs text-white/45">{p.style.font}</span></span>
+              {#if $sessionSubtitleStyle?.id === p.id}<Check size={18} />{/if}
+            </button>
           {/each}
           <div class="mb-2 mt-5 flex items-center justify-between gap-3">
             <p class="text-xs font-bold uppercase tracking-wide text-white/50">Find more subtitles</p>
