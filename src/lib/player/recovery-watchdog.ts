@@ -90,6 +90,15 @@ export function recoveryWatchDecision(
     return { state: { ...state, lastAdvancedAt: now }, recover: false }
   }
   if (!firstFrame) {
+    // A stream whose CLOCK is moving is alive, whatever the frame flag says. The flag rides a
+    // presentation event (Android: PLAYBACK_RESTART) that can be lost in transit, and a lost flag
+    // used to park a perfectly-playing torrent in this branch forever — recovery then fired on
+    // every startup-timeout lap, "switching" away from a healthy source over and over. Position
+    // advancement is the same ground truth the stalled branch below already trusts; requiring a
+    // real position keeps a stream frozen at 0 on the timeout path it belongs on.
+    if (position > POSITION_EPSILON_S && now - state.lastAdvancedAt < STALL_TIMEOUT_MS) {
+      return { state, recover: false }
+    }
     const startTimeout = signal.startTimeoutMs != null
       && Number.isFinite(signal.startTimeoutMs)
       && signal.startTimeoutMs > 0
