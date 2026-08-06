@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
+  import { openUrl } from '@tauri-apps/plugin-opener'
   import type { Media } from '$lib/anilist/types'
   import type { DiscussionComment, DiscussionThread } from '$lib/comments'
   import type { EpMeta } from '$lib/anizip/types'
@@ -9,7 +10,7 @@
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
   import { fetchDiscussion } from '$lib/comments'
-  import { preferredMobileDiscussion } from '$lib/comments/mobile'
+  import { embedResizeHeight, preferredMobileDiscussion } from '$lib/comments/mobile'
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
   import { getMalProgress } from '$lib/trackers'
@@ -174,11 +175,21 @@
 
   onMount(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || event.source !== disqusFrame?.contentWindow) return
-      if (event.data?.type === 'izumi-disqus-height') {
-        const height = Number(event.data.height)
-        if (Number.isFinite(height)) disqusHeight = Math.max(480, Math.min(20_000, Math.ceil(height)))
-      } else if (event.data?.type === 'izumi-react') {
+      // Rewritten Disqus profile links (DISQUS_PROFILE_SCRIPT, lib.rs) arrive from the INNER
+      // disqus.com frame — not the loader — so this must precede the source gate below. Origin +
+      // fixed URL prefix bound what can be opened.
+      if (event.origin === 'https://disqus.com' && event.data?.type === 'izumi-open-external') {
+        const url: unknown = event.data.url
+        if (typeof url === 'string' && url.startsWith('https://discussanime.moe/api/profile-redirect/')) void openUrl(url)
+        return
+      }
+      if (event.source !== disqusFrame?.contentWindow) return
+      // Height reports come from two origins: the same-origin Disqus loader and the cross-origin
+      // archive (which hides its own overflow — unsized, it clips to 480px and cannot scroll).
+      const height = embedResizeHeight(event.origin, event.data, window.location.origin)
+      if (height != null) { disqusHeight = height; return }
+      if (event.origin !== window.location.origin) return
+      if (event.data?.type === 'izumi-react') {
         void sendReaction(event.data.base, event.data.identifier, event.data.key)
       } else if (event.data?.type === 'izumi-reaction-state') {
         void loadReactionState(event.data.base, event.data.identifier)

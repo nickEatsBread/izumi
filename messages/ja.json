@@ -29,6 +29,7 @@
   "settings_episode_layout": "エピソード一覧の表示",
   "settings_browse_layout": "ブラウズの表示",
   "settings_schedule_layout": "放送予定の表示",
+  "settings_schedule_default_tab": "放送予定の初期タブ",
   "settings_desktop": "デスクトップ",
   "settings_home_rows": "ホームの行",
   "settings_show": "表示",
