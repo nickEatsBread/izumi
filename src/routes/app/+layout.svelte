@@ -19,10 +19,14 @@
   const loadDebridCaching = () => import('$lib/components/player/DebridCaching.svelte')
   const loadSourceConnecting = () => import('$lib/components/player/SourceConnecting.svelte')
   const loadExitPrompt = () => import('$lib/components/shell/ExitPrompt.svelte')
-  const loadDeckKeyboardWarning = () => import('$lib/components/shell/DeckKeyboardWarning.svelte')
+  // NOT lazy: its onMount registers the `deck-keyboard-warning` listener that ANSWERS the native
+  // side, and the native login popup stays hidden until that answer arrives. Mounting it only once
+  // `$deckKeyboardWarning` is set would be circular — the listener is what leads to the store being
+  // set — so a Deck third-party sign-in would open a window that never becomes visible. Small
+  // component; it self-gates its own dialog.
+  import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
   import { streamPicker, connecting, exitPrompt } from '$lib/player/session'
-  import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
@@ -249,7 +253,7 @@
 {#if $exitPrompt}<Lazy load={loadExitPrompt} />{/if}
 <GlobalSearch />
 <OnScreenKeyboard />
-{#if $deckKeyboardWarning}<Lazy load={loadDeckKeyboardWarning} />{/if}
+<DeckKeyboardWarning />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->
 {#if $watchToast}
   <div class="fixed inset-x-0 bottom-20 z-[60] mx-auto flex w-fit max-w-[92vw] items-center gap-3 rounded-full bg-neutral-900/95 px-4 py-2.5 text-sm text-white shadow-lg">
