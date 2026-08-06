@@ -11,6 +11,10 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual fallback: run from the Actions tab (or `gh workflow run release.yml --ref vX.Y.Z`)
+  # with the TAG as the ref. Dispatch runs are created via the API, so they still work when
+  # GitHub's push-event webhooks are throttled/dropped (which has swallowed tag builds before).
+  workflow_dispatch:
 
 permissions:
   contents: write
