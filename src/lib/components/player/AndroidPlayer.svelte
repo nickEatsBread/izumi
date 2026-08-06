@@ -53,7 +53,7 @@
     HOLD_MS,
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
-  import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery } from '$lib/player/session'
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import {
     autoSkip, seekDuration, scrubThumbnails, openSubtitlesToken,
@@ -152,6 +152,11 @@
   // for it looks broken. Pre-first-frame (no duration yet) there is nothing to flash over, so that
   // case shows immediately.
   const SPINNER_DELAY_MS = 280
+  // Automatic recovery counts as loading: a dead source's END_FILE clears `stalled` (eof), which
+  // used to drop BOTH spinners while recoverPlaybackSource spent up to ~25s re-resolving — black
+  // screen, no indicator, no message, then a different source appears. The notice toast below
+  // carries the words; this keeps the motion.
+  const recovering = $derived($playbackRecovery?.recovering === true && $playbackRecovery.media.id === $nowPlaying.id)
   let loading = $state(false)
   $effect(() => {
     if (!stalled) { loading = false; return }
@@ -183,7 +188,10 @@
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
-  const hasNext = $derived(np.episode != null && np.total != null && np.episode < np.total)
+  // Gate on the AIRED count, exactly like the desktop controls: `np.total` is the PLANNED episode
+  // count, so on a currently-airing show's newest episode `episode < total` kept Next enabled —
+  // an enabled-looking button whose playNext guard then silently refused ("not greyed out" bug).
+  const hasNext = $derived(np.episode != null && np.airedTotal != null && np.episode < np.airedTotal)
 
   // --- System integration: miniplayer on leave + lock-screen transport ---
   //
@@ -409,7 +417,40 @@
     const target = Math.max(0, $mpvState.pos + delta)
     void seekAbsolute(dur > 0 ? Math.min(dur, target) : target)
   }
-  function pressPause() { cancelScrub(); resetTapSequence(); void togglePause() }
+  function pressPause() {
+    // A stream that never produced a frame has nothing to pause — and pausing it anyway disarms
+    // the recovery watchdog (it deliberately holds off while "paused"), which was one of the
+    // "black screen until I toggle pause/play" reports: the toggle was the accidental UN-pause
+    // that re-armed the watchdog. The spinner renders inside this button, so a poke at the
+    // spinner used to be exactly this dead pause.
+    if (!$mpvState.frameReady && $mpvState.dur === 0) return
+    cancelScrub(); resetTapSequence(); void togglePause()
+  }
+
+  // --- Ghost-click suppression -------------------------------------------------------------
+  // The tap that SHOWS the controls mounts the transport buttons under the finger, and Android's
+  // WebView then dispatches its synthesized compat click against the NEW DOM at those coordinates
+  // — pausing/seeking from a tap that was only meant to reveal the chrome. A real button press is
+  // distinguishable: its own pointerdown lands on the button; the ghost's pointerdown landed on
+  // the bare video surface before the button existed. Suppress clicks whose pointerdown did not
+  // start inside a button.
+  // Auto-clear the transient toast (mirrors the desktop overlay's behavior).
+  $effect(() => {
+    if (!$playerNotice) return
+    const t = setTimeout(() => playerNotice.set(''), 3500)
+    return () => clearTimeout(t)
+  })
+
+  let downWasOnButton = false
+  function noteDownTarget(e: PointerEvent) {
+    downWasOnButton = !!(e.target as Element | null)?.closest?.('button')
+  }
+  function suppressGhostClick(e: MouseEvent) {
+    if (!downWasOnButton && (e.target as Element | null)?.closest?.('button')) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+  }
 
   // --- Scrub thumbnail preview (debounced + cached, best-effort; falls back to the time bubble) ---
   let thumbUrl = $state<string | null>(null)
@@ -1103,13 +1144,22 @@
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
   <section bind:this={rootEl} class="video-frame relative touch-none bg-transparent"
     style:transform={`translate3d(0, ${pullTranslateY}px, 0) scale(${pullScale})`}
-    onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture} role="presentation">
+    onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture}
+    onpointerdowncapture={noteDownTarget} onclickcapture={suppressGhostClick} role="presentation">
   <!-- Loading with the controls hidden (or locked): the spinner is the only thing on screen, so it
        still reads as "working on it" without a tap. With controls up it moves into the transport
        button below instead, so the play/pause target is never taken away. -->
-  {#if loading && (!controlsShown || locked)}
+  {#if (loading || recovering) && (!controlsShown || locked)}
     <div transition:fade={{ duration: 150 }} class="pointer-events-none absolute inset-0 grid place-items-center">
       <BufferSpinner size={48} />
+    </div>
+  {/if}
+  <!-- Transient toast (auto-advance failures, recovery progress, "no later episode yet"). The
+       desktop overlay renders $playerNotice; Android never did, so every one of those messages
+       was written into the void and failures looked like silent no-ops. -->
+  {#if $playerNotice}
+    <div transition:fade={{ duration: 150 }} class="pointer-events-none absolute inset-x-0 top-[calc(var(--player-safe-top,0px)+12px)] z-40 flex justify-center px-6">
+      <span class="max-w-full truncate rounded-full bg-black/75 px-4 py-1.5 text-sm font-bold">{$playerNotice}</span>
     </div>
   {/if}
 
@@ -1187,8 +1237,8 @@
          its hit target (you can still pause a stream that is still buffering). -->
     <div in:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
       <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
-      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={loading ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading}>
-        {#if loading}
+      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={loading || recovering ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading || recovering}>
+        {#if loading || recovering}
           <span in:fade={{ duration: 120 }} class="grid place-items-center">
             <BufferSpinner size={40} />
           </span>

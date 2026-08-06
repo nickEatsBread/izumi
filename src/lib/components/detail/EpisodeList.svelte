@@ -185,7 +185,27 @@
   function startSelect() { selecting = true; selected = new Set(); followNew = !!subscription }
   function cancelSelect() { selecting = false; selected = new Set(); followNew = false }
   const allAiredSelected = $derived(aired > 0 && selected.size >= aired)
-  function toggleAllAired() { selected = allAiredSelected ? new Set() : new Set(airedList) }
+  function toggleAllAired() { h.select(); selected = allAiredSelected ? new Set() : new Set(airedList) }
+  // One-line echo of the Settings → Downloads matching rules, so select mode says what it will
+  // actually fetch instead of shipping a bare "Matching settings" link to go find out.
+  const AUDIO_LABEL = { any: 'Any audio', sub: 'Subbed', dub: 'Dubbed' } as const
+  const matchSummary = $derived(
+    [
+      $downloadQuality === 'any' ? 'Any quality' : `${$downloadQuality}p`,
+      AUDIO_LABEL[$downloadAudio],
+      $downloadCodec === 'any' ? null : $downloadCodec.toUpperCase(),
+      $downloadCachedOnly ? 'Cached only' : null,
+    ].filter(Boolean).join(' · '),
+  )
+  // Nothing to apply unless episodes are picked or the auto-download subscription actually changed.
+  const applyDisabled = $derived(!selected.size && followNew === !!subscription)
+  const applyLabel = $derived(
+    selected.size
+      ? `Download ${selected.size} episode${selected.size === 1 ? '' : 's'}`
+      : followNew !== !!subscription
+        ? (followNew ? 'Turn on auto-download' : 'Turn off auto-download')
+        : 'Tap episodes to select',
+  )
   function confirmDownload() {
     if (!selected.size && followNew === !!subscription) return
     if (selected.size) {
@@ -259,6 +279,38 @@
         </details>
       {/if}
     </div>
+    {#if selecting && $isMobile}
+      <!-- Mobile select mode. The desktop toolbar is a row of chips of mismatched heights; dropped
+           into the 2-column mobile grid it wrapped into a scattered mess (a bare label sharing a row
+           with a button, a tiny text link floating next to a checkbox). On mobile it's one panel of
+           full-width rows in reading order — count/cancel, select-all, auto-download, what will be
+           matched — with the primary action pinned to a bottom bar so it stays under the thumb while
+           you scroll the grid tapping episodes. -->
+      <div class="mb-4 rounded-xl border border-border bg-card p-3">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-base font-black leading-tight">{selected.size ? `${selected.size} selected` : 'Select episodes'}</p>
+            <p class="mt-0.5 text-xs text-muted-foreground">Tap episodes below to pick them.</p>
+          </div>
+          <button data-focusable onclick={cancelSelect}
+                  class="-mr-1 -mt-1 flex h-11 shrink-0 items-center rounded-lg px-3 text-sm font-bold text-muted-foreground transition-colors active:bg-accent">
+            Cancel
+          </button>
+        </div>
+        <button data-focusable onclick={toggleAllAired}
+                class="mt-2 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-secondary text-sm font-bold transition-colors active:bg-accent">
+          <ListChecks size={16} /> {allAiredSelected ? 'Clear selection' : `Select all aired (${aired})`}
+        </button>
+        <label class="mt-2 flex min-h-12 cursor-pointer items-center gap-3 rounded-lg bg-secondary px-3 py-2 text-sm font-bold">
+          <input data-focusable type="checkbox" bind:checked={followNew} class="size-5 shrink-0 accent-theme" />
+          <span class="flex-1">Auto-download new episodes</span>
+        </label>
+        <div class="mt-2 flex items-center gap-2 px-1">
+          <p class="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={matchSummary}>{matchSummary}</p>
+          <a data-focusable href="/app/settings/downloads" class="shrink-0 rounded px-1 py-1 text-xs font-bold text-theme">Change</a>
+        </div>
+      </div>
+    {:else}
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !selecting}
         {#if !$isMobile}
@@ -287,10 +339,11 @@
           <input data-focusable type="checkbox" bind:checked={followNew} />
           Auto-download new episodes
         </label>
-        <a data-focusable href="/app/settings/downloads" class="text-xs font-bold text-theme hover:underline">Matching settings</a>
-        <button data-focusable disabled={!selected.size && followNew === !!subscription} onclick={confirmDownload}
+        <a data-focusable href="/app/settings/downloads" title={matchSummary}
+           class="text-sm font-bold text-theme hover:underline">{matchSummary}</a>
+        <button data-focusable disabled={applyDisabled} onclick={confirmDownload}
                 class="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-40">
-          <Download size={15} /> Apply{selected.size ? ` · Download ${selected.size}` : ''}
+          <Download size={15} /> {applyLabel}
         </button>
         <button data-focusable onclick={cancelSelect}
                 class="ml-auto rounded-md px-3 py-1.5 text-sm font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
@@ -298,6 +351,7 @@
         </button>
       {/if}
     </div>
+    {/if}
     {#if !selecting && subscription}
       <p class="mb-3 text-xs font-bold text-theme">Auto-download is watching for episode {subscription.nextEpisode}.</p>
     {/if}
@@ -408,6 +462,20 @@
       <span class="text-muted-foreground">Episodes {startIdx + 1}–{startIdx + eps.length} of {total} · page {curPage + 1}/{pages}</span>
       <button data-focusable disabled={curPage >= pages - 1} onclick={() => (page = curPage + 1)}
               class="rounded bg-secondary px-4 py-2.5 disabled:opacity-40 sm:py-1">Next</button>
+    </div>
+  {/if}
+
+  {#if selecting && $isMobile}
+    <!-- Sits above the bottom tab bar (z-30) and is taller than it, so select mode owns the bottom
+         edge exactly like an Android contextual action bar — you can't navigate away mid-selection
+         by mis-tapping a tab. The spacer keeps the last episode row and the pager clear of it. -->
+    <div class="h-28" aria-hidden="true"></div>
+    <div class="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-3 pt-3 backdrop-blur"
+         style="padding-bottom: max(0.75rem, env(safe-area-inset-bottom));">
+      <button data-focusable disabled={applyDisabled} onclick={confirmDownload}
+              class="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-black text-primary-foreground transition-opacity active:opacity-90 disabled:opacity-40">
+        <Download size={17} /> {applyLabel}
+      </button>
     </div>
   {/if}
 {:else if next?.episode}
