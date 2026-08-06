@@ -150,4 +150,39 @@ describe('playback recovery watchdog', () => {
       position: 30,
     })).recover).toBe(false)
   })
+
+  it('never recovers a stream whose position is advancing, even with the frame flag lost', () => {
+    // The flag rides a presentation event that can be lost (Android PLAYBACK_RESTART). A healthy
+    // torrent then sat in the never-started branch forever and recovery fired on every
+    // startup-timeout lap — "P2P source is too slow" while playback was visibly fine.
+    let state = resetRecoveryWatch(1_000)
+    for (let tick = 1; tick <= 90; tick++) {
+      const now = 1_000 + tick * 1_000
+      const decision = recoveryWatchDecision(state, signal(now, {
+        firstFrame: false,
+        position: tick, // the clock is moving one second per tick
+        networkBytes: 0, // fully-downloaded torrent: no new bytes this session
+        startTimeoutMs: DIRECT_TORRENT_START_TIMEOUT_MS,
+        minimumStartupBytesPerSecond: 100_000,
+      }))
+      state = decision.state
+      expect(decision.recover).toBe(false)
+    }
+  })
+
+  it('still recovers a frameless stream frozen at a nonzero position', () => {
+    // Loaded at a resume offset, clock never moves: the advancing-clock guard lapses after the
+    // stall window and the startup timeout takes over as before.
+    let state = resetRecoveryWatch(1_000)
+    ;({ state } = recoveryWatchDecision(state, signal(2_000, { position: 47.3 })))
+    const later = 2_000 + Math.max(STALL_TIMEOUT_MS, START_TIMEOUT_MS)
+    expect(recoveryWatchDecision(state, signal(later, { position: 47.3 })).recover).toBe(true)
+  })
+
+  it('keeps the plain never-started timeout for a stream stuck at zero', () => {
+    const state = resetRecoveryWatch(1_000)
+    const decision = recoveryWatchDecision(state, signal(1_000 + START_TIMEOUT_MS, { position: 0 }))
+    expect(decision.recover).toBe(true)
+    expect(decision.reason).toBe('never-started')
+  })
 })
