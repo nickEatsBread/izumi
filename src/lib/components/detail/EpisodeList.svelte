@@ -14,6 +14,7 @@
     absoluteEpisodeNumbers,
   } from '$lib/settings/ui'
   import { localHistory, sessionProgress, manualProgressOverrides, setLocalProgress } from '$lib/player/history'
+  import { positions, progressKey, episodeBarPercent } from '$lib/player/progress'
   import { updateProgress } from '$lib/trackers'
   import { anilistToken, malToken } from '$lib/trackers/config'
   import { episodeLabels, episodeNumberLabel } from '$lib/anilist/episode-labels'
@@ -409,6 +410,11 @@
         {@const dl = $downloads[keyFor(media.id, ep)]}
         {@const sel = selecting && selected.has(ep)}
         {@const labels = episodeLabels(ep, meta[ep]?.title, $hideSpoilers && watchedThrough < ep)}
+        <!-- Watched state, same derivation the cards use. The compact layout previously read
+             `watchedThrough` ONLY to blur spoilers, so a fully-watched season looked completely
+             unwatched here while the card layout showed every episode finished. -->
+        {@const done = watchedThrough >= ep}
+        {@const pct = episodeBarPercent($positions[progressKey(media.id, ep)], done, released)}
         <div
           data-focusable
           role="button"
@@ -418,7 +424,7 @@
           onclick={() => { if (!resolving) { h.tap(); tap(ep) } }}
           onkeydown={(e) => { if (!resolving && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); tap(ep) } }}
           title={selecting ? (released ? (sel ? 'Selected — tap to unselect' : 'Tap to select') : 'Not yet aired') : released ? `Play episode ${ep}${filler ? ' (filler)' : ''}` : isNext ? `Airing in ${countdown(next?.timeUntilAiring)}` : 'Not yet aired'}
-          class="group flex items-center gap-3 rounded-md px-2.5 py-1.5 text-left transition-colors sm:px-3 sm:py-2
+          class="group relative flex items-center gap-3 overflow-hidden rounded-md px-2.5 py-1.5 text-left transition-colors sm:px-3 sm:py-2
             {released ? 'cursor-pointer bg-secondary hover:bg-accent' : 'cursor-not-allowed bg-background/40 opacity-60'} {filler ? 'ring-1 ring-yellow-400/70' : ''} {sel ? 'ring-2 ring-primary' : ''}"
         >
           {#if selecting && released}
@@ -426,7 +432,10 @@
               <Check size={16} />
             </span>
           {:else}
-            <span class="grid h-7 min-w-7 shrink-0 place-items-center rounded bg-background/40 px-1 text-sm font-black sm:h-8 sm:min-w-8">{numberLabel(ep)}</span>
+            <!-- The number chip carries the watched state: it stays a NUMBER (identity is what you
+                 scan for in this layout) but takes the theme tint, so a finished season reads as
+                 finished at a glance without hiding which episode is which. -->
+            <span class="grid h-7 min-w-7 shrink-0 place-items-center rounded px-1 text-sm font-black sm:h-8 sm:min-w-8 {done ? 'bg-theme/25 text-theme' : 'bg-background/40'}">{numberLabel(ep)}</span>
           {/if}
           <span class="min-w-0 flex-1">
             <span class="flex items-center gap-1.5">
@@ -449,6 +458,11 @@
               {:else if dl.status === 'queued'}<Loader size={13} class="animate-spin text-muted-foreground" />
               {:else}<Pause size={12} class="text-amber-400" />{/if}
             </span>
+          {/if}
+          <!-- Resume/watched bar, identical to the card layout: a real saved position wins, and a
+               tracker-counted episode fills it as the fallback. -->
+          {#if pct > 0 && !selecting}
+            <span class="absolute inset-x-0 bottom-0 h-0.5 bg-white/15"><span class="block h-full bg-theme" style={`width:${pct}%`}></span></span>
           {/if}
         </div>
       {/each}
