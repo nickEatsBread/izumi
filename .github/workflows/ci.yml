@@ -60,6 +60,9 @@ jobs:
         working-directory: src-tauri
         run: cargo check
 
-      - name: Extension package validator tests
+      # Full test run: in-crate #[cfg(test)] units AND the integration tests. This was
+      # `cargo test --test extension_package` for a while, which silently skipped every
+      # in-crate test (~60 of them) on every CI run.
+      - name: Rust tests
         working-directory: src-tauri
-        run: cargo test --test extension_package
+        run: cargo test
