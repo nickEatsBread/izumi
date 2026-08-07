@@ -34,6 +34,7 @@ import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
 import { normalizeLang } from './sublang'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
+import { cancelExtensionFetches } from '$lib/extensions/fetch-registry'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
@@ -289,11 +290,21 @@ function pushListen<T>(event: string, handler: EventCallback<T>) {
 
 // The in-flight source resolve (playEpisode). A new play or an explicit picker close aborts it
 // so a closed resolve settles to idle at once instead of leaving its caller stuck in `resolving`.
-// A superseded resolve stays silent because the newer request now owns caller state. The fetches
-// themselves are best-effort and may finish harmlessly in the background.
+// A superseded resolve stays silent because the newer request now owns caller state. The signal
+// also cancels the addon stream fetches themselves (only the session-cached manifest lookups run
+// to completion); an explicit pick/close additionally cuts the bridged extension fetches — see
+// cancelExtensionFetches below. A supersede-by-new-play deliberately does NOT cut those: they
+// usually belong to the same title, and their settled answers warm the memo cache the
+// replacement resolve is about to read.
 let resolveAbort: AbortController | null = null
 /** Abort the in-flight source resolve — called when the picker is closed (X / click-off / Esc). */
-export function cancelResolve() { resolveAbort?.abort(); resolveAbort = null }
+export function cancelResolve() {
+  resolveAbort?.abort()
+  resolveAbort = null
+  // The fetches were "best-effort background" once; on a click they are contention on the very
+  // lanes the picked source needs. Cut them loose — reissued fresh next resolve.
+  cancelExtensionFetches()
+}
 
 // The in-flight DEBRID resolve (playStream's add/select/poll chain). Owned by the newest
 // playStream: starting another play aborts the previous chain so a superseded uncached pick
