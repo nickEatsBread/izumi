@@ -2862,7 +2862,8 @@ async fn oauth_capture(
 /// Better-Auth session token, its `da_session` bridge, …) are invisible to JS and never sent
 /// cross-site, so the native CookieManager is the only way to reach them for an authenticated POST.
 /// We send the WHOLE jar (not one cookie) so whichever auth cookie the server wants is present. Times
-/// out to "" so a missing async callback can't hang the caller. Windows-only; "" elsewhere.
+/// out to "" so a missing async callback can't hang the caller. Windows uses the WebView2 API
+/// directly (Tauri's own reader deadlocks there); other desktops go through Tauri's `cookies_for_url`.
 #[cfg(windows)]
 async fn read_cookies(window: tauri::WebviewWindow, uri: String) -> String {
     use webview2_com::GetCookiesCompletedHandler;
@@ -2937,7 +2938,35 @@ async fn read_cookies(window: tauri::WebviewWindow, uri: String) -> String {
     }
 }
 
-#[cfg(not(windows))]
+/// Linux/macOS cookie read. WebKitGTK has no public "give me the header" call, but Tauri exposes the
+/// webview cookie store via `cookies_for_url` (wry drives WebKit's cookie manager, so httpOnly cookies
+/// come through — same reason we need the native path at all). Two hazards it works around: the wry
+/// implementation pumps the GTK main loop inside the runtime's event loop, so it must be dispatched
+/// from a NON-main thread (hence `spawn_blocking`, never an inline call on this task), and it blocks
+/// its caller with no internal timeout, so a wedged read is capped here instead of hanging a reaction.
+#[cfg(not(any(windows, target_os = "android")))]
+async fn read_cookies(window: tauri::WebviewWindow, uri: String) -> String {
+    let Ok(url) = uri.parse::<tauri::Url>() else {
+        return String::new();
+    };
+    let read = tauri::async_runtime::spawn_blocking(move || match window.cookies_for_url(url) {
+        Ok(cookies) => cookies
+            .iter()
+            .map(|c| format!("{}={}", c.name(), c.value()))
+            .collect::<Vec<_>>()
+            .join("; "),
+        Err(e) => {
+            eprintln!("[cookies] read failed: {e}");
+            String::new()
+        }
+    });
+    match tokio::time::timeout(std::time::Duration::from_secs(6), read).await {
+        Ok(Ok(v)) => v,
+        _ => String::new(),
+    }
+}
+
+#[cfg(target_os = "android")]
 async fn read_cookies(_window: tauri::WebviewWindow, _uri: String) -> String {
     String::new()
 }
@@ -3093,19 +3122,42 @@ async fn da_login(app: tauri::AppHandle, base: String) -> Result<bool, String> {
         .on_new_window(|_u, _f| tauri::webview::NewWindowResponse::Allow) // Disqus OAuth may use a popup
         .build()
         .map_err(|e| e.to_string())?;
+    // The cookie poll is the primary signal, but it only fires when the platform can read the jar.
+    // Backstop: discussanime ends the OAuth round trip by redirecting the window back to its own site
+    // outside /auth/ (its homepage). Once we've seen the flow leave and come back, the login is over —
+    // give the cookie a couple more reads, then close regardless so a failed read can't strand the
+    // window open for the full 5-minute timeout.
+    let site_host = url::Url::parse(&format!("{base}/"))
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string));
+    let mut left_auth = true; // the window opens ON /auth/disqus/login
+    let mut settle: u8 = 0;
     let mut waited: u64 = 0;
     loop {
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
         waited += 800;
-        if win.url().is_err() {
-            break;
-        } // user closed the window
-        let c = read_cookies(win.clone(), format!("{base}/")).await;
+        let Ok(current) = win.url() else { break }; // user closed the window
+        // Read through the main window, not the login one: the jar is shared by every webview in the
+        // app, and the login window can be torn down mid-read (the user closing it) — which on the
+        // GTK backend means blocking on a callback the dead webview will never fire.
+        let reader = app.get_webview_window("main").unwrap_or_else(|| win.clone());
+        let c = read_cookies(reader, format!("{base}/")).await;
         if has_auth_cookie(&c) {
             eprintln!("[da_login] session cookie appeared — signed in");
             *DA_COOKIES.lock().unwrap() = Some(c);
             let _ = win.close();
             return Ok(true);
+        }
+        let on_site = site_host.as_deref() == current.host_str();
+        let in_auth = current.path().contains("/auth");
+        if on_site && in_auth {
+            left_auth = true; // the /auth/… hop we opened, or the provider handing back
+        } else if on_site && left_auth {
+            settle += 1;
+            if settle >= 3 {
+                eprintln!("[da_login] back on the site with no readable session — closing");
+                break;
+            }
         }
         if waited > 300_000 {
             break;
