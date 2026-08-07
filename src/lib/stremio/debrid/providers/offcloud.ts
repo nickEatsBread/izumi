@@ -24,12 +24,13 @@ import type { DebridProvider, DebridInfo } from '../types'
 const BASE = 'https://offcloud.com/api'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function oc(method: string, path: string, key: string, body?: unknown): Promise<any> {
+async function oc(method: string, path: string, key: string, body?: unknown, priority?: boolean): Promise<any> {
   const sep = path.includes('?') ? '&' : '?'
   const { status, json } = await jfetch(`${BASE}${path}${sep}key=${encodeURIComponent(key)}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    priority,
   })
   const auth = authError('Offcloud', { status, message: json?.error })
   if (auth) throw new Error(auth)
@@ -66,15 +67,15 @@ export function ocFiles(explore: any): OcFile[] {
 
 /** Current status of one request: history first (current API), legacy per-request
  *  status endpoint as a fall back. Undefined when neither knows it yet. */
-async function ocRequestStatus(key: string, rid: string): Promise<string | undefined> {
+async function ocRequestStatus(key: string, rid: string, priority?: boolean): Promise<string | undefined> {
   try {
-    const hist = await oc('GET', '/cloud/history', key)
+    const hist = await oc('GET', '/cloud/history', key, undefined, priority)
     const items = Array.isArray(hist) ? hist : (hist?.history ?? [])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const it = items.find((x: any) => x?.requestId === rid)
     if (it?.status) return it.status
   } catch { /* endpoint absent on the legacy API — fall through */ }
-  const st = await oc('POST', '/cloud/status', key, { requestId: rid })
+  const st = await oc('POST', '/cloud/status', key, { requestId: rid }, priority)
   return st?.status?.status ?? st?.status
 }
 
@@ -96,7 +97,7 @@ export const offcloud: DebridProvider = {
     // the torrent anyway or serves a link to a different release. Decline instead: noAdd's
     // contract is that nothing speculative is ever created.
     if (opts?.noAdd) throw new Error("Offcloud needs to add this release, which background prefetch isn't allowed to do.")
-    const add = await oc('POST', '/cloud', key, { url: magnetOf(hashOrMagnet) })
+    const add = await oc('POST', '/cloud', key, { url: magnetOf(hashOrMagnet) }, opts?.priority)
     if (add?.not_available) throw new Error(`Offcloud can't take that link on your plan (${add.not_available} add-on required).`)
     if (add?.status === 'error' || !add?.requestId) throw new Error(add?.error ?? 'Offcloud rejected the magnet (cloud add-on required?).')
     const rid: string = add.requestId
@@ -104,14 +105,14 @@ export const offcloud: DebridProvider = {
     // an immediate round-trip (cached torrents come back 'downloaded' right here).
     let known: string | undefined = add.status
     await poll(async () => {
-      const s = known ?? await ocRequestStatus(key, rid)
+      const s = known ?? await ocRequestStatus(key, rid, opts?.priority)
       known = undefined
       return ocStatus(s)
     }, opts)
     let files: OcFile[] = []
     // Legacy single-file torrents skip explore and expose the link on the add response —
     // that fallback is the only reason an explore failure is ever swallowed.
-    try { files = ocFiles(await oc('GET', `/cloud/explore/${rid}?format=detailed`, key)) }
+    try { files = ocFiles(await oc('GET', `/cloud/explore/${rid}?format=detailed`, key, undefined, opts?.priority)) }
     catch (e) { if (!add.url) throw e }
     if (!files.length && add.url) files = ocFiles([add.url])
     const best = pickVideoFile(files, opts?.want) ?? files[0]

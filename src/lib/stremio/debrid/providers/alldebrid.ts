@@ -7,11 +7,12 @@ import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridAccountI
 
 const BASE = 'https://api.alldebrid.com'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ad(path: string, key: string, body: string): Promise<any> {
+async function ad(path: string, key: string, body: string, priority?: boolean): Promise<any> {
   const { status, json } = await jfetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    priority,
   })
   if (json?.status !== 'success') {
     const auth = authError('AllDebrid', { status, code: json?.error?.code, message: json?.error?.message })
@@ -129,29 +130,29 @@ export const alldebrid: DebridProvider = {
       // Background prefetch may only serve what the account already holds: magnet/upload creates
       // a permanent entry, which is exactly the "torrent the user didn't ask for" noAdd forbids.
       // AllDebrid has no get-by-hash endpoint, so scan the account's magnet list instead.
-      const list = await ad('/v4.1/magnet/status', key, form({})).catch(() => undefined)
+      const list = await ad('/v4.1/magnet/status', key, form({}), opts?.priority).catch(() => undefined)
       const existing = adFindReady(list?.magnets, hashOf(hashOrMagnet))
       if (!existing) throw new Error("AllDebrid needs to add this release, which background prefetch isn't allowed to do.")
       id = existing
     }
     else {
-      const up = await ad('/v4/magnet/upload', key, form({ 'magnets[]': magnetOf(hashOrMagnet) }))
+      const up = await ad('/v4/magnet/upload', key, form({ 'magnets[]': magnetOf(hashOrMagnet) }), opts?.priority)
       const m = up.magnets?.[0]
       if (m?.error) throw new Error(m.error.message ?? 'AllDebrid rejected the magnet.')
       id = String(m.id)
     }
     await poll(async () => {
-      const st = (await ad('/v4.1/magnet/status', key, form({ id }))).magnets
+      const st = (await ad('/v4.1/magnet/status', key, form({ id }), opts?.priority)).magnets
       const s = Array.isArray(st) ? st[0] : st
       return adStatus(s)
     }, opts)
-    const tree = (await ad('/v4/magnet/files', key, form({ 'id[]': id })))?.magnets?.[0]?.files ?? []
+    const tree = (await ad('/v4/magnet/files', key, form({ 'id[]': id }), opts?.priority))?.magnets?.[0]?.files ?? []
     const flat: { name: string; bytes: number; link: string }[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(function walk(ns: any[]) { for (const n of ns) { if (n.e) walk(n.e); else flat.push({ name: n.n, bytes: n.s ?? 0, link: n.l }) } })(tree)
     const best = pickVideoFile(flat, opts?.want)
     if (!best?.link) throw new Error('No playable file in that torrent.')
-    const unlocked = await ad('/v4/link/unlock', key, form({ link: best.link }))
+    const unlocked = await ad('/v4/link/unlock', key, form({ link: best.link }), opts?.priority)
     return unlocked.link ?? unlocked.download
   },
   async listItems(key) {

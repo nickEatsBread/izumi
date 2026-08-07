@@ -19,9 +19,9 @@ import type { DebridProvider, DebridInfo } from '../types'
 const BASE = 'https://www.mega-debrid.eu/api.php'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function md(action: string, params: Record<string, string>, body?: string): Promise<any> {
+async function md(action: string, params: Record<string, string>, body?: string, priority?: boolean): Promise<any> {
   const qs = new URLSearchParams({ action, ...params }).toString()
-  const { ok, status, json } = await jfetch(`${BASE}?${qs}`, body ? { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body } : {})
+  const { ok, status, json } = await jfetch(`${BASE}?${qs}`, body ? { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, priority } : { priority })
   if (!ok) throw new Error(authError('Mega-Debrid', { status }, 'login') ?? `Mega-Debrid request failed (${status}).`)
   if (json?.response_code && json.response_code !== 'ok') throw new Error(authError('Mega-Debrid', { code: json?.response_code, message: json?.response_text }, 'login') ?? json?.response_text ?? 'Mega-Debrid request failed.')
   return json
@@ -80,17 +80,17 @@ export const megadebrid: DebridProvider = {
     if (opts?.noAdd) throw new Error("Mega-Debrid needs to add this release, which background prefetch isn't allowed to do.")
     const [login, password] = (cred ?? '').split(':')
     if (!login || !password) throw new Error('Mega-Debrid needs "username:password" in the key field.')
-    const token = (await md('connectUser', { login, password })).token
+    const token = (await md('connectUser', { login, password }, undefined, opts?.priority)).token
     if (!token) throw new Error('Mega-Debrid login failed.')
     // Documented free-account marker: the token slot carries "vip_end" instead of a token.
     if (token === 'vip_end') throw new Error('Mega-Debrid: access denied — this API is premium-only and your account looks free or expired.')
-    const up = await md('uploadTorrent', { token }, form({ magnet: magnetOf(hashOrMagnet) }))
+    const up = await md('uploadTorrent', { token }, form({ magnet: magnetOf(hashOrMagnet) }), opts?.priority)
     // uploadTorrent answers { newTorrent: { name, size, hash } } — that hash is the key
     // getTorrent wants. Fall back to the magnet's own btih if the field is missing.
     const hash = up?.newTorrent?.hash ?? hashOf(hashOrMagnet)
     let torrent: MdTorrent | undefined
     await poll(async () => {
-      const r = await md('getTorrent', { token }, form({ hash }))
+      const r = await md('getTorrent', { token }, form({ hash }), opts?.priority)
       // The detail payload is nested under "status" (docs); tolerate a flat shape too.
       torrent = r && typeof r.status === 'object' ? r.status : r
       return mdStatus(torrent)
