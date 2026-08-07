@@ -16,10 +16,12 @@ use tokio::sync::{watch, Semaphore};
 const GLOBAL_CONCURRENCY: usize = 12;
 const EXTENSION_CONCURRENCY: usize = 6;
 const BACKGROUND_CONCURRENCY: usize = 8;
+const PLAYBACK_CONCURRENCY: usize = 4;
 
 static GLOBAL_GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static EXTENSION_GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static BACKGROUND_GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
+static PLAYBACK_GATE: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static ACTIVE: OnceLock<Mutex<HashMap<String, watch::Sender<bool>>>> = OnceLock::new();
 
 #[derive(Clone, Copy)]
@@ -29,6 +31,10 @@ pub(crate) enum RequestClass {
     /// Bulk/long-lived traffic (debrid resolves, cache probes): its own pool, NEVER a global
     /// permit — however oversubscribed it gets, the UI's metadata lane keeps its full capacity.
     Background,
+    /// The click-to-play critical path (the debrid chain behind a user's source pick). Its own
+    /// small pool and NEVER a global permit: however busy list-population traffic is, a pick
+    /// the user just made must not queue behind it.
+    Playback,
 }
 
 fn global_gate() -> Arc<Semaphore> {
@@ -46,6 +52,12 @@ fn extension_gate() -> Arc<Semaphore> {
 fn background_gate() -> Arc<Semaphore> {
     BACKGROUND_GATE
         .get_or_init(|| Arc::new(Semaphore::new(BACKGROUND_CONCURRENCY)))
+        .clone()
+}
+
+fn playback_gate() -> Arc<Semaphore> {
+    PLAYBACK_GATE
+        .get_or_init(|| Arc::new(Semaphore::new(PLAYBACK_CONCURRENCY)))
         .clone()
 }
 
@@ -107,7 +119,7 @@ where
         // only then a global one: the old order (global → extension) let every queued extension
         // request dead-hold a global permit, so 12 in-flight ext_fetch calls consumed the entire
         // global pool while only 6 did any work — and metadata requests got nothing. Background
-        // requests never touch the global gate at all.
+        // and playback requests never touch the global gate at all.
         let _class_permit = match class {
             RequestClass::Metadata => None,
             RequestClass::Extension => Some(
@@ -122,9 +134,15 @@ where
                     .await
                     .map_err(|_| "background request gate closed".to_string())?,
             ),
+            RequestClass::Playback => Some(
+                playback_gate()
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| "playback request gate closed".to_string())?,
+            ),
         };
         let _global = match class {
-            RequestClass::Background => None,
+            RequestClass::Background | RequestClass::Playback => None,
             _ => Some(
                 global_gate()
                     .acquire_owned()
@@ -275,5 +293,51 @@ mod tests {
         assert_eq!(task.await.unwrap().unwrap_err(), "request cancelled");
         assert!(!is_active("cancel-test"));
         assert!(!cancel("cancel-test"));
+    }
+
+    #[tokio::test]
+    async fn playback_lane_ignores_saturation_of_every_other_lane() {
+        // Saturate EVERY other lane with permits that never release: background, extension
+        // (which also eats a global permit each) and enough metadata to drain the global gate.
+        // NB: a request id is required — `run(None, …)` drops its cancellation sender
+        // immediately and settles as cancelled, so an id-less request would never hold its
+        // permit.
+        let saturate = |class: RequestClass, count: usize, tag: &'static str| -> Vec<_> {
+            (0..count)
+                .map(|i| {
+                    tokio::spawn(run(
+                        Some(format!("{tag}-saturate-{i}")),
+                        Duration::from_secs(5),
+                        class,
+                        std::future::pending::<Result<(), String>>(),
+                    ))
+                })
+                .collect()
+        };
+        let mut held = saturate(RequestClass::Background, BACKGROUND_CONCURRENCY, "bg");
+        held.extend(saturate(RequestClass::Extension, EXTENSION_CONCURRENCY, "ext"));
+        held.extend(saturate(RequestClass::Metadata, GLOBAL_CONCURRENCY, "meta"));
+        tokio::task::yield_now().await;
+        // Deterministic guard against a scheduler that hasn't run the holds yet: the other
+        // lanes must be VERIFIABLY exhausted before the playback probe means anything.
+        assert_eq!(background_gate().available_permits(), 0);
+        assert_eq!(extension_gate().available_permits(), 0);
+        assert_eq!(global_gate().available_permits(), 0);
+        // A playback request must still complete promptly.
+        let result = tokio::time::timeout(
+            Duration::from_millis(500),
+            run(
+                Some("playback-priority-test".into()),
+                Duration::from_secs(5),
+                RequestClass::Playback,
+                async { Ok::<_, String>(()) },
+            ),
+        )
+        .await;
+        let inner = result.expect("playback request queued behind the saturated lanes");
+        assert!(inner.is_ok(), "playback run errored: {inner:?}");
+        for h in held {
+            h.abort();
+        }
     }
 }
