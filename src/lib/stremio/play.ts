@@ -1096,6 +1096,41 @@ export async function playEpisode(
         return played
       })()
     }
+    // FAST PATH: the source that last worked for this series, queried ALONE (resolveRememberedSource
+    // passes its origin id as `onlyId`, so it costs one provider's round trip instead of the whole
+    // sweep). Continue Watching has always done this; a plain episode click paid the full fan-out
+    // every time even though the answer was usually already known.
+    //
+    // Raced, never substituted: the fan-out below keeps running, so a stale or dead remembered
+    // origin costs nothing but one concurrent query. Whichever produces playable video first wins,
+    // and only a fast-path failure lets the picker appear — which is exactly the old behaviour.
+    //
+    // Skipped for a continuation (that path is already speculative — two speculative plays racing
+    // would fight over the same player) and whenever the user asked to choose by hand.
+    let fastAttempt: Promise<boolean> | null = null
+    const remembered = !cont && !options.forceManual && get(autoSelectSource) && episode != null
+      ? get(sourceOrigins)[media.id]
+      : undefined
+    if (remembered && episode != null) {
+      // Narrowing does not survive into the async closure below, so pin the episode here.
+      const fastEpisode = episode
+      // Hidden like a continuation: the connecting screen holds the user, rather than a picker
+      // that flashes up and vanishes the moment the fast path lands.
+      hideForContinuation = true
+      streamPicker.update((c) => c ? { ...c, hidden: true } : c)
+      fastAttempt = (async () => {
+        const stream = await resolveRememberedSource(media, fastEpisode, remembered).catch(() => undefined)
+        if (!stream || !stillCurrent()) return false
+        let played = false
+        await playStream(media, episode, stream, (state) => {
+          const result = applyContinuationState(state, () => streamPicker.set(null), onState)
+          played ||= result.played
+          // Deliberately NOT recorded into continuationError: a dead remembered source is not
+          // something to report, it is something to silently fall back from.
+        }, { autoplay })
+        return played
+      })()
+    }
     // Autoplay readiness. Three ways to become ready, earliest wins:
     //   * the pick we would actually commit to is cached, in the user's language and past the
     //     season gate, and has HELD that position for 350ms (so a better row arriving mid-hold
@@ -1222,6 +1257,10 @@ export async function playEpisode(
       // fold in harmlessly (refresh() no-ops once the picker is no longer ours), but we settle now.
       if (signal.aborted) return resolve()
       signal.addEventListener('abort', () => resolve(), { once: true })
+      // A fast-path win must not sit behind the slowest addon's budget — that would hand back the
+      // very latency this path exists to remove. Losing (or erroring) simply leaves the fan-out to
+      // settle normally.
+      void fastAttempt?.then((played) => { if (played) resolve() }).catch(() => {})
       if (!pending) return resolve()
       const done = () => { if (--pending === 0) resolve() }
       if (kitsu != null) {
@@ -1280,6 +1319,13 @@ export async function playEpisode(
           .finally(done)
       }
     })
+    // The fast path may have won the race above (it resolves the wait itself). Settle its real
+    // outcome before anything else touches the picker: a success owns the player from here.
+    if (fastAttempt && await fastAttempt) return
+    // It lost or found nothing, so the picker is the UI again — it was hidden while the fast path
+    // had a chance. Revealed unconditionally rather than only on error, because "no remembered
+    // source could play" is not an error worth showing, just a return to choosing.
+    if (remembered) revealPicker()
     await seasonReady
     // If the picker was closed, settle its caller to idle now so the next click works. If a newer
     // play superseded this one, stay silent because that request now owns the caller's state.
