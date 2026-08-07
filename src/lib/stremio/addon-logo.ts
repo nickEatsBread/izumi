@@ -25,28 +25,11 @@ export function resolveAddonLogo(logo: string | undefined, base: string): string
   }
 }
 
-/** Deterministic fallback tile for an addon with no usable icon. Colour is seeded by identity so a
- *  given addon always looks the same, which makes rows scannable even with no artwork at all. */
-const PALETTE: readonly (readonly [string, string])[] = [
-  ['#f97373', '#b53b3b'],
-  ['#7eb6ff', '#3a6fb8'],
-  ['#9d7af6', '#5d3ec1'],
-  ['#5ad6a4', '#2c8c66'],
-  ['#f4b85a', '#a76f1f'],
-  ['#ec78c9', '#a83a8a'],
-  ['#5ad0d6', '#1f7a85'],
-  ['#c0c8d4', '#5e6677'],
-]
-
-export function logoTile(seed: string, name: string): { initial: string; from: string; to: string } {
-  // Normalised so the same addon keeps one colour whether it is identified by its id, its display
-  // name, or a variant with different punctuation.
-  const key = (seed || name || '?').toLowerCase().replace(/[^a-z0-9]+/g, '')
-  let h = 0
-  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
-  const [from, to] = PALETTE[h % PALETTE.length]
-  return { initial: (name || '?').trim().charAt(0).toUpperCase() || '?', from, to }
-}
+// A source with no usable icon used to get a deterministic colour-hashed tile stamped with its
+// initial, generated here. It has been removed rather than reused: the coloured tiles read as real
+// branding next to real logos, and they were only ever half the story — the store and the
+// extensions list drew a puzzle mark for the same condition. The single fallback now lives in
+// $lib/components/SourcePlaceholder.svelte. Do not reintroduce a generated one.
 
 /** Turn a stored icon into something an <img>/<image> can actually load.
  *

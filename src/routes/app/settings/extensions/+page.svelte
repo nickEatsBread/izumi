@@ -16,11 +16,11 @@
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
   import { accountInfo, providerList, providerMeta, type DebridAccountInfo } from '$lib/stremio/debrid'
   import Boxes from '@lucide/svelte/icons/boxes'
-  import Puzzle from '@lucide/svelte/icons/puzzle'
   import Search from '@lucide/svelte/icons/search'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
+  import SourcePlaceholder from '$lib/components/SourcePlaceholder.svelte'
 
   const current = $derived(providerMeta($debridProvider))
   let account = $state<DebridAccountInfo | null>(null)
@@ -48,7 +48,7 @@
   const installedById = $derived(new Map(localPackages.map((extension) => [extension.id, extension])))
   // Real launcher icons for INSTALLED Aniyomi extensions, keyed by Android package name — which is
   // the same string a catalog entry uses as its id. The catalog itself ships no icons, so anything
-  // not installed (and every JS extension without one) falls through to AddonLogo's generated tile.
+  // not installed (and every JS extension without one) falls through to the shared placeholder.
   let jvmIcons = $state(new Map<string, string>())
   const installedIn = (packages: ExtensionCatalogPackage[]) => packages.filter((p) => installedById.has(p.id))
   const enabledInstalledIn = (packages: ExtensionCatalogPackage[]) =>
@@ -57,7 +57,7 @@
   async function refreshPackages() {
     localPackages = await installedExtensionPackages()
     // After the list, never blocking it: enumerating sources can spin the JVM runtime, and an icon
-    // arriving a moment late just swaps a tile for the real logo.
+    // arriving a moment late just swaps the placeholder for the real logo.
     void jvmExtensionIcons().then((icons) => { jvmIcons = icons })
   }
   async function installFromCatalog(url: string, extension: ExtensionCatalogPackage) {
@@ -312,11 +312,13 @@
                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.2 3.44 9.61 8.2 11.17.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.7-4.04-1.58-4.04-1.58-.55-1.36-1.33-1.73-1.33-1.73-1.09-.73.08-.71.08-.71 1.2.08 1.83 1.21 1.83 1.21 1.07 1.79 2.81 1.27 3.5.97.11-.76.42-1.27.76-1.56-2.67-.3-5.47-1.29-5.47-5.75 0-1.27.47-2.31 1.24-3.12-.12-.3-.54-1.52.12-3.16 0 0 1.01-.32 3.3 1.19a11.6 11.6 0 0 1 3-.39c1.02 0 2.05.13 3 .39 2.29-1.51 3.3-1.19 3.3-1.19.66 1.64.24 2.86.12 3.16.77.81 1.24 1.85 1.24 3.12 0 4.47-2.81 5.45-5.49 5.74.43.36.81 1.08.81 2.18 0 1.57-.01 2.84-.01 3.23 0 .31.22.68.83.56A12.02 12.02 0 0 0 24 12.29C24 5.78 18.63.5 12 .5Z"/></svg>
               </div>
             {:else if m}
-              <!-- Single-plugin source: its own icon, or a tile keyed on the plugin so the row
-                   stays identifiable when the manifest ships none / the icon host is down. -->
+              <!-- Single-plugin source: its own icon, else the shared placeholder AddonLogo falls
+                   back to when the manifest ships none / the icon host is down. -->
               <AddonLogo logo={m.icon} name={m.name} id={m.id} size={40} />
             {:else}
-              <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Puzzle size={18} /></div>
+              <!-- A multi-plugin source has no icon of its own to show. Same placeholder as a
+                   missing one, so there is a single missing-artwork visual across the app. -->
+              <SourcePlaceholder size={40} />
             {/if}
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
@@ -479,7 +481,7 @@
                       {@const pOff = pluginOff(p.id)}
                       <li class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50" class:opacity-50={pOff}>
                         <!-- Manifest icon when the plugin ships one, its Aniyomi launcher icon when
-                             it is an installed JVM package, else the generated tile. -->
+                             it is an installed JVM package, else the shared placeholder. -->
                         <AddonLogo logo={p.icon ?? jvmIcons.get(p.id)} name={p.name} id={p.id} size={24} />
                         <span class="min-w-0 flex-1 truncate text-sm">{p.name}</span>
                         {#if p.lang}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}

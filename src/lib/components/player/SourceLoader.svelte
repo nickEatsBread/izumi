@@ -67,10 +67,15 @@
     <div bind:this={host} class="h-28 w-52" aria-hidden="true"></div>
   {/if}
 
-  <div class="space-y-2">
+  <!-- `w-full min-w-0` is load-bearing: the column centres its children rather than stretching them,
+       so `max-w-md` (28rem) sized the detail line to 448px on a ~360px portrait phone and the release
+       name ran off the screen edge. `truncate` was already there and could not help — it clips
+       INSIDE the box, and the box itself was the thing overflowing. Bounded to the parent, it
+       ellipsizes as intended. -->
+  <div class="w-full min-w-0 space-y-2">
     <p class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
     {#if detail}
-      <p class="max-w-md truncate text-sm text-white/75" {title}>{detail}</p>
+      <p class="mx-auto w-full max-w-md truncate text-sm text-white/75" {title}>{detail}</p>
     {/if}
   </div>
 
