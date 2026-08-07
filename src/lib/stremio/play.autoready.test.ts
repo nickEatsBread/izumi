@@ -59,6 +59,8 @@ vi.mock('$lib/settings/ui', () => ({
   torrentDownloadLimitMbps: readable(0),
   torrentUploadLimitMode: readable('automatic'),
   torrentUpstreamCapacityMbps: readable(0),
+  sourcePriority: readable([]),
+  sourcePriorityMode: readable('prefer'),
 }))
 vi.mock('$lib/player/session', () => ({
   streamPicker: picker,
