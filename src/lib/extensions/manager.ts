@@ -8,6 +8,7 @@ import type { ExtensionCatalogPackage } from './catalog'
 import { extensionSourceConfigured, liveJvmSources } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
 import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
+import { trackFetch, fetchEpoch } from './fetch-registry'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -250,6 +251,10 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
       // forbidden headers (Referer, Origin, Cookie, …). Many streaming embeds gate the actual
       // stream URL on Referer, so plugin-http silently resolved nothing. reqwest forwards every
       // header the extension set. See ext_fetch in lib.rs.
+      // Registered with the fetch registry so a source pick can abort it MID-FLIGHT: the worker
+      // code that issued this fetch is unreachable from the host, and an unaborted ext_fetch holds
+      // a native lane permit for up to 30s — exactly the lanes the picked source now needs.
+      const tracked = trackFetch()
       try {
         const init = m.init ?? {}
         const r = await invokeNativeHttp<{ status: number; url: string; headers: Record<string, string>; setCookie: string[]; body: string }>('ext_fetch', {
@@ -257,10 +262,12 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
           method: init.method,
           headers: init.headers,
           body: typeof init.body === 'string' ? init.body : undefined,
-        })
+        }, { signal: tracked.controller.signal })
         worker.postMessage({ type: 'fetch-result', reqId: m.reqId, res: { ok: r.status >= 200 && r.status < 300, status: r.status, url: r.url, headers: r.headers, setCookie: r.setCookie, body: r.body } })
       } catch (err) {
         worker.postMessage({ type: 'fetch-result', reqId: m.reqId, error: String(err) })
+      } finally {
+        tracked.done()
       }
     } else if (m.type === 'loaded' || m.type === 'result') {
       const w = ext.waits.get(m.id)
@@ -486,6 +493,16 @@ function jvmInvoke<T>(method: string, args: Record<string, unknown>): Promise<T>
 }
 
 async function jvmProviderCall(source: JvmSource, method: string, callArgs: unknown[]): Promise<unknown> {
+  // A bridge call cannot be cancelled mid-flight (the JVM side has no abort channel), so
+  // cancellation is epoch-based: picking a source bumps the fetch epoch, and this guard throws
+  // an AbortError — before the invoke when the pick already happened, and after it when the pick
+  // landed DURING the wait — so the resolver never spends the next hop (getDetail, getVideoList)
+  // on a resolve that has been superseded. noteProblem upstream swallows AbortError, so a
+  // cancelled provider stays silent in the picker instead of reporting a fake failure.
+  const startEpoch = fetchEpoch()
+  const guard = () => {
+    if (fetchEpoch() !== startEpoch) throw new DOMException('Aborted', 'AbortError')
+  }
   if (method === 'getSettings') {
     // JVM getVideoList already returns every server and audio flavour in one response. Marking this
     // prevents the online layer from issuing identical sub + dub calls (and starting two competing
@@ -494,9 +511,11 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
   }
   if (method === 'search') {
     const input = (callArgs[0] ?? {}) as { query?: unknown }
+    guard()
     const response = await jvmInvoke<{ list?: Record<string, unknown>[] }>('search', {
       sourceId: source.id, query: String(input.query ?? ''), page: 1, isAnime: true,
     })
+    guard()
     return (response.list ?? []).map((item) => ({
       id: JSON.stringify({ url: item.url, title: item.title, cover: item.cover }),
       title: String(item.title ?? ''),
@@ -505,6 +524,7 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
   }
   if (method === 'findEpisodes') {
     const identity = JSON.parse(String(callArgs[0] ?? '{}')) as { url?: string; title?: string; cover?: string }
+    guard()
     const detail = await jvmInvoke<{ title?: unknown; episodes?: Record<string, unknown>[] }>('getDetail', {
       sourceId: source.id,
       media: {
@@ -514,6 +534,7 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
       },
       isAnime: true,
     })
+    guard()
     return (detail.episodes ?? [])
       .map((episode) => ({
         id: JSON.stringify({ url: episode.url, name: episode.name }),
@@ -530,10 +551,12 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
     const raw = callArgs[0] as { id?: unknown } | string
     const encoded = typeof raw === 'string' ? raw : raw?.id
     const episode = JSON.parse(String(encoded ?? '{}')) as { url?: string; name?: string }
+    guard()
     const videos = await jvmInvoke<Record<string, unknown>[]>('getVideoList', {
       sourceId: source.id,
       episode: { url: episode.url ?? '', name: episode.name ?? '' },
     })
+    guard()
     const mapped = videos
       .filter((video) => /^https?:\/\//i.test(String(video.url ?? '')))
       .map((video) => {

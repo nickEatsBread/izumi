@@ -417,7 +417,9 @@ export async function resolveOnlineStreams(
       if (best) break
     }
     if (!best) {
-      if (sawFailure && !sawAnswer) noteSearchFailure(failKey)
+      // An abort mid-sweep makes the "every search failed" signal a lie — the provider was cut
+      // off, not dead — and would mute it for the whole cooldown on the next picker open.
+      if (sawFailure && !sawAnswer && !signal?.aborted) noteSearchFailure(failKey)
       return null
     }
     searchFailures.delete(failKey)
