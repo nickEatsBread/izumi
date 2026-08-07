@@ -1646,9 +1646,6 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         #[cfg(target_os = "linux")]
         if wid.is_some() {
             let _ = init.set_option("gpu-context", "x11egl");
-            // TEMP diagnostic: surface mpv's vo init to stderr (izumi run.log).
-            let _ = init.set_option("terminal", "yes");
-            let _ = init.set_option("msg-level", "all=v");
         }
         // Render the video to EXACTLY the embedded child surface — never DPI-scale it.
         // On a Windows display at 125%/150% scaling, mpv otherwise renders the video
