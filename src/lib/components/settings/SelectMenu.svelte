@@ -2,6 +2,8 @@
   import { onMount, tick } from 'svelte'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
+  import { rootZoom } from '$lib/components/cards/preview-pos'
+  import { menuPlacement } from '$lib/components/menu-placement'
 
   export type SelectOption = {
     value: string
@@ -28,10 +30,35 @@
   let open = $state(false)
   const selected = $derived(options.find((option) => option.value === value) ?? options[0])
 
+  // Placement: a menu anchored below a trigger that sits low on the screen used to run straight off
+  // the bottom, unreachable, with no page scroll to bring it back. menuPlacement flips it up and
+  // caps its height to the room on whichever side it chose (see that module for the zoom caveat).
+  let menu = $state<HTMLDivElement>()
+  let placement = $state<'down' | 'up'>('down')
+  let maxHeight = $state(260)
+
+  /** @param content the menu's natural height in local px, once it has rendered. */
+  function measure(content?: number) {
+    if (!trigger) return
+    const rect = trigger.getBoundingClientRect()
+    const fit = menuPlacement({
+      top: rect.top,
+      bottom: rect.bottom,
+      viewport: window.innerHeight,
+      zoom: rootZoom(),
+      content,
+    })
+    placement = fit.side
+    maxHeight = fit.maxHeight
+  }
+
   async function setOpen(next: boolean) {
+    if (next) measure()
     open = next
     if (!next) return
     await tick()
+    // Now that it exists, re-decide against the real content height rather than the estimate.
+    measure(menu?.scrollHeight)
     const current = root.querySelector<HTMLElement>(`[data-select-value="${CSS.escape(value)}"]`)
     const first = root.querySelector<HTMLElement>('[data-select-value]:not(:disabled)')
     ;(current ?? first)?.focus({ preventScroll: true })
@@ -79,6 +106,19 @@
       window.removeEventListener('blur', closeOnBlur)
     }
   })
+
+  // The trigger moves under an open menu when the page scrolls (including the scroll the keyboard
+  // shoves the view up by on Android), so re-decide the side rather than leave it stale.
+  $effect(() => {
+    if (!open) return
+    const remeasure = () => measure(menu?.scrollHeight)
+    window.addEventListener('resize', remeasure)
+    window.addEventListener('scroll', remeasure, true)
+    return () => {
+      window.removeEventListener('resize', remeasure)
+      window.removeEventListener('scroll', remeasure, true)
+    }
+  })
 </script>
 
 <div bind:this={root} class="relative {className}" data-nav-trap={open ? '' : undefined}>
@@ -99,10 +139,13 @@
 
   {#if open}
     <div
+      bind:this={menu}
       role="listbox"
       tabindex="-1"
       aria-label={ariaLabel}
-      class="absolute left-0 top-[calc(100%+0.25rem)] z-[80] min-w-full overflow-hidden rounded-md border border-border bg-background p-1 text-foreground shadow-xl"
+      class="absolute left-0 z-[80] min-w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl
+        {placement === 'down' ? 'top-[calc(100%+0.25rem)]' : 'bottom-[calc(100%+0.25rem)]'}"
+      style="max-height:{maxHeight}px"
       onkeydown={onMenuKeydown}
     >
       {#each options as option (option.value)}
