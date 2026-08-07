@@ -1223,7 +1223,7 @@ export async function playEpisode(
             // A response that outlived the whole resolve must not put a settled picker back into
             // its loading state — the rows just appear.
             refresh(!resolveSettled)
-          })
+          }, signal)
             .then((r) => { acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(true) })
             .catch(() => {})
             .finally(done)
@@ -1244,7 +1244,7 @@ export async function playEpisode(
             const extra = buildStreamIds({ type, imdb: ids.imdbId, season: ids.season, imdbEpisode: ids.episodeNumber, episode })
             if (!extra.length || !stillCurrent()) return
             await Promise.all(bases.map((base) =>
-              fetchAddonStreams(base, extra, type, fold).then(fold).catch(() => {})))
+              fetchAddonStreams(base, extra, type, fold, signal).then(fold).catch(() => {})))
           })
           .catch(() => {})
           .finally(done)
