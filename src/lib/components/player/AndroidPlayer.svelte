@@ -55,7 +55,7 @@
     HOLD_MS,
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
-  import { nowPlaying, nowPlayingMedia, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, playerLoadId, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery } from '$lib/player/session'
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import {
     autoSkip, seekDuration, scrubThumbnails, openSubtitlesToken,
@@ -241,13 +241,46 @@
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end) ?? null)
   const willSkip = (s: Segment) =>
     $autoSkip && !((s.type === 'op' && firstOcc.op) || (s.type === 'ed' && firstOcc.ed))
+  // `$playerLoadId` is in the key because a dub/sub or alternate-server swap re-plays the SAME
+  // media and episode from a different release: on media+episode alone the guard never fires, so
+  // auto-skip stayed armed with the previous release's OP/ED windows (a jump mid-scene) and the
+  // scrub cache kept serving frames decoded from a file that is no longer loaded. It bumps on
+  // every file load, including the ones no other store can tell apart. (The desktop overlay also
+  // folds in `spriteKey`; that store is only ever set on the desktop embed path, so on Android it
+  // would contribute nothing that `playerLoadId` does not already carry.)
+  //
+  // It bumps at the TOP of playStream though — seconds before mpv is handed the replacement, and
+  // the outgoing file keeps playing throughout the resolve. Acting on the announcement would fetch
+  // AniSkip against the OUTGOING duration and read the OUTGOING file's chapter list, then never
+  // re-run once the real duration arrived. So the reset waits for mpv to actually change files,
+  // which mpvLoad signals by blanking its state: any change to `dur` (the 0 in between) is the
+  // handover. Until then the still-playing file keeps its own segments and preview frames, which
+  // are still the correct ones for what is on screen.
+  let loadKey = ''
+  let handoverDur: number | null = null
+  function resetForNewFile() {
+    segments = []
+    chapters = []
+    autoSkipped = new Set()
+    firstOcc = { op: false, ed: false }
+    thumbCache.clear() // new file → drop cached preview frames
+  }
   $effect(() => {
-    const key = `${np.malId}:${np.episode}`
+    const key = `${$playerLoadId}:${np.malId}:${np.episode}`
+    if (key !== loadKey) {
+      // Nothing to wait for on the first load of this player session (mpv already holds that file)
+      // or when the outgoing one never reported a duration to go stale.
+      handoverDur = loadKey !== '' && dur > 0 ? dur : null
+      loadKey = key
+      if (handoverDur == null) resetForNewFile()
+    }
+    if (handoverDur != null) {
+      if (dur === handoverDur) return
+      handoverDur = null
+      resetForNewFile()
+    }
     if (dur > 0 && key !== segKey) {
       segKey = key
-      autoSkipped = new Set()
-      firstOcc = { op: false, ed: false }
-      thumbCache.clear() // new file → drop cached preview frames
       void (async () => {
         // Assign the debut guard before the segments it guards — the auto-skip effect fires as soon
         // as `segments` lands.
