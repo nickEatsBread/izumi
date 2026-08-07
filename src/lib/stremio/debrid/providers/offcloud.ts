@@ -1,4 +1,4 @@
-import { jfetch, magnetOf, poll, authError } from '../http'
+import { jfetch, magnetOf, poll, authError, debridHttpError } from '../http'
 import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo } from '../types'
 
@@ -26,7 +26,7 @@ const BASE = 'https://offcloud.com/api'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function oc(method: string, path: string, key: string, body?: unknown, priority?: boolean): Promise<any> {
   const sep = path.includes('?') ? '&' : '?'
-  const { status, json } = await jfetch(`${BASE}${path}${sep}key=${encodeURIComponent(key)}`, {
+  const { ok, status, json } = await jfetch(`${BASE}${path}${sep}key=${encodeURIComponent(key)}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -34,6 +34,15 @@ async function oc(method: string, path: string, key: string, body?: unknown, pri
   })
   const auth = authError('Offcloud', { status, message: json?.error })
   if (auth) throw new Error(auth)
+  // Every other non-2xx used to fall straight through: jfetch does not throw, it returns `{}`, and
+  // ocStatus maps an absent status to 'downloading' — so a dead service pinned the caching overlay
+  // for the poll's full deadline. debridHttpError tags a 5xx — and a 429, on its own longer budget
+  // — so poll retries instead of killing a download in progress; the 404 that means "this
+  // generation of the API has no such route" stays fatal to whoever asked. Both callers that
+  // legitimately expect a route to be
+  // missing (the /cloud/history probe, and /cloud/explore for a legacy single-file torrent)
+  // already catch, so they keep their fallbacks either way.
+  if (!ok) throw debridHttpError(status, json?.error ?? `Offcloud request failed (${status}).`)
   return json
 }
 
