@@ -297,6 +297,14 @@ export async function fetchAddonStreams(
     return usable
   }
 
+  // The JS race below only decides when izumi STOPS WAITING; without a native deadline the
+  // dropped request kept running to the backend's 30s default while still holding one of the
+  // twelve slots in the shared HTTP pool, starving the metadata/manifest/subtitle traffic on the
+  // same lane. The grace keeps the native timeout strictly behind the budget, so a response that
+  // is merely a tick late still reaches `onLate` instead of being cancelled out from under it.
+  const budgetMs = streamBudgetMs(b)
+  const deadlineMs = budgetMs + 5_000
+
   const work = (async (): Promise<AddonStreams> => {
     try {
       const ask = askable()
@@ -305,7 +313,7 @@ export async function fetchAddonStreams(
       // imdb triple reaches addons in either namespace instead of only the anime-aware ones.
       const responses = await Promise.all(ask.map(async (one) => {
         try {
-          const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(one)}.json`, { signal })
+          const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(one)}.json`, { signal, timeoutMs: deadlineMs })
           if (!r.ok) return []
           return ((await r.json()) as { streams?: Stream[] }).streams ?? []
         } catch { return [] }
@@ -324,7 +332,7 @@ export async function fetchAddonStreams(
   let lapsed = false
   let timer: ReturnType<typeof setTimeout> | undefined
   const budget = new Promise<AddonStreams>((res) => {
-    timer = setTimeout(() => { lapsed = true; res({ streams: [], total: 0 }) }, streamBudgetMs(b))
+    timer = setTimeout(() => { lapsed = true; res({ streams: [], total: 0 }) }, budgetMs)
   })
   void work.then((r) => {
     if (timer) clearTimeout(timer)
