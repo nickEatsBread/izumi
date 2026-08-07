@@ -16,10 +16,11 @@ describe('extension list logos', () => {
   it('renders every store row and plugin row through AddonLogo', () => {
     expect(page).toContain("import AddonLogo from '$lib/components/player/AddonLogo.svelte'")
     // The catalog ("store") row keys its icon on the package id, which for an Aniyomi package IS
-    // the Android package name the installed-icon map is keyed by.
-    expect(page).toContain('<AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={24} />')
+    // the Android package name the installed-icon map is keyed by. The rendered size is a layout
+    // choice that mobile tuning moves around, so it is deliberately not asserted.
+    expect(page).toContain('<AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size=')
     // A plugin prefers its own manifest icon and falls back to the installed launcher icon.
-    expect(page).toContain('<AddonLogo logo={p.icon ?? jvmIcons.get(p.id)} name={p.name} id={p.id} size={24} />')
+    expect(page).toContain('<AddonLogo logo={p.icon ?? jvmIcons.get(p.id)} name={p.name} id={p.id} size=')
   })
 
   it('never leaves a raw <img> to render a broken box for a missing icon', () => {

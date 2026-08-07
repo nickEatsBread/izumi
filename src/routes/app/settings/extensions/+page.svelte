@@ -152,6 +152,18 @@
   // Per-catalog search text; the adult switch is a single preference across all of them.
   let catalogQuery = $state<Record<string, string>>({})
   let showNsfw = $state(false)
+  // A catalog runs to several hundred packages. Rendering them all was tolerable behind a nested
+  // scroll box on desktop, but that box is unusable with a finger — it eats the page scroll — so on
+  // mobile the list flows into the page instead, and the page can't carry 300 rows. Show a window
+  // of them and grow it on demand; searching resets it, since a search is meant to shorten the list.
+  const PAGE_SIZE = 30
+  let catalogShown = $state<Record<string, number>>({})
+  const shownLimit = (url: string) => catalogShown[url] ?? PAGE_SIZE
+  function showMore(url: string) { catalogShown[url] = shownLimit(url) + PAGE_SIZE }
+  function setCatalogQuery(url: string, value: string) {
+    catalogQuery[url] = value
+    catalogShown[url] = PAGE_SIZE
+  }
   function visiblePackages(url: string, packages: ExtensionCatalogPackage[]) {
     const query = (catalogQuery[url] ?? '').trim().toLocaleLowerCase()
     return packages.filter((extension) => {
@@ -353,7 +365,7 @@
             </div>
             {#if pkgs || metas.length > 1}
               <button data-focusable onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
-                class="shrink-0 rounded-md px-2 py-1 text-xs font-bold text-muted-foreground hover:bg-accent">
+                class="shrink-0 rounded-md bg-secondary px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-1">
                 {isExpanded(url) ? 'Hide' : pkgs ? 'Packages' : 'Plugins'}
               </button>
             {/if}
@@ -368,7 +380,7 @@
               </button>
             {/if}
           {/await}
-          <button onclick={() => removeExt(i)} data-focusable title="Remove" class="grid size-8 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent"><Trash2 size={16} /></button>
+          <button onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
           </div>
 
           {#if isExpanded(url)}
@@ -379,87 +391,109 @@
                 {@const ids = installedIn(pkgs).map((p) => p.id)}
                 {@const enabledPackages = enabledInstalledIn(pkgs)}
                 <div class="mt-3 border-t border-border pt-3">
-                  <div class="mb-2 flex flex-wrap items-center gap-2">
-                    <label class="relative min-w-48 flex-1">
-                      <Search size={14} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <!-- Stacked on a phone: search on its own full-width line, then the switches. The
+                       old single wrap-row squeezed the field to a stub between the checkbox and the
+                       All on/off pair. -->
+                  <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                    <label class="relative sm:min-w-48 sm:flex-1">
+                      <Search size={16} class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                       <input
-                        bind:value={catalogQuery[url]}
+                        value={catalogQuery[url] ?? ''}
+                        oninput={(event) => setCatalogQuery(url, event.currentTarget.value)}
                         data-focusable
                         placeholder="Search packages"
-                        class="w-full rounded-md bg-input py-1.5 pl-8 pr-3 text-sm"
+                        class="w-full rounded-md bg-input py-2.5 pl-9 pr-3 text-sm sm:py-1.5"
                       />
                     </label>
-                    <label class="flex items-center gap-2 px-1 text-xs text-muted-foreground">
-                      <input type="checkbox" bind:checked={showNsfw} />
-                      Adult sources
-                    </label>
-                    {#if ids.length}
-                      <span class="flex gap-1">
-                        <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded px-2 py-0.5 text-xs font-bold text-muted-foreground hover:bg-accent">All on</button>
-                        <button data-focusable onclick={() => setAllPlugins(ids, false)} class="rounded px-2 py-0.5 text-xs font-bold text-muted-foreground hover:bg-accent">All off</button>
-                      </span>
-                    {/if}
+                    <div class="flex items-center justify-between gap-2">
+                      <label class="flex items-center gap-2 py-1 text-sm text-muted-foreground sm:px-1 sm:text-xs">
+                        <input type="checkbox" bind:checked={showNsfw} class="size-4" />
+                        Adult sources
+                      </label>
+                      {#if ids.length}
+                        <span class="flex gap-1">
+                          <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All on</button>
+                          <button data-focusable onclick={() => setAllPlugins(ids, false)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All off</button>
+                        </span>
+                      {/if}
+                    </div>
                   </div>
                   {#if packageStatus?.url === url}
                     <p class="mb-2 text-xs {packageStatus.ok ? 'text-emerald-400' : 'text-amber-400'}">{packageStatus.text}</p>
                   {/if}
-                  <p class="px-1 pb-1 text-[0.68rem] text-muted-foreground">
+                  <p class="px-1 pb-1 text-xs text-muted-foreground sm:text-[0.68rem]">
                     {shown.length} of {pkgs.length} packages. Installed ones stay installed if this source is removed.
                     Aniyomi support and its shared runtime download only when needed.
                   </p>
                   {#if ids.length}
-                    <p class="mb-2 rounded-md bg-secondary/60 px-2 py-1.5 text-[0.68rem] text-muted-foreground">
+                    <p class="mb-2 rounded-md bg-secondary/60 px-2 py-1.5 text-xs text-muted-foreground sm:text-[0.68rem]">
                       <span class="font-bold text-foreground">Enabled ({enabledPackages.length}):</span>
                       {enabledPackages.map((extension) => extension.name).join(' · ') || 'None'}
                     </p>
                   {/if}
-                  <ul class="max-h-72 space-y-1 overflow-y-auto pr-1">
-                    {#each shown as p (p.id)}
+                  <!-- Nested scroll box on desktop only; on touch it fights the page scroll. -->
+                  <ul class="space-y-1 sm:max-h-72 sm:overflow-y-auto sm:pr-1">
+                    {#each shown.slice(0, shownLimit(url)) as p (p.id)}
                       {@const inst = installedById.get(p.id)}
                       {@const pOff = !!inst && pluginOff(p.id)}
-                      <li class="flex items-center gap-2 rounded-md bg-background/45 px-2 py-1.5" class:opacity-50={pOff}>
-                        <!-- Real launcher icon once the extension is installed; otherwise a
-                             deterministic tile, so every row in the store reads as a distinct
-                             source instead of an identical grey glyph. -->
-                        <AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={24} />
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-1.5">
-                            <span class="truncate text-xs font-bold">{p.name}</span>
-                            <span class="rounded bg-secondary px-1 py-0.5 text-[0.55rem] font-bold text-muted-foreground">{p.language?.toUpperCase() ?? 'MULTI'}</span>
-                            {#if p.backend === 'izumi-js'}
-                              <span class="rounded bg-emerald-500/15 px-1 py-0.5 text-[0.55rem] font-bold text-emerald-400">NATIVE</span>
-                            {/if}
-                            {#if p.nsfw}
-                              <span class="rounded bg-rose-500/15 px-1 py-0.5 text-[0.55rem] font-bold text-rose-400">18+</span>
-                            {/if}
-                            {#if inst}
-                              <span class="rounded bg-secondary px-1 py-0.5 text-[0.55rem] font-bold text-muted-foreground">v{inst.version}</span>
-                              <span class="rounded px-1 py-0.5 text-[0.55rem] font-bold {pOff ? 'bg-white/10 text-muted-foreground' : 'bg-emerald-500/15 text-emerald-400'}">
-                                {pOff ? 'OFF' : 'ENABLED'}
-                              </span>
-                            {/if}
+                      <!-- Two-line on a phone (identity above, controls below) and the original
+                           single line from `sm` up. Everything on one row at 360px left the name
+                           truncated to a few characters with sub-legible 0.55rem badges beside it. -->
+                      <li class="flex flex-col gap-2 rounded-md bg-background/45 px-2 py-2 sm:flex-row sm:items-center sm:gap-2 sm:py-1.5" class:opacity-50={pOff}>
+                        <div class="flex min-w-0 flex-1 items-center gap-2">
+                          <!-- Real launcher icon once the extension is installed; otherwise a
+                               deterministic tile, so every row in the store reads as a distinct
+                               source instead of an identical grey glyph. -->
+                          <AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={28} />
+                          <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-center gap-1.5">
+                              <span class="truncate text-sm font-bold sm:text-xs">{p.name}</span>
+                              <span class="rounded bg-secondary px-1 py-0.5 text-[0.65rem] font-bold text-muted-foreground sm:text-[0.55rem]">{p.language?.toUpperCase() ?? 'MULTI'}</span>
+                              {#if p.backend === 'izumi-js'}
+                                <span class="rounded bg-emerald-500/15 px-1 py-0.5 text-[0.65rem] font-bold text-emerald-400 sm:text-[0.55rem]">NATIVE</span>
+                              {/if}
+                              {#if p.nsfw}
+                                <span class="rounded bg-rose-500/15 px-1 py-0.5 text-[0.65rem] font-bold text-rose-400 sm:text-[0.55rem]">18+</span>
+                              {/if}
+                              {#if inst}
+                                <span class="rounded bg-secondary px-1 py-0.5 text-[0.65rem] font-bold text-muted-foreground sm:text-[0.55rem]">v{inst.version}</span>
+                                <span class="rounded px-1 py-0.5 text-[0.65rem] font-bold sm:text-[0.55rem] {pOff ? 'bg-white/10 text-muted-foreground' : 'bg-emerald-500/15 text-emerald-400'}">
+                                  {pOff ? 'OFF' : 'ENABLED'}
+                                </span>
+                              {/if}
+                            </div>
+                            <p class="truncate text-xs text-muted-foreground sm:text-[0.65rem]">{(p.sources ?? []).map((source) => source.name).join(' · ') || p.id}</p>
                           </div>
-                          <p class="truncate text-[0.65rem] text-muted-foreground">{(p.sources ?? []).map((source) => source.name).join(' · ') || p.id}</p>
                         </div>
-                        {#if inst}
-                          <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff}
-                            title={pOff ? 'Enable' : 'Disable'}
-                            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
-                            <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
-                          </button>
-                        {/if}
-                        <button
-                          data-focusable
-                          disabled={packageBusy}
-                          onclick={() => installFromCatalog(url, p)}
-                          class="shrink-0 rounded-md px-2 py-1 text-xs font-bold {inst ? 'text-muted-foreground hover:bg-accent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
-                        >{!inst ? 'Install' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
-                        {#if inst}
-                          <button data-focusable disabled={packageBusy} onclick={() => removePackage(url, p.id)} title="Uninstall"
-                            class="grid size-7 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50"><Trash2 size={14} /></button>
-                        {/if}
+                        <div class="flex items-center justify-end gap-2 sm:contents">
+                          {#if inst}
+                            <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff}
+                              title={pOff ? 'Enable' : 'Disable'}
+                              class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+                              <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+                            </button>
+                          {/if}
+                          <button
+                            data-focusable
+                            disabled={packageBusy}
+                            onclick={() => installFromCatalog(url, p)}
+                            class="shrink-0 rounded-md px-3 py-2 text-xs font-bold sm:px-2 sm:py-1 {inst ? 'bg-secondary text-muted-foreground hover:bg-accent sm:bg-transparent' : 'bg-primary text-primary-foreground'} disabled:opacity-50"
+                          >{!inst ? 'Install' : inst.version === p.version ? 'Reinstall' : 'Update'}</button>
+                          {#if inst}
+                            <button data-focusable disabled={packageBusy} onclick={() => removePackage(url, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+                              class="grid size-9 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-7"><Trash2 size={16} /></button>
+                          {/if}
+                        </div>
                       </li>
                     {/each}
+                    {#if shown.length > shownLimit(url)}
+                      <li>
+                        <button data-focusable onclick={() => showMore(url)}
+                          class="w-full rounded-md bg-secondary px-3 py-2.5 text-xs font-bold transition-colors hover:bg-accent">
+                          Show {Math.min(PAGE_SIZE, shown.length - shownLimit(url))} more of {shown.length}
+                        </button>
+                      </li>
+                    {/if}
                     {#if !shown.length}
                       <li class="p-3 text-xs text-muted-foreground">No packages match that search.</li>
                     {/if}
@@ -472,17 +506,17 @@
                   <div class="mb-2 flex items-center justify-between">
                     <span class="text-xs font-bold text-muted-foreground">Plugins in this source</span>
                     <span class="flex gap-1">
-                      <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded px-2 py-0.5 text-xs font-bold text-muted-foreground hover:bg-accent">All on</button>
-                      <button data-focusable onclick={() => setAllPlugins(ids, false)} class="rounded px-2 py-0.5 text-xs font-bold text-muted-foreground hover:bg-accent">All off</button>
+                      <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All on</button>
+                      <button data-focusable onclick={() => setAllPlugins(ids, false)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All off</button>
                     </span>
                   </div>
                   <ul class="space-y-1">
                     {#each metas as p (p.id)}
                       {@const pOff = pluginOff(p.id)}
-                      <li class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50" class:opacity-50={pOff}>
+                      <li class="flex items-center gap-2 rounded-md px-2 py-2.5 hover:bg-accent/50 sm:py-1.5" class:opacity-50={pOff}>
                         <!-- Manifest icon when the plugin ships one, its Aniyomi launcher icon when
                              it is an installed JVM package, else the shared placeholder. -->
-                        <AddonLogo logo={p.icon ?? jvmIcons.get(p.id)} name={p.name} id={p.id} size={24} />
+                        <AddonLogo logo={p.icon ?? jvmIcons.get(p.id)} name={p.name} id={p.id} size={28} />
                         <span class="min-w-0 flex-1 truncate text-sm">{p.name}</span>
                         {#if p.lang}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}
                         <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
