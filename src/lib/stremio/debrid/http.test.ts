@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { classifyAuth, authError, isArchiveName, isDecoy, poll, debridBlocked, isDebridBlocked } from './http'
+import { classifyAuth, authError, isArchiveName, isDecoy, poll, debridBlocked, isDebridBlocked, isRetryableStatus, debridHttpError, isDebridRetryable, isDebridThrottled } from './http'
 
 describe('classifyAuth', () => {
   // Real-Debrid — HTTP status only
@@ -95,6 +95,33 @@ describe('debridBlocked', () => {
     expect(isDebridBlocked(new Error('Real-Debrid request failed (500).'))).toBe(false)
     expect(isDebridBlocked('blocked')).toBe(false)
     expect(isDebridBlocked(undefined)).toBe(false)
+  })
+})
+
+describe('isRetryableStatus', () => {
+  it('"not right now" statuses are worth another probe', () => {
+    for (const s of [408, 425, 429, 500, 502, 503, 504]) expect(isRetryableStatus(s)).toBe(true)
+  })
+  it('auth and dead-request statuses are not', () => {
+    for (const s of [400, 401, 402, 403, 404, 410, 451]) expect(isRetryableStatus(s)).toBe(false)
+  })
+})
+
+describe('debridHttpError', () => {
+  it('tags a 5xx so a poll can ride it out', () => {
+    expect(isDebridRetryable(debridHttpError(502, 'TorBox request failed (502).'))).toBe(true)
+    expect(isDebridRetryable(debridHttpError(408, 'TorBox request failed (408).'))).toBe(true)
+  })
+  it('tags a 429 separately, because a rate limit is a service that IS up', () => {
+    const e = debridHttpError(429, 'TorBox request failed (429).')
+    expect(isDebridThrottled(e)).toBe(true)
+    // Not on the short "it's down" budget — that would kill a resolve minutes into a download.
+    expect(isDebridRetryable(e)).toBe(false)
+  })
+  it('leaves an auth failure untagged, and keeps its message', () => {
+    const e = debridHttpError(401, 'TorBox: access denied — your API key looks wrong or expired.')
+    expect(isDebridRetryable(e)).toBe(false)
+    expect(e.message).toContain('access denied')
   })
 })
 
@@ -195,5 +222,111 @@ describe('poll cadence', () => {
     await vi.advanceTimersByTimeAsync(2)
     await done
     expect(calls).toBe(2)
+  })
+})
+
+describe('poll failure tolerance', () => {
+  afterEach(() => vi.useRealTimers())
+
+  const stage = (s: string) => ({ stage: s } as never)
+  const blip = () => debridHttpError(502, 'TorBox request failed (502).')
+  const throttle = () => debridHttpError(429, 'TorBox request failed (429).')
+
+  it('rides out a transient failure instead of throwing away a download in progress', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const probe = async () => {
+      calls++
+      if (calls === 2) throw blip()
+      return stage(calls >= 4 ? 'ready' : 'downloading')
+    }
+
+    const done = poll(probe, {})
+    await vi.advanceTimersByTimeAsync(10_000)
+    await done
+
+    expect(calls).toBe(4)
+  })
+
+  it('ends on the first tick for anything not tagged retryable', async () => {
+    let calls = 0
+    const probe = async () => { calls++; throw new Error('TorBox: access denied — your API key looks wrong or expired.') }
+
+    await expect(poll(probe, {})).rejects.toThrow(/access denied/)
+    expect(calls).toBe(1)
+  })
+
+  it('turns a sustained failure into a real error in well under the 600s deadline', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const probe = async () => { calls++; throw blip() }
+
+    const done = expect(poll(probe, {})).rejects.toThrow(/502/)
+    await vi.advanceTimersByTimeAsync(60_000)
+    await done
+
+    expect(calls).toBe(13) // 12 tolerated, the 13th gives up (~36s at the 3s failure backoff)
+  })
+
+  it('resets the run on any successful probe, so an intermittent service still finishes', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    // Fails far more often than the tolerance allows — just never twice in a row.
+    const probe = async () => {
+      calls++
+      if (calls >= 60) return stage('ready')
+      if (calls % 2 === 0) throw blip()
+      return stage('downloading')
+    }
+
+    const done = poll(probe, {})
+    await vi.advanceTimersByTimeAsync(300_000)
+    await done
+
+    expect(calls).toBe(60)
+  })
+
+  it('rides out a rate limit far longer than an outage, since a 429 means the service is up', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const probe = async () => { calls++; throw throttle() }
+
+    const done = expect(poll(probe, { timeoutMs: 600_000 })).rejects.toThrow(/429/)
+    await vi.advanceTimersByTimeAsync(300_000)
+    await done
+
+    expect(calls).toBe(37) // 36 tolerated, the 37th gives up (~3min at the 5s throttle backoff)
+  })
+
+  it('a rate limit that clears is not remembered against the outage budget', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    // Twenty consecutive 429s — well past the 12-probe outage tolerance, well inside the throttle
+    // budget — then the window clears. Before the split this resolve died at probe 13.
+    const probe = async () => {
+      calls++
+      if (calls <= 20) throw throttle()
+      return stage('ready')
+    }
+
+    const done = poll(probe, {})
+    await vi.advanceTimersByTimeAsync(300_000)
+    await done
+
+    expect(calls).toBe(21)
+  })
+
+  it('cannot fire on a healthy slow download whose probes all answer', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+    const probe = async () => { calls++; return stage('downloading') }
+
+    // Runs out its OWN deadline and reports a timeout — a stage that never leaves 'downloading' is
+    // a slow torrent, not a failing service, and must never trip the failure tolerance.
+    const done = expect(poll(probe, { timeoutMs: 60_000 })).rejects.toThrow(/timed out/)
+    await vi.advanceTimersByTimeAsync(70_000)
+    await done
+
+    expect(calls).toBeGreaterThan(20)
   })
 })
