@@ -295,6 +295,7 @@ export function videoSourceToStream(
     __headers: vs.headers ?? headers,
     __audio: vs.audio ?? audio,
     __server: sourceServer && sourceServer !== 'default' ? sourceServer : undefined,
+    __quality: quality,
     __subtitleMode: vs.subtitleMode,
     // Normalize the provider's subtitle shape: `language`/`lang`/`label` → lang, and carry
     // `isDefault` so the player auto-selects the intended track (both were being dropped).
