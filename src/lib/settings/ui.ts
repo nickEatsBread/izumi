@@ -1,6 +1,7 @@
 import { persisted } from 'svelte-persisted-store'
 import { derived } from 'svelte/store'
 import type { StreamSort } from '$lib/stremio/addon'
+import type { SourcePriorityMode } from '$lib/stremio/source-priority'
 
 /** How the episode list renders. Names are intentionally generic. */
 export type EpisodeLayout = 'cards' | 'compact'
@@ -87,6 +88,12 @@ export const autoSelectSource = persisted<boolean>('autoplay-best', true)
 export const autoSelectCountdown = persisted<boolean>('auto-select-animate', false)
 export type Quality = '2160' | '1080' | '720' | '480' | 'any'
 export const preferredQuality = persisted<Quality>('preferred-quality', '1080')
+/** Origin ids the user trusts, most-trusted first. Empty = no opinion, which is the default: the
+ *  existing heuristics already rank well, and a preference nobody stated should not be invented. */
+export const sourcePriority = persisted<string[]>('source-priority', [])
+/** `prefer` ranks the trusted sources first but still uses the others; `strict` uses ONLY them and
+ *  reports an empty result rather than quietly playing a source that was excluded on purpose. */
+export const sourcePriorityMode = persisted<SourcePriorityMode>('source-priority-mode', 'prefer')
 
 // --- Source picker ---
 /** Show dead/down sources (uncached torrents with no seeders) in the picker.
