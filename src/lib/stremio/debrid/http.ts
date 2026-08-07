@@ -68,7 +68,8 @@ export function pickLargestVideo<T extends { name: string; bytes: number }>(file
  *
  *  `init.signal`/`init.timeoutMs` are threaded through to the native side, which cancels the
  *  in-flight reqwest future — an aborted caller frees its lane slot instead of occupying it to
- *  completion. */
+ *  completion. `init.priority` moves a call onto the reserved playback lane instead (a user's
+ *  pick must not queue behind list-population traffic); see ResolveOpts.priority. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; status: number; json: any }> {
   const method = String(init?.method ?? 'GET').toUpperCase()
@@ -77,12 +78,15 @@ export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; st
   const opts = {
     signal: init?.signal as AbortSignal | undefined,
     timeoutMs: init?.timeoutMs as number | undefined,
+    priority: init?.priority as boolean | undefined,
   }
   const r = method === 'GET' && body == null
     ? await invokeNativeHttp<{ status: number; body: string }>('http_get', { url, headers, background: true }, opts)
     : method === 'POST'
       ? await invokeNativeHttp<{ status: number; body: string }>('http_post', { url, body: body ?? '', headers, background: true }, opts)
-      : await invokeNativeHttp<{ status: number; body: string }>('ext_fetch', { url, method, headers, body }, opts)
+      // ext_fetch has no playback lane (it is extension-class on the Rust side), so the flag is
+      // stripped rather than silently ignored — the args sent over IPC say what actually happens.
+      : await invokeNativeHttp<{ status: number; body: string }>('ext_fetch', { url, method, headers, body }, { ...opts, priority: undefined })
   let json: unknown = {}
   try { json = r.body ? JSON.parse(r.body) : {} } catch { json = {} }
   return { ok: r.status >= 200 && r.status < 300, status: r.status, json }

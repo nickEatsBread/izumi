@@ -34,6 +34,7 @@ import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
 import { normalizeLang } from './sublang'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
+import { cancelExtensionFetches } from '$lib/extensions/fetch-registry'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import type { TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
@@ -289,11 +290,21 @@ function pushListen<T>(event: string, handler: EventCallback<T>) {
 
 // The in-flight source resolve (playEpisode). A new play or an explicit picker close aborts it
 // so a closed resolve settles to idle at once instead of leaving its caller stuck in `resolving`.
-// A superseded resolve stays silent because the newer request now owns caller state. The fetches
-// themselves are best-effort and may finish harmlessly in the background.
+// A superseded resolve stays silent because the newer request now owns caller state. The signal
+// also cancels the addon stream fetches themselves (only the session-cached manifest lookups run
+// to completion); an explicit pick/close additionally cuts the bridged extension fetches — see
+// cancelExtensionFetches below. A supersede-by-new-play deliberately does NOT cut those: they
+// usually belong to the same title, and their settled answers warm the memo cache the
+// replacement resolve is about to read.
 let resolveAbort: AbortController | null = null
 /** Abort the in-flight source resolve — called when the picker is closed (X / click-off / Esc). */
-export function cancelResolve() { resolveAbort?.abort(); resolveAbort = null }
+export function cancelResolve() {
+  resolveAbort?.abort()
+  resolveAbort = null
+  // The fetches were "best-effort background" once; on a click they are contention on the very
+  // lanes the picked source needs. Cut them loose — reissued fresh next resolve.
+  cancelExtensionFetches()
+}
 
 // The in-flight DEBRID resolve (playStream's add/select/poll chain). Owned by the newest
 // playStream: starting another play aborts the previous chain so a superseded uncached pick
@@ -647,6 +658,7 @@ async function extToStreams(
   kitsu: number | undefined,
   onBatch: (s: Stream[]) => void,
   onlyOriginId?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
     // Resolve the production-specific AniZip ids (AniDB/TVDB + absolute episode) so ID-based
@@ -705,8 +717,8 @@ async function extToStreams(
     // (search/smartSearch). Query both concurrently; each source's batch folds in as it lands.
     const fold = (rs: TorrentResult[]) => onBatch(rs.map((r) => extToStream(r, r.provider ?? 'Extension')))
     await Promise.all([
-      queryExtensions(query, fold, onlyOriginId),
-      queryTorrentProviders(query, toProviderMedia(media), fold, onlyOriginId),
+      queryExtensions(query, fold, onlyOriginId, signal),
+      queryTorrentProviders(query, toProviderMedia(media), fold, onlyOriginId, signal),
     ])
   } catch { /* best-effort: failed sources contributed nothing */ }
 }
@@ -1223,7 +1235,7 @@ export async function playEpisode(
             // A response that outlived the whole resolve must not put a settled picker back into
             // its loading state — the rows just appear.
             refresh(!resolveSettled)
-          })
+          }, signal)
             .then((r) => { acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(true) })
             .catch(() => {})
             .finally(done)
@@ -1244,7 +1256,7 @@ export async function playEpisode(
             const extra = buildStreamIds({ type, imdb: ids.imdbId, season: ids.season, imdbEpisode: ids.episodeNumber, episode })
             if (!extra.length || !stillCurrent()) return
             await Promise.all(bases.map((base) =>
-              fetchAddonStreams(base, extra, type, fold).then(fold).catch(() => {})))
+              fetchAddonStreams(base, extra, type, fold, signal).then(fold).catch(() => {})))
           })
           .catch(() => {})
           .finally(done)
@@ -1258,13 +1270,13 @@ export async function playEpisode(
       const budget = (work: Promise<unknown>) =>
         Promise.race([work.catch(() => {}), new Promise<void>((resolve) => setTimeout(resolve, EXT_WAVE_BUDGET_MS))])
       if (hasExt) {
-        budget(extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }))
+        budget(extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }, undefined, signal))
           .finally(done)
       }
       if (hasExt) {
         // Fold each provider in as it settles, exactly like the torrent wave above — otherwise one
         // slow (or wedged, 20s-capped) provider hides every fast one's results until it gives up.
-        budget(resolveOnlineStreams(media, episode, undefined, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }))
+        budget(resolveOnlineStreams(media, episode, undefined, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }, signal))
           .finally(done)
       }
     })
@@ -1619,6 +1631,7 @@ export async function playStream(
         const url = await resolveHash(provider, key, torrent, {
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
+          priority: true,
           onStatus: (i) => {
             if (!firstNotReadyAt) firstNotReadyAt = Date.now()
             if (!overlayShown && shouldShowCachingScreen({

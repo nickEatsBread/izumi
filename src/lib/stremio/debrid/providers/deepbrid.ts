@@ -17,11 +17,12 @@ import type { DebridProvider, DebridInfo } from '../types'
 const BASE = 'https://www.deepbrid.com/api/v1'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function db(method: string, path: string, key: string, body?: string): Promise<any> {
+async function db(method: string, path: string, key: string, body?: string, priority?: boolean): Promise<any> {
   const { ok, status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     ...(body ? { body } : {}),
+    priority,
   })
   if (!ok) throw new Error(authError('Deepbrid', { status }) ?? `Deepbrid request failed (${status}).`)
   // `error` is 0 on success. Newer responses use the HTTP status as the code (401/403),
@@ -99,11 +100,11 @@ export const deepbrid: DebridProvider = {
     // listing to reuse one from, so a background prefetch can only decline. Bailing is the whole
     // point of noAdd: never a speculative entry the user didn't ask for.
     if (opts?.noAdd) throw new Error("Deepbrid needs to add this release, which background prefetch isn't allowed to do.")
-    const add = await db('POST', '/torrents/add', key, form({ magnet: magnetOf(hashOrMagnet) }))
+    const add = await db('POST', '/torrents/add', key, form({ magnet: magnetOf(hashOrMagnet) }), opts?.priority)
     const id = add?.id ?? add?.torrent?.id ?? add?.torrentId
     let torrent: DbTorrent | undefined
     await poll(async () => {
-      const r = await db('GET', `/torrents/info${id ? `?id=${encodeURIComponent(String(id))}` : ''}`, key)
+      const r = await db('GET', `/torrents/info${id ? `?id=${encodeURIComponent(String(id))}` : ''}`, key, undefined, opts?.priority)
       torrent = dbPick(r, id ? String(id) : undefined)
       return dbStatus(torrent)
     }, opts)
@@ -114,7 +115,7 @@ export const deepbrid: DebridProvider = {
     // (a live probe answers error 16 "Wrong captcha entered" for anonymous callers), so a
     // failure here falls back to the raw link rather than killing playback.
     try {
-      const gen = await db('POST', '/generate/link', key, form({ link }))
+      const gen = await db('POST', '/generate/link', key, form({ link }), opts?.priority)
       if (gen?.link) return gen.link
     } catch { /* not unrestrictable — fall through to the raw link */ }
     return link

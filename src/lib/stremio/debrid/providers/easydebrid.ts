@@ -16,7 +16,7 @@ import type { DebridProvider, DebridSidecar } from '../types'
 const BASE = 'https://easydebrid.com/api/v1'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function ed(method: string, path: string, key: string, body?: unknown): Promise<any> {
+async function ed(method: string, path: string, key: string, body?: unknown, priority?: boolean): Promise<any> {
   const { ok, status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: {
@@ -25,6 +25,7 @@ async function ed(method: string, path: string, key: string, body?: unknown): Pr
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    priority,
   })
   // Two error shapes to fold together: the framework's auth envelope ({message}, with the status)
   // and the service's own ({error}, e.g. "Account not premium." for a lapsed subscription — which
@@ -93,8 +94,8 @@ const GENERATE_MEMO_MS = 60_000
 let lastGenerate: { key: string; magnet: string; at: number; files: EdFile[] } | null = null
 
 /** POST /link/generate, keeping the payload for the sidecar pass that follows. */
-async function generateFiles(key: string, magnet: string): Promise<EdFile[]> {
-  const files = edFiles(await ed('POST', '/link/generate', key, { url: magnet }))
+async function generateFiles(key: string, magnet: string, priority?: boolean): Promise<EdFile[]> {
+  const files = edFiles(await ed('POST', '/link/generate', key, { url: magnet }, priority))
   lastGenerate = { key, magnet, at: Date.now(), files }
   return files
 }
@@ -125,11 +126,11 @@ export const easydebrid: DebridProvider = {
     // guard below is the conservative one. /link/lookup answers the cache question and creates
     // nothing, so a background prefetch asks that first and declines rather than starting work the
     // user never asked for.
-    if (opts?.noAdd && !edCached(await ed('POST', '/link/lookup', key, { urls: [magnet] }))) {
+    if (opts?.noAdd && !edCached(await ed('POST', '/link/lookup', key, { urls: [magnet] }, opts?.priority))) {
       throw new Error("EasyDebrid needs to cache this release, which background prefetch isn't allowed to do.")
     }
     // Never from the memo: this URL goes straight to the player.
-    const files = await generateFiles(key, magnet)
+    const files = await generateFiles(key, magnet, opts?.priority)
     if (!files.length) {
       throw new Error('EasyDebrid has no cached copy of this release yet — pick a different source, or try this one again in a moment.')
     }

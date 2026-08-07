@@ -5,6 +5,8 @@ export interface NativeHttpOptions {
   timeoutMs?: number
   maxBytes?: number
   requestId?: string
+  /** Click-to-play critical path: rides the reserved Rust playback lane. */
+  priority?: boolean
 }
 
 let requestSequence = 0
@@ -29,6 +31,7 @@ export async function invokeNativeHttp<T>(
   const requestArgs: Record<string, unknown> = { ...args, requestId }
   if (options.timeoutMs != null) requestArgs.timeoutMs = options.timeoutMs
   if (options.maxBytes != null) requestArgs.maxBytes = options.maxBytes
+  if (options.priority) requestArgs.priority = true
 
   let rejectAbort: ((reason: Error) => void) | undefined
   const aborted = new Promise<never>((_, reject) => { rejectAbort = reject })
