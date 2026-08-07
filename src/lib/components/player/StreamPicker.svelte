@@ -20,6 +20,7 @@
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
   import { getSeadexEntry, bestHashes, isWebLink, matchSeadexStreams, type SeadexEntry, type SeadexRelease } from '$lib/stremio/seadex'
+  import { autoCommitPhase, autoCommitProgress } from '$lib/components/player/auto-commit'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { providerProblems } from '$lib/stremio/onlinestream'
   import { rejectLabel } from '$lib/stremio/refine'
@@ -40,10 +41,15 @@
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
   const cacheCheck = $derived($debridKey ? cacheCheckMode($debridProvider) : 'none')
 
-  // Curated best-release annotation. Loaded AFTER first paint and never awaited by anything: the
-  // list, the ranking and the countdown all run on `seadex === null`, and a matched entry simply
-  // re-ranks and re-badges when (if) it lands. A failure is indistinguishable from "no entry".
+  // Curated best-release annotation. Loaded AFTER first paint and never awaited by the list or the
+  // ranking, both of which run on `seadex === null` and simply re-rank and re-badge when (if) an
+  // entry lands. A failure is indistinguishable from "no entry".
+  //
+  // The COUNTDOWN is the one exception: it commits, and a commit cannot be re-ranked afterwards, so
+  // it holds briefly for an in-flight lookup rather than auto-playing a release the curators had
+  // something to say about. See auto-commit.ts.
   let seadex = $state<SeadexEntry | null>(null)
+  let seadexPending = $state(false)
   // The id, NOT `pick`, is what the load below may depend on. `pick` is a new object on every
   // progressive stream update, so an effect reading it directly would re-run (and blank the
   // annotation) each time an addon landed — a flickering badge and a re-ranking list mid-resolve.
@@ -52,11 +58,15 @@
   $effect(() => {
     const anilistId = seadexId
     seadex = null
+    seadexPending = false
     if (!anilistId) return
-    // `seadex` is written but never read in here, so the write cannot re-trigger this effect.
-    // `live` drops a response that arrives after the picker moved to another title.
+    // `seadex`/`seadexPending` are written but never read in here, so the writes cannot re-trigger
+    // this effect. `live` drops a response that arrives after the picker moved to another title.
     let live = true
-    void getSeadexEntry(anilistId).then((entry) => { if (live) seadex = entry })
+    seadexPending = true
+    void getSeadexEntry(anilistId)
+      .then((entry) => { if (live) seadex = entry })
+      .finally(() => { if (live) seadexPending = false })
     return () => { live = false }
   })
   const seadexHashes = $derived(bestHashes(seadex))
@@ -313,8 +323,13 @@
       autoState = 'counting'
       autoStart = performance.now()
       autoTimer = setInterval(() => {
-        autoProgress = Math.min(1, (performance.now() - autoStart) / AUTO_MS)
-        if (autoProgress >= 1) { stopAutoTimer(); autoState = 'off'; autoBest() }
+        const elapsed = performance.now() - autoStart
+        autoProgress = autoCommitProgress(elapsed, AUTO_MS)
+        // 'holding': the bar has filled but the curated lookup is still out. Waiting a moment costs
+        // the user nothing and is the difference between "Mark best releases" deciding the auto-pick
+        // and it being a badge that arrives after playback started. Capped inside autoCommitPhase.
+        const phase = autoCommitPhase({ elapsed, autoMs: AUTO_MS, curatedPending: seadexPending })
+        if (phase === 'commit') { stopAutoTimer(); autoState = 'off'; autoBest() }
       }, 50)
     }
   })
