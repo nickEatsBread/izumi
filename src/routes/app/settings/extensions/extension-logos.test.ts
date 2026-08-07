@@ -1,15 +1,16 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { iconSrc, logoTile } from '$lib/stremio/addon-logo'
+import { iconSrc } from '$lib/stremio/addon-logo'
 
-// Source icons in the extensions list. Two facts have to hold together for a logo to appear:
-// the page has to render AddonLogo (which owns the icon → tile fallback ladder), and the icon the
-// native side hands us has to be in the bare-base64 form AddonLogo understands. This app cannot
-// boot in a plain browser — it reads Tauri metadata at init — so these are asserted here rather
-// than through the preview.
+// Source icons in the extensions list and the store. Two facts have to hold together for a logo to
+// appear: the page has to render AddonLogo (which owns the icon → placeholder fallback ladder), and
+// the icon the native side hands us has to be in the bare-base64 form AddonLogo understands. This
+// app cannot boot in a plain browser — it reads Tauri metadata at init — so these are asserted here
+// rather than through the preview.
 
 const page = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
+const store = readFileSync(fileURLToPath(new URL('../store/+page.svelte', import.meta.url)), 'utf8')
 
 describe('extension list logos', () => {
   it('renders every store row and plugin row through AddonLogo', () => {
@@ -39,13 +40,30 @@ describe('extension list logos', () => {
     expect(iconSrc(undefined)).toBeUndefined()
   })
 
-  it('gives sources without any icon a stable, distinguishable tile', () => {
-    const a = logoTile('eu.kanade.tachiyomi.animeextension.en.onetwothreeanime', '123Anime')
-    const b = logoTile('eu.kanade.tachiyomi.animeextension.en.gogoanime', 'GogoAnime')
-    expect(a.initial).toBe('1')
-    expect(b.initial).toBe('G')
-    // Same source, same colour on every render — that is what makes the list scannable.
-    expect(logoTile('eu.kanade.tachiyomi.animeextension.en.gogoanime', 'GogoAnime')).toEqual(b)
-    expect(a.from).not.toBe(b.from)
+  it('draws one shared placeholder, never a locally invented one', () => {
+    // A source with several plugins has no icon of its own. It used to get a bespoke grey puzzle
+    // tile here while the store drew a themed one and AddonLogo drew a coloured initial — three
+    // answers to the same question.
+    expect(page).toContain("import SourcePlaceholder from '$lib/components/SourcePlaceholder.svelte'")
+    expect(page).toContain('<SourcePlaceholder size={40} />')
+    expect(page).not.toContain('@lucide/svelte/icons/puzzle')
+    expect(store).not.toContain('@lucide/svelte/icons/puzzle')
+  })
+})
+
+describe('store icons', () => {
+  it('shows a package its real icon instead of a fixed glyph', () => {
+    // Both store lists — the catalog tab and the installed section — go through AddonLogo, so a
+    // package with artwork shows it and one without gets the same placeholder as everywhere else.
+    expect(store).toContain("import AddonLogo from '$lib/components/player/AddonLogo.svelte'")
+    expect(store).toContain('<AddonLogo logo={packageIcon(item.id)} name={item.name} id={item.id} size={40} />')
+    expect(store).toContain('<AddonLogo logo={packageIcon(item.id)} name={item.name} id={item.id} size={36} />')
+  })
+
+  it('resolves those icons off the render path', () => {
+    // Same shape as the sources screen: the list paints, then icons fill in. jvmExtensionIcons can
+    // spin the JVM runtime, so awaiting it before the first paint would stall the whole page.
+    expect(store).toContain('void jvmExtensionIcons().then((icons) => { jvmIcons = icons })')
+    expect(store).toContain('fetchExtensionMeta(spec)')
   })
 })
