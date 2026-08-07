@@ -1,5 +1,5 @@
 import { persisted } from 'svelte-persisted-store'
-import { get } from 'svelte/store'
+import { get, type Readable } from 'svelte/store'
 import { anilistToken, malToken } from './config'
 import type { AniStatus } from './index'
 import type { FuzzyDate } from '$lib/anilist/types'
@@ -201,11 +201,51 @@ function tokenReady(t: TrackerName): boolean {
 // Date.now() is available at app runtime (the ban is workflow-scripts-only).
 function ownNow(): number { return Date.now() }
 
+const WAKE_INTERVAL = 60_000
+
 let inited = false
-/** Wire the online-reconnect flush + run one boot flush. Idempotent. */
-export function initTrackerQueue() {
-  if (inited || typeof window === 'undefined') return
+let teardown: (() => void) | null = null
+/** Wire every flush trigger + run one boot flush. Idempotent — repeat calls return the SAME
+ *  teardown rather than stacking a second interval/listener set. */
+export function initTrackerQueue(): () => void {
+  if (typeof window === 'undefined') return () => {}
+  if (inited) return teardown ?? (() => {})
   inited = true
-  window.addEventListener('online', () => { void flushQueue() })
+  const wake = () => { void flushQueue() }
+  // 'online' + the boot flush alone leave the backoff ladder decorative: the resume paths that
+  // actually matter — Deck suspend/resume, an Android warm start, a VPN flap — fire no 'online'
+  // event, so an episode finished offline would sit unsynced until the next app launch. The
+  // periodic wake is the only trigger that guarantees a queued op gets its next attempt at all;
+  // it can't defeat the ladder because flushQueue only replays entries past nextAttemptAt.
+  const timer = setInterval(wake, WAKE_INTERVAL)
+  const onVisible = () => { if (document.visibilityState === 'visible') wake() }
+  window.addEventListener('online', wake)
+  window.addEventListener('focus', wake)
+  document.addEventListener('visibilitychange', onVisible)
+  // tokenReady() gates the replay, so ops queued while signed out (or while a MAL token was
+  // cleared pending refresh) are skipped by every wake until auth lands. The token stores ARE the
+  // readiness signal, so subscribing turns sign-in into a trigger instead of a wait for the next tick.
+  const unsubs = [anilistToken, malToken].map((store) => watchToken(store, wake))
+  teardown = () => {
+    clearInterval(timer)
+    window.removeEventListener('online', wake)
+    window.removeEventListener('focus', wake)
+    document.removeEventListener('visibilitychange', onVisible)
+    for (const un of unsubs) un()
+    inited = false
+    teardown = null
+  }
   void flushQueue()
+  return teardown
+}
+
+/** Call `onReady` when a token store goes empty → set. subscribe() fires synchronously with the
+ *  current value, so the first emission is the baseline, never a transition. */
+function watchToken(store: Readable<string | null>, onReady: () => void): () => void {
+  let had: boolean | null = null
+  return store.subscribe((v) => {
+    const has = !!v
+    if (had === false && has) onReady()
+    had = has
+  })
 }
