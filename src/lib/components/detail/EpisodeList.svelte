@@ -11,7 +11,7 @@
   import type { EpMeta } from '$lib/anizip/types'
   import {
     episodeLayout, hideSpoilers, downloadQuality, downloadAudio, downloadCodec, downloadCachedOnly,
-    absoluteEpisodeNumbers,
+    absoluteEpisodeNumbers, type Quality,
   } from '$lib/settings/ui'
   import { localHistory, sessionProgress, manualProgressOverrides, setLocalProgress } from '$lib/player/history'
   import { positions, progressKey, episodeBarPercent } from '$lib/player/progress'
@@ -172,6 +172,12 @@
   let selecting = $state(false)
   let selected = $state<Set<number>>(new Set())
   let followNew = $state(false)
+  // Per-batch overrides for this select-mode session only — seeded from the Settings → Downloads
+  // globals each time select mode starts, but never written back. Lets a one-off batch (e.g. "just
+  // the dub of this arc") diverge from the standing default without touching it.
+  let batchQuality = $state<Quality>('any')
+  let batchAudio = $state<'any' | 'sub' | 'dub'>('any')
+  let batchCodec = $state<'any' | 'h264' | 'h265' | 'av1'>('any')
   const airedList = $derived(Array.from({ length: aired }, (_, i) => i + 1))
   const subscription = $derived($autoDownloadRules.find((rule) => rule.mediaId === media.id))
   // A tap on a released episode plays it — or, in select mode, toggles its selection.
@@ -183,18 +189,21 @@
     n.has(ep) ? n.delete(ep) : n.add(ep)
     selected = n
   }
-  function startSelect() { selecting = true; selected = new Set(); followNew = !!subscription }
+  function startSelect() {
+    selecting = true; selected = new Set(); followNew = !!subscription
+    batchQuality = $downloadQuality; batchAudio = $downloadAudio; batchCodec = $downloadCodec
+  }
   function cancelSelect() { selecting = false; selected = new Set(); followNew = false }
   const allAiredSelected = $derived(aired > 0 && selected.size >= aired)
   function toggleAllAired() { h.select(); selected = allAiredSelected ? new Set() : new Set(airedList) }
-  // One-line echo of the Settings → Downloads matching rules, so select mode says what it will
-  // actually fetch instead of shipping a bare "Matching settings" link to go find out.
+  // One-line echo of the current batch pickers (used as a tooltip on the "Defaults" link now that
+  // the pickers themselves are inline controls, not read-only text).
   const AUDIO_LABEL = { any: 'Any audio', sub: 'Subbed', dub: 'Dubbed' } as const
   const matchSummary = $derived(
     [
-      $downloadQuality === 'any' ? 'Any quality' : `${$downloadQuality}p`,
-      AUDIO_LABEL[$downloadAudio],
-      $downloadCodec === 'any' ? null : $downloadCodec.toUpperCase(),
+      batchQuality === 'any' ? 'Any quality' : `${batchQuality}p`,
+      AUDIO_LABEL[batchAudio],
+      batchCodec === 'any' ? null : batchCodec.toUpperCase(),
       $downloadCachedOnly ? 'Cached only' : null,
     ].filter(Boolean).join(' · '),
   )
@@ -211,10 +220,10 @@
     if (!selected.size && followNew === !!subscription) return
     if (selected.size) {
       enqueueMany(media, [...selected].sort((a, b) => a - b), {
-        quality: $downloadQuality,
+        quality: batchQuality,
         cachedOnly: $downloadCachedOnly,
-        audio: $downloadAudio,
-        codec: $downloadCodec,
+        audio: batchAudio,
+        codec: batchCodec,
       })
     }
     if (followNew) subscribeAutoDownloads(media, subscription?.nextEpisode ?? aired + 1)
@@ -306,9 +315,35 @@
           <input data-focusable type="checkbox" bind:checked={followNew} class="size-5 shrink-0 accent-theme" />
           <span class="flex-1">Auto-download new episodes</span>
         </label>
-        <div class="mt-2 flex items-center gap-2 px-1">
-          <p class="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={matchSummary}>{matchSummary}</p>
-          <a data-focusable href="/app/settings/downloads" class="shrink-0 rounded px-1 py-1 text-xs font-bold text-theme">Change</a>
+        <!-- flex-wrap + a real min width on the selects: flex-1 alone has basis 0% and would let
+             narrow phones crush both selects to ~20px instead of wrapping the row. -->
+        <div class="mt-2 flex flex-wrap items-center gap-2 px-1">
+          <select data-focusable bind:value={batchQuality}
+                  aria-label="Batch quality"
+                  class="min-w-[6rem] flex-1 rounded-lg bg-secondary px-2 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-accent">
+            <option value="any">Any quality</option>
+            <option value="2160">2160p</option>
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
+            <option value="480">480p</option>
+          </select>
+          <div class="flex shrink-0 rounded-lg bg-secondary p-0.5 text-xs font-bold">
+            <button type="button" data-focusable onclick={() => (batchAudio = 'any')}
+                    class="rounded-md px-2 py-1.5 leading-none transition-colors {batchAudio === 'any' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Any</button>
+            <button type="button" data-focusable onclick={() => (batchAudio = 'sub')}
+                    class="rounded-md px-2 py-1.5 leading-none transition-colors {batchAudio === 'sub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Sub</button>
+            <button type="button" data-focusable onclick={() => (batchAudio = 'dub')}
+                    class="rounded-md px-2 py-1.5 leading-none transition-colors {batchAudio === 'dub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Dub</button>
+          </div>
+          <select data-focusable bind:value={batchCodec}
+                  aria-label="Batch codec"
+                  class="min-w-[6rem] flex-1 rounded-lg bg-secondary px-2 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-accent">
+            <option value="any">Any codec</option>
+            <option value="h264">H264</option>
+            <option value="h265">H265</option>
+            <option value="av1">AV1</option>
+          </select>
+          <a data-focusable href="/app/settings/downloads" title={matchSummary} class="shrink-0 rounded px-1 py-1 text-xs font-bold text-theme">Defaults</a>
         </div>
       </div>
     {:else}
@@ -340,8 +375,33 @@
           <input data-focusable type="checkbox" bind:checked={followNew} />
           Auto-download new episodes
         </label>
+        <select data-focusable bind:value={batchQuality}
+                aria-label="Batch quality"
+                class="rounded-md bg-secondary px-2 py-1.5 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
+          <option value="any">Any quality</option>
+          <option value="2160">2160p</option>
+          <option value="1080">1080p</option>
+          <option value="720">720p</option>
+          <option value="480">480p</option>
+        </select>
+        <div class="flex rounded-md bg-secondary p-0.5 text-sm font-bold">
+          <button type="button" data-focusable onclick={() => (batchAudio = 'any')}
+                  class="rounded px-2 py-1 leading-none transition-colors {batchAudio === 'any' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Any</button>
+          <button type="button" data-focusable onclick={() => (batchAudio = 'sub')}
+                  class="rounded px-2 py-1 leading-none transition-colors {batchAudio === 'sub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Sub</button>
+          <button type="button" data-focusable onclick={() => (batchAudio = 'dub')}
+                  class="rounded px-2 py-1 leading-none transition-colors {batchAudio === 'dub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Dub</button>
+        </div>
+        <select data-focusable bind:value={batchCodec}
+                aria-label="Batch codec"
+                class="rounded-md bg-secondary px-2 py-1.5 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
+          <option value="any">Any codec</option>
+          <option value="h264">H264</option>
+          <option value="h265">H265</option>
+          <option value="av1">AV1</option>
+        </select>
         <a data-focusable href="/app/settings/downloads" title={matchSummary}
-           class="text-sm font-bold text-theme hover:underline">{matchSummary}</a>
+           class="text-sm font-bold text-theme hover:underline">Defaults</a>
         <button data-focusable disabled={applyDisabled} onclick={confirmDownload}
                 class="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground transition-colors hover:opacity-90 disabled:opacity-40">
           <Download size={15} /> {applyLabel}

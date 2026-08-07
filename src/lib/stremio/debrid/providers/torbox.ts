@@ -9,11 +9,12 @@ import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../type
 const BASE = 'https://api.torbox.app/v1/api'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function tb(method: string, path: string, key: string, body?: FormData): Promise<any> {
+async function tb(method: string, path: string, key: string, body?: FormData, priority?: boolean): Promise<any> {
   const { status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}` },
     ...(body ? { body } : {}),
+    priority,
   })
   if (json?.success === false) {
     const auth = authError('TorBox', { status, code: json?.error, message: json?.detail })
@@ -95,20 +96,20 @@ export const torbox: DebridProvider = {
     if (opts?.noAdd) {
       // createtorrent adds a permanent entry to the account, so a background prefetch may only
       // reuse a torrent that is already there. mylist is TorBox's only by-hash lookup.
-      const list = await tb('GET', '/torrents/mylist?bypass_cache=true', key).catch(() => undefined)
+      const list = await tb('GET', '/torrents/mylist?bypass_cache=true', key, undefined, opts?.priority).catch(() => undefined)
       const existing = tbFindReady(list, hashOf(hashOrMagnet))
       if (!existing) throw new Error("TorBox needs to add this release, which background prefetch isn't allowed to do.")
       id = existing
     }
     else {
       const fd = new FormData(); fd.set('magnet', magnetOf(hashOrMagnet))
-      const cr = await tb('POST', '/torrents/createtorrent', key, fd)
+      const cr = await tb('POST', '/torrents/createtorrent', key, fd, opts?.priority)
       id = cr.torrent_id
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let files: any[] = []
     await poll(async () => {
-      const r = await tb('GET', `/torrents/mylist?bypass_cache=true&id=${id}`, key)
+      const r = await tb('GET', `/torrents/mylist?bypass_cache=true&id=${id}`, key, undefined, opts?.priority)
       const t = Array.isArray(r) ? r[0] : r
       files = t?.files ?? []
       return tbStatus(t ?? {})
@@ -120,7 +121,7 @@ export const torbox: DebridProvider = {
     const best = pickVideoFile(mapped, opts?.want)
     if (best?.id == null) throw new Error('No playable file in that torrent.')
     // requestdl: token is a QUERY param here (not Bearer). data is the URL string.
-    const dl = await tb('GET', `/torrents/requestdl?token=${encodeURIComponent(key)}&torrent_id=${id}&file_id=${best.id}`, key)
+    const dl = await tb('GET', `/torrents/requestdl?token=${encodeURIComponent(key)}&torrent_id=${id}&file_id=${best.id}`, key, undefined, opts?.priority)
     if (typeof dl !== 'string') throw new Error('TorBox returned no link.')
     return dl
   },

@@ -8,11 +8,12 @@ import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../type
 const BASE = 'https://debrid-link.fr/api/v2'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function dl(method: string, path: string, key: string, body?: string): Promise<any> {
+async function dl(method: string, path: string, key: string, body?: string, priority?: boolean): Promise<any> {
   const { status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     ...(body ? { body } : {}),
+    priority,
   })
   if (json?.success === false) {
     const auth = authError('Debrid-Link', { status, code: json?.error })
@@ -81,19 +82,19 @@ export const debridlink: DebridProvider = {
       // /seedbox/add puts a permanent torrent on the account, so a background prefetch may only
       // reuse an entry already in the seedbox. The poll below re-finds it by hash anyway; this
       // lookup exists purely to decide whether there is anything to reuse at all.
-      const list = await dl('GET', '/seedbox/list', key).catch(() => undefined)
+      const list = await dl('GET', '/seedbox/list', key, undefined, opts?.priority).catch(() => undefined)
       const hit = dlFindReady(list?.value, want)
       if (!hit) throw new Error("Debrid-Link needs to add this release, which background prefetch isn't allowed to do.")
       addedId = hit.id
     }
     else {
-      const add = await dl('POST', '/seedbox/add', key, form({ url: magnetOf(hashOrMagnet) }))
+      const add = await dl('POST', '/seedbox/add', key, form({ url: magnetOf(hashOrMagnet) }), opts?.priority)
       addedId = add.value?.id
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let files: any[] = []
     await poll(async () => {
-      const list = (await dl('GET', '/seedbox/list', key)).value ?? []
+      const list = (await dl('GET', '/seedbox/list', key, undefined, opts?.priority)).value ?? []
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const t = list.find((x: any) => (x.hashString ?? '').toLowerCase() === want) ?? list.find((x: any) => x.id === addedId)
       files = t?.files ?? []

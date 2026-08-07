@@ -67,6 +67,10 @@ export interface Stream {
   // Individual extractor/server identity. Some JVM providers return every server in one response,
   // making the enclosing provider name useless for distinguishing rows in the chooser.
   __server?: string
+  // The extractor's own quality string ("1080p", "auto"), carried so variant UIs don't re-parse it
+  // out of the display name — and so they don't fall back to resolutionOf's regex haystack, which
+  // reads the server token itself (e.g. "HD-1") as a quality signal ("\bhd\b").
+  __quality?: string
   // "hard" means subtitles are burned into the video; "soft" means selectable sidecar tracks.
   __subtitleMode?: 'soft' | 'hard'
   // Content language of the provider that produced this row (ISO 639-1, e.g. 'it'), and whether it

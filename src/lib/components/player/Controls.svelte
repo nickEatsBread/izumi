@@ -23,14 +23,17 @@
   import Languages from '@lucide/svelte/icons/languages'
   import Search from '@lucide/svelte/icons/search'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery } from '$lib/player/session'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
   import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles } from '$lib/settings/ui'
-  import { playPrev, playNext, playEpisode, searchOnlineSubtitles } from '$lib/stremio/play'
+  import { playPrev, playNext, playEpisode, playStream, searchOnlineSubtitles } from '$lib/stremio/play'
+  import { audioCounterpart, serverSiblings, variantLabels } from '$lib/player/source-variants'
+  import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
   import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
@@ -85,6 +88,7 @@
     commentsOpen.set(opening)
     showOptions = false
     showTracks = false
+    showServers = false
   }
 
   // Game mode (Deck) scales the controls up for a touchscreen at arm's length: bigger
@@ -167,6 +171,37 @@
         autoplay: true,
       })
     }
+  }
+
+  // Sibling-source switching (online providers): the candidate pool retained for watchdog
+  // recovery (playbackRecovery.streams) holds the OTHER rows this site resolved for the same
+  // episode — the opposite audio flavour and alternate servers/qualities. Swapping loads the
+  // sibling in place and resumes at the click-time position; no re-resolve, no picker.
+  const recovery = $derived($playbackRecovery)
+  const currentStream = $derived(recovery?.current ?? null)
+  const variantPool = $derived(recovery?.streams ?? [])
+  const dubSubTarget = $derived(currentStream ? audioCounterpart(currentStream, variantPool) : undefined)
+  const altServers = $derived(currentStream ? serverSiblings(currentStream, variantPool) : [])
+  // Labelled as a SET: two unnamed mirrors of one site can reduce to the same text, and a menu of
+  // identical rows gives no basis to choose.
+  const altServerLabels = $derived(variantLabels(altServers))
+  // What the button switches TO (current sub → "DUB", dub → "SUB").
+  const dubSubLabel = $derived(currentStream?.__audio === 'sub' ? 'DUB' : 'SUB')
+  let showServers = $state(false)
+  let swapping = $state(false)
+  async function swapTo(target: Stream) {
+    const ctx = get(nowPlayingMedia)
+    if (!ctx || swapping) return
+    swapping = true
+    showServers = false
+    const startSeconds = pos // position at CLICK time, not a stale derived
+    await playStream(ctx.media, ctx.episode, target, (s) => {
+      if (s.status === 'error') playerNotice.set(s.message ?? 'Could not switch source.')
+      if (s.status !== 'resolving') swapping = false
+    }, { autoplay: true, startSeconds })
+    // playStream's ownership guard can return without ever reporting a state; never strand the
+    // buttons disabled.
+    swapping = false
   }
 
   // Video fit: 'best' = letterbox (panscan 0); 'fill' = crop-to-fill (panscan 1),
@@ -383,6 +418,7 @@
   }
   async function loadTracks() {
     showOptions = false // only one popover open at a time
+    showServers = false
     showTracks = !showTracks
     menuLevel = 'root'
     if (showTracks) await refreshTracks()
@@ -485,7 +521,7 @@
   // Drive the Game-mode snapshot overlay to its fast (60fps) cadence while a popover is open so
   // navigating it isn't laggy. The cleanup resets on unmount so the flag can't stick true.
   $effect(() => {
-    playerMenuOpen.set(showOptions || showTracks)
+    playerMenuOpen.set(showOptions || showTracks || showServers)
     return () => playerMenuOpen.set(false)
   })
 </script>
@@ -610,7 +646,7 @@
         <!-- Playback options: speed, audio/subtitle delay, subtitle size. In Game mode it sits to
              the RIGHT of the Subtitles button (Crunchy-Deck order) via order-last. -->
         <div class="relative {gm ? 'order-last' : ''}">
-          <button data-focusable class={iconBtn} onclick={() => { showOptions = !showOptions; showTracks = false; if (showOptions) readDelays() }} aria-label="Playback options"><Settings size={icSize} /></button>
+          <button data-focusable class={iconBtn} onclick={() => { showOptions = !showOptions; showTracks = false; showServers = false; if (showOptions) readDelays() }} aria-label="Playback options"><Settings size={icSize} /></button>
           {#if showOptions}
             <!-- NO backdrop-blur (video is a separate surface the webview can't sample → blurs
                  black). Desktop promotes to its own compositing layer (translateZ/will-change) so
@@ -669,6 +705,37 @@
                 aria-label="Discussion" aria-pressed={$commentsOpen}>
           <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
         </button>
+
+        <!-- SUB↔DUB: one-click swap to this source's other audio flavour. Only rendered when the
+             retained pool actually holds a counterpart row (torrents/debrid never do). -->
+        {#if dubSubTarget}
+          <button data-focusable disabled={swapping}
+                  onclick={() => dubSubTarget && swapTo(dubSubTarget)}
+                  aria-label="Switch to {dubSubLabel === 'DUB' ? 'dub' : 'sub'} audio"
+                  title="Switch to {dubSubLabel === 'DUB' ? 'dub' : 'sub'} audio"
+                  class="{iconBtn} select-none text-xs font-bold tracking-wide disabled:opacity-40">
+            {dubSubLabel}
+          </button>
+        {/if}
+
+        <!-- Alternate servers/qualities for the current source (same site, same flavour). -->
+        {#if altServers.length}
+          <div class="relative">
+            <button data-focusable class={iconBtn} onclick={() => { showServers = !showServers; showOptions = false; showTracks = false }} aria-label="Switch server"><ArrowRightLeft size={icSize} /></button>
+            {#if showServers}
+              <!-- Same popover rules as the options menu: no backdrop-blur; Desktop promotes its
+                   own layer, Game mode must stay on the base layer to snapshot crisply. -->
+              <div class="absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900 p-2 text-sm text-white shadow-xl {gm ? '' : '[transform:translateZ(0)] [will-change:transform]'}">
+                <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Servers</p>
+                {#each altServers as alt, i (alt.url)}
+                  <button data-focusable disabled={swapping} class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15 disabled:opacity-40" onclick={() => swapTo(alt)}>
+                    {altServerLabels[i]}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <!-- Subtitle / audio track menu -->
         <div class="relative">

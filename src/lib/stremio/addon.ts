@@ -262,11 +262,16 @@ export const streamBudgetMs = (base: string) =>
 // Blowing the budget is not the same as failing: `onLate` receives the response if it lands
 // afterwards, so a slow addon's rows still reach an open picker instead of being thrown away
 // (they were, previously — a response one tick past the cap was discarded outright).
+//
+// `signal`, when passed, rides only the stream request (never the manifest — see below): a
+// picker supersede aborts the in-flight fetch instead of leaving it to run to completion against
+// the shared native HTTP pool, freeing the slot immediately for whatever the new pick needs.
 export async function fetchAddonStreams(
   base: string,
   id: string | string[],
   type = 'series',
   onLate?: (r: AddonStreams) => void,
+  signal?: AbortSignal,
 ): Promise<AddonStreams> {
   let b = base.replace(/^http:\/\//i, 'https://')
   if (!/^https?:\/\//i.test(b)) b = 'https://' + b
@@ -300,7 +305,7 @@ export async function fetchAddonStreams(
       // imdb triple reaches addons in either namespace instead of only the anime-aware ones.
       const responses = await Promise.all(ask.map(async (one) => {
         try {
-          const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(one)}.json`)
+          const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(one)}.json`, { signal })
           if (!r.ok) return []
           return ((await r.json()) as { streams?: Stream[] }).streams ?? []
         } catch { return [] }

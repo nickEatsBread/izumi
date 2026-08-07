@@ -60,6 +60,8 @@ export interface ResolveOpts {
    *  honours it the same way: serve an entry the account already holds, otherwise THROW — never
    *  fall through to the add/upload/create endpoint. */
   noAdd?: boolean
+  /** Set by playStream for a user-picked source: providers thread it into each jfetch. */
+  priority?: boolean
 }
 
 /** One external subtitle file resolved alongside the chosen video. */

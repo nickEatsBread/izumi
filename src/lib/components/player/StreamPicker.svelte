@@ -181,6 +181,44 @@
   const renderedMain = $derived(showAll ? shown : shown.slice(0, RENDER_CAP))
   const hiddenCount = $derived(shown.length - renderedMain.length)
 
+  // Online-provider variants grouped per site: every server/quality/flavour of one site is one
+  // expandable card headed by its best-ranked variant. Torrent/debrid rows stay flat.
+  const originKey = (i: StreamInfo) =>
+    i.stream.__stream ? (i.stream.__origin?.id ?? i.stream.__origin?.name ?? i.addon ?? '') : ''
+  interface RowGroup { head: StreamInfo; rest: StreamInfo[] }
+  const groupedMain = $derived.by(() => {
+    const groups = new Map<string, RowGroup>()
+    const out: (StreamInfo | RowGroup)[] = []
+    for (const i of renderedMain) {
+      const key = originKey(i)
+      if (!key) { out.push(i); continue }
+      const g = groups.get(key)
+      if (!g) { const ng = { head: i, rest: [] as StreamInfo[] }; groups.set(key, ng); out.push(ng) }
+      else g.rest.push(i) // ranked order → head is the site's best variant
+    }
+    return out
+  })
+  const isGroup = (e: StreamInfo | RowGroup): e is RowGroup => 'head' in e
+  const entryKey = (e: StreamInfo | RowGroup) => (isGroup(e) ? keyOf(e.head) : keyOf(e))
+  let expandedGroups = $state<Set<string>>(new Set())
+  function toggleGroup(key: string) {
+    // Expanding a group IS interacting with the list — the countdown must not pick over the
+    // user's head while they browse variants. (onfocus alone misses pointer clicks on WebKit.)
+    cancelAuto()
+    const n = new Set(expandedGroups)
+    if (n.has(key)) n.delete(key)
+    else n.add(key)
+    expandedGroups = n
+  }
+  // A text filter that matched variants inside a collapsed group must not hide them.
+  const forceExpand = $derived(!!filter.trim())
+  // Game mode moves controller focus onto [data-best-source] the moment Best appears (the effect
+  // below) — on the Deck a Best variant hidden inside a collapsed card would strand the d-pad on
+  // nothing and point the "Picked for…" explanation at an invisible row. Derived, not state: the
+  // group holding Best simply cannot render collapsed while it holds it (a Best HEAD needs no
+  // expansion); user toggles still govern every other group.
+  const groupHasBest = (g: RowGroup) => !!best && g.rest.includes(best)
+
   // Rows the title/production/season heuristics removed. Shown on request, APPENDED rather than
   // merged: they must never reach `best`, so a release we judged to be the wrong show can't become
   // the auto-pick just because the user wanted to see what was filtered.
@@ -195,7 +233,8 @@
       : [],
   )
   const reasonOf = $derived(new Map(rejected.map((r) => [describe(r.stream), rejectLabel[r.reason]])))
-  const rendered = $derived([...renderedMain, ...filteredInfos])
+  // Rejected rows keep their flat presentation, appended after the grouped main section.
+  const rendered = $derived<(StreamInfo | RowGroup)[]>([...groupedMain, ...filteredInfos])
 
   // Backdrop for the resolve screen.
   const backdrop = $derived(pick ? (banner(pick.media) || cover(pick.media)) : '')
@@ -234,6 +273,7 @@
     if (k !== lastKey) {
       lastKey = k
       busy = false; error = ''; blockedRetry = null; filter = ''; chosenLabel = ''; showAll = false; showFiltered = false; seadexOpen = false
+      expandedGroups = new Set()
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
       autoIdx = 0; failedKeys = []
       focusedBest = false
@@ -453,6 +493,115 @@
   {#if batch}<Database size={13} class="shrink-0 text-indigo-300" />{/if}
 {/snippet}
 
+<!-- One source row, used identically in every render position — flat rows, a group's head, its
+     expanded variants, and the shown-on-request filtered rows. `inset` nudges a grouped sub-row
+     right so it reads as belonging to the card above it. The flip animation is NOT in here: it
+     must live on the immediate child of the outer keyed each. -->
+{#snippet sourceRow(info: StreamInfo, inset: boolean)}
+  {@const g = cacheGlyph(info)}
+  {@const isBest = info === best}
+  {@const disabled = busy}
+  {@const filteredAs = reasonOf.get(info)}
+  {@const knownBad = hasFailed(info.stream)}
+  {@const body = descriptionOf(info)}
+  {@const curated = curatedOf(info)}
+  <!-- The row body and the copy action are SIBLINGS, not nested: a <button> inside a
+       role="button" is ambiguous to a screen reader, and on a phone the 14px copy icon sat
+       inline in the heading row — directly under the thumb aiming at the row, so a mis-tap
+       copied a magnet instead of playing. Mobile moves it to a separated 48px rail. -->
+  <div
+    class="group flex items-stretch overflow-hidden rounded-xl border border-transparent bg-secondary/40 transition-colors {inset ? 'ml-4' : 'w-full'}"
+    class:opacity-40={info.cached === 'down' || !!filteredAs || knownBad}
+    class:!border-theme={isBest}
+    class:!border-red-400={isBest && autoState === 'counting' && autoProgress > 0.4}
+    class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4 && animate}
+  >
+  <div
+    data-focusable
+    data-best-source={isBest ? '' : undefined}
+    role="button"
+    tabindex="0"
+    aria-disabled={disabled}
+    onclick={() => choose(info)}
+    onpointerenter={cancelAuto}
+    onfocus={cancelAuto}
+    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
+    class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
+  >
+    <!-- Mobile has no hover, so this tooltip-only glyph told a touch user nothing. It states
+         itself as a worded pill in the meta row down there instead, and the reclaimed ~30px
+         goes to the release name — the scarcest thing on a 375px screen. -->
+    {#if !$isMobile}
+      <span class="mt-0.5 shrink-0 text-lg leading-none {g.cls}" title={g.t} aria-hidden="true">{g.i}</span>
+    {/if}
+
+    <span class="min-w-0 flex-1">
+      <!-- heading row -->
+      <span class="flex items-center gap-2">
+        <AddonLogo logo={info.logo} name={info.addon ?? info.provider} id={info.stream.__origin?.id} size={20} />
+        <span class="truncate text-base font-bold">{info.server ?? info.group ?? info.addon ?? info.provider ?? 'Source'}</span>
+        {#if isBest}
+          <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white" title={whyBest}>Best</span>
+          {#if autoState === 'counting'}<span class="shrink-0 font-black tabular-nums text-theme" class:text-red-400={autoProgress > 0.4}>[{Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}]</span>{/if}
+        {/if}
+        {#if !$isMobile}
+          {@render qualifiers(curated, filteredAs, knownBad, !!info.batch)}
+          <span class="ml-auto flex shrink-0 items-center gap-2">
+            <!-- Unconditional. Suppressing the name whenever a logo EXISTED meant a logo that
+                 failed to load left the row with a broken box and no name — no provenance at all. -->
+            {#if info.addon}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
+            <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
+            <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
+          </span>
+        {/if}
+      </span>
+
+      <!-- Why the Best row won, on the row itself. Desktop hides this behind the badge's
+           `title`; on touch that reasoning was simply unreachable. One row carries it. -->
+      {#if isBest && $isMobile && whyBest}
+        <span class="mt-1 block text-[0.75rem] font-semibold leading-snug text-theme">{whyBest}</span>
+      {/if}
+
+      <!-- The addon's OWN text, verbatim. It writes real detail in here — tracker, languages,
+           per-file notes, its own formatting — and the row used to show a single parsed
+           filename instead, discarding everything we hadn't explicitly extracted. -->
+      <span
+        class="mt-0.5 block whitespace-pre-line leading-snug text-muted-foreground {$isMobile ? 'text-[0.8rem]' : 'text-[0.72rem]'} {$fullStreamDescription ? '' : ($isMobile ? 'line-clamp-2' : 'line-clamp-3')}"
+        title={body}
+      >{body}</span>
+
+      <!-- meta + badges. Seeders/size are suppressed when the addon already wrote them into
+           the text above, so the row states each fact once. -->
+      <span class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 {$isMobile ? 'text-[0.75rem]' : 'text-[0.7rem]'}">
+        {#if $isMobile}
+          <span class="rounded px-1.5 py-0.5 font-bold {g.pill}">{g.i} {g.w}</span>
+          {@render qualifiers(curated, filteredAs, knownBad, !!info.batch)}
+        {/if}
+        {#if info.provider}<span class="font-bold text-theme">{info.provider}</span>{/if}
+        {#if info.cached === 'uncached' && !$isMobile}<span class="text-amber-400">{directP2p ? 'direct P2P' : 'will download'}</span>{/if}
+        {#if info.seeders != null && !statedSeeders(body)}<span class={seedClass(info.seeders)}>👤 {info.seeders}</span>{/if}
+        {#if info.sizeLabel && !statedSize(body, info.sizeLabel)}<span class="text-muted-foreground">💾 {info.sizeLabel}</span>{/if}
+        {#each info.badges as b}
+          <span
+            class="rounded px-1.5 py-0.5 font-medium {badgeClass(b)}"
+            title={/^(?:CC \d+|HARDSUB)$/.test(b) ? info.subtitleLabel : undefined}
+          >{b}</span>
+        {/each}
+        <!-- Provenance, demoted to the end of the wrapping row: on desktop it sits in the
+             heading's right gutter, which a phone doesn't have to spare. -->
+        {#if $isMobile && info.addon}<span class="font-semibold text-muted-foreground/70">{info.addon}</span>{/if}
+      </span>
+    </span>
+  </div>
+  {#if $isMobile}
+    <button type="button" data-focusable onclick={(e) => copyLink(e, info)} aria-label="Copy link"
+            class="grid w-12 shrink-0 place-items-center border-l border-border/60 transition-colors active:bg-accent {copiedKey === keyOf(info) ? 'text-green-400' : 'text-muted-foreground'}">
+      {#if copiedKey === keyOf(info)}<Check size={17} />{:else}<Copy size={17} />{/if}
+    </button>
+  {/if}
+  </div>
+{/snippet}
+
 <!-- `hidden` renders nothing while the entry stays live: with a single configured source there is
      nothing to choose, but the resolve flow still needs the picker to exist to recognise its own
      request. Errors clear the flag, so a failure is never silent. -->
@@ -668,110 +817,31 @@
             </div>
           {/each}
         {:else}
-        {#each rendered as info (keyOf(info))}
-          {@const g = cacheGlyph(info)}
-          {@const isBest = info === best}
-          {@const disabled = busy}
-          {@const filteredAs = reasonOf.get(info)}
-          {@const knownBad = hasFailed(info.stream)}
-          {@const body = descriptionOf(info)}
-          {@const curated = curatedOf(info)}
-          <!-- The row body and the copy action are SIBLINGS, not nested: a <button> inside a
-               role="button" is ambiguous to a screen reader, and on a phone the 14px copy icon sat
-               inline in the heading row — directly under the thumb aiming at the row, so a mis-tap
-               copied a magnet instead of playing. Mobile moves it to a separated 48px rail. -->
-          <div
-            class="group flex w-full items-stretch overflow-hidden rounded-xl border border-transparent bg-secondary/40 transition-colors"
-            class:opacity-40={info.cached === 'down' || !!filteredAs || knownBad}
-            class:!border-theme={isBest}
-            class:!border-red-400={isBest && autoState === 'counting' && autoProgress > 0.4}
-            class:animate-pulse={isBest && autoState === 'counting' && autoProgress > 0.4 && animate}
-            animate:flip={{ duration: resolving ? 0 : 220 }}
-            in:fade={{ duration: 150 }}
-          >
-          <div
-            data-focusable
-            data-best-source={isBest ? '' : undefined}
-            role="button"
-            tabindex="0"
-            aria-disabled={disabled}
-            onclick={() => choose(info)}
-            onpointerenter={cancelAuto}
-            onfocus={cancelAuto}
-            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
-            class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
-          >
-            <!-- Mobile has no hover, so this tooltip-only glyph told a touch user nothing. It states
-                 itself as a worded pill in the meta row down there instead, and the reclaimed ~30px
-                 goes to the release name — the scarcest thing on a 375px screen. -->
-            {#if !$isMobile}
-              <span class="mt-0.5 shrink-0 text-lg leading-none {g.cls}" title={g.t} aria-hidden="true">{g.i}</span>
+        {#each rendered as entry (entryKey(entry))}
+          <!-- The animated element: one per list entry, whether that entry is a flat row or a whole
+               group. Its key is stable across the flat-row → group transition (a group is keyed by
+               its head), so flip never sees a remove+insert for the same source. -->
+          {@const grouped = isGroup(entry) && entry.rest.length > 0 ? entry : null}
+          <div animate:flip={{ duration: resolving ? 0 : 220 }} in:fade={{ duration: 150 }}>
+            {#if grouped}
+              {@const gk = originKey(grouped.head)}
+              {@const open = forceExpand || expandedGroups.has(gk) || groupHasBest(grouped)}
+              <div class="space-y-1 rounded-xl border border-border/60 bg-secondary/20 p-1">
+                {@render sourceRow(grouped.head, false)}
+                <button data-focusable aria-expanded={open} onclick={() => toggleGroup(gk)} onfocus={cancelAuto}
+                        class="flex w-full items-center justify-center gap-1.5 rounded-lg text-center font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:bg-accent {$isMobile ? 'min-h-10 py-2 text-sm' : 'py-1.5 text-xs'}">
+                  {grouped.rest.length} more from {grouped.head.addon ?? grouped.head.provider ?? 'this site'}
+                  <span aria-hidden="true">{open ? '▴' : '▾'}</span>
+                </button>
+                {#if open}
+                  {#each grouped.rest as sub (keyOf(sub))}
+                    {@render sourceRow(sub, true)}
+                  {/each}
+                {/if}
+              </div>
+            {:else}
+              {@render sourceRow(isGroup(entry) ? entry.head : entry, false)}
             {/if}
-
-            <span class="min-w-0 flex-1">
-              <!-- heading row -->
-              <span class="flex items-center gap-2">
-                <AddonLogo logo={info.logo} name={info.addon ?? info.provider} id={info.stream.__origin?.id} size={20} />
-                <span class="truncate text-base font-bold">{info.server ?? info.group ?? info.addon ?? info.provider ?? 'Source'}</span>
-                {#if isBest}
-                  <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white" title={whyBest}>Best</span>
-                  {#if autoState === 'counting'}<span class="shrink-0 font-black tabular-nums text-theme" class:text-red-400={autoProgress > 0.4}>[{Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}]</span>{/if}
-                {/if}
-                {#if !$isMobile}
-                  {@render qualifiers(curated, filteredAs, knownBad, !!info.batch)}
-                  <span class="ml-auto flex shrink-0 items-center gap-2">
-                    <!-- Unconditional. Suppressing the name whenever a logo EXISTED meant a logo that
-                         failed to load left the row with a broken box and no name — no provenance at all. -->
-                    {#if info.addon}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
-                    <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
-                    <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
-                  </span>
-                {/if}
-              </span>
-
-              <!-- Why the Best row won, on the row itself. Desktop hides this behind the badge's
-                   `title`; on touch that reasoning was simply unreachable. One row carries it. -->
-              {#if isBest && $isMobile && whyBest}
-                <span class="mt-1 block text-[0.75rem] font-semibold leading-snug text-theme">{whyBest}</span>
-              {/if}
-
-              <!-- The addon's OWN text, verbatim. It writes real detail in here — tracker, languages,
-                   per-file notes, its own formatting — and the row used to show a single parsed
-                   filename instead, discarding everything we hadn't explicitly extracted. -->
-              <span
-                class="mt-0.5 block whitespace-pre-line leading-snug text-muted-foreground {$isMobile ? 'text-[0.8rem]' : 'text-[0.72rem]'} {$fullStreamDescription ? '' : ($isMobile ? 'line-clamp-2' : 'line-clamp-3')}"
-                title={body}
-              >{body}</span>
-
-              <!-- meta + badges. Seeders/size are suppressed when the addon already wrote them into
-                   the text above, so the row states each fact once. -->
-              <span class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 {$isMobile ? 'text-[0.75rem]' : 'text-[0.7rem]'}">
-                {#if $isMobile}
-                  <span class="rounded px-1.5 py-0.5 font-bold {g.pill}">{g.i} {g.w}</span>
-                  {@render qualifiers(curated, filteredAs, knownBad, !!info.batch)}
-                {/if}
-                {#if info.provider}<span class="font-bold text-theme">{info.provider}</span>{/if}
-                {#if info.cached === 'uncached' && !$isMobile}<span class="text-amber-400">{directP2p ? 'direct P2P' : 'will download'}</span>{/if}
-                {#if info.seeders != null && !statedSeeders(body)}<span class={seedClass(info.seeders)}>👤 {info.seeders}</span>{/if}
-                {#if info.sizeLabel && !statedSize(body, info.sizeLabel)}<span class="text-muted-foreground">💾 {info.sizeLabel}</span>{/if}
-                {#each info.badges as b}
-                  <span
-                    class="rounded px-1.5 py-0.5 font-medium {badgeClass(b)}"
-                    title={/^(?:CC \d+|HARDSUB)$/.test(b) ? info.subtitleLabel : undefined}
-                  >{b}</span>
-                {/each}
-                <!-- Provenance, demoted to the end of the wrapping row: on desktop it sits in the
-                     heading's right gutter, which a phone doesn't have to spare. -->
-                {#if $isMobile && info.addon}<span class="font-semibold text-muted-foreground/70">{info.addon}</span>{/if}
-              </span>
-            </span>
-          </div>
-          {#if $isMobile}
-            <button type="button" data-focusable onclick={(e) => copyLink(e, info)} aria-label="Copy link"
-                    class="grid w-12 shrink-0 place-items-center border-l border-border/60 transition-colors active:bg-accent {copiedKey === keyOf(info) ? 'text-green-400' : 'text-muted-foreground'}">
-              {#if copiedKey === keyOf(info)}<Check size={17} />{:else}<Copy size={17} />{/if}
-            </button>
-          {/if}
           </div>
         {/each}
         {#if resolving}

@@ -10,9 +10,9 @@ import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridAccountI
 const BASE = 'https://www.premiumize.me/api'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function pm(method: string, path: string, key: string, fd?: FormData): Promise<any> {
+async function pm(method: string, path: string, key: string, fd?: FormData, priority?: boolean): Promise<any> {
   const sep = path.includes('?') ? '&' : '?'
-  const { status, json } = await jfetch(`${BASE}${path}${sep}apikey=${encodeURIComponent(key)}`, fd ? { method, body: fd } : { method })
+  const { status, json } = await jfetch(`${BASE}${path}${sep}apikey=${encodeURIComponent(key)}`, fd ? { method, body: fd, priority } : { method, priority })
   // Only throw on an auth/subscription failure; a plain status:'error' (e.g. directdl
   // "not cached") must still fall through to the caller's slow path.
   const auth = authError('Premiumize', { status, message: json?.message })
@@ -105,7 +105,7 @@ export const premiumize: DebridProvider = {
     const magnet = magnetOf(hashOrMagnet)
     // Fast path — instant for cached torrents.
     const fd = new FormData(); fd.set('src', magnet)
-    const dd = await pm('POST', '/transfer/directdl', key, fd)
+    const dd = await pm('POST', '/transfer/directdl', key, fd, opts?.priority)
     if (dd?.status === 'success' && Array.isArray(dd.content) && dd.content.length) {
       const best = pickVideoFile(flattenContent(dd.content), opts?.want)
       if (best?.link) return best.link
@@ -115,19 +115,19 @@ export const premiumize: DebridProvider = {
     // only this transfer — a permanent entry in the user's cloud — that noAdd forbids.
     if (opts?.noAdd) throw new Error("Premiumize needs to add this release, which background prefetch isn't allowed to do.")
     const fd2 = new FormData(); fd2.set('src', magnet)
-    const cr = await pm('POST', '/transfer/create', key, fd2)
+    const cr = await pm('POST', '/transfer/create', key, fd2, opts?.priority)
     if (cr?.status !== 'success' || !cr.id) throw new Error(cr?.message ?? 'Premiumize rejected the magnet.')
     let folderId: string | undefined
     let fileId: string | undefined
     await poll(async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const t = (await pm('GET', '/transfer/list', key)).transfers?.find((x: any) => x.id === cr.id)
+      const t = (await pm('GET', '/transfer/list', key, undefined, opts?.priority)).transfers?.find((x: any) => x.id === cr.id)
       folderId = t?.folder_id; fileId = t?.file_id
       return pmStatus(t ?? {})
     }, opts)
     let files: PmFile[]
-    if (folderId) files = flattenContent((await pm('GET', `/folder/list?id=${folderId}`, key)).content ?? [])
-    else if (fileId) { const d = await pm('GET', `/item/details?id=${fileId}`, key); files = [{ name: d.name ?? '', bytes: d.size ?? 0, link: d.link, stream_link: d.stream_link }] }
+    if (folderId) files = flattenContent((await pm('GET', `/folder/list?id=${folderId}`, key, undefined, opts?.priority)).content ?? [])
+    else if (fileId) { const d = await pm('GET', `/item/details?id=${fileId}`, key, undefined, opts?.priority); files = [{ name: d.name ?? '', bytes: d.size ?? 0, link: d.link, stream_link: d.stream_link }] }
     else files = []
     const best = pickVideoFile(files, opts?.want)
     if (!best?.link && !best?.stream_link) throw new Error('No playable file in that torrent.')
