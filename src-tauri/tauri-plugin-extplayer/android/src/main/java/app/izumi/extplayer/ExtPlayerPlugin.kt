@@ -693,19 +693,42 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         return overlay to web
     }
 
+    // Disqus' logged-in marker in the shared jar: the Django `sessionid` cookie on disqus.com. Returned
+    // as a value (not a boolean) because an anonymous visit can already carry one — Django rotates the
+    // session key on login, so a CHANGED value is the signal, not mere presence.
+    private fun disqusSessionId(): String? {
+        val jar = CookieManager.getInstance().getCookie("https://disqus.com/") ?: return null
+        for (part in jar.split(';')) {
+            val entry = part.trim()
+            if (!entry.startsWith("sessionid=")) continue
+            return entry.removePrefix("sessionid=").ifEmpty { null }
+        }
+        return null
+    }
+
     // Disqus' own comment login (opened via the window.open hook in load()). A Custom Tab can't complete
     // Disqus' popup+postMessage handshake and lands the session cookie in the wrong jar, so run it in an
-    // in-app overlay sharing the WebView cookie jar. Disqus calls window.close() when done
-    // (onCloseWindow); on finish reload the embed iframe so it re-boots with the new session cookie.
+    // in-app overlay sharing the WebView cookie jar. On finish, reload the embed iframe so it re-boots
+    // with the new session cookie.
+    //
+    // Closing it must NOT rely on Disqus calling window.close(): this overlay is a plain WebView, not a
+    // script-opened popup, so it has no `opener` and Chromium ignores close() on it — Disqus' post-login
+    // page then spins forever on a handshake that can't complete and onCloseWindow never fires, leaving
+    // the overlay stuck over the app. So drive the teardown from our side: poll the disqus.com jar for a
+    // new `sessionid`, and treat a navigation back to the comments embed as done too (same signal the
+    // OAuth capture path uses). onCloseWindow stays wired as a bonus for the cases where it does fire.
     private fun showDisqusLogin(uri: Uri) {
         activity.runOnUiThread {
             val content = activity.findViewById<ViewGroup>(android.R.id.content)
+            val handler = Handler(Looper.getMainLooper())
             var done = false
             var overlayRef: FrameLayout? = null
             var webRef: WebView? = null
+            val sessionBefore = disqusSessionId()
             fun finish() {
                 if (done) return
                 done = true
+                handler.removeCallbacksAndMessages(null)
                 CookieManager.getInstance().flush()
                 (overlayRef?.parent as? ViewGroup)?.removeView(overlayRef)
                 webRef?.stopLoading()
@@ -718,7 +741,17 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             val (overlay, web) = makeOverlay { finish() }
             overlayRef = overlay
             webRef = web
-            web.webViewClient = WebViewClient()
+            web.webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    val parsed = Uri.parse(url)
+                    val host = parsed.host.orEmpty()
+                    if (host != "disqus.com" && !host.endsWith(".disqus.com")) return
+                    val path = parsed.path.orEmpty()
+                    // End of the round trip: the OAuth provider handing back (`/_ax/<provider>/complete/`,
+                    // `/profile/login/complete/`) or the popup bouncing to the comments embed.
+                    if (path.startsWith("/embed/comments") || path.contains("/complete")) finish()
+                }
+            }
             web.webChromeClient = object : WebChromeClient() {
                 override fun onCloseWindow(window: WebView) { finish() }
             }
@@ -727,6 +760,23 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ))
             web.loadUrl(uri.toString())
+            var waited = 0
+            var baseline = sessionBefore
+            val poll = object : Runnable {
+                override fun run() {
+                    if (done) return
+                    val now = disqusSessionId()
+                    // For the first seconds the login page's own cookies are still landing, so keep
+                    // re-baselining instead of reading them as a sign-in — nobody completes a login
+                    // that fast, so no real one is missed and the overlay can't self-close on load.
+                    if (waited < 3_000) baseline = now
+                    else if (now != null && now != baseline) { finish(); return }
+                    waited += 700
+                    if (waited > 300_000) { finish(); return } // never leave the overlay up forever
+                    handler.postDelayed(this, 700)
+                }
+            }
+            handler.postDelayed(poll, 700)
         }
     }
 
