@@ -1064,6 +1064,38 @@
   let sheetOpenFrame = 0
   // Scroller the touch started in (null = handle/header), and what the touch resolved to.
   let sheetScroller: HTMLElement | null = null
+  let sheetEl = $state<HTMLElement>()
+
+  // Why a raw touch listener when the drag itself is pointer-driven:
+  //
+  // `.settings-body` is `touch-action: pan-y`, so the BROWSER owns vertical panning inside it. The
+  // moment a finger moves down, it claims the gesture and fires `pointercancel` — which lands in
+  // handleCancel and kills the drag before sheetGestureIntent ever gets to classify it. That is why
+  // pulling down on the settings list did nothing: the intent logic was right, it was simply never
+  // reached. `touch-action` cannot be changed after `pointerdown`, so pointer events alone cannot
+  // express "drag the sheet, unless the list still has somewhere to scroll up into".
+  //
+  // A non-passive `touchmove` can: preventDefault() exactly the downward-at-top case stops the
+  // browser taking the gesture, so the pointer stream survives and the existing drag runs. Every
+  // other case (scrolling up, or dragging down mid-list) is left to native scrolling.
+  function onSheetTouchMove(e: TouchEvent) {
+    // Not cancelable once the browser has already committed to scrolling — preventDefault would
+    // only earn an [Intervention] warning.
+    if (!e.cancelable || sheetPointerId == null) return
+    const touch = e.touches[0]
+    if (!touch) return
+    const pullingDown = touch.clientY - sheetStartY > 0
+    const atTop = !sheetScroller || sheetScroller.scrollTop <= 0
+    if (pullingDown && atTop) e.preventDefault()
+  }
+  $effect(() => {
+    const el = sheetEl
+    if (!el) return
+    // Explicitly non-passive: a passive listener's preventDefault() is a no-op, which is the whole
+    // mechanism here.
+    el.addEventListener('touchmove', onSheetTouchMove, { passive: false })
+    return () => el.removeEventListener('touchmove', onSheetTouchMove)
+  })
   let sheetIntent: 'drag' | 'scroll' | null = null
   // A pull that passes over a settings row still fires a click on release; swallow exactly one.
   let sheetSuppressClick = false
@@ -1454,7 +1486,7 @@
     <!-- The pointer handlers sit on the sheet ROOT so a pull anywhere on it dismisses. They also
          stopPropagation on move+up (not just down) so swiping the sheet / scrolling the list never
          leaks to the video's gesture layer underneath (the "interferes with the video" bug). -->
-    <div class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleCancel} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
+    <div bind:this={sheetEl} class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleCancel} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
       <!-- Grab affordance only — the whole sheet is draggable, so this is decoration, not the target. -->
       <div class="sheet-handle py-4 touch-none">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>
