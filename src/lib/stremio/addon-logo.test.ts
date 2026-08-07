@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { resolveAddonLogo, logoTile, iconSrc } from './addon-logo'
+import { resolveAddonLogo, iconSrc } from './addon-logo'
 
 describe('resolveAddonLogo', () => {
   it('passes an absolute url through', () => {
@@ -38,26 +40,29 @@ describe('resolveAddonLogo', () => {
   })
 })
 
-describe('logoTile', () => {
-  it('uses the first character of the addon name', () => {
-    expect(logoTile('torrentio', 'Torrentio').initial).toBe('T')
+// There is exactly ONE missing-icon visual in the app, and it is a component rather than something
+// generated per source. The colour-hashed initial tile this module used to export was the second
+// one; these guard against it (or a replacement for it) creeping back.
+const src = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+const addonLogo = src('../components/player/AddonLogo.svelte')
+
+describe('the single icon fallback', () => {
+  it('no longer generates a per-source tile', () => {
+    // A colour seeded off the source id made a placeholder look like real branding next to the
+    // real logos it sat beside.
+    expect(src('./addon-logo.ts')).not.toContain('logoTile')
   })
 
-  it('falls back to a question mark for a nameless addon', () => {
-    expect(logoTile('x', '').initial).toBe('?')
+  it('routes AddonLogo\'s fallback through the shared placeholder', () => {
+    expect(addonLogo).toContain("import SourcePlaceholder from '$lib/components/SourcePlaceholder.svelte'")
+    expect(addonLogo).toContain('<SourcePlaceholder {size} />')
   })
 
-  it('is deterministic for the same seed', () => {
-    expect(logoTile('comet', 'Comet').from).toBe(logoTile('comet', 'Comet').from)
-  })
-
-  it('gives different addons different colours', () => {
-    const seeds = ['torrentio', 'comet', 'mediafusion', 'nyaa', 'torbox']
-    expect(new Set(seeds.map((s) => logoTile(s, s).from)).size).toBeGreaterThan(1)
-  })
-
-  it('ignores case and punctuation in the seed so one addon keeps one colour', () => {
-    expect(logoTile('Torrentio-RD', 'Torrentio').from).toBe(logoTile('torrentio rd', 'Torrentio').from)
+  it('keeps the placeholder underneath the icon so a dead host never shows a broken box', () => {
+    // The <img> is layered OVER the placeholder and only faded in once it loads; an onerror drops
+    // it entirely. Both halves have to be present or a 404 icon leaves the broken-image glyph.
+    expect(addonLogo).toContain('onerror={() => (failedSrc = src)}')
+    expect(addonLogo).toContain('{#if !broken}')
   })
 })
 
