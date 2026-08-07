@@ -40,6 +40,9 @@
     '/app/settings/player': 'Player', '/app/settings/subtitles': 'Subtitles',
     '/app/settings/hotkeys': 'Hotkeys',
     '/app/settings/store': 'Source Store',
+    // Nested routes come FIRST: the lookup below takes the first prefix that matches, so listing
+    // /sources ahead of /sources/priority would title the reorder screen "Sources".
+    '/app/settings/sources/priority': 'Source priority',
     '/app/settings/sources': 'Sources', '/app/settings/extensions': 'Extensions',
     '/app/settings/downloads': 'Downloads', '/app/settings/interface': 'Interface',
     '/app/settings/history': 'History', '/app/settings/sync': 'Device sync',
@@ -51,6 +54,13 @@
     const p = $page.url.pathname
     const hit = Object.keys(childTitles).find((k) => p === k || p.startsWith(k + '/'))
     return hit ? childTitles[hit] : m.nav_settings()
+  })
+
+  // Back goes one level up, not straight to the index: a sub-screen like the source reorder is
+  // reached FROM its category, and dropping the user two levels loses their place in that page.
+  const backHref = $derived.by(() => {
+    const parts = $page.url.pathname.replace(/\/+$/, '').split('/')
+    return parts.length > 4 ? parts.slice(0, -1).join('/') : '/app/settings'
   })
 
   // Search results for shared Toggle rows carry a stable key. Once the destination page has
@@ -100,7 +110,7 @@
     <div class="min-h-screen">
       <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur"
            style="padding-top:max(0.5rem,env(safe-area-inset-top))">
-        <a href="/app/settings" data-focusable onclick={() => h.tap()} aria-label={m.common_back_to_settings()}
+        <a href={backHref} data-focusable onclick={() => h.tap()} aria-label={m.common_back_to_settings()}
            class="grid h-10 w-10 place-items-center rounded-full transition-colors active:bg-accent">
           <ChevronLeft size={22} />
         </a>
