@@ -679,8 +679,14 @@ pub async fn extension_install_url(
 }
 
 #[tauri::command]
-pub fn extension_list(app: AppHandle) -> Result<Vec<InstalledExtension>, String> {
-    package::list(&app)
+pub async fn extension_list(app: AppHandle) -> Result<Vec<InstalledExtension>, String> {
+    // `async` matters: tauri-macros only picks `ExecutionContext::Async` when the fn is async, so
+    // the sync version re-read, unzipped, SHA-256'd and signature-verified every installed package
+    // inline on the event-loop thread — hundreds of milliseconds of frozen UI for a handful of
+    // packages, paid several times per episode click.
+    tauri::async_runtime::spawn_blocking(move || package::list(&app))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
