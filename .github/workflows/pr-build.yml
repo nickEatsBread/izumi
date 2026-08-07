@@ -1,0 +1,239 @@
+name: pr-build
+
+# Installable preview builds for a pull request, so a change can be tested on real hardware BEFORE
+# it merges. Opt-in: add the `build-preview` label to the PR (or run this from the Actions tab).
+# Every push to a labelled PR rebuilds and supersedes the previous run.
+#
+# Deliberately NOT a release:
+#   * artifacts only — never a GitHub Release, so this can never collide with the rolling `beta`
+#     release that release.yml deletes and recreates on each run;
+#   * no updater signing key, and `createUpdaterArtifacts` is forced off, so a preview build can
+#     never be served to anyone's auto-updater;
+#   * the Android APK is signed with a throwaway key generated in-run, never the release keystore.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
+
+# Newest push wins: these builds are slow and only the latest commit is worth testing. (The
+# opposite of release.yml, which queues instead — there, a superseded run must still finish.)
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    # `labeled` fires once per label add; the `contains` check is what actually gates every other
+    # trigger (synchronize/opened/reopened), so a push to an unlabelled PR costs nothing.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-preview')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: pr-windows
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup MSVC (lib.exe)
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+
+      # Same script the release matrix uses — see scripts/ci/libmpv-windows.ps1.
+      - name: libmpv (Windows)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pwsh -File scripts/ci/libmpv-windows.ps1
+
+      - name: Install JS deps
+        run: npm ci
+
+      # No release inputs => tauri-action builds only. The config JSON must contain NO spaces:
+      # tauri-action splits `args` on whitespace.
+      - name: Build
+        uses: tauri-apps/tauri-action@v1
+        with:
+          args: --config {"bundle":{"createUpdaterArtifacts":false,"resources":["libmpv-2.dll"]}}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: izumi-pr${{ github.event.pull_request.number || github.run_id }}-windows
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+
+  flatpak:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-preview')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install flatpak + flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      # Same cache key as the release job, so a preview build reuses the ~15min mpv/libplacebo/
+      # libass compile the last release already paid for.
+      - name: Cache flatpak build
+        uses: actions/cache@v6
+        with:
+          path: |
+            flatpak/.flatpak-builder
+            ~/.local/share/flatpak
+          key: flatpak-${{ hashFiles('flatpak/com.nicho.izumi.yml') }}
+          restore-keys: flatpak-
+
+      # Unsigned, and with no `--repo-url`: a preview bundle must not advertise the production
+      # update origin, or installing one would wire the Deck up to `flatpak update` into a release.
+      - name: Build the Steam Deck Flatpak bundle
+        run: |
+          dbus-run-session -- bash -euxo pipefail -c '
+            flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+            cd flatpak
+            flatpak-builder --user --install-deps-from=flathub --force-clean --disable-rofiles-fuse \
+              --repo=_repo _build com.nicho.izumi.yml
+            flatpak build-bundle _repo ../izumi-preview-steamdeck.flatpak com.nicho.izumi \
+              --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+          '
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: izumi-pr${{ github.event.pull_request.number || github.run_id }}-steamdeck
+          retention-days: 14
+          if-no-files-found: error
+          path: izumi-preview-steamdeck.flatpak
+
+  android:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-preview')
+    runs-on: ubuntu-latest
+    # Only the `full` flavor: the embedded-player build is the one worth device-testing, and
+    # building both would double the slowest job in this workflow for little extra signal.
+    env:
+      NDK_VERSION: "27.0.12077973"
+      BUILD_TOOLS: "35.0.0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install NDK + platform + build-tools
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}" "platforms;android-36" "build-tools;${BUILD_TOOLS}"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust + Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: pr-android-full
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Stage the subtitle font
+        run: |
+          set -euo pipefail
+          npm run fonts:subtitle
+          test -s src-tauri/tauri-plugin-mpv/android/src/main/assets/fonts/Nunito.ttf
+
+      # Same script the release matrix uses — see scripts/ci/android-scaffold.sh. This is also what
+      # compiles the Kotlin plugins, which no job in ci.yml can reach.
+      - name: Configure flavor + scaffold Android project
+        run: bash scripts/ci/android-scaffold.sh full
+
+      - name: Build Android APK (arm64, full)
+        run: npx tauri android build --apk --target aarch64 --features android-mpv --config src-tauri/tauri.android-mpv.conf.json
+
+      # A throwaway key, generated per run: the release keystore must never be exposed to a PR
+      # build. The signature therefore differs from the installed release build AND from any
+      # previous preview — Android refuses an update across signatures, so uninstall first.
+      - name: Sign with a throwaway key
+        run: |
+          set -euo pipefail
+          KS="$RUNNER_TEMP/preview.jks"
+          keytool -genkeypair -keystore "$KS" -storepass preview -keypass preview \
+            -alias preview -keyalg RSA -keysize 2048 -validity 30 \
+            -dname "CN=izumi preview build, OU=CI, O=izumi, C=GB"
+          BT="$ANDROID_SDK_ROOT/build-tools/${BUILD_TOOLS}"
+          UNSIGNED="$(find src-tauri/gen/android -path '*release*' -name '*-unsigned.apk' | head -1)"
+          if [ -z "$UNSIGNED" ]; then echo "no unsigned APK produced"; exit 1; fi
+          OUT="izumi-preview-android-arm64-full.apk"
+          "$BT/zipalign" -f -p 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign --ks "$KS" --ks-pass pass:preview --ks-key-alias preview \
+            --key-pass pass:preview --out "$OUT" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --verbose "$OUT"
+          rm -f "$KS" "$RUNNER_TEMP/aligned.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: izumi-pr${{ github.event.pull_request.number || github.run_id }}-android-full
+          retention-days: 14
+          if-no-files-found: error
+          path: izumi-preview-android-arm64-full.apk
+
+  # One place that says what was built and how to install it, on the run's own summary page —
+  # cheaper than a PR comment, which would need write permission on pull-requests.
+  summary:
+    needs: [windows, flatpak, android]
+    if: always() && (github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-preview'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write install notes
+        run: |
+          {
+            echo "## Preview builds"
+            echo ""
+            echo "| Target | Status |"
+            echo "| --- | --- |"
+            echo "| Windows | ${{ needs.windows.result }} |"
+            echo "| Steam Deck (Flatpak) | ${{ needs.flatpak.result }} |"
+            echo "| Android arm64 (full) | ${{ needs.android.result }} |"
+            echo ""
+            echo "Download them from the **Artifacts** section of this run. They expire in 14 days."
+            echo ""
+            echo "* **Windows** — unsigned; SmartScreen will warn on first launch."
+            echo "* **Steam Deck** — \`flatpak install --user izumi-preview-steamdeck.flatpak\`. Carries no update origin, so it will not auto-update; remove it when you are done testing."
+            echo "* **Android** — signed with a throwaway key, so it cannot install over a release build or an earlier preview. Uninstall izumi first."
+            echo ""
+            echo "None of these are updater-signed and none were published as a release."
+          } >> "$GITHUB_STEP_SUMMARY"
