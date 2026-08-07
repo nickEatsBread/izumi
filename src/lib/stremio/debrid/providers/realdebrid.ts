@@ -13,11 +13,12 @@ interface RdFile { id: number; path: string; bytes: number; selected: number }
 interface RdInfo { id: string; status: string; progress: number; seeders?: number; speed?: number; bytes?: number; files?: RdFile[]; links?: string[] }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function rd(method: string, path: string, key: string, body?: string): Promise<any> {
+async function rd(method: string, path: string, key: string, body?: string, priority?: boolean): Promise<any> {
   const { ok, status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     body,
+    priority,
   })
   // 451 = Real-Debrid has this exact torrent/infohash blocked for legal reasons
   // (DMCA). It is per-file, not your account/IP — a different release usually works.
@@ -158,7 +159,7 @@ function rdNoteAdded(key: string, id: string, hash: string): void {
   hit.rows = [{ id, hash, status: 'queued' }, ...hit.rows]
 }
 
-async function loadTorrentList(key: string, now = Date.now()): Promise<RdListRow[]> {
+async function loadTorrentList(key: string, priority?: boolean, now = Date.now()): Promise<RdListRow[]> {
   const hit = listCache.get(key)
   if (hit && now - hit.at < LIST_TTL_MS) return hit.rows
   // The cache-badge path (checkCached) usually pulled the ENTIRE account list into its own
@@ -185,12 +186,12 @@ async function loadTorrentList(key: string, now = Date.now()): Promise<RdListRow
   for (let page = 1; page <= MAX_PAGES; page++) {
     let list: RdListRow[]
     try {
-      list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as RdListRow[]
+      list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key, undefined, priority) as RdListRow[]
     }
     catch {
       if (page > 1 || LIMIT === 100) break
       LIMIT = 100
-      try { list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as RdListRow[] }
+      try { list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key, undefined, priority) as RdListRow[] }
       catch { break }
     }
     if (!Array.isArray(list) || list.length === 0) { complete = true; break }
@@ -205,8 +206,8 @@ async function loadTorrentList(key: string, now = Date.now()): Promise<RdListRow
   return rows
 }
 
-async function findDownloadedId(key: string, hash: string): Promise<string | undefined> {
-  return rdPickBestDownloaded(await loadTorrentList(key), hash)?.id
+async function findDownloadedId(key: string, hash: string, priority?: boolean): Promise<string | undefined> {
+  return rdPickBestDownloaded(await loadTorrentList(key, priority), hash)?.id
 }
 
 /** Pure: RD account torrent list -> POSITIVE-ONLY cache map, restricted to hashes we asked about.
@@ -281,13 +282,13 @@ export function rdMatchesSingleFile(files: Array<{ id: number; selected: number 
 async function rdResolveSingleFile(
   key: string, hashOrMagnet: string, fileId: number, opts?: ResolveOpts,
 ): Promise<RdUnrestricted> {
-  const id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
+  const id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) }), opts?.priority) as { id: string }).id
   rdNoteAdded(key, id, hashOf(hashOrMagnet))
-  await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: String(fileId) }))
-  let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+  await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: String(fileId) }), opts?.priority)
+  let info = await rd('GET', `/torrents/info/${id}`, key, undefined, opts?.priority) as RdInfo
   if (rdStatus(info).stage !== 'ready') {
     await poll(async () => {
-      info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+      info = await rd('GET', `/torrents/info/${id}`, key, undefined, opts?.priority) as RdInfo
       return rdStatus(info)
     }, opts)
   }
@@ -300,7 +301,7 @@ async function rdResolveSingleFile(
     throw new Error("Real-Debrid didn't select the right file for this torrent — try again or pick a different source.")
   const link = info.links?.[0]
   if (!link) throw new Error('Real-Debrid returned no link for that file.')
-  return await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
+  return await rd('POST', '/unrestrict/link', key, form({ link }), opts?.priority) as RdUnrestricted
 }
 
 // Look for an existing 'downloaded' entry for `hash` whose selection is EXACTLY the file we want
@@ -312,13 +313,13 @@ async function rdResolveSingleFile(
 // candidate costs one /torrents/info lookup; pre-filtering by `bytes === chosenBytes` keeps that
 // to roughly zero or one extra GET per page. Mirrors findDownloadedId's pagination and
 // per-page error handling. Never throws: any failure just means "no reusable entry found".
-async function findSingleFileEntry(key: string, hash: string, fileId: number, chosenBytes: number): Promise<RdInfo | undefined> {
+async function findSingleFileEntry(key: string, hash: string, fileId: number, chosenBytes: number, priority?: boolean): Promise<RdInfo | undefined> {
   const LIMIT = 100
   const MAX_PAGES = 5
   for (let page = 1; page <= MAX_PAGES; page++) {
     let list: RdListRow[]
     try {
-      list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key) as RdListRow[]
+      list = await rd('GET', `/torrents?limit=${LIMIT}&page=${page}`, key, undefined, priority) as RdListRow[]
     }
     catch { break }
     if (!Array.isArray(list) || list.length === 0) break
@@ -326,7 +327,7 @@ async function findSingleFileEntry(key: string, hash: string, fileId: number, ch
     for (const c of candidates) {
       let info: RdInfo
       try {
-        info = await rd('GET', `/torrents/info/${c.id}`, key) as RdInfo
+        info = await rd('GET', `/torrents/info/${c.id}`, key, undefined, priority) as RdInfo
       }
       catch { continue }
       if (rdMatchesSingleFile(info.files ?? [], fileId)) return info
@@ -345,9 +346,9 @@ async function findSingleFileEntry(key: string, hash: string, fileId: number, ch
 async function resolveViaSingleFile(
   key: string, hashOrMagnet: string, chosenId: number, chosenBytes: number, opts?: ResolveOpts,
 ): Promise<RdUnrestricted> {
-  const reuse = await findSingleFileEntry(key, hashOf(hashOrMagnet), chosenId, chosenBytes).catch(() => undefined)
+  const reuse = await findSingleFileEntry(key, hashOf(hashOrMagnet), chosenId, chosenBytes, opts?.priority).catch(() => undefined)
   const reuseLink = reuse?.links?.[0]
-  if (reuseLink) return await rd('POST', '/unrestrict/link', key, form({ link: reuseLink })) as RdUnrestricted
+  if (reuseLink) return await rd('POST', '/unrestrict/link', key, form({ link: reuseLink }), opts?.priority) as RdUnrestricted
   return await rdResolveSingleFile(key, hashOrMagnet, chosenId, opts)
 }
 
@@ -380,7 +381,7 @@ export const realdebrid: DebridProvider = {
     const hash = hashOf(hashOrMagnet)
     let id: string | undefined
     try {
-      id = await findDownloadedId(key, hash)
+      id = await findDownloadedId(key, hash, opts?.priority)
     } catch { /* list unavailable — fall through to addMagnet */ }
     if (!id) {
       // No entry on this account yet. `pickSameRelease`'s cached-only gate reads an addon glyph
@@ -388,17 +389,17 @@ export const realdebrid: DebridProvider = {
       // RD generally can still be brand new to this account, so this addMagnet is exactly the
       // "torrent entries the user didn't ask for" noAdd promises never to create.
       if (opts?.noAdd) throw new Error("Real-Debrid needs to add this release, which background prefetch isn't allowed to do.")
-      id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) })) as { id: string }).id
+      id = (await rd('POST', '/torrents/addMagnet', key, form({ magnet: magnetOf(hashOrMagnet) }), opts?.priority) as { id: string }).id
       rdNoteAdded(key, id, hash)
     }
-    let info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+    let info = await rd('GET', `/torrents/info/${id}`, key, undefined, opts?.priority) as RdInfo
     // addMagnet returns the moment the id exists, but Real-Debrid answers /torrents/info with an
     // EMPTY file list while it is still converting the magnet — and selectFiles with nothing to
     // select is a 404 that killed the whole resolve ("Real-Debrid request failed (404)"). Wait for
     // the list to appear before choosing anything from it.
     if (!(info.files ?? []).length && rdStatus(info).stage !== 'ready') {
       await poll(async () => {
-        info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+        info = await rd('GET', `/torrents/info/${id}`, key, undefined, opts?.priority) as RdInfo
         // Files present is the condition we are waiting on; hand `poll` a ready so it stops. Any
         // genuine error status still propagates through rdStatus.
         return (info.files ?? []).length ? { stage: 'ready', raw: info.status } : rdStatus(info)
@@ -408,9 +409,9 @@ export const realdebrid: DebridProvider = {
       // A 404 here means the selection is not ours to make — the torrent is already finished, or
       // RD resolved the add onto an entry that is past this stage. Neither is a reason to abandon
       // playback: re-read the entry and carry on with whatever it actually holds.
-      await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: rdSelectFileIds(info.files ?? []) }))
+      await rd('POST', `/torrents/selectFiles/${id}`, key, form({ files: rdSelectFileIds(info.files ?? []) }), opts?.priority)
         .catch((e) => { if (!/\(404\)/.test(String(e instanceof Error ? e.message : e))) throw e })
-      info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+      info = await rd('GET', `/torrents/info/${id}`, key, undefined, opts?.priority) as RdInfo
     }
     // `poll` probes once before its first sleep, so entering it with an already-`downloaded` info
     // spent a whole extra round-trip (fresh TLS handshake — the plugin pools nothing) re-fetching
@@ -419,7 +420,7 @@ export const realdebrid: DebridProvider = {
     // paying for it. Routed through `rdStatus` so error-status mapping stays in one place.
     if (rdStatus(info).stage !== 'ready') {
       await poll(async () => {
-        info = await rd('GET', `/torrents/info/${id}`, key) as RdInfo
+        info = await rd('GET', `/torrents/info/${id}`, key, undefined, opts?.priority) as RdInfo
         return rdStatus(info)
       }, opts)
     }
@@ -438,7 +439,7 @@ export const realdebrid: DebridProvider = {
     const idx = selected.indexOf(chosen)
     const link = idx >= 0 ? rdLinkFor(selected.length, idx, info.links ?? []) : undefined
     let un = link
-      ? await rd('POST', '/unrestrict/link', key, form({ link })) as RdUnrestricted
+      ? await rd('POST', '/unrestrict/link', key, form({ link }), opts?.priority) as RdUnrestricted
       : undefined
     // Recover with a single-file selection when needed (no usable link — including `chosen` not
     // being selected at all — or RD packed the selection into an archive); see

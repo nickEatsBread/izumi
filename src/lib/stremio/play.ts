@@ -1619,6 +1619,7 @@ export async function playStream(
         const url = await resolveHash(provider, key, torrent, {
           signal: controller.signal,
           timeoutMs: 30 * 60 * 1000,
+          priority: true,
           onStatus: (i) => {
             if (!firstNotReadyAt) firstNotReadyAt = Date.now()
             if (!overlayShown && shouldShowCachingScreen({
