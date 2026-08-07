@@ -330,8 +330,13 @@ export function videoSourceToStream(
  *  every other one had finished. */
 export async function resolveOnlineStreams(
   media: Media, episode: number | undefined, onlyId?: string, onBatch?: (rs: Stream[]) => void,
+  signal?: AbortSignal,
 ): Promise<Stream[]> {
   if (episode == null) return []
+  // Superseded resolve (user already picked a source): issue NO hops — every scrape below spawns
+  // worker HTTP that competes with the picked source's playback path. Checked again before each
+  // hop tier, so an abort mid-wave stops the chain at the next boundary.
+  if (signal?.aborted) return []
   providerProblems.set([])
   const unordered = await runningStreamExtensions(onlyId)
   if (!unordered.length) return []
@@ -371,6 +376,8 @@ export async function resolveOnlineStreams(
   // Record once per provider: the first failure is the informative one, and a provider whose every
   // server fails would otherwise repeat the same line for each.
   const noteProblem = (ext: { id: string; name: string }, error: unknown) => {
+    // An aborted bridged fetch is the resolve being superseded, not the provider misbehaving.
+    if ((error as Error)?.name === 'AbortError') return
     const message = providerProblemText(error)
     if (!message) return
     providerProblems.update((all) =>
@@ -397,6 +404,7 @@ export async function resolveOnlineStreams(
     // matched none of the first few will not match the tenth — while a dead provider would burn
     // its 20s timeout PER alias, serially.
     for (const query of queries.slice(0, MAX_SEARCH_ALIASES)) {
+      if (signal?.aborted) return null
       const results = await memo(
         `search|${ext.id}|${dub}|${JSON.stringify(query)}|${media.seasonYear ?? ''}`,
         () => ext.call('search', { query, dub, year: media.seasonYear ?? undefined })
@@ -430,6 +438,7 @@ export async function resolveOnlineStreams(
     return { episode: matchedEpisode, matchedTitle }
   }
   const per = await Promise.all(exts.map(async (ext): Promise<Stream[]> => {
+    if (signal?.aborted) return []
     try {
       // Settings first: `supportsDub` decides whether a dub pass is worth running at all, so a
       // sub-only provider is never queried twice. Memoized because it never varies per episode and
@@ -442,6 +451,7 @@ export async function resolveOnlineStreams(
       const servers = settings?.episodeServers?.length ? settings.episodeServers : ['default']
       // One audio flavour: search with the dub flag, resolve the episode, fan out over servers.
       const resolvePass = async (dub: boolean): Promise<Stream[]> => {
+      if (signal?.aborted) return []
       const match = await findEp(ext, dub)
       if (!match) return []
       const { episode: ep, matchedTitle } = match
@@ -463,7 +473,7 @@ export async function resolveOnlineStreams(
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, servers.length) }, async () => {
         for (;;) {
           const idx = cursor++
-          if (idx >= servers.length) return
+          if (signal?.aborted || idx >= servers.length) return
           found[idx] = (await ext.call('findEpisodeServer', ep, servers[idx])
             .catch((error: unknown) => { noteProblem(ext, error); return null })) as SnEpisodeServer | null
         }
@@ -497,6 +507,7 @@ export async function resolveOnlineStreams(
         ? [false]
         : passesForAudio(dubPasses(settings?.supportsDub, preferDub), audioFilter)
       if (!passes.length) return []
+      if (signal?.aborted) return []
       const results = await Promise.all(passes.map(resolvePass))
       // Dedupe across passes in pass order (preferred audio first). A provider that ignores the dub
       // flag returns the same URL for both passes; without this it would appear twice, once

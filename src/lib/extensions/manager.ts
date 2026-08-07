@@ -365,7 +365,7 @@ function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<Tor
  *  returns [] when none are configured or all fail. Never throws.
  *  `onBatch` (optional) fires with each extension's results AS IT SETTLES, so the picker can
  *  fold sources in live instead of waiting on the slowest (or a wedged one's 20s timeout). */
-export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string): Promise<TorrentResult[]> {
+export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string, signal?: AbortSignal): Promise<TorrentResult[]> {
   try {
     const exts = await ensureRunning()
     const candidates = exts.filter((e) => !onlyId || e.cfg.id === onlyId)
@@ -378,9 +378,11 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
     // torrent-provider path, so the picker labels the row with the real source instead of the
     // generic "Extension" fallback. Per-extension map (not a flat fan-out) keeps that association.
     const batches = await Promise.all(live.map(async (e) => {
+      // A superseded resolve (source already picked) must not issue further worker queries — each
+      // one spawns HTTP that competes with the picked source's playback path.
       const queried = await Promise.all(methods.map(async (method) => ({
         method,
-        results: await call(e, method, query),
+        results: signal?.aborted ? [] : await call(e, method, query),
       })))
       // Preserve which SDK method produced the row. A lot of Blu-ray packs are named only
       // "[Group] Title (BD 1080p)" with no textual batch marker, so losing `batch()` here made

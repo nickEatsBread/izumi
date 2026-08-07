@@ -647,6 +647,7 @@ async function extToStreams(
   kitsu: number | undefined,
   onBatch: (s: Stream[]) => void,
   onlyOriginId?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
     // Resolve the production-specific AniZip ids (AniDB/TVDB + absolute episode) so ID-based
@@ -705,8 +706,8 @@ async function extToStreams(
     // (search/smartSearch). Query both concurrently; each source's batch folds in as it lands.
     const fold = (rs: TorrentResult[]) => onBatch(rs.map((r) => extToStream(r, r.provider ?? 'Extension')))
     await Promise.all([
-      queryExtensions(query, fold, onlyOriginId),
-      queryTorrentProviders(query, toProviderMedia(media), fold, onlyOriginId),
+      queryExtensions(query, fold, onlyOriginId, signal),
+      queryTorrentProviders(query, toProviderMedia(media), fold, onlyOriginId, signal),
     ])
   } catch { /* best-effort: failed sources contributed nothing */ }
 }
@@ -1258,13 +1259,13 @@ export async function playEpisode(
       const budget = (work: Promise<unknown>) =>
         Promise.race([work.catch(() => {}), new Promise<void>((resolve) => setTimeout(resolve, EXT_WAVE_BUDGET_MS))])
       if (hasExt) {
-        budget(extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }))
+        budget(extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }, undefined, signal))
           .finally(done)
       }
       if (hasExt) {
         // Fold each provider in as it settles, exactly like the torrent wave above — otherwise one
         // slow (or wedged, 20s-capped) provider hides every fast one's results until it gives up.
-        budget(resolveOnlineStreams(media, episode, undefined, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }))
+        budget(resolveOnlineStreams(media, episode, undefined, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }, signal))
           .finally(done)
       }
     })
