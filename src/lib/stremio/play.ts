@@ -21,6 +21,7 @@ const rankOpts = (anilistId?: number): RankOptions => ({
   // preference, the same way it did before the annotation existed.
   seadexHashes: get(seadexAnnotations) ? knownBestHashes(anilistId) : undefined,
   cacheCheck: get(debridKey) ? cacheCheckMode(get(debridProvider)) : 'none',
+  sourcePriority: get(sourcePriority),
 })
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
@@ -60,7 +61,9 @@ import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
+  sourcePriority, sourcePriorityMode,
 } from '$lib/settings/ui'
+import { applyPriorityFilter } from './source-priority'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
 import { title, banner, cover, airedCount, totalEpisodes } from '$lib/anilist/media'
@@ -1181,6 +1184,10 @@ export async function playEpisode(
       const refined = refineStreams(media, acc)
       let s = refined.kept
       if (want) s = verifySeason(s, want)
+      // `strict` means the user excluded the rest deliberately, so an empty list is the correct
+      // answer rather than a reason to quietly play something they ruled out. A no-op in `prefer`
+      // mode and whenever no trust order has been stated at all.
+      s = applyPriorityFilter(s, get(sourcePriority), get(sourcePriorityMode))
       s = annotateCache(s, cacheAnswers, cacheMode === 'library' ? 'library' : 'native')
       retainRecoveryCandidates(media, episode, s)
       if (resolving) scheduleReady(s)
