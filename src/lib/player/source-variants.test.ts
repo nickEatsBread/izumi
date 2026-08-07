@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Stream } from '$lib/stremio/addon'
-import { audioCounterpart, serverSiblings, variantLabel } from './source-variants'
+import { audioCounterpart, serverSiblings, variantLabel, variantLabels } from './source-variants'
 
 // Minimal online-provider row shaped like videoSourceToStream's real output (onlinestream.ts):
 // `name` follows its "⚡ Provider · Server · quality" convention, __stream marks a direct source,
@@ -143,20 +143,59 @@ describe('serverSiblings', () => {
 })
 
 describe('variantLabel', () => {
-  it('renders server · quality, hides a "default" server, falls back to name', () => {
+  it('renders server · quality when the provider named its server', () => {
     const withServer = row({ __server: 'HD-2', __quality: '1080p', name: '⚡ ProviderOne · HD-2 · 1080p' })
     expect(variantLabel(withServer)).toBe('HD-2 · 1080p')
+  })
 
-    const defaultServer = row({ __server: 'default', __quality: '1080p', name: '⚡ ProviderOne · 1080p' })
-    expect(variantLabel(defaultServer)).toBe('1080p')
+  it('falls back to the streaming host when the provider named no server', () => {
+    // videoSourceToStream drops a server called "default", and the Aniyomi bridge only recovers one
+    // from a strictly-shaped video title — so unnamed mirrors are common. Without the host they all
+    // render as a bare quality and the menu reads as a list of identical rows.
+    const defaultServer = row({
+      __server: 'default', __quality: '1080p',
+      url: 'https://www.vidcdn.example/a.m3u8', name: '⚡ ProviderOne · 1080p',
+    })
+    expect(variantLabel(defaultServer)).toBe('vidcdn.example · 1080p')
 
-    const noServerNoQuality = row({ __server: undefined, __quality: undefined, name: 'ProviderOne stream' })
-    expect(variantLabel(noServerNoQuality)).toBe('ProviderOne stream')
+    // No __quality at all falls through to describe()'s heuristic, so this fixture also has to
+    // drop the quality token from `name` — otherwise the heuristic legitimately recovers 1080p.
+    const noServer = row({
+      __server: undefined, __quality: undefined,
+      url: 'https://mirror2.example/b.mp4', name: 'ProviderOne stream',
+    })
+    expect(variantLabel(noServer)).toBe('mirror2.example')
+  })
+
+  it('falls back to the row name when there is no server, quality or usable host', () => {
+    const bare = row({ __server: undefined, __quality: undefined, url: 'not-a-url', name: 'ProviderOne stream' })
+    expect(variantLabel(bare)).toBe('ProviderOne stream')
   })
 
   it('regression: an "auto" __quality renders the server with NO quality suffix', () => {
-    // Same HD-token trap as above: "HD-1" in the name must not resurrect a fabricated "· 720p".
+    // "HD-1" in the name must not satisfy resolutionOf's `\bhd\b` branch and fabricate "· 720p".
     const autoQuality = row({ __server: 'HD-1', __quality: 'auto', name: '⚡ ProviderOne · HD-1 · auto' })
     expect(variantLabel(autoQuality)).toBe('HD-1')
+  })
+})
+
+describe('variantLabels', () => {
+  it('numbers collisions so a menu never shows two identical rows', () => {
+    // The reported bug: several mirrors of one site, none of them named, all reducing to the same
+    // text. Same host AND same quality is the one case the label alone cannot separate.
+    const a = row({ __server: undefined, __quality: '1080p', url: 'https://cdn.example/1.mp4' })
+    const b = row({ __server: undefined, __quality: '1080p', url: 'https://cdn.example/2.mp4' })
+    const c = row({ __server: 'HD-3', __quality: '720p', url: 'https://cdn.example/3.mp4' })
+    expect(variantLabels([a, b, c])).toEqual([
+      'cdn.example · 1080p',
+      'cdn.example · 1080p (2)',
+      'HD-3 · 720p',
+    ])
+  })
+
+  it('leaves already-distinct labels untouched and preserves order', () => {
+    const a = row({ __server: 'HD-1', __quality: '1080p' })
+    const b = row({ __server: 'HD-2', __quality: '720p' })
+    expect(variantLabels([a, b])).toEqual(['HD-1 · 1080p', 'HD-2 · 720p'])
   })
 })

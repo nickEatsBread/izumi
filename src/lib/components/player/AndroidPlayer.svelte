@@ -71,7 +71,7 @@
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playNext, playPrev, playEpisode, playStream, finalizeAndroidWatch, searchOnlineSubtitles } from '$lib/stremio/play'
-  import { audioCounterpart, serverSiblings, variantLabel } from '$lib/player/source-variants'
+  import { audioCounterpart, serverSiblings, variantLabel, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
@@ -948,6 +948,10 @@
   const variantPool = $derived($playbackRecovery?.streams ?? [])
   const dubSubTarget = $derived(currentStream ? audioCounterpart(currentStream, variantPool) : undefined)
   const altServers = $derived(currentStream ? serverSiblings(currentStream, variantPool) : [])
+  // Labelled as a SET: two unnamed mirrors of one site can reduce to the same text, and a menu of
+  // identical rows gives no basis to choose. Includes the playing row so its label is numbered
+  // consistently with the alternatives it sits above.
+  const serverMenuLabels = $derived(variantLabels(currentStream ? [currentStream, ...altServers] : []))
   // What the flavour row switches TO. Only read when dubSubTarget exists, which guarantees the
   // current row carries an __audio tag.
   const otherFlavour = $derived(currentStream?.__audio === 'sub' ? 'Dub' : 'Sub')
@@ -1499,10 +1503,10 @@
             <!-- The row that is playing, then its alternatives. Keyed by url: the pool is url-deduped
                  upstream (dedupeStreams), so these cannot collide. -->
             {#if currentStream}
-              <button disabled class="settings-choice settings-choice-selected"><span class="truncate">{variantLabel(currentStream)}</span><Check size={18} /></button>
+              <button disabled class="settings-choice settings-choice-selected"><span class="truncate">{serverMenuLabels[0]}</span><Check size={18} /></button>
             {/if}
-            {#each altServers as alt (alt.url)}
-              <button onclick={() => swapTo(alt)} disabled={swapping} class="settings-choice disabled:opacity-40"><span class="truncate">{variantLabel(alt)}</span></button>
+            {#each altServers as alt, i (alt.url)}
+              <button onclick={() => swapTo(alt)} disabled={swapping} class="settings-choice disabled:opacity-40"><span class="truncate">{serverMenuLabels[i + 1]}</span></button>
             {/each}
           </div>
         {:else if settingsPage === 'display'}

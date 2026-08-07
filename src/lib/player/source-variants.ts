@@ -66,13 +66,46 @@ export function serverSiblings(current: Stream, pool: Stream[]): Stream[] {
 // alternatives says nothing, so it's dropped rather than displayed.
 const isDefaultServer = (server?: string) => !server || /^default$/i.test(server)
 
-/** Short menu label: server, then quality when it says something ("HD-2 · 1080p"). Falls back to
- *  the row's own name/addon label when neither is informative (an unresolved "auto" HLS ladder). */
+/** Host of the stream URL, as a stand-in server identity.
+ *
+ *  Plenty of sources reach the menu with no server name at all: videoSourceToStream drops a server
+ *  the provider called "default", and the Aniyomi bridge only recovers one from a video title
+ *  shaped exactly like "HD-1 - Sub - 1080p". Those rows are still genuinely DIFFERENT mirrors, and
+ *  what actually distinguishes them is the host they stream from — so show that rather than
+ *  repeating the quality on every row. `www.` is noise; a bare IP or unparseable URL yields
+ *  nothing and falls through to the caller's next fallback. */
+function hostOf(s: Stream): string | undefined {
+  try {
+    const host = new URL(s.url ?? '').hostname.replace(/^www\./i, '')
+    return host && !/^\d+\.\d+\.\d+\.\d+$/.test(host) ? host : undefined
+  } catch { return undefined }
+}
+
+/** Short menu label: server (or the streaming host when the provider named none), then quality
+ *  when it says something — "HD-2 · 1080p", "vidcdn.example · 720p". Falls back to the row's own
+ *  name/addon label when nothing else is informative. */
 export function variantLabel(s: Stream): string {
   const parts: string[] = []
-  if (!isDefaultServer(s.__server)) parts.push(s.__server as string)
+  const server = isDefaultServer(s.__server) ? hostOf(s) : s.__server
+  if (server) parts.push(server)
   const q = quality(s)
   if (q != null) parts.push(qualityLabel(q))
   if (parts.length) return parts.join(' · ')
   return s.name || s.__addonName || 'Stream'
+}
+
+/** Labels for a MENU of variants, guaranteed distinct.
+ *
+ *  A list of identical rows is worse than useless — it looks broken and gives the user no basis to
+ *  choose. Two mirrors can legitimately reduce to the same server+quality text, so any collision is
+ *  numbered ("HD-1 · 1080p (2)"). Order matches the input, and a row that is already unique is
+ *  never decorated. */
+export function variantLabels(rows: Stream[]): string[] {
+  const seen = new Map<string, number>()
+  return rows.map((s) => {
+    const base = variantLabel(s)
+    const n = (seen.get(base) ?? 0) + 1
+    seen.set(base, n)
+    return n === 1 ? base : `${base} (${n})`
+  })
 }

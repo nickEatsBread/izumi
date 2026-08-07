@@ -32,7 +32,7 @@
   import { discussionExpanded } from '$lib/comments'
   import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, playStream, searchOnlineSubtitles } from '$lib/stremio/play'
-  import { audioCounterpart, serverSiblings, variantLabel } from '$lib/player/source-variants'
+  import { audioCounterpart, serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
@@ -182,6 +182,9 @@
   const variantPool = $derived(recovery?.streams ?? [])
   const dubSubTarget = $derived(currentStream ? audioCounterpart(currentStream, variantPool) : undefined)
   const altServers = $derived(currentStream ? serverSiblings(currentStream, variantPool) : [])
+  // Labelled as a SET: two unnamed mirrors of one site can reduce to the same text, and a menu of
+  // identical rows gives no basis to choose.
+  const altServerLabels = $derived(variantLabels(altServers))
   // What the button switches TO (current sub → "DUB", dub → "SUB").
   const dubSubLabel = $derived(currentStream?.__audio === 'sub' ? 'DUB' : 'SUB')
   let showServers = $state(false)
@@ -724,9 +727,9 @@
                    own layer, Game mode must stay on the base layer to snapshot crisply. -->
               <div class="absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900 p-2 text-sm text-white shadow-xl {gm ? '' : '[transform:translateZ(0)] [will-change:transform]'}">
                 <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Servers</p>
-                {#each altServers as alt (alt.url)}
+                {#each altServers as alt, i (alt.url)}
                   <button data-focusable disabled={swapping} class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15 disabled:opacity-40" onclick={() => swapTo(alt)}>
-                    {variantLabel(alt)}
+                    {altServerLabels[i]}
                   </button>
                 {/each}
               </div>
