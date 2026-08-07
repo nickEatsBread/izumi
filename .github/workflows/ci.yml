@@ -66,3 +66,80 @@ jobs:
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test
+
+  # Cross-platform compile coverage. `check` above is thorough but runs only on Linux, so anything
+  # that broke the Windows, macOS or Android build stayed invisible until a tag was pushed and the
+  # release matrix failed on it — which is how a linux_embed.rs change once shipped having never
+  # compiled. A per-target `cargo check` closes that in a couple of minutes.
+  #
+  # NOT covered here: the Android Kotlin plugins. Their sources only compile inside the
+  # `tauri android init` scaffold (gen/ is gitignored and regenerated per run), so building them
+  # means building the whole APK — that lives in pr-build.yml, which produces an installable one.
+  compile:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            name: windows
+          - platform: macos-14
+            name: macos (arm64)
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: compile-${{ matrix.name }}
+
+      # `cargo check` never links, so the import lib / dylib that libmpv2-sys asks the LINKER for is
+      # not needed here — only the crate's own build script has to succeed. That keeps this job at
+      # "does it compile" speed instead of re-running the release job's libmpv staging.
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check
+
+  # Android is its own job: the target needs the NDK's C toolchain (ring/aws-lc build scripts
+  # invoke a cross clang), and the embedded-player code behind `android-mpv` is the half most
+  # likely to break — it is invisible to every other job in this file.
+  compile-android:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: "27.0.12077973"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install NDK
+        run: sdkmanager --install "ndk;${NDK_VERSION}"
+
+      - name: Install Rust + Android target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: compile-android
+
+      # The API level in the clang wrapper's name must match minSdkVersion (26, tauri.conf.json).
+      # Without CC_*/AR_* the ring build script fails looking for `aarch64-linux-android-clang`.
+      - name: cargo check (aarch64, android-mpv)
+        working-directory: src-tauri
+        run: |
+          set -euo pipefail
+          BIN="$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$BIN/aarch64-linux-android26-clang" || { echo "NDK clang not at $BIN"; exit 1; }
+          export CC_aarch64_linux_android="$BIN/aarch64-linux-android26-clang"
+          export AR_aarch64_linux_android="$BIN/llvm-ar"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$BIN/aarch64-linux-android26-clang"
+          cargo check --target aarch64-linux-android --features android-mpv
