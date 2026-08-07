@@ -131,7 +131,6 @@
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
   const paused = $derived($mpvState.paused)
-  const frameReady = $derived($mpvState.frameReady)
   const atEof = $derived($mpvState.eof)
   // Depend on the four MEMOIZED booleans, never on `$mpvState` itself: the store emits a fresh
   // object per time-pos event (24-60Hz), so an effect reading it directly re-ran — and re-invoked
@@ -139,7 +138,11 @@
   // relayout per call, so that was a main-looper-saturating relayout storm for entire episodes
   // (the "everything gets slower until force-quit" report). Deriveds only propagate on value
   // change, so this now fires on play/pause/EOF edges alone.
-  const activelyWatching = $derived($androidMpvActive && frameReady && !paused && !atEof)
+  // Deliberately NOT gated on `frameReady`: that goes false on every SEEK (event 20, restored by
+  // playback-restart) and while a load buffers, so including it RELEASED the screen lock each time
+  // the user scrubbed — handing the display timeout a window mid-episode. Seeking is not "stopped
+  // watching". Pause and EOF are the honest edges, and both still release it.
+  const activelyWatching = $derived($androidMpvActive && !paused && !atEof)
   $effect(() => {
     void setAndroidKeepScreenAwake($keepAwakeWhilePlaying && activelyWatching)
   })

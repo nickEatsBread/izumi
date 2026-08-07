@@ -416,6 +416,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         mpv = m
         view = v
         container = playerContainer
+        // A fresh container starts with the view flag cleared, so re-assert whatever the web side
+        // last asked for — otherwise a surface rebuilt mid-episode silently drops keep-awake.
+        playerContainer.keepScreenOn = keepScreenAwakeOn
         contentView = content
         installPipWatcher(content)
         installAutoPipHook()
@@ -1247,25 +1250,46 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         return saved && file.isFile && file.length() > 0L
     }
 
-    /** Prevent Android's display timeout only while the web player says video is actively playing. */
+    /** Prevent Android's display timeout only while the web player says video is actively playing.
+     *
+     *  FLAG_KEEP_SCREEN_ON lives on the WINDOW, and a window rebuilt by the system — entering or
+     *  leaving picture-in-picture, an activity recreation, a restore after process death — comes
+     *  back WITHOUT it. The `keepScreenAwakeOn` cache below then made that unrecoverable: it
+     *  recorded what we last asked for, the guard treated it as what the window actually has, and
+     *  so every later "keep awake" request was skipped as a no-op while the real flag stayed off
+     *  for the rest of the session. That is the screen-sleeps-mid-episode report.
+     *
+     *  The durable half is therefore owned by the VIEW: View.keepScreenOn is re-applied by the
+     *  framework whenever the view re-attaches, so it survives exactly the rebuilds that lose a
+     *  window flag, and it cannot desync from a cached boolean because there is nothing to cache.
+     *  The window flag is kept alongside it for the case where the surface container does not
+     *  exist yet, and its guard now only protects the relayout — see setKeepScreenAwake. */
     @Command
     fun keepScreenAwake(invoke: Invoke) {
         val a = invoke.parseArgs(KeepScreenAwakeArgs::class.java)
         activity.runOnUiThread {
-            // Skip repeats: Window.addFlags/clearFlags dispatch a window relayout (a binder
-            // round-trip to WindowManagerService) even when the flag value is UNCHANGED, and the
-            // web side used to re-request this per video frame — a relayout storm that kept the
-            // main looper saturated for entire episodes. The web effect is fixed too; this guard
-            // makes the command safe against any future chatty caller.
-            if (a.enabled != keepScreenAwakeOn) {
-                keepScreenAwakeOn = a.enabled
-                if (a.enabled) {
-                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                } else {
-                    activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                }
-            }
+            setKeepScreenAwake(a.enabled)
             invoke.resolve()
+        }
+    }
+
+    /** Apply the desired keep-awake state. UI thread only. */
+    private fun setKeepScreenAwake(enabled: Boolean) {
+        // Idempotent and local: View.setFlags early-returns when the value is unchanged, so this
+        // costs nothing on a repeat and never reaches WindowManagerService.
+        container?.keepScreenOn = enabled
+        // Skip repeats on the WINDOW path only: addFlags/clearFlags dispatch a relayout (a binder
+        // round-trip) even when the value is unchanged, and the web side used to re-request this
+        // per video frame — a relayout storm that saturated the main looper for entire episodes.
+        // The guard is safe here precisely because the view above, not this cache, is what has to
+        // survive a window rebuild.
+        if (enabled != keepScreenAwakeOn) {
+            keepScreenAwakeOn = enabled
+            if (enabled) {
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
         }
     }
 
@@ -1504,6 +1528,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         lastViewport = null
         showWebPlayerUi(true)
         setImmersive(false)
+        container?.keepScreenOn = false
         keepScreenAwakeOn = false
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         container?.let { (it.parent as? ViewGroup)?.removeView(it) }
