@@ -176,4 +176,20 @@ describe('reconcileContinueWatching', () => {
     expect(snap[0].updatedAt).toBe(1234)
     expect(get(reconciledOnce)).toBe(true)
   })
+
+  it('revalidates: every read asks for cache-and-network, never urql’s cache-first default', async () => {
+    // cache-first would serve all three reads from the process-lifetime normalized cache after the
+    // first sync, so a reconcile could never see progress from another device or a list removal.
+    const policies: (string | undefined)[] = []
+    const spyClient = {
+      query: (_q: unknown, _v: unknown, ctx?: { requestPolicy?: string }) => {
+        policies.push(ctx?.requestPolicy)
+        return { toPromise: async () => ({ data: { Page: { media: [media(101, { idMal: 202 })] } } }) }
+      },
+    }
+    mocks.malList.mockResolvedValue([{ idMal: 202, progress: 5, updatedAt: 1234 }])
+    localHistory.set({ 101: hist(101) }) // gives refreshLocalMedia an id to look up
+    await reconcileContinueWatching(spyClient as never, 'someone', true, true)
+    expect(policies).toEqual(['cache-and-network', 'cache-and-network', 'cache-and-network'])
+  })
 })
