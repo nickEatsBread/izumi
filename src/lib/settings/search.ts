@@ -45,6 +45,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Preferred quality', category: 'Sources', href: '/app/settings/sources', keywords: '4k 1080p 720p resolution' },
   { title: 'Stremio addon sources', category: 'Sources', href: '/app/settings/sources', keywords: 'manifest url torrent debrid' },
   { title: 'Mark best releases', category: 'Sources', href: '/app/settings/sources', keywords: 'seadex releases.moe curated encode quality badge recommended', anchored: true },
+  { title: 'Source priority', category: 'Sources', href: '/app/settings/sources', keywords: 'order trust prefer strict addon extension provider first', anchored: true },
   { title: 'Default discussion source', category: 'Sources', href: '/app/settings/sources', keywords: 'comments reddit anilist mal youtube disqus forum', anchored: true },
 
   { title: 'Debrid provider', category: 'Extensions', href: '/app/settings/extensions', keywords: 'Real-Debrid AllDebrid Premiumize TorBox' },

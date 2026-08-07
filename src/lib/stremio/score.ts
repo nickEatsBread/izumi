@@ -1,4 +1,5 @@
 import type { StreamInfo } from './parse'
+import { priorityIndexOf, priorityPoints } from './source-priority'
 
 // Within-tier ranking.
 //
@@ -21,6 +22,9 @@ export interface ScoreOptions {
   /** Direct P2P has to fetch bytes before the first frame. Within the same quality tier, favour
    * efficient encodes that can build a useful playback buffer sooner. */
   directP2p?: boolean
+  /** The user's ordered source trust list. Ranks a stated preference above every heuristic about
+   * the file — but still under cache state, which rankInfos sorts on first. */
+  sourcePriority?: readonly string[]
 }
 
 /** Fansub groups with a track record for encode quality and subtitle accuracy. Anime-first by
@@ -46,6 +50,13 @@ export const RESOLUTION_POINTS: [number, number][] = [[2160, 25], [1440, 22], [1
 export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: number; reasons: ScoreReason[] } {
   const reasons: ScoreReason[] = []
   const add = (signal: string, delta: number) => { if (delta) reasons.push({ signal, delta }) }
+
+  // Stated preference first: the user knows which provider actually works for them, which is not
+  // something any signal below can infer from the file.
+  if (opts.sourcePriority?.length) {
+    const points = priorityPoints(priorityIndexOf(info.stream, opts.sourcePriority))
+    if (points) add('preferred source', points)
+  }
 
   const res = RESOLUTION_POINTS.find(([q]) => info.quality >= q)
   if (res) add(`${info.quality}p`, res[1])

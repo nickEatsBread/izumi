@@ -16,7 +16,7 @@
   import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
-  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations } from '$lib/settings/ui'
+  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
   import { getSeadexEntry, bestHashes, isWebLink, matchSeadexStreams, type SeadexEntry, type SeadexRelease } from '$lib/stremio/seadex'
@@ -88,6 +88,7 @@
     directP2p,
     seadexHashes,
     cacheCheck,
+    sourcePriority: $sourcePriority,
   })
   const all = $derived(pick ? rankInfos(pick.streams, $preferredStreamSort, rankOpts) : ([] as StreamInfo[]))
   // Only DEAD rows are hidden behind the toggle. 'unknown' must stay visible: it is the default
