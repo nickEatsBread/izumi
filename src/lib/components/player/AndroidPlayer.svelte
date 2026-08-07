@@ -70,7 +70,9 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playNext, playPrev, playEpisode, finalizeAndroidWatch, searchOnlineSubtitles } from '$lib/stremio/play'
+  import { playNext, playPrev, playEpisode, playStream, finalizeAndroidWatch, searchOnlineSubtitles } from '$lib/stremio/play'
+  import { audioCounterpart, serverSiblings, variantLabel } from '$lib/player/source-variants'
+  import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
@@ -86,6 +88,8 @@
   import Lock from '@lucide/svelte/icons/lock'
   import Ratio from '@lucide/svelte/icons/ratio'
   import Layers from '@lucide/svelte/icons/layers'
+  import Languages from '@lucide/svelte/icons/languages'
+  import Server from '@lucide/svelte/icons/server'
   import Film from '@lucide/svelte/icons/film'
   import Gauge from '@lucide/svelte/icons/gauge'
   import Captions from '@lucide/svelte/icons/captions'
@@ -832,7 +836,7 @@
 
   // --- Sheets ---
   type Sheet = null | 'settings'
-  type SettingsPage = 'main' | 'speed' | 'display' | 'subtitles' | 'audio' | 'capture'
+  type SettingsPage = 'main' | 'speed' | 'display' | 'subtitles' | 'audio' | 'capture' | 'servers'
   let sheet = $state<Sheet>(null)
   let settingsPage = $state<SettingsPage>('main')
   let tracks = $state<MpvTrack[]>([])
@@ -872,6 +876,7 @@
       : settingsPage === 'subtitles' ? 'Subtitles'
       : settingsPage === 'audio' ? 'Audio track'
       : settingsPage === 'capture' ? 'Capture'
+      : settingsPage === 'servers' ? 'Server'
       : 'Video settings'
   }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
@@ -933,6 +938,38 @@
     const m = $nowPlayingMedia
     // autoplay always: picking a replacement source is an explicit "play this" (see Controls).
     if (m) playEpisode(m.media, m.episode, () => {}, { forceManual: true, autoplay: true })
+  }
+
+  // --- Sibling sources (audio flavour / server) ---
+  // The desktop player offers these from Controls.svelte, which Android never mounts — the phone
+  // renders this component instead. Same helpers, same pool: the episode's ranked candidates are
+  // already retained in playbackRecovery for the stall watchdog, so switching costs no re-resolve.
+  const currentStream = $derived($playbackRecovery?.current ?? null)
+  const variantPool = $derived($playbackRecovery?.streams ?? [])
+  const dubSubTarget = $derived(currentStream ? audioCounterpart(currentStream, variantPool) : undefined)
+  const altServers = $derived(currentStream ? serverSiblings(currentStream, variantPool) : [])
+  // What the flavour row switches TO. Only read when dubSubTarget exists, which guarantees the
+  // current row carries an __audio tag.
+  const otherFlavour = $derived(currentStream?.__audio === 'sub' ? 'Dub' : 'Sub')
+  let swapping = $state(false)
+
+  /** Replace the playing source with a sibling, resuming where we are. */
+  async function swapTo(target: Stream) {
+    const m = $nowPlayingMedia
+    if (!m || swapping) return
+    swapping = true
+    sheet = null
+    // Captured at tap time, not from a derived: `pos` tracks the scrubber and must not be re-read
+    // after the await.
+    const startSeconds = pos
+    flashToast('Switching source…')
+    await playStream(m.media, m.episode, target, (s) => {
+      if (s.status === 'error') playerNotice.set(s.message ?? 'Could not switch source.')
+      if (s.status !== 'resolving') swapping = false
+    }, { autoplay: true, startSeconds })
+    // playStream can return without reporting a state at all when a newer play took ownership;
+    // clearing here keeps the rows from staying disabled for the rest of the episode.
+    swapping = false
   }
 
   let speed = $state(1)
@@ -1428,6 +1465,22 @@
         {#if settingsPage === 'main'}
           <div class="overflow-hidden rounded-2xl bg-white/[0.07]">
             <button onclick={changeSource} class="settings-row"><Layers size={20} /><span class="flex-1 font-bold">Change source</span><ChevronRight size={18} class="text-white/35" /></button>
+            <!-- Sibling-source rows sit with "Change source" because they answer the same question,
+                 just without reopening the picker. Both are absent unless the pool actually holds an
+                 alternative, so neither can render as a dead control. -->
+            {#if dubSubTarget}
+              <button onclick={() => dubSubTarget && swapTo(dubSubTarget)} disabled={swapping} class="settings-row disabled:opacity-40">
+                <Languages size={20} /><span class="flex-1 font-bold">Switch to {otherFlavour}</span>
+                <span class="text-sm uppercase text-white/50">{currentStream?.__audio}</span>
+              </button>
+            {/if}
+            {#if altServers.length}
+              <button onclick={() => (settingsPage = 'servers')} disabled={swapping} class="settings-row disabled:opacity-40">
+                <Server size={20} /><span class="flex-1 font-bold">Server</span>
+                <span class="max-w-28 truncate text-sm text-white/50">{currentStream ? variantLabel(currentStream) : ''}</span>
+                <ChevronRight size={18} class="text-white/35" />
+              </button>
+            {/if}
             <button onclick={() => (settingsPage = 'speed')} class="settings-row"><Gauge size={20} /><span class="flex-1 font-bold">Playback speed</span><span class="text-sm text-white/50">{speed}×</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'display')} class="settings-row"><Ratio size={20} /><span class="flex-1 font-bold">Resize</span><span class="text-sm text-white/50">{FITS[fitIdx]}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'subtitles')} class="settings-row"><Captions size={20} /><span class="flex-1 font-bold">Subtitles</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('sub')}</span><ChevronRight size={18} class="text-white/35" /></button>
@@ -1439,6 +1492,17 @@
           <div class="space-y-1">
             {#each SPEEDS as v (v)}
               <button onclick={() => setSpeed(v)} class="settings-choice {speed === v ? 'settings-choice-selected' : ''}"><span>{v}×</span>{#if speed === v}<Check size={18} />{/if}</button>
+            {/each}
+          </div>
+        {:else if settingsPage === 'servers'}
+          <div class="space-y-1">
+            <!-- The row that is playing, then its alternatives. Keyed by url: the pool is url-deduped
+                 upstream (dedupeStreams), so these cannot collide. -->
+            {#if currentStream}
+              <button disabled class="settings-choice settings-choice-selected"><span class="truncate">{variantLabel(currentStream)}</span><Check size={18} /></button>
+            {/if}
+            {#each altServers as alt (alt.url)}
+              <button onclick={() => swapTo(alt)} disabled={swapping} class="settings-choice disabled:opacity-40"><span class="truncate">{variantLabel(alt)}</span></button>
             {/each}
           </div>
         {:else if settingsPage === 'display'}
