@@ -66,3 +66,31 @@ describe('matchesRelease — torrent identities still work', () => {
     expect(matchesRelease(s, { infoHash: 'abc', originId: 'animepahe' })).toBe(true)
   })
 })
+
+// Audio flavour is part of an online source's release identity. Without it, switching an episode
+// to dub mid-playback continued the NEXT episode on the same provider's sub row — silently undoing
+// the switch the user had just made.
+const flavoured = (originId: string, audio: 'sub' | 'dub'): Stream =>
+  ({ ...online(originId), __audio: audio } as Stream)
+
+describe('matchesRelease — audio flavour', () => {
+  const hint: ContinueHint = { originId: 'prov', online: true, audio: 'dub' }
+
+  it('continues on the same flavour and refuses the other one', () => {
+    expect(matchesRelease(flavoured('prov', 'dub'), hint)).toBe(true)
+    expect(matchesRelease(flavoured('prov', 'sub'), hint)).toBe(false)
+  })
+
+  it('ignores flavour when either side does not declare one', () => {
+    // A provider that reports no flavour must behave exactly as it did before this rule existed,
+    // rather than losing continuity entirely.
+    expect(matchesRelease(online('prov'), hint)).toBe(true)
+    expect(matchesRelease(flavoured('prov', 'sub'), { originId: 'prov', online: true })).toBe(true)
+  })
+
+  it('never lets flavour override a torrent identity', () => {
+    // infoHash/bingeGroup/group are exact release matches; flavour only qualifies the origin rule.
+    const torrent = { infoHash: 'abc', __audio: 'sub', name: '[G] Show - 03' } as Stream
+    expect(matchesRelease(torrent, { infoHash: 'abc', audio: 'dub' })).toBe(true)
+  })
+})

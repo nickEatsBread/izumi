@@ -730,7 +730,7 @@ async function extToStreams(
 // shares the Stremio bingeGroup, the exact pack infoHash, OR the parsed release group
 // (fansub author) — the group match is what continues extension/fansub content, which
 // carries no bingeGroup. `describe(s).group` is the same parse the picker heading uses.
-export interface ContinueHint { bingeGroup?: string; infoHash?: string; group?: string; originId?: string; online?: boolean }
+export interface ContinueHint { bingeGroup?: string; infoHash?: string; group?: string; originId?: string; online?: boolean; audio?: 'sub' | 'dub' }
 export function matchesRelease(s: Stream, c: ContinueHint): boolean {
   return !!(
     (c.bingeGroup && s.behaviorHints?.bingeGroup === c.bingeGroup)
@@ -739,7 +739,12 @@ export function matchesRelease(s: Stream, c: ContinueHint): boolean {
     // Direct online sources: the provider IS the release identity. They carry no bingeGroup,
     // no infoHash and no parseable release group, so without this nothing ever matched and the
     // picker reopened for every episode of a binge.
-    || (c.originId && s.__origin?.id === c.originId)
+    // Flavour is PART of that identity. A provider serves both sub and dub rows under one origin,
+    // so matching the origin alone let the next episode silently revert to the flavour the user
+    // had just switched away from mid-episode. Compared only when both sides declare one — a
+    // provider that reports no flavour behaves exactly as before.
+    || (c.originId && s.__origin?.id === c.originId
+      && (!c.audio || !s.__audio || s.__audio === c.audio))
   )
 }
 // The continuity hint for the NEXT episode of `media`: the release identity of what's
@@ -749,7 +754,7 @@ function continueHint(media: Media): ContinueHint | undefined {
   if (!get(bingePreload) && !get(autoplayNext)) return undefined
   const b = get(bingeSource)
   if (!b || b.mediaId !== media.id || !(b.bingeGroup || b.infoHash || b.group || b.originId)) return undefined
-  return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group, originId: b.originId, online: b.online }
+  return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group, originId: b.originId, online: b.online, audio: b.audio }
 }
 // A stream mpv can start without a multi-minute debrid cache: a direct online stream, an
 // already-resolved url, or a debrid-cached torrent (⚡ — resolves in ~1s).
@@ -818,7 +823,11 @@ async function prefetchNext(media: Media, episode: number) {
     const b = get(bingeSource)
     if (b && b.mediaId === media.id && b.online && b.originId) {
       const rows = await resolveOnlineStreams(media, next, b.originId)
-      const s = rows.find((r) => r.__origin?.id === b.originId && !!r.url) ?? rows.find((r) => !!r.url)
+      // Same provider AND same flavour first: warming the sub of an episode the user is watching
+      // in dub hands auto-advance a stream that undoes their switch.
+      const s = rows.find((r) => r.__origin?.id === b.originId && !!r.url && (!b.audio || r.__audio === b.audio))
+        ?? rows.find((r) => r.__origin?.id === b.originId && !!r.url)
+        ?? rows.find((r) => !!r.url)
       if (s?.url) {
         prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
         nextEpisodeReady.set({ mediaId: media.id, episode: next })
@@ -1776,7 +1785,7 @@ export async function playStream(
     // `online` marks a DIRECT streaming source (no torrent behind it) — the flag that lets
     // same-origin continuation stay on in Direct-P2P mode, where torrent continuations are
     // deliberately blocked (see resolveAndPlayBest).
-    const releaseIdentity = { bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group, originId: stream.__origin?.id, online: !!stream.__stream }
+    const releaseIdentity = { bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group, originId: stream.__origin?.id, online: !!stream.__stream, audio: stream.__audio }
     bingeSource.set({ mediaId: media.id, ...releaseIdentity })
     // A prefetched next episode continues the release that was playing when the prefetch ran.
     // Starting a DIFFERENT release now (manual source change) makes that stored stream — and its
