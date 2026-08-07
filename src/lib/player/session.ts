@@ -200,7 +200,7 @@ export const spriteKey = writable<string | null>(null)
 // bingeGroup / infoHash / release group, but an online-stream row has none of those — no infoHash,
 // no bingeGroup, and a filename that carries no release group — so continuity never matched for
 // them and the picker reopened on every episode.
-export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; infoHash?: string; group?: string; originId?: string; online?: boolean } | null>(null)
+export const bingeSource = writable<{ mediaId: number; bingeGroup?: string; infoHash?: string; group?: string; originId?: string; online?: boolean; audio?: 'sub' | 'dub' } | null>(null)
 
 // Fullscreen state of the MAIN window while playing. Drives hiding the
 // sidebar/titlebar chrome for edge-to-edge video. Kept in sync with the actual

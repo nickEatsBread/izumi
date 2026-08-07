@@ -30,7 +30,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, providerAudio } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { audioCounterpart, serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
@@ -181,6 +181,12 @@
   const currentStream = $derived(recovery?.current ?? null)
   const variantPool = $derived(recovery?.streams ?? [])
   const dubSubTarget = $derived(currentStream ? audioCounterpart(currentStream, variantPool) : undefined)
+  // See AndroidPlayer: `providerAudio` decides which flavours are QUERIED, so narrowing it makes a
+  // counterpart impossible rather than absent. Say which, instead of silently having no button.
+  const flavourNarrowed = $derived($providerAudio !== 'both')
+  const flavourBlocked = $derived(
+    !dubSubTarget && flavourNarrowed && !!currentStream?.__stream && !!currentStream?.__audio,
+  )
   const altServers = $derived(currentStream ? serverSiblings(currentStream, variantPool) : [])
   // Labelled as a SET: two unnamed mirrors of one site can reduce to the same text, and a menu of
   // identical rows gives no basis to choose.
@@ -708,6 +714,12 @@
 
         <!-- SUB↔DUB: one-click swap to this source's other audio flavour. Only rendered when the
              retained pool actually holds a counterpart row (torrents/debrid never do). -->
+        {#if flavourBlocked}
+          <span class="rounded-md bg-white/5 px-2.5 py-1.5 text-xs font-bold text-white/45"
+                title="Only {$providerAudio === 'dub' ? 'dubbed' : 'subbed'} sources are fetched — change it in Settings.">
+            {$providerAudio === 'dub' ? 'DUB' : 'SUB'} ONLY
+          </span>
+        {/if}
         {#if dubSubTarget}
           <button data-focusable disabled={swapping}
                   onclick={() => dubSubTarget && swapTo(dubSubTarget)}
