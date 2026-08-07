@@ -53,10 +53,10 @@ export function atorrentToResult(t: AnimeTorrent, hash: string): TorrentResult |
 /** Query every anime-torrent-provider extension for an episode's torrents, mapped into izumi's
  *  TorrentResult. smartSearch when the provider supports it, else search. Best-effort: [] on any
  *  failure; dedupe by hash. `onBatch` fires with each provider's results as it settles. */
-export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string): Promise<TorrentResult[]> {
+export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string, signal?: AbortSignal): Promise<TorrentResult[]> {
   try {
     const provs = await runningTorrentProviderExtensions(onlyId)
-    if (!provs.length) return []
+    if (!provs.length || signal?.aborted) return []
     // Release names are romaji-based; a localized display title may never appear in a torrent name,
     // so query by romaji. And when a precise episode/anime id is available the provider locates the
     // exact release by id — an extra title/resolution text filter then only over-restricts (an
@@ -65,14 +65,21 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia,
     const romaji = media.romajiTitle || query.titles[0] || ''
     const hasId = (query.anidbEid ?? 0) > 0 || (query.anidbAid ?? 0) > 0
     const per = await Promise.all(provs.map(async (p): Promise<TorrentResult[]> => {
+      // A superseded resolve (source already picked) must not issue further worker queries — each
+      // one spawns HTTP that competes with the picked source's playback path. Re-checked before
+      // every dispatch tier, since getSettings/search can settle after the abort lands.
+      if (signal?.aborted) return []
       try {
         const s = (await p.call('getSettings').catch(() => null)) as AtpSettings | null
+        if (signal?.aborted) return []
         const raw = (s?.canSmartSearch
           ? await p.call('smartSearch', { media, query: hasId ? '' : romaji, batch: false, episodeNumber: query.episode ?? -1, anidbAID: query.anidbAid, anidbEID: query.anidbEid, bestReleases: false })
           : await p.call('search', { media, query: romaji })) as unknown
         const list: AnimeTorrent[] = Array.isArray(raw) ? raw : []
         const out: TorrentResult[] = []
         for (const t of list) {
+          // getTorrentInfoHash is one dispatch PER torrent; discard the batch instead of walking it.
+          if (signal?.aborted) return []
           let hash = (t.infoHash ?? '').toLowerCase()
           if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
           const r = atorrentToResult(t, hash)
