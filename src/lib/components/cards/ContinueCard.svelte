@@ -6,7 +6,7 @@
   // resume episode is right regardless of which tracker owns the show.
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
-  import { title as mediaTitle, cover, resumeEp } from '$lib/anilist/media'
+  import { title as mediaTitle, cardCover, resumeEp } from '$lib/anilist/media'
   import { episodeSummary } from '$lib/anilist/episode-labels'
   import { getEpisodeMeta } from '$lib/anizip'
   import { positionPercent, positions, progressKey } from '$lib/player/progress'
@@ -25,10 +25,12 @@
   const name = $derived(mediaTitle(media))
 
   // Episode thumbnail (AniZip) for the resume episode; fall back to the banner/cover so
-  // the card is never blank. Fetched once per media; `img` reacts to the resume episode.
+  // the card is never blank. Fetched once per media; `img` reacts to the resume episode. The card
+  // renders at ~264px — well under the ~460px extraLarge asset cover() reaches for — so the cover
+  // fallback uses cardCover() too.
   let meta = $state<Record<number, EpMeta>>({})
   onMount(async () => { try { meta = await getEpisodeMeta(media.id) } catch { /* fallback image */ } })
-  const thumb = $derived(meta[ep]?.image || media.bannerImage || cover(media))
+  const thumb = $derived(meta[ep]?.image || media.bannerImage || cardCover(media))
   const epTitle = $derived(meta[ep]?.title)
   const episodeLabel = $derived(episodeSummary(ep, epTitle, $hideSpoilers))
 

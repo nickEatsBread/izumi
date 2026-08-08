@@ -12,7 +12,7 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { reliableImage } from '$lib/util/reliable-image'
-  import { title, cover, season, format, mediaHref } from '$lib/anilist/media'
+  import { title, cardCover, season, format, mediaHref } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import { fade } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
@@ -28,7 +28,7 @@
   let { media, fill = false }: { media: Media; fill?: boolean } = $props()
 
   let hovered = $state(false)
-  const coverSrc = $derived(cover(media))
+  const coverSrc = $derived(cardCover(media))
   let coverReady = $state(false)
   $effect(() => { void coverSrc; coverReady = false })
   let pos = $state({ left: 0, top: 0 })
