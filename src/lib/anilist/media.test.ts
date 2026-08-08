@@ -12,12 +12,26 @@ describe('media helpers', () => {
       .toBe('https://i.ytimg.com/vi/YT/maxresdefault.jpg')
     expect(banner({ id: 1, title: {}, coverImage: { extraLarge: 'c.jpg' } } as any)).toBe('c.jpg')
   })
-  it('cardCover prefers large (small cards don’t need the extraLarge asset), falls back to extraLarge then medium', () => {
-    expect(cardCover({ id: 1, title: {}, coverImage: { large: 'l.jpg', extraLarge: 'xl.jpg', medium: 'm.jpg' } } as any)).toBe('l.jpg')
-    // Older cwSnapshot entries persisted before `large` was added to the query won't have it.
-    expect(cardCover({ id: 1, title: {}, coverImage: { extraLarge: 'xl.jpg', medium: 'm.jpg' } } as any)).toBe('xl.jpg')
-    expect(cardCover({ id: 1, title: {}, coverImage: { medium: 'm.jpg' } } as any)).toBe('m.jpg')
-    expect(cardCover({ id: 1, title: {} } as any)).toBe('')
+  it('cardCover picks the smallest asset that still covers the painted pixels', () => {
+    const m = { id: 1, title: {}, coverImage: { large: 'l.jpg', extraLarge: 'xl.jpg', medium: 'm.jpg' } } as any
+    // AniList's `large` is 230px wide. A 152px card on a 1x monitor is covered three times over.
+    ;(globalThis as any).window = { devicePixelRatio: 1 }
+    expect(cardCover(m, 152)).toBe('l.jpg')
+    // The same card on a 2.75x phone needs ~300 real pixels, so the big asset is the correct one -
+    // density decides this, not platform. DPR is budgeted at 2x, past which the bytes stop paying.
+    ;(globalThis as any).window = { devicePixelRatio: 2.75 }
+    expect(cardCover(m, 131)).toBe('xl.jpg')
+    // A caller that cannot state a width (fill-width cell, 16:9 fallback) must not be guessed small.
+    expect(cardCover(m)).toBe('xl.jpg')
+    delete (globalThis as any).window
+  })
+
+  it('cardCover falls back when a snapshot predates the large field', () => {
+    ;(globalThis as any).window = { devicePixelRatio: 1 }
+    expect(cardCover({ id: 1, title: {}, coverImage: { extraLarge: 'xl.jpg', medium: 'm.jpg' } } as any, 152)).toBe('xl.jpg')
+    expect(cardCover({ id: 1, title: {}, coverImage: { medium: 'm.jpg' } } as any, 152)).toBe('m.jpg')
+    expect(cardCover({ id: 1, title: {} } as any, 152)).toBe('')
+    delete (globalThis as any).window
   })
   it('format maps enum to label', () => {
     expect(format({ id: 1, title: {}, format: 'TV_SHORT' } as any)).toBe('TV Short')
