@@ -233,21 +233,33 @@
 
 {#if !$offlineMode && $store.fetching && !media}
   {#if $isMobile}
-    <div class="relative isolate px-4 pb-10 pt-[max(2.5rem,env(safe-area-inset-top))]">
-      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
-        {#if detailHint && banner(detailHint)}<img src={banner(detailHint)} alt="" class="h-full w-full object-cover opacity-35" />{:else}<div class="h-full w-full skeloader"></div>{/if}
-        <div class="absolute inset-0 bg-gradient-to-b from-background/20 via-background/70 to-background"></div>
-      </div>
-      <div class="flex items-end gap-4">
-        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="aspect-[46/65] w-28 shrink-0 rounded-xl object-cover shadow-xl" />{:else}<div class="aspect-[46/65] w-28 shrink-0 rounded-xl skeloader"></div>{/if}
-        <div class="min-w-0 flex-1 pb-1">
-          <h1 class="line-clamp-3 text-2xl font-black leading-tight">{detailHint ? title(detailHint) : 'Loading title…'}</h1>
-          <div class="mt-3 flex gap-2"><span class="h-6 w-16 rounded-full skeloader"></span><span class="h-6 w-20 rounded-full skeloader"></span></div>
+    <!-- Shapes the loading skeleton after the real hero below: a full-bleed artwork band (same
+         height classes, so the two cannot drift apart), then poster + stacked title/meta beside
+         it, a synopsis block, and a full-width button bar — so the page does not visibly
+         re-lay-out the instant data lands. -->
+    <div class="relative pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
+      {#if detailHint && banner(detailHint)}
+        <img src={banner(detailHint)} alt="" class="h-[26vh] max-h-72 min-h-44 w-full object-cover opacity-35" />
+      {:else}
+        <div class="h-[26vh] max-h-72 min-h-44 w-full skeloader"></div>
+      {/if}
+      <div class="px-4">
+        <div class="-mt-10 flex gap-4">
+          {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />{:else}<div class="aspect-[46/65] w-28 shrink-0 self-start rounded-xl skeloader min-[420px]:w-32"></div>{/if}
+          <div class="min-w-0 flex-1 self-end space-y-2 pb-1">
+            <div class="h-3 w-20 rounded skeloader"></div>
+            <h1 class="line-clamp-2 text-xl font-black leading-tight">{detailHint ? title(detailHint) : 'Loading title…'}</h1>
+          </div>
         </div>
+        <div class="mt-3 flex gap-2"><span class="h-4 w-16 rounded-full skeloader"></span><span class="h-4 w-24 rounded-full skeloader"></span></div>
+        <div class="mt-4 space-y-2">
+          <div class="h-3 w-full rounded skeloader"></div>
+          <div class="h-3 w-full rounded skeloader"></div>
+          <div class="h-3 w-2/3 rounded skeloader"></div>
+        </div>
+        <div class="mt-4 h-12 w-full rounded-lg skeloader"></div>
+        <div class="mt-2 grid grid-cols-4 gap-2">{#each Array(4) as _}<div class="h-11 rounded-lg skeloader"></div>{/each}</div>
       </div>
-      <div class="mt-6 h-12 rounded-xl skeloader"></div>
-      <div class="mt-3 grid grid-cols-3 gap-2">{#each Array(3) as _}<div class="h-11 rounded-xl skeloader"></div>{/each}</div>
-      <div class="mt-8 h-11 w-full rounded-lg skeloader"></div>
     </div>
   {:else}
     <div class="relative min-h-[70vh] overflow-hidden px-8 pb-16 pt-24">

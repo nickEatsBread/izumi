@@ -56,4 +56,10 @@ describe('mobile series hero', () => {
     expect(detail).toContain('let artLoaded = $state(false)')
     expect(detail).toContain('transition-opacity duration-500')
   })
+
+  it('shapes the loading skeleton like the hero it is standing in for', () => {
+    // Same height classes as the real band, so the page does not re-lay-out when data lands.
+    const bands = detail.match(/h-\[26vh\] max-h-72 min-h-44/g) ?? []
+    expect(bands.length).toBeGreaterThanOrEqual(2)
+  })
 })
