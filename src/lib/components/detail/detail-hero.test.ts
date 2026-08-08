@@ -62,4 +62,16 @@ describe('mobile series hero', () => {
     const bands = detail.match(/h-\[26vh\] max-h-72 min-h-44/g) ?? []
     expect(bands.length).toBeGreaterThanOrEqual(2)
   })
+  it('keeps the poster above the artwork band', () => {
+    // The band is positioned, so it paints over static in-flow content - and the poster row is
+    // pulled up into it. Without its own stacking context the band covered the poster's top the
+    // moment its image loaded, which read as the cover being cropped.
+    expect(detail).toContain('relative z-10 -mt-10 flex gap-4')
+  })
+
+  it('gives the airing times a row of their own', () => {
+    // AiringStatus emits bare inline chips with no spacing, so sub and dub ran together and sat
+    // flush against the block above.
+    expect(detail).toContain('mt-3 flex flex-wrap items-center gap-2 empty:mt-0')
+  })
 })
