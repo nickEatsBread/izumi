@@ -1,5 +1,5 @@
 import { describe as suite, it, expect } from 'vitest'
-import { isUncached, isCached, describe } from './parse'
+import { isUncached, isCached, describe, isWrongSeason } from './parse'
 
 suite('streaming source cache state', () => {
   it('a __stream source is never uncached', () => {
@@ -130,5 +130,47 @@ suite('cache state tri-state', () => {
   it('a __cache hint with no explicit source defaults to native', () => {
     const r = describe({ name: 'Show', infoHash: 'abc', __cache: 'cached' })
     expect(r.cacheSource).toBe('native')
+  })
+})
+
+suite('isWrongSeason with a TVDB absolute mapping', () => {
+  // Live AniZip for AniList 171110 (Ascendance of a Bookworm S4), episode 17:
+  //   seasonNumber 1, episodeNumber 43, absoluteEpisodeNumber 43
+  // TVDB folds the whole franchise into one season and counts through it; every release is named
+  // by cour (`S4 - 17`). Comparing the two coordinate systems dropped all four correct files and
+  // kept only the one numbered TVDB's way, so the picker cleared itself a moment after filling.
+  const want = { episode: 17, season: 1, abs: 43 }
+  const named = (filename: string) => ({ behaviorHints: { filename } }) as never
+
+  it('keeps a cour-numbered release whose season TVDB does not model', () => {
+    expect(isWrongSeason(named('[ASW] Honzuki no Gekokujou S4 - 17 [1080p HEVC x265 10Bit][AAC]'), want)).toBe(false)
+    expect(isWrongSeason(named('[Judas] Honzuki no Gekokujou - S04E17 [1080p][HEVC x265 10bit]'), want)).toBe(false)
+  })
+
+  it('accepts either numbering for the same episode', () => {
+    // 17 is the cour number, 43 the absolute one. Both name this episode.
+    expect(isWrongSeason(named('[Erai-raws] Honzuki no Gekokujou - Ryushu no Youjo - 17v2 [1080p]'), want)).toBe(false)
+    expect(isWrongSeason(named('[YE] Honzuki no Gekokujou - 43 (ytv 1280x720 x265 10bit AAC)'), want)).toBe(false)
+    expect(isWrongSeason(named('[Group] Honzuki no Gekokujou S01E43 [1080p]'), want)).toBe(false)
+  })
+
+  it('still rejects an episode that matches neither number', () => {
+    expect(isWrongSeason(named('[ASW] Honzuki no Gekokujou S4 - 12 [1080p]'), want)).toBe(true)
+    expect(isWrongSeason(named('[YE] Honzuki no Gekokujou - 99 (ytv)'), want)).toBe(true)
+  })
+
+  it('keeps comparing seasons when TVDB does split the show by cour', () => {
+    // season > 1 means TVDB agrees with the cour numbering, so a mismatch is real again — this is
+    // the Torrentio season-overflow case the guard exists for.
+    const split = { episode: 1, season: 4, abs: 40 }
+    expect(isWrongSeason(named('[Group] Show S01E01 [1080p]'), split)).toBe(true)
+    expect(isWrongSeason(named('[Group] Show S04E01 [1080p]'), split)).toBe(false)
+  })
+
+  it('leaves the no-absolute-mapping behaviour alone', () => {
+    const plain = { episode: 7, season: 1 }
+    expect(isWrongSeason(named('[Group] Show - 07 [1080p]'), plain)).toBe(false)
+    expect(isWrongSeason(named('[Group] Show - 12 [1080p]'), plain)).toBe(true)
+    expect(isWrongSeason(named('[Group] Show S02E07 [1080p]'), plain)).toBe(true)
   })
 })
