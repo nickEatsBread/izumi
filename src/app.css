@@ -22,8 +22,13 @@ html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); 
 body { overflow-x: clip; }
 /* Mobile (Android edge-to-edge WebView): inset the page content below the status bar.
    Applied to <main> so every route clears the status bar; the bottom tab bar handles
-   the gesture-area inset itself. Needs viewport-fit=cover (app.html) to resolve non-zero. */
-@media (max-width: 640px) { main { padding-top: env(safe-area-inset-top); } }
+   the gesture-area inset itself. Needs viewport-fit=cover (app.html) to resolve non-zero.
+   Screens that want to paint under the status bar (artwork, blurred bars) set `edge-to-edge`
+   on <html> while mounted and take responsibility for their own top padding. */
+@media (max-width: 640px) {
+  main { padding-top: var(--main-safe-top, env(safe-area-inset-top)); }
+  .edge-to-edge main { --main-safe-top: 0px; }
+}
 /* Mobile density ramp: the browse UI was sized in rem for desktop, so the default 16px root
    made type/spacing ~1/6 too large on a ~390px phone viewport. Tighten the rem base on phones
    only — desktop and Steam Deck are unaffected (Deck scales via `zoom`, a different lever, and
@@ -205,3 +210,13 @@ body { overflow-x: clip; }
    Higher specificity than the *:focus-visible and .gamemode :focus rules above, so it wins. */
 [data-nav-sidebar] [data-focusable]:focus-visible { outline: none; box-shadow: none; background: hsl(var(--foreground) / 0.12); }
 .gamemode [data-nav-sidebar] [data-focusable]:focus { box-shadow: none; background: hsl(var(--foreground) / 0.16); }
+
+/* Press ripple (see src/lib/actions/ripple.ts). Transform/opacity only, so it stays off the layout
+   path; the span deletes itself on animationend. */
+.ripple-host { position: relative; overflow: hidden; }
+.ripple-ink {
+  position: absolute; border-radius: 9999px; pointer-events: none;
+  background: currentColor; opacity: 0.18; transform: scale(0);
+  animation: ripple-expand 420ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes ripple-expand { to { transform: scale(1); opacity: 0; } }

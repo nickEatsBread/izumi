@@ -11,7 +11,7 @@
   import type { EpMeta } from '$lib/anizip/types'
   import {
     episodeLayout, hideSpoilers, downloadQuality, downloadAudio, downloadCodec, downloadCachedOnly,
-    absoluteEpisodeNumbers, type Quality,
+    absoluteEpisodeNumbers, type Quality, type EpisodeLayout,
   } from '$lib/settings/ui'
   import { localHistory, sessionProgress, manualProgressOverrides, setLocalProgress } from '$lib/player/history'
   import { positions, progressKey, episodeBarPercent } from '$lib/player/progress'
@@ -27,6 +27,7 @@
     autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
   } from '$lib/downloads/rules'
   import EpisodeCard from './EpisodeCard.svelte'
+  import { episodeTileState } from './episode-tile'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Pause from '@lucide/svelte/icons/pause'
@@ -34,6 +35,8 @@
   import Search from '@lucide/svelte/icons/search'
   import Shuffle from '@lucide/svelte/icons/shuffle'
   import ListChecks from '@lucide/svelte/icons/list-checks'
+  import LayoutGrid from '@lucide/svelte/icons/layout-grid'
+  import Rows3 from '@lucide/svelte/icons/rows-3'
   let { media, offline = false }: { media: Media; offline?: boolean } = $props()
 
   // Offline: the playable set is exactly the DOWNLOADED episodes (the download keys carry the
@@ -108,6 +111,18 @@
   let sortDir = $state<SortDir>('asc')
   const rows = $derived(orderEpisodes(eps, sortDir))
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
+
+  // The switch is binary but the preference is ternary: `compact` is only reachable from Settings.
+  // Remember which non-grid layout the user actually has so toggling back restores THAT, instead of
+  // silently overwriting a compact preference with cards.
+  let lastNonGrid: EpisodeLayout = $episodeLayout === 'grid' ? 'cards' : $episodeLayout
+  function setLayout(next: 'list' | 'grid') {
+    const target = next === 'grid' ? 'grid' : lastNonGrid
+    if ($episodeLayout === target) return
+    if ($episodeLayout !== 'grid') lastNonGrid = $episodeLayout
+    h.select()
+    episodeLayout.set(target)
+  }
 
   // Per-episode metadata from AniZip (thumbnail/title/rating). Best-effort; the
   // cards fall back to the show art when a given episode has no entry.
@@ -266,6 +281,24 @@
                 class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
           <Shuffle size={15} /> Random
         </button>
+      {/if}
+      {#if $isMobile}
+        <!-- Layout switch: mobile-only. Rendering it unconditionally added two data-focusable
+             stops to the desktop toolbar and the Deck's controller focus order for a layout that
+             doesn't apply there. -->
+        <div role="group" aria-label="Episode layout"
+             class="flex min-h-11 items-stretch rounded-xl bg-secondary p-1">
+          <button data-focusable onclick={() => setLayout('list')} aria-label="Episode cards"
+                  aria-pressed={$episodeLayout !== 'grid'}
+                  class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout !== 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
+            <Rows3 size={17} />
+          </button>
+          <button data-focusable onclick={() => setLayout('grid')} aria-label="Episode numbers"
+                  aria-pressed={$episodeLayout === 'grid'}
+                  class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout === 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
+            <LayoutGrid size={17} />
+          </button>
+        </div>
       {/if}
       {#if !trackerLinked}
         <details class="relative">
@@ -430,6 +463,12 @@
           </div>
         {/each}
       </div>
+    {:else if $episodeLayout === 'grid'}
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-2">
+        {#each eps as ep (ep)}
+          <div class="skeloader h-11 rounded-lg"></div>
+        {/each}
+      </div>
     {:else}
       <div class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
         {#each eps as ep (ep)}
@@ -440,6 +479,31 @@
         {/each}
       </div>
     {/if}
+  {:else if $episodeLayout === 'grid'}
+    <!-- Dense number tiles: a compact shape for browsing long-runners at a glance. Tile states
+         mirror what a card shows, so switching layouts never changes what the list is telling you. -->
+    <div class="grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-2">
+      {#each rows as ep (ep)}
+        {@const tile = episodeTileState({
+          ep,
+          watchedThrough,
+          aired,
+          percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
+        })}
+        <button data-focusable disabled={!tile.playable} onclick={() => { h.tap(); tap(ep) }}
+                aria-label={`Episode ${numberLabel(ep)}`}
+                class="relative grid h-11 place-items-center overflow-hidden rounded-lg text-sm font-bold transition-colors
+                  {tile.kind === 'watched' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}
+                  {tile.kind === 'resume' ? 'ring-2 ring-theme' : ''}
+                  {selecting && selected.has(ep) ? 'ring-2 ring-primary' : ''}
+                  {tile.kind === 'unaired' ? 'opacity-40' : 'active:bg-accent'}">
+          {numberLabel(ep)}
+          {#if tile.kind === 'partial'}
+            <span class="absolute inset-x-0 bottom-0 h-1 bg-theme" style="width:{tile.percent}%"></span>
+          {/if}
+        </button>
+      {/each}
+    </div>
   {:else if $episodeLayout === 'cards'}
     <div class="grid grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
       {#each rows as ep (ep)}
