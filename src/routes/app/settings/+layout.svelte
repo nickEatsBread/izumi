@@ -131,7 +131,9 @@
         <span class="ml-auto"><SettingsSearch compact /></span>
       </div>
       {#key $page.url.pathname}
-        <div class="settings-child" in:fly={{ x: 22, duration: 190 }}>{@render children()}</div>
+        <!-- Vertical, short, and fading: a push that reads as a platform screen change rather than
+             a carousel. app.css shortens every transition under the reduced-motion gate. -->
+        <div class="settings-child" in:fly={{ y: 12, duration: 160, opacity: 0 }}>{@render children()}</div>
       {/key}
     </div>
   {/if}
