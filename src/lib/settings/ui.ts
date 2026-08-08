@@ -3,8 +3,9 @@ import { derived } from 'svelte/store'
 import type { StreamSort } from '$lib/stremio/addon'
 import type { SourcePriorityMode } from '$lib/stremio/source-priority'
 
-/** How the episode list renders. Names are intentionally generic. */
-export type EpisodeLayout = 'cards' | 'compact'
+/** How the episode list renders. Names are intentionally generic.
+ *  `grid` is the dense number-tile layout — the only workable shape for a long-runner. */
+export type EpisodeLayout = 'cards' | 'compact' | 'grid'
 
 /** Persisted episode-list layout preference (default: rich cards). */
 export const episodeLayout = persisted<EpisodeLayout>('episode-layout', 'cards')
