@@ -11,7 +11,8 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore } from '$lib/player/session'
+  import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
   import {
@@ -353,7 +354,8 @@
     try { ch = JSON.parse(await invoke<string>('player_chapters')) as { time: number; title: string }[] }
     catch { ch = [] }
     if (key !== loadedKey) return
-    chapters = ch
+    chapters = sortChapters(ch)
+    chapterStore.set(chapters)
     // AniSkip coverage is thin outside popular titles; well-tagged releases name their own chapters.
     // Chapter-derived segments carry the same op/ed type, so the debut guard covers them too.
     segments = mergeSkipSegments(segs, segmentsFromChapters(ch, dur))
@@ -370,6 +372,7 @@
     if (key === loadedKey) return
     loadedKey = key
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
+    chapterStore.set([])
     coreIdle = true; seeking = false; eof = false; firstFrame = false; loadedUrl = ''
     recoveryWatch = resetRecoveryWatch(Date.now())
     directTorrentDownloadedBytes = 0
@@ -611,6 +614,10 @@
     invoke('desktop_presence_clear').catch(() => {})
     // A style preset picked in the track menu is session-scoped by contract.
     sessionSubtitleStyle.set(null)
+    // The chapter list belongs to the file that just closed — leaving it set would let a menu opened
+    // after teardown (or before the next file's chapters land) offer timestamps for a file that is
+    // no longer loaded.
+    chapterStore.set([])
   })
 
   // Game mode controller: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1
@@ -764,6 +771,18 @@
       else if (action === 'playerPlayPause') cmd('cycle', ['pause'])
       else if (action === 'playerSeekBack') cmd('seek', [String(-get(seekDuration)), 'relative+exact'])
       else if (action === 'playerSeekForward') cmd('seek', [String(get(seekDuration)), 'relative+exact'])
+      else if (action === 'playerPreviousChapter') {
+        // No chapters means no-op, deliberately: a key that silently turns into a plain seek is
+        // worse than one that does nothing, because you cannot tell which happened.
+        // `chapters` is sorted at the point it is stored (see the load effect above), so it can
+        // be passed straight to these binary-search-based lookups.
+        const t = prevChapterTarget(chapters, pos)
+        if (t !== null) seekTo(t)
+      }
+      else if (action === 'playerNextChapter') {
+        const t = nextChapterTarget(chapters, pos)
+        if (t !== null) seekTo(t)
+      }
       else if (action === 'playerVolumeUp') cmd('add', ['volume', '5'])
       else if (action === 'playerVolumeDown') cmd('add', ['volume', '-5'])
       else if (action === 'playerMute') cmd('cycle', ['mute'])
@@ -951,7 +970,7 @@
     </div>
   {:else if controlsVisible}
     <div class:opacity-0={gmDynamicActive}>
-      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {chapters} {cmd} onclose={close} gm={gmMode} />
+      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} />
     </div>
   {/if}
 
