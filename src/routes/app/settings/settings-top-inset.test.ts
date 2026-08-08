@@ -24,3 +24,9 @@ describe('settings sub-page top inset', () => {
     expect(layout).toContain("document.documentElement.classList.remove('edge-to-edge')")
   })
 })
+
+describe('settings sub-page transition', () => {
+  it('fades and slides in, and lets the reduced-motion gate shorten it', () => {
+    expect(layout).toContain('in:fly={{ y: 12, duration: 160, opacity: 0 }}')
+  })
+})
