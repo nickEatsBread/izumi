@@ -188,15 +188,21 @@
   // teardown so every other screen keeps the normal inset even if the user navigates mid-transition.
   let artHeight = $state(0)
   let barHeight = $state(0)
-  let scrollY = $state(0)
-  let barSolid = $state(false)
-  const barState = $derived(heroBarState(scrollY, artHeight, barHeight, barSolid))
-  $effect(() => { barSolid = barState.solid })
+  // The bar's own previous state feeds the hysteresis, so it is computed in the scroll handler and
+  // NOT derived: a $derived that reads the value an $effect writes back is a self-referential graph,
+  // and Svelte resolves that into an update loop rather than a settled value.
+  let barState = $state({ solid: false, showTitle: false })
+  function onHeroScroll() {
+    barState = heroBarState(window.scrollY, artHeight, barHeight, barState.solid)
+  }
   $effect(() => {
     if (!$isMobile || typeof document === 'undefined') return
     document.documentElement.classList.add('edge-to-edge')
     return () => document.documentElement.classList.remove('edge-to-edge')
   })
+  // artHeight/barHeight land a frame after mount; recompute once they do so the bar is in the right
+  // state for the scroll position the page was restored to.
+  $effect(() => { void artHeight; void barHeight; onHeroScroll() })
   // Back returns to where the user came from, preserving that screen's scroll position. A deep
   // link (share sheet, notification) has no history to return to, so it lands on Home instead of
   // leaving the chevron dead.
@@ -207,7 +213,7 @@
   }
 </script>
 
-<svelte:window bind:scrollY onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
+<svelte:window onscroll={onHeroScroll} onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
 
 {#if !$offlineMode && $store.fetching && !media}
   {#if $isMobile}

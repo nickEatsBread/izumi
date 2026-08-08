@@ -23,7 +23,9 @@ describe('mobile series hero', () => {
 
   it('drives the floating bar from the tested helper', () => {
     expect(detail).toContain("import { heroBarState } from './hero-bar'")
-    expect(detail).toContain('heroBarState(scrollY, artHeight, barHeight, barSolid)')
+    expect(detail).toContain('heroBarState(window.scrollY, artHeight, barHeight, barState.solid)')
+    // A $derived that reads what an $effect writes back is an update loop, not a settled value.
+    expect(detail).not.toContain('$derived(heroBarState')
   })
 
   it('keeps the floating bar clear of the status bar itself', () => {
