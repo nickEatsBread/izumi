@@ -23,7 +23,7 @@ describe('mobile series hero', () => {
 
   it('drives the floating bar from the tested helper', () => {
     expect(detail).toContain("import { heroBarState } from './hero-bar'")
-    expect(detail).toContain('heroBarState(window.scrollY, artHeight, barHeight, barState.solid)')
+    expect(detail).toContain('heroBarState(window.scrollY, artHeight, barHeight, wasSolid)')
     // A $derived that reads what an $effect writes back is an update loop, not a settled value.
     expect(detail).not.toContain('$derived(heroBarState')
   })
@@ -37,5 +37,13 @@ describe('mobile series hero', () => {
     expect(detail).toContain('function heroBack()')
     expect(detail).toContain('history.length > 1')
     expect(detail).toContain("goto('/app/home')")
+  })
+
+  it('keeps the hysteresis latch off the reactive graph', () => {
+    // A latch an effect both reads and writes must not be $state, or Svelte resolves the cycle as
+    // an update loop. Guard the shape, not just the call.
+    expect(detail).toContain('let wasSolid = false')
+    expect(detail).not.toContain('$state(false)\n  const barState')
+    expect(detail).toContain('if (next.solid === wasSolid) return')
   })
 })
