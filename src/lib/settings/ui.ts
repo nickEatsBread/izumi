@@ -243,6 +243,8 @@ export const scheduleStickyHeader = persisted<boolean>('schedule-sticky-header',
  *  'watchlist' — the viewer's watching list ordered by aired-but-unwatched episodes. */
 export type ScheduleTab = 'schedule' | 'watchlist'
 export const scheduleDefaultTab = persisted<ScheduleTab>('schedule-default-tab', 'schedule')
+/** Show the "Next up" strip at the top of the schedule. Off means the grid starts immediately. */
+export const scheduleShowNextUp = persisted<boolean>('schedule-show-next-up', true)
 
 // --- Updates ---
 /** Auto-updater release channel: 'stable' (normal GitHub releases) or 'beta'
