@@ -95,8 +95,10 @@
   // page must not be inset a second time by `main`. Shared with the series page via a refcount:
   // their lifetimes can overlap mid-navigation, so a bare add/remove here could strip the inset
   // out from under the other screen (or vice versa).
+  // Only the child screen has the sticky header that carries the inset (see the header markup).
+  // The index has no header, so it must keep main's inset or its heading lands under the status bar.
   $effect(() => {
-    if (!$isMobile) return
+    if (!$isMobile || isIndex) return
     return acquireEdgeToEdge()
   })
 </script>

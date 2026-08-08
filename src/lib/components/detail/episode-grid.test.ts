@@ -15,7 +15,7 @@ describe('episode number grid', () => {
 
   it('offers a layout switch on the episode controls row', () => {
     expect(list).toContain('aria-label="Episode layout"')
-    expect(list).toContain("setLayout('cards')")
+    expect(list).toContain("setLayout('list')")
     expect(list).toContain("setLayout('grid')")
   })
 
@@ -23,5 +23,14 @@ describe('episode number grid', () => {
     expect(list).toContain("import { episodeTileState } from './episode-tile'")
     expect(list).toContain("$episodeLayout === 'grid'")
     expect(list).toContain('minmax(3.25rem,1fr)')
+  })
+
+  it('restores the remembered non-grid layout instead of overwriting compact', () => {
+    expect(list).toContain('let lastNonGrid')
+    expect(list).toContain("const target = next === 'grid' ? 'grid' : lastNonGrid")
+  })
+
+  it('shows selection state in the grid, like the other layouts', () => {
+    expect(list).toContain("selecting && selected.has(ep) ? 'ring-2 ring-primary' : ''")
   })
 })
