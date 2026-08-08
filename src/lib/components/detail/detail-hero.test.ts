@@ -44,4 +44,16 @@ describe('mobile series hero', () => {
     expect(detail).toContain('let wasSolid = false')
     expect(detail).toContain('if (next.solid === wasSolid) return')
   })
+
+  it('never crops the cover art or feeds a trailer thumbnail to the band', () => {
+    expect(detail).toContain('object-contain')
+    // banner() falls back to a YouTube still whose blurred pillarbox is baked into the JPEG.
+    expect(detail).toContain('<img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover')
+    expect(detail).not.toContain('src={banner(m)}')
+  })
+
+  it('fades the artwork in rather than popping it', () => {
+    expect(detail).toContain('let artLoaded = $state(false)')
+    expect(detail).toContain('transition-opacity duration-500')
+  })
 })
