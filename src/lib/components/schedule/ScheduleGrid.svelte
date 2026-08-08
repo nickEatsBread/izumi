@@ -18,7 +18,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { localHistory } from '$lib/player/history'
   import { gameMode } from '$lib/player/session'
-  import { scheduleLayout } from '$lib/settings/ui'
+  import { scheduleLayout, scheduleShowNextUp } from '$lib/settings/ui'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import type { Media } from '$lib/anilist/types'
@@ -219,10 +219,10 @@
     {@render selectedDay()}
   {:else if layout === 'days' || $isMobile}
     {@render dayTabs(false)}
-    {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
+    {#if isCurrentWeek && $scheduleShowNextUp}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
     {@render selectedDay()}
   {:else}
-    {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
+    {#if isCurrentWeek && $scheduleShowNextUp}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
     <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} {infoOf} {headerOffset} />
   {/if}
 {/if}
