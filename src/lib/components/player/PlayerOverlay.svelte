@@ -970,7 +970,7 @@
     </div>
   {:else if controlsVisible}
     <div class:opacity-0={gmDynamicActive}>
-      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {chapters} {cmd} onclose={close} gm={gmMode} />
+      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} />
     </div>
   {/if}
 

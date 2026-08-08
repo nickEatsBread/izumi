@@ -61,7 +61,6 @@
     buffer,
     paused,
     segments,
-    chapters,
     cmd,
     onclose,
     gm = false,
@@ -72,7 +71,6 @@
     buffer: number
     paused: boolean
     segments: Segment[]
-    chapters: { time: number; title: string }[]
     cmd: (name: string, args?: string[]) => void
     onclose: () => void
     // Game mode (Deck/gamescope touch player): no windowed/fullscreen toggle, and the
@@ -607,11 +605,11 @@
     {#if gm}
       <div class="pointer-events-auto flex items-center gap-3">
         <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums text-white/85">{fmt(pos)}</span>
-        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} /></div>
+        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
         <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums text-white/60">{fmt(dur)}</span>
       </div>
     {:else}
-      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} /></div>
+      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
     {/if}
 
     <div class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
