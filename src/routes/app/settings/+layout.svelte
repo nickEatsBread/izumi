@@ -108,8 +108,9 @@
   {:else}
     <!-- Mobile child: back-header + the category content. -->
     <div class="min-h-screen">
-      <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur"
-           style="padding-top:max(0.5rem,env(safe-area-inset-top))">
+      <!-- No safe-area padding here: <main> already insets the page below the status bar, and
+           adding it again cost a second status bar of dead space above this header. -->
+      <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur">
         <a href={backHref} data-focusable onclick={() => h.tap()} aria-label={m.common_back_to_settings()}
            class="grid h-10 w-10 place-items-center rounded-full transition-colors active:bg-accent">
           <ChevronLeft size={22} />
