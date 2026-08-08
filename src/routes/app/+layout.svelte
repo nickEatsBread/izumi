@@ -11,6 +11,8 @@
   // ~30% of the app JS but never render until playback/resolve starts. Loading them on demand
   // keeps first home paint off that code entirely. See Lazy.svelte.
   import Lazy from '$lib/components/Lazy.svelte'
+  import PlayFeedback from '$lib/components/PlayFeedback.svelte'
+  import { title as mediaTitle } from '$lib/anilist/media'
   const loadPlayerOverlay = () => import('$lib/components/player/PlayerOverlay.svelte')
   const loadAndroidPlayer = () => import('$lib/components/player/AndroidPlayer.svelte')
   const loadCommentsPanel = () => import('$lib/components/player/CommentsPanel.svelte')
@@ -247,8 +249,25 @@
 {#if $androidMpvActive}<Lazy load={loadPartyPresence} props={{ floating: true }} />{/if}
 <!-- Player-flow overlays: self-gated on their trigger store here so the module (and lottie-web,
      which SourceLoader pulls in) loads only when a resolve/cache/picker actually starts. -->
-{#if $streamPicker}<Lazy load={loadStreamPicker} />{/if}
-{#if $connecting}<Lazy load={loadSourceConnecting} />{/if}
+<!-- These two ARE the feedback for a tap on Play or an episode, so they carry a `pending` stand-in:
+     their chunk graph includes lottie-web, and on a cold cache the gate opened while the module was
+     still on the network — the click produced an empty screen and then, seconds later, a video.
+     The continuation case stays silent on purpose: a binge keeps the picker hidden, so covering the
+     screen there would flash a selector the user never asked for. -->
+{#if $streamPicker}
+  <Lazy load={loadStreamPicker}>
+    {#snippet pending()}
+      {#if !$streamPicker?.hidden}
+        <PlayFeedback label={$streamPicker?.media ? mediaTitle($streamPicker.media) : 'Finding a source…'} />
+      {/if}
+    {/snippet}
+  </Lazy>
+{/if}
+{#if $connecting}
+  <Lazy load={loadSourceConnecting}>
+    {#snippet pending()}<PlayFeedback label={$connecting?.title ?? 'Finding a source…'} />{/snippet}
+  </Lazy>
+{/if}
 {#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}
 {#if $exitPrompt}<Lazy load={loadExitPrompt} />{/if}
 <GlobalSearch />
