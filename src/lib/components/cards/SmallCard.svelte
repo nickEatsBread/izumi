@@ -28,7 +28,11 @@
   let { media, fill = false }: { media: Media; fill?: boolean } = $props()
 
   let hovered = $state(false)
-  const coverSrc = $derived(cardCover(media))
+  // The card's own painted width, so cardCover can pick the smallest asset that still covers it:
+  // `w-36` against the 14.5px mobile root is ~131px, the `sm:` carousel tile is 152px. A fill-width
+  // grid cell has no fixed width to state, so it gets the safe (larger) asset.
+  const coverWidth = $derived(fill ? 0 : $isMobile ? 131 : 152)
+  const coverSrc = $derived(cardCover(media, coverWidth))
   let coverReady = $state(false)
   $effect(() => { void coverSrc; coverReady = false })
   let pos = $state({ left: 0, top: 0 })
