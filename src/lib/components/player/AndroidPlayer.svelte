@@ -56,7 +56,9 @@
     HOLD_MS,
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
-  import { nowPlaying, nowPlayingMedia, playerLoadId, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, playerLoadId, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
+  import { activeChapterIndex, chapterRowLabel, sortChapters } from '$lib/player/chapters'
+  import type { Chapter } from '$lib/player/chapter-skip'
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import {
     autoSkip, seekDuration, scrubThumbnails, openSubtitlesToken,
@@ -89,6 +91,7 @@
   import Lock from '@lucide/svelte/icons/lock'
   import Ratio from '@lucide/svelte/icons/ratio'
   import Layers from '@lucide/svelte/icons/layers'
+  import List from '@lucide/svelte/icons/list'
   import Languages from '@lucide/svelte/icons/languages'
   import Server from '@lucide/svelte/icons/server'
   import Film from '@lucide/svelte/icons/film'
@@ -232,7 +235,9 @@
 
   // --- AniSkip OP/ED/recap segments + chapters ---
   let segments = $state<Segment[]>([])
-  let chapters = $state<number[]>([])
+  let chapters = $state<Chapter[]>([])
+  // Seekbar ticks only need the times; the titles feed the sheet's Chapters page.
+  const chapterTimes = $derived(chapters.map((c) => c.time))
   let segKey = ''
   let autoSkipped = $state(new Set<number>())
   // AnimeThemes: don't auto-skip the episode where an OP/ED first debuts, so each new theme is
@@ -262,6 +267,7 @@
   function resetForNewFile() {
     segments = []
     chapters = []
+    chapterStore.set([])
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
     thumbCache.clear() // new file → drop cached preview frames
@@ -292,7 +298,8 @@
         ])
         if (key !== segKey) return
         firstOcc = occ
-        chapters = chapterList.map((c) => c.time)
+        chapters = sortChapters(chapterList)
+        chapterStore.set(chapters)
         segments = mergeSkipSegments(segs, segmentsFromChapters(chapterList, dur))
       })()
     }
@@ -881,13 +888,18 @@
 
   // --- Sheets ---
   type Sheet = null | 'settings'
-  type SettingsPage = 'main' | 'speed' | 'display' | 'subtitles' | 'audio' | 'capture' | 'servers'
+  type SettingsPage = 'main' | 'speed' | 'display' | 'subtitles' | 'audio' | 'capture' | 'servers' | 'chapters'
   let sheet = $state<Sheet>(null)
   let settingsPage = $state<SettingsPage>('main')
   let tracks = $state<MpvTrack[]>([])
   const audioTracks = $derived(tracks.filter((t) => t.type === 'audio'))
   const subTracks = $derived(tracks.filter((t) => t.type === 'sub'))
   const subOff = $derived(!subTracks.some((t) => t.selected))
+  // Gated on the sheet actually showing the Chapters page: `pos` updates at tick rate, so an
+  // ungated derived would recompute on every mpv position event even while the sheet is shut.
+  const activeChapter = $derived(
+    sheet === 'settings' && settingsPage === 'chapters' ? activeChapterIndex(chapters, pos) : -1,
+  )
   async function openSettings() {
     clearTimeout(hideTimer)
     clearTimeout(sheetCloseTimer)
@@ -922,6 +934,7 @@
       : settingsPage === 'audio' ? 'Audio track'
       : settingsPage === 'capture' ? 'Capture'
       : settingsPage === 'servers' ? 'Server'
+      : settingsPage === 'chapters' ? 'Chapters'
       : 'Video settings'
   }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
@@ -1363,6 +1376,11 @@
       // `mpv_stop` already drops the session natively; this covers an unmount without a stop
       // (the overlay being torn down while the core is reused for the next episode).
       void setAndroidMediaSession({ enabled: false })
+      // The chapter list belongs to the file that just closed — leaving it set would let a menu
+      // from a future play session offer timestamps for a file that is no longer loaded. This
+      // cleanup only ever runs via close() (the sole thing that unmounts this component on
+      // Android), but the store must not outlive it regardless of which teardown path got here.
+      chapterStore.set([])
     }
   })
 </script>
@@ -1505,7 +1523,7 @@
           {/each}
           <div class="absolute inset-y-0 left-0 bg-theme" style="width:{playedPct}%"></div>
         </div>
-        {#each chapters as c (c)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(c / dur) * 100}%"></div>{/each}
+        {#each chapterTimes as t (t)}<div class="absolute bottom-0 h-1 w-[3px] -translate-x-1/2 rounded-full bg-black/70" style="left:{(t / dur) * 100}%"></div>{/each}
         <div class="absolute -bottom-[5px] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-theme shadow-md" style="left:clamp(7px, {playedPct}%, calc(100% - 7px))"></div>
         {#if scrubbing}
           <div class="pointer-events-none absolute bottom-8 flex -translate-x-1/2 flex-col items-center gap-1" style="left:{playedPct}%">
@@ -1592,6 +1610,13 @@
             <button onclick={() => (settingsPage = 'subtitles')} class="settings-row"><Captions size={20} /><span class="flex-1 font-bold">Subtitles</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('sub')}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'audio')} class="settings-row"><Volume2 size={20} /><span class="flex-1 font-bold">Audio track</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('audio')}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'capture')} class="settings-row"><Film size={20} /><span class="flex-1 font-bold">Capture</span><span class="text-sm text-white/50">GIF</span><ChevronRight size={18} class="text-white/35" /></button>
+            {#if chapters.length}
+              <button onclick={() => (settingsPage = 'chapters')} class="settings-row">
+                <List size={20} /><span class="flex-1 font-bold">Chapters</span>
+                <span class="text-sm text-white/50">{chapters.length}</span>
+                <ChevronRight size={18} class="text-white/35" />
+              </button>
+            {/if}
           </div>
           <button onclick={toggleLock} class="mt-3 flex w-full items-center gap-3 rounded-2xl bg-white/[0.07] px-4 py-3.5 text-left"><Lock size={20} /><span class="text-sm font-bold">{locked ? 'Unlock controls' : 'Lock controls'}</span></button>
         {:else if settingsPage === 'speed'}
@@ -1611,6 +1636,13 @@
               <button onclick={() => swapTo(alt)} disabled={swapping} class="settings-choice disabled:opacity-40"><span class="truncate">{serverMenuLabels[i + 1]}</span></button>
             {/each}
           </div>
+        {:else if settingsPage === 'chapters'}
+          {#each chapters as c, i (i)}
+            <button onclick={() => { void seekAbsolute(c.time); sheet = null }}
+                    class="settings-choice" class:settings-choice-selected={i === activeChapter}>
+              <span class="min-w-0 truncate">{chapterRowLabel(c)}</span>
+            </button>
+          {/each}
         {:else if settingsPage === 'display'}
           <div class="space-y-1">
             {#each FITS as fit, i (fit)}
