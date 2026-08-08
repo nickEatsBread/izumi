@@ -39,10 +39,7 @@
   import { heroBarState } from './hero-bar'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import { goto } from '$app/navigation'
-
-  // Refcounted: a keyed re-render can mount the next instance before the previous one tears down,
-  // and a bare add/remove would then either double-inset the new page or strip the inset entirely.
-  let edgeToEdgeUsers = 0
+  import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -206,11 +203,11 @@
     barState = next
   }
   // The page paints under the status bar only while the hero (with its floating bar) is actually
-  // rendered — the loading/error/not-found branches have no bar to replace main's inset.
+  // rendered — the loading/error/not-found branches have no bar to replace main's inset. Shared
+  // with the settings layout via a refcount: their lifetimes can overlap mid-navigation.
   $effect(() => {
-    if (!$isMobile || !media || typeof document === 'undefined') return
-    if (++edgeToEdgeUsers === 1) document.documentElement.classList.add('edge-to-edge')
-    return () => { if (--edgeToEdgeUsers === 0) document.documentElement.classList.remove('edge-to-edge') }
+    if (!$isMobile || !media) return
+    return acquireEdgeToEdge()
   })
   // artHeight/barHeight land a frame after mount; recompute once they do so the bar is in the right
   // state for the scroll position the page was restored to.

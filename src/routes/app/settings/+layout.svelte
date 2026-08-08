@@ -9,6 +9,7 @@
   import * as h from '$lib/haptics'
   import { fly } from 'svelte/transition'
   import { m } from '$lib/paraglide/messages.js'
+  import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
 
   let { children } = $props()
 
@@ -91,12 +92,12 @@
   })
 
   // The sticky back-header carries the status-bar inset itself (see the header markup), so the
-  // page must not be inset a second time by `main`. The class is removed on teardown, so every
-  // other route keeps the default inset even if a navigation interrupts a transition.
+  // page must not be inset a second time by `main`. Shared with the series page via a refcount:
+  // their lifetimes can overlap mid-navigation, so a bare add/remove here could strip the inset
+  // out from under the other screen (or vice versa).
   $effect(() => {
-    if (!$isMobile || typeof document === 'undefined') return
-    document.documentElement.classList.add('edge-to-edge')
-    return () => document.documentElement.classList.remove('edge-to-edge')
+    if (!$isMobile) return
+    return acquireEdgeToEdge()
   })
 </script>
 
