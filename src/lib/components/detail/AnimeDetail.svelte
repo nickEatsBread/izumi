@@ -36,6 +36,9 @@
   import AiringStatus from './AiringStatus.svelte'
   import { reliableImage } from '$lib/util/reliable-image'
   import { detailHints, rememberDetail } from '$lib/anilist/detail-hint'
+  import { heroBarState } from './hero-bar'
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left'
+  import { goto } from '$app/navigation'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -179,9 +182,32 @@
       setTimeout(() => (copied = false), 1500)
     }
   }
+
+  // --- Mobile hero -------------------------------------------------------------------------
+  // The page paints under the status bar while this component is mounted; the class is removed on
+  // teardown so every other screen keeps the normal inset even if the user navigates mid-transition.
+  let artHeight = $state(0)
+  let barHeight = $state(0)
+  let scrollY = $state(0)
+  let barSolid = $state(false)
+  const barState = $derived(heroBarState(scrollY, artHeight, barHeight, barSolid))
+  $effect(() => { barSolid = barState.solid })
+  $effect(() => {
+    if (!$isMobile || typeof document === 'undefined') return
+    document.documentElement.classList.add('edge-to-edge')
+    return () => document.documentElement.classList.remove('edge-to-edge')
+  })
+  // Back returns to where the user came from, preserving that screen's scroll position. A deep
+  // link (share sheet, notification) has no history to return to, so it lands on Home instead of
+  // leaving the chevron dead.
+  function heroBack() {
+    h.tap()
+    if (typeof history !== 'undefined' && history.length > 1) history.back()
+    else void goto('/app/home')
+  }
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
+<svelte:window bind:scrollY onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
 
 {#if !$offlineMode && $store.fetching && !media}
   {#if $isMobile}
@@ -217,31 +243,48 @@
   {@const m = media}
   {@const trackerConnected = !!($anilistToken || $malToken)}
   {#if $isMobile}
-    <!-- Mobile: poster-forward header. `isolate` makes this a stacking context so the -z-10
-         background-art layer stays BEHIND the cover/title yet ABOVE the opaque page background
-         (without it, -z-10 escapes to the root and the banner is hidden by the body bg). -->
-    <div class="relative isolate px-4 pb-8">
-      <!-- Background art (banner) behind the cover + title, like desktop: prominent at the top,
-           dissolving into the page before the description so text stays legible. -->
-      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
-        <img src={banner(m)} alt="" class="h-full w-full object-cover opacity-70" style="object-position:center 20%" />
-        <div class="absolute inset-0 bg-gradient-to-b from-background/10 via-background/55 to-background"></div>
+    <div class="relative pb-8">
+      <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
+           art), blurred and titled once the artwork has scrolled under it. It carries the status-bar
+           inset itself: a fixed element does not inherit main's padding once it locks. -->
+      <div bind:clientHeight={barHeight}
+           class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
+                  {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : ''}"
+           style="padding-top:max(0.5rem,env(safe-area-inset-top))">
+        {#if !barState.solid}
+          <div class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-black/55 to-transparent"></div>
+        {/if}
+        <button data-focusable onclick={heroBack} aria-label="Back"
+                class="grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors active:bg-white/15">
+          <ChevronLeft size={22} />
+        </button>
+        {#if barState.showTitle}
+          <span class="min-w-0 flex-1 truncate text-base font-black">{title(m)}</span>
+        {/if}
       </div>
 
-      <div class="flex gap-4 pt-10">
-        <img use:reliableImage={cover(m)} alt="" class="aspect-[46/65] w-28 shrink-0 rounded-xl object-cover shadow-xl min-[420px]:w-32" />
-        <div class="min-w-0 flex-1 self-end">
-          {#if m.title.native || m.title.romaji}
-            <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
-          {/if}
-          <h1 class="line-clamp-2 text-xl font-black leading-tight drop-shadow-[0_1px_4px_rgba(0,0,0,0.85)]">{title(m)}</h1>
-          <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
-            {#if format(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{format(m)}</span>{/if}
-            {#if status(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{status(m)}</span>{/if}
-            {#if m.averageScore}<span class="rounded-full px-2 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
+      <!-- Artwork band: a bounded strip that ends in a hard cut. Nothing is written on top of it,
+           so legibility no longer depends on how busy the banner is. -->
+      <div bind:clientHeight={artHeight} class="hero-art relative h-[30vh] max-h-80 min-h-52 w-full overflow-hidden">
+        <img src={banner(m)} alt="" class="h-full w-full object-cover" style="object-position:center 20%" />
+        <div class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
+      </div>
+
+      <div class="px-4">
+        <div class="-mt-10 flex gap-4">
+          <img use:reliableImage={cover(m)} alt="" class="aspect-[46/65] w-28 shrink-0 rounded-xl object-cover shadow-xl min-[420px]:w-32" />
+          <div class="min-w-0 flex-1 self-end">
+            {#if m.title.native || m.title.romaji}
+              <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
+            {/if}
+            <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
+            <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
+              {#if format(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{format(m)}</span>{/if}
+              {#if status(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{status(m)}</span>{/if}
+              {#if m.averageScore}<span class="rounded-full px-2 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
+            </div>
           </div>
         </div>
-      </div>
 
       <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
         <span class="rounded-full bg-secondary px-2 py-0.5">{effProgress}/{epsTotal(m) || '?'} Episodes</span>
@@ -341,6 +384,7 @@
             </dl>
           </div>
         {/if}
+      </div>
       </div>
     </div>
   {:else}
