@@ -21,12 +21,13 @@ describe('settings sub-page top inset', () => {
 
   it('opts the settings screen out of the main inset so it is not applied twice', () => {
     expect(layout).toContain("import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'")
+    expect(layout).toContain('if (!$isMobile || isIndex) return')
     expect(layout).toContain('return acquireEdgeToEdge()')
   })
 })
 
 describe('settings sub-page transition', () => {
-  it('fades and slides in, and lets the reduced-motion gate shorten it', () => {
+  it('fades and slides in rather than sliding sideways', () => {
     expect(layout).toContain('in:fly={{ y: 12, duration: 160, opacity: 0 }}')
   })
 })

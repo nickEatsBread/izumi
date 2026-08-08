@@ -11,7 +11,7 @@
   import type { EpMeta } from '$lib/anizip/types'
   import {
     episodeLayout, hideSpoilers, downloadQuality, downloadAudio, downloadCodec, downloadCachedOnly,
-    absoluteEpisodeNumbers, type Quality,
+    absoluteEpisodeNumbers, type Quality, type EpisodeLayout,
   } from '$lib/settings/ui'
   import { localHistory, sessionProgress, manualProgressOverrides, setLocalProgress } from '$lib/player/history'
   import { positions, progressKey, episodeBarPercent } from '$lib/player/progress'
@@ -112,10 +112,16 @@
   const rows = $derived(orderEpisodes(eps, sortDir))
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
 
-  function setLayout(next: 'cards' | 'grid') {
-    if ($episodeLayout === next) return
+  // The switch is binary but the preference is ternary: `compact` is only reachable from Settings.
+  // Remember which non-grid layout the user actually has so toggling back restores THAT, instead of
+  // silently overwriting a compact preference with cards.
+  let lastNonGrid: EpisodeLayout = $episodeLayout === 'grid' ? 'cards' : $episodeLayout
+  function setLayout(next: 'list' | 'grid') {
+    const target = next === 'grid' ? 'grid' : lastNonGrid
+    if ($episodeLayout === target) return
+    if ($episodeLayout !== 'grid') lastNonGrid = $episodeLayout
     h.select()
-    episodeLayout.set(next)
+    episodeLayout.set(target)
   }
 
   // Per-episode metadata from AniZip (thumbnail/title/rating). Best-effort; the
@@ -279,7 +285,7 @@
       <!-- Layout switch: visible on both mobile and desktop, unlike the sort control above it. -->
       <div role="group" aria-label="Episode layout"
            class="flex min-h-11 items-stretch rounded-xl bg-secondary p-1">
-        <button data-focusable onclick={() => setLayout('cards')} aria-label="Episode cards"
+        <button data-focusable onclick={() => setLayout('list')} aria-label="Episode cards"
                 aria-pressed={$episodeLayout !== 'grid'}
                 class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout !== 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
           <Rows3 size={17} />
@@ -485,6 +491,7 @@
                 class="relative grid h-11 place-items-center overflow-hidden rounded-lg text-sm font-bold transition-colors
                   {tile.kind === 'watched' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}
                   {tile.kind === 'resume' ? 'ring-2 ring-theme' : ''}
+                  {selecting && selected.has(ep) ? 'ring-2 ring-primary' : ''}
                   {tile.kind === 'unaired' ? 'opacity-40' : 'active:bg-accent'}">
           {numberLabel(ep)}
           {#if tile.kind === 'partial'}
