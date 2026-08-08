@@ -8,6 +8,7 @@ import {
   fullscreenPullTransform,
   shouldDismissSheet,
   sheetGestureIntent,
+  needsExplicitPointerCapture,
   landscapeExitProgress,
   shouldExitFullscreen,
 } from './android-gestures'
@@ -163,5 +164,21 @@ describe('landscape swipe-down exit', () => {
     expect(shouldExitFullscreen(0.5, 0.1)).toBe(true)
     expect(shouldExitFullscreen(0.1, 0.7)).toBe(true)
     expect(shouldExitFullscreen(0.1, 0.1)).toBe(false)
+  })
+})
+
+describe('needsExplicitPointerCapture', () => {
+  // Touch and pen are implicitly captured by the element the gesture started on. Capturing again
+  // retargets the pointer, and the retarget fires a bubbling lostpointercapture that reads as a
+  // cancel — which is what stopped the settings sheet from being draggable on a phone.
+  it('leaves direct-manipulation pointers to their implicit capture', () => {
+    expect(needsExplicitPointerCapture('touch')).toBe(false)
+    expect(needsExplicitPointerCapture('pen')).toBe(false)
+  })
+
+  it('still captures a mouse, which has none', () => {
+    expect(needsExplicitPointerCapture('mouse')).toBe(true)
+    // An unknown/absent pointerType is treated as indirect: capturing is the safe default there.
+    expect(needsExplicitPointerCapture(undefined)).toBe(true)
   })
 })
