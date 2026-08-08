@@ -446,6 +446,14 @@ export function parseSeasonEp(s: Stream): { season?: number; episode?: number; a
   // pack when the requested title is a DIFFERENT part of the franchise.
   const ord = f.match(/\b(\d{1,2})\s*(?:st|nd|rd|th)\s+Season\b/i)
   if (ord) return { season: Number(ord[1]) }
+  // Season plus a dash-separated episode: "[ASW] Honzuki no Gekokujou S4 - 17", the dominant anime
+  // fansub form. Read BOTH numbers. Season-only used to win here, which left the episode invisible
+  // to the verifier — so a title whose season could not be compared (a TVDB absolute mapping, where
+  // TVDB's season numbering is not the scene's) had nothing left to check, and a wrong episode from
+  // the right cour passed. The episode is capped at three digits and must not be followed by more
+  // digits, so a resolution or a CRC in the same position cannot be read as one.
+  const seasonDashEp = f.match(/\bS(?:eason\s*)?(\d{1,2})\b[^\dA-Za-z]{0,4}-\s*(\d{1,3})(?!\d)/i)
+  if (seasonDashEp) return { season: Number(seasonDashEp[1]), episode: Number(seasonDashEp[2]) }
   // Season-only (a season pack / batch like "Title S01 1080p BluRay", "Season 2")
   // — no episode, but the season alone is enough to reject a wrong-season pack.
   const sOnly = f.match(/\bS(?:eason\s*)?(\d{1,2})\b/i)
@@ -470,11 +478,26 @@ export function parseSeasonEp(s: Stream): { season?: number; episode?: number; a
 export function isWrongSeason(s: Stream, want: { season?: number; episode?: number; abs?: number }): boolean {
   if (want.season == null && want.episode == null && want.abs == null) return false
   const p = parseSeasonEp(s)
-  if (want.season != null && p.season != null && p.season !== want.season) return true
-  // A season pack (`Title S01`) has no explicit episode and remains eligible. A row/file that
-  // actually says S01E03 is confidently wrong when the user requested Episode 7.
-  if (want.episode != null && p.episode != null && p.episode !== want.episode) return true
-  if (want.abs != null && p.abs != null && p.abs !== want.abs) return true
+  // The ground truth and the release name can be in two DIFFERENT coordinate systems. AniZip's
+  // season/absolute numbers come from TVDB, which folds some franchises into a single season and
+  // counts straight through it, while the scene numbers by cour. Ascendance of a Bookworm S4 is the
+  // worst case: TVDB says season 1, episode 43 for what AniList calls episode 17, and the releases
+  // are all named `S4 - 17` / `S04E17`. Comparing those coordinates directly declared every correct
+  // file "confidently wrong" and left only the one file numbered TVDB's way — a title where the
+  // right sources appeared for a moment and then vanished from the picker.
+  const absMapped = want.abs != null && want.episode != null && want.abs !== want.episode
+  // With an absolute mapping in play, a stated season is not comparable: TVDB's is not the scene's.
+  // A TVDB season above 1 means TVDB does split this show by cour after all, so it IS comparable.
+  const seasonComparable = !absMapped || (want.season != null && want.season > 1)
+  if (seasonComparable && want.season != null && p.season != null && p.season !== want.season) return true
+  // Both numberings name the same episode, so accept either — but only reject on an axis whose
+  // ground truth we actually hold. Comparing a season-relative `E01` against an absolute target of
+  // 73 would discard a correct file, which is the mirror of the bug above.
+  const either = [want.episode, want.abs].filter((n): n is number => n != null)
+  // A season pack (`Title S01`) has no explicit episode and remains eligible; a file that actually
+  // says S01E03 is confidently wrong when the user requested episode 7.
+  if (want.episode != null && p.episode != null && !either.includes(p.episode)) return true
+  if (want.abs != null && p.abs != null && !either.includes(p.abs)) return true
   // Without an absolute mapping, the common `Title - 07` form is the per-title episode number.
   if (want.abs == null && want.episode != null && p.abs != null && p.abs !== want.episode) return true
   return false
