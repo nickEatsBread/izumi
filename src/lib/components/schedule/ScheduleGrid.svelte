@@ -18,7 +18,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { localHistory } from '$lib/player/history'
   import { gameMode } from '$lib/player/session'
-  import { scheduleLayout, scheduleStickyHeader } from '$lib/settings/ui'
+  import { scheduleLayout } from '$lib/settings/ui'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import type { Media } from '$lib/anilist/types'
@@ -26,7 +26,20 @@
   import AgendaWeek from './AgendaWeek.svelte'
   import ScheduleNextUp from './ScheduleNextUp.svelte'
 
-  let { start, end }: { start: number; end: number } = $props()
+  // `view`/`viewTouched`/`mineCount` are owned by the page now — the My Shows/All toggle itself
+  // renders in the page's header row, beside the Schedule/Watchlist tabs, instead of on its own
+  // row below. They stay bindable rather than fully lifted because the default-view effect below
+  // needs `sets`, which is loaded here (dragging the AniList/MAL list-loading logic up to the page
+  // just to own two booleans would be the wrong trade). `headerOffset` runs the other direction:
+  // it is now measured from the page's own sticky header (which the toggle is part of) and handed
+  // down, since this component no longer renders a header row of its own to measure.
+  let {
+    start, end, headerOffset = 0,
+    view = $bindable('all'), viewTouched = $bindable(false), mineCount = $bindable(0),
+  }: {
+    start: number; end: number; headerOffset?: number
+    view?: 'mine' | 'all'; viewTouched?: boolean; mineCount?: number
+  } = $props()
 
   const SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -81,16 +94,17 @@
   const badgeOf = (m: Media): MineKind | null => classifyMine(m, sets)
 
   // View: My Shows vs All. Default to My Shows once we know the viewer has any source; flips to All
-  // for a user with nothing tracked. Sticks once the user picks a side.
-  let view = $state<'mine' | 'all'>('all')
-  let viewTouched = $state(false)
+  // for a user with nothing tracked. Sticks once the user picks a side. `view`/`viewTouched` are
+  // bindable (owned by the page) — this effect stays here because it needs `sets`, loaded above.
   $effect(() => { if (!viewTouched) view = hasMySources(sets) ? 'mine' : 'all' })
   const pick = (v: 'mine' | 'all') => { view = v; viewTouched = true }
 
   const days = $derived(groupByDay(airings, start))
   const mineDays = $derived(days.map((d) => d.filter((a) => isMine(a.media, sets))))
   const shownDays = $derived(view === 'mine' ? mineDays : days)
-  const mineCount = $derived(mineDays.reduce((n, d) => n + d.length, 0))
+  // Pushed out to the bindable prop rather than left as a plain $derived, since the page's header
+  // toggle (not this component) is what displays the count now.
+  $effect(() => { mineCount = mineDays.reduce((n, d) => n + d.length, 0) })
 
   // AnimeSchedule delay overlay, looked up ONLY for the viewer's own shows: a week of the global
   // feed lists well over a hundred titles, and a break only matters for something you're actually
@@ -116,27 +130,6 @@
   const dayDate = (i: number) =>
     new Date((start + i * 24 * 3600) * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
   const hasUnaired = (i: number) => shownDays[i]?.some((a) => a.airingAt * 1000 > Date.now()) ?? false
-
-  // Measured height of the sticky filter bar so the agenda's auto-scroll-to-today lands BELOW it
-  // instead of under it. Only the My Shows/All toggle is pinned — "Next up" is browse content, not a
-  // control, and pinning it held ~230px of viewport hostage for the whole scroll.
-  let headerH = $state(0)
-
-  // The desktop window titlebar is a 32px `fixed` bar whose drag region spans the FULL width, so a
-  // `top-0` sticky bar pinned underneath it: the toggle sat behind the window controls (visually out
-  // of line with minimize/maximize/close) and its clicks were swallowed by the drag region. Park it
-  // just below instead — the same offset the online banner uses. Mobile has no titlebar, only the
-  // status-bar inset. Game mode never reaches these branches (it renders the toggle unpinned).
-  const TITLEBAR_H = 32
-  const stickyTop = $derived($isMobile ? 'top-[env(safe-area-inset-top)]' : 'top-8')
-  // Full-bleed to the page's own padding so the divider + blur read as a real toolbar row under the
-  // titlebar, rather than a floating rectangle that stops short of the content edges.
-  const barCls = $derived(
-    ($scheduleStickyHeader ? `sticky ${stickyTop} ` : '') +
-      'z-20 -mx-4 mb-6 border-b border-border/60 bg-background/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:px-8',
-  )
-  // What the bar actually occludes at the top of the viewport: itself plus the titlebar above it.
-  const headerOffset = $derived($scheduleStickyHeader ? headerH + ($isMobile ? 0 : TITLEBAR_H) : 0)
 
   // Live-ish clock so the "Next up" countdowns tick without each card owning a timer.
   let now = $state(Date.now())
@@ -167,21 +160,6 @@
     })
   })
 </script>
-
-{#snippet toggle()}
-  <div class="inline-flex rounded-lg bg-secondary p-0.5">
-    <button data-focusable onclick={() => pick('mine')}
-      class="flex items-center rounded-md px-3 py-1.5 text-sm font-bold transition-colors
-             {view === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
-      <span>My Shows</span>{#if mineCount}<span class="ml-1.5 opacity-70">· {mineCount}</span>{/if}
-    </button>
-    <button data-focusable onclick={() => pick('all')}
-      class="rounded-md px-3 py-1.5 text-sm font-bold transition-colors
-             {view === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
-      All
-    </button>
-  </div>
-{/snippet}
 
 {#snippet dayTabs(showHint: boolean)}
   <div bind:this={dayRow} class="-mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] snap-x sm:mx-0 sm:overflow-visible sm:px-0">
@@ -235,23 +213,15 @@
 {:else}
   {#if view === 'mine' && mineCount === 0}
     {@render dayTabs(false)}
-    <div class="mb-4">{@render toggle()}</div>
     {@render mineEmpty()}
   {:else if gm}
     {@render dayTabs(true)}
-    <div class="mb-4">{@render toggle()}</div>
     {@render selectedDay()}
   {:else if layout === 'days' || $isMobile}
     {@render dayTabs(false)}
-    <div class={barCls} bind:clientHeight={headerH}>
-      {@render toggle()}
-    </div>
     {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
     {@render selectedDay()}
   {:else}
-    <div class={barCls} bind:clientHeight={headerH}>
-      {@render toggle()}
-    </div>
     {#if isCurrentWeek}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
     <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} {infoOf} {headerOffset} />
   {/if}

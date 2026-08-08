@@ -5,9 +5,10 @@
   import { weekRange } from '$lib/anilist/schedule'
   import ScheduleGrid from '$lib/components/schedule/ScheduleGrid.svelte'
   import WatchlistView from '$lib/components/schedule/WatchlistView.svelte'
-  import { scheduleDefaultTab, type ScheduleTab } from '$lib/settings/ui'
+  import { scheduleDefaultTab, scheduleStickyHeader, type ScheduleTab } from '$lib/settings/ui'
   import { heroMedia } from '$lib/stores/hero'
   import { offlineMode } from '$lib/stores/offline'
+  import { isMobile } from '$lib/platform'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
@@ -38,6 +39,27 @@
     const to = new Date((end - 1) * 1000).toLocaleDateString([], opts)
     return `${from} – ${to}`
   })
+
+  // My Shows/All toggle — used to live on its own row inside ScheduleGrid, which cost a phone a
+  // whole row of vertical space for one binary choice. It now renders here, beside the
+  // Schedule/Watchlist tabs, and its filtering state is bound down into ScheduleGrid instead of
+  // owned there, so this header can render it without also owning the AniList/MAL list-loading
+  // logic that used to size it.
+  let view = $state<'mine' | 'all'>('all')
+  let viewTouched = $state(false)
+  let mineCount = $state(0)
+  const pick = (v: 'mine' | 'all') => { view = v; viewTouched = true }
+
+  // The desktop window titlebar is a 32px `fixed` bar whose drag region spans the FULL width, so a
+  // `top-0` sticky header pinned underneath it would sit behind the window controls and swallow
+  // clicks. Park it just below instead. Mobile has no titlebar, only the status-bar inset.
+  const TITLEBAR_H = 32
+  let headerH = $state(0)
+  const stickyActive = $derived(tab === 'schedule' && $scheduleStickyHeader)
+  const stickyTop = $derived($isMobile ? 'top-[env(safe-area-inset-top)]' : 'top-8')
+  // What the header actually occludes at the top of the viewport: itself plus the titlebar above
+  // it. Handed down to ScheduleGrid, which forwards it to the agenda view's scroll-to-today gate.
+  const headerOffset = $derived(stickyActive ? headerH + ($isMobile ? 0 : TITLEBAR_H) : 0)
 </script>
 
 {#if $offlineMode}
@@ -46,7 +68,15 @@
 <!-- Extra desktop top padding: `p-8` put the title flush against the bottom edge of the 32px window
      titlebar, so the page's top-left content read as a continuation of the window-control row. -->
 <div class="px-4 pb-8 pt-5 sm:px-8 sm:pb-8 sm:pt-10">
-  <div class="mb-4 flex flex-wrap items-center gap-2 sm:mb-7 sm:gap-4">
+  <!-- Schedule/Watchlist tabs, week nav, and (schedule tab only) the My Shows/All filter all share
+       one header row so a phone spends a single row on controls instead of two. Wraps on narrow
+       widths rather than squashing — this row already carried week nav before the filter joined
+       it. Gets the sticky toolbar treatment only while actually pinned, so the plain tab row isn't
+       boxed in when the "Pin schedule header" setting is off. -->
+  <div bind:clientHeight={headerH}
+       class="flex flex-wrap items-center gap-2 sm:gap-4 {stickyActive
+         ? `sticky ${stickyTop} z-20 -mx-4 mb-4 border-b border-border/60 bg-background/95 px-4 py-3 backdrop-blur sm:-mx-8 sm:mb-7 sm:px-8`
+         : 'mb-4 sm:mb-7'}">
     <div class="mr-auto inline-flex rounded-lg bg-secondary p-1 text-sm font-black">
       <button data-focusable onclick={() => (tab = 'schedule')}
         class="rounded-md px-4 py-2 transition-colors {tab === 'schedule' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
@@ -58,6 +88,18 @@
       </button>
     </div>
     {#if tab === 'schedule'}
+      <div class="inline-flex rounded-lg bg-secondary p-0.5">
+        <button data-focusable onclick={() => pick('mine')}
+          class="flex items-center rounded-md px-3 py-1.5 text-sm font-bold transition-colors
+                 {view === 'mine' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
+          <span>My Shows</span>{#if mineCount}<span class="ml-1.5 opacity-70">· {mineCount}</span>{/if}
+        </button>
+        <button data-focusable onclick={() => pick('all')}
+          class="rounded-md px-3 py-1.5 text-sm font-bold transition-colors
+                 {view === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
+          All
+        </button>
+      </div>
       <div class="flex items-center gap-1">
         <button data-focusable onclick={() => (offset -= 1)} title="Previous week"
           class="grid size-9 place-items-center rounded-lg bg-secondary hover:bg-accent sm:size-8 sm:rounded-md">
@@ -78,7 +120,7 @@
 
   {#if tab === 'schedule'}
     {#key offset}
-      <ScheduleGrid {start} {end} />
+      <ScheduleGrid {start} {end} {headerOffset} bind:view bind:viewTouched bind:mineCount />
     {/key}
   {:else}
     <WatchlistView />
