@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { title, banner, format, mediaHref, isReadingMedia, ratingBg, airedCount, totalEpisodes, resumeEp, hasAiredEpisodeToWatch } from './media'
+import { title, banner, cardCover, format, mediaHref, isReadingMedia, ratingBg, airedCount, totalEpisodes, resumeEp, hasAiredEpisodeToWatch } from './media'
 
 describe('media helpers', () => {
   it('title prefers userPreferred, falls back to TBA', () => {
@@ -11,6 +11,13 @@ describe('media helpers', () => {
     expect(banner({ id: 1, title: {}, trailer: { id: 'YT', site: 'youtube' } } as any))
       .toBe('https://i.ytimg.com/vi/YT/maxresdefault.jpg')
     expect(banner({ id: 1, title: {}, coverImage: { extraLarge: 'c.jpg' } } as any)).toBe('c.jpg')
+  })
+  it('cardCover prefers large (small cards don’t need the extraLarge asset), falls back to extraLarge then medium', () => {
+    expect(cardCover({ id: 1, title: {}, coverImage: { large: 'l.jpg', extraLarge: 'xl.jpg', medium: 'm.jpg' } } as any)).toBe('l.jpg')
+    // Older cwSnapshot entries persisted before `large` was added to the query won't have it.
+    expect(cardCover({ id: 1, title: {}, coverImage: { extraLarge: 'xl.jpg', medium: 'm.jpg' } } as any)).toBe('xl.jpg')
+    expect(cardCover({ id: 1, title: {}, coverImage: { medium: 'm.jpg' } } as any)).toBe('m.jpg')
+    expect(cardCover({ id: 1, title: {} } as any)).toBe('')
   })
   it('format maps enum to label', () => {
     expect(format({ id: 1, title: {}, format: 'TV_SHORT' } as any)).toBe('TV Short')

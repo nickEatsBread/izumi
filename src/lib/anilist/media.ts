@@ -19,6 +19,13 @@ export const banner = (m: Media) =>
 
 export const cover = (m: Media) => m.coverImage?.extraLarge || m.coverImage?.medium || ''
 
+// Small grid/carousel cards (~152px, e.g. SmallCard/ContinueCard) were requesting `extraLarge`
+// (~460px wide) via cover() — about 4x the pixels they display. `large` is AniList's mid-size asset,
+// a better match for a small card; fall back to extraLarge then medium for snapshots fetched before
+// `large` was added to the query (e.g. an older cwSnapshot in localStorage). Detail-page posters and
+// the hero deliberately keep using cover() — they render at a size that wants the full asset.
+export const cardCover = (m: Media) => m.coverImage?.large || m.coverImage?.extraLarge || m.coverImage?.medium || ''
+
 const FORMATS: Record<string, string> = {
   TV: 'TV', TV_SHORT: 'TV Short', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA',
   ONA: 'ONA', MUSIC: 'Music', MANGA: 'Manga', NOVEL: 'Novel', ONE_SHOT: 'One Shot',
