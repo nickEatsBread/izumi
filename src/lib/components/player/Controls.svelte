@@ -42,6 +42,8 @@
   import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import Brush from '@lucide/svelte/icons/brush'
+  import { chapters as chapterStore } from '$lib/player/session'
+  import { activeChapterIndex, formatChapterTime } from '$lib/player/chapters'
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
@@ -373,7 +375,7 @@
   // category's list) with a Miller-column slide. `menuLevel`/`detailCat` drive the slide;
   // `rootH`/`detailH` are the measured column heights so the panel morphs to fit.
   let menuLevel = $state<'root' | 'detail'>('root')
-  let detailCat = $state<'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style'>('audio')
+  let detailCat = $state<'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters'>('audio')
 
   // Subtitle style presets: capture the active ASS track's fonting (mpv sub-ass-extradata) and
   // save it under the release group's name; picking a saved preset overrides styling for THIS
@@ -455,7 +457,10 @@
   // `curLabel` is what shows on the collapsed root row for each category (the active
   // track, or "Off"). `pickLeaf` sets the track then slides back to the root.
   const detailItems = $derived(detailCat === 'audio' ? audios : subs)
-  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : 'Subtitles')
+  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : detailCat === 'chapters' ? 'Chapters' : 'Subtitles')
+  // Only track the active row while the track menu is actually open. `pos` updates at tick rate, so
+  // an unconditional $derived would re-run this on every position update for a closed menu.
+  const activeChapter = $derived(showTracks && detailCat === 'chapters' ? activeChapterIndex($chapterStore, pos) : -1)
   const leafKind = $derived<'aid' | 'sid' | 'secondary-sid'>(detailCat === 'audio' ? 'aid' : detailCat === 'secondary' ? 'secondary-sid' : 'sid')
   const detailOff = $derived(detailCat === 'secondary' ? secondaryId === 'no' : !detailItems.some((t) => t.selected)) // nothing selected ⇒ "Off" is active
   const curLabel = (group: Track[]) => {
@@ -472,7 +477,7 @@
     const track = subs.find((item) => String(item.id) === secondaryId)
     return track ? label(track, subs) : 'Off'
   })
-  function openDetail(cat: 'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style') {
+  function openDetail(cat: 'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters') {
     detailCat = cat
     menuLevel = 'detail'
   }
@@ -801,6 +806,17 @@
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
+                      <!-- Hidden entirely (not just empty) when the file has no chapters: most anime
+                           web releases ship none, and an empty category is worse than no category. -->
+                      {#if $chapterStore.length}
+                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('chapters')}>
+                          <span class="min-w-0">
+                            <span class="block text-xs uppercase tracking-wide text-white/45">Chapters</span>
+                            <span class="block truncate">{$chapterStore.length} chapters</span>
+                          </span>
+                          <ChevronRight size={18} class="shrink-0 text-white/40" />
+                        </button>
+                      {/if}
                       {#if $secondarySubtitles}
                         <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('secondary')}>
                           <span class="min-w-0">
@@ -854,7 +870,23 @@
                           </button>
                         {/if}
                       </div>
-                      {#if detailCat === 'online'}
+                      {#if detailCat === 'chapters'}
+                        <div class="max-h-64 overflow-y-auto">
+                          <!-- Keyed on index, not `c.time`: activeChapterIndex's own doc notes a
+                               zero-length chapter can share a timestamp with its neighbour, and the
+                               store is always replaced wholesale (never spliced), so index is stable. -->
+                          {#each $chapterStore as c, i (i)}
+                            <button data-focusable onclick={() => { seekTo(c.time); showTracks = false }}
+                                    class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10">
+                              <span class="min-w-0">
+                                <span class="block truncate">{c.title?.trim() || 'Chapter'}</span>
+                                <span class="block text-xs tabular-nums text-white/45">{formatChapterTime(c.time)}</span>
+                              </span>
+                              {#if i === activeChapter}<Check size={18} class="shrink-0 text-primary" />{/if}
+                            </button>
+                          {/each}
+                        </div>
+                      {:else if detailCat === 'online'}
                         <label class="mb-2 flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5">
                           <Search size={15} class="shrink-0 text-white/50" />
                           <input data-focusable bind:value={subQuery} onkeydown={onSubQueryKey} placeholder="Search subtitles…" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" />
