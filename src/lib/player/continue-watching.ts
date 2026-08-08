@@ -13,7 +13,7 @@ import type { Media } from '$lib/anilist/types'
 // separate from `localHistory` (the strict "played in this app" log that feeds MAL export + the
 // schedule). See docs/superpowers/specs/2026-07-17-local-first-continue-watching-design.md.
 
-const CAP = 60 // bound the persisted list so localStorage can't grow without limit
+export const CAP = 60 // bound the persisted list so localStorage can't grow without limit
 
 export interface CwEntry {
   media: Media        // trimmed snapshot (mediaSnapshot() shape)
@@ -150,18 +150,29 @@ export function buildSnapshot(inp: BuildInput): CwEntry[] {
 type QueryClient = Pick<Client, 'query'>
 
 // urql defaults to cache-first and the normalized cache lives as long as the client (i.e. the whole
-// process, barring an account switch). Without a policy these three reads were served from memory
+// process, barring an account switch). Without a policy the list read below was served from memory
 // after the first reconcile of a session, which made RECONCILE_TTL_MS and `reconciling` decorative
-// and meant progress watched on another device, a removal from the list, or a newly-aired episode
-// never showed up until relaunch. cache-and-network keeps the instant cache emission for anything
-// subscribing live, and `.toPromise()` drops that emission as stale — so what we await here, and
-// therefore what lands in the snapshot, is the network read.
-const REVALIDATE = { requestPolicy: 'cache-and-network' } as const
+// and meant progress watched on another device, or a removal from the list, never showed up until
+// relaunch. cache-and-network keeps the instant cache emission for anything subscribing live, and
+// `.toPromise()` drops that emission as stale — so what we await here, and therefore what lands in
+// the snapshot, is the network read. Only the LIST read gets this: it is the one thing that goes
+// stale in a way the user can notice mid-session.
+const LIST_REVALIDATE = { requestPolicy: 'cache-and-network' } as const
+
+// The two media-metadata lookups below (MAL id matching, local-history refresh) fetch titles, covers
+// and episode counts — they don't change minute to minute, and when they do, the next cold start
+// picks them up. They were the EXPENSIVE half of the original blanket policy: fanned out over every
+// unique id in the user's local history, uncapped, in batches of 50, each batch requesting the full
+// MediaFields fragment. AniList traffic is capped at 2 concurrent requests (see anilist/client.ts),
+// so those batches occupied both slots on every mount of the Continue Watching row and starved the
+// hero + home-row queries queued behind them — which delayed the cards that request cover art in
+// the first place. Left at urql's default cache-first.
+const MEDIA_DEFAULT = {} as const
 
 async function fetchAni(client: QueryClient, userName: string | undefined): Promise<{ items: Item[]; failed: boolean }> {
   if (!userName) return { items: [], failed: false }
   try {
-    const res = await client.query(LIST_QUERY, { userName, status: 'CURRENT' }, REVALIDATE).toPromise()
+    const res = await client.query(LIST_QUERY, { userName, status: 'CURRENT' }, LIST_REVALIDATE).toPromise()
     if (res.error) return { items: [], failed: true }
     const items = flattenEntries(res.data as never).map((e) => ({
       media: e.media,
@@ -185,7 +196,7 @@ async function fetchMal(client: QueryClient, malActive: boolean): Promise<{ item
     const malIds = list.map((e) => e.idMal)
     const byMal = new Map<number | undefined, Media>()
     for (let i = 0; i < malIds.length; i += 50) {
-      const res = await client.query(MEDIA_BY_MAL_QUERY, { ids: malIds.slice(i, i + 50) }, REVALIDATE).toPromise()
+      const res = await client.query(MEDIA_BY_MAL_QUERY, { ids: malIds.slice(i, i + 50) }, MEDIA_DEFAULT).toPromise()
       if (res.error) return { items: [], failed: true }
       for (const m of ((res.data as { Page?: { media?: Media[] } })?.Page?.media ?? [])) byMal.set(m.idMal, m)
     }
@@ -198,12 +209,15 @@ async function fetchMal(client: QueryClient, malActive: boolean): Promise<{ item
 }
 
 async function refreshLocalMedia(client: QueryClient): Promise<{ media: Record<number, Media>; failed: boolean }> {
-  const ids = [...new Set(historyEntries(get(localHistory)).map((e) => e.media.id))]
+  // historyEntries() is already most-recent-first. The Continue Watching row (and buildSnapshot's
+  // own CAP slice) never renders more than CAP entries, so refreshing metadata for the rest of a
+  // user's lifetime history is pure waste — cap here to the same bound, keeping the most recent ids.
+  const ids = [...new Set(historyEntries(get(localHistory)).map((e) => e.media.id))].slice(0, CAP)
   if (!ids.length) return { media: {}, failed: false }
   try {
     const media: Record<number, Media> = {}
     for (let i = 0; i < ids.length; i += 50) {
-      const res = await client.query(MEDIA_BY_IDS_QUERY, { ids: ids.slice(i, i + 50) }, REVALIDATE).toPromise()
+      const res = await client.query(MEDIA_BY_IDS_QUERY, { ids: ids.slice(i, i + 50) }, MEDIA_DEFAULT).toPromise()
       if (res.error) return { media: {}, failed: true }
       for (const m of (res.data as { Page?: { media?: Media[] } })?.Page?.media ?? []) media[m.id] = m
     }
