@@ -19,6 +19,35 @@ export const banner = (m: Media) =>
 
 export const cover = (m: Media) => m.coverImage?.extraLarge || m.coverImage?.medium || ''
 
+// Small grid/carousel cards (~152px, e.g. SmallCard/ContinueCard) were requesting `extraLarge`
+// (~460px wide) via cover() — about 4x the pixels they display. `large` is AniList's mid-size asset,
+// a better match for a small card; fall back to extraLarge then medium for snapshots fetched before
+// `large` was added to the query (e.g. an older cwSnapshot in localStorage). Detail-page posters and
+// the hero deliberately keep using cover() — they render at a size that wants the full asset.
+/** AniList's cover fields are fixed assets, not hints: `extraLarge` is 460px wide, `large` 230px,
+ *  `medium` 100px. */
+const LARGE_COVER_W = 230
+/** Past 2x the extra sharpness is not perceptible enough to justify quadrupling the bytes, which is
+ *  the whole point of choosing here. A 3x phone therefore budgets as if it were 2x. */
+const MAX_USEFUL_DPR = 2
+
+/**
+ * The smallest cover asset that still covers the pixels this card will actually paint.
+ *
+ * Density is what decides it, not platform: a 131px card on a 2.75x phone needs ~360 real pixels, so
+ * it wants `extraLarge`, while the same card at 152px on a 1x monitor is served three times over by
+ * `large`. Callers that cannot state a width (a fill-width card, a 16:9 fallback) get `extraLarge`,
+ * because guessing small is the one mistake that shows.
+ */
+export function cardCover(m: Media, cssWidth = 0): string {
+  const c = m.coverImage
+  if (!c) return ''
+  const dpr = Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, MAX_USEFUL_DPR)
+  const needed = cssWidth * dpr
+  if (needed > 0 && needed <= LARGE_COVER_W) return c.large || c.extraLarge || c.medium || ''
+  return c.extraLarge || c.large || c.medium || ''
+}
+
 const FORMATS: Record<string, string> = {
   TV: 'TV', TV_SHORT: 'TV Short', MOVIE: 'Movie', SPECIAL: 'Special', OVA: 'OVA',
   ONA: 'ONA', MUSIC: 'Music', MANGA: 'Manga', NOVEL: 'Novel', ONE_SHOT: 'One Shot',

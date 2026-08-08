@@ -12,6 +12,27 @@ export const SCHEDULE_MEDIA_FIELDS = gql`
     coverImage { medium extraLarge }
   }`
 
+// Slim projection for the Continue Watching reconcile (MEDIA_BY_IDS_QUERY's local-history refresh +
+// MEDIA_BY_MAL_QUERY's MAL id matching). ContinueCard only ever renders a resume thumbnail, a title
+// and an episode number, and buildSnapshot only ever reads id/idMal/title/coverImage/bannerImage/
+// status/format/episodes/nextAiringEpisode/airingSchedule (see mediaSnapshot in player/history.ts) —
+// not the description, synonyms, studios, trailer or 100-node airingSchedule that MediaFields drags
+// in. A batch of fifty of those, requested on EVERY mount of the row, was a large parse+normalize
+// cost landing on the main thread on a phone. airingSchedule is kept but shrunk (not dropped): AniList
+// leaves episodes/nextAiringEpisode both null on many OVAs/ONAs and adult titles, whose only episode-
+// count signal is this schedule (see hasAiredEpisodeToWatch/airedCount in anilist/media.ts) — and
+// those formats essentially never run past two-dozen episodes, so a much smaller page still covers them.
+export const CONTINUE_MEDIA_FIELDS = gql`
+  fragment ContinueMediaFields on Media {
+    id idMal
+    title { romaji english userPreferred }
+    coverImage { medium large extraLarge }
+    bannerImage
+    status format episodes
+    nextAiringEpisode { episode timeUntilAiring }
+    airingSchedule(perPage: 26) { nodes { episode airingAt } }
+  }`
+
 export const MEDIA_FIELDS = gql`
   fragment MediaFields on Media {
     id idMal type isAdult
@@ -21,7 +42,7 @@ export const MEDIA_FIELDS = gql`
     synonyms
     startDate { year month day }
     studios(isMain: true) { nodes { id name } }
-    coverImage { extraLarge medium color }
+    coverImage { extraLarge large medium color }
     bannerImage
     trailer { id site }
     nextAiringEpisode { episode timeUntilAiring }
@@ -39,6 +60,6 @@ export const READING_MEDIA_FIELDS = gql`
     format status chapters volumes averageScore popularity genres synonyms
     countryOfOrigin source
     startDate { year month day }
-    coverImage { extraLarge medium color }
+    coverImage { extraLarge large medium color }
     bannerImage
   }`

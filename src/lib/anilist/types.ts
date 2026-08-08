@@ -25,7 +25,7 @@ export interface Media {
   synonyms?: string[]
   startDate?: FuzzyDate | null
   studios?: { nodes?: { name: string }[] } | null
-  coverImage?: { extraLarge?: string; medium?: string; color?: string }
+  coverImage?: { extraLarge?: string; large?: string; medium?: string; color?: string }
   bannerImage?: string
   trailer?: { id?: string; site?: string } | null
   nextAiringEpisode?: { episode: number; timeUntilAiring: number } | null
