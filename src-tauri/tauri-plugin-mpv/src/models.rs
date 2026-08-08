@@ -80,6 +80,14 @@ pub struct FullscreenRequest {
     pub enabled: bool,
 }
 
+/// Hold (or release) the display while video is actually playing. The Kotlin side owns both
+/// halves — `View.keepScreenOn` on the surface container plus `FLAG_KEEP_SCREEN_ON` on the
+/// window — so this only carries the desired state.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct KeepScreenAwakeRequest {
+    pub enabled: bool,
+}
+
 /// Live scale + vertical translate for the portrait pull-to-fullscreen gesture. `scale` is a unitless
 /// view scale (1.0 = resting 16:9); `translate_y` is physical pixels (negative = up).
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -204,6 +212,12 @@ mod tests {
     #[test]
     fn fullscreen_request_deserializes() {
         let r: FullscreenRequest = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
+        assert!(r.enabled);
+    }
+
+    #[test]
+    fn keep_screen_awake_request_deserializes() {
+        let r: KeepScreenAwakeRequest = serde_json::from_str(r#"{"enabled":true}"#).unwrap();
         assert!(r.enabled);
     }
 

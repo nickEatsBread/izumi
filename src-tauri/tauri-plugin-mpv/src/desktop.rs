@@ -3,8 +3,8 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
     AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
-    GifSaveRequest, GifStartRequest, HapticRequest, LoadRequest, MediaSessionRequest, SetRequest,
-    ThumbRequest, TransformRequest, ViewportRequest,
+    GifSaveRequest, GifStartRequest, HapticRequest, KeepScreenAwakeRequest, LoadRequest,
+    MediaSessionRequest, SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -61,6 +61,10 @@ impl<R: Runtime> Mpv<R> {
     }
 
     pub fn fullscreen(&self, _payload: FullscreenRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn keep_screen_awake(&self, _payload: KeepScreenAwakeRequest) -> crate::Result<()> {
         Ok(())
     }
 
