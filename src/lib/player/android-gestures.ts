@@ -147,3 +147,15 @@ export function sheetGestureIntent(
   if (dy <= 0) return 'scroll'
   return scrollTop != null && scrollTop > 0 ? 'scroll' : 'drag'
 }
+
+/** Whether a drag has to call `setPointerCapture` to keep receiving moves.
+ *
+ *  Touch and pen are direct-manipulation devices: the browser IMPLICITLY captures the pointer to
+ *  the element the gesture started on, so events keep arriving (and keep bubbling to the sheet)
+ *  without asking. Capturing again on an ancestor moves the capture, and the retarget fires
+ *  `lostpointercapture` at the element that held it — which bubbles straight back into the sheet's
+ *  own cancel handler and kills the drag before it renders a single frame. A mouse has no implicit
+ *  capture, so there it is still required or the drag dies the moment the cursor leaves the sheet. */
+export function needsExplicitPointerCapture(pointerType: string | undefined): boolean {
+  return pointerType !== 'touch' && pointerType !== 'pen'
+}
