@@ -49,6 +49,7 @@
     shouldEnterFullscreen,
     shouldDismissSheet,
     sheetGestureIntent,
+    needsExplicitPointerCapture,
     landscapeExitProgress,
     shouldExitFullscreen,
     MOVE_PX,
@@ -473,8 +474,16 @@
     armHide()
     try { if (barEl?.hasPointerCapture(e.pointerId)) barEl.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
   }
+  /** `lostpointercapture` BUBBLES, and touch/pen pointers are IMPLICITLY captured by whichever
+   *  descendant the gesture started on. So a child handing its implicit capture over — which is
+   *  exactly what happens when one of these surfaces calls setPointerCapture on itself — bubbles up
+   *  looking identical to the gesture being cancelled out from under us. Only an element losing its
+   *  OWN capture means that. Without this check a drag dies before its first rendered frame, which
+   *  is what made the settings sheet impossible to pull down on a phone while it worked under a
+   *  mouse (a mouse has no implicit capture, so nothing was ever handed over). */
+  const isOwnCaptureLoss = (e: PointerEvent) => e.target === e.currentTarget
   function onBarLostCapture(e: PointerEvent) {
-    if (barPointerId === e.pointerId) onBarCancel(e)
+    if (isOwnCaptureLoss(e) && barPointerId === e.pointerId) onBarCancel(e)
   }
 
   function skip(delta: number) {
@@ -846,7 +855,7 @@
     try { rootEl?.releasePointerCapture?.(e.pointerId) } catch { /* ignore */ }
   }
   function onRootLostCapture(e: PointerEvent) {
-    if (rootPointerId === e.pointerId) onRootCancel(e)
+    if (isOwnCaptureLoss(e) && rootPointerId === e.pointerId) onRootCancel(e)
   }
 
   // --- Lock ---
@@ -1195,7 +1204,13 @@
       sheetLastY = e.clientY
       sheetLastTime = e.timeStamp
       sheetDragging = true
-      try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
+      // Touch already has implicit capture; taking it again here retargets the pointer and fires
+      // `lostpointercapture` at the element that held it, which bubbles into handleLostCapture and
+      // cancels the pull we just started. That is the "drag does nothing" bug — the sheet never
+      // moved a pixel on a phone while behaving perfectly under a mouse.
+      if (needsExplicitPointerCapture(e.pointerType)) {
+        try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
+      }
       return
     }
     const dt = Math.max(1, e.timeStamp - sheetLastTime)
@@ -1235,6 +1250,10 @@
     sheetDragging = false
     sheetDrag = 0
     sheetBackdropOpacity = 1
+  }
+  function handleLostCapture(e: PointerEvent) {
+    if (!isOwnCaptureLoss(e)) { e.stopPropagation(); return }
+    handleCancel(e)
   }
   // Capture phase: a pull that started on a row must not also activate that row on release.
   function handleSheetClick(e: MouseEvent) {
@@ -1530,7 +1549,7 @@
     <!-- The pointer handlers sit on the sheet ROOT so a pull anywhere on it dismisses. They also
          stopPropagation on move+up (not just down) so swiping the sheet / scrolling the list never
          leaks to the video's gesture layer underneath (the "interferes with the video" bug). -->
-    <div bind:this={sheetEl} class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleCancel} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
+    <div bind:this={sheetEl} class="settings-sheet absolute z-40 bg-neutral-900 shadow-2xl" class:sheet-dragging={sheetDragging} class:sheet-closing={sheetClosing} style="transform:translateY({sheetDrag}px)" onpointerdown={handleDown} onpointermove={handleMove} onpointerup={handleUp} onpointercancel={handleCancel} onlostpointercapture={handleLostCapture} onclickcapture={handleSheetClick} role="dialog" aria-modal="true" aria-label="Video settings" tabindex="-1">
       <!-- Grab affordance only — the whole sheet is draggable, so this is decoration, not the target. -->
       <div class="sheet-handle py-4 touch-none">
         <div class="mx-auto h-1 w-10 rounded-full bg-white/25"></div>
