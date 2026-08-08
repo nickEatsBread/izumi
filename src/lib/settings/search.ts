@@ -71,6 +71,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Browse layout', category: 'Interface', href: '/app/settings/interface', keywords: 'grid list covers' },
   { title: 'Schedule layout', category: 'Interface', href: '/app/settings/interface', keywords: 'agenda days' },
   { title: 'Pin schedule header', category: 'Interface', href: '/app/settings/interface', keywords: 'sticky', anchored: true },
+  { title: 'Show "Next up" on the schedule', category: 'Interface', href: '/app/settings/interface', keywords: 'airing now countdown strip hide', anchored: true },
   { title: 'Remove from Continue Watching', category: 'Interface', href: '/app/settings/interface', keywords: 'dismiss dropped paused on hold' },
   { title: 'UI scale', category: 'Interface', href: '/app/settings/interface', keywords: 'zoom size accessibility' },
   { title: 'Hide spoilers', category: 'Interface', href: '/app/settings/interface', keywords: 'blur episode thumbnails titles ratings', anchored: true },

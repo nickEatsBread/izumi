@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -26,6 +26,7 @@
   const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
     { value: 'cards', label: 'Cards', hint: 'Thumbnails, titles, ratings and a watch-progress bar.' },
     { value: 'compact', label: 'Compact', hint: 'Simple text rows — denser, lighter on data.' },
+    { value: 'grid', label: 'Numbers', hint: 'Dense number tiles for browsing long-runners at a glance.' },
   ]
 
   const browseLayouts: { value: BrowseLayout; label: string; hint: string }[] = [
@@ -196,8 +197,9 @@
       {/each}
     </div>
 
-    <div class="mb-4">
-      <Toggle label="Pin schedule header" desc="Keep the My Shows / All toggle and Next-up strip stuck to the top while scrolling the schedule. Off = the header scrolls away with the list (default on Android)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
+    <div class="mb-4 space-y-3">
+      <Toggle label="Pin schedule header" desc="Keep the Schedule/Watchlist tabs, week navigation, and My Shows / All toggle stuck to the top while scrolling the schedule. Off = the header scrolls away with the list (default on Android; ignored in Game mode)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
+      <Toggle label={'Show "Next up" on the schedule'} desc="The strip of soonest episodes above the schedule grid." value={$scheduleShowNextUp} onToggle={() => ($scheduleShowNextUp = !$scheduleShowNextUp)} />
     </div>
 
     <p class="mb-1 text-sm font-bold">{m.settings_home_rows()}</p>
