@@ -42,6 +42,8 @@
   import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import Brush from '@lucide/svelte/icons/brush'
+  import { chapters as chapterStore } from '$lib/player/session'
+  import { activeChapterIndex, formatChapterTime, isGenericChapterTitle } from '$lib/player/chapters'
 
   const np = $derived($nowPlaying)
   const hasPrev = $derived(np.episode != null && np.episode > 1)
@@ -59,7 +61,6 @@
     buffer,
     paused,
     segments,
-    chapters,
     cmd,
     onclose,
     gm = false,
@@ -70,7 +71,6 @@
     buffer: number
     paused: boolean
     segments: Segment[]
-    chapters: { time: number; title: string }[]
     cmd: (name: string, args?: string[]) => void
     onclose: () => void
     // Game mode (Deck/gamescope touch player): no windowed/fullscreen toggle, and the
@@ -373,7 +373,7 @@
   // category's list) with a Miller-column slide. `menuLevel`/`detailCat` drive the slide;
   // `rootH`/`detailH` are the measured column heights so the panel morphs to fit.
   let menuLevel = $state<'root' | 'detail'>('root')
-  let detailCat = $state<'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style'>('audio')
+  let detailCat = $state<'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters'>('audio')
 
   // Subtitle style presets: capture the active ASS track's fonting (mpv sub-ass-extradata) and
   // save it under the release group's name; picking a saved preset overrides styling for THIS
@@ -455,7 +455,21 @@
   // `curLabel` is what shows on the collapsed root row for each category (the active
   // track, or "Off"). `pickLeaf` sets the track then slides back to the root.
   const detailItems = $derived(detailCat === 'audio' ? audios : subs)
-  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : 'Subtitles')
+  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : detailCat === 'chapters' ? 'Chapters' : 'Subtitles')
+  // Controls unmounts entirely when the bar is hidden (PlayerOverlay only mounts it while its
+  // `controlsVisible` is true), so this only runs while the bar is actually on screen — one lookup
+  // shared by the track-menu highlight below and the overlay label further down.
+  const chapterIdx = $derived(activeChapterIndex($chapterStore, pos))
+  // The menu highlight only needs to mean anything while the chapters detail pane is open — showing
+  // a "current" row for a closed menu would be pointless, so this stays -1 otherwise.
+  const activeChapter = $derived(showTracks && detailCat === 'chapters' ? chapterIdx : -1)
+  // Generic titles ("Chapter 1", a bare number — see isGenericChapterTitle) are suppressed rather
+  // than shown: they cost screen space and tell the user nothing the seekbar doesn't already.
+  const activeChapterTitle = $derived.by(() => {
+    const c = $chapterStore[chapterIdx]
+    if (!c || isGenericChapterTitle(c.title ?? '')) return ''
+    return c.title.trim()
+  })
   const leafKind = $derived<'aid' | 'sid' | 'secondary-sid'>(detailCat === 'audio' ? 'aid' : detailCat === 'secondary' ? 'secondary-sid' : 'sid')
   const detailOff = $derived(detailCat === 'secondary' ? secondaryId === 'no' : !detailItems.some((t) => t.selected)) // nothing selected ⇒ "Off" is active
   const curLabel = (group: Track[]) => {
@@ -472,7 +486,7 @@
     const track = subs.find((item) => String(item.id) === secondaryId)
     return track ? label(track, subs) : 'Off'
   })
-  function openDetail(cat: 'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style') {
+  function openDetail(cat: 'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters') {
     detailCat = cat
     menuLevel = 'detail'
   }
@@ -591,11 +605,11 @@
     {#if gm}
       <div class="pointer-events-auto flex items-center gap-3">
         <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums text-white/85">{fmt(pos)}</span>
-        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} /></div>
+        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
         <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums text-white/60">{fmt(dur)}</span>
       </div>
     {:else}
-      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} {chapters} {gm} onseek={seekTo} /></div>
+      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
     {/if}
 
     <div class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">
@@ -626,9 +640,14 @@
         </button>
       {/if}
 
-      <!-- Desktop shows the time here; Game mode moved it to flank the bar (above). -->
+      <!-- Desktop shows the time here; Game mode moved it to flank the bar (above). The active
+           chapter title rides along, Desktop-only — Game mode's bar is already tight on a Deck,
+           and confining the experiment to one surface keeps a revert clean either way. -->
       {#if !gm}
         <span class="ml-1 select-none font-mono tabular-nums text-sm">{fmt(pos)} / {fmt(dur)}</span>
+        {#if activeChapterTitle}
+          <span class="hidden min-w-0 max-w-[16rem] truncate text-xs text-white/50 sm:inline">{activeChapterTitle}</span>
+        {/if}
       {/if}
 
       <div class="ml-auto flex items-center gap-3 {gm ? 'gap-4' : ''}">
@@ -801,6 +820,17 @@
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
+                      <!-- Hidden entirely (not just empty) when the file has no chapters: most anime
+                           web releases ship none, and an empty category is worse than no category. -->
+                      {#if $chapterStore.length}
+                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('chapters')}>
+                          <span class="min-w-0">
+                            <span class="block text-xs uppercase tracking-wide text-white/45">Chapters</span>
+                            <span class="block truncate">{$chapterStore.length} chapters</span>
+                          </span>
+                          <ChevronRight size={18} class="shrink-0 text-white/40" />
+                        </button>
+                      {/if}
                       {#if $secondarySubtitles}
                         <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('secondary')}>
                           <span class="min-w-0">
@@ -854,7 +884,23 @@
                           </button>
                         {/if}
                       </div>
-                      {#if detailCat === 'online'}
+                      {#if detailCat === 'chapters'}
+                        <div class="max-h-64 overflow-y-auto">
+                          <!-- Keyed on index, not `c.time`: activeChapterIndex's own doc notes a
+                               zero-length chapter can share a timestamp with its neighbour, and the
+                               store is always replaced wholesale (never spliced), so index is stable. -->
+                          {#each $chapterStore as c, i (i)}
+                            <button data-focusable onclick={() => { seekTo(c.time); showTracks = false }}
+                                    class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10">
+                              <span class="min-w-0">
+                                <span class="block truncate">{c.title?.trim() || 'Chapter'}</span>
+                                <span class="block text-xs tabular-nums text-white/45">{formatChapterTime(c.time)}</span>
+                              </span>
+                              {#if i === activeChapter}<Check size={18} class="shrink-0 text-primary" />{/if}
+                            </button>
+                          {/each}
+                        </div>
+                      {:else if detailCat === 'online'}
                         <label class="mb-2 flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5">
                           <Search size={15} class="shrink-0 text-white/50" />
                           <input data-focusable bind:value={subQuery} onkeydown={onSubQueryKey} placeholder="Search subtitles…" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground" />

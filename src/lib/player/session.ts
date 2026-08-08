@@ -7,6 +7,7 @@ import type { DebridInfo } from '$lib/stremio/debrid/types'
 import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
 import type { SharedSourceState } from '$lib/watch-together/source'
 import type { DirectTorrentHealth } from '$lib/player/direct-torrent'
+import type { Chapter } from '$lib/player/chapter-skip'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
@@ -136,6 +137,12 @@ export const advancedFiltersOpen = writable(false)
 // Series-page AniList/MAL editor. While open, the Deck controller keeps directional focus inside
 // the dialog, A activates its controls, and B dismisses it instead of leaving the series page.
 export const listEditorOpen = writable(false)
+
+// The playing file's chapter marks, sorted, or [] when it has none. Written by whichever player
+// component parsed them (desktop or Android), read by the menus that offer them as a jump list.
+// Shared rather than kept per-component so the two players cannot drift — the desktop-only fix for
+// stale skip segments after a source switch was exactly that kind of drift.
+export const chapters = writable<Chapter[]>([])
 
 // Game-mode track menu (Deck ☰ button): the controller-navigable audio/subtitle picker.
 // While true it CAPTURES the pad — the app-wide nav translator and the player's own A/B/L1/R1

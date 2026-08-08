@@ -5,6 +5,8 @@ export type HotkeyId =
   | 'playerClose'
   | 'playerSeekBack'
   | 'playerSeekForward'
+  | 'playerPreviousChapter'
+  | 'playerNextChapter'
   | 'playerVolumeUp'
   | 'playerVolumeDown'
   | 'playerMute'
@@ -48,6 +50,8 @@ export const HOTKEYS: HotkeyDefinition[] = [
   { id: 'playerLoopClear', scope: 'Player', group: 'Tools', label: 'Clear A/B loop', description: 'Disable the active A/B loop.', defaultBinding: '\\' },
   { id: 'playerSeekBack', scope: 'Player', group: 'Seeking', label: 'Seek back', description: 'Seek by the configured player step.', defaultBinding: 'ArrowLeft' },
   { id: 'playerSeekForward', scope: 'Player', group: 'Seeking', label: 'Seek forward', description: 'Seek by the configured player step.', defaultBinding: 'ArrowRight' },
+  { id: 'playerPreviousChapter', scope: 'Player', group: 'Seeking', label: 'Previous chapter', description: 'Restart this chapter, or jump back a chapter if it just started.', defaultBinding: 'PageUp' },
+  { id: 'playerNextChapter', scope: 'Player', group: 'Seeking', label: 'Next chapter', description: 'Jump to the start of the next chapter.', defaultBinding: 'PageDown' },
   { id: 'playerVolumeUp', scope: 'Player', group: 'Audio', label: 'Volume up', description: 'Raise volume five points.', defaultBinding: 'ArrowUp' },
   { id: 'playerVolumeDown', scope: 'Player', group: 'Audio', label: 'Volume down', description: 'Lower volume five points.', defaultBinding: 'ArrowDown' },
   { id: 'playerSubtitleCycle', scope: 'Player', group: 'Subtitles', label: 'Cycle subtitles', description: 'Select the next subtitle track.', defaultBinding: 's' },
@@ -98,6 +102,7 @@ export function displayBinding(binding: string) {
   const labels: Record<string, string> = {
     ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt', meta: 'Meta',
     ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
+    PageUp: 'Page Up', PageDown: 'Page Down',
   }
   return binding.split('+').map((part) => labels[part] ?? (part.length === 1 ? part.toUpperCase() : part)).join(' + ')
 }
