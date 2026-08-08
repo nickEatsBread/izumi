@@ -7,8 +7,9 @@ vi.mock('$lib/trackers', () => ({ getMalListProgressOrThrow: mocks.malList }))
 
 import {
   mergeInstant, buildSnapshot, reconcileContinueWatching,
-  cwSnapshot, reconciling, reconciledOnce, type CwEntry,
+  cwSnapshot, reconciling, reconciledOnce, CAP, type CwEntry,
 } from './continue-watching'
+import { LIST_QUERY, MEDIA_BY_MAL_QUERY, MEDIA_BY_IDS_QUERY } from '$lib/anilist/lists'
 import { localHistory, sessionProgress, type HistoryEntry } from './history'
 import type { Media } from '$lib/anilist/types'
 
@@ -177,19 +178,50 @@ describe('reconcileContinueWatching', () => {
     expect(get(reconciledOnce)).toBe(true)
   })
 
-  it('revalidates: every read asks for cache-and-network, never urql’s cache-first default', async () => {
-    // cache-first would serve all three reads from the process-lifetime normalized cache after the
-    // first sync, so a reconcile could never see progress from another device or a list removal.
-    const policies: (string | undefined)[] = []
+  it('revalidates only the list read; the two media-metadata reads stay cache-first', async () => {
+    // cache-first would serve the list from the process-lifetime normalized cache after the first
+    // sync, so a reconcile could never see progress from another device or a list removal. The
+    // media-metadata reads (MAL id matching, local-history refresh) don't need that: titles/covers/
+    // episode counts don't change minute to minute, and fanning those out with cache-and-network on
+    // every mount was the expensive half of the original fix.
+    const calls: { query: unknown; requestPolicy: string | undefined }[] = []
     const spyClient = {
-      query: (_q: unknown, _v: unknown, ctx?: { requestPolicy?: string }) => {
-        policies.push(ctx?.requestPolicy)
+      query: (q: unknown, _v: unknown, ctx?: { requestPolicy?: string }) => {
+        calls.push({ query: q, requestPolicy: ctx?.requestPolicy })
         return { toPromise: async () => ({ data: { Page: { media: [media(101, { idMal: 202 })] } } }) }
       },
     }
     mocks.malList.mockResolvedValue([{ idMal: 202, progress: 5, updatedAt: 1234 }])
     localHistory.set({ 101: hist(101) }) // gives refreshLocalMedia an id to look up
     await reconcileContinueWatching(spyClient as never, 'someone', true, true)
-    expect(policies).toEqual(['cache-and-network', 'cache-and-network', 'cache-and-network'])
+    expect(calls).toHaveLength(3)
+    // fetchAni/fetchMal/refreshLocalMedia race concurrently (Promise.all), so only the LIST call is
+    // order-guaranteed (it has no await ahead of it); match the two media calls by query identity.
+    const byQuery = new Map(calls.map((c) => [c.query, c.requestPolicy]))
+    expect(byQuery.get(LIST_QUERY)).toBe('cache-and-network')
+    expect(byQuery.get(MEDIA_BY_MAL_QUERY)).not.toBe('cache-and-network')
+    expect(byQuery.get(MEDIA_BY_IDS_QUERY)).not.toBe('cache-and-network')
+  })
+
+  it('caps refreshLocalMedia to CAP ids, most recent first, even with far more history', async () => {
+    const queried: number[][] = []
+    const spyClient = {
+      query: (q: unknown, v: { ids?: number[] }) => {
+        if (q === MEDIA_BY_IDS_QUERY) queried.push(v.ids ?? [])
+        return { toPromise: async () => ({ data: { Page: { media: [] } } }) }
+      },
+    }
+    mocks.malList.mockResolvedValue([]) // malActive must be true to reach refreshLocalMedia (a
+    // local-only user with no linked tracker returns early with no network at all — by design).
+    // CAP + 20 history entries, DESCENDING updatedAt so id 0 is the most recent — historyEntries()
+    // sorts by updatedAt desc, and the cap should keep exactly that most-recent slice.
+    const totalEntries = CAP + 20
+    const history: Record<number, HistoryEntry> = {}
+    for (let i = 0; i < totalEntries; i++) history[i] = hist(i, { updatedAt: totalEntries - i })
+    localHistory.set(history)
+    await reconcileContinueWatching(spyClient as never, undefined, true, true)
+    const requestedIds = queried.flat()
+    expect(requestedIds.length).toBeLessThanOrEqual(CAP)
+    expect(requestedIds).toEqual(Array.from({ length: CAP }, (_, i) => i)) // ids 0..CAP-1 = most recent
   })
 })
