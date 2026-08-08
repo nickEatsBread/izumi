@@ -3,8 +3,8 @@ use tauri::{command, AppHandle, Runtime};
 use crate::{
     models::{
         AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
-        GifSaveRequest, GifStartRequest, HapticRequest, LoadRequest, MediaSessionRequest,
-        SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
+        GifSaveRequest, GifStartRequest, HapticRequest, KeepScreenAwakeRequest, LoadRequest,
+        MediaSessionRequest, SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -82,6 +82,14 @@ pub(crate) async fn mpv_fullscreen<R: Runtime>(
     payload: FullscreenRequest,
 ) -> Result<()> {
     app.mpv().fullscreen(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_keep_screen_awake<R: Runtime>(
+    app: AppHandle<R>,
+    payload: KeepScreenAwakeRequest,
+) -> Result<()> {
+    app.mpv().keep_screen_awake(payload)
 }
 
 #[command]
