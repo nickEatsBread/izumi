@@ -1,5 +1,5 @@
 import { gql } from '@urql/core'
-import { MEDIA_FIELDS, READING_MEDIA_FIELDS } from './fragments'
+import { CONTINUE_MEDIA_FIELDS, MEDIA_FIELDS, READING_MEDIA_FIELDS } from './fragments'
 import type { Media } from './types'
 
 export const LIST_QUERY = gql`
@@ -44,14 +44,15 @@ export function matchesLibraryKind(media: Media, kind: LibraryKind): boolean {
   return kind === 'novel' ? media.format === 'NOVEL' : media.format !== 'NOVEL'
 }
 
-// Look up AniList media by a batch of MAL ids (for MAL-sourced home rows). AniList
-// supports `idMal_in`, so this is one request. Results come back in AniList's own
-// order — callers re-sort into the MAL list order.
+// Look up AniList media by a batch of MAL ids (for the Continue Watching row's MAL-sourced entries).
+// AniList supports `idMal_in`, so this is one request. Results come back in AniList's own order —
+// callers re-sort into the MAL list order. Uses the slim ContinueMediaFields projection — see its
+// comment in fragments.ts for why.
 export const MEDIA_BY_MAL_QUERY = gql`
   query MediaByMal($ids: [Int]) {
-    Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { ...MediaFields } }
+    Page(perPage: 50) { media(idMal_in: $ids, type: ANIME) { ...ContinueMediaFields } }
   }
-  ${MEDIA_FIELDS}`
+  ${CONTINUE_MEDIA_FIELDS}`
 
 export const READING_MEDIA_BY_MAL_QUERY = gql`
   query ReadingMediaByMal($ids: [Int]) {
@@ -61,8 +62,9 @@ export const READING_MEDIA_BY_MAL_QUERY = gql`
 
 // Refresh locally-saved history snapshots in one request. In particular, nextAiringEpisode must be
 // current so Continue Watching can hide a caught-up show and bring it back when a new episode airs.
+// Uses the slim ContinueMediaFields projection — see its comment in fragments.ts for why.
 export const MEDIA_BY_IDS_QUERY = gql`
   query MediaByIds($ids: [Int]) {
-    Page(perPage: 50) { media(id_in: $ids, type: ANIME) { ...MediaFields } }
+    Page(perPage: 50) { media(id_in: $ids, type: ANIME) { ...ContinueMediaFields } }
   }
-  ${MEDIA_FIELDS}`
+  ${CONTINUE_MEDIA_FIELDS}`
