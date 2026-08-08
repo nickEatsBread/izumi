@@ -244,7 +244,7 @@
         <div class="h-[26vh] max-h-72 min-h-44 w-full skeloader"></div>
       {/if}
       <div class="px-4">
-        <div class="-mt-10 flex gap-4">
+        <div class="relative z-10 -mt-10 flex gap-4">
           {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />{:else}<div class="aspect-[46/65] w-28 shrink-0 self-start rounded-xl skeloader min-[420px]:w-32"></div>{/if}
           <div class="min-w-0 flex-1 self-end space-y-2 pb-1">
             <div class="h-3 w-20 rounded skeloader"></div>
@@ -315,7 +315,11 @@
       </div>
 
       <div class="px-4">
-        <div class="-mt-10 flex gap-4">
+        <!-- `relative z-10`: the artwork band above is positioned, so it paints OVER static
+             in-flow content — and this row is pulled up into it. Without a stacking context of its
+             own the band covered the top of the poster the moment its image loaded, which read as
+             the cover being cropped (and looked fine until then, because the band was transparent). -->
+        <div class="relative z-10 -mt-10 flex gap-4">
           <!-- Covers vary in aspect; forcing them all into one ratio with object-cover crops real
                artwork the user came here to see. Follow the image's own height instead. -->
           <img use:reliableImage={cover(m)} alt=""
@@ -328,11 +332,10 @@
           </div>
         </div>
 
-        <AiringStatus media={m} compact />
-
         <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
-             rows and read as a wall of pills rather than a summary. -->
-        <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+             rows and read as a wall of pills rather than a summary. Facts sit directly under the
+             title — identity first, schedule after. -->
+        <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
           {#if m.averageScore}
             <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
           {/if}
@@ -340,6 +343,12 @@
           <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
           {#if season(m)}<span class="opacity-40">·</span><span>{season(m)}</span>{/if}
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
+        </div>
+
+        <!-- AiringStatus emits bare inline chips with no spacing of their own, so the sub and dub
+             times ran into each other and sat flush against the block above. Give them a row. -->
+        <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
+          <AiringStatus media={m} compact />
         </div>
 
         {#if m.description}
