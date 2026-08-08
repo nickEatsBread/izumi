@@ -15,7 +15,12 @@ describe('settings sub-page top inset', () => {
     expect(css).toContain('.edge-to-edge main { --main-safe-top: 0px; }')
   })
 
-  it('does not re-apply the inset inside the settings header', () => {
-    expect(layout).not.toContain('env(safe-area-inset-top)')
+  it('lets the sticky header own the inset, since main cannot protect a stuck element', () => {
+    expect(layout).toContain('style="padding-top:max(0.5rem,env(safe-area-inset-top))"')
+  })
+
+  it('opts the settings screen out of the main inset so it is not applied twice', () => {
+    expect(layout).toContain("document.documentElement.classList.add('edge-to-edge')")
+    expect(layout).toContain("document.documentElement.classList.remove('edge-to-edge')")
   })
 })

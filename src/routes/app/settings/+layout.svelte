@@ -89,6 +89,15 @@
     timer = setTimeout(find, 0)
     return () => { cancelled = true; clearTimeout(timer) }
   })
+
+  // The sticky back-header carries the status-bar inset itself (see the header markup), so the
+  // page must not be inset a second time by `main`. The class is removed on teardown, so every
+  // other route keeps the default inset even if a navigation interrupts a transition.
+  $effect(() => {
+    if (!$isMobile || typeof document === 'undefined') return
+    document.documentElement.classList.add('edge-to-edge')
+    return () => document.documentElement.classList.remove('edge-to-edge')
+  })
 </script>
 
 {#if $isMobile}
@@ -108,9 +117,12 @@
   {:else}
     <!-- Mobile child: back-header + the category content. -->
     <div class="min-h-screen">
-      <!-- No safe-area padding here: <main> already insets the page below the status bar, and
-           adding it again cost a second status bar of dead space above this header. -->
-      <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur">
+      <!-- This header owns the status-bar inset for the whole settings screen: it is `sticky`, so
+           once the page scrolls it locks to the physical viewport top and `main`'s padding no
+           longer protects it. Padding it here keeps the back button clear of the status bar at
+           every scroll offset, and the blurred bar paints that band instead of leaving it black. -->
+      <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur"
+           style="padding-top:max(0.5rem,env(safe-area-inset-top))">
         <a href={backHref} data-focusable onclick={() => h.tap()} aria-label={m.common_back_to_settings()}
            class="grid h-10 w-10 place-items-center rounded-full transition-colors active:bg-accent">
           <ChevronLeft size={22} />
