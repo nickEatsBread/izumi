@@ -202,11 +202,12 @@
     wasSolid = next.solid
     barState = next
   }
-  // The page paints under the status bar only while the hero (with its floating bar) is actually
-  // rendered — the loading/error/not-found branches have no bar to replace main's inset. Shared
-  // with the settings layout via a refcount: their lifetimes can overlap mid-navigation.
+  // Acquired for every branch on mobile, not just once the hero has loaded — gating this on `media`
+  // made the page jump by the status-bar height the instant the skeleton was replaced by the loaded
+  // hero. The loading/error/not-found branches carry their own top padding instead of the bar.
+  // Shared with the settings layout via a refcount: their lifetimes can overlap mid-navigation.
   $effect(() => {
-    if (!$isMobile || !media) return
+    if (!$isMobile) return
     return acquireEdgeToEdge()
   })
   // artHeight/barHeight land a frame after mount; recompute once they do so the bar is in the right
@@ -222,11 +223,11 @@
   }
 </script>
 
-<svelte:window onscroll={onHeroScroll} onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
+<svelte:window onscroll={$isMobile ? onHeroScroll : undefined} onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
 
 {#if !$offlineMode && $store.fetching && !media}
   {#if $isMobile}
-    <div class="relative isolate px-4 pb-10 pt-10">
+    <div class="relative isolate px-4 pb-10 pt-[max(2.5rem,env(safe-area-inset-top))]">
       <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
         {#if detailHint && banner(detailHint)}<img src={banner(detailHint)} alt="" class="h-full w-full object-cover opacity-35" />{:else}<div class="h-full w-full skeloader"></div>{/if}
         <div class="absolute inset-0 bg-gradient-to-b from-background/20 via-background/70 to-background"></div>
@@ -264,7 +265,7 @@
            inset itself: a fixed element does not inherit main's padding once it locks. -->
       <div bind:clientHeight={barHeight}
            class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
-                  {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : ''}"
+                  {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : 'text-white'}"
            style="padding-top:max(0.5rem,env(safe-area-inset-top))">
         {#if !barState.solid}
           <div class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-black/55 to-transparent"></div>

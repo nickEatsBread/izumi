@@ -26,7 +26,7 @@
   const layouts: { value: EpisodeLayout; label: string; hint: string }[] = [
     { value: 'cards', label: 'Cards', hint: 'Thumbnails, titles, ratings and a watch-progress bar.' },
     { value: 'compact', label: 'Compact', hint: 'Simple text rows — denser, lighter on data.' },
-    { value: 'grid', label: 'Numbers', hint: 'Dense number tiles — the only shape that stays usable at 1000+ episodes.' },
+    { value: 'grid', label: 'Numbers', hint: 'Dense number tiles for browsing long-runners at a glance.' },
   ]
 
   const browseLayouts: { value: BrowseLayout; label: string; hint: string }[] = [
