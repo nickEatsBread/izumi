@@ -93,6 +93,52 @@ describe('torbox.resolveHash noAdd', () => {
     await expect(torbox.resolveHash('key', HASH)).resolves.toBe('https://cdn.torbox/Show_01.mkv')
     expect(called(httpFetch, '/torrents/createtorrent')).toBe(true)
   })
+
+  it('rides out a single 5xx during the poll instead of throwing the download away', async () => {
+    // The resolve may be minutes into an uncached download by the time a gateway hiccups; one 502
+    // must cost a probe, not the whole thing.
+    vi.useFakeTimers()
+    let probes = 0
+    httpFetch.mockImplementation(async (_command: string, args: { url: string }) => {
+      const url = String(args?.url)
+      if (url.includes('/torrents/createtorrent')) return { status: 200, body: JSON.stringify({ success: true, data: { torrent_id: 9 } }) }
+      if (url.includes('/torrents/requestdl')) return { status: 200, body: JSON.stringify({ success: true, data: 'https://cdn.torbox/Show_01.mkv' }) }
+      if (++probes === 1) return { status: 502, body: '' }
+      return { status: 200, body: JSON.stringify({ success: true, data: [{ id: 9, hash: HASH, download_finished: true, files: [{ id: 0, name: 'Show_01.mkv', size: 100 }] }] }) }
+    })
+    const done = expect(torbox.resolveHash('key', HASH)).resolves.toBe('https://cdn.torbox/Show_01.mkv')
+    await vi.advanceTimersByTimeAsync(5000)
+    await done
+    vi.useRealTimers()
+  })
+
+  it('gives up on a sustained 5xx well short of the poll deadline', async () => {
+    vi.useFakeTimers()
+    httpFetch.mockImplementation(async (_command: string, args: { url: string }) => (
+      String(args?.url).includes('/torrents/mylist')
+        ? { status: 502, body: '' }
+        : { status: 200, body: JSON.stringify({ success: true, data: { torrent_id: 9 } }) }
+    ))
+    const onStatus = vi.fn()
+    const done = expect(torbox.resolveHash('key', HASH, { onStatus })).rejects.toThrow(/502/)
+    // Settles inside a minute — the whole point is not reaching the 600s deadline.
+    await vi.advanceTimersByTimeAsync(60_000)
+    await done
+    // Never reported a stage either: every probe threw, so the caching overlay is never raised.
+    expect(onStatus).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('a 401 during the poll fails immediately with the access-denied message', async () => {
+    let probes = 0
+    httpFetch.mockImplementation(async (_command: string, args: { url: string }) => {
+      if (!String(args?.url).includes('/torrents/mylist')) return { status: 200, body: JSON.stringify({ success: true, data: { torrent_id: 9 } }) }
+      probes++
+      return { status: 401, body: '' }
+    })
+    await expect(torbox.resolveHash('key', HASH)).rejects.toThrow(/access denied/)
+    expect(probes).toBe(1) // a wrong key is not going to become right — no retry run
+  })
 })
 
 describe('tbCacheMap', () => {

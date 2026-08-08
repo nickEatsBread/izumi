@@ -92,6 +92,50 @@ export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; st
   return { ok: r.status >= 200 && r.status < 300, status: r.status, json }
 }
 
+// --- Transient vs terminal HTTP failures --------------------------------------
+// jfetch never throws on a non-2xx, so every provider has to decide what a status MEANS, and inside
+// a poll loop the two answers are not interchangeable. A resolve can be MINUTES into an uncached
+// download, so a gateway blip or a rate-limit window must cost one probe, not the whole download —
+// while a bad key or a request that can never succeed must fail now instead of leaving the mappers
+// to report 'queued'/'downloading' until the ten-minute deadline with the caching overlay pinned.
+// 408/425/429 and every 5xx are the service saying "not right now"; any other non-2xx is it saying
+// "not ever" for this request (401/402/403 auth, 400/404/410 client errors).
+//
+// 429 is split out from the rest. A rate limit is the one "not right now" that proves the service is
+// UP and answering — it is a queue, not an outage — so it must not spend the same short budget that
+// exists to catch a service which has actually fallen over. Sized separately below.
+
+export function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500
+}
+
+/** Transient transport failure. Tagged by NAME, like debridBlocked, because the distinction has to
+ *  survive being thrown through a provider's own call chain: `poll` rides out a run of these and
+ *  propagates anything else on the first tick. */
+export function debridRetryable(message: string): Error {
+  const e = new Error(message)
+  e.name = 'DebridRetryable'
+  return e
+}
+export const isDebridRetryable = (e: unknown): boolean => e instanceof Error && e.name === 'DebridRetryable'
+
+/** Rate limited. Same ride-it-out contract as debridRetryable, separate name so `poll` can spend a
+ *  separate, longer budget on it — see the 429 note above. */
+export function debridThrottled(message: string): Error {
+  const e = new Error(message)
+  e.name = 'DebridThrottled'
+  return e
+}
+export const isDebridThrottled = (e: unknown): boolean => e instanceof Error && e.name === 'DebridThrottled'
+
+/** The error a provider wrapper throws for a non-ok response: `message` is whatever the provider
+ *  could say about it (an authError string when the status was an access failure), and the status
+ *  alone decides whether a poll may ride it out. */
+export function debridHttpError(status: number, message: string): Error {
+  if (status === 429) return debridThrottled(message)
+  return isRetryableStatus(status) ? debridRetryable(message) : new Error(message)
+}
+
 /** Standard poll loop. `probe` returns DebridInfo; resolves when stage==='ready'.
  *  Aborts near-instantly: the abort check does not rely on throwIfAborted, and the
  *  between-polls sleep rejects immediately when opts.signal fires. */
@@ -106,26 +150,66 @@ export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; st
 const POLL_RAMP_MS = [250, 500, 750, 1000, 1500, 2000]
 const POLL_MAX_MS = 3000
 
+// A probe that FAILS is not a probe that says 'downloading', and the loop has to survive the first
+// without waiting out the deadline on the second. Retryable failures are ridden out because a
+// resolve may be well into an uncached download that one 502 must not throw away; a service that is
+// simply down still has to become a real error fast. Twelve consecutive failures at the fixed
+// failure backoff is ~36s of unbroken failure — long enough to cover a gateway blip or a rate-limit
+// window, short enough that the user gets a message instead of a frozen overlay. ANY successful
+// probe resets the run, so a healthy slow download (probes answer, stage just stays 'downloading')
+// can never reach the limit.
+const MAX_PROBE_FAILURES = 12
+const FAIL_BACKOFF_MS = 3000
+
+// Rate limiting gets its own, much longer run. A 429 is a service that IS up and answering, so the
+// ~36s "it's down" budget would be a REGRESSION here: before any of this the mappers read a 429 as a
+// healthy 'queued'/'downloading' probe and the loop simply kept going, and a resolve minutes into an
+// uncached download must not die because the account brushed a per-minute cap. Rate-limit windows
+// are typically 60s, so 36 tries at a 5s backoff (~3 min) rides out several of them while still
+// ending in a real message rather than the full ten-minute deadline behind a pinned overlay.
+const MAX_THROTTLED_PROBES = 36
+const THROTTLE_BACKOFF_MS = 5000
+
 export async function poll(probe: () => Promise<DebridInfo>, opts: ResolveOpts = {}): Promise<void> {
   let tick = 0
+  let fails = 0
+  let throttles = 0
   const deadline = Date.now() + (opts.timeoutMs ?? 600_000)
   const aborted = () => { if (opts.signal?.aborted) throw new DOMException('Aborted', 'AbortError') }
+  // Abortable sleep: resolve on the timer, OR reject immediately if the signal aborts.
+  const sleep = (ms: number) => new Promise<void>((resolve, reject) => {
+    const sig = opts.signal
+    if (sig?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
+    const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) }
+    const t = setTimeout(() => { sig?.removeEventListener?.('abort', onAbort); resolve() }, ms)
+    sig?.addEventListener?.('abort', onAbort, { once: true })
+  })
   for (;;) {
     aborted()
-    const info = await probe()
+    let info: DebridInfo
+    try {
+      info = await probe()
+      fails = 0
+      throttles = 0
+    }
+    catch (e) {
+      // Anything not tagged retryable (auth, a dead id, an abort) is final on the first tick, and a
+      // service that has failed every attempt for the whole tolerance window is final too — either
+      // way the provider's own message carries out, so the user reads the status instead of
+      // watching a stuck overlay. Rate limits spend their own budget: see MAX_THROTTLED_PROBES.
+      const throttled = isDebridThrottled(e)
+      if (throttled ? ++throttles > MAX_THROTTLED_PROBES : (!isDebridRetryable(e) || ++fails > MAX_PROBE_FAILURES)) throw e
+      if (Date.now() > deadline) throw new Error('Debrid download timed out — try a cached source.')
+      // Failure backoff rather than the ramp: hammering a struggling service at 250ms helps nobody,
+      // and leaving `tick` alone means a recovered service resumes at the cadence it had reached.
+      await sleep(throttled ? THROTTLE_BACKOFF_MS : FAIL_BACKOFF_MS)
+      continue
+    }
     if (info.stage === 'ready') return
     if (info.stage === 'error') throw new Error(`Torrent unavailable on debrid (${info.raw ?? 'error'}).`)
     opts.onStatus?.(info)
     if (Date.now() > deadline) throw new Error('Debrid download timed out — try a cached source.')
-    // Abortable sleep: resolve on the timer, OR reject immediately if the signal aborts.
-    await new Promise<void>((resolve, reject) => {
-      const sig = opts.signal
-      if (sig?.aborted) { reject(new DOMException('Aborted', 'AbortError')); return }
-      const onAbort = () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) }
-      const wait = opts.pollMs ?? POLL_RAMP_MS[tick++] ?? POLL_MAX_MS
-      const t = setTimeout(() => { sig?.removeEventListener?.('abort', onAbort); resolve() }, wait)
-      sig?.addEventListener?.('abort', onAbort, { once: true })
-    })
+    await sleep(opts.pollMs ?? POLL_RAMP_MS[tick++] ?? POLL_MAX_MS)
   }
 }
 

@@ -74,12 +74,29 @@ function resetRunning(): void {
   clearProviderCache()
 }
 
+// One listing per install-set: `extension_list` re-reads, unzips, SHA-256s and signature-verifies
+// EVERY installed `.izumi-ext` on each call, and the resolve path hits it several times per episode
+// click (guard, build, JVM enumeration, source origins). The installed set only changes when a
+// package is added or removed — both of which bump `installedRevision` (finishPackageInstall,
+// removeInstalledExtension) — so that counter is the exact invalidation key. The PROMISE is cached,
+// not the resolved array, so callers that fire concurrently share one invoke instead of racing
+// several full verification passes.
+let installedPackagesCache: { revision: number; value: Promise<InstalledExtensionPackage[]> } | null = null
+
 export async function installedExtensionPackages(): Promise<InstalledExtensionPackage[]> {
-  try {
-    return await invoke<InstalledExtensionPackage[]>('extension_list')
-  } catch {
-    return []
+  if (installedPackagesCache?.revision === installedRevision) return installedPackagesCache.value
+  // Explicit annotation: without it TS reports circular inference on the self-reference below.
+  const entry: { revision: number; value: Promise<InstalledExtensionPackage[]> } = {
+    revision: installedRevision,
+    // A failure must not be remembered as "no packages installed" for the rest of the revision —
+    // drop the slot so the next caller retries the invoke.
+    value: invoke<InstalledExtensionPackage[]>('extension_list').catch(() => {
+      if (installedPackagesCache === entry) installedPackagesCache = null
+      return [] as InstalledExtensionPackage[]
+    }),
   }
+  installedPackagesCache = entry
+  return entry.value
 }
 
 export async function installCatalogPackage(

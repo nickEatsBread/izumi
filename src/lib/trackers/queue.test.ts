@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { get } from 'svelte/store'
-import { trackerQueue, enqueue, markConfirmed, classifyStatus, dropSuperseded, type TrackerOp } from './queue'
+import { trackerQueue, enqueue, markConfirmed, classifyStatus, dropSuperseded, initTrackerQueue, registerReplay, type TrackerOp } from './queue'
+import { anilistToken } from './config'
 
 const progOp = (mediaId: number, progress: number): TrackerOp => ({ kind: 'progress', mediaId, progress, status: 'CURRENT' })
 const statusOp = (mediaId: number): TrackerOp => ({ kind: 'status', mediaId, status: 'PLANNING' })
@@ -92,5 +93,39 @@ describe('tracker retry queue', () => {
     expect(classifyStatus(401)).toBe('drop')
     expect(classifyStatus(404)).toBe('drop')
     expect(classifyStatus(400)).toBe('drop')
+  })
+})
+
+describe('tracker queue wake triggers', () => {
+  let stop: (() => void) | null = null
+
+  afterEach(() => {
+    stop?.(); stop = null
+    registerReplay(async () => ({ ok: true }))
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('the periodic wake replays a due entry and leaves a not-yet-due one alone', async () => {
+    anilistToken.set('token') // tokenReady() gates the replay
+    trackerQueue.set([])
+    vi.useFakeTimers()
+    // The module only ever touches these three globals; the node test env has no DOM.
+    vi.stubGlobal('navigator', { onLine: true })
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} })
+    vi.stubGlobal('document', { addEventListener() {}, removeEventListener() {}, visibilityState: 'visible' })
+    const replayed: number[] = []
+    registerReplay(async (op) => { replayed.push(op.mediaId); return { ok: true } })
+
+    stop = initTrackerQueue()
+    const now = Date.now()
+    trackerQueue.set([
+      { tracker: 'AniList', op: progOp(900, 5), attempts: 1, createdAt: now, updatedAt: now, nextAttemptAt: now - 1 },
+      { tracker: 'AniList', op: progOp(901, 5), attempts: 3, createdAt: now, updatedAt: now, nextAttemptAt: now + 3_600_000 },
+    ])
+
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(replayed).toEqual([900])
+    expect(get(trackerQueue).map((e) => e.op.mediaId)).toEqual([901]) // still serving its backoff
   })
 })
