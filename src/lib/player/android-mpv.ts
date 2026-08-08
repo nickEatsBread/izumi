@@ -486,14 +486,25 @@ export const setVolume = (v: number) => mpvCommand(['set', 'volume', String(Math
 export const getVolume = async () => Number(await mpvGet('volume')) || 0
 
 // --- Native touch extras (embedded full flavor only; reject → caught no-op on lite) ---
+// The rejection is EXPECTED on the lite flavor, where the plugin is absent — but swallowing it
+// outright also hid a command that was never registered on the Rust side at all, so keep-awake
+// silently did nothing for every build. Warn once per command instead of never: one line in
+// logcat distinguishes "lite, as designed" from "wired to a command that does not exist".
+const warned = new Set<string>()
+const optionalPluginCall = (command: string, payload: Record<string, unknown>) =>
+  invoke(`plugin:mpv|${command}`, { payload }).catch((error) => {
+    if (warned.has(command)) return
+    warned.add(command)
+    console.warn(`[android-mpv] ${command} unavailable:`, error)
+  })
+
 /** Screen brightness 0..1, or -1 to restore system/auto brightness. */
-export const setBrightness = (value: number) =>
-  invoke('plugin:mpv|mpv_brightness', { payload: { value } }).catch(() => {})
+export const setBrightness = (value: number) => optionalPluginCall('mpv_brightness', { value })
 /** Keep Android's display awake while a decoded video frame is actively playing. */
 export const setAndroidKeepScreenAwake = (enabled: boolean) =>
-  invoke('plugin:mpv|mpv_keep_screen_awake', { payload: { enabled } }).catch(() => {})
+  optionalPluginCall('mpv_keep_screen_awake', { enabled })
 /** Short haptic pulse (ms). */
-export const haptic = (ms: number) => invoke('plugin:mpv|mpv_haptic', { payload: { ms } }).catch(() => {})
+export const haptic = (ms: number) => optionalPluginCall('mpv_haptic', { ms })
 
 /** Current Android stream URL + headers, for the thumbnail frame source. Null when idle. */
 export const androidStreamInfo = writable<{ url: string; headers: Record<string, string> } | null>(null)

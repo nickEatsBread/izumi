@@ -14,6 +14,7 @@ permissions = [
     "allow-mpv-request-notifications",
     "allow-mpv-viewport",
     "allow-mpv-fullscreen",
+    "allow-mpv-keep-screen-awake",
     "allow-mpv-transform",
     "allow-mpv-brightness",
     "allow-mpv-haptic",

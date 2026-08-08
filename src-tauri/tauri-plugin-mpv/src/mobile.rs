@@ -6,8 +6,8 @@ use tauri::{
 
 use crate::models::{
     AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
-    GifSaveRequest, GifStartRequest, HapticRequest, LoadRequest, MediaSessionRequest, SetRequest,
-    ThumbRequest, TransformRequest, ViewportRequest,
+    GifSaveRequest, GifStartRequest, HapticRequest, KeepScreenAwakeRequest, LoadRequest,
+    MediaSessionRequest, SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -83,6 +83,14 @@ impl<R: Runtime> Mpv<R> {
     pub fn fullscreen(&self, payload: FullscreenRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("fullscreen", payload)
+            .map_err(Into::into)
+    }
+
+    // The Kotlin method is `keepScreenAwake`; `run_mobile_plugin` matches the native method name
+    // verbatim, so this string must stay camelCase even though the Rust command is snake_case.
+    pub fn keep_screen_awake(&self, payload: KeepScreenAwakeRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("keepScreenAwake", payload)
             .map_err(Into::into)
     }
 

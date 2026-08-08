@@ -15,6 +15,7 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-request-notifications`
 - `allow-mpv-viewport`
 - `allow-mpv-fullscreen`
+- `allow-mpv-keep-screen-awake`
 - `allow-mpv-transform`
 - `allow-mpv-brightness`
 - `allow-mpv-haptic`
@@ -291,6 +292,32 @@ Enables the mpv_haptic command without any pre-configured scope.
 <td>
 
 Denies the mpv_haptic command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-keep-screen-awake`
+
+</td>
+<td>
+
+Enables the mpv_keep_screen_awake command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-keep-screen-awake`
+
+</td>
+<td>
+
+Denies the mpv_keep_screen_awake command without any pre-configured scope.
 
 </td>
 </tr>
