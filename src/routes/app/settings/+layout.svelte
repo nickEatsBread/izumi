@@ -9,6 +9,7 @@
   import * as h from '$lib/haptics'
   import { fly } from 'svelte/transition'
   import { m } from '$lib/paraglide/messages.js'
+  import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
 
   let { children } = $props()
 
@@ -89,6 +90,17 @@
     timer = setTimeout(find, 0)
     return () => { cancelled = true; clearTimeout(timer) }
   })
+
+  // The sticky back-header carries the status-bar inset itself (see the header markup), so the
+  // page must not be inset a second time by `main`. Shared with the series page via a refcount:
+  // their lifetimes can overlap mid-navigation, so a bare add/remove here could strip the inset
+  // out from under the other screen (or vice versa).
+  // Only the child screen has the sticky header that carries the inset (see the header markup).
+  // The index has no header, so it must keep main's inset or its heading lands under the status bar.
+  $effect(() => {
+    if (!$isMobile || isIndex) return
+    return acquireEdgeToEdge()
+  })
 </script>
 
 {#if $isMobile}
@@ -108,6 +120,10 @@
   {:else}
     <!-- Mobile child: back-header + the category content. -->
     <div class="min-h-screen">
+      <!-- This header owns the status-bar inset for the whole settings screen: it is `sticky`, so
+           once the page scrolls it locks to the physical viewport top and `main`'s padding no
+           longer protects it. Padding it here keeps the back button clear of the status bar at
+           every scroll offset, and the blurred bar paints that band instead of leaving it black. -->
       <div class="sticky top-0 z-20 flex items-center gap-2 border-b border-border bg-background/95 px-2 py-2 backdrop-blur"
            style="padding-top:max(0.5rem,env(safe-area-inset-top))">
         <a href={backHref} data-focusable onclick={() => h.tap()} aria-label={m.common_back_to_settings()}
@@ -118,7 +134,9 @@
         <span class="ml-auto"><SettingsSearch compact /></span>
       </div>
       {#key $page.url.pathname}
-        <div class="settings-child" in:fly={{ x: 22, duration: 190 }}>{@render children()}</div>
+        <!-- Vertical, short, and fading: a push that reads as a platform screen change rather than
+             a carousel. app.css shortens every transition under the reduced-motion gate. -->
+        <div class="settings-child" in:fly={{ y: 12, duration: 160, opacity: 0 }}>{@render children()}</div>
       {/key}
     </div>
   {/if}

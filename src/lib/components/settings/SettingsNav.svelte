@@ -2,6 +2,7 @@
   import { page } from '$app/stores'
   import { isAndroid, isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
+  import { ripple } from '$lib/actions/ripple'
   import Play from '@lucide/svelte/icons/play'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Rss from '@lucide/svelte/icons/rss'
@@ -22,27 +23,27 @@
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
     { label: 'Playback', items: [
-      { title: 'Player', href: '/app/settings/player', icon: Play },
-      { title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions },
-      { title: 'Hotkeys', href: '/app/settings/hotkeys', icon: Keyboard },
+      { title: 'Player', href: '/app/settings/player', icon: Play, subtitle: 'Playback, languages, external player' },
+      { title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions, subtitle: 'Style, sources, sync' },
+      { title: 'Hotkeys', href: '/app/settings/hotkeys', icon: Keyboard, subtitle: 'Keyboard shortcuts' },
     ] },
     { label: 'Content', items: [
-      { title: 'Sources', href: '/app/settings/sources', icon: Rss },
-      { title: 'Extensions', href: '/app/settings/extensions', icon: Puzzle },
-      { title: 'Downloads', href: '/app/settings/downloads', icon: Download },
+      { title: 'Sources', href: '/app/settings/sources', icon: Rss, subtitle: 'Addons, providers, priority' },
+      { title: 'Extensions', href: '/app/settings/extensions', icon: Puzzle, subtitle: 'Installed source extensions' },
+      { title: 'Downloads', href: '/app/settings/downloads', icon: Download, subtitle: 'Offline library and storage' },
     ] },
     { label: 'App', items: [
-      { title: 'Interface', href: '/app/settings/interface', icon: LayoutGrid },
-      { title: 'Navigation', href: '/app/settings/navigation', icon: PanelBottom },
-      { title: 'History', href: '/app/settings/history', icon: History },
-      { title: 'Device sync', href: '/app/settings/sync', icon: RefreshCw },
-      { title: 'Backup & restore', href: '/app/settings/backup', icon: DatabaseBackup },
-      { title: 'Accounts', href: '/app/settings/accounts', icon: User },
-      { title: 'Network', href: '/app/settings/network', icon: Globe },
+      { title: 'Interface', href: '/app/settings/interface', icon: LayoutGrid, subtitle: 'Appearance and layout' },
+      { title: 'Navigation', href: '/app/settings/navigation', icon: PanelBottom, subtitle: 'Bottom bar and shortcuts' },
+      { title: 'History', href: '/app/settings/history', icon: History, subtitle: 'Watch history and progress' },
+      { title: 'Device sync', href: '/app/settings/sync', icon: RefreshCw, subtitle: 'Sync between your devices' },
+      { title: 'Backup & restore', href: '/app/settings/backup', icon: DatabaseBackup, subtitle: 'Export and import your data' },
+      { title: 'Accounts', href: '/app/settings/accounts', icon: User, subtitle: 'AniList, MyAnimeList and debrid' },
+      { title: 'Network', href: '/app/settings/network', icon: Globe, subtitle: 'Proxy, DNS and connectivity' },
     ] },
     { label: 'About', items: [
-      { title: 'Changelog', href: '/app/settings/changelog', icon: ScrollText },
-      { title: 'About', href: '/app/settings/about', icon: Info },
+      { title: 'Changelog', href: '/app/settings/changelog', icon: ScrollText, subtitle: 'What changed in this release' },
+      { title: 'About', href: '/app/settings/about', icon: Info, subtitle: 'Version and licences' },
     ] },
   ]
   // Hotkeys rebinds physical keyboard shortcuts for the desktop player. Android is a touch device
@@ -77,11 +78,14 @@
         <div class="overflow-hidden rounded-xl bg-secondary/40">
           {#each g.items as it (it.href)}
             {@const Icon = it.icon}
-            <a href={it.href} data-focusable onclick={() => h.tap()}
-               class="flex items-center gap-3 border-b border-border/50 px-4 py-3.5 text-[0.95rem] font-bold last:border-b-0 transition-colors active:bg-accent">
-              <Icon size={20} class="text-muted-foreground" />
-              <span class="flex-1">{it.title}</span>
-              <ChevronRight size={18} class="text-muted-foreground" />
+            <a href={it.href} data-focusable use:ripple onclick={() => h.tap()}
+               class="ripple-host flex min-h-16 items-center gap-4 border-b border-border/50 px-4 py-3 last:border-b-0 transition-transform active:scale-[0.985]">
+              <Icon size={22} class="shrink-0 text-muted-foreground" />
+              <span class="min-w-0 flex-1">
+                <span class="block text-[0.95rem] font-bold leading-tight">{it.title}</span>
+                <span class="mt-0.5 block truncate text-xs text-muted-foreground">{it.subtitle}</span>
+              </span>
+              <ChevronRight size={18} class="shrink-0 text-muted-foreground" />
             </a>
           {/each}
         </div>

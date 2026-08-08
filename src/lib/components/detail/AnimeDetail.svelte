@@ -36,6 +36,10 @@
   import AiringStatus from './AiringStatus.svelte'
   import { reliableImage } from '$lib/util/reliable-image'
   import { detailHints, rememberDetail } from '$lib/anilist/detail-hint'
+  import { heroBarState } from './hero-bar'
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left'
+  import { goto } from '$app/navigation'
+  import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -106,6 +110,9 @@
   })
   const detailHint = $derived($detailHints[id])
   $effect(() => { if (media) rememberDetail(media) })
+  // Reset the fade latch when the media changes, so navigating between series does not show the
+  // previous title's fade-in state (or a stale full-opacity frame) before the new art decodes.
+  $effect(() => { void media?.id; artLoaded = false })
 
   // Match the episode list's progress ownership. Tracker queries can still be stale when Android
   // returns from the player, while session/local history has already recorded the completed episode.
@@ -179,27 +186,80 @@
       setTimeout(() => (copied = false), 1500)
     }
   }
+
+  // --- Mobile hero -------------------------------------------------------------------------
+  // The page paints under the status bar while this component is mounted; the class is removed on
+  // teardown so every other screen keeps the normal inset even if the user navigates mid-transition.
+  let artHeight = $state(0)
+  let barHeight = $state(0)
+  // The banner is a large image over a network the phone may be struggling with; popping it in at
+  // full opacity reads as a glitch. Fade on decode instead.
+  let artLoaded = $state(false)
+  // `wasSolid` is deliberately a plain `let`, NOT $state: the scroll handler both reads and writes
+  // it to resolve the hysteresis, and a reactive latch read+written by its own effect is a cycle
+  // Svelte resolves as an update loop, not a settled value (same trap as malEntryFor above).
+  let wasSolid = false
+  let barState = $state({ solid: false, showTitle: false })
+  function onHeroScroll() {
+    const next = heroBarState(window.scrollY, artHeight, barHeight, wasSolid)
+    // Nothing to publish while the state is unchanged — which is every scroll frame but two. This
+    // also keeps the bar off the reactive graph during a fling.
+    if (next.solid === wasSolid) return
+    wasSolid = next.solid
+    barState = next
+  }
+  // Acquired for every branch on mobile, not just once the hero has loaded — gating this on `media`
+  // made the page jump by the status-bar height the instant the skeleton was replaced by the loaded
+  // hero. The loading/error/not-found branches carry their own top padding instead of the bar.
+  // Shared with the settings layout via a refcount: their lifetimes can overlap mid-navigation.
+  $effect(() => {
+    if (!$isMobile) return
+    return acquireEdgeToEdge()
+  })
+  // artHeight/barHeight land a frame after mount; recompute once they do so the bar is in the right
+  // state for the scroll position the page was restored to.
+  $effect(() => { void artHeight; void barHeight; onHeroScroll() })
+  // Back returns to where the user came from, preserving that screen's scroll position. A deep
+  // link (share sheet, notification) has no history to return to, so it lands on Home instead of
+  // leaving the chevron dead.
+  function heroBack() {
+    h.tap()
+    if (typeof history !== 'undefined' && history.length > 1) history.back()
+    else void goto('/app/home')
+  }
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
+<svelte:window onscroll={$isMobile ? onHeroScroll : undefined} onkeydown={(e) => { if (e.key === 'Escape' && showMore) showMore = false }} />
 
 {#if !$offlineMode && $store.fetching && !media}
   {#if $isMobile}
-    <div class="relative isolate px-4 pb-10 pt-10">
-      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
-        {#if detailHint && banner(detailHint)}<img src={banner(detailHint)} alt="" class="h-full w-full object-cover opacity-35" />{:else}<div class="h-full w-full skeloader"></div>{/if}
-        <div class="absolute inset-0 bg-gradient-to-b from-background/20 via-background/70 to-background"></div>
-      </div>
-      <div class="flex items-end gap-4">
-        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="aspect-[46/65] w-28 shrink-0 rounded-xl object-cover shadow-xl" />{:else}<div class="aspect-[46/65] w-28 shrink-0 rounded-xl skeloader"></div>{/if}
-        <div class="min-w-0 flex-1 pb-1">
-          <h1 class="line-clamp-3 text-2xl font-black leading-tight">{detailHint ? title(detailHint) : 'Loading title…'}</h1>
-          <div class="mt-3 flex gap-2"><span class="h-6 w-16 rounded-full skeloader"></span><span class="h-6 w-20 rounded-full skeloader"></span></div>
+    <!-- Shapes the loading skeleton after the real hero below: a full-bleed artwork band (same
+         height classes, so the two cannot drift apart), then poster + stacked title/meta beside
+         it, a synopsis block, and a full-width button bar — so the page does not visibly
+         re-lay-out the instant data lands. -->
+    <div class="relative pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
+      {#if detailHint && banner(detailHint)}
+        <img src={banner(detailHint)} alt="" class="h-[26vh] max-h-72 min-h-44 w-full object-cover opacity-35" />
+      {:else}
+        <div class="h-[26vh] max-h-72 min-h-44 w-full skeloader"></div>
+      {/if}
+      <div class="px-4">
+        <div class="relative z-10 -mt-10 flex gap-4">
+          {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />{:else}<div class="aspect-[46/65] w-28 shrink-0 self-start rounded-xl skeloader min-[420px]:w-32"></div>{/if}
+          <div class="min-w-0 flex-1 self-end space-y-2 pb-1">
+            <div class="h-3 w-20 rounded skeloader"></div>
+            <h1 class="line-clamp-2 text-xl font-black leading-tight">{detailHint ? title(detailHint) : 'Loading title…'}</h1>
+          </div>
         </div>
+        <div class="mt-3 flex gap-2"><span class="h-4 w-16 rounded-full skeloader"></span><span class="h-4 w-24 rounded-full skeloader"></span></div>
+        <div class="mt-4 space-y-2">
+          <div class="h-3 w-full rounded skeloader"></div>
+          <div class="h-3 w-full rounded skeloader"></div>
+          <div class="h-3 w-2/3 rounded skeloader"></div>
+        </div>
+        <div class="mt-4 h-12 w-full rounded-lg skeloader"></div>
+        <div class="mt-2 grid grid-cols-4 gap-2">{#each Array(4) as _}<div class="h-11 rounded-lg skeloader"></div>{/each}</div>
       </div>
-      <div class="mt-6 h-12 rounded-xl skeloader"></div>
-      <div class="mt-3 grid grid-cols-3 gap-2">{#each Array(3) as _}<div class="h-11 rounded-xl skeloader"></div>{/each}</div>
-      <div class="mt-8 h-11 w-full rounded-lg skeloader"></div>
     </div>
   {:else}
     <div class="relative min-h-[70vh] overflow-hidden px-8 pb-16 pt-24">
@@ -212,135 +272,178 @@
     </div>
   {/if}
 {:else if !$offlineMode && $store.error}
-  <div class="p-8 text-muted-foreground">Failed to load: {$store.error.message}</div>
+  <div class="p-8 pt-[max(2rem,env(safe-area-inset-top))] text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if media}
   {@const m = media}
   {@const trackerConnected = !!($anilistToken || $malToken)}
   {#if $isMobile}
-    <!-- Mobile: poster-forward header. `isolate` makes this a stacking context so the -z-10
-         background-art layer stays BEHIND the cover/title yet ABOVE the opaque page background
-         (without it, -z-10 escapes to the root and the banner is hidden by the body bg). -->
-    <div class="relative isolate px-4 pb-8">
-      <!-- Background art (banner) behind the cover + title, like desktop: prominent at the top,
-           dissolving into the page before the description so text stays legible. -->
-      <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 overflow-hidden">
-        <img src={banner(m)} alt="" class="h-full w-full object-cover opacity-70" style="object-position:center 20%" />
-        <div class="absolute inset-0 bg-gradient-to-b from-background/10 via-background/55 to-background"></div>
+    <div class="relative pb-8">
+      <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
+           art), blurred and titled once the artwork has scrolled under it. It carries the status-bar
+           inset itself: a fixed element does not inherit main's padding once it locks. -->
+      <div bind:clientHeight={barHeight}
+           class="fixed inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 transition-colors duration-200
+                  {barState.solid ? 'border-b border-border bg-background/80 backdrop-blur' : 'text-white'}"
+           style="padding-top:max(0.5rem,env(safe-area-inset-top))">
+        {#if !barState.solid}
+          <div class="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-black/55 to-transparent"></div>
+        {/if}
+        <button data-focusable onclick={heroBack} aria-label="Back"
+                class="grid h-10 w-10 shrink-0 place-items-center rounded-full transition-colors active:bg-white/15">
+          <ChevronLeft size={22} />
+        </button>
+        {#if barState.showTitle}
+          <span class="min-w-0 flex-1 truncate text-base font-black">{title(m)}</span>
+        {/if}
       </div>
 
-      <div class="flex gap-4 pt-10">
-        <img use:reliableImage={cover(m)} alt="" class="aspect-[46/65] w-28 shrink-0 rounded-xl object-cover shadow-xl min-[420px]:w-32" />
-        <div class="min-w-0 flex-1 self-end">
-          {#if m.title.native || m.title.romaji}
-            <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
-          {/if}
-          <h1 class="line-clamp-2 text-xl font-black leading-tight drop-shadow-[0_1px_4px_rgba(0,0,0,0.85)]">{title(m)}</h1>
-          <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
-            {#if format(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{format(m)}</span>{/if}
-            {#if status(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{status(m)}</span>{/if}
-            {#if m.averageScore}<span class="rounded-full px-2 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
+      <!-- Artwork band: a bounded strip that ends in a hard cut. Nothing is written on top of it,
+           so legibility no longer depends on how busy the banner is. -->
+      <div bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
+        {#if m.bannerImage}
+          <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
+               class="h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
+               style="object-position:center 20%" />
+        {:else}
+          <!-- No banner: a YouTube trailer still has blurred pillarbox bars baked into the JPEG, and a
+               portrait cover cropped to a wide band loses its subject. Blur the cover into a wash
+               instead — it reads as ambient colour rather than a broken photograph. -->
+          <img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
+               onload={() => (artLoaded = true)} style="object-position:center 30%" />
+        {/if}
+        <div class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
+      </div>
+
+      <div class="px-4">
+        <!-- `relative z-10`: the artwork band above is positioned, so it paints OVER static
+             in-flow content — and this row is pulled up into it. Without a stacking context of its
+             own the band covered the top of the poster the moment its image loaded, which read as
+             the cover being cropped (and looked fine until then, because the band was transparent). -->
+        <div class="relative z-10 -mt-10 flex gap-4">
+          <!-- Covers vary in aspect; forcing them all into one ratio with object-cover crops real
+               artwork the user came here to see. Follow the image's own height instead. -->
+          <img use:reliableImage={cover(m)} alt=""
+               class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />
+          <div class="min-w-0 flex-1 self-end">
+            {#if m.title.native || m.title.romaji}
+              <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
+            {/if}
+            <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
           </div>
         </div>
-      </div>
 
-      <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
-        <span class="rounded-full bg-secondary px-2 py-0.5">{effProgress}/{epsTotal(m) || '?'} Episodes</span>
-        {#if season(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{season(m)}</span>{/if}
-        <AiringStatus media={m} compact />
-      </div>
+        <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
+             rows and read as a wall of pills rather than a summary. Facts sit directly under the
+             title — identity first, schedule after. -->
+        <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+          {#if m.averageScore}
+            <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
+          {/if}
+          {#if format(m)}<span>{format(m)}</span><span class="opacity-40">·</span>{/if}
+          <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
+          {#if season(m)}<span class="opacity-40">·</span><span>{season(m)}</span>{/if}
+          {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
+        </div>
 
-      {#if m.description}
-        <button type="button" onclick={() => (descExpanded = !descExpanded)}
-                class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
-          {stripHtml(m.description)}
-        </button>
-      {/if}
+        <!-- AiringStatus emits bare inline chips with no spacing of their own, so the sub and dub
+             times ran into each other and sat flush against the block above. Give them a row. -->
+        <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
+          <AiringStatus media={m} compact />
+        </div>
 
-      <!-- Primary CTA -->
-      <button data-focusable use:focusOnMount
-              onclick={() => playCta(m)}
-              class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
-        <Play size={18} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
-      </button>
-
-      <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
-      <div class="relative mt-2 flex items-center gap-2">
-        {#if trackerConnected}
-          <button data-focusable onclick={() => { h.tap(); showEditor = true }} aria-label="Edit list status"
-                  class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
-            {#if effStatus}
-              <span class="size-2.5 shrink-0 rounded-full" style="background:{STATUS_COLOR[effStatus]}"></span>{STATUS_LABEL[effStatus]}
-            {:else}
-              <BookmarkPlus size={16} /> Add
-            {/if}
+        {#if m.description}
+          <button type="button" onclick={() => (descExpanded = !descExpanded)}
+                  class="mt-3 w-full text-left text-sm text-muted-foreground {descExpanded ? 'block' : 'line-clamp-3'}">
+            {stripHtml(m.description)}
           </button>
         {/if}
-        <button data-focusable onclick={() => { h.tap(); onShare(m) }} aria-label="Copy link"
-                class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
-          {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
-        </button>
-        {#if m.trailer?.id}
-          <button data-focusable onclick={() => { h.tap(); showTrailer = true }} aria-label="Trailer"
-                  class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
-            <Clapperboard size={18} />
-          </button>
-        {/if}
-        <button data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
-                aria-haspopup="true" aria-expanded={showMore}
-                class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
-          <MoreHorizontal size={18} />
+
+        <!-- Primary CTA -->
+        <button data-focusable use:focusOnMount
+                onclick={() => playCta(m)}
+                class="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3 font-bold text-primary-foreground">
+          <Play size={18} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
         </button>
 
-        {#if showMore}
-          <!-- Full-screen backdrop (below the menu) so a tap anywhere else dismisses it, matching
-               the trailer dialog's dismissal convention. Escape is handled on <svelte:window>. -->
-          <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
-                  class="fixed inset-0 z-10 cursor-default"></button>
-          <div class="absolute bottom-full right-0 z-20 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-            <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://anilist.co/anime/${m.id}`) }}
-                    class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
-              <ExternalLink size={15} /> Open on AniList
+        <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
+        <div class="relative mt-2 flex items-center gap-2">
+          {#if trackerConnected}
+            <button data-focusable onclick={() => { h.tap(); showEditor = true }} aria-label="Edit list status"
+                    class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
+              {#if effStatus}
+                <span class="size-2.5 shrink-0 rounded-full" style="background:{STATUS_COLOR[effStatus]}"></span>{STATUS_LABEL[effStatus]}
+              {:else}
+                <BookmarkPlus size={16} /> Add
+              {/if}
             </button>
-            {#if m.idMal}
-              <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://myanimelist.net/anime/${m.idMal}`) }}
+          {/if}
+          <button data-focusable onclick={() => { h.tap(); onShare(m) }} aria-label="Copy link"
+                  class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
+            {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
+          </button>
+          {#if m.trailer?.id}
+            <button data-focusable onclick={() => { h.tap(); showTrailer = true }} aria-label="Trailer"
+                    class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
+              <Clapperboard size={18} />
+            </button>
+          {/if}
+          <button data-focusable onclick={() => { h.tap(); showMore = !showMore }} aria-label="More"
+                  aria-haspopup="true" aria-expanded={showMore}
+                  class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
+            <MoreHorizontal size={18} />
+          </button>
+
+          {#if showMore}
+            <!-- Full-screen backdrop (below the menu) so a tap anywhere else dismisses it, matching
+                 the trailer dialog's dismissal convention. Escape is handled on <svelte:window>. -->
+            <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
+                    class="fixed inset-0 z-40 cursor-default"></button>
+            <div class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
+              <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://anilist.co/anime/${m.id}`) }}
                       class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
-                <ExternalLink size={15} /> Open on MyAnimeList
+                <ExternalLink size={15} /> Open on AniList
               </button>
-            {/if}
-          </div>
-        {/if}
-      </div>
-
-      {#if heroPlay.status === 'error'}
-        <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
-      {/if}
-
-      <div class="mt-6">
-        <Tabs tabs={['Episodes', 'Relations', 'Characters', 'Recommended', 'Details']} bind:active />
-        {#if active === 'Episodes'}
-          <EpisodeList media={m} offline={$offlineMode} />
-        {:else if active === 'Relations'}
-          {#if m.relations?.edges?.length}
-            <div class="mt-3 grid grid-cols-2 gap-4">
-              {#each m.relations.edges as e (e.node.id)}
-                <div class="min-w-0"><SmallCard media={e.node} fill /></div>
-              {/each}
+              {#if m.idMal}
+                <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://myanimelist.net/anime/${m.idMal}`) }}
+                        class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+                  <ExternalLink size={15} /> Open on MyAnimeList
+                </button>
+              {/if}
             </div>
-          {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
-        {:else if active === 'Characters'}
-          <div class="mt-3"><RichMetadata media={m} view="people" /></div>
-        {:else if active === 'Recommended'}
-          <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
-        {:else}
-          <div class="mt-3 space-y-4">
-            {#if m.description}<p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>{/if}
-            <dl class="grid grid-cols-1 gap-2 text-sm">
-              {#if m.studios?.nodes?.length}<div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{m.studios.nodes.map((s) => s.name).join(', ')}</dd></div>{/if}
-              {#if fmtDate(m.startDate)}<div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>{/if}
-              {#if m.synonyms?.length}<div><dt class="font-bold">Synonyms</dt><dd class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>{/if}
-            </dl>
-          </div>
+          {/if}
+        </div>
+
+        {#if heroPlay.status === 'error'}
+          <p class="mt-3 text-sm text-destructive">{heroPlay.message}</p>
         {/if}
+
+        <div class="mt-6">
+          <Tabs tabs={['Episodes', 'Relations', 'Characters', 'Recommended', 'Details']} bind:active />
+          {#if active === 'Episodes'}
+            <EpisodeList media={m} offline={$offlineMode} />
+          {:else if active === 'Relations'}
+            {#if m.relations?.edges?.length}
+              <div class="mt-3 grid grid-cols-2 gap-4">
+                {#each m.relations.edges as e (e.node.id)}
+                  <div class="min-w-0"><SmallCard media={e.node} fill /></div>
+                {/each}
+              </div>
+            {:else}<p class="mt-3 text-muted-foreground">No related titles.</p>{/if}
+          {:else if active === 'Characters'}
+            <div class="mt-3"><RichMetadata media={m} view="people" /></div>
+          {:else if active === 'Recommended'}
+            <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
+          {:else}
+            <div class="mt-3 space-y-4">
+              {#if m.description}<p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>{/if}
+              <dl class="grid grid-cols-1 gap-2 text-sm">
+                {#if m.studios?.nodes?.length}<div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{m.studios.nodes.map((s) => s.name).join(', ')}</dd></div>{/if}
+                {#if fmtDate(m.startDate)}<div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>{/if}
+                {#if m.synonyms?.length}<div><dt class="font-bold">Synonyms</dt><dd class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>{/if}
+              </dl>
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
   {:else}
@@ -470,14 +573,18 @@
   {#if showTrailer && m.trailer?.id}
     <div
       role="dialog" aria-modal="true" aria-label="Trailer" tabindex="-1"
-      class="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4"
+      class="fixed inset-0 z-50 grid place-items-center bg-black/80 sm:p-4"
       onclick={(e) => { if (e.target === e.currentTarget) showTrailer = false }}
       onkeydown={(e) => e.key === 'Escape' && (showTrailer = false)}
     >
-      <div class="aspect-video w-full max-w-4xl">
+      <div class="aspect-video w-full max-w-4xl sm:px-0">
+        <!-- On Android the surrounding dialog IS the fullscreen surface: the WebView this app runs in
+             has no custom-view handler for iframe-initiated fullscreen, so the iframe's own fullscreen
+             button cannot do anything there. `allow`/`allowfullscreen` still let platforms that can
+             support it do so natively. -->
         <iframe class="h-full w-full rounded-lg" title="Trailer"
                 src={`https://www.youtube-nocookie.com/embed/${m.trailer.id}?autoplay=1`}
-                allow="autoplay; encrypted-media" allowfullscreen></iframe>
+                allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
       </div>
       <button data-focusable onclick={() => (showTrailer = false)}
               class="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-md bg-secondary px-3 py-2 text-sm font-bold">Close</button>
@@ -504,5 +611,5 @@
     </div>
   </div>
 {:else}
-  <div class="p-8 text-muted-foreground">Not found.</div>
+  <div class="p-8 pt-[max(2rem,env(safe-area-inset-top))] text-muted-foreground">Not found.</div>
 {/if}

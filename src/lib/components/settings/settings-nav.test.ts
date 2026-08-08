@@ -10,7 +10,7 @@ describe('SettingsNav', () => {
   })
 
   it('has a Subtitles nav entry pointing at the subtitles route', () => {
-    expect(src).toContain("{ title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions }")
+    expect(src).toContain("{ title: 'Subtitles', href: '/app/settings/subtitles', icon: Captions")
   })
 
   it('groups Subtitles under Playback, ahead of the Content entries', () => {
