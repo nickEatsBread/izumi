@@ -16,7 +16,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   }),
 }))
 
-import { mpvLoad, mpvState, seekRelative, startMpvEvents } from './android-mpv'
+import { getChapterList, mpvLoad, mpvState, seekRelative, startMpvEvents } from './android-mpv'
 
 describe('Android mpv seek coordination', () => {
   beforeAll(async () => {
@@ -167,5 +167,47 @@ describe('Android mpv loading signals', () => {
     mocks.progress?.({ property: 'duration', value: 1400 })
     mocks.event?.({ id: 7 })
     expect(get(mpvState)).toMatchObject({ dur: 1400, eof: true })
+  })
+})
+
+describe('getChapterList', () => {
+  beforeEach(() => {
+    mocks.invoke.mockReset()
+  })
+
+  function mockChapterProps(props: Record<string, string>) {
+    mocks.invoke.mockImplementation(async (_cmd: string, args?: unknown) => {
+      const property = (args as { payload?: { property?: string } })?.payload?.property ?? ''
+      return { value: props[property] ?? null }
+    })
+  }
+
+  it('keeps a chapter that starts at exactly 0:00, matching the desktop chapter list', async () => {
+    mockChapterProps({
+      'chapter-list/count': '2',
+      'chapter-list/0/time': '0',
+      'chapter-list/0/title': 'Intro',
+      'chapter-list/1/time': '85',
+      'chapter-list/1/title': 'OP',
+    })
+
+    expect(await getChapterList()).toEqual([
+      { time: 0, title: 'Intro' },
+      { time: 85, title: 'OP' },
+    ])
+  })
+
+  it('still drops genuinely invalid times (negative or non-finite)', async () => {
+    mockChapterProps({
+      'chapter-list/count': '3',
+      'chapter-list/0/time': '-5',
+      'chapter-list/0/title': 'Negative',
+      'chapter-list/1/time': 'not-a-number',
+      'chapter-list/1/title': 'Broken',
+      'chapter-list/2/time': '0',
+      'chapter-list/2/title': 'Intro',
+    })
+
+    expect(await getChapterList()).toEqual([{ time: 0, title: 'Intro' }])
   })
 })
