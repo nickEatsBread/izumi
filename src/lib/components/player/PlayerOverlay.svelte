@@ -11,7 +11,8 @@
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore } from '$lib/player/session'
+  import { sortChapters } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
   import {
@@ -354,6 +355,7 @@
     catch { ch = [] }
     if (key !== loadedKey) return
     chapters = ch
+    chapterStore.set(sortChapters(ch))
     // AniSkip coverage is thin outside popular titles; well-tagged releases name their own chapters.
     // Chapter-derived segments carry the same op/ed type, so the debut guard covers them too.
     segments = mergeSkipSegments(segs, segmentsFromChapters(ch, dur))
@@ -370,6 +372,7 @@
     if (key === loadedKey) return
     loadedKey = key
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
+    chapterStore.set([])
     coreIdle = true; seeking = false; eof = false; firstFrame = false; loadedUrl = ''
     recoveryWatch = resetRecoveryWatch(Date.now())
     directTorrentDownloadedBytes = 0
@@ -611,6 +614,10 @@
     invoke('desktop_presence_clear').catch(() => {})
     // A style preset picked in the track menu is session-scoped by contract.
     sessionSubtitleStyle.set(null)
+    // The chapter list belongs to the file that just closed — leaving it set would let a menu opened
+    // after teardown (or before the next file's chapters land) offer timestamps for a file that is
+    // no longer loaded.
+    chapterStore.set([])
   })
 
   // Game mode controller: player-specific buttons (the app-wide nav translator leaves A/B/L1/R1
