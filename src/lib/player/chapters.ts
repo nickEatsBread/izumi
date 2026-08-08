@@ -78,3 +78,13 @@ export function formatChapterTime(seconds: number): string {
 export function chapterRowLabel(chapter: Chapter): string {
   return `${chapter.title?.trim() || 'Chapter'} — ${formatChapterTime(chapter.time)}`
 }
+
+// "Chapter 1", "Part 3", a bare number: a mark the muxer numbered because it had nothing to name.
+// Showing that in the overlay costs space and tells the user nothing they cannot read off the
+// seekbar, so the label is suppressed rather than rendered.
+const GENERIC_TITLE = /^(?:chapter|part|track|untitled|act|scene|segment)?\s*\d*$/i
+
+/** True when a chapter title is a placeholder rather than a real name. */
+export function isGenericChapterTitle(title: string): boolean {
+  return GENERIC_TITLE.test(title.trim())
+}

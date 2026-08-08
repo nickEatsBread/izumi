@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeChapterIndex, chapterRowLabel, formatChapterTime, nextChapterTarget, prevChapterTarget, sortChapters } from './chapters'
+import { activeChapterIndex, chapterRowLabel, formatChapterTime, isGenericChapterTitle, nextChapterTarget, prevChapterTarget, sortChapters } from './chapters'
 import type { Chapter } from './chapter-skip'
 
 // A typical well-tagged episode: cold open, opening, two acts, ending, next-episode preview.
@@ -121,5 +121,19 @@ describe('chapterRowLabel', () => {
 
   it('falls back to a generic word for an untitled chapter', () => {
     expect(chapterRowLabel({ time: 85, title: '   ' })).toBe('Chapter — 1:25')
+  })
+})
+
+describe('isGenericChapterTitle', () => {
+  it('flags titles that carry no information', () => {
+    for (const t of ['Chapter 1', 'chapter 12', 'Part 3', 'Track 2', 'Untitled', '7', '', '   ', 'Act 1', 'Scene 2', 'Segment 3']) {
+      expect(isGenericChapterTitle(t), t).toBe(true)
+    }
+  })
+
+  it('keeps titles worth showing', () => {
+    for (const t of ['OP', 'Part A', 'Ending', 'Preview', 'Cold Open']) {
+      expect(isGenericChapterTitle(t), t).toBe(false)
+    }
   })
 })
