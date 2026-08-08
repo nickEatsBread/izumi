@@ -210,3 +210,13 @@ body { overflow-x: clip; }
    Higher specificity than the *:focus-visible and .gamemode :focus rules above, so it wins. */
 [data-nav-sidebar] [data-focusable]:focus-visible { outline: none; box-shadow: none; background: hsl(var(--foreground) / 0.12); }
 .gamemode [data-nav-sidebar] [data-focusable]:focus { box-shadow: none; background: hsl(var(--foreground) / 0.16); }
+
+/* Press ripple (see src/lib/actions/ripple.ts). Transform/opacity only, so it stays off the layout
+   path; the span deletes itself on animationend. */
+.ripple-host { position: relative; overflow: hidden; }
+.ripple-ink {
+  position: absolute; border-radius: 9999px; pointer-events: none;
+  background: currentColor; opacity: 0.18; transform: scale(0);
+  animation: ripple-expand 420ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes ripple-expand { to { transform: scale(1); opacity: 0; } }
