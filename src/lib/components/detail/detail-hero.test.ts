@@ -10,8 +10,8 @@ const detail = readFileSync(fileURLToPath(new URL('./AnimeDetail.svelte', import
 
 describe('mobile series hero', () => {
   it('takes the full canvas while mounted and gives it back on teardown', () => {
-    expect(detail).toContain("document.documentElement.classList.add('edge-to-edge')")
-    expect(detail).toContain("document.documentElement.classList.remove('edge-to-edge')")
+    expect(detail).toContain("import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'")
+    expect(detail).toContain('return acquireEdgeToEdge()')
   })
 
   it('renders the artwork as a measured band, not a backdrop behind the text', () => {

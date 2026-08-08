@@ -20,8 +20,8 @@ describe('settings sub-page top inset', () => {
   })
 
   it('opts the settings screen out of the main inset so it is not applied twice', () => {
-    expect(layout).toContain("document.documentElement.classList.add('edge-to-edge')")
-    expect(layout).toContain("document.documentElement.classList.remove('edge-to-edge')")
+    expect(layout).toContain("import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'")
+    expect(layout).toContain('return acquireEdgeToEdge()')
   })
 })
 
