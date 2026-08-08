@@ -26,19 +26,21 @@
   import AgendaWeek from './AgendaWeek.svelte'
   import ScheduleNextUp from './ScheduleNextUp.svelte'
 
-  // `view`/`viewTouched`/`mineCount` are owned by the page now — the My Shows/All toggle itself
-  // renders in the page's header row, beside the Schedule/Watchlist tabs, instead of on its own
-  // row below. They stay bindable rather than fully lifted because the default-view effect below
-  // needs `sets`, which is loaded here (dragging the AniList/MAL list-loading logic up to the page
-  // just to own two booleans would be the wrong trade). `headerOffset` runs the other direction:
-  // it is now measured from the page's own sticky header (which the toggle is part of) and handed
-  // down, since this component no longer renders a header row of its own to measure.
+  // `view`/`viewTouched` are owned by the page now — the My Shows/All toggle itself renders in the
+  // page's header row, beside the Schedule/Watchlist tabs, instead of on its own row below. They
+  // stay bindable rather than fully lifted because the default-view effect below needs `sets`,
+  // which is loaded here (dragging the AniList/MAL list-loading logic up to the page just to own
+  // two booleans would be the wrong trade). `mineCount` is an OUTPUT, not shared state — it is
+  // derived here and reported up via `onMineCount` rather than made bindable, so this component
+  // isn't reading back a copy of its own derivation. `headerOffset` runs the other direction: it is
+  // now measured from the page's own sticky header (which the toggle is part of) and handed down,
+  // since this component no longer renders a header row of its own to measure.
   let {
-    start, end, headerOffset = 0,
-    view = $bindable('all'), viewTouched = $bindable(false), mineCount = $bindable(0),
+    start, end, headerOffset = 0, onMineCount,
+    view = $bindable('all'), viewTouched = $bindable(false),
   }: {
-    start: number; end: number; headerOffset?: number
-    view?: 'mine' | 'all'; viewTouched?: boolean; mineCount?: number
+    start: number; end: number; headerOffset?: number; onMineCount?: (n: number) => void
+    view?: 'mine' | 'all'; viewTouched?: boolean
   } = $props()
 
   const SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -97,14 +99,21 @@
   // for a user with nothing tracked. Sticks once the user picks a side. `view`/`viewTouched` are
   // bindable (owned by the page) — this effect stays here because it needs `sets`, loaded above.
   $effect(() => { if (!viewTouched) view = hasMySources(sets) ? 'mine' : 'all' })
-  const pick = (v: 'mine' | 'all') => { view = v; viewTouched = true }
+  // "See all airing" below is a one-week escape hatch out of an empty My Shows view, not a
+  // deliberate preference — it must NOT set viewTouched, or a single empty week would permanently
+  // opt the viewer out of My Shows for the rest of the session (including weeks that do have their
+  // shows). Leaving viewTouched false keeps the default free to reassert itself next week.
+  const showAllThisWeek = () => { view = 'all' }
 
   const days = $derived(groupByDay(airings, start))
   const mineDays = $derived(days.map((d) => d.filter((a) => isMine(a.media, sets))))
   const shownDays = $derived(view === 'mine' ? mineDays : days)
-  // Pushed out to the bindable prop rather than left as a plain $derived, since the page's header
-  // toggle (not this component) is what displays the count now.
-  $effect(() => { mineCount = mineDays.reduce((n, d) => n + d.length, 0) })
+  // mineCount is an OUTPUT, not shared state: making it bindable meant this component would read a
+  // one-flush-stale copy of its own derivation back (an $effect writing a bindable runs AFTER the
+  // DOM update), which flashed the mineEmpty state below on every load. Keep it a plain $derived for
+  // the local read here, and report it up separately for the page's header badge.
+  const mineCount = $derived(mineDays.reduce((n, d) => n + d.length, 0))
+  $effect(() => { onMineCount?.(mineCount) })
 
   // AnimeSchedule delay overlay, looked up ONLY for the viewer's own shows: a week of the global
   // feed lists well over a hundred titles, and a break only matters for something you're actually
@@ -192,7 +201,7 @@
       <p class="text-sm font-bold">None of your shows air this week</p>
       <p class="mt-1 text-xs text-muted-foreground">Try another week, or browse everything airing.</p>
     {/if}
-    <button data-focusable onclick={() => pick('all')}
+    <button data-focusable onclick={showAllThisWeek}
       class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">See all airing</button>
   </div>
 {/snippet}

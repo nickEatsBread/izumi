@@ -8,6 +8,7 @@
   import { scheduleDefaultTab, scheduleStickyHeader, type ScheduleTab } from '$lib/settings/ui'
   import { heroMedia } from '$lib/stores/hero'
   import { offlineMode } from '$lib/stores/offline'
+  import { gameMode } from '$lib/player/session'
   import { isMobile } from '$lib/platform'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
 
@@ -55,7 +56,10 @@
   // clicks. Park it just below instead. Mobile has no titlebar, only the status-bar inset.
   const TITLEBAR_H = 32
   let headerH = $state(0)
-  const stickyActive = $derived(tab === 'schedule' && $scheduleStickyHeader)
+  // Game mode never pinned this header: gamescope repaints a backdrop-blur bar every scroll frame
+  // (app.css forces will-change:auto under .gamemode, so the layer is never promoted), and the
+  // controller UI has no need for a sticky filter it can reach with one D-pad press.
+  const stickyActive = $derived(tab === 'schedule' && $scheduleStickyHeader && !$gameMode)
   const stickyTop = $derived($isMobile ? 'top-[env(safe-area-inset-top)]' : 'top-8')
   // What the header actually occludes at the top of the viewport: itself plus the titlebar above
   // it. Handed down to ScheduleGrid, which forwards it to the agenda view's scroll-to-today gate.
@@ -120,7 +124,7 @@
 
   {#if tab === 'schedule'}
     {#key offset}
-      <ScheduleGrid {start} {end} {headerOffset} bind:view bind:viewTouched bind:mineCount />
+      <ScheduleGrid {start} {end} {headerOffset} bind:view bind:viewTouched onMineCount={(n) => (mineCount = n)} />
     {/key}
   {:else}
     <WatchlistView />
