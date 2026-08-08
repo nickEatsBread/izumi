@@ -385,13 +385,17 @@ export const setPlayerTransform = (scale: number, translateY: number) =>
   invoke('plugin:mpv|mpv_transform', { payload: { scale, translateY } })
 
 /** mpv chapters (time in seconds + title), via sub-property paths. Empty when the file has none.
- *  Titles are needed for chapter-derived skip segments — see player/chapter-skip.ts. */
+ *  Titles are needed for chapter-derived skip segments — see player/chapter-skip.ts. Keeps every
+ *  entry with a finite, non-negative time (matching the desktop Rust `chapters()` command and the
+ *  `>= 0` contract `sortChapters()` documents), so this file's chapter list agrees across platforms. */
 export async function getChapterList(): Promise<{ time: number; title: string }[]> {
   const count = Number(await mpvGet('chapter-list/count')) || 0
   const out: { time: number; title: string }[] = []
   for (let i = 0; i < count; i++) {
     const t = Number(await mpvGet(`chapter-list/${i}/time`))
-    if (!isFinite(t) || t <= 0) continue
+    // A cold-open/"Intro" chapter starting at exactly 0:00 is legitimate and common on well-tagged
+    // anime releases — do not drop it. Only genuinely invalid times (NaN/Infinity, or negative) go.
+    if (!isFinite(t) || t < 0) continue
     // Untitled chapters read back as an empty string (or nothing at all); that's a non-match for
     // the classifier, which is what we want.
     const title = String((await mpvGet(`chapter-list/${i}/title`)) ?? '')
