@@ -1,0 +1,3 @@
+# Scripts are parsed by the test runner, and a CRLF shebang or stray CR breaks that transform.
+# Linux CI would never catch it: only a Windows checkout converts them.
+scripts/**/*.mjs text eol=lf

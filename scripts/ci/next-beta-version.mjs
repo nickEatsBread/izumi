@@ -1,4 +1,7 @@
-#!/usr/bin/env node
+// No shebang: this is invoked as `node scripts/ci/next-beta-version.mjs`, never executed
+// directly, and on a CRLF checkout a shebang line breaks the test transform
+// (SyntaxError: Invalid or unexpected token) - which only ever bites on Windows, because
+// Linux CI checks the file out with LF and stays green.
 // Next beta version, printed to stdout for the version-bump workflow.
 //
 // Betas are numbered `x.y.z-N`, NOT `x.y.z-beta.N`. Tauri's MSI bundler rejects a non-numeric
