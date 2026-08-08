@@ -110,6 +110,9 @@
   })
   const detailHint = $derived($detailHints[id])
   $effect(() => { if (media) rememberDetail(media) })
+  // Reset the fade latch when the media changes, so navigating between series does not show the
+  // previous title's fade-in state (or a stale full-opacity frame) before the new art decodes.
+  $effect(() => { void media?.id; artLoaded = false })
 
   // Match the episode list's progress ownership. Tracker queries can still be stale when Android
   // returns from the player, while session/local history has already recorded the completed episode.
@@ -189,6 +192,9 @@
   // teardown so every other screen keeps the normal inset even if the user navigates mid-transition.
   let artHeight = $state(0)
   let barHeight = $state(0)
+  // The banner is a large image over a network the phone may be struggling with; popping it in at
+  // full opacity reads as a glitch. Fade on decode instead.
+  let artLoaded = $state(false)
   // `wasSolid` is deliberately a plain `let`, NOT $state: the scroll handler both reads and writes
   // it to resolve the hysteresis, and a reactive latch read+written by its own effect is a cycle
   // Svelte resolves as an update loop, not a settled value (same trap as malEntryFor above).
@@ -281,37 +287,47 @@
 
       <!-- Artwork band: a bounded strip that ends in a hard cut. Nothing is written on top of it,
            so legibility no longer depends on how busy the banner is. -->
-      <div bind:clientHeight={artHeight} class="hero-art relative h-[30vh] max-h-80 min-h-52 w-full overflow-hidden">
+      <div bind:clientHeight={artHeight} class="hero-art relative h-[26vh] max-h-72 min-h-44 w-full overflow-hidden">
         {#if m.bannerImage}
-          <img src={m.bannerImage} alt="" class="h-full w-full object-cover" style="object-position:center 20%" />
+          <img src={m.bannerImage} alt="" onload={() => (artLoaded = true)}
+               class="h-full w-full object-cover transition-opacity duration-500 {artLoaded ? 'opacity-100' : 'opacity-0'}"
+               style="object-position:center 20%" />
         {:else}
-          <!-- No banner: the cover is all we have, so blur and dim it into a wash rather than
-               showing a hugely zoomed crop of the poster that sits right below it. -->
-          <img src={banner(m)} alt="" class="h-full w-full scale-110 object-cover opacity-50 blur-xl" style="object-position:center 30%" />
+          <!-- No banner: a YouTube trailer still has blurred pillarbox bars baked into the JPEG, and a
+               portrait cover cropped to a wide band loses its subject. Blur the cover into a wash
+               instead — it reads as ambient colour rather than a broken photograph. -->
+          <img src={cover(m)} alt="" class="h-full w-full scale-110 object-cover blur-xl transition-opacity duration-500 {artLoaded ? 'opacity-50' : 'opacity-0'}"
+               onload={() => (artLoaded = true)} style="object-position:center 30%" />
         {/if}
         <div class="absolute inset-x-0 bottom-0 h-1/6 bg-gradient-to-b from-transparent to-background"></div>
       </div>
 
       <div class="px-4">
         <div class="-mt-10 flex gap-4">
-          <img use:reliableImage={cover(m)} alt="" class="aspect-[46/65] w-28 shrink-0 rounded-xl object-cover shadow-xl min-[420px]:w-32" />
+          <!-- Covers vary in aspect; forcing them all into one ratio with object-cover crops real
+               artwork the user came here to see. Follow the image's own height instead. -->
+          <img use:reliableImage={cover(m)} alt=""
+               class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />
           <div class="min-w-0 flex-1 self-end">
             {#if m.title.native || m.title.romaji}
               <div class="truncate text-xs text-muted-foreground">{m.title.native || m.title.romaji}</div>
             {/if}
             <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(m)}</h1>
-            <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
-              {#if format(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{format(m)}</span>{/if}
-              {#if status(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{status(m)}</span>{/if}
-              {#if m.averageScore}<span class="rounded-full px-2 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
-            </div>
           </div>
         </div>
 
-        <div class="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] font-bold">
-          <span class="rounded-full bg-secondary px-2 py-0.5">{effProgress}/{epsTotal(m) || '?'} Episodes</span>
-          {#if season(m)}<span class="rounded-full bg-secondary px-2 py-0.5">{season(m)}</span>{/if}
-          <AiringStatus media={m} compact />
+        <AiringStatus media={m} compact />
+
+        <!-- One line of facts instead of seven chips: on a phone the chips wrapped into three
+             rows and read as a wall of pills rather than a summary. -->
+        <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+          {#if m.averageScore}
+            <span class="rounded-full px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>
+          {/if}
+          {#if format(m)}<span>{format(m)}</span><span class="opacity-40">·</span>{/if}
+          <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
+          {#if season(m)}<span class="opacity-40">·</span><span>{season(m)}</span>{/if}
+          {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
         </div>
 
         {#if m.description}
@@ -536,14 +552,18 @@
   {#if showTrailer && m.trailer?.id}
     <div
       role="dialog" aria-modal="true" aria-label="Trailer" tabindex="-1"
-      class="fixed inset-0 z-50 grid place-items-center bg-black/80 p-4"
+      class="fixed inset-0 z-50 grid place-items-center bg-black/80 sm:p-4"
       onclick={(e) => { if (e.target === e.currentTarget) showTrailer = false }}
       onkeydown={(e) => e.key === 'Escape' && (showTrailer = false)}
     >
-      <div class="aspect-video w-full max-w-4xl">
+      <div class="aspect-video w-full max-w-4xl sm:px-0">
+        <!-- On Android the surrounding dialog IS the fullscreen surface: the WebView this app runs in
+             has no custom-view handler for iframe-initiated fullscreen, so the iframe's own fullscreen
+             button cannot do anything there. `allow`/`allowfullscreen` still let platforms that can
+             support it do so natively. -->
         <iframe class="h-full w-full rounded-lg" title="Trailer"
                 src={`https://www.youtube-nocookie.com/embed/${m.trailer.id}?autoplay=1`}
-                allow="autoplay; encrypted-media" allowfullscreen></iframe>
+                allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
       </div>
       <button data-focusable onclick={() => (showTrailer = false)}
               class="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-md bg-secondary px-3 py-2 text-sm font-bold">Close</button>
