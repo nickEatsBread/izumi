@@ -42,7 +42,12 @@ jobs:
         run: |
           set -e
           if [ "${{ inputs.type }}" = "beta" ]; then
-            NEW=$(npm version prerelease --preid beta --no-git-tag-version)
+            # Numeric identifier, not `-beta.N`: Tauri's MSI bundler rejects a non-numeric one
+            # outright ("optional pre-release identifier in app version must be numeric-only"), so
+            # `--preid beta` built every target EXCEPT Windows and failed the run after 25 minutes.
+            # The maths lives in scripts/ci/next-beta-version.mjs so it is unit-tested rather than
+            # discovered by a failed release build.
+            NEW=$(npm version "$(node scripts/ci/next-beta-version.mjs)" --no-git-tag-version)
           else
             NEW=$(npm version ${{ inputs.type }} --no-git-tag-version)
           fi
