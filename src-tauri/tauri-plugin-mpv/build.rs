@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "mpv_request_notifications",
     "mpv_viewport",
     "mpv_fullscreen",
+    "mpv_keep_screen_awake",
     "mpv_transform",
     "mpv_brightness",
     "mpv_haptic",
