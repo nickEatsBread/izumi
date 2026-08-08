@@ -1,4 +1,4 @@
-import { jfetch, form, magnetOf, hashOf, poll, VIDEO, JUNK, authError } from '../http'
+import { jfetch, form, magnetOf, hashOf, poll, VIDEO, JUNK, authError, debridHttpError } from '../http'
 import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
@@ -9,7 +9,7 @@ const BASE = 'https://debrid-link.fr/api/v2'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function dl(method: string, path: string, key: string, body?: string, priority?: boolean): Promise<any> {
-  const { status, json } = await jfetch(`${BASE}${path}`, {
+  const { ok, status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}`, ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}) },
     ...(body ? { body } : {}),
@@ -19,6 +19,12 @@ async function dl(method: string, path: string, key: string, body?: string, prio
     const auth = authError('Debrid-Link', { status, code: json?.error })
     throw new Error(auth ?? json?.error ?? 'Debrid-Link request failed.')
   }
+  // A non-2xx with no envelope (5xx, an HTML gateway page) leaves jfetch's `{}` fallback behind,
+  // and dlStatus maps a missing entry to 'queued' — so an unchecked status let the poll burn its
+  // whole deadline waiting on a service that is simply down. debridHttpError separates the blip
+  // poll should ride out from the failure that ends the resolve. Checked AFTER the envelope so a
+  // 401 keeps Debrid-Link's badToken wording.
+  if (!ok) throw debridHttpError(status, authError('Debrid-Link', { status }) ?? `Debrid-Link request failed (${status}).`)
   return json
 }
 

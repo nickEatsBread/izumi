@@ -1,4 +1,4 @@
-import { jfetch, magnetOf, hashOf, poll, VIDEO, JUNK, authError } from '../http'
+import { jfetch, magnetOf, hashOf, poll, VIDEO, JUNK, authError, debridHttpError } from '../http'
 import { pickVideoFile } from '../episode-file'
 import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
 
@@ -10,7 +10,7 @@ const BASE = 'https://api.torbox.app/v1/api'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tb(method: string, path: string, key: string, body?: FormData, priority?: boolean): Promise<any> {
-  const { status, json } = await jfetch(`${BASE}${path}`, {
+  const { ok, status, json } = await jfetch(`${BASE}${path}`, {
     method,
     headers: { Authorization: `Bearer ${key}` },
     ...(body ? { body } : {}),
@@ -20,6 +20,14 @@ async function tb(method: string, path: string, key: string, body?: FormData, pr
     const auth = authError('TorBox', { status, code: json?.error, message: json?.detail })
     throw new Error(auth ?? json?.detail ?? json?.error ?? 'TorBox request failed.')
   }
+  // A transport failure (5xx, a gateway's HTML error page) carries no envelope at all, and jfetch
+  // does not throw on a non-2xx — it hands back `{}`. tbStatus reads that as a queued torrent, so
+  // an unchecked status let the poll loop sit on a dead service for its full ~10-minute deadline
+  // with the "caching" overlay pinned. debridHttpError keeps the cases apart: a 5xx is ridden out
+  // by poll, a 429 is ridden out on its own longer budget, a 401/404 ends the resolve now. Checked
+  // AFTER the envelope so a 403 still
+  // gets TorBox's own BAD_TOKEN wording rather than a bare status.
+  if (!ok) throw debridHttpError(status, authError('TorBox', { status }) ?? `TorBox request failed (${status}).`)
   return json?.data
 }
 

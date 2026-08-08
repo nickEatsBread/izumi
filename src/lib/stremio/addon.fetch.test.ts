@@ -28,6 +28,23 @@ describe('per-addon stream budget', () => {
   it('recognises a slow family anywhere in the URL, not just the host', () => {
     expect(streamBudgetMs('https://elfhosted.com/mediafusion/abc')).toBe(streamBudgetMs('https://comet.example.org'))
   })
+
+  it('gives the native request a deadline just past the budget, inside the Rust 1s-60s clamp', async () => {
+    mocks.phttp.mockResolvedValue(streamResponse([{ url: 'u1', name: 'x' }]))
+
+    for (const base of ['https://plain.example.org', 'https://comet.example.org']) {
+      mocks.phttp.mockClear()
+      const p = fetchAddonStreams(base, 'kitsu:1:1')
+      await vi.advanceTimersByTimeAsync(50)
+      await p
+
+      const { timeoutMs } = mocks.phttp.mock.calls[0][1]
+      // Strictly after the JS budget, so a barely-late response still reaches `onLate`.
+      expect(timeoutMs).toBeGreaterThan(streamBudgetMs(base))
+      expect(timeoutMs).toBeGreaterThanOrEqual(1_000)
+      expect(timeoutMs).toBeLessThanOrEqual(60_000)
+    }
+  })
 })
 
 describe('manifest is decoupled from the stream fetch', () => {

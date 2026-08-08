@@ -7,6 +7,8 @@ import { serveJson, called } from '../../../../test/debrid-http'
 import { ocFiles, ocStatus, offcloud } from './offcloud'
 
 const HASH = 'a'.repeat(40)
+// Both routes a poll probe can take: history (current API) then the legacy per-request status.
+const STATUS_ROUTE = /\/cloud\/(?:history|status)/
 
 describe('ocStatus', () => {
   it('downloaded = ready', () => expect(ocStatus('downloaded')).toEqual({ stage: 'ready', progress: 100, raw: 'downloaded' }))
@@ -62,5 +64,52 @@ describe('offcloud.resolveHash noAdd', () => {
       ['/cloud', { requestId: 'RID', status: 'downloaded' }],
     ])
     await expect(offcloud.resolveHash('key', HASH)).resolves.toBe('https://cdn.oc/Show_01.mkv')
+  })
+
+  it('rides out a single 5xx from both status routes instead of throwing the download away', async () => {
+    // Offcloud probes history first and falls back to the legacy per-request status route, so one
+    // bad second is TWO failed calls — it still has to cost only a probe, not the whole resolve.
+    vi.useFakeTimers()
+    let rounds = 0
+    httpFetch.mockImplementation(async (_command: string, args: { url: string }) => {
+      const url = String(args?.url)
+      if (url.includes('/cloud/explore/')) return { status: 200, body: JSON.stringify({ files: [{ name: 'Show_01.mkv', size: 100, url: 'https://cdn.oc/Show_01.mkv' }] }) }
+      if (!STATUS_ROUTE.test(url)) return { status: 200, body: JSON.stringify({ requestId: 'RID' }) }
+      if (url.includes('/cloud/history')) rounds++
+      return rounds === 1 ? { status: 502, body: '' } : { status: 200, body: JSON.stringify([{ requestId: 'RID', status: 'downloaded' }]) }
+    })
+    const done = expect(offcloud.resolveHash('key', HASH)).resolves.toBe('https://cdn.oc/Show_01.mkv')
+    await vi.advanceTimersByTimeAsync(5000)
+    await done
+    vi.useRealTimers()
+  })
+
+  it('gives up on a sustained 5xx well short of the poll deadline', async () => {
+    vi.useFakeTimers()
+    httpFetch.mockImplementation(async (_command: string, args: { url: string }) => (
+      STATUS_ROUTE.test(String(args?.url))
+        ? { status: 502, body: '' }
+        : { status: 200, body: JSON.stringify({ requestId: 'RID' }) }
+    ))
+    const onStatus = vi.fn()
+    const done = expect(offcloud.resolveHash('key', HASH, { onStatus })).rejects.toThrow(/502/)
+    // Settles inside a minute — the whole point is not reaching the 600s deadline.
+    await vi.advanceTimersByTimeAsync(60_000)
+    await done
+    // Never reported a stage either: every probe threw, so the caching overlay is never raised.
+    expect(onStatus).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
+  it('a 401 during the poll fails immediately with the access-denied message', async () => {
+    let statusCalls = 0
+    httpFetch.mockImplementation(async (_command: string, args: { url: string }) => {
+      if (!STATUS_ROUTE.test(String(args?.url))) return { status: 200, body: JSON.stringify({ requestId: 'RID' }) }
+      statusCalls++
+      return { status: 401, body: JSON.stringify({ error: 'NOAUTH' }) }
+    })
+    await expect(offcloud.resolveHash('key', HASH)).rejects.toThrow(/access denied/)
+    // One history + one legacy-status attempt and done: a wrong key is not going to become right.
+    expect(statusCalls).toBe(2)
   })
 })

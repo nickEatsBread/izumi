@@ -149,10 +149,19 @@ export function buildSnapshot(inp: BuildInput): CwEntry[] {
 // fake cast to it) satisfies it.
 type QueryClient = Pick<Client, 'query'>
 
+// urql defaults to cache-first and the normalized cache lives as long as the client (i.e. the whole
+// process, barring an account switch). Without a policy these three reads were served from memory
+// after the first reconcile of a session, which made RECONCILE_TTL_MS and `reconciling` decorative
+// and meant progress watched on another device, a removal from the list, or a newly-aired episode
+// never showed up until relaunch. cache-and-network keeps the instant cache emission for anything
+// subscribing live, and `.toPromise()` drops that emission as stale — so what we await here, and
+// therefore what lands in the snapshot, is the network read.
+const REVALIDATE = { requestPolicy: 'cache-and-network' } as const
+
 async function fetchAni(client: QueryClient, userName: string | undefined): Promise<{ items: Item[]; failed: boolean }> {
   if (!userName) return { items: [], failed: false }
   try {
-    const res = await client.query(LIST_QUERY, { userName, status: 'CURRENT' }).toPromise()
+    const res = await client.query(LIST_QUERY, { userName, status: 'CURRENT' }, REVALIDATE).toPromise()
     if (res.error) return { items: [], failed: true }
     const items = flattenEntries(res.data as never).map((e) => ({
       media: e.media,
@@ -176,7 +185,7 @@ async function fetchMal(client: QueryClient, malActive: boolean): Promise<{ item
     const malIds = list.map((e) => e.idMal)
     const byMal = new Map<number | undefined, Media>()
     for (let i = 0; i < malIds.length; i += 50) {
-      const res = await client.query(MEDIA_BY_MAL_QUERY, { ids: malIds.slice(i, i + 50) }).toPromise()
+      const res = await client.query(MEDIA_BY_MAL_QUERY, { ids: malIds.slice(i, i + 50) }, REVALIDATE).toPromise()
       if (res.error) return { items: [], failed: true }
       for (const m of ((res.data as { Page?: { media?: Media[] } })?.Page?.media ?? [])) byMal.set(m.idMal, m)
     }
@@ -194,7 +203,7 @@ async function refreshLocalMedia(client: QueryClient): Promise<{ media: Record<n
   try {
     const media: Record<number, Media> = {}
     for (let i = 0; i < ids.length; i += 50) {
-      const res = await client.query(MEDIA_BY_IDS_QUERY, { ids: ids.slice(i, i + 50) }).toPromise()
+      const res = await client.query(MEDIA_BY_IDS_QUERY, { ids: ids.slice(i, i + 50) }, REVALIDATE).toPromise()
       if (res.error) return { media: {}, failed: true }
       for (const m of (res.data as { Page?: { media?: Media[] } })?.Page?.media ?? []) media[m.id] = m
     }
