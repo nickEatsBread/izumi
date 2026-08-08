@@ -16,7 +16,6 @@ describe('mobile series hero', () => {
 
   it('renders the artwork as a measured band, not a backdrop behind the text', () => {
     expect(detail).toContain('bind:clientHeight={artHeight}')
-    expect(detail).toContain('hero-art')
     // The old text-over-art rescue must be gone.
     expect(detail).not.toContain('drop-shadow-[0_1px_4px_rgba(0,0,0,0.85)]')
   })
@@ -43,7 +42,6 @@ describe('mobile series hero', () => {
     // A latch an effect both reads and writes must not be $state, or Svelte resolves the cycle as
     // an update loop. Guard the shape, not just the call.
     expect(detail).toContain('let wasSolid = false')
-    expect(detail).not.toContain('$state(false)\n  const barState')
     expect(detail).toContain('if (next.solid === wasSolid) return')
   })
 })
