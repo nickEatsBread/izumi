@@ -20,6 +20,12 @@ export function idle(fn: () => void, timeout = 3000): IdleHandle {
     const id = w.requestIdleCallback(fn, { timeout })
     return { cancel: () => w.cancelIdleCallback?.(id) }
   }
-  const id = setTimeout(fn, Math.min(timeout, 1000))
+  // Honour the caller's delay instead of clamping it. The clamp collapsed every boot warmer onto the
+  // same ~1s tick, which is the whole stagger gone: on WebKitGTK — the Deck and every Linux build —
+  // the id map's multi-megabyte download and parse, the extension workers, and the player chunk all
+  // fired together while the home page was still loading its first covers. Harmless on a warm start,
+  // brutal on a first-ever launch where nothing is cached. Callers pass a deliberate ordering
+  // (3s/5s/6s); the fallback has to preserve it, since it IS the path on this platform.
+  const id = setTimeout(fn, timeout)
   return { cancel: () => clearTimeout(id) }
 }

@@ -27,7 +27,10 @@ async function loadIndex(): Promise<Index> {
   const ts = (await get<number>(TS)) ?? 0
   let data = await get<MapEntry[]>(KEY)
   if (!data || Date.now() - ts > 7 * 864e5) {
-    try { data = await (await phttp(URL)).json() as MapEntry[]; await set(KEY, data); await set(TS, Date.now()) }
+    // BACKGROUND lane: this is the largest download the app ever makes, and on a first-ever launch
+    // it happens while the home page is still filling in. In the metadata lane it took a permit from
+    // the very covers and queries the user is waiting on.
+    try { data = await (await phttp(URL, { background: true })).json() as MapEntry[]; await set(KEY, data); await set(TS, Date.now()) }
     catch { data = data ?? [] }
   }
   // Only memoize a NON-EMPTY index. The catch above falls back to `[]` on a cold cache, and
