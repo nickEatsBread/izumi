@@ -19,6 +19,7 @@
   import PanelBottom from '@lucide/svelte/icons/panel-bottom'
   import Keyboard from '@lucide/svelte/icons/keyboard'
   import DatabaseBackup from '@lucide/svelte/icons/database-backup'
+  import HardDrive from '@lucide/svelte/icons/hard-drive'
 
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
@@ -31,6 +32,7 @@
       { title: 'Sources', href: '/app/settings/sources', icon: Rss, subtitle: 'Addons, providers, priority' },
       { title: 'Extensions', href: '/app/settings/extensions', icon: Puzzle, subtitle: 'Installed source extensions' },
       { title: 'Downloads', href: '/app/settings/downloads', icon: Download, subtitle: 'Offline library and storage' },
+      { title: 'Storage', href: '/app/settings/storage', icon: HardDrive, subtitle: 'Disk caches and space used' },
     ] },
     { label: 'App', items: [
       { title: 'Interface', href: '/app/settings/interface', icon: LayoutGrid, subtitle: 'Appearance and layout' },
