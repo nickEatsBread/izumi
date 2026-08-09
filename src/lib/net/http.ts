@@ -7,6 +7,13 @@ export interface NativeHttpOptions {
   requestId?: string
   /** Click-to-play critical path: rides the reserved Rust playback lane. */
   priority?: boolean
+  /** Bulk traffic (a multi-megabyte index, a warm-up prefetch): rides the Rust BACKGROUND lane,
+   *  which can never take a permit from the metadata lane the UI's own queries ride. Rust has had
+   *  this lane since the lifecycle rework, but nothing could ask for it — every frontend request
+   *  landed in the metadata lane, so a single large download competed with the covers and queries
+   *  the user is waiting on. Worst on a first-ever launch, where nothing is cached and the biggest
+   *  download of the app's life happens while the home page is still filling in. */
+  background?: boolean
 }
 
 let requestSequence = 0
@@ -32,6 +39,7 @@ export async function invokeNativeHttp<T>(
   if (options.timeoutMs != null) requestArgs.timeoutMs = options.timeoutMs
   if (options.maxBytes != null) requestArgs.maxBytes = options.maxBytes
   if (options.priority) requestArgs.priority = true
+  if (options.background) requestArgs.background = true
 
   let rejectAbort: ((reason: Error) => void) | undefined
   const aborted = new Promise<never>((_, reject) => { rejectAbort = reject })
