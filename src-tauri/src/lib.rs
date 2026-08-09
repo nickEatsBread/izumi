@@ -1985,6 +1985,47 @@ fn player_area(parent: windows::Win32::Foundation::HWND) -> (i32, i32, i32, i32)
     }
 }
 
+/// Window class for the mpv container, registered once, whose only job is to erase with BLACK.
+///
+/// The container used to be a "STATIC" control. A STATIC erases itself with the brush its parent
+/// returns for WM_CTLCOLORSTATIC, and tao's window procedure has no opinion, so DefWindowProc
+/// answered with COLOR_WINDOW — white. That paint is invisible for as long as the WebView2 above it
+/// is opaque, and becomes visible at exactly one moment: playback start, when the frontend punches
+/// the transparent hole. `player_embed` resolves when mpv has ACCEPTED the url, not when it has
+/// produced a frame, so the hole opened onto a white rectangle the size of the player area for the
+/// hundreds of milliseconds before the first frame landed — a white flash between the connecting
+/// screen and the video. Black makes that gap indistinguishable from the player it precedes.
+#[cfg(windows)]
+fn container_class() -> windows::core::PCWSTR {
+    use std::sync::Once;
+    use windows::core::w;
+    use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Graphics::Gdi::{GetStockObject, BLACK_BRUSH, HBRUSH};
+    use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, RegisterClassExW, WNDCLASSEXW};
+
+    unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+        unsafe { DefWindowProcW(hwnd, msg, wp, lp) }
+    }
+
+    static REGISTER: Once = Once::new();
+    let name = w!("izumiMpvContainer");
+    REGISTER.call_once(|| unsafe {
+        let class = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(wndproc),
+            // Matches the `None` hInstance the CreateWindowExW below passes.
+            hInstance: HINSTANCE::default(),
+            hbrBackground: HBRUSH(GetStockObject(BLACK_BRUSH).0),
+            lpszClassName: name,
+            ..Default::default()
+        };
+        // A failure here (already registered, or a hostile shell) is not fatal: CreateWindowExW
+        // falls back to reporting failure and the caller already handles a 0 container.
+        RegisterClassExW(&class);
+    });
+    name
+}
+
 /// Create (once) the mpv container child window, sized to the player area. Click-through
 /// (`WS_EX_TRANSPARENT`) + disabled so input flows to the WebView2 overlay above it.
 #[cfg(windows)]
@@ -2005,7 +2046,7 @@ fn ensure_container(main_raw: isize) -> isize {
         let (x, y, w, h) = player_area(main);
         let hwnd = CreateWindowExW(
             WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
-            w!("STATIC"),
+            container_class(),
             w!(""),
             WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_DISABLED,
             x,
