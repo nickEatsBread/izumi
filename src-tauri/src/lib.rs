@@ -1,4 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod cache_gc;
 mod direct_torrent;
 mod direct_torrent_select;
 mod doh;
@@ -394,44 +395,35 @@ fn player_sprite_start(
     Ok(())
 }
 
-fn dir_size(p: &std::path::Path) -> u64 {
-    let mut total = 0;
-    if let Ok(rd) = std::fs::read_dir(p) {
-        for e in rd.flatten() {
-            let path = e.path();
-            if path.is_dir() {
-                total += dir_size(&path);
-            } else if let Ok(m) = e.metadata() {
-                total += m.len();
-            }
-        }
-    }
-    total
-}
-
 /// Clear the on-disk scrub-thumbnail cache (`<app-cache>/thumbs`) — the sprite JPEGs generated
 /// while skimming the seek bar. They regenerate on demand, so this only frees space. Returns
-/// the number of bytes freed.
+/// the number of bytes freed. Kept as its own command because the Player screen's button predates
+/// the Storage screen and means exactly this one bucket.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn clear_video_cache(app: AppHandle) -> Result<u64, String> {
     // `async` matters: tauri-macros only picks `ExecutionContext::Async` when the fn is async, so
     // the sync version ran the recursive stat walk + `remove_dir_all` inline on the event-loop
     // thread and froze the UI for the duration. Do the blocking FS work on the blocking pool.
-    let dir = app
-        .path()
-        .app_cache_dir()
+    tauri::async_runtime::spawn_blocking(move || cache_gc::clear(&app, "thumbs"))
+        .await
         .map_err(|e| e.to_string())?
-        .join("thumbs");
-    tauri::async_runtime::spawn_blocking(move || {
-        let freed = dir_size(&dir);
-        if dir.exists() {
-            std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
-        }
-        Ok(freed)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+}
+
+/// Per-bucket size of everything izumi caches on disk, for the Storage screen.
+#[tauri::command]
+async fn cache_usage(app: AppHandle) -> Result<Vec<cache_gc::CacheBucket>, String> {
+    tauri::async_runtime::spawn_blocking(move || cache_gc::usage(&app))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Empty one cache bucket by id, or every bucket for `"all"`. Returns bytes freed.
+#[tauri::command]
+async fn clear_cache(app: AppHandle, bucket: String) -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(move || cache_gc::clear(&app, &bucket))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Set the WebKit page zoom (Linux). Used in Game mode instead of CSS `zoom` on the scroll
@@ -3731,6 +3723,9 @@ pub fn run() {
             .build(),
     );
     let builder = builder.setup(|app| {
+            // Reclaim what the last session left behind, before anything writes more. Detached: a
+            // stat walk over an abandoned torrent payload must not sit between launch and paint.
+            cache_gc::sweep_at_startup(app.handle());
             // Stash a magnet URL only when the OS/user explicitly launched this executable with
             // one. Izumi never registers or claims the magnet scheme itself.
             #[cfg(not(target_os = "android"))]
@@ -4176,6 +4171,8 @@ pub fn run() {
             player_thumb_tile,
             player_thumb_info,
             clear_video_cache,
+            cache_usage,
+            clear_cache,
             set_webview_zoom,
             restore_native_touch,
             native_touch_hold,
@@ -4275,6 +4272,10 @@ pub fn run() {
         // Always answers None on Android (no argv), but keeping it registered means the shared
         // deep-link bootstrap doesn't have to branch per platform.
         take_pending_magnet,
+        // Android has no scrub tiles (playback is delegated), but it does accumulate the torrent,
+        // subtitle and update buckets, and the Storage screen is shared.
+        cache_usage,
+        clear_cache,
         http_get,
         opensubtitles_moviehash,
         http_post,
