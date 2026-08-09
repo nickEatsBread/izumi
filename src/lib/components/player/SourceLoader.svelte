@@ -11,7 +11,7 @@
   import { onDestroy } from 'svelte'
   import lottie, { type AnimationItem } from 'lottie-web'
   import animationData from './source-loader.json'
-  import { gameMode } from '$lib/player/session'
+  import { gameMode, playing } from '$lib/player/session'
 
   let { title = '', caption = 'Connecting', detail = '', onCancel }: {
     title?: string
@@ -28,11 +28,19 @@
   const reduced = typeof window !== 'undefined'
     && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
+  // SVG Lottie mutates several DOM nodes every frame. That is cheap on Desktop, but in Gamescope it
+  // invalidates the full WebKit surface and competes with mpv on the Deck iGPU — so game mode swaps
+  // in a tiny stepped CSS ring instead.
+  //
+  // That contention only exists while mpv is actually rendering, which on the route INTO playback it
+  // is not: this screen is the whole picture until the first frame arrives. Gating on `$playing` as
+  // well keeps the cheap ring exactly where it was bought — a mid-playback source change, where the
+  // video is live behind this overlay — and gives the Deck the same loader as the desktop everywhere
+  // before the player opens.
+  const cheapSpinner = $derived($gameMode && $playing)
+
   $effect(() => {
-    // SVG Lottie mutates several DOM nodes every frame. That is cheap on Desktop, but in Gamescope
-    // it invalidates the full WebKit surface and competes with mpv on the Deck iGPU. The markup
-    // below uses a tiny stepped CSS ring there instead.
-    if ($gameMode) {
+    if (cheapSpinner) {
       anim?.destroy()
       anim = undefined
       return
@@ -59,7 +67,7 @@
     </h1>
   {/if}
 
-  {#if $gameMode}
+  {#if cheapSpinner}
     <div class="grid h-28 w-52 place-items-center" aria-hidden="true">
       <div class="loading-spinner size-14 animate-spin rounded-full border-4 border-white/20 border-t-white"></div>
     </div>
