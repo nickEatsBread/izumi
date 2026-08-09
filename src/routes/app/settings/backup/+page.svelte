@@ -3,7 +3,7 @@
   import Upload from '@lucide/svelte/icons/upload'
   import ShieldAlert from '@lucide/svelte/icons/shield-alert'
   import { parseBackup, restoreBackup, stringifyBackup, type AppBackup } from '$lib/backup'
-  import { saveTextFile } from '$lib/player/history-io'
+  import { ioErrorMessage, saveTextFile } from '$lib/player/history-io'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
   let includeSecrets = $state(false)
@@ -20,7 +20,7 @@
       )
       if (saved) message = 'Application backup saved.'
     } catch (error) {
-      message = error instanceof Error ? error.message : 'Backup failed.'
+      message = ioErrorMessage(error, 'Backup failed.')
     }
   }
 
@@ -35,7 +35,7 @@
       message = ''
     } catch (error) {
       pending = null
-      message = error instanceof Error ? error.message : 'Invalid backup.'
+      message = ioErrorMessage(error, 'Invalid backup.')
     }
   }
 
@@ -47,7 +47,7 @@
       pending = null
       setTimeout(() => location.reload(), 350)
     } catch (error) {
-      message = error instanceof Error ? error.message : 'Restore failed.'
+      message = ioErrorMessage(error, 'Restore failed.')
     }
   }
 </script>

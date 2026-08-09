@@ -7,6 +7,7 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import { clearDiagnostics, diagnosticEvents, diagnosticsSnapshot } from '$lib/diagnostics'
   import { save } from '@tauri-apps/plugin-dialog'
+  import { ioErrorMessage } from '$lib/player/history-io'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   let appVersion = $state('')
@@ -73,7 +74,7 @@
       if (!path) return
       await invoke('write_text_file', { path, contents: diagnosticsSnapshot({ appVersion, tauriVersion, mpvVersion, os }) })
       diagnosticNotice = 'Diagnostics saved'
-    } catch { diagnosticNotice = 'Save failed' }
+    } catch (error) { diagnosticNotice = ioErrorMessage(error, 'Save failed') }
   }
 </script>
 
