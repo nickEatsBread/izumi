@@ -56,3 +56,40 @@ describe('native HTTP lifecycle bridge', () => {
     expect(mocks.invoke).toHaveBeenCalledWith('http_cancel', { requestId: 'timeout-1' })
   })
 })
+
+describe('lane selection', () => {
+  beforeEach(() => { mocks.invoke.mockReset() })
+
+  it('can ask for the background lane, so bulk traffic stays off the metadata lane', async () => {
+    // Rust has had a background lane since the lifecycle rework specifically so bulk downloads
+    // "can never starve the metadata lane the UI's queries ride" — but nothing could request it, so
+    // every frontend call landed in the metadata lane. The id map is the largest download the app
+    // makes and it happens on a first-ever launch, competing with the covers on screen.
+    mocks.invoke.mockResolvedValue({ status: 200, body: '[]' })
+    await phttp('https://example.com/big.json', { requestId: 'g', background: true })
+    expect(mocks.invoke).toHaveBeenCalledWith('http_get', expect.objectContaining({ background: true }))
+  })
+
+  it('sends no lane flag at all by default', async () => {
+    mocks.invoke.mockResolvedValue({ status: 200, body: '{}' })
+    await phttp('https://example.com/small.json', { requestId: 'g' })
+    const args = mocks.invoke.mock.calls[0][1] as Record<string, unknown>
+    expect(args.background).toBeUndefined()
+    expect(args.priority).toBeUndefined()
+  })
+
+  it('keeps the playback lane available for the click-to-play path', async () => {
+    mocks.invoke.mockResolvedValue({ status: 200, body: '{}' })
+    await phttp('https://example.com/pick', { requestId: 'g', priority: true })
+    expect(mocks.invoke).toHaveBeenCalledWith('http_get', expect.objectContaining({ priority: true }))
+  })
+})
+
+describe('the id map rides the background lane', () => {
+  it('asks for it at the call site', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const idmap = readFileSync(fileURLToPath(new URL('../stremio/idmap.ts', import.meta.url)), 'utf8')
+    expect(idmap).toContain('phttp(URL, { background: true })')
+  })
+})
