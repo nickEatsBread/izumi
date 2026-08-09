@@ -1,7 +1,7 @@
 <script lang="ts">
   import { saveLocalHistory } from '$lib/settings/ui'
   import { localHistory, historyEntries, clearHistory, forgetMedia } from '$lib/player/history'
-  import { exportJson, exportMalXml, importJson, saveTextFile } from '$lib/player/history-io'
+  import { exportJson, exportMalXml, importJson, ioErrorMessage, saveTextFile } from '$lib/player/history-io'
   import { title as mediaTitle } from '$lib/anilist/media'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import Download from '@lucide/svelte/icons/download'
@@ -19,7 +19,7 @@
 
   async function doExportJson() {
     try { if (await saveTextFile('izumi-watch-history.json', exportJson())) flash('Exported your history.') }
-    catch (e) { flash(e instanceof Error ? e.message : 'Export failed.') }
+    catch (e) { flash(ioErrorMessage(e, 'Export failed.')) }
   }
   async function doExportXml() {
     const { xml, total, skipped } = exportMalXml()
@@ -29,7 +29,7 @@
         flash(skipped ? `Exported ${total - skipped} titles (${skipped} without a MyAnimeList id were skipped).` : `Exported ${total} titles.`)
       }
     }
-    catch (e) { flash(e instanceof Error ? e.message : 'Export failed.') }
+    catch (e) { flash(ioErrorMessage(e, 'Export failed.')) }
   }
   async function onImportFile(e: Event) {
     const el = e.target as HTMLInputElement
