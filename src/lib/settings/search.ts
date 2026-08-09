@@ -65,6 +65,12 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Theme and accessibility', category: 'Interface', href: '/app/settings/interface', keywords: 'light dark contrast motion focus wcag large targets' },
   { title: 'Storage used', category: 'Downloads', href: '/app/settings/downloads', keywords: 'disk space size' },
 
+  { title: 'Cache sizes', category: 'Storage', href: '/app/settings/storage', keywords: 'disk space used free cleanup hoarding' },
+  { title: 'Scrub previews cache', category: 'Storage', href: '/app/settings/storage', keywords: 'thumbnails seek bar hover tiles clear' },
+  { title: 'Direct P2P playback cache', category: 'Storage', href: '/app/settings/storage', keywords: 'torrent pieces streaming clear space' },
+  { title: 'Downloaded subtitles cache', category: 'Storage', href: '/app/settings/storage', keywords: 'opensubtitles subdl jimaku srt clear' },
+  { title: 'Clear all caches', category: 'Storage', href: '/app/settings/storage', keywords: 'free disk space delete cleanup' },
+
   { title: 'Haptics', category: 'Interface', href: '/app/settings/interface', keywords: 'vibration feedback Android', anchored: true },
   { title: 'Episode list layout', category: 'Interface', href: '/app/settings/interface', keywords: 'cards compact' },
   { title: 'Series-wide episode numbers', category: 'Interface', href: '/app/settings/interface', keywords: 'absolute numbering season episode number continuous count', anchored: true },
