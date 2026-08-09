@@ -12,7 +12,7 @@
   // keeps first home paint off that code entirely. See Lazy.svelte.
   import Lazy from '$lib/components/Lazy.svelte'
   import PlayFeedback from '$lib/components/PlayFeedback.svelte'
-  import { title as mediaTitle } from '$lib/anilist/media'
+  import { title as mediaTitle, banner as mediaBanner, cover as mediaCover } from '$lib/anilist/media'
   const loadPlayerOverlay = () => import('$lib/components/player/PlayerOverlay.svelte')
   const loadAndroidPlayer = () => import('$lib/components/player/AndroidPlayer.svelte')
   const loadCommentsPanel = () => import('$lib/components/player/CommentsPanel.svelte')
@@ -258,14 +258,20 @@
   <Lazy load={loadStreamPicker}>
     {#snippet pending()}
       {#if !$streamPicker?.hidden}
-        <PlayFeedback label={$streamPicker?.media ? mediaTitle($streamPicker.media) : 'Finding a source…'} />
+        <!-- Same title/artwork the picker's own loader uses, so the stand-in and the screen it
+             precedes are the same screen. -->
+        <PlayFeedback
+          label={$streamPicker?.media ? mediaTitle($streamPicker.media) : ''}
+          caption="Finding sources"
+          art={$streamPicker?.media ? (mediaBanner($streamPicker.media) || mediaCover($streamPicker.media)) : ''}
+        />
       {/if}
     {/snippet}
   </Lazy>
 {/if}
 {#if $connecting}
   <Lazy load={loadSourceConnecting}>
-    {#snippet pending()}<PlayFeedback label={$connecting?.title ?? 'Finding a source…'} />{/snippet}
+    {#snippet pending()}<PlayFeedback label={$connecting?.title ?? ''} art={$connecting?.art ?? ''} />{/snippet}
   </Lazy>
 {/if}
 {#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}
