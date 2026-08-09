@@ -141,6 +141,16 @@ export function importJson(text: string, options: WatchJsonOptions = {}): { impo
   return { imported, positionsImported, originsImported }
 }
 
+/** Tauri rejects with a plain STRING — permission denials, IO errors, everything — never an Error.
+ *  Call sites that tested `error instanceof Error` therefore threw away the only useful part of
+ *  every backend failure and printed their generic fallback instead. That is how a capability file
+ *  missing `dialog:allow-save` surfaced as "Backup failed." with nothing to act on. */
+export function ioErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  const text = typeof error === 'string' ? error.trim() : ''
+  return text || fallback
+}
+
 /** Prompt for a location and write the given text there. Returns false if the user cancelled. */
 export async function saveTextFile(defaultName: string, contents: string): Promise<boolean> {
   const path = await save({
