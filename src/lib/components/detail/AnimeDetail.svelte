@@ -266,7 +266,10 @@
       {#if detailHint && banner(detailHint)}<img src={banner(detailHint)} alt="" class="absolute inset-0 -z-10 h-[55vh] w-full object-cover opacity-30" />{/if}
       <div class="absolute inset-x-0 top-0 -z-10 h-[60vh] bg-gradient-to-b from-transparent to-background"></div>
       <div class="flex items-end gap-7">
-        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="aspect-[2/3] w-48 rounded-xl bg-muted object-contain shadow-xl" />{:else}<div class="aspect-[2/3] w-48 rounded-xl skeloader"></div>{/if}
+        <!-- Sized exactly like the loaded cover below (h-auto, same widths): boxing the hint into a
+             fixed 2/3 ratio letterboxed every real cover (AniList ships 46/65) against bg-muted,
+             which read as grey bands above and below the artwork. -->
+        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-40 shrink-0 self-start rounded-lg object-contain shadow-lg md:w-52" />{:else}<div class="aspect-[46/65] w-40 shrink-0 self-start rounded-lg skeloader md:w-52"></div>{/if}
         <div class="max-w-2xl flex-1 pb-3"><h1 class="text-3xl font-black">{detailHint ? title(detailHint) : 'Loading title…'}</h1><div class="mt-4 h-4 w-2/3 rounded skeloader"></div><div class="mt-3 h-4 w-1/2 rounded skeloader"></div><div class="mt-6 h-10 w-52 rounded-lg skeloader"></div></div>
       </div>
     </div>
