@@ -435,7 +435,41 @@ impl PlayerHandle {
             .lock()
             .map_err(|e| e.to_string())? = None;
         self.headless.stop();
+        // Scrub tiles are worth exactly as long as the stream they describe is open. Leaving them
+        // meant every episode ever hovered accumulated ~9KB per tile, up to 144 tiles, forever.
+        self.discard_sprite_tiles(None);
         Ok(())
+    }
+
+    /// Delete the tile directories of finished sprite jobs, keeping `keep`'s if given. The unlink
+    /// runs detached: `stop` is on the close-player command path and a tree of small files is not
+    /// worth a stutter there.
+    fn discard_sprite_tiles(&self, keep: Option<&str>) {
+        let stale: Vec<PathBuf> = match self.sprite_jobs.lock() {
+            Ok(mut jobs) => {
+                let doomed = jobs
+                    .iter()
+                    .filter(|(key, _)| Some(key.as_str()) != keep)
+                    .map(|(key, job)| (key.clone(), job.dir.clone()))
+                    .collect::<Vec<_>>();
+                for (key, _) in &doomed {
+                    jobs.remove(key);
+                }
+                doomed.into_iter().map(|(_, dir)| dir).collect()
+            }
+            Err(_) => return,
+        };
+        if stale.is_empty() {
+            return;
+        }
+        std::thread::Builder::new()
+            .name("izumi-thumb-gc".into())
+            .spawn(move || {
+                for dir in stale {
+                    crate::cache_gc::drop_thumb_dir(&dir);
+                }
+            })
+            .ok();
     }
 
     /// Register a scrub-preview thumbnail job for the current stream, keyed by `key`
@@ -456,19 +490,26 @@ impl PlayerHandle {
         let dir = cache_root.join(sanitize_key(&key));
         let _ = std::fs::create_dir_all(&dir);
         if let Ok(mut jobs) = self.sprite_jobs.lock() {
-            if jobs.len() > 64 {
-                jobs.clear();
-            }
             jobs.insert(
-                key,
+                key.clone(),
                 TileJob {
-                    dir,
+                    dir: dir.clone(),
                     interval,
                     frames,
                     url,
                 },
             );
         }
+        // Registering a new stream means the previous one is done with — an episode advance, a
+        // binge continuation, or a source change. Its tiles go with it, which is what keeps this
+        // cache proportional to what is playing instead of to everything ever played.
+        self.discard_sprite_tiles(Some(&key));
+        // Backstop for sessions that ended without a `stop` (crash, kill, power cut): they leave
+        // tiles nothing will ever come back to remove.
+        std::thread::Builder::new()
+            .name("izumi-thumb-cap".into())
+            .spawn(move || crate::cache_gc::enforce_thumb_cap(&cache_root, Some(&dir)))
+            .ok();
     }
 
     /// The tile for hover time `time` (seconds). Returns INSTANTLY — never blocks the
