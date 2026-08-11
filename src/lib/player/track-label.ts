@@ -109,6 +109,24 @@ const SDH_RE = /\b(sdh|cc|hi)\b|hearing[\s-]?impaired|for the deaf/i
 const isSdh = (title?: string) => !!title && SDH_RE.test(title)
 // Some releases mark a forced track only in its title, not with the forced flag.
 const isForcedTitle = (title?: string) => !!title && /\bforced\b/i.test(title)
+const isSignsOnlyTitle = (title?: string) => !!title && /signs?.*(songs?|karaoke)|(?:songs?|karaoke).*signs?/i.test(title)
+const isFullDialogueTitle = (title?: string) => !!title && /full[\s_-]*(?:subtitles?|subs?)|dialogue/i.test(title)
+
+// Some anime muxers tag subtitle tracks by the AUDIO they accompany: `eng / Signs & Songs` and
+// `jpn / Full Subtitles`, even though both tracks contain English text. Correct the menu language
+// only when that exact paired layout proves what the otherwise misleading `jpn` tag means.
+function effectiveLang(t: Track, group: Track[]): string | undefined {
+  if (
+    t.type === 'sub'
+    && ['ja', 'jpn', 'japanese'].includes(t.lang?.trim().toLowerCase() ?? '')
+    && isFullDialogueTitle(t.title)
+    && group.some((other) =>
+      other.type === 'sub'
+      && ['en', 'eng', 'english'].includes(other.lang?.trim().toLowerCase() ?? '')
+      && isSignsOnlyTitle(other.title))
+  ) return 'eng'
+  return t.lang
+}
 
 /** Audio channel count → a friendly layout name. */
 export function chLabel(n?: number): string {
@@ -121,9 +139,10 @@ export function chLabel(n?: number): string {
 }
 
 // The label BEFORE collision-disambiguation: "{language|title} · {qualifiers…}".
-function baseLabel(t: Track): string {
-  const lang = langName(t.lang)
-  const title = distinctiveTitle(t.title, t.lang)
+function baseLabel(t: Track, group: Track[]): string {
+  const effective = effectiveLang(t, group)
+  const lang = langName(effective)
+  const title = distinctiveTitle(t.title, effective)
   const primary = lang ?? title ?? (t.type === 'sub' ? 'Subtitle' : `Track ${t.id}`)
   const bits: string[] = []
   // A distinctive title becomes a qualifier when the language already leads.
@@ -143,15 +162,15 @@ const withCodec = (t: Track, base: string) =>
  *  language-forward, codec appended only for colliding audio tracks, and a numeric suffix as a
  *  last resort so two rows are never identical. */
 export function trackLabel(t: Track, group: Track[]): string {
-  const base = baseLabel(t)
-  if (group.filter((o) => baseLabel(o) === base).length <= 1) return base
+  const base = baseLabel(t, group)
+  if (group.filter((o) => baseLabel(o, group) === base).length <= 1) return base
 
   // Collision. Try the codec (audio); if that makes it unique, use it.
   const tagged = withCodec(t, base)
-  if (group.filter((o) => withCodec(o, baseLabel(o)) === tagged).length <= 1) return tagged
+  if (group.filter((o) => withCodec(o, baseLabel(o, group)) === tagged).length <= 1) return tagged
 
   // Still identical (same lang + codec, or codec-less subtitles) → number them so a pick is
   // always possible. Index is 1-based within the colliding subset.
-  const peers = group.filter((o) => baseLabel(o) === base)
+  const peers = group.filter((o) => baseLabel(o, group) === base)
   return `${tagged} (${peers.findIndex((o) => o.id === t.id) + 1})`
 }
