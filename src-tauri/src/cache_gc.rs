@@ -16,6 +16,7 @@
 //! size/age backstop for the cases where "as soon as" never arrived (a crash, a kill, a power cut).
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use tauri::{AppHandle, Manager};
@@ -29,6 +30,11 @@ pub const THUMB_CAP_BYTES: u64 = 250 * 1024 * 1024;
 /// rewatches. Age them out rather than dropping them with the episode.
 const SUB_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
+/// `.torrent` metadata is tiny compared with episode payloads and removes the slowest part of a
+/// repeat play: exchanging metadata over DHT again. Keep it much longer than subtitle sidecars,
+/// while still treating it as disposable cache data.
+const TORRENT_METADATA_MAX_AGE: Duration = Duration::from_secs(90 * 24 * 60 * 60);
+
 /// One cache bucket as reported to the Storage settings screen.
 #[derive(serde::Serialize)]
 pub struct CacheBucket {
@@ -39,7 +45,15 @@ pub struct CacheBucket {
 
 /// Buckets in the order the settings screen lists them. `downloads` is deliberately absent: it is
 /// the offline library the user asked for, not a cache, and it lives under app DATA for that reason.
-const BUCKETS: [&str; 4] = ["thumbs", "direct-torrents", "subs", "gif-capture"];
+const BUCKETS: [&str; 5] = [
+    "thumbs",
+    "direct-torrents",
+    "torrent-metadata",
+    "subs",
+    "gif-capture",
+];
+
+static GC_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub fn cache_root(app: &AppHandle) -> Result<PathBuf, String> {
     app.path().app_cache_dir().map_err(|e| e.to_string())
@@ -106,6 +120,60 @@ pub fn drop_thumb_dir(dir: &Path) {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// Atomically move an abandoned direct-torrent payload out of the engine's live path. Renaming one
+/// directory entry is effectively constant-time; recursively unlinking the episode can take long
+/// enough to swallow the whole warm-up window on Windows. A unique name also lets a new process
+/// recover a staged tree left by a kill without first waiting for it to disappear.
+fn stage_direct_torrent_payload(root: &Path) -> Result<Option<PathBuf>, String> {
+    let live = root.join("direct-torrents");
+    if !live.exists() {
+        return Ok(None);
+    }
+    let sequence = GC_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let staged = root.join(format!(
+        "direct-torrents.gc-{}-{sequence}",
+        std::process::id()
+    ));
+    std::fs::rename(&live, &staged)
+        .map_err(|e| format!("Could not retire the old torrent cache: {e}"))?;
+    Ok(Some(staged))
+}
+
+fn drop_staged_direct_torrents(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if (name == "direct-torrents.gc" || name.starts_with("direct-torrents.gc-"))
+            && entry.path().is_dir()
+        {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
+/// Return a fresh directory for the torrent engine without putting recursive deletion on its
+/// startup path. Normal startup has already staged the previous payload; this second staging is a
+/// backstop for tests/alternate entry points and for a startup sweep that could not run.
+pub fn fresh_direct_torrent_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let root = cache_root(app)?;
+    let staged = stage_direct_torrent_payload(&root)?;
+    let live = root.join("direct-torrents");
+    std::fs::create_dir_all(&live)
+        .map_err(|e| format!("Could not create the torrent cache: {e}"))?;
+    if let Some(staged) = staged {
+        std::thread::Builder::new()
+            .name("izumi-torrent-gc".into())
+            .spawn(move || {
+                let _ = std::fs::remove_dir_all(staged);
+            })
+            .ok();
+    }
+    Ok(live)
+}
+
 /// Evict least-recently-modified tile directories until `thumbs/` is under the cap. `keep` (the
 /// episode currently playing) is never a candidate, however big it is — evicting the tiles being
 /// hovered right now would just re-decode them a frame later.
@@ -148,27 +216,16 @@ pub fn enforce_thumb_cap(thumbs_root: &Path, keep: Option<&Path>) {
 /// bucket alone can be hundreds of MB.
 pub fn sweep_at_startup(app: &AppHandle) {
     let Ok(root) = cache_root(app) else { return };
+    // Stage synchronously, before the webview can invoke torrent warm-up. Doing the rename inside
+    // the detached worker leaves a small but real race where it can move the brand-new live folder
+    // after librqbit has opened it. Only the recursive deletion belongs in the background.
+    let _ = stage_direct_torrent_payload(&root);
     std::thread::Builder::new()
         .name("izumi-cache-gc".into())
         .spawn(move || {
-            // Direct-torrent payload. The engine already discards this on ITS next start, which is
-            // the problem: nothing about "the user never streams another torrent" should mean the
-            // last one's bytes live forever. Renamed before deleting so a play that starts during
-            // the sweep races nothing — the engine's own `remove_dir_all` then finds no directory
-            // (tolerated) rather than a tree being unlinked underneath it.
-            let torrents = root.join("direct-torrents");
-            if torrents.exists() {
-                let staged = root.join("direct-torrents.gc");
-                let _ = std::fs::remove_dir_all(&staged);
-                match std::fs::rename(&torrents, &staged) {
-                    Ok(()) => {
-                        let _ = std::fs::remove_dir_all(&staged);
-                    }
-                    // A rename can fail on Windows if something still holds a handle. The bucket is
-                    // reclaimable next launch; a failed sweep must never block startup.
-                    Err(_) => {}
-                }
-            }
+            // Direct-torrent payloads were moved out of the live path above. This also reclaims a
+            // staged tree left behind if the app was killed while an earlier sweep was unlinking it.
+            drop_staged_direct_torrents(&root);
 
             // GIF scratch. No capture can be in flight before the window exists, so anything here
             // is from a session that was killed mid-recording.
@@ -177,6 +234,10 @@ pub fn sweep_at_startup(app: &AppHandle) {
             // Subtitle sidecars age out; they are shared across rewatches, so they are not tied to
             // an episode's lifetime the way tiles are.
             prune_older_than(&root.join("subs"), SUB_MAX_AGE);
+
+            // Keep immutable metainfo across launches. This deliberately lives outside the
+            // ephemeral payload directory, so starting the torrent engine cannot erase it.
+            prune_older_than(&root.join("torrent-metadata"), TORRENT_METADATA_MAX_AGE);
 
             // Tiles are dropped per episode during a normal session. Anything left is from one that
             // ended abruptly, so apply the cap (and with no episode playing, nothing is exempt).
@@ -264,6 +325,23 @@ mod tests {
         prune_older_than(&root, Duration::from_secs(0));
         assert!(!root.join("fresh.srt").exists());
         assert!(root.exists(), "the bucket directory itself must survive");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn staging_a_torrent_payload_is_atomic_from_the_engines_point_of_view() {
+        let root = std::env::temp_dir().join(format!(
+            "izumi-gc-torrent-{}-{}",
+            std::process::id(),
+            GC_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        write(&root.join("direct-torrents").join("episode.mkv"), 16);
+
+        let staged = stage_direct_torrent_payload(&root).unwrap().unwrap();
+
+        assert!(!root.join("direct-torrents").exists());
+        assert!(staged.join("episode.mkv").exists());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

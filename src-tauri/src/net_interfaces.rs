@@ -104,9 +104,27 @@ fn is_vpn_like(iface: &IfaceView) -> bool {
     )
     .to_lowercase();
     const HINTS: &[&str] = &[
-        "vpn", "tunnel", "nordlynx", "mullvad", "gotatun", "proton", "wireguard", "wintun",
-        "openvpn", "lightway", "expressvpn", "surfshark", "windscribe", "cyberghost", "ipvanish",
-        "private internet access", "wgpia", "tailscale", "zerotier", "hamachi", "tap-",
+        "vpn",
+        "tunnel",
+        "nordlynx",
+        "mullvad",
+        "gotatun",
+        "proton",
+        "wireguard",
+        "wintun",
+        "openvpn",
+        "lightway",
+        "expressvpn",
+        "surfshark",
+        "windscribe",
+        "cyberghost",
+        "ipvanish",
+        "private internet access",
+        "wgpia",
+        "tailscale",
+        "zerotier",
+        "hamachi",
+        "tap-",
     ];
     if HINTS.iter().any(|hint| haystack.contains(hint)) {
         return true;
@@ -152,7 +170,8 @@ pub(crate) async fn snapshot() -> Result<Vec<IfaceView>, String> {
                 tunnel_like_type: iface.is_tun()
                     || matches!(
                         iface.if_type,
-                        netdev::prelude::InterfaceType::Tunnel | netdev::prelude::InterfaceType::Ppp
+                        netdev::prelude::InterfaceType::Tunnel
+                            | netdev::prelude::InterfaceType::Ppp
                     ),
                 up: iface.is_up(),
                 default_route: iface.default,
@@ -375,7 +394,15 @@ mod tests {
 
     #[test]
     fn recognizes_vpn_adapters_by_product_and_device_names() {
-        for name in ["NordLynx", "wg0", "tun0", "utun4", "wg-mullvad", "proton0", "ppp0"] {
+        for name in [
+            "NordLynx",
+            "wg0",
+            "tun0",
+            "utun4",
+            "wg-mullvad",
+            "proton0",
+            "ppp0",
+        ] {
             assert!(is_vpn_like(&iface(name, None, true, &[])), "{name}");
         }
         let tap = IfaceView {
@@ -384,7 +411,12 @@ mod tests {
         };
         assert!(is_vpn_like(&tap));
         assert!(is_vpn_like(&iface("{guid}", Some("Mullvad"), true, &[])));
-        assert!(is_vpn_like(&iface("{guid}", Some("ProtonVPN TUN"), true, &[])));
+        assert!(is_vpn_like(&iface(
+            "{guid}",
+            Some("ProtonVPN TUN"),
+            true,
+            &[]
+        )));
     }
 
     #[test]
@@ -418,8 +450,18 @@ mod tests {
         assert!(ready(&iface("wg0", None, true, &["10.64.0.3"])));
         assert!(!ready(&iface("wg0", None, false, &["10.64.0.3"])));
         // A disconnected adapter often keeps only link-local addresses.
-        assert!(!ready(&iface("wg0", None, true, &["169.254.10.2", "fe80::1"])));
+        assert!(!ready(&iface(
+            "wg0",
+            None,
+            true,
+            &["169.254.10.2", "fe80::1"]
+        )));
         assert!(!ready(&iface("wg0", None, true, &[])));
-        assert!(ready(&iface("wg0", None, true, &["fe80::1", "2a03:1b20::4"])));
+        assert!(ready(&iface(
+            "wg0",
+            None,
+            true,
+            &["fe80::1", "2a03:1b20::4"]
+        )));
     }
 }

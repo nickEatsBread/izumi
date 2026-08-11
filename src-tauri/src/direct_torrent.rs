@@ -1,7 +1,8 @@
 use std::{
-    collections::HashSet,
-    net::Ipv4Addr,
+    collections::{HashMap, HashSet},
+    net::{Ipv4Addr, SocketAddr},
     num::NonZeroU32,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -10,23 +11,32 @@ use std::{
 };
 
 use librqbit::{
-    api::TorrentIdOrHash,
-    http_api::{HttpApi, HttpApiOptions},
-    AddTorrent, AddTorrentOptions, AddTorrentResponse, Api, ManagedTorrent, Session,
-    SessionOptions,
+    api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Api, Magnet,
+    ManagedTorrent, Session, SessionOptions, SessionPersistenceConfig,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tokio::{
     net::TcpListener,
-    sync::{Mutex, OnceCell},
+    sync::{oneshot, Mutex, OnceCell},
     task::JoinHandle,
     time::{sleep, timeout, Instant},
 };
 
-use crate::direct_torrent_select::{select_file, select_subtitles, subtitle_language, TorrentFile};
+use crate::direct_torrent_select::{
+    select_file_for_title, select_subtitles, subtitle_language, TorrentFile,
+};
 
 const METADATA_TIMEOUT: Duration = Duration::from_secs(60);
+const MIN_STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
+const STARTUP_CANCEL_POLL: Duration = Duration::from_millis(50);
+const STARTUP_CANCELED: &str = "Torrent startup canceled.";
+const STARTUP_STREAM_PRIORITY_TIMEOUT: Duration = Duration::from_secs(15);
+const METADATA_CACHE_ENTRIES: usize = 16;
+const MAX_CACHED_TORRENT_BYTES: u64 = 16 * 1024 * 1024;
+const METADATA_CACHE_DIR: &str = "torrent-metadata";
+const DIRECT_PEER_PORTS: std::ops::Range<u16> = 42400..42500;
+const DEFERRED_WRITE_MIB: usize = 32;
 const POST_PLAYBACK_SEED_TIME: Duration = Duration::from_secs(30 * 60);
 const SEED_CHECK_INTERVAL: Duration = Duration::from_secs(10);
 const PLAYBACK_BUFFER_FLOOR_SECONDS: f64 = 60.0;
@@ -34,16 +44,40 @@ const AUTO_UPLOAD_MBPS: f64 = 1.0;
 const USER_CAPACITY_FRACTION: f64 = 0.70;
 const BUFFERING_UPLOAD_BPS: u32 = 64 * 1024;
 
+/// Anime-oriented public trackers used by Hayase in addition to a torrent's own announce list.
+/// DHT remains the primary decentralized source; these stop a bare info-hash from depending on a
+/// single discovery mechanism. Dead/duplicate trackers are harmless because rqbit polls them in
+/// parallel and de-duplicates URLs.
+const PUBLIC_TRACKERS: [&str; 6] = [
+    "udp://open.stealth.si:80/announce",
+    "http://nyaa.tracker.wf:7777/announce",
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://exodus.desync.com:6969/announce",
+    "http://open.acgnxtracker.com:80/announce",
+    "https://tracker.nekobt.to/api/tracker/public/announce",
+];
+
 #[derive(Default)]
 pub struct DirectTorrentState {
     engine: OnceCell<Arc<DirectTorrentEngine>>,
     active: Arc<Mutex<Option<ActivePlayback>>>,
+    /// At most one different-infohash next episode may download beside the active torrent.
+    prepared_next: Arc<Mutex<Option<PreparedTorrent>>>,
+    /// Magnet metadata is immutable for an info hash. Keeping a small session-local copy avoids
+    /// repeating the slow DHT/tracker metadata exchange for every episode in the same season pack.
+    metadata_cache: Mutex<HashMap<String, CachedTorrentMetadata>>,
     next_playback_id: AtomicU64,
+    /// Every new startup supersedes the previous one before it waits on metadata or the active
+    /// torrent lock. The webview cannot abort a Tauri invoke directly, so this generation is the
+    /// cancellation boundary shared by explicit Back/Cancel and replacement source attempts.
+    active_startup_id: AtomicU64,
 }
 
 struct DirectTorrentEngine {
     session: Arc<Session>,
     port: u16,
+    stream_diagnostics: crate::direct_torrent_stream::StreamDiagnostics,
+    fastresume_folder: PathBuf,
     socks_proxy_url: Option<String>,
     bind_interface: Option<String>,
 }
@@ -58,7 +92,33 @@ struct ActivePlayback {
     uploaded_at_start: u64,
     upload_bps: NonZeroU32,
     upload_reduced: bool,
+    /// Holds a zero-position FileStream open from before the torrent is unpaused until mpv has
+    /// accepted the URL. librqbit schedules active stream ranges before ordinary selected-file
+    /// pieces, so the first peer requests warm the media header instead of arbitrary payload.
+    startup_stream_release: Option<oneshot::Sender<()>>,
+    next_episode_preload: Option<NextEpisodePreload>,
     cleanup_task: Option<JoinHandle<()>>,
+}
+
+struct NextEpisodePreload {
+    file_index: usize,
+    size: u64,
+    subtitle_indices: HashSet<usize>,
+    /// Dropping/sending this releases the FileStream that prioritizes the next file's first 32 MiB.
+    _stream_release: oneshot::Sender<()>,
+}
+
+struct PreparedTorrent {
+    info_hash: String,
+    handle: Arc<ManagedTorrent>,
+    file_index: usize,
+    size: u64,
+}
+
+#[derive(Clone)]
+struct CachedTorrentMetadata {
+    torrent_bytes: Vec<u8>,
+    seen_peers: Vec<SocketAddr>,
 }
 
 #[derive(Serialize)]
@@ -68,8 +128,22 @@ pub struct DirectTorrentPlayback {
     filename: String,
     file_index: usize,
     size: u64,
+    torrent_size: u64,
+    piece_count: usize,
     playback_id: u64,
     subtitles: Vec<DirectTorrentSubtitle>,
+    engine_ready_ms: u64,
+    metadata_ms: u64,
+    active_lock_wait_ms: u64,
+    initialization_ms: u64,
+    total_ms: u64,
+    reused_torrent: bool,
+    metadata_peers: usize,
+    metadata_cached: bool,
+    metadata_cache: String,
+    tracker_count: usize,
+    incoming_peer_port: Option<u16>,
+    fastresume_primed: bool,
 }
 
 #[derive(Serialize)]
@@ -96,6 +170,24 @@ pub struct DirectTorrentHealth {
     /// engine stops treating peers as needed.
     finished: bool,
     error: Option<String>,
+    stream_request_count: u64,
+    stream_file_index: Option<usize>,
+    stream_request_range: Option<String>,
+    stream_status: Option<u16>,
+    stream_response_bytes: Option<u64>,
+    next_preload_file_index: Option<usize>,
+    next_preload_downloaded_bytes: u64,
+    next_preload_size: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectTorrentNextPreload {
+    file_index: usize,
+    filename: String,
+    size: u64,
+    downloaded_bytes: u64,
+    same_torrent: bool,
 }
 
 #[derive(Serialize)]
@@ -188,6 +280,27 @@ fn selected_file_downloaded_bytes(
         .min(selected_size)
 }
 
+fn managed_torrent_files(handle: &ManagedTorrent) -> Result<Vec<TorrentFile>, String> {
+    handle
+        .with_metadata(|metadata| {
+            let details = metadata
+                .info
+                .iter_file_details()
+                .map_err(|error| format!("Could not read the torrent file list: {error:#}"))?;
+            Ok(details
+                .enumerate()
+                .filter_map(|(index, details)| {
+                    details.filename.to_string().ok().map(|name| TorrentFile {
+                        index,
+                        name,
+                        length: details.len,
+                    })
+                })
+                .collect::<Vec<_>>())
+        })
+        .map_err(|error| format!("Could not read the active torrent metadata: {error:#}"))?
+}
+
 /// Empty/whitespace means "no binding". The value is an OS interface name picked from
 /// `list_network_interfaces` and treated as opaque — existence is checked at session start.
 pub(crate) fn normalized_bind_interface(value: Option<String>) -> Option<String> {
@@ -239,6 +352,97 @@ pub(crate) fn proxy_safe_magnet(magnet: &str, proxy_enabled: bool) -> Result<Str
     Ok(parsed.into())
 }
 
+/// Add a compact, known-public announce set without rewriting the caller's magnet. Stremio
+/// add-ons frequently provide only an info hash; Hayase/Shiru compensate with application-level
+/// trackers, while we previously left those torrents entirely at the mercy of a cold DHT table.
+pub(crate) fn add_public_trackers(magnet: &str) -> Result<String, String> {
+    let parsed = url::Url::parse(magnet)
+        .map_err(|_| "Direct playback needs a valid magnet link.".to_string())?;
+    let existing = parsed
+        .query_pairs()
+        .filter(|(key, _)| key == "tr")
+        .map(|(_, value)| value.into_owned())
+        .collect::<HashSet<_>>();
+    let mut result = magnet.to_string();
+    for tracker in PUBLIC_TRACKERS {
+        if existing.contains(tracker) {
+            continue;
+        }
+        if !result.ends_with('?') && !result.ends_with('&') {
+            result.push('&');
+        }
+        result.push_str("tr=");
+        result.extend(url::form_urlencoded::byte_serialize(tracker.as_bytes()));
+    }
+    Ok(result)
+}
+
+fn metadata_cache_path(app: &AppHandle, info_hash: &str) -> Result<PathBuf, String> {
+    if info_hash.len() != 40 || !info_hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("The torrent returned an invalid v1 info hash.".into());
+    }
+    Ok(crate::cache_gc::cache_root(app)?
+        .join(METADATA_CACHE_DIR)
+        .join(format!("{}.torrent", info_hash.to_ascii_lowercase())))
+}
+
+async fn read_disk_metadata(path: &Path) -> Option<Vec<u8>> {
+    let metadata = tokio::fs::metadata(path).await.ok()?;
+    if metadata.len() == 0 || metadata.len() > MAX_CACHED_TORRENT_BYTES {
+        let _ = tokio::fs::remove_file(path).await;
+        return None;
+    }
+    tokio::fs::read(path).await.ok()
+}
+
+async fn write_disk_metadata(path: PathBuf, bytes: Vec<u8>, startup_id: u64) {
+    if bytes.is_empty() || bytes.len() as u64 > MAX_CACHED_TORRENT_BYTES || path.exists() {
+        return;
+    }
+    let Some(parent) = path.parent() else { return };
+    if tokio::fs::create_dir_all(parent).await.is_err() {
+        return;
+    }
+    let temporary = path.with_extension(format!("{startup_id}.tmp"));
+    if tokio::fs::write(&temporary, bytes).await.is_err() {
+        return;
+    }
+    if tokio::fs::rename(&temporary, &path).await.is_err() {
+        // Another concurrent resolve may have won the race, which is a successful outcome.
+        let _ = tokio::fs::remove_file(&temporary).await;
+    }
+}
+
+fn empty_fastresume_bitfield_len(piece_hash_bytes: usize) -> Result<usize, String> {
+    const SHA1_BYTES: usize = 20;
+    if piece_hash_bytes == 0 || piece_hash_bytes % SHA1_BYTES != 0 {
+        return Err("The torrent contains an invalid v1 piece-hash table.".into());
+    }
+    Ok((piece_hash_bytes / SHA1_BYTES).div_ceil(8))
+}
+
+/// A direct-playback subfolder is ephemeral and starts with no trusted pieces. rqbit otherwise
+/// walks every piece in the ENTIRE torrent during initialization—even after the first missing-file
+/// read proves there is nothing to checksum. A zero fast-resume bitfield expresses the same fact
+/// directly: no existing byte is trusted, and the stream still blocks until requested pieces have
+/// been downloaded and hash-verified.
+async fn prime_empty_fastresume(
+    folder: &Path,
+    info_hash: &str,
+    piece_hash_bytes: usize,
+) -> Result<(), String> {
+    let bitfield_len = empty_fastresume_bitfield_len(piece_hash_bytes)?;
+    tokio::fs::create_dir_all(folder)
+        .await
+        .map_err(|error| format!("Could not create the torrent fast-resume cache: {error}"))?;
+    tokio::fs::write(
+        folder.join(format!("{}.bitv", info_hash.to_ascii_lowercase())),
+        vec![0; bitfield_len],
+    )
+    .await
+    .map_err(|error| format!("Could not prime torrent fast-resume state: {error}"))
+}
+
 impl DirectTorrentState {
     async fn get(
         &self,
@@ -258,29 +462,15 @@ impl DirectTorrentState {
                 if let Some(name) = &configured_bind {
                     crate::net_interfaces::ensure_bound_iface_ready(name).await?;
                 }
-                let folder = app
-                    .path()
-                    .app_cache_dir()
-                    .map_err(|e| format!("Could not locate Izumi's cache folder: {e}"))?
-                    .join("direct-torrents");
-
-                // Direct playback is deliberately ephemeral rather than a local library. If the
-                // app was killed before its normal seeding cleanup, discard that abandoned cache
-                // before starting a fresh torrent session.
-                match tokio::fs::remove_dir_all(&folder).await {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => {
-                        return Err(format!("Could not clear the old torrent cache: {error}"))
-                    }
-                }
-                tokio::fs::create_dir_all(&folder)
-                    .await
-                    .map_err(|e| format!("Could not create the torrent cache: {e}"))?;
+                // Direct playback is deliberately ephemeral rather than a local library. Retire an
+                // abandoned payload with an atomic rename and unlink it off-thread: recursively
+                // deleting the previous episode here made release warm-up wait on disk cleanup.
+                let folder = crate::cache_gc::fresh_direct_torrent_dir(app)?;
 
                 // Episode payloads are ephemeral, but desktop DHT routing is allowed to persist so
                 // the first play after launch is not a completely cold peer-discovery bootstrap.
                 // Android still disables that persistence because it has no librqbit project dir.
+                let fastresume_folder = folder.join(".fastresume");
                 let session = Session::new_with_opts(
                     folder,
                     SessionOptions {
@@ -290,8 +480,26 @@ impl DirectTorrentState {
                         disable_dht: configured_proxy.is_some(),
                         disable_dht_persistence: cfg!(target_os = "android")
                             || configured_proxy.is_some(),
-                        persistence: None,
+                        // Persistence supplies rqbit's bitfield store. Payload retention remains
+                        // ephemeral: this database lives inside the disposable playback folder.
+                        persistence: Some(SessionPersistenceConfig::Json {
+                            folder: Some(fastresume_folder.clone()),
+                        }),
+                        fastresume: true,
                         socks_proxy_url: configured_proxy.clone(),
+                        // A real listen port lets DHT/trackers announce us and allows peers to
+                        // connect back. Keep proxy/VPN-bound sessions closed because rqbit 8's
+                        // listener cannot bind to a named interface safely.
+                        listen_port_range: (!cfg!(target_os = "android")
+                            && configured_proxy.is_none()
+                            && configured_bind.is_none())
+                        .then_some(DIRECT_PEER_PORTS),
+                        enable_upnp_port_forwarding: !cfg!(target_os = "android")
+                            && configured_proxy.is_none()
+                            && configured_bind.is_none(),
+                        // Keep completed pieces briefly in memory so a slow Windows disk cannot
+                        // stall the priority HTTP reader behind synchronous writes.
+                        defer_writes_up_to: Some(DEFERRED_WRITE_MIB),
                         ..Default::default()
                     },
                 )
@@ -305,15 +513,12 @@ impl DirectTorrentState {
                     .local_addr()
                     .map_err(|e| format!("Could not read the local playback address: {e}"))?
                     .port();
-                let server = HttpApi::new(
-                    api,
-                    Some(HttpApiOptions {
-                        read_only: true,
-                        basic_auth: None,
-                    }),
-                );
+                let stream_diagnostics = crate::direct_torrent_stream::StreamDiagnostics::default();
+                let server_diagnostics = stream_diagnostics.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = server.make_http_api_and_run(listener, None).await {
+                    if let Err(error) =
+                        crate::direct_torrent_stream::serve(api, listener, server_diagnostics).await
+                    {
                         eprintln!("direct torrent playback server stopped: {error:#}");
                     }
                 });
@@ -322,9 +527,11 @@ impl DirectTorrentState {
                 app.state::<crate::net_interfaces::VpnGuard>()
                     .attach(app, configured_bind.clone(), &session)
                     .await?;
-                Ok(Arc::new(DirectTorrentEngine {
+                Ok::<Arc<DirectTorrentEngine>, String>(Arc::new(DirectTorrentEngine {
                     session,
                     port,
+                    stream_diagnostics,
+                    fastresume_folder,
                     socks_proxy_url: configured_proxy,
                     bind_interface: configured_bind,
                 }))
@@ -371,35 +578,36 @@ async fn delete_active(
     }
 }
 
-#[tauri::command]
-pub async fn torrent_playback_url(
-    app: AppHandle,
-    state: tauri::State<'_, DirectTorrentState>,
-    magnet: String,
-    preferred_filename: Option<String>,
-    episode: Option<u32>,
-    absolute_episode: Option<u32>,
-    season: Option<u32>,
-    download_limit_mbps: Option<f64>,
-    upstream_capacity_mbps: Option<f64>,
-    socks_proxy_url: Option<String>,
-    bind_interface: Option<String>,
-) -> Result<DirectTorrentPlayback, String> {
-    let magnet = magnet.trim();
-    if !magnet.to_ascii_lowercase().starts_with("magnet:?") {
-        return Err("Direct playback needs a valid magnet link.".into());
-    }
+fn configured_startup_timeout(timeout_ms: Option<u64>) -> Duration {
+    timeout_ms
+        .map(Duration::from_millis)
+        .unwrap_or(METADATA_TIMEOUT)
+        .clamp(MIN_STARTUP_TIMEOUT, METADATA_TIMEOUT)
+}
 
-    let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
-    let magnet = proxy_safe_magnet(magnet, socks_proxy_url.is_some())?;
-    let engine = state.get(&app, socks_proxy_url, bind_interface).await?;
-    // With the kill switch engaged, the metadata fetch below would sit on a paused session until
-    // its 60 s timeout and then blame the seeders. Fail fast with the real reason instead.
-    app.state::<crate::net_interfaces::VpnGuard>().ensure_up()?;
-    let listing = timeout(
-        METADATA_TIMEOUT,
-        engine.session.add_torrent(
-            AddTorrent::from_url(&magnet),
+fn remaining_startup_time(started: Instant, budget: Duration) -> Duration {
+    budget.saturating_sub(started.elapsed())
+}
+
+fn startup_is_current(state: &DirectTorrentState, startup_id: u64) -> bool {
+    state.active_startup_id.load(Ordering::Acquire) == startup_id
+}
+
+async fn wait_for_startup_cancellation(state: &DirectTorrentState, startup_id: u64) {
+    while startup_is_current(state, startup_id) {
+        sleep(STARTUP_CANCEL_POLL).await;
+    }
+}
+
+async fn list_torrent_metadata(
+    session: &Arc<Session>,
+    source: AddTorrent<'_>,
+    allowance: Duration,
+) -> Result<AddTorrentResponse, String> {
+    timeout(
+        allowance,
+        session.add_torrent(
+            source,
             Some(AddTorrentOptions {
                 list_only: true,
                 ..Default::default()
@@ -410,12 +618,183 @@ pub async fn torrent_playback_url(
     .map_err(|_| {
         "Timed out while looking for torrent metadata. Try a source with more seeders.".to_string()
     })?
-    .map_err(|e| format!("Could not resolve the magnet: {e:#}"))?;
+    .map_err(|error| format!("Could not resolve the magnet: {error:#}"))
+}
 
-    let listing = match listing {
+/// Abort the native half of a connecting attempt. A Tauri `invoke()` promise itself is not
+/// cancelable, so merely dropping its JavaScript owner used to leave metadata discovery running for
+/// 60 seconds and holding up the next source. New starts also advance this generation themselves.
+#[tauri::command]
+pub fn torrent_playback_cancel_start(state: tauri::State<'_, DirectTorrentState>, startup_id: u64) {
+    // Compare-and-clear makes a delayed Cancel harmless after a replacement has already started.
+    // A blind increment could arrive out of order across two invokes and cancel the new source.
+    let _ = state.active_startup_id.compare_exchange(
+        startup_id,
+        0,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    );
+}
+
+#[tauri::command]
+pub async fn torrent_playback_url(
+    app: AppHandle,
+    state: tauri::State<'_, DirectTorrentState>,
+    magnet: String,
+    preferred_filename: Option<String>,
+    series_title: Option<String>,
+    episode: Option<u32>,
+    absolute_episode: Option<u32>,
+    season: Option<u32>,
+    download_limit_mbps: Option<f64>,
+    upstream_capacity_mbps: Option<f64>,
+    socks_proxy_url: Option<String>,
+    bind_interface: Option<String>,
+    startup_timeout_ms: Option<u64>,
+    startup_id: u64,
+) -> Result<DirectTorrentPlayback, String> {
+    let total_started = Instant::now();
+    let magnet = magnet.trim();
+    if !magnet.to_ascii_lowercase().starts_with("magnet:?") {
+        return Err("Direct playback needs a valid magnet link.".into());
+    }
+
+    if startup_id == 0 {
+        return Err("Torrent startup needs a non-zero request id.".into());
+    }
+    // Store, rather than increment: the caller can later cancel this exact request without a
+    // delayed cancel message being able to invalidate whichever request replaced it.
+    state.active_startup_id.store(startup_id, Ordering::Release);
+    let startup_timeout = configured_startup_timeout(startup_timeout_ms);
+    let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
+    let magnet = add_public_trackers(magnet)?;
+    let magnet = proxy_safe_magnet(&magnet, socks_proxy_url.is_some())?;
+    let parsed_magnet =
+        Magnet::parse(&magnet).map_err(|e| format!("Could not parse the magnet link: {e:#}"))?;
+    let info_hash = parsed_magnet
+        .as_id20()
+        .ok_or("Direct playback currently needs a BitTorrent v1 info hash.")?;
+    let info_hash_key = info_hash.as_string();
+    let magnet_trackers = parsed_magnet.trackers;
+    let tracker_count = magnet_trackers.len();
+    let engine_started = Instant::now();
+    let engine = state.get(&app, socks_proxy_url, bind_interface).await?;
+    let engine_ready_ms = engine_started.elapsed().as_millis() as u64;
+    if !startup_is_current(&state, startup_id) {
+        return Err(STARTUP_CANCELED.into());
+    }
+    // With the kill switch engaged, the metadata fetch below would sit on a paused session until
+    // its 60 s timeout and then blame the seeders. Fail fast with the real reason instead.
+    app.state::<crate::net_interfaces::VpnGuard>().ensure_up()?;
+    // Metadata and local initialization share ONE attempt budget. Applying the allowance to each
+    // phase separately could turn a 15-second automatic attempt into a 30-second one.
+    let startup_budget_started = Instant::now();
+    let metadata_started = Instant::now();
+    let memory_metadata = state
+        .metadata_cache
+        .lock()
+        .await
+        .get(&info_hash_key)
+        .cloned();
+    let disk_cache_path = metadata_cache_path(&app, &info_hash_key)?;
+    let memory_cached = memory_metadata.is_some();
+    let disk_metadata = if !memory_cached {
+        read_disk_metadata(&disk_cache_path).await
+    } else {
+        None
+    };
+    let disk_cached = disk_metadata.is_some();
+    let cached_metadata = memory_metadata.or_else(|| {
+        disk_metadata.map(|torrent_bytes| CachedTorrentMetadata {
+            torrent_bytes,
+            seen_peers: Vec::new(),
+        })
+    });
+    let mut metadata_cached = cached_metadata.is_some();
+    let mut metadata_cache = if memory_cached {
+        "memory"
+    } else if disk_cached {
+        "disk"
+    } else {
+        "miss"
+    };
+    let cached_peers = cached_metadata
+        .as_ref()
+        .map(|cached| cached.seen_peers.clone())
+        .unwrap_or_default();
+    let metadata_source = cached_metadata
+        .map(|cached| AddTorrent::from_bytes(cached.torrent_bytes))
+        .unwrap_or_else(|| AddTorrent::from_url(&magnet));
+    let first_listing = tokio::select! {
+        result = list_torrent_metadata(
+            &engine.session,
+            metadata_source,
+            remaining_startup_time(startup_budget_started, startup_timeout),
+        ) => result,
+        _ = wait_for_startup_cancellation(&state, startup_id) => {
+            return Err(STARTUP_CANCELED.into());
+        }
+    }
+    .and_then(|response| match &response {
+        AddTorrentResponse::ListOnly(listing) if listing.info_hash.as_string() != info_hash_key => {
+            Err("Cached torrent metadata did not match its info hash.".to_string())
+        }
+        _ => Ok(response),
+    });
+    let listing = if metadata_cached && first_listing.is_err() {
+        // A partial write, old format, or manual cache edit must degrade to an ordinary magnet
+        // lookup rather than make that info hash permanently unplayable.
+        state.metadata_cache.lock().await.remove(&info_hash_key);
+        let _ = tokio::fs::remove_file(&disk_cache_path).await;
+        metadata_cached = false;
+        metadata_cache = "invalid-fallback";
+        tokio::select! {
+            result = list_torrent_metadata(
+                &engine.session,
+                AddTorrent::from_url(&magnet),
+                remaining_startup_time(startup_budget_started, startup_timeout),
+            ) => result,
+            _ = wait_for_startup_cancellation(&state, startup_id) => {
+                return Err(STARTUP_CANCELED.into());
+            }
+        }?
+    } else {
+        first_listing?
+    };
+    let metadata_ms = metadata_started.elapsed().as_millis() as u64;
+
+    let mut listing = match listing {
         AddTorrentResponse::ListOnly(listing) => listing,
         _ => return Err("The torrent engine returned an invalid metadata response.".into()),
     };
+    if metadata_cached {
+        // Parsing cached .torrent bytes does not discover peers. Retain the peers observed during
+        // the original magnet exchange as an immediate seed for the actual playback torrent.
+        listing.seen_peers = cached_peers;
+    } else {
+        let torrent_bytes = listing.torrent_bytes.to_vec();
+        let mut cache = state.metadata_cache.lock().await;
+        if cache.len() >= METADATA_CACHE_ENTRIES {
+            if let Some(oldest) = cache.keys().next().cloned() {
+                cache.remove(&oldest);
+            }
+        }
+        cache.insert(
+            listing.info_hash.as_string(),
+            CachedTorrentMetadata {
+                torrent_bytes: torrent_bytes.clone(),
+                seen_peers: listing.seen_peers.clone(),
+            },
+        );
+        drop(cache);
+        tauri::async_runtime::spawn(write_disk_metadata(
+            disk_cache_path,
+            torrent_bytes,
+            startup_id,
+        ));
+    }
+    let metadata_peers = listing.seen_peers.len();
+    let piece_hash_bytes = listing.info.pieces.as_ref().len();
     let files = listing
         .info
         .iter_file_details()
@@ -429,9 +808,14 @@ pub async fn torrent_playback_url(
             })
         })
         .collect::<Vec<_>>();
-    let selected = select_file(
+    let torrent_size = files
+        .iter()
+        .fold(0u64, |total, file| total.saturating_add(file.length));
+    let piece_count = piece_hash_bytes / 20;
+    let selected = select_file_for_title(
         &files,
         preferred_filename.as_deref(),
+        series_title.as_deref(),
         episode,
         absolute_episode,
         season,
@@ -467,10 +851,34 @@ pub async fn torrent_playback_url(
         .ratelimits
         .set_download_bps(download_limit_mbps.and_then(mbps_to_bps));
 
+    // Claim a background-prepared single-episode torrent before replacing the current one. A
+    // stale slot is deleted here so a manual source/title change cannot leave it downloading.
+    let (prepared_torrent, stale_prepared) = {
+        let mut prepared = state.prepared_next.lock().await;
+        match prepared.take() {
+            Some(item) if item.info_hash == info_hash_key => (Some(item), None),
+            Some(item) => (None, Some(item)),
+            None => (None, None),
+        }
+    };
+    if let Some(stale) = stale_prepared {
+        let _ = engine
+            .session
+            .delete(TorrentIdOrHash::Id(stale.handle.id()), true)
+            .await;
+    }
+
     // Serialize replacement with post-play cleanup. Reuse the same managed torrent for another
-    // episode in a season pack; otherwise remove the previous torrent and its ephemeral files
-    // before admitting the new one. This keeps exactly one torrent active.
-    let mut active = state.active.lock().await;
+    // episode in a season pack, or claim the one prepared-next handle. During ordinary playback
+    // there is one active torrent; the binge feature may keep exactly one additional bounded slot.
+    let active_lock_started = Instant::now();
+    let mut active = tokio::select! {
+        active = state.active.lock() => active,
+        _ = wait_for_startup_cancellation(&state, startup_id) => {
+            return Err(STARTUP_CANCELED.into());
+        }
+    };
+    let active_lock_wait_ms = active_lock_started.elapsed().as_millis() as u64;
     let same_torrent = active
         .as_ref()
         .filter(|item| item.handle.info_hash() == listing.info_hash)
@@ -493,9 +901,16 @@ pub async fn torrent_playback_url(
         }
     }
 
+    let claimed_prepared = prepared_torrent.is_some();
     let (handle, reused_torrent) = if let Some(handle) = same_torrent {
         (handle, true)
+    } else if let Some(prepared) = prepared_torrent {
+        (prepared.handle, true)
     } else {
+        // This must happen after the previous torrent is deleted: rqbit persistence removes its
+        // mapped bitfield during deletion. Priming earlier could have our new file removed with it
+        // when two releases happen to share an info hash.
+        prime_empty_fastresume(&engine.fastresume_folder, &info_hash_key, piece_hash_bytes).await?;
         let added = engine
             .session
             .add_torrent(
@@ -504,6 +919,14 @@ pub async fn torrent_playback_url(
                     only_files: Some(selected_indices.iter().copied().collect()),
                     overwrite: true,
                     initial_peers: Some(listing.seen_peers),
+                    // Preserve the addon's current tracker hints even on a metadata-cache hit.
+                    trackers: Some(magnet_trackers),
+                    // Initialize storage without allowing ordinary sequential pieces to occupy
+                    // peer request slots. A priority FileStream is registered before unpausing.
+                    paused: true,
+                    // A timed-out initialization may still be unwinding when the fallback starts.
+                    // Never make the retry checksum or contend with that abandoned attempt's files.
+                    sub_folder: Some(format!("playback-{startup_id}")),
                     ..Default::default()
                 }),
             )
@@ -514,26 +937,107 @@ pub async fn torrent_playback_url(
             .map(|handle| (handle, false))
             .ok_or_else(|| "The torrent did not start.".to_string())?
     };
+    let delete_on_failure = !reused_torrent || claimed_prepared;
+
+    if !startup_is_current(&state, startup_id) {
+        if delete_on_failure {
+            let _ = engine
+                .session
+                .delete(TorrentIdOrHash::Id(handle.id()), true)
+                .await;
+        }
+        return Err(STARTUP_CANCELED.into());
+    }
 
     // The HTTP stream API rejects reads while a torrent is still initializing. Returning its URL
     // before this point lets mpv make one failed request and close it permanently while librqbit
     // goes on downloading the episode in the background. Wait only for checksum/storage setup —
     // NOT for episode data — so the first URL request is guaranteed to be streamable.
-    timeout(METADATA_TIMEOUT, handle.wait_until_initialized())
-        .await
-        .map_err(|_| "Timed out while preparing the torrent stream.".to_string())?
-        .map_err(|e| format!("Could not prepare the torrent stream: {e:#}"))?;
+    let initialization_started = Instant::now();
+    let initialization = tokio::select! {
+        result = timeout(
+            remaining_startup_time(startup_budget_started, startup_timeout),
+            handle.wait_until_initialized(),
+        ) => result
+            .map_err(|_| "Timed out while preparing the torrent stream.".to_string())?
+            .map_err(|e| format!("Could not prepare the torrent stream: {e:#}")),
+        _ = wait_for_startup_cancellation(&state, startup_id) => {
+            Err(STARTUP_CANCELED.into())
+        }
+    };
+    let initialization_ms = initialization_started.elapsed().as_millis() as u64;
+    if let Err(error) = initialization {
+        // The handle is not installed in `active` until initialization succeeds, so the ordinary
+        // stop command cannot see it. Delete it here or every timed-out attempt becomes an orphan
+        // that keeps discovering/downloading peers while the fallback source starts.
+        if delete_on_failure {
+            let _ = engine
+                .session
+                .delete(TorrentIdOrHash::Id(handle.id()), true)
+                .await;
+        }
+        return Err(error);
+    }
 
-    // A newly-added torrent already received this exact selection through AddTorrentOptions.
-    // Only a reused season pack needs its selection changed to the newly requested episode; its
-    // active HTTP stream still receives priority.
+    // A newly-added torrent already received this selection through AddTorrentOptions. Reused
+    // season packs and claimed prepared handles are narrowed to the episode requested at the cut.
     if reused_torrent {
-        engine
+        if let Err(error) = engine
             .session
             .update_only_files(&handle, &selected_indices)
             .await
-            .map_err(|e| format!("Could not select the episode inside the torrent: {e:#}"))?;
+        {
+            if delete_on_failure {
+                let _ = engine
+                    .session
+                    .delete(TorrentIdOrHash::Id(handle.id()), true)
+                    .await;
+            }
+            return Err(format!(
+                "Could not select the episode inside the torrent: {error:#}"
+            ));
+        }
     }
+
+    // Register byte-zero as a streaming range BEFORE a new torrent is allowed to contact peers.
+    // librqbit gives every active FileStream's 32 MiB look-ahead precedence over its natural-order
+    // queue. Previously the torrent was live for the whole JS/cache/player handoff, so peers could
+    // fill their request queues with background pieces before mpv opened the loopback URL.
+    let startup_stream = match handle.clone().stream(selected.index) {
+        Ok(stream) => stream,
+        Err(error) => {
+            if delete_on_failure {
+                let _ = engine
+                    .session
+                    .delete(TorrentIdOrHash::Id(handle.id()), true)
+                    .await;
+            }
+            return Err(format!(
+                "Could not prioritize the torrent stream: {error:#}"
+            ));
+        }
+    };
+    if !reused_torrent {
+        if let Err(error) = engine.session.unpause(&handle).await {
+            let _ = engine
+                .session
+                .delete(TorrentIdOrHash::Id(handle.id()), true)
+                .await;
+            return Err(format!("Could not start torrent peers: {error:#}"));
+        }
+    }
+
+    // FileStream itself is intentionally owned by this task. ActivePlayback stores only the
+    // release end of the channel, avoiding a librqbit-internal type in shared application state.
+    // The timeout is a fail-safe for an external player or failed frontend callback.
+    let (startup_stream_release, released) = oneshot::channel();
+    tauri::async_runtime::spawn(async move {
+        let _startup_stream = startup_stream;
+        tokio::select! {
+            _ = released => {}
+            _ = sleep(STARTUP_STREAM_PRIORITY_TIMEOUT) => {}
+        }
+    });
 
     let playback_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let uploaded_at_start = handle.stats().uploaded_bytes;
@@ -560,6 +1064,8 @@ pub async fn torrent_playback_url(
         uploaded_at_start,
         upload_bps,
         upload_reduced: false,
+        startup_stream_release: Some(startup_stream_release),
+        next_episode_preload: None,
         cleanup_task: None,
     });
     drop(active);
@@ -572,8 +1078,299 @@ pub async fn torrent_playback_url(
         filename: selected.name,
         file_index: selected.index,
         size: selected.length,
+        torrent_size,
+        piece_count,
         playback_id,
         subtitles,
+        engine_ready_ms,
+        metadata_ms,
+        active_lock_wait_ms,
+        initialization_ms,
+        total_ms: total_started.elapsed().as_millis() as u64,
+        reused_torrent,
+        metadata_peers,
+        metadata_cached,
+        metadata_cache: metadata_cache.to_string(),
+        tracker_count,
+        incoming_peer_port: engine.session.tcp_listen_port(),
+        fastresume_primed: !reused_torrent || claimed_prepared,
+    })
+}
+
+/// Release the synthetic byte-zero priority stream once mpv has accepted the real HTTP stream.
+/// mpv's own range requests remain registered with librqbit and take over priority from here.
+#[tauri::command]
+pub async fn torrent_playback_player_attached(
+    state: tauri::State<'_, DirectTorrentState>,
+    playback_id: u64,
+) -> Result<(), String> {
+    let mut active = state.active.lock().await;
+    let Some(current) = active.as_mut() else {
+        return Ok(());
+    };
+    if current.playback_id != playback_id || current.cleanup_task.is_some() {
+        return Ok(());
+    }
+    if let Some(release) = current.startup_stream_release.take() {
+        let _ = release.send(());
+    }
+    Ok(())
+}
+
+/// Select and prioritize the next episode. A season-pack file is added to the active selection;
+/// a different infohash occupies the single bounded prepared-next slot and is adopted at the cut.
+#[tauri::command]
+pub async fn torrent_playback_prepare_next(
+    state: tauri::State<'_, DirectTorrentState>,
+    playback_id: u64,
+    info_hash: String,
+    magnet: Option<String>,
+    preferred_filename: Option<String>,
+    series_title: Option<String>,
+    episode: Option<u32>,
+    absolute_episode: Option<u32>,
+    season: Option<u32>,
+) -> Result<DirectTorrentNextPreload, String> {
+    let engine = state
+        .engine
+        .get()
+        .ok_or("The direct torrent player is not running.")?;
+    let info_hash = info_hash.trim().to_ascii_lowercase();
+    if info_hash.len() != 40 || !info_hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err("The next episode returned an invalid v1 info hash.".into());
+    }
+    let mut active = state.active.lock().await;
+    let current = active
+        .as_mut()
+        .filter(|item| item.playback_id == playback_id && item.cleanup_task.is_none())
+        .ok_or("This torrent playback is no longer active.")?;
+    if current.handle.info_hash().as_string() == info_hash {
+        let files = managed_torrent_files(&current.handle)?;
+        let selected = select_file_for_title(
+            &files,
+            preferred_filename.as_deref(),
+            series_title.as_deref(),
+            episode,
+            absolute_episode,
+            season,
+        )
+        .ok_or("Could not identify the next episode inside the active season pack.")?;
+        if selected.index == current.selected_file_index {
+            return Err("The next-episode mapping selected the episode already playing.".into());
+        }
+        let subtitle_files = select_subtitles(&files, &selected);
+        let preload_stream = current
+            .handle
+            .clone()
+            .stream(selected.index)
+            .map_err(|error| format!("Could not prioritize the next episode: {error:#}"))?;
+        let next_subtitle_indices = subtitle_files
+            .iter()
+            .map(|file| file.index)
+            .collect::<HashSet<_>>();
+        let selected_indices = std::iter::once(current.selected_file_index)
+            .chain(current.subtitle_indices.iter().copied())
+            .chain(std::iter::once(selected.index))
+            .chain(next_subtitle_indices.iter().copied())
+            .collect::<HashSet<_>>();
+        engine
+            .session
+            .update_only_files(&current.handle, &selected_indices)
+            .await
+            .map_err(|error| format!("Could not select the next episode for preload: {error:#}"))?;
+
+        current.next_episode_preload.take();
+        let (stream_release, released) = oneshot::channel();
+        tauri::async_runtime::spawn(async move {
+            let _preload_stream = preload_stream;
+            tokio::select! {
+                _ = released => {}
+                _ = sleep(STARTUP_STREAM_PRIORITY_TIMEOUT) => {}
+            }
+        });
+        current.next_episode_preload = Some(NextEpisodePreload {
+            file_index: selected.index,
+            size: selected.length,
+            subtitle_indices: next_subtitle_indices,
+            _stream_release: stream_release,
+        });
+        let stats = current.handle.stats();
+        let downloaded_bytes =
+            selected_file_downloaded_bytes(&stats.file_progress, selected.index, selected.length);
+        return Ok(DirectTorrentNextPreload {
+            file_index: selected.index,
+            filename: selected.name,
+            size: selected.length,
+            downloaded_bytes,
+            same_torrent: true,
+        });
+    }
+    drop(active);
+
+    let magnet = magnet.ok_or("The next episode did not provide a magnet link.")?;
+    let magnet = add_public_trackers(&magnet)?;
+    let magnet = proxy_safe_magnet(&magnet, engine.socks_proxy_url.is_some())?;
+    let parsed = Magnet::parse(&magnet)
+        .map_err(|error| format!("Could not parse the next episode magnet: {error:#}"))?;
+    if parsed.as_id20().map(|hash| hash.as_string()).as_deref() != Some(info_hash.as_str()) {
+        return Err("The next episode magnet did not match its info hash.".into());
+    }
+    let trackers = parsed.trackers;
+
+    let cached = state.metadata_cache.lock().await.get(&info_hash).cloned();
+    let source = cached
+        .as_ref()
+        .map(|cached| AddTorrent::from_bytes(cached.torrent_bytes.clone()))
+        .unwrap_or_else(|| AddTorrent::from_url(&magnet));
+    let response = list_torrent_metadata(&engine.session, source, METADATA_TIMEOUT).await?;
+    let mut listing = match response {
+        AddTorrentResponse::ListOnly(listing) => listing,
+        _ => return Err("The next episode returned invalid torrent metadata.".into()),
+    };
+    if listing.info_hash.as_string() != info_hash {
+        return Err("The next episode metadata did not match its info hash.".into());
+    }
+    if let Some(cached) = cached {
+        listing.seen_peers = cached.seen_peers;
+    } else {
+        let mut cache = state.metadata_cache.lock().await;
+        if cache.len() >= METADATA_CACHE_ENTRIES {
+            if let Some(oldest) = cache.keys().next().cloned() {
+                cache.remove(&oldest);
+            }
+        }
+        cache.insert(
+            info_hash.clone(),
+            CachedTorrentMetadata {
+                torrent_bytes: listing.torrent_bytes.to_vec(),
+                seen_peers: listing.seen_peers.clone(),
+            },
+        );
+    }
+    let files = listing
+        .info
+        .iter_file_details()
+        .map_err(|error| format!("Could not read the next torrent file list: {error:#}"))?
+        .enumerate()
+        .filter_map(|(index, details)| {
+            details.filename.to_string().ok().map(|name| TorrentFile {
+                index,
+                name,
+                length: details.len,
+            })
+        })
+        .collect::<Vec<_>>();
+    let selected = select_file_for_title(
+        &files,
+        preferred_filename.as_deref(),
+        series_title.as_deref(),
+        episode,
+        absolute_episode,
+        season,
+    )
+    .ok_or("Could not identify the episode inside the prepared torrent.")?;
+    let subtitle_indices = select_subtitles(&files, &selected)
+        .into_iter()
+        .map(|file| file.index)
+        .collect::<HashSet<_>>();
+    let selected_indices = std::iter::once(selected.index)
+        .chain(subtitle_indices.iter().copied())
+        .collect::<HashSet<_>>();
+
+    if let Some(previous) = state.prepared_next.lock().await.take() {
+        let _ = engine
+            .session
+            .delete(TorrentIdOrHash::Id(previous.handle.id()), true)
+            .await;
+    }
+    prime_empty_fastresume(
+        &engine.fastresume_folder,
+        &info_hash,
+        listing.info.pieces.as_ref().len(),
+    )
+    .await?;
+    let preload_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
+    let added = engine
+        .session
+        .add_torrent(
+            AddTorrent::from_bytes(listing.torrent_bytes),
+            Some(AddTorrentOptions {
+                only_files: Some(selected_indices.iter().copied().collect()),
+                overwrite: true,
+                initial_peers: Some(listing.seen_peers),
+                trackers: Some(trackers),
+                paused: true,
+                sub_folder: Some(format!("preload-{playback_id}-{preload_id}")),
+                ..Default::default()
+            }),
+        )
+        .await
+        .map_err(|error| format!("Could not start the next episode torrent: {error:#}"))?;
+    let handle = added
+        .into_handle()
+        .ok_or("The next episode torrent did not start.")?;
+    let prepare_result = async {
+        timeout(METADATA_TIMEOUT, handle.wait_until_initialized())
+            .await
+            .map_err(|_| "Timed out while preparing the next episode torrent.".to_string())?
+            .map_err(|error| format!("Could not initialize the next episode torrent: {error:#}"))?;
+        let preload_stream = handle
+            .clone()
+            .stream(selected.index)
+            .map_err(|error| format!("Could not prioritize the prepared episode: {error:#}"))?;
+        engine
+            .session
+            .unpause(&handle)
+            .await
+            .map_err(|error| format!("Could not start next-episode peers: {error:#}"))?;
+        tauri::async_runtime::spawn(async move {
+            let _preload_stream = preload_stream;
+            sleep(STARTUP_STREAM_PRIORITY_TIMEOUT).await;
+        });
+        Ok::<(), String>(())
+    }
+    .await;
+    if let Err(error) = prepare_result {
+        let _ = engine
+            .session
+            .delete(TorrentIdOrHash::Id(handle.id()), true)
+            .await;
+        return Err(error);
+    }
+    let still_current = state
+        .active
+        .lock()
+        .await
+        .as_ref()
+        .is_some_and(|item| item.playback_id == playback_id && item.cleanup_task.is_none());
+    if !still_current {
+        let _ = engine
+            .session
+            .delete(TorrentIdOrHash::Id(handle.id()), true)
+            .await;
+        return Err("The current episode changed before its preload finished.".into());
+    }
+    let stats = handle.stats();
+    let downloaded_bytes =
+        selected_file_downloaded_bytes(&stats.file_progress, selected.index, selected.length);
+    let displaced = state.prepared_next.lock().await.replace(PreparedTorrent {
+        info_hash,
+        handle,
+        file_index: selected.index,
+        size: selected.length,
+    });
+    if let Some(displaced) = displaced {
+        let _ = engine
+            .session
+            .delete(TorrentIdOrHash::Id(displaced.handle.id()), true)
+            .await;
+    }
+    Ok(DirectTorrentNextPreload {
+        file_index: selected.index,
+        filename: selected.name,
+        size: selected.length,
+        downloaded_bytes,
+        same_torrent: false,
     })
 }
 
@@ -641,6 +1438,9 @@ pub async fn torrent_playback_health(
     if selection_needs_restoring(stats.finished, downloaded_bytes, current.selected_size) {
         let selected_indices = std::iter::once(current.selected_file_index)
             .chain(current.subtitle_indices.iter().copied())
+            .chain(current.next_episode_preload.iter().flat_map(|next| {
+                std::iter::once(next.file_index).chain(next.subtitle_indices.iter().copied())
+            }))
             .collect::<HashSet<_>>();
         if let Err(error) = engine
             .session
@@ -657,8 +1457,36 @@ pub async fn torrent_playback_health(
             );
         }
     }
+    let active_pack_preload = current.next_episode_preload.as_ref().map(|next| {
+        (
+            Some(next.file_index),
+            selected_file_downloaded_bytes(&stats.file_progress, next.file_index, next.size),
+            next.size,
+        )
+    });
+    let separate_preload = if active_pack_preload.is_none() {
+        state.prepared_next.lock().await.as_ref().map(|next| {
+            let next_stats = next.handle.stats();
+            (
+                Some(next.file_index),
+                selected_file_downloaded_bytes(
+                    &next_stats.file_progress,
+                    next.file_index,
+                    next.size,
+                ),
+                next.size,
+            )
+        })
+    } else {
+        None
+    };
+    let (next_preload_file_index, next_preload_downloaded_bytes, next_preload_size) =
+        active_pack_preload
+            .or(separate_preload)
+            .unwrap_or((None, 0, 0));
     let live = stats.live.as_ref();
     let peers = live.map(|live| &live.snapshot.peer_stats);
+    let stream = engine.stream_diagnostics.snapshot();
 
     Ok(DirectTorrentHealth {
         downloaded_bytes,
@@ -675,6 +1503,14 @@ pub async fn torrent_playback_health(
         state: stats.state.to_string(),
         finished: stats.finished,
         error: stats.error.clone(),
+        stream_request_count: stream.request_count,
+        stream_file_index: stream.file_index,
+        stream_request_range: stream.request_range,
+        stream_status: stream.status,
+        stream_response_bytes: stream.response_bytes,
+        next_preload_file_index,
+        next_preload_downloaded_bytes,
+        next_preload_size,
     })
 }
 
@@ -733,6 +1569,13 @@ pub async fn torrent_playback_stop(
     }
     if current.cleanup_task.is_some() {
         return Ok(());
+    }
+    current.next_episode_preload.take();
+    if let Some(prepared) = state.prepared_next.lock().await.take() {
+        let _ = engine
+            .session
+            .delete(TorrentIdOrHash::Id(prepared.handle.id()), true)
+            .await;
     }
 
     if !allow_post_playback_seed {
@@ -799,9 +1642,13 @@ pub async fn torrent_playback_stop(
 #[cfg(test)]
 mod tests {
     use super::{
+        add_public_trackers, configured_startup_timeout, empty_fastresume_bitfield_len,
         mbps_to_bps, normalized_socks_proxy, proxy_safe_magnet, ratio_target_bytes,
-        selected_file_downloaded_bytes, selection_needs_restoring, upload_limit,
+        remaining_startup_time, selected_file_downloaded_bytes, selection_needs_restoring,
+        startup_is_current, upload_limit, DirectTorrentState, METADATA_TIMEOUT,
+        MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
     };
+    use std::sync::atomic::Ordering;
 
     #[test]
     fn automatic_upload_is_one_megabit() {
@@ -821,6 +1668,34 @@ mod tests {
     #[test]
     fn ratio_target_rounds_up_to_a_quarter() {
         assert_eq!(ratio_target_bytes(10), 3);
+    }
+
+    #[test]
+    fn startup_timeout_is_bounded_but_manual_keeps_the_full_allowance() {
+        assert_eq!(configured_startup_timeout(None), METADATA_TIMEOUT);
+        assert_eq!(configured_startup_timeout(Some(15_000)).as_secs(), 15);
+        assert_eq!(configured_startup_timeout(Some(100)), MIN_STARTUP_TIMEOUT);
+        assert_eq!(configured_startup_timeout(Some(120_000)), METADATA_TIMEOUT);
+    }
+
+    #[test]
+    fn metadata_and_initialization_share_one_startup_budget() {
+        let started = tokio::time::Instant::now();
+        let remaining = remaining_startup_time(started, std::time::Duration::from_secs(15));
+        assert!(remaining <= std::time::Duration::from_secs(15));
+        assert!(remaining > std::time::Duration::from_secs(14));
+    }
+
+    #[test]
+    fn a_new_startup_id_supersedes_the_previous_one() {
+        let state = DirectTorrentState::default();
+        let first = 41;
+        state.active_startup_id.store(first, Ordering::Release);
+        assert!(startup_is_current(&state, first));
+        let second = 42;
+        state.active_startup_id.store(second, Ordering::Release);
+        assert!(!startup_is_current(&state, first));
+        assert!(startup_is_current(&state, second));
     }
 
     #[test]
@@ -854,5 +1729,35 @@ mod tests {
         assert!(!safe.contains("udp%3A"));
         assert!(safe.contains("https%3A%2F%2Ftracker.example%2Fannounce"));
         assert!(safe.contains("xt=urn%3Abtih%3Aabc"));
+    }
+
+    #[test]
+    fn bare_magnets_receive_public_trackers_without_rewriting_the_hash() {
+        let magnet = "magnet:?xt=urn:btih:0123456789012345678901234567890123456789";
+        let enriched = add_public_trackers(magnet).unwrap();
+        assert!(enriched.starts_with(magnet));
+        for tracker in PUBLIC_TRACKERS {
+            let encoded =
+                url::form_urlencoded::byte_serialize(tracker.as_bytes()).collect::<String>();
+            assert!(enriched.contains(&encoded));
+        }
+    }
+
+    #[test]
+    fn public_tracker_enrichment_does_not_duplicate_existing_urls() {
+        let encoded =
+            url::form_urlencoded::byte_serialize(PUBLIC_TRACKERS[0].as_bytes()).collect::<String>();
+        let magnet = format!("magnet:?xt=urn:btih:abc&tr={encoded}");
+        let enriched = add_public_trackers(&magnet).unwrap();
+        assert_eq!(enriched.matches(&encoded).count(), 1);
+    }
+
+    #[test]
+    fn empty_fastresume_matches_rqbits_one_bit_per_piece_layout() {
+        assert_eq!(empty_fastresume_bitfield_len(20).unwrap(), 1);
+        assert_eq!(empty_fastresume_bitfield_len(8 * 20).unwrap(), 1);
+        assert_eq!(empty_fastresume_bitfield_len(9 * 20).unwrap(), 2);
+        assert!(empty_fastresume_bitfield_len(0).is_err());
+        assert!(empty_fastresume_bitfield_len(21).is_err());
     }
 }
