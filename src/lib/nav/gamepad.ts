@@ -141,6 +141,9 @@ export function startGamepadNav(): () => void {
     if (inPlayer()) return
     switch (name) {
       case 'a': (document.activeElement as HTMLElement | null)?.click(); break
+      // X removes the focused Continue Watching card. That row already owns the keyboard D action,
+      // so synthesize the same key instead of duplicating its tracker/local-state semantics here.
+      case 'x': keydown('d'); break
       // ☰ (start) in browse opens the side menu: focus the current page's item (else the first),
       // which expands the labelled rail via its focus-driven expand. In the player, ☰ is the
       // track menu (handled by TrackMenu before this) — inPlayer() above already returned.
@@ -169,7 +172,7 @@ export function startGamepadNav(): () => void {
         if (location.pathname.replace(/\/$/, '') === '/app/home')
           window.dispatchEvent(new CustomEvent('hero-nav', { detail: name === 'l1' ? -1 : 1 }))
         break
-      // l2/r2/start/select: player-only or reserved.
+      // l2/r2/select: player-only or reserved.
     }
   }
 

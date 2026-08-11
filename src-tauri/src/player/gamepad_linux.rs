@@ -129,6 +129,7 @@ fn btn_name(b: Button) -> Option<&'static str> {
     Some(match b {
         Button::South => "a",
         Button::East => "b",
+        Button::West => "x",
         Button::LeftTrigger => "l1",
         Button::RightTrigger => "r1",
         Button::LeftTrigger2 => "l2",
