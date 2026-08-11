@@ -29,7 +29,7 @@
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
   import { streamPicker, connecting, exitPrompt } from '$lib/player/session'
-  import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, initGameMode, debridCaching } from '$lib/player/session'
+  import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
@@ -59,14 +59,17 @@
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
   import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
-  import { initGmTouchWatchdog } from '$lib/player/gm-touch-watchdog'
+  import { initGmTouchWatchdog, restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
+  import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   let { children } = $props()
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
   // re-sizes it per file by bitrate in play.ts). Handles the Uncapped sentinel. Picked up next file.
   $effect(() => { invoke('set_player_cache', { bytes: playerCacheBytes(Number($playerCacheMb)) }).catch(() => {}) })
   // Game mode (Deck): start the backend controller reader + the app-wide gamepad→nav
   // translator once gamescope/Deck mode is resolved. Reacts to the async gameMode store.
+  let webviewZoomChain: Promise<unknown> = Promise.resolve()
   $effect(() => {
+    if (!$gameModeResolved) return
     if (!$gameMode) return
     // Gamescope touch survival: gesture-aware keepalive hold + stuck-pointer recovery (a lost
     // touch-up strands the pointer forever on this WebKitGTK — no pointercancel exists there).
@@ -155,12 +158,18 @@
   // behind the webview and is unaffected, so the sidebar-inset math below scales by
   // the same factor to keep the video hole aligned with the (zoomed) sidebar rail.
   $effect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rootStyle = document.documentElement.style as any
+    // Desktop can apply its ordinary CSS scale immediately. A Gamescope document has the native
+    // launch-pending class and remains hidden here until detection chooses native page zoom below.
+    if (!$gameModeResolved) {
+      rootStyle.zoom = $isMobile ? '1' : String($uiScale)
+      return
+    }
     // Game mode (gamescope): scale the browse UI up ~25% for the Deck's small screen +
     // controller distance. Not while the player is up (its controls are already sized for
     // touch). `gamemode` class drives the no-cursor + focus-highlight rules in app.css.
-    const z = $uiScale * ($gameMode && !$playing ? 1.25 : 1)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rootStyle = document.documentElement.style as any
+    const z = $gameMode ? deckWebviewZoom($uiScale, $playing) : $uiScale
     if ($isMobile) {
       // Mobile never applies the desktop/Deck UI-scale (a persisted value would zoom the whole page).
       rootStyle.zoom = '1'
@@ -169,11 +178,26 @@
       // root — CSS zoom re-rasterizes the whole page on every scroll, which is what made
       // vertical scrolling crawl on the Deck. Native zoom scrolls like a zoomed desktop page.
       rootStyle.zoom = '1'
-      invoke('set_webview_zoom', { level: z }).catch(() => {})
+      // Keep native zoom changes ordered: a late browse callback must never overwrite the
+      // player's 1:1 request. Reveal the launch document only at its final Deck scale.
+      webviewZoomChain = webviewZoomChain
+        .catch(() => {})
+        .then(() => invoke('set_webview_zoom', { level: z }))
+        .finally(() => requestAnimationFrame(() => document.documentElement.classList.remove('deck-launch-pending')))
     } else {
       rootStyle.zoom = String(z)
+      document.documentElement.classList.remove('deck-launch-pending')
     }
     document.documentElement.classList.toggle('gamemode', $gameMode)
+  })
+
+  // Closing playback does not navigate, so afterNavigate cannot repair a touch release swallowed
+  // by a comments iframe. Reset native routing as the browse surface becomes active again.
+  let playerWasOpen = false
+  $effect(() => {
+    const open = $playing
+    if ($gameMode && playerWasOpen && !open) restoreGmTouchAfterTransition()
+    playerWasOpen = open
   })
 
   // Single-window player: mpv renders into THIS window, behind the webview. When

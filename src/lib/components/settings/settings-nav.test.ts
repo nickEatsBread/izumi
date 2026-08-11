@@ -3,6 +3,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 
 const src = readFileSync(fileURLToPath(new URL('./SettingsNav.svelte', import.meta.url)), 'utf8')
+const layout = readFileSync(fileURLToPath(new URL('../../../routes/app/settings/+layout.svelte', import.meta.url)), 'utf8')
+const dpad = readFileSync(fileURLToPath(new URL('../../nav/index.ts', import.meta.url)), 'utf8')
 
 describe('SettingsNav', () => {
   it('imports the Captions icon from lucide', () => {
@@ -34,5 +36,13 @@ describe('SettingsNav', () => {
     expect(src).toContain("$isAndroid")
     expect(src).toContain("it.href !== '/app/settings/hotkeys'")
     expect(src).toContain('{#each visibleGroups as g (g.label)}')
+  })
+
+  it('scrolls the desktop category rail independently through the off-screen About item', () => {
+    expect(layout).toContain('<div class="min-h-0 flex-1"><SettingsNav /></div>')
+    expect(src).toContain('data-nav-scroll-container')
+    expect(src).toContain('overflow-y-auto overscroll-contain')
+    expect(dpad).toContain("closest<HTMLElement>('[data-nav-scroll-container]')")
+    expect(dpad).toContain("pane.scrollBy({ top, left, behavior: 'smooth' })")
   })
 })

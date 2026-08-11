@@ -77,6 +77,25 @@ const fieldShape = (target: EventTarget | null): FieldShape | null => {
   }
 }
 
+/** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
+ * settings category rail owns its own viewport; moving it must never scroll the category content. */
+function revealFocused(el: HTMLElement, vertical: boolean): void {
+  const pane = el.closest<HTMLElement>('[data-nav-scroll-container]')
+  if (!pane) {
+    el.scrollIntoView({
+      behavior: 'smooth',
+      block: vertical ? 'center' : 'nearest',
+      inline: vertical ? 'nearest' : 'center',
+    })
+    return
+  }
+  const item = el.getBoundingClientRect()
+  const port = pane.getBoundingClientRect()
+  const top = item.top < port.top ? item.top - port.top : item.bottom > port.bottom ? item.bottom - port.bottom : 0
+  const left = item.left < port.left ? item.left - port.left : item.right > port.right ? item.right - port.right : 0
+  if (top || left) pane.scrollBy({ top, left, behavior: 'smooth' })
+}
+
 export function initDpadNav() {
   window.addEventListener('keydown', (e) => {
     // Only the four arrows are bound — Home/End/PageUp are never mapped, so a focused field keeps
@@ -120,6 +139,7 @@ export function initDpadNav() {
       // with `aria-disabled`, like unaired episodes, stay focusable on purpose.)
       .filter(el => !(el instanceof HTMLButtonElement && el.disabled))
     const active = document.activeElement as HTMLElement
+    const vertical = dir === 'up' || dir === 'down'
     // No real focus yet (just opened / focus sits on <body>): the FIRST press must land on the
     // first content focusable — NOT spatial-search from <body>'s full-page rect, which measures
     // "down" from the whole viewport and flings focus deep into the grid (the "jumps to romance,
@@ -131,7 +151,7 @@ export function initDpadNav() {
       const first = content.find(el => !isTextInput(el)) ?? content[0] ?? els[0]
       if (first) {
         first.focus({ preventScroll: true })
-        first.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        revealFocused(first, vertical)
         e.preventDefault()
       }
       return
@@ -144,7 +164,6 @@ export function initDpadNav() {
     // left/right crosses at a row's edge — WITHOUT the alignment cone, so a low row can still
     // reach a sidebar link that sits well above it (the "fantasy row can't reach the menu" bug).
     const inSidebar = (el: Element | null) => !!el?.closest('[data-nav-sidebar]')
-    const vertical = dir === 'up' || dir === 'down'
     const activeInSidebar = inSidebar(active)
     const all: ElCand[] = els.filter(el => el !== active).map(el => ({ id: '', rect: el.getBoundingClientRect(), el }))
     const sameRegion = all.filter(c => inSidebar(c.el) === activeInSidebar)
@@ -166,11 +185,7 @@ export function initDpadNav() {
       // we moved: horizontal moves scroll the row horizontally (block:nearest avoids a vertical
       // re-center jitter on every left/right); vertical moves scroll the page vertically.
       pick.el.focus({ preventScroll: true })
-      pick.el.scrollIntoView({
-        behavior: 'smooth',
-        block: vertical ? 'center' : 'nearest',
-        inline: vertical ? 'nearest' : 'center',
-      })
+      revealFocused(pick.el, vertical)
       e.preventDefault()
     }
   })

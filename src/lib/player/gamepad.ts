@@ -13,6 +13,26 @@ export const SEEK = {
   ramp: 1600,
 } as const
 
+/** One logical press per physical button cycle, with a short bounce guard for Steam's duplicate
+ * virtual-controller edges. Used by View/Select so one press cannot close then reopen comments. */
+export class ButtonPressLatch {
+  private held = false
+  private lastAccepted = -Infinity
+
+  constructor(private readonly bounceMs = 350) {}
+
+  update(pressed: boolean, now: number): boolean {
+    if (!pressed) {
+      this.held = false
+      return false
+    }
+    if (this.held || now - this.lastAccepted < this.bounceMs) return false
+    this.held = true
+    this.lastAccepted = now
+    return true
+  }
+}
+
 export interface SeekDeps {
   getPos: () => number
   getDur: () => number

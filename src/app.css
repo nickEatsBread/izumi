@@ -20,6 +20,9 @@ html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); 
    (w-screen) can bleed under the sidebar without a horizontal scrollbar — the
    clip is here, NOT on <main>, so it doesn't crop the bleed. */
 body { overflow-x: clip; }
+/* Native Deck page zoom is applied just after document load. Hide that one first paint so launch
+   appears at its final handheld scale instead of visibly growing from 1x. */
+.deck-launch-pending body { visibility: hidden; }
 /* Mobile (Android edge-to-edge WebView): inset the page content below the status bar.
    Applied to <main> so every route clears the status bar; the bottom tab bar handles
    the gesture-area inset itself. Needs viewport-fit=cover (app.html) to resolve non-zero.
@@ -174,6 +177,7 @@ body { overflow-x: clip; }
    YouTube-TV style); z-index keeps the grown tile above its neighbours. */
 /* Never a cursor, and never text selection. Gamescope passthrough delivers native touch to
    WebKitGTK, whose built-in drag/swipe recognizers own scrolling and kinetic momentum. */
+.gamemode { touch-action: pan-x pan-y; }
 .gamemode, .gamemode * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; -webkit-touch-callout: none; }
 /* NOTE: `content-visibility: auto` virtualization was removed — on the Deck's WebKit it forced
    `contain: paint`, which CLIPPED the focus ring + cover-pop (thin/half borders cover-to-cover)

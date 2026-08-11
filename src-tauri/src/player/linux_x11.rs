@@ -161,7 +161,11 @@ fn now_ms() -> u64 {
 
 /// Webview-reported "a finger is physically on the screen" edge (see native_touch_hold).
 pub fn set_touch_hold(held: bool) {
-    let deadline = if held { now_ms() + TOUCH_HOLD_MAX_MS } else { 0 };
+    let deadline = if held {
+        now_ms() + TOUCH_HOLD_MAX_MS
+    } else {
+        0
+    };
     TOUCH_HOLD_UNTIL_MS.store(deadline, Ordering::Relaxed);
 }
 

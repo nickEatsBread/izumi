@@ -30,7 +30,7 @@
   } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
-  import { startNativeGamepadSeek } from '$lib/player/gamepad'
+  import { ButtonPressLatch, startNativeGamepadSeek } from '$lib/player/gamepad'
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
@@ -629,6 +629,7 @@
   // direction within the window commits. (A stray single press does nothing.)
   let padEpArm = 0
   let padEpDir: 1 | -1 = 1
+  const deckViewPress = new ButtonPressLatch()
   function padEpisode(dir: 1 | -1) {
     const now = performance.now()
     if (padEpArm && padEpDir === dir && now - padEpArm < 1400) {
@@ -644,14 +645,23 @@
   $effect(() => {
     if (!gmMode || !$playing) return
     return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
-      if (!e.payload.pressed) return
       if (get(deckKeyboardWarning)) return
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
       if (get(trackMenuOpen)) return
+      // Steam may expose View through duplicate virtual-pad edges. Treat one physical cycle as
+      // one logical toggle so a close cannot immediately turn into a reopen.
+      if (e.payload.name === 'select') {
+        if (!deckViewPress.update(e.payload.pressed, performance.now())) return
+        const opening = !get(commentsOpen)
+        if (opening) discussionExpanded.set(true)
+        commentsOpen.set(opening)
+        return
+      }
+      if (!e.payload.pressed) return
       // While comments are open, do not let controller presses seek, pause, or leave the player
       // behind the modal. B and Select/View close the discussion.
       if (get(commentsOpen)) {
-        if (e.payload.name === 'b' || e.payload.name === 'select') commentsOpen.set(false)
+        if (e.payload.name === 'b') commentsOpen.set(false)
         return
       }
       switch (e.payload.name) {
@@ -666,10 +676,6 @@
           break
         // L1/R1 change episode but only on a DOUBLE press (two quick taps of the same bumper) so a
         // stray press can't jump episodes. The first press arms + shows a hint.
-        case 'select':
-          discussionExpanded.set(true)
-          commentsOpen.set(true)
-          break
         case 'l1': padEpisode(-1); break
         case 'r1': padEpisode(1); break
       }

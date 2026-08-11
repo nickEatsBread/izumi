@@ -15,6 +15,7 @@
   import { nowPlayingMedia, commentsOpen, gameMode } from '$lib/player/session'
   import { fetchDiscussion, defaultDiscussionPlatform, discussionExpanded, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
   import { warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
+  import { restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
 
   let threads = $state<DiscussionThread[]>([])
   let loading = $state(false)
@@ -32,6 +33,19 @@
   // Dedup guard — NON-reactive on purpose. If this were `$state`, the effect below (which reads AND
   // writes it) would re-trigger itself, cancel its own in-flight fetch, and leave `loading` stuck true.
   let loadedKey = ''
+
+  // Closing can make a focused cross-origin iframe inert before its touch release reaches the
+  // parent webview. Blur that frame and explicitly clear/reassert Gamescope touch routing.
+  let commentsWereOpen = false
+  $effect(() => {
+    const open = $commentsOpen
+    if ($gameMode && commentsWereOpen && !open) {
+      const focused = document.activeElement as HTMLElement | null
+      if (focused?.closest?.('[data-comments-panel]')) focused.blur()
+      restoreGmTouchAfterTransition()
+    }
+    commentsWereOpen = open
+  })
 
   // (Re)fetch when the panel opens or the episode changes; cached by media+episode.
   // `$nowPlayingMedia` is REPLACED on every source change, so this effect re-runs each time the user
