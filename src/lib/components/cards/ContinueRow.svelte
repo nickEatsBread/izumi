@@ -6,17 +6,24 @@
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
   import { continueWatching, reconciling, reconciledOnce, reconcileContinueWatching, dismissContinueWatching } from '$lib/player/continue-watching'
+  import { longPressDismiss } from './continue-dismiss'
   import Carousel from './Carousel.svelte'
   import ContinueCard from './ContinueCard.svelte'
+  import * as h from '$lib/haptics'
 
   let { title, userName, malActive }: { title: string; userName?: string; malActive: boolean } = $props()
   const client = getContextClient()
 
   const items = $derived($continueWatching)
 
-  // Press D while hovering (or keyboard/controller-focusing) a card removes that series from
-  // Continue Watching (see dismissContinueWatching for the tracker side-effect).
+  // D on a keyboard and X on a controller remove the active card. The controller translator maps
+  // X to the same D event, keeping one dismissal path and the same tracker side effect.
   let activeId = $state<number | null>(null)
+  function dismiss(item: (typeof items)[number]) {
+    h.warn()
+    dismissContinueWatching(item.media, item.progress)
+    activeId = null
+  }
   function onKey(e: KeyboardEvent) {
     if ((e.key !== 'd' && e.key !== 'D') || e.ctrlKey || e.metaKey || e.altKey) return
     const t = e.target as HTMLElement | null
@@ -25,8 +32,7 @@
     const item = items.find((i) => i.media.id === activeId)
     if (!item) return
     e.preventDefault()
-    dismissContinueWatching(item.media, item.progress)
-    activeId = null
+    dismiss(item)
   }
   // Cold first launch only: nothing cached AND a tracker could still fill the row.
   const cold = $derived(!items.length && $reconciling && (!!userName || malActive))
@@ -50,6 +56,7 @@
     {#each items as item (item.media.id)}
       <div class="shrink-0 transition-[opacity,filter] duration-300 {provisional ? 'opacity-40 grayscale' : ''}"
            role="group"
+           use:longPressDismiss={{ onLongPress: () => dismiss(item) }}
            onmouseenter={() => (activeId = item.media.id)}
            onmouseleave={() => { if (activeId === item.media.id) activeId = null }}
            onfocusin={() => (activeId = item.media.id)}
