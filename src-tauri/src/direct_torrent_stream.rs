@@ -16,6 +16,7 @@ use librqbit::{api::TorrentIdOrHash, Api};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncSeekExt},
     net::TcpListener,
+    sync::mpsc::UnboundedSender,
 };
 
 use crate::direct_torrent_range::parse_byte_range;
@@ -59,6 +60,31 @@ impl StreamDiagnostics {
 struct StreamServerState {
     api: Api,
     diagnostics: StreamDiagnostics,
+    request_started: StreamRequestSender,
+}
+
+#[derive(Debug)]
+pub(crate) struct StreamRequestStarted {
+    pub(crate) torrent_id: usize,
+    pub(crate) file_id: usize,
+    pub(crate) request_range: Option<String>,
+}
+
+pub(crate) type StreamRequestSender = UnboundedSender<StreamRequestStarted>;
+
+fn notify_request_started(
+    sender: &StreamRequestSender,
+    torrent_id: TorrentIdOrHash,
+    file_id: usize,
+    request_range: Option<&str>,
+) {
+    if let TorrentIdOrHash::Id(torrent_id) = torrent_id {
+        let _ = sender.send(StreamRequestStarted {
+            torrent_id,
+            file_id,
+            request_range: request_range.map(str::to_owned),
+        });
+    }
 }
 
 fn text_error(status: StatusCode, message: impl Into<String>) -> Response {
@@ -127,6 +153,16 @@ async fn stream_file(
         Box::new(stream)
     };
 
+    // The player's real FileStream is registered now. Tell the torrent owner to drop its
+    // synthetic byte-zero cursor before this response begins reading pieces, so a tail/Cues or
+    // resume-position request cannot compete with the startup cursor for peer request slots.
+    notify_request_started(
+        &state.request_started,
+        torrent_id,
+        file_id,
+        request_range.and_then(|value| value.to_str().ok()),
+    );
+
     let mut headers = HeaderMap::new();
     headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     if let Ok(value) = HeaderValue::from_str(&response_length.to_string()) {
@@ -166,11 +202,40 @@ pub async fn serve(
     api: Api,
     listener: TcpListener,
     diagnostics: StreamDiagnostics,
+    request_started: StreamRequestSender,
 ) -> anyhow::Result<()> {
     let router = Router::new()
         .route("/torrents/{id}/stream/{file_id}", get(stream_file))
-        .with_state(StreamServerState { api, diagnostics });
+        .with_state(StreamServerState {
+            api,
+            diagnostics,
+            request_started,
+        });
     axum::serve(listener, router)
         .await
         .context("error running direct torrent streaming server")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::notify_request_started;
+    use librqbit::{api::TorrentIdOrHash, dht::Id20};
+    use tokio::sync::mpsc::unbounded_channel;
+
+    #[test]
+    fn numeric_player_request_notifies_the_active_torrent_owner() {
+        let (sender, mut receiver) = unbounded_channel();
+        notify_request_started(&sender, TorrentIdOrHash::Id(42), 7, Some("bytes=0-65535"));
+        let request = receiver.try_recv().unwrap();
+        assert_eq!(request.torrent_id, 42);
+        assert_eq!(request.file_id, 7);
+        assert_eq!(request.request_range.as_deref(), Some("bytes=0-65535"));
+    }
+
+    #[test]
+    fn hash_routes_do_not_claim_an_unrelated_numeric_playback() {
+        let (sender, mut receiver) = unbounded_channel();
+        notify_request_started(&sender, TorrentIdOrHash::Hash(Id20::new([1; 20])), 7, None);
+        assert!(receiver.try_recv().is_err());
+    }
 }

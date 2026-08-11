@@ -80,7 +80,10 @@ import {
   type PlaybackOwner,
 } from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
-import { hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
+import {
+  hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents,
+  androidStreamInfo, waitForMpvFirstFrame,
+} from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
 import {
   activateDirectTorrentPlayback, cancelDirectTorrentStartup, currentDirectTorrentPlaybackId, directTorrentHealth,
@@ -1940,6 +1943,7 @@ export async function playStream(
       recovering: same ? current.recovering : false,
     }
   })
+  let androidFrameTracePending = false
   // Every exit from this function goes through the state callback, so wrapping it once clears the
   // connecting screen on all of them — including the early returns.
   const onState = (s: PlayState) => {
@@ -1950,8 +1954,10 @@ export async function playStream(
     // For local P2P, player_embed only means mpv accepted the loopback URL. Keep the trace alive
     // until an actual duration/progress event so the headline timing is click-to-first-frame,
     // rather than hiding peer/download/probe delay behind an optimistic "playing" result.
-    if (s.status === 'playing'
-      && (directPlaybackId == null || get(isAndroid) || get(enableExternalPlayer))) {
+    const awaitsMeasuredFirstFrame = directPlaybackId != null
+      && !get(enableExternalPlayer)
+      && (!get(isAndroid) || androidFrameTracePending)
+    if (s.status === 'playing' && !awaitsMeasuredFirstFrame) {
       finishResolveTrace(trace, 'playing', streamTraceDetails(stream))
     }
     else if (s.status === 'error') finishResolveTrace(trace, 'playback error')
@@ -2354,8 +2360,25 @@ export async function playStream(
         androidStreamInfo.set({ url: stream.url, headers })
         androidMpvActive.set(true)
         rememberSuccess()
+        androidFrameTracePending = directPlaybackId != null
         onState({ status: 'playing' })
         if (episode != null) attachAndroid(media, episode, onState, directPlaybackId != null)
+        if (directPlaybackId != null) {
+          const playbackId = directPlaybackId
+          traceResolve(trace, 'waiting for Android first video frame')
+          void waitForMpvFirstFrame(DIRECT_TORRENT_HARD_START_TIMEOUT_MS).then((ready) => {
+            if (!stillOwnsPlayback()) return
+            // The native HTTP request normally retired this cursor already. This remains a safe
+            // fallback for players/platform events that reached a frame without the notification.
+            void directTorrentPlayerAttached(playbackId)
+            androidFrameTracePending = false
+            finishResolveTrace(
+              trace,
+              ready ? 'Android first video frame' : 'Android first video frame timeout',
+              streamTraceDetails(stream),
+            )
+          })
+        }
         // Late online subtitles (Android mirror of the desktop path): if the short race above lost
         // to a slow subtitle addon, fold results in once they land. `androidStreamInfo.url` pins
         // the results to THIS load — a newer episode replaces it before its own mpvLoad.

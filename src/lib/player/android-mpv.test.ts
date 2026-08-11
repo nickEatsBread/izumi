@@ -16,7 +16,9 @@ vi.mock('@tauri-apps/api/core', () => ({
   }),
 }))
 
-import { getChapterList, mpvLoad, mpvState, seekRelative, startMpvEvents } from './android-mpv'
+import {
+  getChapterList, mpvLoad, mpvState, seekRelative, startMpvEvents, waitForMpvFirstFrame,
+} from './android-mpv'
 
 describe('Android mpv seek coordination', () => {
   beforeAll(async () => {
@@ -135,6 +137,17 @@ describe('Android mpv loading signals', () => {
     expect(get(mpvState).frameReady).toBe(false)
   })
 
+  it('resolves the startup gate only when playback restart presents a frame', async () => {
+    mpvState.update((s) => ({ ...s, frameReady: false, buffering: true }))
+    const firstFrame = waitForMpvFirstFrame(1_000)
+
+    mocks.event?.({ id: 8 }) // FILE_LOADED is metadata, not a visible frame.
+    expect(get(mpvState).frameReady).toBe(false)
+    mocks.event?.({ id: 21 })
+
+    await expect(firstFrame).resolves.toBe(true)
+  })
+
   // FILE_LOADED used to narrow the direct-torrent file selection to the sidecars. It no longer
   // touches the engine at all: a torrent whose selected pieces are all present is "finished" and
   // sheds its seeders, which starved playback whenever mpv was between HTTP requests.
@@ -159,7 +172,9 @@ describe('Android mpv loading signals', () => {
     mocks.progress?.({ property: 'duration', value: 1000 })
     mocks.progress?.({ property: 'eof-reached', value: true })
     mocks.event?.({ id: 7 })
+    mocks.event?.({ id: 21 })
     expect(get(mpvState)).toMatchObject({ pos: 0, dur: 0, eof: false, buffering: true })
+    expect(get(mpvState).frameReady).toBe(false)
 
     // START_FILE hands event ownership to the replacement. Its own immediate failure must still
     // reach the recovery path, including sources that never update eof-reached.
