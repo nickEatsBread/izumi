@@ -25,7 +25,8 @@ use std::{
 };
 
 use librqbit::{
-    api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Session, SessionOptions,
+    api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Session,
+    SessionOptions,
 };
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
@@ -79,10 +80,15 @@ fn output_name(requested: &str, actual: &str) -> String {
         .unwrap_or(actual)
         .rsplit_once('.')
         .map(|(_, ext)| ext)
-        .filter(|ext| !ext.is_empty() && ext.len() <= 5 && ext.chars().all(|c| c.is_ascii_alphanumeric()));
+        .filter(|ext| {
+            !ext.is_empty() && ext.len() <= 5 && ext.chars().all(|c| c.is_ascii_alphanumeric())
+        });
     match actual_ext {
         Some(ext) => {
-            let stem = requested.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(requested);
+            let stem = requested
+                .rsplit_once('.')
+                .map(|(stem, _)| stem)
+                .unwrap_or(requested);
             let stem = if stem.is_empty() { requested } else { stem };
             format!("{stem}.{ext}")
         }
@@ -468,14 +474,26 @@ mod tests {
 
     #[test]
     fn keeps_the_releases_real_container() {
-        assert_eq!(output_name("Show - E02.mkv", "Show.E02.1080p.mp4"), "Show - E02.mp4");
-        assert_eq!(output_name("Show - E02.mkv", "dir/Show.E02.mkv"), "Show - E02.mkv");
+        assert_eq!(
+            output_name("Show - E02.mkv", "Show.E02.1080p.mp4"),
+            "Show - E02.mp4"
+        );
+        assert_eq!(
+            output_name("Show - E02.mkv", "dir/Show.E02.mkv"),
+            "Show - E02.mkv"
+        );
     }
 
     #[test]
     fn falls_back_to_the_requested_name_without_a_usable_extension() {
-        assert_eq!(output_name("Show - E02.mkv", "Show E02 no extension"), "Show - E02.mkv");
-        assert_eq!(output_name("Show - E02.mkv", "Show.E02.0123456789"), "Show - E02.mkv");
+        assert_eq!(
+            output_name("Show - E02.mkv", "Show E02 no extension"),
+            "Show - E02.mkv"
+        );
+        assert_eq!(
+            output_name("Show - E02.mkv", "Show.E02.0123456789"),
+            "Show - E02.mkv"
+        );
     }
 
     #[test]

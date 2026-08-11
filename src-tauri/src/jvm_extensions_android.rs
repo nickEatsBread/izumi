@@ -150,7 +150,9 @@ const MAX_ICON_BYTES: u64 = 512 * 1024;
 /// data URL are left alone, so a future bridge that returns those keeps working.
 fn inline_source_icons(sources: &mut Value) {
     use base64::Engine;
-    let Some(list) = sources.as_array_mut() else { return };
+    let Some(list) = sources.as_array_mut() else {
+        return;
+    };
     for source in list {
         let Some(path) = source.get("iconUrl").and_then(Value::as_str) else {
             continue;
@@ -213,9 +215,12 @@ pub async fn jvm_extension_reload(app: AppHandle) -> Result<(), String> {
     // Prepare the verified host during installation so the first source search does not pay a
     // surprise 15 MB runtime download. The Kotlin side is then reset and will enumerate the newly
     // installed APK on demand.
-    tokio::time::timeout(std::time::Duration::from_secs(120), ensure_runtime_file(&app))
-        .await
-        .map_err(|_| "Downloading the Android extension runtime timed out.".to_string())??;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        ensure_runtime_file(&app),
+    )
+    .await
+    .map_err(|_| "Downloading the Android extension runtime timed out.".to_string())??;
     call_bridge(30, move || {
         app.extplayer()
             .aniyomi_reload()
