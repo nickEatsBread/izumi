@@ -15,10 +15,10 @@ use librqbit::{
     ManagedTorrent, Session, SessionOptions, SessionPersistenceConfig,
 };
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
     net::TcpListener,
-    sync::{oneshot, Mutex, OnceCell},
+    sync::{mpsc, oneshot, Mutex, OnceCell},
     task::JoinHandle,
     time::{sleep, timeout, Instant},
 };
@@ -43,6 +43,14 @@ const PLAYBACK_BUFFER_FLOOR_SECONDS: f64 = 60.0;
 const AUTO_UPLOAD_MBPS: f64 = 1.0;
 const USER_CAPACITY_FRACTION: f64 = 0.70;
 const BUFFERING_UPLOAD_BPS: u32 = 64 * 1024;
+
+fn peer_listener_enabled(has_proxy: bool, has_bound_interface: bool) -> bool {
+    !has_proxy && !has_bound_interface
+}
+
+fn upnp_enabled(is_android: bool, has_proxy: bool, has_bound_interface: bool) -> bool {
+    !is_android && peer_listener_enabled(has_proxy, has_bound_interface)
+}
 
 /// Anime-oriented public trackers used by Hayase in addition to a torrent's own announce list.
 /// DHT remains the primary decentralized source; these stop a bare info-hash from depending on a
@@ -144,6 +152,14 @@ pub struct DirectTorrentPlayback {
     tracker_count: usize,
     incoming_peer_port: Option<u16>,
     fastresume_primed: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectTorrentStreamStarted {
+    playback_id: u64,
+    file_index: usize,
+    request_range: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -467,19 +483,35 @@ impl DirectTorrentState {
                 // deleting the previous episode here made release warm-up wait on disk cleanup.
                 let folder = crate::cache_gc::fresh_direct_torrent_dir(app)?;
 
-                // Episode payloads are ephemeral, but desktop DHT routing is allowed to persist so
-                // the first play after launch is not a completely cold peer-discovery bootstrap.
-                // Android still disables that persistence because it has no librqbit project dir.
+                // Episode payloads are ephemeral, but DHT routing is durable so the first play
+                // after launch is not a completely cold peer-discovery bootstrap. rqbit's default
+                // project directory is unavailable on Android, so give it an explicit app-private
+                // filename there instead of disabling persistence for the whole platform.
                 let fastresume_folder = folder.join(".fastresume");
+                let android_dht_path = if cfg!(target_os = "android") {
+                    Some(
+                        app.path()
+                            .app_data_dir()
+                            .map_err(|error| {
+                                format!("Could not locate the Android DHT cache: {error}")
+                            })?
+                            .join("torrent-dht.json"),
+                    )
+                } else {
+                    None
+                };
                 let session = Session::new_with_opts(
                     folder,
                     SessionOptions {
-                        // Keep desktop's DHT routing table between launches so the first episode
-                        // does not bootstrap from zero. Android has no compatible persistence dir.
                         // Proxy mode disables UDP DHT completely to prevent bypassing SOCKS5.
                         disable_dht: configured_proxy.is_some(),
-                        disable_dht_persistence: cfg!(target_os = "android")
-                            || configured_proxy.is_some(),
+                        disable_dht_persistence: configured_proxy.is_some(),
+                        dht_config: android_dht_path.map(|config_filename| {
+                            librqbit::dht::PersistentDhtConfig {
+                                config_filename: Some(config_filename),
+                                ..Default::default()
+                            }
+                        }),
                         // Persistence supplies rqbit's bitfield store. Payload retention remains
                         // ephemeral: this database lives inside the disposable playback folder.
                         persistence: Some(SessionPersistenceConfig::Json {
@@ -488,15 +520,24 @@ impl DirectTorrentState {
                         fastresume: true,
                         socks_proxy_url: configured_proxy.clone(),
                         // A real listen port lets DHT/trackers announce us and allows peers to
-                        // connect back. Keep proxy/VPN-bound sessions closed because rqbit 8's
-                        // listener cannot bind to a named interface safely.
-                        listen_port_range: (!cfg!(target_os = "android")
-                            && configured_proxy.is_none()
-                            && configured_bind.is_none())
+                        // connect back. Android supports ordinary server sockets too; keeping it
+                        // outbound-only made Wi-Fi/manual-forwarding and VPN-forwarded ports
+                        // unusable. Keep proxy/VPN-bound sessions closed because rqbit 8's listener
+                        // cannot bind to a named interface safely.
+                        listen_port_range: peer_listener_enabled(
+                            configured_proxy.is_some(),
+                            configured_bind.is_some(),
+                        )
                         .then_some(DIRECT_PEER_PORTS),
-                        enable_upnp_port_forwarding: !cfg!(target_os = "android")
-                            && configured_proxy.is_none()
-                            && configured_bind.is_none(),
+                        // Do not silently create a home-router mapping on Android: it can bypass a
+                        // system VPN's tunnel and cellular CGNAT cannot benefit. The TCP listener
+                        // still works with VPN/manual port forwarding. Desktop retains its existing
+                        // UPnP behavior when no explicit privacy route is configured.
+                        enable_upnp_port_forwarding: upnp_enabled(
+                            cfg!(target_os = "android"),
+                            configured_proxy.is_some(),
+                            configured_bind.is_some(),
+                        ),
                         // Keep completed pieces briefly in memory so a slow Windows disk cannot
                         // stall the priority HTTP reader behind synchronous writes.
                         defer_writes_up_to: Some(DEFERRED_WRITE_MIB),
@@ -515,9 +556,42 @@ impl DirectTorrentState {
                     .port();
                 let stream_diagnostics = crate::direct_torrent_stream::StreamDiagnostics::default();
                 let server_diagnostics = stream_diagnostics.clone();
+                let (request_started_tx, mut request_started_rx) =
+                    mpsc::unbounded_channel::<crate::direct_torrent_stream::StreamRequestStarted>();
+                let active_for_requests = self.active.clone();
+                let app_for_requests = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) =
-                        crate::direct_torrent_stream::serve(api, listener, server_diagnostics).await
+                    while let Some(request) = request_started_rx.recv().await {
+                        let mut active = active_for_requests.lock().await;
+                        let Some(current) = active.as_mut() else {
+                            continue;
+                        };
+                        if current.torrent_id != request.torrent_id
+                            || current.selected_file_index != request.file_id
+                        {
+                            continue;
+                        }
+                        if let Some(release) = current.startup_stream_release.take() {
+                            let _ = release.send(());
+                            let _ = app_for_requests.emit(
+                                "direct-torrent-stream-started",
+                                DirectTorrentStreamStarted {
+                                    playback_id: current.playback_id,
+                                    file_index: request.file_id,
+                                    request_range: request.request_range,
+                                },
+                            );
+                        }
+                    }
+                });
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = crate::direct_torrent_stream::serve(
+                        api,
+                        listener,
+                        server_diagnostics,
+                        request_started_tx,
+                    )
+                    .await
                     {
                         eprintln!("direct torrent playback server stopped: {error:#}");
                     }
@@ -1643,10 +1717,10 @@ pub async fn torrent_playback_stop(
 mod tests {
     use super::{
         add_public_trackers, configured_startup_timeout, empty_fastresume_bitfield_len,
-        mbps_to_bps, normalized_socks_proxy, proxy_safe_magnet, ratio_target_bytes,
-        remaining_startup_time, selected_file_downloaded_bytes, selection_needs_restoring,
-        startup_is_current, upload_limit, DirectTorrentState, METADATA_TIMEOUT,
-        MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
+        mbps_to_bps, normalized_socks_proxy, peer_listener_enabled, proxy_safe_magnet,
+        ratio_target_bytes, remaining_startup_time, selected_file_downloaded_bytes,
+        selection_needs_restoring, startup_is_current, upload_limit, upnp_enabled,
+        DirectTorrentState, METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
     };
     use std::sync::atomic::Ordering;
 
@@ -1663,6 +1737,14 @@ mod tests {
     #[test]
     fn zero_download_limit_means_uncapped() {
         assert_eq!(mbps_to_bps(0.0), None);
+    }
+
+    #[test]
+    fn android_can_listen_for_peers_without_enabling_upnp() {
+        assert!(peer_listener_enabled(false, false));
+        assert!(!upnp_enabled(true, false, false));
+        assert!(!peer_listener_enabled(true, false));
+        assert!(!peer_listener_enabled(false, true));
     }
 
     #[test]

@@ -355,6 +355,17 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // screen forever. `force-window=no` already keeps an idle core from showing a window.
         m.setOptionString("idle", "yes")
         m.setOptionString("cache", "yes")
+        // Local torrent playback is a seekable HTTP range stream. Match the desktop fast-start
+        // limits: FFmpeg's uncapped/default probe can read several megabytes and analyze for
+        // several seconds before presenting the first frame, which is especially visible while
+        // those bytes are arriving as torrent pieces. Two MiB / one second remains large enough
+        // to discover anime's secondary audio and subtitle tracks.
+        m.setOptionString("force-seekable", "yes")
+        m.setOptionString("demuxer-lavf-probesize", "2097152")
+        m.setOptionString("demuxer-lavf-analyzeduration", "1")
+        // Avoid a run of tiny loopback reads while libavformat probes MKV headers and Cues.
+        m.setOptionString("stream-buffer-size", "262144")
+        m.setOptionString("network-timeout", "30")
         m.setOptionString("sub-auto", "fuzzy")
         m.init()
         m.addObserver(this)

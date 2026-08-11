@@ -53,7 +53,15 @@ export function initTorrentVpnToasts(): () => void {
     vpnNotify(`VPN disconnected — torrenting is paused until ${event.payload} returns`))
   const unUp = listenSafe<string>('torrent-vpn-up', (event) =>
     vpnNotify(`VPN reconnected — torrenting resumed on ${event.payload}`))
-  return () => { unDown(); unUp() }
+  const unStream = listenSafe<{
+    playbackId: number
+    fileIndex: number
+    requestRange: string | null
+  }>('direct-torrent-stream-started', (event) => {
+    if (event.payload.playbackId !== activePlaybackId) return
+    traceResolve(currentResolveTrace(), 'direct P2P first player HTTP request', event.payload)
+  })
+  return () => { unDown(); unUp(); unStream() }
 }
 
 type AndroidDeviceStatus = { unmetered: boolean; charging: boolean }

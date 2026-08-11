@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { addPluginListener, type PluginListener } from '@tauri-apps/api/core'
 import { writable, get } from 'svelte/store'
+import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
 
 // Embedded libmpv player on Android (the "full" flavor). The plugin (plugin:mpv|*) only exists
 // when the app was built with the `android-mpv` Cargo feature; on the "lite" flavor these invokes
@@ -58,6 +59,30 @@ const IDLE_STATE: MpvState = {
 }
 
 export const mpvState = writable<MpvState>({ ...IDLE_STATE })
+
+/** Wait for libmpv's presentation event, not merely an accepted `loadfile` command. This is the
+ * Android equivalent of the desktop player's first-progress gate and keeps resolve timings tied to
+ * the first visible frame. */
+export function waitForMpvFirstFrame(timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false
+    let unsubscribe = () => {}
+    const finish = (ready: boolean) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      unsubscribe()
+      resolve(ready)
+    }
+    const timer = setTimeout(() => finish(false), timeoutMs)
+    unsubscribe = mpvState.subscribe((state) => {
+      if (state.frameReady) finish(true)
+    })
+    // Svelte subscriptions emit synchronously. If the first value completed the promise before
+    // `unsubscribe` was assigned, retire the now-real subscription here.
+    if (settled) unsubscribe()
+  })
+}
 
 // Android resolves mpv_command as soon as libmpv has QUEUED it, before the matching time-pos event.
 // Keep ignoring older observations until that acknowledgement arrives, otherwise a stale event can
@@ -157,6 +182,7 @@ export async function startMpvEvents(): Promise<void> {
       // PLAYBACK_RESTART=21.
       if (id === 6) {
         awaitingLoadStart = false
+        traceResolve(currentResolveTrace(), 'Android mpv START_FILE')
         // START_FILE is the ownership boundary between the outgoing file and this load. Clear any
         // values delivered by the old file after mpvLoad's optimistic reset.
         mpvState.set({ ...IDLE_STATE, buffering: true })
@@ -174,9 +200,15 @@ export async function startMpvEvents(): Promise<void> {
           awaitingLoadStart = false
           mpvState.update((s) => ({ ...s, eof: true, buffering: false }))
         }
+      } else if (id === 8) {
+        traceResolve(currentResolveTrace(), 'Android mpv FILE_LOADED')
       } else if (id === 21) {
+        // A replacement can receive the outgoing file's final presentation event after loadfile
+        // was queued. START_FILE is the ownership boundary; until then this is not our first frame.
+        if (awaitingLoadStart) return
         // The definitive edge that says a frame is being presented again. Metadata and time-pos
         // updates can arrive first and must not retire the loader.
+        traceResolve(currentResolveTrace(), 'Android mpv first frame presented')
         mpvState.update((s) => ({
           ...s,
           frameReady: true,
