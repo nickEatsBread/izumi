@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('idb-keyval', () => ({ get: mocks.get, set: mocks.set }))
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 
-import { episodeRatingPercent, fetchAniZip, parseEpisodes } from './index'
+import { episodeRatingPercent, fetchAniZip, getEpisodeMeta, parseEpisodes } from './index'
 
 const RES = {
   episodes: {
@@ -72,5 +72,22 @@ describe('fetchAniZip watched titles', () => {
 
     await expect(fetchAniZip(7, undefined, 2)).resolves.toBe(cached)
     expect(mocks.phttp).not.toHaveBeenCalled()
+  })
+
+  it('returns stale episode art immediately and publishes a background refresh', async () => {
+    const now = 100 * 24 * 60 * 60 * 1000
+    const cached = { episodes: { '1': { image: 'old.jpg', title: { en: 'Old' } } } }
+    const fresh = { episodes: { '1': { image: 'new.jpg', title: { en: 'New' } } } }
+    vi.spyOn(Date, 'now').mockReturnValue(now)
+    // getEpisodeMeta's immediate read, followed by fetchAniZip's cache + timestamp reads.
+    mocks.get.mockResolvedValueOnce(cached).mockResolvedValueOnce(cached).mockResolvedValueOnce(0)
+    mocks.phttp.mockResolvedValue({ ok: true, json: async () => fresh })
+    const refreshed = vi.fn()
+
+    const initial = await getEpisodeMeta(7, undefined, refreshed)
+
+    expect(initial[1]).toMatchObject({ image: 'old.jpg', title: 'Old' })
+    await vi.waitFor(() => expect(refreshed).toHaveBeenCalledOnce())
+    expect(refreshed.mock.calls[0][0][1]).toMatchObject({ image: 'new.jpg', title: 'New' })
   })
 })

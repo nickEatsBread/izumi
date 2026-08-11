@@ -4,6 +4,10 @@ import {
   createDiscussionClient, type DiscussionClient, type HttpAdapter,
   type Thread as SdkThread, type Comment as SdkComment,
 } from '@nicholasyoannou/hayami-sdk'
+import {
+  byAnimeUrl, matchEpisodeThread, rowToThreadRef,
+  type AnimeThreadRow, type ByAnimeResponse,
+} from '@nicholasyoannou/hayami-sdk/forum'
 import { anilistToken } from '$lib/anilist/auth'
 import { commentsBackendUrl } from './config'
 import type { Media } from '$lib/anilist/types'
@@ -17,7 +21,7 @@ export { commentsBackendUrl, defaultDiscussionPlatform, discussionExpanded } fro
 // can't have: a CORS-free HTTP adapter (its Rust `ext_fetch`, which forwards any header — User-Agent /
 // Referer / Authorization — un-stripped, unlike the webview fetch) and the AniList token for authed
 // reads/posts. Reddit/AniList/MAL/YouTube need no backend; the forum comes from the user-set mapper URL.
-const http: HttpAdapter = async (url, init) => {
+const performHttp: HttpAdapter = async (url, init) => {
   const r = await invokeNativeHttp<{ status: number; headers: Record<string, string>; body: string }>('ext_fetch', {
     url, method: init?.method ?? 'GET', headers: init?.headers, body: init?.body,
   })
@@ -28,6 +32,24 @@ const http: HttpAdapter = async (url, init) => {
     text: async () => r.body,
     json: async () => JSON.parse(r.body),
   }
+}
+
+// The early forum lookup and Hayami's full aggregation ask for the same anonymous mapper URL.
+// Share that exact GET so mounting Disqus early does not double network traffic.
+const anonymousGetInflight = new Map<string, ReturnType<HttpAdapter>>()
+const http: HttpAdapter = (url, init) => {
+  const method = (init?.method ?? 'GET').toUpperCase()
+  const anonymousGet = method === 'GET' && !init?.body && !Object.keys(init?.headers ?? {}).length
+  if (!anonymousGet) return performHttp(url, init)
+  const running = anonymousGetInflight.get(url)
+  if (running) return running
+  const request = performHttp(url, init)
+  anonymousGetInflight.set(url, request)
+  void request.then(
+    () => anonymousGetInflight.delete(url),
+    () => anonymousGetInflight.delete(url),
+  )
+  return request
 }
 
 // SDK platform slug → the badge label izumi's panel shows.
@@ -81,7 +103,13 @@ export const discussionKey = (media: Media, episode: number | null | undefined) 
 // on open) share one round of requests instead of racing two.
 const DISCUSSION_TTL_MS = 10 * 60 * 1000
 const DISCUSSION_CACHE_MAX = 32
-const discussionCache = new Map<string, { at: number; value: Promise<DiscussionThread[]> }>()
+type DiscussionCacheEntry = {
+  at: number
+  value: Promise<DiscussionThread[]>
+  early: Promise<DiscussionThread[]>
+  complete: boolean
+}
+const discussionCache = new Map<string, DiscussionCacheEntry>()
 
 /** Drop every memoized discussion (used by tests; also safe to call on sign-in changes). */
 export function clearDiscussionCache() {
@@ -90,19 +118,38 @@ export function clearDiscussionCache() {
 
 /** Fetch episode-discussion threads (with inline comments where available) for a title. Best-effort.
  *  Memoized per (anilistId, malId, episode) — see `discussionKey`. */
-export function fetchDiscussion(media: Media, episode: number | null | undefined): Promise<DiscussionThread[]> {
+export function fetchDiscussion(
+  media: Media,
+  episode: number | null | undefined,
+  onEarly?: (threads: DiscussionThread[]) => void,
+): Promise<DiscussionThread[]> {
   const key = discussionKey(media, episode)
   const hit = discussionCache.get(key)
-  if (hit && Date.now() - hit.at < DISCUSSION_TTL_MS) return hit.value
+  if (hit && Date.now() - hit.at < DISCUSSION_TTL_MS) {
+    deliverEarly(hit, onEarly)
+    return hit.value
+  }
 
   // An empty result is "nothing found YET" as often as it is "nothing exists" — a transient SDK/network
   // failure returns [] too (getDiscussion never rejects). Caching that would hide real comments for the
   // whole TTL, so only a non-empty aggregation is retained.
-  const value = fetchDiscussionUncached(media, episode).then((threads) => {
+  const early = fetchForumUncached(media, episode)
+  const value = Promise.all([fetchDiscussionUncached(media, episode), early])
+    .then(([threads, forum]) => [
+      ...forum,
+      ...threads.filter((thread) => !forum.some((fast) => fast.id === thread.id)),
+    ])
+    .then((threads) => {
     if (!threads.length && discussionCache.get(key)?.value === value) discussionCache.delete(key)
     return threads
   })
-  discussionCache.set(key, { at: Date.now(), value })
+  const entry = { at: Date.now(), value, early, complete: false }
+  void value.then(
+    () => { entry.complete = true },
+    () => { entry.complete = true },
+  )
+  discussionCache.set(key, entry)
+  deliverEarly(entry, onEarly)
   // Map iteration is insertion-ordered, so the first key is the oldest entry.
   while (discussionCache.size > DISCUSSION_CACHE_MAX) {
     const oldest = discussionCache.keys().next()
@@ -110,6 +157,49 @@ export function fetchDiscussion(media: Media, episode: number | null | undefined
     discussionCache.delete(oldest.value)
   }
   return value
+}
+
+function deliverEarly(entry: DiscussionCacheEntry, callback?: (threads: DiscussionThread[]) => void) {
+  if (!callback || entry.complete) return
+  // Only publish the forum-only result when it beats the full aggregation. This prevents a late
+  // early result from replacing an already-complete source list in the UI.
+  void Promise.race([
+    entry.early.then((threads) => ({ early: true, threads })),
+    entry.value.then(() => ({ early: false, threads: [] as DiscussionThread[] })),
+  ]).then((result) => { if (result.early && result.threads.length) callback(result.threads) })
+}
+
+async function fetchForumUncached(
+  media: Media,
+  episode: number | null | undefined,
+): Promise<DiscussionThread[]> {
+  const base = get(commentsBackendUrl).trim().replace(/\/+$/, '')
+  if (!base) return []
+  const episodeHint = typeof episode === 'number' && episode > 0 ? episode : null
+  const url = byAnimeUrl(base, {
+    malId: media.idMal ?? undefined,
+    anilistId: media.id,
+    episodeHint,
+    limit: 50,
+    page: 1,
+  })
+  if (!url) return []
+  try {
+    const response = await http(url)
+    if (!response.ok) return []
+    const body = await response.json() as ByAnimeResponse
+    const rows: AnimeThreadRow[] = Array.isArray(body?.threads) ? body.threads : []
+    const hit = matchEpisodeThread(rows, {
+      episodeCandidates: [episode],
+      isMovie: media.format === 'MOVIE',
+    })
+    if (!hit) return []
+    const ref = rowToThreadRef(hit)
+    return [mapThread({ ...ref, title: hit.title ?? '', replyCount: ref.commentCount })]
+  } catch (error) {
+    console.warn('[izumi comments] fast forum lookup failed:', error)
+    return []
+  }
 }
 
 async function fetchDiscussionUncached(media: Media, episode: number | null | undefined): Promise<DiscussionThread[]> {

@@ -1149,6 +1149,16 @@ async fn updater_download_apk(app: AppHandle, url: String) -> Result<String, Str
 pub struct HttpReply {
     status: u16,
     body: String,
+    timings: HttpTimings,
+}
+
+#[derive(Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HttpTimings {
+    queue_ms: u64,
+    response_ms: u64,
+    body_ms: u64,
+    native_total_ms: u64,
 }
 
 const MIB: usize = 1024 * 1024;
@@ -1181,7 +1191,7 @@ async fn http_get(
     priority: Option<bool>,
 ) -> Result<HttpReply, String> {
     let limit = http_lifecycle::body_limit(max_bytes, HTTP_GET_BODY_LIMIT, HTTP_GET_BODY_HARD_MAX);
-    http_lifecycle::run(
+    let outcome = http_lifecycle::run(
         request_id,
         http_lifecycle::timeout_ms(timeout_ms, 30_000),
         // Priority = the click-to-play critical path on its own lane; background = bulk
@@ -1195,6 +1205,7 @@ async fn http_get(
             http_lifecycle::RequestClass::Metadata
         },
         async move {
+            let request_started = std::time::Instant::now();
             let mut req = http_client().get(&url);
             if let Some(h) = headers {
                 for (k, v) in h {
@@ -1202,12 +1213,26 @@ async fn http_get(
                 }
             }
             let resp = req.send().await.map_err(|_| "request failed".to_string())?;
+            let response_ms = request_started.elapsed().as_millis() as u64;
             let status = resp.status().as_u16();
+            let body_started = std::time::Instant::now();
             let body = http_lifecycle::read_limited_text(resp, limit).await?;
-            Ok(HttpReply { status, body })
+            Ok(HttpReply {
+                status,
+                body,
+                timings: HttpTimings {
+                    response_ms,
+                    body_ms: body_started.elapsed().as_millis() as u64,
+                    ..Default::default()
+                },
+            })
         },
     )
-    .await
+    .await?;
+    let mut reply = outcome.value;
+    reply.timings.queue_ms = outcome.queue_ms;
+    reply.timings.native_total_ms = outcome.queue_ms.saturating_add(outcome.work_ms);
+    Ok(reply)
 }
 
 #[derive(serde::Serialize)]
@@ -1215,6 +1240,7 @@ pub struct HttpFullReply {
     status: u16,
     headers: std::collections::HashMap<String, String>,
     body: String,
+    timings: HttpTimings,
 }
 
 /// `ext_fetch`'s reply. Adds the post-redirect `url` (scrapers resolve relative links against it)
@@ -1227,6 +1253,7 @@ pub struct ExtFetchReply {
     headers: std::collections::HashMap<String, String>,
     set_cookie: Vec<String>,
     body: String,
+    timings: HttpTimings,
 }
 
 /// Pooled HTTP POST that returns status + headers + body as PLAIN data (no streamed
@@ -1248,7 +1275,7 @@ async fn http_post(
 ) -> Result<HttpFullReply, String> {
     let limit =
         http_lifecycle::body_limit(max_bytes, HTTP_POST_BODY_LIMIT, HTTP_POST_BODY_HARD_MAX);
-    http_lifecycle::run(
+    let outcome = http_lifecycle::run(
         request_id,
         http_lifecycle::timeout_ms(timeout_ms, 30_000),
         // Same lane split as http_get: `priority: true` = click-to-play critical path,
@@ -1261,6 +1288,7 @@ async fn http_post(
             http_lifecycle::RequestClass::Metadata
         },
         async move {
+            let request_started = std::time::Instant::now();
             let mut req = http_client().post(&url).body(body);
             if let Some(h) = headers {
                 for (k, v) in h {
@@ -1268,6 +1296,7 @@ async fn http_post(
                 }
             }
             let resp = req.send().await.map_err(|_| "request failed".to_string())?;
+            let response_ms = request_started.elapsed().as_millis() as u64;
             let status = resp.status().as_u16();
             let mut hdrs = std::collections::HashMap::new();
             for (k, v) in resp.headers() {
@@ -1275,15 +1304,25 @@ async fn http_post(
                     hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
                 }
             }
+            let body_started = std::time::Instant::now();
             let body = http_lifecycle::read_limited_text(resp, limit).await?;
             Ok(HttpFullReply {
                 status,
                 headers: hdrs,
                 body,
+                timings: HttpTimings {
+                    response_ms,
+                    body_ms: body_started.elapsed().as_millis() as u64,
+                    ..Default::default()
+                },
             })
         },
     )
-    .await
+    .await?;
+    let mut reply = outcome.value;
+    reply.timings.queue_ms = outcome.queue_ms;
+    reply.timings.native_total_ms = outcome.queue_ms.saturating_add(outcome.work_ms);
+    Ok(reply)
 }
 
 /// Method-agnostic pooled fetch for source-extension HTTP. The webview `fetch`
@@ -1306,11 +1345,12 @@ async fn ext_fetch(
 ) -> Result<ExtFetchReply, String> {
     let limit =
         http_lifecycle::body_limit(max_bytes, EXT_FETCH_BODY_LIMIT, EXT_FETCH_BODY_HARD_MAX);
-    http_lifecycle::run(
+    let outcome = http_lifecycle::run(
         request_id,
         http_lifecycle::timeout_ms(timeout_ms, 30_000),
         http_lifecycle::RequestClass::Extension,
         async move {
+            let request_started = std::time::Instant::now();
             let verb = method.unwrap_or_else(|| "GET".into()).to_ascii_uppercase();
             let verb = reqwest::Method::from_bytes(verb.as_bytes())
                 .map_err(|_| "bad method".to_string())?;
@@ -1324,6 +1364,7 @@ async fn ext_fetch(
                 req = req.body(b);
             }
             let resp = req.send().await.map_err(|_| "request failed".to_string())?;
+            let response_ms = request_started.elapsed().as_millis() as u64;
             let status = resp.status().as_u16();
             let final_url = resp.url().to_string();
             let mut hdrs = std::collections::HashMap::new();
@@ -1339,6 +1380,7 @@ async fn ext_fetch(
                     hdrs.insert(k.as_str().to_ascii_lowercase(), vs.to_string());
                 }
             }
+            let body_started = std::time::Instant::now();
             let body = http_lifecycle::read_limited_text(resp, limit).await?;
             Ok(ExtFetchReply {
                 status,
@@ -1346,10 +1388,19 @@ async fn ext_fetch(
                 headers: hdrs,
                 set_cookie,
                 body,
+                timings: HttpTimings {
+                    response_ms,
+                    body_ms: body_started.elapsed().as_millis() as u64,
+                    ..Default::default()
+                },
             })
         },
     )
-    .await
+    .await?;
+    let mut reply = outcome.value;
+    reply.timings.queue_ms = outcome.queue_ms;
+    reply.timings.native_total_ms = outcome.queue_ms.saturating_add(outcome.work_ms);
+    Ok(reply)
 }
 
 /// izumi's embedded OpenSubtitles consumer Api-Key — makes *search* keyless for users (download

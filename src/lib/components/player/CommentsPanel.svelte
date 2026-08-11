@@ -63,7 +63,7 @@
     loading = true
     filter = 'All'
     embedEverShown = false
-    fetchDiscussion(np.media, np.episode).then((t) => {
+    const applyThreads = (t: DiscussionThread[]) => {
       if (key !== loadedKey) return
       threads = t
       loading = false
@@ -71,7 +71,8 @@
       const want = $defaultDiscussionPlatform
       const lbl = want !== 'auto' ? platLabel(want) : 'All'
       filter = lbl !== 'All' && t.some((x) => x.source === lbl) ? lbl : 'All'
-    })
+    }
+    fetchDiscussion(np.media, np.episode, applyThreads).then(applyThreads)
   })
 
   // SDK platform slug → the badge/filter label (mirrors comments/index.ts).

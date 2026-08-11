@@ -9,7 +9,7 @@ use std::{
     collections::HashMap,
     future::Future,
     sync::{Arc, Mutex, OnceLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::sync::{watch, Semaphore};
 
@@ -35,6 +35,12 @@ pub(crate) enum RequestClass {
     /// small pool and NEVER a global permit: however busy list-population traffic is, a pick
     /// the user just made must not queue behind it.
     Playback,
+}
+
+pub(crate) struct RunResult<T> {
+    pub value: T,
+    pub queue_ms: u64,
+    pub work_ms: u64,
 }
 
 fn global_gate() -> Arc<Semaphore> {
@@ -109,12 +115,13 @@ pub(crate) async fn run<T, F>(
     timeout: Duration,
     class: RequestClass,
     work: F,
-) -> Result<T, String>
+) -> Result<RunResult<T>, String>
 where
     F: Future<Output = Result<T, String>>,
 {
     let (_registration, mut cancel) = Registration::new(request_id)?;
     let guarded = async move {
+        let queued_at = Instant::now();
         // Acquisition order is load-bearing. Extension requests take THEIR class permit first and
         // only then a global one: the old order (global → extension) let every queued extension
         // request dead-hold a global permit, so 12 in-flight ext_fetch calls consumed the entire
@@ -150,7 +157,14 @@ where
                     .map_err(|_| "request gate closed".to_string())?,
             ),
         };
-        work.await
+        let work_started = Instant::now();
+        let queue_ms = work_started.duration_since(queued_at).as_millis() as u64;
+        let value = work.await?;
+        Ok(RunResult {
+            value,
+            queue_ms,
+            work_ms: work_started.elapsed().as_millis() as u64,
+        })
     };
 
     tokio::select! {

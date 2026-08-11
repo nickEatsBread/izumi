@@ -29,7 +29,12 @@
   // renders at ~264px — well under the ~460px extraLarge asset cover() reaches for — so the cover
   // fallback uses cardCover() too.
   let meta = $state<Record<number, EpMeta>>({})
-  onMount(async () => { try { meta = await getEpisodeMeta(media.id) } catch { /* fallback image */ } })
+  onMount(() => {
+    let active = true
+    const applyMeta = (value: Record<number, EpMeta>) => { if (active) meta = value }
+    getEpisodeMeta(media.id, undefined, applyMeta).then(applyMeta).catch(() => {})
+    return () => { active = false }
+  })
   const thumb = $derived(meta[ep]?.image || media.bannerImage || cardCover(media))
   const epTitle = $derived(meta[ep]?.title)
   const episodeLabel = $derived(episodeSummary(ep, epTitle, $hideSpoilers))
