@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { get, readable, writable } from 'svelte/store'
 
 const picker = writable<Record<string, unknown> | null>(null)
+const connecting = writable<Record<string, unknown> | null>(null)
+const rememberedSources = writable<Record<number, unknown>>({})
 const hasConfiguredExtensions = vi.fn(async () => true)
 const runningExtensionCount = vi.fn(async () => 1)
-const resolveOnlineStreams = vi.fn(() => new Promise<never>(() => {}))
+const resolveOnlineStreams = vi.fn((..._args: unknown[]): Promise<unknown[]> => new Promise(() => {}))
 const automaticSources = writable(true)
 
 vi.mock('./sources', () => ({
@@ -17,7 +19,7 @@ vi.mock('./idmap', () => ({
 }))
 vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
 vi.mock('./onlinestream', () => ({
-  resolveOnlineStreams: () => resolveOnlineStreams(),
+  resolveOnlineStreams: (...args: unknown[]) => resolveOnlineStreams(...args),
 }))
 vi.mock('$lib/anizip', () => ({
   getKitsuId: async () => undefined,
@@ -37,6 +39,7 @@ vi.mock('$lib/extensions/torrentProvider', () => ({
 }))
 vi.mock('$lib/anilist/media', () => ({
   title: (media: { title: { romaji: string } }) => media.title.romaji,
+  banner: () => undefined,
   cover: () => undefined,
   airedCount: () => 12,
   totalEpisodes: () => 12,
@@ -62,10 +65,13 @@ vi.mock('$lib/settings/ui', () => ({
   torrentDownloadLimitMbps: readable(0),
   torrentUploadLimitMode: readable('automatic'),
   torrentUpstreamCapacityMbps: readable(0),
+  sourcePriority: readable([]),
+  sourcePriorityMode: readable('prefer'),
+  seadexAnnotations: readable(false),
 }))
 vi.mock('$lib/player/session', () => ({
   streamPicker: picker,
-  connecting: writable(null),
+  connecting,
   playing: writable(false),
   playerLoadId: writable(0),
   nowPlaying: writable({}),
@@ -80,6 +86,10 @@ vi.mock('$lib/player/session', () => ({
   subtitleNotice: writable(''),
   torrentSubtitleState: writable({ status: 'idle', tracks: [] }),
   playbackRecovery: writable(null),
+}))
+vi.mock('$lib/player/source-origin', () => ({
+  sourceOrigins: rememberedSources,
+  rememberSourceOrigin: vi.fn(),
 }))
 
 const { cancelResolve, playEpisode } = await import('./play')
@@ -96,6 +106,8 @@ const media = {
 afterEach(() => {
   cancelResolve()
   picker.set(null)
+  connecting.set(null)
+  rememberedSources.set({})
   vi.clearAllMocks()
 })
 
@@ -129,5 +141,19 @@ describe('manual episode source chooser', () => {
 
     cancelResolve()
     await resolving
+  })
+
+  it('does not let a remembered provider bypass the globally ranked automatic choice', async () => {
+    resolveOnlineStreams.mockResolvedValue([])
+    rememberedSources.set({
+      1: { origin: { kind: 'online-extension', id: 'last-working-source' }, updatedAt: Date.now() },
+    })
+
+    await playEpisode(media as never, 2, () => {})
+
+    expect(resolveOnlineStreams).toHaveBeenCalled()
+    expect(resolveOnlineStreams.mock.calls.every((call) => call[2] === undefined)).toBe(true)
+    expect(get(picker)).toMatchObject({ hidden: false })
+    expect(get(connecting)).toBeNull()
   })
 })

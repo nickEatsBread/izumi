@@ -9,6 +9,7 @@ import { extensionSourceConfigured, liveJvmSources } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
 import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
 import { trackFetch, fetchEpoch } from './fetch-registry'
+import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -237,7 +238,16 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
     moduleCode: extension.code!,
     signed: extension.signed,
   }))
-  return [...results.flat(), ...local].filter((c) => !off.includes(c.id))
+  const seen = new Set<string>()
+  return [...results.flat(), ...local].filter((config) => {
+    if (off.includes(config.id) || seen.has(config.id)) return false
+    // The same marketplace can be installed through both its catalog URL and an expanded pointer,
+    // and two catalogs may contain the same provider. One worker per stable id prevents duplicate
+    // Nyaa/Sukebei requests and duplicated picker rows without conflating different providers that
+    // merely share a display name.
+    seen.add(config.id)
+    return true
+  })
 }
 
 // Fetch an extension's module source. esm.sh often returns a tiny re-export STUB
@@ -391,6 +401,7 @@ function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<Tor
  *  fold sources in live instead of waiting on the slowest (or a wedged one's 20s timeout). */
 export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string, signal?: AbortSignal): Promise<TorrentResult[]> {
   try {
+    const trace = currentResolveTrace(query.anilistId, query.episode)
     const exts = await ensureRunning()
     const candidates = exts.filter((e) => !onlyId || e.cfg.id === onlyId)
     const live = (await Promise.all(candidates.map(async (e) => ((await e.ready) ? e : null))))
@@ -398,16 +409,31 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
     // Movies also get single(): SDK sources treat single() as the universal entry (their movie()
     // often returns [] with "single already gets movies with matching media id").
     const methods = query.episode != null ? ['single', 'batch'] : ['single', 'movie']
+    traceResolve(trace, 'legacy torrent extensions ready', {
+      configured: exts.length,
+      queried: live.map((extension) => extension.cfg.name),
+      methods,
+    })
     // Stamp each result with the extension that produced it (name + icon), mirroring the
     // torrent-provider path, so the picker labels the row with the real source instead of the
     // generic "Extension" fallback. Per-extension map (not a flat fan-out) keeps that association.
     const batches = await Promise.all(live.map(async (e) => {
+      const providerStartedAt = performance.now()
+      traceResolve(trace, 'legacy torrent provider start', { provider: e.cfg.name })
       // A superseded resolve (source already picked) must not issue further worker queries — each
       // one spawns HTTP that competes with the picked source's playback path.
-      const queried = await Promise.all(methods.map(async (method) => ({
-        method,
-        results: signal?.aborted ? [] : await call(e, method, query),
-      })))
+      const queried = await Promise.all(methods.map(async (method) => {
+        const methodStartedAt = performance.now()
+        traceResolve(trace, 'legacy torrent provider method start', { provider: e.cfg.name, method })
+        const results = signal?.aborted ? [] : await call(e, method, query)
+        traceResolve(trace, 'legacy torrent provider method finish', {
+          provider: e.cfg.name,
+          method,
+          durationMs: Math.round(performance.now() - methodStartedAt),
+          rows: results.length,
+        })
+        return { method, results }
+      }))
       // Preserve which SDK method produced the row. A lot of Blu-ray packs are named only
       // "[Group] Title (BD 1080p)" with no textual batch marker, so losing `batch()` here made
       // refinement label them "movie, not an episode". If single() and batch() return the same
@@ -439,6 +465,11 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
         logo: r.logo ?? e.cfg.icon,
       }))
       if (onBatch && stamped.length) onBatch(stamped)
+      traceResolve(trace, 'legacy torrent provider finish', {
+        provider: e.cfg.name,
+        durationMs: Math.round(performance.now() - providerStartedAt),
+        rows: stamped.length,
+      })
       return stamped
     }))
     const seen = new Set<string>()

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { currentResolveTrace, safeRequestTarget, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
 
 export interface NativeHttpOptions {
   signal?: AbortSignal
@@ -17,6 +18,7 @@ export interface NativeHttpOptions {
 }
 
 let requestSequence = 0
+let debugRequestSequence = 0
 
 function nextRequestId(command: string) {
   const random = globalThis.crypto?.randomUUID?.()
@@ -35,6 +37,15 @@ export async function invokeNativeHttp<T>(
 ): Promise<T> {
   if (options.signal?.aborted) throw abortError()
   const requestId = options.requestId ?? nextRequestId(command)
+  const trace = currentResolveTrace()
+  const debugId = trace ? ++debugRequestSequence : 0
+  const debugStartedAt = globalThis.performance?.now?.() ?? Date.now()
+  if (trace) traceResolve(trace, `HTTP ${debugId} start`, {
+    command,
+    target: safeRequestTarget(args.url),
+    timeoutMs: options.timeoutMs,
+    lane: options.priority ? 'playback' : options.background ? 'background' : 'metadata',
+  })
   const requestArgs: Record<string, unknown> = { ...args, requestId }
   if (options.timeoutMs != null) requestArgs.timeoutMs = options.timeoutMs
   if (options.maxBytes != null) requestArgs.maxBytes = options.maxBytes
@@ -63,7 +74,23 @@ export async function invokeNativeHttp<T>(
     const pending: Promise<T>[] = [request]
     if (options.signal) pending.push(aborted)
     if (options.timeoutMs != null) pending.push(timedOut)
-    return await Promise.race(pending)
+    const result = await Promise.race(pending)
+    if (trace) traceResolve(trace, `HTTP ${debugId} finish`, {
+      command,
+      target: safeRequestTarget(args.url),
+      durationMs: Math.round((globalThis.performance?.now?.() ?? Date.now()) - debugStartedAt),
+      status: typeof result === 'object' && result && 'status' in result
+        ? (result as { status?: unknown }).status
+        : undefined,
+    })
+    return result
+  } catch (error) {
+    if (trace) traceResolveError(trace, `HTTP ${debugId} failed`, error, {
+      command,
+      target: safeRequestTarget(args.url),
+      durationMs: Math.round((globalThis.performance?.now?.() ?? Date.now()) - debugStartedAt),
+    })
+    throw error
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle)
     options.signal?.removeEventListener('abort', onAbort)

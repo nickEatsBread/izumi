@@ -29,6 +29,14 @@ export function invalidatePlaybackOwner(): void {
   activeOwner = Symbol('playback-pending')
 }
 
+/** Cancel a source load only if it still owns playback. Returning false means a newer source has
+ * already taken over, so the stale cancel callback must not invalidate that newer request. */
+export function cancelPlaybackOwner(owner: PlaybackOwner): boolean {
+  if (activeOwner !== owner) return false
+  activeOwner = null
+  return true
+}
+
 export function currentPlaybackOwner(): PlaybackOwner | null {
   return activeOwner
 }

@@ -315,7 +315,11 @@ mod tests {
                 .collect()
         };
         let mut held = saturate(RequestClass::Background, BACKGROUND_CONCURRENCY, "bg");
-        held.extend(saturate(RequestClass::Extension, EXTENSION_CONCURRENCY, "ext"));
+        held.extend(saturate(
+            RequestClass::Extension,
+            EXTENSION_CONCURRENCY,
+            "ext",
+        ));
         held.extend(saturate(RequestClass::Metadata, GLOBAL_CONCURRENCY, "meta"));
         tokio::task::yield_now().await;
         // Deterministic guard against a scheduler that hasn't run the holds yet: the other

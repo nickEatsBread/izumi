@@ -1,6 +1,7 @@
 import type { Media } from '$lib/anilist/types'
 import type { TorrentResult, TorrentQuery } from './types'
 import { runningTorrentProviderExtensions } from './manager'
+import { currentResolveTrace, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
 
 // anime-torrent-provider SDK shapes. Fields we consume.
 export interface SnMedia {
@@ -55,8 +56,12 @@ export function atorrentToResult(t: AnimeTorrent, hash: string): TorrentResult |
  *  failure; dedupe by hash. `onBatch` fires with each provider's results as it settles. */
 export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia, onBatch?: (rs: TorrentResult[]) => void, onlyId?: string, signal?: AbortSignal): Promise<TorrentResult[]> {
   try {
+    const trace = currentResolveTrace(query.anilistId, query.episode)
     const provs = await runningTorrentProviderExtensions(onlyId)
     if (!provs.length || signal?.aborted) return []
+    traceResolve(trace, 'anime torrent providers ready', {
+      queried: provs.map((provider) => provider.name),
+    })
     // Release names are romaji-based; a localized display title may never appear in a torrent name,
     // so query by romaji. And when a precise episode/anime id is available the provider locates the
     // exact release by id — an extra title/resolution text filter then only over-restricts (an
@@ -69,14 +74,33 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia,
       // one spawns HTTP that competes with the picked source's playback path. Re-checked before
       // every dispatch tier, since getSettings/search can settle after the abort lands.
       if (signal?.aborted) return []
+      const providerStartedAt = performance.now()
+      traceResolve(trace, 'anime torrent provider start', { provider: p.name })
       try {
+        const settingsStartedAt = performance.now()
         const s = (await p.call('getSettings').catch(() => null)) as AtpSettings | null
+        traceResolve(trace, 'anime torrent provider settings ready', {
+          provider: p.name,
+          durationMs: Math.round(performance.now() - settingsStartedAt),
+          smartSearch: !!s?.canSmartSearch,
+        })
         if (signal?.aborted) return []
+        const searchStartedAt = performance.now()
         const raw = (s?.canSmartSearch
           ? await p.call('smartSearch', { media, query: hasId ? '' : romaji, batch: false, episodeNumber: query.episode ?? -1, anidbAID: query.anidbAid, anidbEID: query.anidbEid, bestReleases: false })
           : await p.call('search', { media, query: romaji })) as unknown
         const list: AnimeTorrent[] = Array.isArray(raw) ? raw : []
+        traceResolve(trace, 'anime torrent provider search finish', {
+          provider: p.name,
+          method: s?.canSmartSearch ? 'smartSearch' : 'search',
+          durationMs: Math.round(performance.now() - searchStartedAt),
+          rows: list.length,
+        })
         const out: TorrentResult[] = []
+        const missingHashes = list.filter((torrent) => !torrent.infoHash).length
+        if (missingHashes) traceResolve(trace, 'anime torrent hash lookups start', {
+          provider: p.name, torrents: missingHashes,
+        })
         for (const t of list) {
           // getTorrentInfoHash is one dispatch PER torrent; discard the batch instead of walking it.
           if (signal?.aborted) return []
@@ -86,6 +110,13 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia,
           if (r) out.push({ ...r, provider: p.name, providerId: p.id, logo: p.icon })
         }
         if (onBatch && out.length) onBatch(out)
+        traceResolve(trace, 'anime torrent provider finish', {
+          provider: p.name,
+          durationMs: Math.round(performance.now() - providerStartedAt),
+          rawRows: list.length,
+          usableRows: out.length,
+          hashLookups: missingHashes,
+        })
         return out
       }
       catch (err) {
@@ -93,6 +124,10 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia,
         // finds the anime then throws (e.g. on the torrent-fetch step) otherwise looks like an empty
         // result with no clue why. `import.meta.env.DEV` is compiled to `false` in release builds.
         if (import.meta.env.DEV) console.warn(`[torrent-provider: ${p.name}] threw during query`, err)
+        traceResolveError(trace, 'anime torrent provider failed', err, {
+          provider: p.name,
+          durationMs: Math.round(performance.now() - providerStartedAt),
+        })
         return []
       }
     }))
