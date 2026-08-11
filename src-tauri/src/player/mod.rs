@@ -24,6 +24,7 @@
 //! [`spawn_event_loop`].
 
 mod headless;
+mod subtitle_select;
 // On-demand anime-upscaler shader fetch (Anime video-quality preset). Pinned upstream release,
 // cached under the app config dir; never a user-supplied URL. See shaders.rs.
 pub mod shaders;
@@ -68,6 +69,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use headless::HeadlessMpv;
+use subtitle_select::{preferred_full_subtitle_id, SemanticTrack};
 
 /// The mpv/libmpv version string, for the About page.
 pub fn libmpv_version() -> String {
@@ -1244,6 +1246,43 @@ fn attach_external_tracks(mpv: &Mpv, tracks: PendingExternalTracks) -> usize {
     failures
 }
 
+fn prefer_full_dialogue_subtitle(mpv: &Mpv) {
+    let preferred_lang: String = match mpv.get_property("slang") {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let count: i64 = match mpv.get_property("track-list/count") {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let tracks = (0..count)
+        .map(|index| SemanticTrack {
+            id: mpv
+                .get_property(&format!("track-list/{index}/id"))
+                .unwrap_or(0),
+            kind: mpv
+                .get_property(&format!("track-list/{index}/type"))
+                .unwrap_or_default(),
+            title: mpv
+                .get_property(&format!("track-list/{index}/title"))
+                .unwrap_or_default(),
+            lang: mpv
+                .get_property(&format!("track-list/{index}/lang"))
+                .unwrap_or_default(),
+            selected: mpv
+                .get_property(&format!("track-list/{index}/selected"))
+                .unwrap_or(false),
+        })
+        .collect::<Vec<_>>();
+    if let Some(id) = preferred_full_subtitle_id(&preferred_lang, &tracks) {
+        if mpv.set_property("sid", id).is_ok() {
+            eprintln!(
+                "[subtitle-select] replaced signs-only track with full dialogue track id={id}"
+            );
+        }
+    }
+}
+
 /// Set mpv's preferred audio/subtitle languages BEFORE `loadfile`, so mpv
 /// auto-selects the matching tracks (e.g. Japanese audio + English subs). `alang`
 /// = audio language, `slang` = subtitle language (ISO 639-2; `slang="no"` disables
@@ -1334,7 +1373,6 @@ pub(crate) fn spawn_event_loop(
                         // Include the path so the frontend can associate this event with the exact
                         // direct-torrent playback. Generic progress events from the previous file
                         // may still be queued after loadfile; FileLoaded + URL cannot be mistaken.
-                        let _ = app.emit("player-file-loaded", loaded_url.clone());
                         if let Some(tracks) =
                             take_pending_external_tracks(&pending_external_tracks, &loaded_url)
                         {
@@ -1355,6 +1393,11 @@ pub(crate) fn spawn_event_loop(
                                 eprintln!("mpv could not apply autoplay after file load: {error}");
                             }
                         }
+                        // mpv has now seen both embedded and newly-attached sidecar tracks, so this
+                        // is the first deterministic point at which semantic subtitle preference
+                        // can correct a mislabeled anime mux.
+                        prefer_full_dialogue_subtitle(&client);
+                        let _ = app.emit("player-file-loaded", loaded_url.clone());
                         // Re-state EVERY mirrored flag on each load, not just `pause`.
                         //
                         // observe_property is silent when a value repeats, and the overlay resets

@@ -399,6 +399,19 @@
     playerNotice.set(`Saved subtitle style “${preset.name}”`)
   }
 
+  async function saveDeckSubtitleStyle() {
+    capturedStyle = captureFromExtradata(
+      await invoke<string>('player_get_property', { name: 'sub-ass-extradata' }).catch(() => ''),
+    )
+    styleSaveName = get(bingeSource)?.group ?? get(nowPlayingMedia)?.media.title?.userPreferred ?? ''
+    if (!capturedStyle) {
+      playerNotice.set('Current subtitle track has no ASS style to save')
+      return
+    }
+    saveCapturedStyle()
+    showTracks = false
+  }
+
   // Dev-only tools, reached through the track menu (Subtitles/Audio) as a third "Dev tools"
   // category. import.meta.env.DEV is compiled to a literal false in production, so both the row
   // and this whole block are tree-shaken out of a release build. Copy URL is the first tool;
@@ -795,6 +808,20 @@
                     {t.selected ? '✓ ' : ''}{label(t, subs)}
                   </button>
                 {/each}
+                <p class="mt-1 px-2 py-1 text-xs uppercase tracking-wide text-white/50">Subtitle style</p>
+                <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15"
+                        onclick={() => { sessionSubtitleStyle.set(null); playerNotice.set('Using default subtitle style'); showTracks = false }}>
+                  Use default style
+                </button>
+                {#each $savedSubtitleStyles as preset (preset.id)}
+                  <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15"
+                          onclick={() => { sessionSubtitleStyle.set(preset); playerNotice.set(`Applied subtitle style: ${preset.name}`); showTracks = false }}>
+                    Apply {preset.name}
+                  </button>
+                {/each}
+                <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={saveDeckSubtitleStyle}>
+                  Save current release style
+                </button>
               </div>
             {:else}
               <!-- Desktop: a two-level drill-down. Root shows the two categories with their

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen, onlineSubCandidates, subtitleNotice } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, bingeSource } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { searchOnlineSubtitles } from '$lib/stremio/play'
   import { openSubtitlesToken } from '$lib/settings/ui'
@@ -12,6 +12,8 @@
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import Check from '@lucide/svelte/icons/check'
+  import { captureFromExtradata } from '$lib/player/ass-style-capture'
+  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
 
   // Game-mode (Deck) audio/subtitle picker: a controller-navigable CASCADING column menu.
   // Opens on the ☰ (start) button; d-pad up/down moves within a column, →/A descends into the
@@ -44,11 +46,15 @@
     | { kind: 'aid' | 'sid'; id: number; label: string; selected: boolean }
     | { kind: 'online'; label: string; selected: boolean; candidate: SubtitleCandidate }
     | { kind: 'search'; label: string; selected: false }
+    | { kind: 'style-default'; label: string; selected: boolean }
+    | { kind: 'style-preset'; label: string; selected: boolean; preset: SubtitleStylePreset }
+    | { kind: 'style-save'; label: string; selected: false }
   // Only surface a category that has tracks; Online shows when candidates were found on play.
   const roots = $derived([
     ...(audios.length ? [{ key: 'audio' as const, label: 'Audio' }] : []),
     ...(subs.length ? [{ key: 'subs' as const, label: 'Subtitles' }] : []),
     ...(onlineItems.length ? [{ key: 'online' as const, label: 'Online subtitles' }] : []),
+    { key: 'style' as const, label: 'Subtitle style' },
   ])
   // Track list for the highlighted category. Subtitles gets a leading "Off"; Online gets a trailing
   // "Search again". No free-text input in Game mode (needs the OSK) — result list + re-search only.
@@ -62,10 +68,22 @@
       ...onlineItems.map((c) => ({ kind: 'online' as const, label: onlineLeafLabel(c), selected: isCandidateLoaded(c, loadedSubTitles), candidate: c })),
       { kind: 'search' as const, label: 'Search again', selected: false as const },
     ]
+    if (key === 'style') return [
+      { kind: 'style-default' as const, label: 'Use default style', selected: !$sessionSubtitleStyle },
+      ...$savedSubtitleStyles.map((preset) => ({
+        kind: 'style-preset' as const,
+        label: `Apply ${preset.name}`,
+        selected: $sessionSubtitleStyle?.id === preset.id,
+        preset,
+      })),
+      { kind: 'style-save' as const, label: 'Save current release style', selected: false as const },
+    ]
     return []
   }
   // Stable {#each} key across the union (online/search leaves have no track id).
-  const leafKey = (it: Leaf) => it.kind === 'online' ? candidateKey(it.candidate) : it.kind === 'search' ? 'search' : `${it.kind}${it.id}`
+  const leafKey = (it: Leaf) => it.kind === 'online' ? candidateKey(it.candidate)
+    : it.kind === 'style-preset' ? `style-${it.preset.id}`
+      : it.kind === 'aid' || it.kind === 'sid' ? `${it.kind}${it.id}` : it.kind
 
   let open = $state(false)
   let level = $state(0) // 0 = category column, 1 = track column
@@ -132,18 +150,45 @@
       subtitleNotice.set(subtitleErrorNotice(c.provider, e))
     }
   }
-  function apply(leaf: Leaf) {
+  async function saveCurrentStyle() {
+    const raw = await invoke<string>('player_get_property', { name: 'sub-ass-extradata' }).catch(() => '')
+    const style = captureFromExtradata(raw)
+    if (!style) {
+      playerNotice.set('Current subtitle track has no ASS style to save')
+      return
+    }
+    const group = get(bingeSource)?.group
+    const title = get(nowPlayingMedia)?.media.title?.userPreferred
+    const preset = saveSubtitlePreset(group ?? title ?? 'Saved style', style, { group, title })
+    sessionSubtitleStyle.set(preset)
+    playerNotice.set(`Saved and applied subtitle style “${preset.name}”`)
+    closeMenu()
+  }
+  async function apply(leaf: Leaf) {
     // "Search again" re-runs the aggregator; an online candidate downloads + live-loads. Both keep
     // the menu open so the updated list/Check stays visible (only track picks close the menu).
     if (leaf.kind === 'search') { void searchOnlineSubtitles(); return }
     if (leaf.kind === 'online') { void addOnlineSub(leaf.candidate); return }
+    if (leaf.kind === 'style-save') { await saveCurrentStyle(); return }
+    if (leaf.kind === 'style-default') {
+      sessionSubtitleStyle.set(null)
+      playerNotice.set('Using default subtitle style')
+      closeMenu()
+      return
+    }
+    if (leaf.kind === 'style-preset') {
+      sessionSubtitleStyle.set(leaf.preset)
+      playerNotice.set(`Applied subtitle style “${leaf.preset.name}”`)
+      closeMenu()
+      return
+    }
     cmd('set', [leaf.kind, leaf.id === -1 ? 'no' : String(leaf.id)])
     // Reflect the new selection locally so the check mark is instant.
     const type = leaf.kind === 'aid' ? 'audio' : 'sub'
     tracks = tracks.map((t) => (t.type === type ? { ...t, selected: leaf.id !== -1 && t.id === leaf.id } : t))
     closeMenu()
   }
-  function activate() { if (level === 0) descend(); else { const it = subItems[subIdx]; if (it) apply(it) } }
+  function activate() { if (level === 0) descend(); else { const it = subItems[subIdx]; if (it) void apply(it) } }
 
   // Controller: own the ☰ (start) toggle always; capture d-pad/A/B only while open.
   onMount(() => {
@@ -234,7 +279,7 @@
               class:bg-white={subIdx === i}
               class:text-black={subIdx === i}
               onpointerenter={() => (subIdx = i)}
-              onclick={() => apply(it)}
+              onclick={() => void apply(it)}
             >
               <span class="grid w-8 shrink-0 place-items-center">{#if it.selected}<Check size={32} />{/if}</span>
               <span class="line-clamp-2">{it.label}</span>

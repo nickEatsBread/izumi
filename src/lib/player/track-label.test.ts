@@ -77,6 +77,21 @@ describe('trackLabel — subtitles', () => {
     const t = sub({ id: 1, lang: 'eng', title: 'Signs & Songs' })
     expect(trackLabel(t, [t])).toBe('English · Signs & Songs')
   })
+
+  it('corrects anime muxes that tag full English dialogue by Japanese audio', () => {
+    const g = [
+      sub({ id: 1, lang: 'eng', title: 'Signs & Songs (Shio-freeka)' }),
+      sub({ id: 2, lang: 'jpn', title: 'Full Subtitles (Shio-freeka)' }),
+      sub({ id: 3, lang: 'eng', title: 'Signs & Songs (Coalgirls)' }),
+      sub({ id: 4, lang: 'jpn', title: 'Full Subtitles (Coalgirls)' }),
+    ]
+    expect(labels(g)).toEqual([
+      'English · Signs & Songs (Shio-freeka)',
+      'English · Full Subtitles (Shio-freeka)',
+      'English · Signs & Songs (Coalgirls)',
+      'English · Full Subtitles (Coalgirls)',
+    ])
+  })
 })
 
 describe('trackLabel — audio', () => {
