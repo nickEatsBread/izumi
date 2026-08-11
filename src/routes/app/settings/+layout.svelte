@@ -146,7 +146,7 @@
     <aside class="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-border bg-background p-4">
       <h1 class="mb-3 px-3 text-2xl font-black">{m.nav_settings()}</h1>
       <div class="mb-4 px-1"><SettingsSearch /></div>
-      <SettingsNav />
+      <div class="min-h-0 flex-1"><SettingsNav /></div>
       <div class="mt-auto space-y-0.5 px-3 pt-6 text-xs text-muted-foreground">
         {#if appVersion}<div>{m.common_client_version({ version: appVersion })}</div>{/if}
         {#if osLine}<div>{osLine}</div>{/if}

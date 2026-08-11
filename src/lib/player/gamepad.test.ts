@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { TriggerScrubber, SEEK } from './gamepad'
+import { ButtonPressLatch, TriggerScrubber, SEEK } from './gamepad'
 
 function deps(pos = 100, dur = 1000) {
   return {
@@ -57,5 +57,23 @@ describe('TriggerScrubber', () => {
     s.update(true, 0)
     s.update(false, 100)
     expect(d.seek).toHaveBeenCalledWith(110)
+  })
+})
+
+describe('ButtonPressLatch', () => {
+  it('accepts one press until release and ignores a duplicated pressed edge', () => {
+    const latch = new ButtonPressLatch()
+    expect(latch.update(true, 1000)).toBe(true)
+    expect(latch.update(true, 1001)).toBe(false)
+    expect(latch.update(false, 1010)).toBe(false)
+  })
+
+  it('ignores a release/press bounce but accepts the next deliberate press', () => {
+    const latch = new ButtonPressLatch(350)
+    expect(latch.update(true, 1000)).toBe(true)
+    latch.update(false, 1010)
+    expect(latch.update(true, 1020)).toBe(false)
+    latch.update(false, 1030)
+    expect(latch.update(true, 1400)).toBe(true)
   })
 })

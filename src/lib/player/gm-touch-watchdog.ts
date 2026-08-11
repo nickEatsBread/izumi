@@ -20,6 +20,17 @@ const CHECK_MS = 2_000
 
 type Tracked = { downAt: number; lastAt: number; captured: Element | null }
 
+/** Clear any gesture WebKit lost while a player/comments surface was being hidden, then reassert
+ * Gamescope passthrough after the replacement surface has painted. Cross-origin iframes can own
+ * the release event, so the parent watchdog cannot rely on seeing pointerup in this transition. */
+export function restoreGmTouchAfterTransition(): void {
+  window.dispatchEvent(new Event('gm-touch-reset'))
+  void invoke('native_touch_hold', { held: false }).catch(() => {})
+  const restore = () => void invoke('restore_native_touch').catch(() => {})
+  requestAnimationFrame(restore)
+  window.setTimeout(restore, 240)
+}
+
 /** Start the watchdog; returns the teardown. Call only in Game mode. */
 export function initGmTouchWatchdog(): () => void {
   const active = new Map<number, Tracked>()
@@ -30,6 +41,9 @@ export function initGmTouchWatchdog(): () => void {
     void invoke('native_touch_hold', { held: h }).catch(() => {})
   }
   const down = (e: PointerEvent) => {
+    // Compatibility mouse pointers are not fingers and can legitimately lose their release when
+    // a clicked control unmounts. Tracking them held native touch routing for ten seconds.
+    if (e.pointerType !== 'touch') return
     active.set(e.pointerId, { downAt: Date.now(), lastAt: Date.now(), captured: null })
     setHold(true)
   }
@@ -74,6 +88,8 @@ export function initGmTouchWatchdog(): () => void {
   }, CHECK_MS)
   const reset = () => {
     for (const [id, p] of [...active]) recover(id, p, 'focus-reset')
+    active.clear()
+    setHold(false)
   }
   window.addEventListener('pointerdown', down, true)
   window.addEventListener('pointermove', move, true)
@@ -82,6 +98,7 @@ export function initGmTouchWatchdog(): () => void {
   window.addEventListener('gotpointercapture', got, true)
   window.addEventListener('lostpointercapture', lost, true)
   window.addEventListener('blur', reset)
+  window.addEventListener('gm-touch-reset', reset)
   document.addEventListener('visibilitychange', reset)
   return () => {
     clearInterval(timer)
@@ -93,6 +110,7 @@ export function initGmTouchWatchdog(): () => void {
     window.removeEventListener('gotpointercapture', got, true)
     window.removeEventListener('lostpointercapture', lost, true)
     window.removeEventListener('blur', reset)
+    window.removeEventListener('gm-touch-reset', reset)
     document.removeEventListener('visibilitychange', reset)
   }
 }

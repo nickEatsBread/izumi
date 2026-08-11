@@ -96,7 +96,7 @@
   </div>
 {:else}
   <!-- Desktop: vertical rail (unchanged behavior). -->
-  <nav class="flex flex-col gap-1">
+  <nav data-nav-scroll-container class="flex h-full flex-col gap-1 overflow-y-auto overscroll-contain pr-1">
     {#each flat as it (it.href)}
       {@const Icon = it.icon}
       <a href={it.href} data-focusable

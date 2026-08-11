@@ -3784,6 +3784,13 @@ pub fn run() {
                     // until the app document finishes its first load so that surface can never be
                     // presented between the dark native window and the dark HTML paint.
                     .visible(false)
+                    // Native Deck zoom is applied by the frontend after it reads the persisted UI
+                    // scale. Hide the first document paint until then to prevent a launch zoom-in.
+                    .initialization_script(if gamescope {
+                        "(function(){function hide(){if(!document.documentElement)return false;document.documentElement.classList.add('deck-launch-pending');return true}if(!hide())document.addEventListener('DOMContentLoaded',hide,{once:true})})();"
+                    } else {
+                        ""
+                    })
                     // Force the webview to report prefers-color-scheme: dark. The app itself is dark via
                     // CSS classes (darkMode:'class', no prefers-color-scheme queries), so this doesn't
                     // change our UI — but the discussion embeds (discussanime archive, Disqus) keep
