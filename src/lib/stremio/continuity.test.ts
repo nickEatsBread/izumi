@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { matchesRelease, type ContinueHint } from './play'
+import { matchesRelease, pickDirectPreloadCandidate, type ContinueHint } from './play'
 import type { Stream } from './parse'
 
 // Release continuity across episodes. A torrent row is identified by bingeGroup / infoHash /
@@ -64,6 +64,52 @@ describe('matchesRelease — torrent identities still work', () => {
     // required to satisfy the other's field.
     const s = { name: 'x', infoHash: 'abc' } as Stream
     expect(matchesRelease(s, { infoHash: 'abc', originId: 'animepahe' })).toBe(true)
+  })
+
+  it('continues a real per-episode ASW release when the infohash changes', () => {
+    const episode2 = {
+      name: 'Torrentio\n1080p',
+      infoHash: '4a0fec197db1950e70da12028531e5cd995551b2',
+      behaviorHints: { filename: '[ASW] Oni no Hanayome - 02 [1080p HEVC][E24C66BA].mkv' },
+    } as Stream
+    const picked = pickDirectPreloadCandidate([episode2], {
+      infoHash: 'episode-1-hash',
+      group: 'ASW',
+    }, { season: 1, episode: 2, abs: 2 })
+    expect(picked).toBe(episode2)
+  })
+
+  it('does not treat every torrent from the same addon as the same release', () => {
+    const torrentioOrigin = { kind: 'addon' as const, id: 'torrentio.strem.fun', name: 'Torrentio' }
+    const doomdos = {
+      name: 'Torrentio\n4k',
+      infoHash: 'doomdos-episode-6',
+      __origin: torrentioOrigin,
+      behaviorHints: {
+        bingeGroup: 'torrentio|4k|Doomdos',
+        filename: '[Doomdos] The Exiled Heavy Knight - 6 [2160p].mkv',
+      },
+    } as Stream
+    const toonsHub = {
+      name: 'Torrentio\n1080p',
+      infoHash: 'toonshub-episode-6',
+      __origin: torrentioOrigin,
+      behaviorHints: {
+        bingeGroup: 'torrentio|1080p|ToonsHub',
+        filename: 'The.Exiled.Heavy.Knight.S01E06.1080p-ToonsHub.mkv',
+      },
+    } as Stream
+    const hint: ContinueHint = {
+      infoHash: 'toonshub-episode-5',
+      bingeGroup: 'torrentio|1080p|ToonsHub',
+      group: 'ToonsHub',
+      originId: 'torrentio.strem.fun',
+    }
+
+    expect(matchesRelease(doomdos, hint)).toBe(false)
+    expect(pickDirectPreloadCandidate([doomdos, toonsHub], hint, {
+      season: 1, episode: 6, abs: 6,
+    })).toBe(toonsHub)
   })
 })
 

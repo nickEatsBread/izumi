@@ -6,6 +6,7 @@ import { preferredAudioLang, preferredSubLang, providerLanguages, providerAudio 
 import { runningStreamExtensions } from '$lib/extensions/manager'
 import { normalizeLang, subtitleTitle } from './sublang'
 import { memo, cacheableList } from './online-cache'
+import { currentResolveTrace, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
 
 // Serial alias-search bounds (see findEp). A provider answers or it doesn't — walking every
 // synonym only multiplies a dead provider's timeout, and it used to do so per episode.
@@ -334,6 +335,7 @@ export async function resolveOnlineStreams(
   signal?: AbortSignal,
 ): Promise<Stream[]> {
   if (episode == null) return []
+  const trace = currentResolveTrace(media.id, episode)
   // Superseded resolve (user already picked a source): issue NO hops — every scrape below spawns
   // worker HTTP that competes with the picked source's playback path. Checked again before each
   // hop tier, so an abort mid-wave stops the chain at the next boundary.
@@ -355,6 +357,11 @@ export async function resolveOnlineStreams(
     .filter((e) => allowedByLanguage(e.lang, allowedLangs))
     .sort((a, b) => langRank(a.lang, prefLang) - langRank(b.lang, prefLang))
   if (!exts.length) return []
+  traceResolve(trace, 'online providers ready', {
+    configured: unordered.length,
+    queried: exts.map((extension) => extension.name),
+    skippedByLanguage: unordered.length - exts.length,
+  })
   const titles = [title(media), media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
     .filter((t): t is string => !!t && t.length > 1)
   const queries = searchQueries(titles)
@@ -406,12 +413,23 @@ export async function resolveOnlineStreams(
     // its 20s timeout PER alias, serially.
     for (const query of queries.slice(0, MAX_SEARCH_ALIASES)) {
       if (signal?.aborted) return null
+      const searchStartedAt = performance.now()
+      traceResolve(trace, 'online provider search start', {
+        provider: ext.name, audio: dub ? 'dub' : 'sub', aliasAttempt: queries.indexOf(query) + 1,
+      })
       const results = await memo(
         `search|${ext.id}|${dub}|${JSON.stringify(query)}|${media.seasonYear ?? ''}`,
         () => ext.call('search', { query, dub, year: media.seasonYear ?? undefined })
           .catch((error: unknown) => { noteProblem(ext, error); return null }),
         cacheableList,
       ) as SnSearchResult[] | null
+      traceResolve(trace, 'online provider search finish', {
+        provider: ext.name,
+        audio: dub ? 'dub' : 'sub',
+        durationMs: Math.round(performance.now() - searchStartedAt),
+        answers: results?.length ?? 0,
+        failed: results === null,
+      })
       if (results === null) sawFailure = true
       else sawAnswer = true
       best = pickSearchResult(results ?? [], identityTitles)
@@ -424,6 +442,8 @@ export async function resolveOnlineStreams(
       return null
     }
     searchFailures.delete(failKey)
+    const episodesStartedAt = performance.now()
+    traceResolve(trace, 'online provider episode list start', { provider: ext.name })
     const eps = await memo(
       `episodes|${ext.id}|${best.id}`,
       // Where a login-gated source fails: the detail page is what fetches the episode list, so this
@@ -431,6 +451,12 @@ export async function resolveOnlineStreams(
       () => ext.call('findEpisodes', best.id).catch((error: unknown) => { noteProblem(ext, error); return null }),
       cacheableList,
     ) as SnEpisode[] | null
+    traceResolve(trace, 'online provider episode list finish', {
+      provider: ext.name,
+      durationMs: Math.round(performance.now() - episodesStartedAt),
+      episodes: eps?.length ?? 0,
+      failed: eps === null,
+    })
     const matchedEpisode = pickEpisode(eps ?? [], episode)
     if (!matchedEpisode) return null
     // JVM detail pages expose their canonical title. Validate that too: a fuzzy search result can
@@ -442,6 +468,8 @@ export async function resolveOnlineStreams(
   }
   const per = await Promise.all(exts.map(async (ext): Promise<Stream[]> => {
     if (signal?.aborted) return []
+    const providerStartedAt = performance.now()
+    traceResolve(trace, 'online provider start', { provider: ext.name, language: ext.lang })
     try {
       // Settings first: `supportsDub` decides whether a dub pass is worth running at all, so a
       // sub-only provider is never queried twice. Memoized because it never varies per episode and
@@ -451,6 +479,12 @@ export async function resolveOnlineStreams(
         () => ext.call('getSettings').catch(() => null),
         (v) => v != null,
       ) as SnSettings | null
+      traceResolve(trace, 'online provider settings ready', {
+        provider: ext.name,
+        servers: settings?.episodeServers?.length ?? 1,
+        supportsDub: settings?.supportsDub,
+        mixedAudio: settings?.returnsMixedAudio,
+      })
       const servers = settings?.episodeServers?.length ? settings.episodeServers : ['default']
       // One audio flavour: search with the dub flag, resolve the episode, fan out over servers.
       const resolvePass = async (dub: boolean): Promise<Stream[]> => {
@@ -477,8 +511,19 @@ export async function resolveOnlineStreams(
         for (;;) {
           const idx = cursor++
           if (signal?.aborted || idx >= servers.length) return
+          const serverStartedAt = performance.now()
+          traceResolve(trace, 'online provider server start', {
+            provider: ext.name, server: servers[idx], audio,
+          })
           found[idx] = (await ext.call('findEpisodeServer', ep, servers[idx])
             .catch((error: unknown) => { noteProblem(ext, error); return null })) as SnEpisodeServer | null
+          traceResolve(trace, 'online provider server finish', {
+            provider: ext.name,
+            server: servers[idx],
+            audio,
+            durationMs: Math.round(performance.now() - serverStartedAt),
+            videoSources: found[idx]?.videoSources?.length ?? 0,
+          })
         }
       }))
       for (const [idx, es] of found.entries()) {
@@ -509,7 +554,10 @@ export async function resolveOnlineStreams(
       const passes = settings?.returnsMixedAudio
         ? [false]
         : passesForAudio(dubPasses(settings?.supportsDub, preferDub), audioFilter)
-      if (!passes.length) return []
+      if (!passes.length) {
+        traceResolve(trace, 'online provider skipped by audio filter', { provider: ext.name })
+        return []
+      }
       if (signal?.aborted) return []
       const results = await Promise.all(passes.map(resolvePass))
       // Dedupe across passes in pass order (preferred audio first). A provider that ignores the dub
@@ -528,9 +576,21 @@ export async function resolveOnlineStreams(
       // Hand this provider's rows over the moment they exist, rather than holding them until every
       // other provider has finished.
       if (onBatch && rows.length) onBatch(rows)
+      traceResolve(trace, 'online provider finish', {
+        provider: ext.name,
+        durationMs: Math.round(performance.now() - providerStartedAt),
+        rows: rows.length,
+      })
       return rows
     }
-    catch (error) { noteProblem(ext, error); return [] }
+    catch (error) {
+      noteProblem(ext, error)
+      traceResolveError(trace, 'online provider failed', error, {
+        provider: ext.name,
+        durationMs: Math.round(performance.now() - providerStartedAt),
+      })
+      return []
+    }
   }))
   return per.flat()
 }

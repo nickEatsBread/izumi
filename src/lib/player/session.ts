@@ -220,9 +220,12 @@ export const pictureInPicture = writable(false)
 // while playing. Resolved once from Rust (`player_is_game_mode`) at boot. When true it
 // implies "always fullscreen" for the chrome-hiding + video-inset logic.
 export const gameMode = writable(false)
+/** True once native Game-mode detection has answered (including an error fallback). */
+export const gameModeResolved = writable(false)
 export async function initGameMode() {
   try { gameMode.set(await invoke<boolean>('player_is_game_mode')) }
   catch { /* non-linux / no window yet — stays false (Desktop/windowed) */ }
+  finally { gameModeResolved.set(true) }
 }
 
 export async function toggleFullscreen() {

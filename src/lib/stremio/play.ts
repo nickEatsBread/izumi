@@ -71,6 +71,7 @@ import { isAndroid } from '$lib/platform'
 import { offlineMode } from '$lib/stores/offline'
 import {
   beginPlaybackOwner,
+  cancelPlaybackOwner,
   currentPlaybackIdentity,
   currentPlaybackOwner,
   invalidatePlaybackOwner,
@@ -82,10 +83,19 @@ import { playViaIntent } from '$lib/player/android-playback'
 import { hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents, androidStreamInfo } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
 import {
-  activateDirectTorrentPlayback, currentDirectTorrentPlaybackId, directTorrentHealth,
-  reportDirectTorrentBuffer, stopDirectTorrentPlayback, torrentEngineNetworkOptions,
+  activateDirectTorrentPlayback, cancelDirectTorrentStartup, currentDirectTorrentPlaybackId, directTorrentHealth,
+  directTorrentPlayerAttached, discardDirectTorrentPlayback, nextDirectTorrentStartupId, reportDirectTorrentBuffer,
+  prepareDirectTorrentNext, stopDirectTorrentPlayback, torrentEngineNetworkOptions,
 } from '$lib/player/direct-torrent'
 import { torrentioResolverInfoHash } from './resolver-url'
+import {
+  beginResolveTrace,
+  currentResolveTrace,
+  finishResolveTrace,
+  traceResolve,
+  traceResolveError,
+  type ResolveTrace,
+} from '$lib/debug/resolve-trace'
 
 export type PlayState = {
   status: 'idle' | 'resolving' | 'playing' | 'error'
@@ -108,9 +118,54 @@ export type PlayStreamOptions = {
   forceDirect?: boolean
   /** Override history resume when replacing a failed source in-place. */
   startSeconds?: number
+  /** Automatic picks get a bounded native metadata/initialization attempt so one dead hash cannot
+   * consume the full manual-source allowance before the picker advances to its next candidate. */
+  directStartupTimeoutMs?: number
   /** Internal: a watchdog replacement may retain ownership, but can never claim it after a newer
    * episode/source request has taken over. */
   recoveryOwner?: PlaybackOwner
+}
+
+function addonTraceName(base: string): string {
+  try { return new URL(base).hostname }
+  catch { return 'configured-addon' }
+}
+
+function streamTraceDetails(stream: Stream) {
+  const parsed = describe(stream)
+  return {
+    provider: stream.__origin?.name ?? stream.__addonName ?? 'unknown',
+    kind: stream.__stream ? 'online' : stream.url ? 'resolved-url' : stream.infoHash ? 'torrent' : 'unknown',
+    quality: (stream.__quality ?? parsed.quality) || 'unknown',
+    cache: parsed.cached,
+    cacheSource: parsed.cacheSource,
+    audio: stream.__audio ?? (parsed.dualAudio ? 'dual' : undefined),
+    seeders: stream.__seeders,
+    sizeMiB: stream.behaviorHints?.videoSize
+      ? Math.round(stream.behaviorHints.videoSize / 1024 / 1024)
+      : undefined,
+  }
+}
+
+function batchTraceDetails(streams: Stream[]) {
+  const providers = new Map<string, number>()
+  let torrents = 0
+  let online = 0
+  let resolved = 0
+  for (const stream of streams) {
+    const provider = stream.__origin?.name ?? stream.__addonName ?? 'unknown'
+    providers.set(provider, (providers.get(provider) ?? 0) + 1)
+    if (stream.__stream) online++
+    else if (stream.infoHash) torrents++
+    else if (stream.url) resolved++
+  }
+  return {
+    rows: streams.length,
+    torrents,
+    online,
+    resolved,
+    providers: Object.fromEntries([...providers.entries()].slice(0, 20)),
+  }
 }
 
 type DirectTorrentPlayback = {
@@ -118,8 +173,22 @@ type DirectTorrentPlayback = {
   filename: string
   fileIndex: number
   size: number
+  torrentSize: number
+  pieceCount: number
   playbackId: number
   subtitles: DirectTorrentSubtitle[]
+  engineReadyMs: number
+  metadataMs: number
+  activeLockWaitMs: number
+  initializationMs: number
+  totalMs: number
+  reusedTorrent: boolean
+  metadataPeers: number
+  metadataCached: boolean
+  metadataCache: string
+  trackerCount: number
+  incomingPeerPort: number | null
+  fastresumePrimed: boolean
 }
 
 type DirectTorrentSubtitle = {
@@ -302,6 +371,7 @@ function pushListen<T>(event: string, handler: EventCallback<T>) {
 let resolveAbort: AbortController | null = null
 /** Abort the in-flight source resolve — called when the picker is closed (X / click-off / Esc). */
 export function cancelResolve() {
+  finishResolveTrace(currentResolveTrace(), 'canceled by user')
   resolveAbort?.abort()
   resolveAbort = null
   // The fetches were "best-effort background" once; on a click they are contention on the very
@@ -743,9 +813,28 @@ export function matchesRelease(s: Stream, c: ContinueHint): boolean {
     // so matching the origin alone let the next episode silently revert to the flavour the user
     // had just switched away from mid-episode. Compared only when both sides declare one — a
     // provider that reports no flavour behaves exactly as before.
-    || (c.originId && s.__origin?.id === c.originId
+    // Provider identity is continuity only for DIRECT online streams. Torrent addon rows all share
+    // the same origin id (for example every Torrentio release), so applying this clause to them
+    // made an unrelated first-ranked torrent look like the same release.
+    || (s.__stream && c.originId && s.__origin?.id === c.originId
       && (!c.audio || !s.__audio || s.__audio === c.audio))
   )
+}
+
+/** Pick a torrent that can continue the active release. Input order is already the addon's
+ * ranking order. The exact pack wins; otherwise a per-episode torrent from the same release group
+ * is valid. Kept pure/exported so real provider-shaped rows can regression-test the preloader. */
+export function pickDirectPreloadCandidate(
+  streams: Stream[],
+  hint: ContinueHint | undefined,
+  want?: EpisodeWant,
+): Stream | undefined {
+  if (!hint) return undefined
+  const eligible = streams.filter((stream) =>
+    !!stream.infoHash && !(want && isWrongSeason(stream, want)))
+  return eligible.find((stream) =>
+    !!hint.infoHash && stream.infoHash?.toLowerCase() === hint.infoHash.toLowerCase())
+    ?? eligible.find((stream) => matchesRelease(stream, hint))
 }
 // The continuity hint for the NEXT episode of `media`: the release identity of what's
 // playing now. undefined when continuity is off, nothing is playing, or it's a different
@@ -799,6 +888,74 @@ const prefetchKey = (mediaId: number, episode: number) => `${mediaId}:${episode}
 /** Forget the miss cooldown — the episode changed, so the next target is different. */
 function resetPrefetchMiss() { prefetchMiss = null }
 
+/** Resolve a direct-P2P continuation progressively. `getStreams()` deliberately waits for every
+ * configured addon; that is useful for a complete picker, but disastrous for background preload:
+ * one unrelated addon consuming its 22 s budget used to hide a Torrentio match that arrived in
+ * ~200 ms. Race each addon and stop at the first continuity-safe torrent instead. */
+async function resolveDirectPreloadStream(
+  media: Media,
+  episode: number,
+  hint: ContinueHint | undefined,
+): Promise<{ stream: Stream; want: EpisodeWant; provider: string; rows: number } | undefined> {
+  if (!hint) return undefined
+  const bases = get(enabledAddonUrls)
+  if (!bases.length) return undefined
+  const [kitsu, seasonMap] = await Promise.all([
+    resolveKitsu(media),
+    getEpisodeSeasonMap(media.id).catch(() => ({} as Record<number, { season?: number; abs?: number }>)),
+  ])
+  if (!kitsu) return undefined
+  const mapped = seasonMap[episode]
+  const want: EpisodeWant = { episode, ...(mapped ?? {}) }
+  const controller = new AbortController()
+  const id = streamId(kitsu, episode)
+  const kind = media.format === 'MOVIE' ? 'movie' : 'series'
+  const waitForHedge = (delayMs: number) => new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, delayMs)
+    controller.signal.addEventListener('abort', () => {
+      clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }, { once: true })
+  })
+  const query = async (base: string, delayMs = 0) => {
+    if (delayMs) await waitForHedge(delayMs)
+    const provider = `${addonTraceName(base)}${delayMs ? ' (hedge)' : ''}`
+    const startedAt = performance.now()
+    const response = await fetchAddonStreams(base, id, kind, undefined, controller.signal)
+    const refined = verifySeason(refineStreams(media, response.streams).kept, want)
+    const normalized = refined.map((stream) => {
+      const hash = torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
+      return hash ? { ...stream, url: undefined, infoHash: hash } : stream
+    })
+    const stream = pickDirectPreloadCandidate(normalized, hint, want)
+    if (import.meta.env.DEV) console.info(`[binge-preload] ADDON episode ${episode}`, {
+      provider,
+      durationMs: Math.round(performance.now() - startedAt),
+      rawRows: response.total,
+      usableRows: normalized.length,
+      continuityMatch: !!stream,
+    })
+    if (!stream) throw new Error(`${provider}: no continuity match`)
+    return { stream, want, provider, rows: normalized.length }
+  }
+  const attempts = bases.flatMap((base) => [
+    query(base),
+    // The supplied log ended at 22,017 ms — Torrentio's exact budget — despite this episode being
+    // present on its endpoint. A delayed duplicate is a standard hedge against a single wedged
+    // request. It never runs when the first call is healthy and is aborted with every loser.
+    ...(/torrentio/i.test(base) ? [query(base, 1_200)] : []),
+  ])
+  try {
+    return await Promise.any(attempts)
+  } catch {
+    return undefined
+  } finally {
+    // The winner is enough. Cancel slower addon stream calls so they do not retain native HTTP
+    // pool slots while P2P metadata and tracker work begins.
+    controller.abort()
+  }
+}
+
 /** Resolve the next episode's (cached, same-release-preferred) stream in the
  *  background so the transition is instant. Best-effort; cached-only (never
  *  proactively starts a debrid download). */
@@ -813,6 +970,11 @@ async function prefetchNext(media: Media, episode: number) {
   if (prefetchMiss?.key === key && Date.now() - prefetchMiss.at < PREFETCH_MISS_MS) return
   prefetching = true
   let hit = false
+  const startedAt = performance.now()
+  if (import.meta.env.DEV) console.info(`[binge-preload] START episode ${next}`, {
+    mediaId: media.id,
+    directP2p: directP2pEnabled(),
+  })
   try {
     // Online-extension binge: the addon path below cannot see these sources at all
     // (resolveStreams is addon-only), so the next episode used to start COLD every time — a full
@@ -832,11 +994,33 @@ async function prefetchNext(media: Media, episode: number) {
         prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
         nextEpisodeReady.set({ mediaId: media.id, episode: next })
         hit = true
+        if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+          durationMs: Math.round(performance.now() - startedAt),
+          mode: 'online-provider',
+        })
       }
       return
     }
-    const { streams, want } = await resolveStreams(media, next)
-    const best = pickSameRelease(media, streams, want)
+    const directP2p = directP2pEnabled()
+    const activeRelease = get(bingeSource)
+    const directHint: ContinueHint | undefined = activeRelease?.mediaId === media.id
+      ? {
+          bingeGroup: activeRelease.bingeGroup,
+          infoHash: activeRelease.infoHash,
+          group: activeRelease.group,
+          originId: activeRelease.originId,
+          online: activeRelease.online,
+          audio: activeRelease.audio,
+        }
+      : undefined
+    const directResult = directP2p
+      ? await resolveDirectPreloadStream(media, next, directHint)
+      : undefined
+    const resolved = directP2p
+      ? { streams: directResult ? [directResult.stream] : [], want: directResult?.want }
+      : await resolveStreams(media, next)
+    const { streams, want } = resolved
+    const best = directP2p ? streams[0] : pickSameRelease(media, streams, want)
     if (!best) return // no cached same-release — leave it to the picker rather than force a download
     // Recover the hash from a debrid resolver URL exactly as playStream does. Without this the
     // prefetch stored the resolver URL untouched, playStream then discarded it at play time and
@@ -844,6 +1028,33 @@ async function prefetchNext(media: Media, episode: number) {
     // beyond the addon fan-out, which is most of why "next episode" felt slow.
     const resolverHash = torrentioResolverInfoHash(best.url, best.__addonName ?? best.name)
     let s = resolverHash ? { ...best, url: undefined, infoHash: resolverHash } : best
+    if (directP2p) {
+      if (!s.infoHash || currentDirectTorrentPlaybackId() == null) return
+      const preload = await prepareDirectTorrentNext({
+        infoHash: s.infoHash,
+        magnet: s.__magnet ?? `magnet:?xt=urn:btih:${s.infoHash}`,
+        preferredFilename: s.behaviorHints?.filename,
+        seriesTitle: title(media),
+        episode: next,
+        absoluteEpisode: want?.abs,
+        season: want?.season,
+      })
+      if (!preload) return
+      prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
+      nextEpisodeReady.set({ mediaId: media.id, episode: next })
+      hit = true
+      if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+        durationMs: Math.round(performance.now() - startedAt),
+        mode: preload.sameTorrent ? 'direct-p2p-season-pack' : 'direct-p2p-next-torrent',
+        provider: directResult?.provider,
+        candidateRows: directResult?.rows,
+        releaseGroup: describe(s).group,
+        fileIndex: preload.fileIndex,
+        fileSizeMiB: Math.round(preload.size / 1024 / 1024),
+        alreadyDownloadedMiB: Math.round(preload.downloadedBytes / 1024 / 1024),
+      })
+      return
+    }
     if (!s.url && s.infoHash) {
       s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash, {
         want: { episode: next, abs: want?.abs, season: want?.season, filename: s.behaviorHints?.filename },
@@ -854,19 +1065,33 @@ async function prefetchNext(media: Media, episode: number) {
       prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
       nextEpisodeReady.set({ mediaId: media.id, episode: next })
       hit = true
+      if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+        durationMs: Math.round(performance.now() - startedAt),
+        mode: 'debrid-cdn',
+      })
     }
   }
-  catch { /* best-effort — the normal resolve runs at play time */ }
+  catch (error) {
+    if (import.meta.env.DEV) console.warn(`[binge-preload] FAILED episode ${next}`, {
+      durationMs: Math.round(performance.now() - startedAt),
+      error: error instanceof Error ? error.message : String(error),
+    })
+    /* Best-effort: the normal resolve still runs at play time. */
+  }
   finally {
     prefetching = false
     prefetchMiss = hit ? null : { key, at: Date.now() }
+    if (import.meta.env.DEV && !hit) console.info(`[binge-preload] MISS episode ${next}`, {
+      durationMs: Math.round(performance.now() - startedAt),
+      retryAfterMs: PREFETCH_MISS_MS,
+    })
   }
 }
 
 /** Consume a matching prefetched stream, if one is ready for this exact episode. */
 function takePrefetched(mediaId: number, episode: number): Stream | null {
   const pf = prefetched
-  if (!pf || pf.mediaId !== mediaId || pf.episode !== episode || !pf.stream.url) return null
+  if (!pf || pf.mediaId !== mediaId || pf.episode !== episode || !(pf.stream.url || pf.stream.infoHash)) return null
   // Tokenized/time-limited URLs (online extensions, debrid CDN links) must not be replayed long
   // after they were minted — a paused-overnight binge would otherwise consume a dead link and
   // look like a broken player instead of just resolving fresh.
@@ -919,6 +1144,22 @@ export async function playEpisode(
   onState: (s: PlayState) => void,
   options: PlayEpisodeOptions = {},
 ) {
+  const trace = beginResolveTrace({
+    mediaId: media.id,
+    episode,
+    title: title(media),
+    entry: 'episode click',
+  })
+  traceResolve(trace, 'resolve configuration', {
+    forceManual: !!options.forceManual,
+    continuation: !!options.continuation,
+    autoplay: options.autoplay ?? true,
+    preferredQuality: get(preferredQuality),
+    autoSelect: get(autoSelectSource),
+    torrentMode: get(torrentPlaybackMode),
+    debridProvider: get(debridKey) ? providerName(get(debridProvider)) : 'none',
+    cacheCheck: activeCacheCheck(),
+  })
   // Cancel a watchdog replacement immediately, before this new episode has even resolved a source.
   invalidatePlaybackOwner()
   const cont = options.continuation
@@ -935,6 +1176,7 @@ export async function playEpisode(
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = episode != null ? downloadOf(media.id, episode) : undefined
   if (local?.status === 'done' && local.path) {
+    traceResolve(trace, 'completed download hit; skipping source discovery')
     return await playStream(
       media,
       episode,
@@ -982,6 +1224,8 @@ export async function playEpisode(
   }
   const showPickerError = (message: string) => {
     if (!stillCurrent()) return
+    traceResolve(trace, 'picker error', { message })
+    finishResolveTrace(trace, 'picker error')
     cacheSettled = true
     streamPicker.update((current) => current ? {
       ...current,
@@ -1030,7 +1274,17 @@ export async function playEpisode(
       hashes.push(h)
     }
     if (!hashes.length) return
+    const cacheStartedAt = performance.now()
+    traceResolve(trace, 'debrid cache check start', {
+      provider: providerName(cacheProvider), hashes: hashes.length, mode: cacheMode,
+    })
     cacheChecks.push(checkCached(cacheProvider, cacheKey, hashes).then((map) => {
+      traceResolve(trace, 'debrid cache check finish', {
+        durationMs: Math.round(performance.now() - cacheStartedAt),
+        answers: map.size,
+        cached: [...map.values()].filter((value) => value === 'cached').length,
+        uncached: [...map.values()].filter((value) => value === 'uncached').length,
+      })
       // Dropped on purpose once the list has settled or the picker moved on: see the timing note.
       if (!map.size || cacheSettled || !stillCurrent()) return
       for (const [h, v] of map) cacheAnswers.set(h, v)
@@ -1053,7 +1307,10 @@ export async function playEpisode(
   // resolving state. A newer request replaces the controller; the superseded caller must not emit
   // a late idle/error that can overwrite that newer request's state.
   const settleCancellation = () => {
-    if (resolveAbort === null) onState({ status: 'idle' })
+    if (resolveAbort === null) {
+      finishResolveTrace(trace, 'source discovery canceled')
+      onState({ status: 'idle' })
+    }
   }
   try {
     // Instant path: this episode was prefetched near the end of the previous one
@@ -1067,12 +1324,25 @@ export async function playEpisode(
     }
 
     const bases = get(enabledAddonUrls)
+    const extensionCheckStartedAt = performance.now()
     const hasExt = await hasConfiguredExtensions()
+    traceResolve(trace, 'source inventory ready', {
+      durationMs: Math.round(performance.now() - extensionCheckStartedAt),
+      addons: bases.map(addonTraceName),
+      extensionsEnabled: hasExt,
+    })
     if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL or install an anime package in Settings.')
     // One provider is not one source: AllAnime and similar providers can expose several hosts,
     // qualities, subtitle sets, or audio variants. A manual episode click therefore keeps the
     // chooser visible regardless of provider count; the normal Auto preference may choose later.
+    const kitsuStartedAt = performance.now()
+    traceResolve(trace, 'Kitsu mapping start')
     const kitsu = await resolveKitsu(media)
+    traceResolve(trace, 'Kitsu mapping finish', {
+      durationMs: Math.round(performance.now() - kitsuStartedAt),
+      found: kitsu != null,
+      kitsuId: kitsu,
+    })
     // Addons index by Kitsu id; extensions search by title/MAL/AniDB. A title with no Kitsu id
     // (e.g. an OVA that isn't in Kitsu) can still be sourced by extensions, so only hard-fail when
     // there's no Kitsu id AND no extension to fall back on. When kitsu is missing we skip the addon
@@ -1080,6 +1350,7 @@ export async function playEpisode(
     if (!kitsu && !hasExt) throw new Error('No addon mapping for this title (not in Kitsu). Add a source extension to find it by title.')
 
     const type = media.format === 'MOVIE' ? 'movie' : 'series'
+    const seasonStartedAt = performance.now()
     const seasonP = episode != null ? getEpisodeSeasonMap(media.id) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
 
     // Fold each addon's streams into the picker AS IT RESPONDS (one
@@ -1108,51 +1379,16 @@ export async function playEpisode(
         return played
       })()
     }
-    // FAST PATH: the source that last worked for this series, queried ALONE (resolveRememberedSource
-    // passes its origin id as `onlyId`, so it costs one provider's round trip instead of the whole
-    // sweep). Continue Watching has always done this; a plain episode click paid the full fan-out
-    // every time even though the answer was usually already known.
-    //
-    // Raced, never substituted: the fan-out below keeps running, so a stale or dead remembered
-    // origin costs nothing but one concurrent query. Whichever produces playable video first wins,
-    // and only a fast-path failure lets the picker appear — which is exactly the old behaviour.
-    //
-    // Skipped for a continuation (that path is already speculative — two speculative plays racing
-    // would fight over the same player) and whenever the user asked to choose by hand.
-    let fastAttempt: Promise<boolean> | null = null
-    const remembered = !cont && !options.forceManual && get(autoSelectSource) && episode != null
-      ? get(sourceOrigins)[media.id]
-      : undefined
-    if (remembered && episode != null) {
-      // Narrowing does not survive into the async closure below, so pin the episode here.
-      const fastEpisode = episode
-      // Hidden like a continuation: the connecting screen holds the user, rather than a picker
-      // that flashes up and vanishes the moment the fast path lands.
-      hideForContinuation = true
-      streamPicker.update((c) => c ? { ...c, hidden: true } : c)
-      fastAttempt = (async () => {
-        const stream = await resolveRememberedSource(media, fastEpisode, remembered).catch(() => undefined)
-        if (!stream || !stillCurrent()) return false
-        let played = false
-        await playStream(media, episode, stream, (state) => {
-          const result = applyContinuationState(state, () => streamPicker.set(null), onState)
-          played ||= result.played
-          // Deliberately NOT recorded into continuationError: a dead remembered source is not
-          // something to report, it is something to silently fall back from.
-        }, { autoplay })
-        return played
-      })()
-    }
     // Autoplay readiness. Three ways to become ready, earliest wins:
     //   * the pick we would actually commit to is cached, in the user's language and past the
     //     season gate, and has HELD that position for 350ms (so a better row arriving mid-hold
     //     restarts it rather than being pre-empted),
-    //   * 1.5s after the first result when something instantly playable is on screen, 4s when
-    //     only uncached rows are (there is no rush to count down toward a debrid download),
+    //   * 1.5s after the first result when something instantly playable is on screen, or when
+    //     direct P2P owns uncached rows; 4s only when those rows imply a debrid download,
     //   * every source settled, which is the old behaviour and remains the backstop.
     const READY_HELD_MS = 350
     const READY_INSTANT_MS = 1500
-    const READY_COLD_MS = 4000
+    const READY_COLD_MS = directP2pEnabled() ? READY_INSTANT_MS : 4000
     let autoReady = false
     let resolveSettled = false
     let firstResultAt = 0
@@ -1185,10 +1421,16 @@ export async function playEpisode(
       readyTimer = setTimeout(() => {
         readyTimer = undefined
         autoReady = true
+        traceResolve(trace, 'autoplay became ready', {
+          waitFromFirstResultMs: firstResultAt ? Date.now() - firstResultAt : 0,
+          seasonSettled,
+          heldTopCandidate: !!heldKey,
+        })
         if (stillCurrent()) paint(true)
       }, Math.max(0, deadline - now))
     }
 
+    let lastPaintTrace = ''
     const paint = (resolving: boolean) => {
       const refined = refineStreams(media, acc)
       let s = refined.kept
@@ -1199,6 +1441,17 @@ export async function playEpisode(
       s = applyPriorityFilter(s, get(sourcePriority), get(sourcePriorityMode))
       s = annotateCache(s, cacheAnswers, cacheMode === 'library' ? 'library' : 'native')
       retainRecoveryCandidates(media, episode, s)
+      const paintTrace = `${acc.length}|${s.length}|${refined.rejected.length}|${resolving}`
+      if (paintTrace !== lastPaintTrace) {
+        lastPaintTrace = paintTrace
+        traceResolve(trace, resolving ? 'picker update' : 'picker settled', {
+          rawRows: acc.length,
+          usableRows: s.length,
+          rejectedRows: refined.rejected.length,
+          cachedRows: s.filter((row) => describe(row).cached === 'instant').length,
+          ...batchTraceDetails(s),
+        })
+      }
       if (resolving) scheduleReady(s)
       else { clearReadyTimer(); autoReady = true; resolveSettled = true; cacheSettled = true }
       streamPicker.set({
@@ -1257,7 +1510,17 @@ export async function playEpisode(
     // no AniZip season data still flips seasonSettled (nothing to wrong-season against).
     const seasonReady = seasonP.then((m) => {
       if (episode != null) want = { episode, ...(m[episode] ?? {}) }
-    }).catch(() => {}).finally(() => { seasonSettled = true; refresh(true) })
+    }).catch((error) => {
+      traceResolveError(trace, 'episode season mapping failed', error)
+    }).finally(() => {
+      seasonSettled = true
+      traceResolve(trace, 'episode season mapping finish', {
+        durationMs: Math.round(performance.now() - seasonStartedAt),
+        season: want?.season,
+        absoluteEpisode: want?.abs,
+      })
+      refresh(true)
+    })
 
     // Each SOURCE (every addon + the extensions as one wave) folds into the picker as
     // it lands — a genuine multi-source trickle + live re-sort, not a
@@ -1268,31 +1531,53 @@ export async function playEpisode(
     // late: for a title whose addons are all imdb-only, it is the wave that returns everything,
     // and settling without it would show "no sources found" a moment before they arrive.
     let pending = (kitsu != null ? bases.length : 0) + (hasExt ? 2 : 0) + (bases.length ? 1 : 0)
+    traceResolve(trace, 'source fan-out start', {
+      pendingWaves: pending,
+      kitsuAddonRequests: kitsu != null ? bases.length : 0,
+      alignedIdWave: bases.length > 0,
+      torrentExtensions: hasExt,
+      onlineExtensions: hasExt,
+    })
     await new Promise<void>((resolve) => {
       // Stop waiting the moment we're superseded/closed — the in-flight fetches keep going and
       // fold in harmlessly (refresh() no-ops once the picker is no longer ours), but we settle now.
       if (signal.aborted) return resolve()
       signal.addEventListener('abort', () => resolve(), { once: true })
-      // A fast-path win must not sit behind the slowest addon's budget — that would hand back the
-      // very latency this path exists to remove. Losing (or erroring) simply leaves the fan-out to
-      // settle normally.
-      void fastAttempt?.then((played) => { if (played) resolve() }).catch(() => {})
       if (!pending) return resolve()
       const done = () => { if (--pending === 0) resolve() }
       if (kitsu != null) {
         const id = streamId(kitsu, episode)
         for (const base of bases) {
+          const provider = addonTraceName(base)
+          const addonStartedAt = performance.now()
+          traceResolve(trace, 'add-on request start', { provider, namespace: 'kitsu' })
           // An addon that blows its budget is slow, not wrong: its rows still fold into an open
           // picker whenever they land, instead of being dropped on the floor as they used to be.
           fetchAddonStreams(base, id, type, (late) => {
             if (!stillCurrent()) return
+            traceResolve(trace, 'add-on late batch', {
+              provider,
+              durationMs: Math.round(performance.now() - addonStartedAt),
+              rawRows: late.total,
+              ...batchTraceDetails(late.streams),
+            })
             acc = [...acc, ...late.streams]; totalRaw += late.total
             // A response that outlived the whole resolve must not put a settled picker back into
             // its loading state — the rows just appear.
             refresh(!resolveSettled)
           }, signal)
-            .then((r) => { acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(true) })
-            .catch(() => {})
+            .then((r) => {
+              traceResolve(trace, 'add-on request finish', {
+                provider,
+                durationMs: Math.round(performance.now() - addonStartedAt),
+                rawRows: r.total,
+                ...batchTraceDetails(r.streams),
+              })
+              acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(true)
+            })
+            .catch((error) => traceResolveError(trace, 'add-on request failed', error, {
+              provider, durationMs: Math.round(performance.now() - addonStartedAt),
+            }))
             .finally(done)
         }
       }
@@ -1304,16 +1589,41 @@ export async function playEpisode(
       if (bases.length) {
         const fold = (r: { streams: Stream[]; total: number }) => {
           if (!stillCurrent() || !r.streams.length) return
+          traceResolve(trace, 'aligned-id add-on batch', { rawRows: r.total, ...batchTraceDetails(r.streams) })
           acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(!resolveSettled)
         }
+        const alignedStartedAt = performance.now()
+        traceResolve(trace, 'aligned IMDb/season mapping start')
         getExtensionIds(media.id, episode)
           .then(async (ids) => {
             const extra = buildStreamIds({ type, imdb: ids.imdbId, season: ids.season, imdbEpisode: ids.episodeNumber, episode })
+            traceResolve(trace, 'aligned IMDb/season mapping finish', {
+              durationMs: Math.round(performance.now() - alignedStartedAt),
+              requestIds: extra.length,
+            })
             if (!extra.length || !stillCurrent()) return
-            await Promise.all(bases.map((base) =>
-              fetchAddonStreams(base, extra, type, fold, signal).then(fold).catch(() => {})))
+            await Promise.all(bases.map(async (base) => {
+              const provider = addonTraceName(base)
+              const startedAt = performance.now()
+              traceResolve(trace, 'add-on request start', { provider, namespace: 'aligned-imdb' })
+              try {
+                const result = await fetchAddonStreams(base, extra, type, fold, signal)
+                traceResolve(trace, 'add-on request finish', {
+                  provider,
+                  namespace: 'aligned-imdb',
+                  durationMs: Math.round(performance.now() - startedAt),
+                  rawRows: result.total,
+                  ...batchTraceDetails(result.streams),
+                })
+                fold(result)
+              } catch (error) {
+                traceResolveError(trace, 'add-on request failed', error, {
+                  provider, namespace: 'aligned-imdb', durationMs: Math.round(performance.now() - startedAt),
+                })
+              }
+            }))
           })
-          .catch(() => {})
+          .catch((error) => traceResolveError(trace, 'aligned IMDb/season mapping failed', error))
           .finally(done)
       }
       // Umbrella budget on both extension waves: the per-call caps BOUND each hop, but a provider
@@ -1322,26 +1632,48 @@ export async function playEpisode(
       // the three) was the only resolve without one. Late results still fold in via the callbacks;
       // the budget only stops the WAIT.
       const EXT_WAVE_BUDGET_MS = 30_000
-      const budget = (work: Promise<unknown>) =>
-        Promise.race([work.catch(() => {}), new Promise<void>((resolve) => setTimeout(resolve, EXT_WAVE_BUDGET_MS))])
+      const budget = async (label: string, work: Promise<unknown>) => {
+        const startedAt = performance.now()
+        let timedOut = false
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        traceResolve(trace, `${label} wave start`, { budgetMs: EXT_WAVE_BUDGET_MS })
+        await Promise.race([
+          work.catch((error) => traceResolveError(trace, `${label} wave failed`, error)),
+          new Promise<void>((resolve) => {
+            timeout = setTimeout(() => { timedOut = true; resolve() }, EXT_WAVE_BUDGET_MS)
+          }),
+        ])
+        if (timeout) clearTimeout(timeout)
+        traceResolve(trace, `${label} wave finish`, {
+          durationMs: Math.round(performance.now() - startedAt), timedOut,
+        })
+      }
       if (hasExt) {
-        budget(extToStreams(media, episode, kitsu, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }, undefined, signal))
+        budget('torrent extension', extToStreams(media, episode, kitsu, (s) => {
+          if (s.length) {
+            traceResolve(trace, 'torrent extension batch', batchTraceDetails(s))
+            acc = [...acc, ...s]; refresh(true)
+          }
+        }, undefined, signal))
           .finally(done)
       }
       if (hasExt) {
         // Fold each provider in as it settles, exactly like the torrent wave above — otherwise one
         // slow (or wedged, 20s-capped) provider hides every fast one's results until it gives up.
-        budget(resolveOnlineStreams(media, episode, undefined, (s) => { if (s.length) { acc = [...acc, ...s]; refresh(true) } }, signal))
+        budget('online extension', resolveOnlineStreams(media, episode, undefined, (s) => {
+          if (s.length) {
+            traceResolve(trace, 'online extension batch', batchTraceDetails(s))
+            acc = [...acc, ...s]; refresh(true)
+          }
+        }, signal))
           .finally(done)
       }
     })
-    // The fast path may have won the race above (it resolves the wait itself). Settle its real
-    // outcome before anything else touches the picker: a success owns the player from here.
-    if (fastAttempt && await fastAttempt) return
-    // It lost or found nothing, so the picker is the UI again — it was hidden while the fast path
-    // had a chance. Revealed unconditionally rather than only on error, because "no remembered
-    // source could play" is not an error worth showing, just a return to choosing.
-    if (remembered) revealPicker()
+    traceResolve(trace, 'source fan-out wait complete', {
+      rawRows: totalRaw,
+      accumulatedRows: acc.length,
+      aborted: signal.aborted,
+    })
     await seasonReady
     // If the picker was closed, settle its caller to idle now so the next click works. If a newer
     // play superseded this one, stay silent because that request now owns the caller's state.
@@ -1350,7 +1682,13 @@ export async function playEpisode(
     // its real outcome: success closes the picker; failure finishes populating it for manual choice.
     if (continuationAttempt && await continuationAttempt) return
     // Last chance for an in-flight cache answer to reach the rows while they are still animating.
+    const cacheGraceStartedAt = performance.now()
     await settleCacheChecks()
+    if (cacheChecks.length) traceResolve(trace, 'cache-check grace complete', {
+      durationMs: Math.round(performance.now() - cacheGraceStartedAt),
+      checks: cacheChecks.length,
+      answers: cacheAnswers.size,
+    })
     if (signal.aborted) return settleCancellation()
     refresh(false)
     if (continuationError && stillCurrent()) {
@@ -1396,10 +1734,16 @@ export async function playEpisode(
         ? `Found ${totalRaw} torrents but none are usable (all dead or notice entries). Try another source.`
         : 'No streams found for this title/episode yet.')
     }
+    traceResolve(trace, 'picker ready for source selection', {
+      rawRows: totalRaw,
+      ...batchTraceDetails(get(streamPicker)?.streams ?? []),
+    })
     onState({ status: 'idle' })
   }
   catch (e) {
     if (signal.aborted) return settleCancellation()
+    traceResolveError(trace, 'source discovery failed', e)
+    finishResolveTrace(trace, 'source discovery error')
     showPickerError(e instanceof Error ? e.message : String(e))
   }
 }
@@ -1548,8 +1892,32 @@ export async function playStream(
   report: (s: PlayState) => void,
   options: PlayStreamOptions = {},
 ) {
+  const trace = currentResolveTrace(media.id, episode) ?? beginResolveTrace({
+    mediaId: media.id,
+    episode,
+    title: title(media),
+    entry: options.recoveryOwner ? 'watchdog source replacement' : 'source selection',
+  })
+  traceResolve(trace, 'source selected', streamTraceDetails(stream))
   const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
-  if (!playbackOwner) return
+  if (!playbackOwner) {
+    finishResolveTrace(trace, 'stale source selection')
+    return
+  }
+  const stillOwnsPlayback = () => ownsPlayback(playbackOwner)
+  const directStartupId = nextDirectTorrentStartupId()
+  const cancelPlaybackStart = () => {
+    if (!cancelPlaybackOwner(playbackOwner)) return
+    void cancelDirectTorrentStartup(directStartupId)
+    activeDebridResolve?.abort()
+    activeDebridResolve = null
+    debridCaching.set(null)
+    connecting.set(null)
+    cancelResolve()
+    // The owner is deliberately invalid now, so onState would suppress this as stale. Notify the
+    // caller directly to re-enable a source picker that was waiting on this exact request.
+    report({ status: 'idle' })
+  }
   // A newer play supersedes whatever debrid resolve a previous playStream still has in flight.
   // Without this, an abandoned uncached pick kept polling the provider every <=3s for up to 30
   // minutes (its timeout below) — each probe now occupies a pooled-HTTP slot, so zombie resolves
@@ -1575,8 +1943,19 @@ export async function playStream(
   // Every exit from this function goes through the state callback, so wrapping it once clears the
   // connecting screen on all of them — including the early returns.
   const onState = (s: PlayState) => {
+    if (!stillOwnsPlayback()) return
     if (s.status !== 'resolving') connecting.set(null)
+    traceResolve(trace, `playback state: ${s.status}`, s.message ? { message: s.message } : {})
     report(s)
+    // For local P2P, player_embed only means mpv accepted the loopback URL. Keep the trace alive
+    // until an actual duration/progress event so the headline timing is click-to-first-frame,
+    // rather than hiding peer/download/probe delay behind an optimistic "playing" result.
+    if (s.status === 'playing'
+      && (directPlaybackId == null || get(isAndroid) || get(enableExternalPlayer))) {
+      finishResolveTrace(trace, 'playing', streamTraceDetails(stream))
+    }
+    else if (s.status === 'error') finishResolveTrace(trace, 'playback error')
+    else if (s.status === 'idle') finishResolveTrace(trace, 'playback canceled')
   }
   connecting.set({
     title: title(media),
@@ -1584,9 +1963,17 @@ export async function playStream(
     // Carried on the payload rather than read from nowPlayingMedia, which this function sets a few
     // lines later — the overlay would otherwise paint the previous episode's art for a frame.
     art: banner(media) || cover(media),
-    cancel: () => { connecting.set(null); cancelResolve() },
+    cancel: cancelPlaybackStart,
   })
   let directPlaybackId: number | null = null
+  const abandonIfStale = async () => {
+    if (stillOwnsPlayback()) return false
+    if (directPlaybackId != null) {
+      await discardDirectTorrentPlayback(directPlaybackId)
+      directPlaybackId = null
+    }
+    return true
+  }
   let directTorrentSubtitles: DirectTorrentSubtitle[] = []
   // Set only on the debrid path, so sidecar subtitles can be resolved after playback starts.
   let debridSidecarSource: { provider: string; key: string; torrent: string; want?: EpisodeWant } | null = null
@@ -1595,7 +1982,10 @@ export async function playStream(
   // deliberately discard that private URL: Izumi's resolver has provider-error + filesize guards,
   // and Watch Together may now share the hash without leaking the token embedded in the path.
   const resolverHash = torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
-  if (resolverHash) stream = { ...stream, url: undefined, infoHash: resolverHash }
+  if (resolverHash) {
+    traceResolve(trace, 'credential-bearing resolver URL converted to local hash resolution')
+    stream = { ...stream, url: undefined, infoHash: resolverHash }
+  }
   // Remember what's playing so the player's "Change source" can re-open the picker for it.
   nowPlayingMedia.set({ media, episode })
   // Provisional room source, so a guest joining mid-resolve still sees what is starting. It is
@@ -1610,7 +2000,13 @@ export async function playStream(
   // generic external players and Android lite (they own subtitle handling). Best-effort — [] on any failure.
   // Also skipped in offline mode — the external-subtitle addons are network-only, and offline
   // playback is always a local file (any embedded/downloaded subs travel with it).
+  const platformStartedAt = performance.now()
   const androidEmbedded = get(isAndroid) ? await hasEmbeddedPlayer() : false
+  traceResolve(trace, 'playback platform ready', {
+    durationMs: Math.round(performance.now() - platformStartedAt),
+    android: get(isAndroid), androidEmbedded, externalPlayer: get(enableExternalPlayer),
+  })
+  if (!stillOwnsPlayback()) return
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
   // visible in it); auto-next calls this with no picker open.
   // Torrent results carry only an infoHash/magnet. Turn that into a player-openable URL
@@ -1619,19 +2015,38 @@ export async function playStream(
     const provider = get(debridProvider)
     const key = get(debridKey)
     const torrent = stream.__magnet ?? stream.infoHash
+    const wantStartedAt = performance.now()
     const want = await episodeWant(media, episode, stream)
+    traceResolve(trace, 'torrent episode mapping ready', {
+      durationMs: Math.round(performance.now() - wantStartedAt),
+      season: want?.season, episode: want?.episode, absoluteEpisode: want?.abs,
+    })
+    if (!stillOwnsPlayback()) return
     const direct = options.forceDirect || get(torrentPlaybackMode) === 'direct' || !key
     if (direct) {
       onState({ status: 'resolving' })
+      const directStartedAt = performance.now()
+      traceResolve(trace, 'direct P2P engine start', {
+        forced: !!options.forceDirect,
+        hasDebridKey: !!key,
+        startupTimeoutMs: options.directStartupTimeoutMs ?? 60_000,
+      })
       try {
         const playback = await invoke<DirectTorrentPlayback>('torrent_playback_url', {
           magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${torrent}`,
           preferredFilename: stream.behaviorHints?.filename,
+          seriesTitle: title(media),
           episode: want?.episode,
           absoluteEpisode: want?.abs,
           season: want?.season,
+          startupTimeoutMs: options.directStartupTimeoutMs,
+          startupId: directStartupId,
           ...torrentEngineNetworkOptions(),
         })
+        if (!stillOwnsPlayback()) {
+          await discardDirectTorrentPlayback(playback.playbackId)
+          return
+        }
         directPlaybackId = playback.playbackId
         directTorrentSubtitles = playback.subtitles
         activateDirectTorrentPlayback(playback.playbackId)
@@ -1640,13 +2055,39 @@ export async function playStream(
           url: playback.url,
           behaviorHints: { ...stream.behaviorHints, filename: playback.filename, videoSize: playback.size },
         }
+        traceResolve(trace, 'direct P2P engine ready', {
+          durationMs: Math.round(performance.now() - directStartedAt),
+          fileSizeMiB: Math.round(playback.size / 1024 / 1024),
+          selectedFilename: playback.filename,
+          torrentSizeMiB: Math.round(playback.torrentSize / 1024 / 1024),
+          pieceCount: playback.pieceCount,
+          subtitleFiles: playback.subtitles.length,
+          engineReadyMs: playback.engineReadyMs,
+          metadataMs: playback.metadataMs,
+          activeLockWaitMs: playback.activeLockWaitMs,
+          initializationMs: playback.initializationMs,
+          nativeTotalMs: playback.totalMs,
+          reusedTorrent: playback.reusedTorrent,
+          metadataPeers: playback.metadataPeers,
+          metadataCached: playback.metadataCached,
+          metadataCache: playback.metadataCache,
+          trackerCount: playback.trackerCount,
+          incomingPeerPort: playback.incomingPeerPort,
+          fastresumePrimed: playback.fastresumePrimed,
+        })
       } catch (e) {
+        if (!stillOwnsPlayback()) return
+        traceResolveError(trace, 'direct P2P engine failed', e, {
+          durationMs: Math.round(performance.now() - directStartedAt),
+        })
         return onState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
       }
     }
     if (!stream.url) {
       const pname = providerName(provider)
       onState({ status: 'resolving' })
+      const debridStartedAt = performance.now()
+      traceResolve(trace, 'debrid resolution start', { provider: pname })
       // A CACHED (⚡/[RD+]) source resolves in ~1s (debrid already has it), so it plays off the
       // picker's lightweight spinner with no full-screen "downloading to debrid" screen. That
       // screen is only for a genuine multi-minute cache: shown upfront for a known-uncached pick,
@@ -1657,14 +2098,14 @@ export async function playStream(
       activeDebridResolve = controller
       let overlayShown = false
       const showCaching = () => {
-        if (overlayShown) return
+        if (overlayShown || !stillOwnsPlayback()) return
         overlayShown = true
         debridCaching.set({
           provider: pname, title: title(media), episode, cover: cover(media), info: { stage: 'queued' },
           // Optimistic cancel: close the screen IMMEDIATELY on the first click, then abort the poll in
           // the background. The eventual AbortError just settles playStream to 'idle' (re-enabling the
           // picker); a late onStatus can't resurrect the screen because the store is already null.
-          cancel: () => { debridCaching.set(null); controller.abort() },
+          cancel: cancelPlaybackStart,
         })
       }
       // The caching screen appears only when we are genuinely WAITING ON DEBRID, not merely
@@ -1695,6 +2136,13 @@ export async function playStream(
           timeoutMs: 30 * 60 * 1000,
           priority: true,
           onStatus: (i) => {
+            if (!stillOwnsPlayback()) return
+            traceResolve(trace, 'debrid status', {
+              provider: pname,
+              stage: i.stage,
+              progress: i.progress,
+              probes: notReady + 1,
+            })
             if (!firstNotReadyAt) firstNotReadyAt = Date.now()
             if (!overlayShown && shouldShowCachingScreen({
               probes: ++notReady,
@@ -1705,25 +2153,43 @@ export async function playStream(
           },
           want,
         })
+        if (!stillOwnsPlayback()) return
         stream = { ...stream, url }
         debridSidecarSource = { provider, key, torrent, want }
         debridCaching.set(null)
         if (activeDebridResolve === controller) activeDebridResolve = null
+        traceResolve(trace, 'debrid resolution finish', {
+          provider: pname,
+          durationMs: Math.round(performance.now() - debridStartedAt),
+          notReadyProbes: notReady,
+          cachingOverlayShown: overlayShown,
+        })
       }
       catch (e) {
-        debridCaching.set(null)
+        if (stillOwnsPlayback()) debridCaching.set(null)
         if (activeDebridResolve === controller) activeDebridResolve = null
+        if (!stillOwnsPlayback()) return
+        traceResolveError(trace, 'debrid resolution failed', e, {
+          provider: pname,
+          durationMs: Math.round(performance.now() - debridStartedAt),
+          notReadyProbes: notReady,
+        })
         // User-initiated cancel: quietly return to the picker, no error toast.
         if (e instanceof Error && e.name === 'AbortError') return onState({ status: 'idle' })
         return onState({ status: 'error', message: e instanceof Error ? e.message : String(e), debridBlocked: isDebridBlocked(e) })
       }
     }
   }
+  if (!stillOwnsPlayback()) return
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
   // Wait until the final byte-addressable URL is known. Direct P2P is the exception: probing its
   // loopback stream for an exact subtitle hash would compete with mpv's startup reads, so search by
   // episode/filename instead and attach the results after player_embed.
-  const subsP: Promise<SubtitleCandidate[]> = (get(isAndroid) ? !androidEmbedded : get(enableExternalPlayer)) || get(offlineMode)
+  const subtitlesStartedAt = performance.now()
+  const skipExternalSubtitles = (get(isAndroid) ? !androidEmbedded : get(enableExternalPlayer)) || get(offlineMode)
+  if (skipExternalSubtitles) traceResolve(trace, 'external subtitle search skipped')
+  else traceResolve(trace, 'external subtitle search start', { addOnCount: get(enabledAddonUrls).length })
+  const subsP: Promise<SubtitleCandidate[]> = (skipExternalSubtitles
     ? Promise.resolve([])
     : fetchExternalSubtitles(
         get(enabledAddonUrls),
@@ -1738,7 +2204,20 @@ export async function playStream(
               headers: stream.__headers,
             }
           : undefined,
-      ).catch(() => [])
+      )).then((rows) => {
+        traceResolve(trace, 'external subtitle search finish', {
+          durationMs: Math.round(performance.now() - subtitlesStartedAt),
+          candidates: rows.length,
+          directUrls: rows.filter((row) => !!row.url).length,
+          needsFetch: rows.filter((row) => !!row.download?.needsFetch).length,
+        })
+        return rows
+      }).catch((error) => {
+        traceResolveError(trace, 'external subtitle search failed', error, {
+          durationMs: Math.round(performance.now() - subtitlesStartedAt),
+        })
+        return []
+      })
   // Re-capture the room source from the FINAL stream. For a debrid play this is the resolved,
   // account-bound CDN link, and it is shared as-is: guests play the host's exact URL rather than
   // needing a debrid account each. The host is warned about what that means for their account
@@ -1748,7 +2227,13 @@ export async function playStream(
   // A newly resolved direct torrent replaces the old one in the native engine. Any other source
   // ends the previous torrent's watch phase before the new player load begins.
   if (directPlaybackId == null && currentDirectTorrentPlaybackId() != null) {
+    const stopTorrentStartedAt = performance.now()
+    traceResolve(trace, 'stop previous direct torrent start')
     await stopDirectTorrentPlayback()
+    traceResolve(trace, 'stop previous direct torrent finish', {
+      durationMs: Math.round(performance.now() - stopTorrentStartedAt),
+    })
+    if (!stillOwnsPlayback()) return
   }
   const rememberSuccess = () => rememberSourceOrigin(media.id, stream.__origin, {
     infoHash: stream.infoHash,
@@ -1808,6 +2293,7 @@ export async function playStream(
         // Android episode transition whenever a subtitle addon was slow); late results attach to
         // the live player below instead of being dropped.
         const addonSubs = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 1500))])
+        if (await abandonIfStale()) return
         onlineSubCandidates.set({
           status: addonSubs.length ? 'ready' : 'searching',
           items: addonSubs.filter((s) => s.download?.needsFetch),
@@ -1846,6 +2332,7 @@ export async function playStream(
           ...(stream.__stream ? stream.__headers ?? {} : {}),
         }
         await startMpvEvents()
+        if (await abandonIfStale()) return
         // The reusable Android core emits the outgoing file's teardown while `loadfile` queues the
         // replacement. Stop its episode tracker first so those events cannot recover/advance the
         // previous episode during a manual Next transition.
@@ -1860,6 +2347,7 @@ export async function playStream(
           headers,
           autoplay,
         })
+        if (await abandonIfStale()) return
         // This episode+source is now the one on screen, so the watchdog may recover against it.
         recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
         // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
@@ -1898,6 +2386,7 @@ export async function playStream(
         isLocalFile,
         directPlaybackId == null ? undefined : () => stopDirectTorrentPlayback(directPlaybackId),
       )
+      if (await abandonIfStale()) return
       if (!ok && directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)
       if (ok) rememberSuccess()
       return onState(
@@ -1923,6 +2412,7 @@ export async function playStream(
           unlistenExit?.()
           void stopDirectTorrentPlayback(id)
         })
+        if (await abandonIfStale()) { unlistenExit?.(); return }
       }
       try {
         await invoke('spawn_external_player', {
@@ -1930,6 +2420,7 @@ export async function playStream(
           url: stream.url,
           headers: stream.__headers,
         })
+        if (await abandonIfStale()) { unlistenExit?.(); return }
       } catch (error) {
         unlistenExit?.()
         throw error
@@ -1951,18 +2442,38 @@ export async function playStream(
     // bitrate (videoSize ÷ runtime), so a 4K Blu-ray buffers as many seconds as the preset holds for
     // 1080p instead of rebuffering on a fixed byte cap. Applied on the next load (this one).
     const durationSec = media.duration ? media.duration * 60 : undefined
+    const playerCacheStartedAt = performance.now()
+    traceResolve(trace, 'configure player cache start')
     await invoke('set_player_cache', {
       bytes: playerCacheBytes(get(playerCacheMb), stream.behaviorHints?.videoSize, durationSec),
     }).catch(() => {})
+    traceResolve(trace, 'configure player cache finish', {
+      durationMs: Math.round(performance.now() - playerCacheStartedAt),
+    })
+    if (await abandonIfStale()) return
     // Await the addon subtitles (bounded — a slow subtitle addon must not hold up playback), and merge
     // them with any the source itself carried (online-stream __subtitles). mpv sub-adds all of them;
     // slang auto-selects the preferred language. The bound used to be 4s, which was the single
     // biggest fixed cost on click-to-video whenever a subtitle addon was having a slow day; late
     // results now attach to the live player below instead of being dropped, so the gate only needs
     // to cover the COMMON fast case (subs land during the debrid resolve and cost nothing here).
+    let subtitleGateTimedOut = false
+    let subtitleGate: ReturnType<typeof setTimeout> | undefined
     const candidates = directPlaybackId == null
-      ? await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 1500))])
+      ? await Promise.race([
+          subsP,
+          new Promise<SubtitleCandidate[]>((resolve) => {
+            subtitleGate = setTimeout(() => { subtitleGateTimedOut = true; resolve([]) }, 1500)
+          }),
+        ])
       : []
+    if (subtitleGate) clearTimeout(subtitleGate)
+    traceResolve(trace, 'subtitle startup gate finish', {
+      timedOut: subtitleGateTimedOut,
+      candidates: candidates.length,
+      skippedForDirectP2p: directPlaybackId != null,
+    })
+    if (await abandonIfStale()) return
     // Partition: url-bearing candidates (addons) merge into mpv at load exactly as before; needsFetch
     // candidates (OpenSubtitles/SubDL) are menu-only — stashed for manual pick, never sent to
     // player_embed. Set fresh each episode so last episode's rows don't linger. An empty result at
@@ -1993,6 +2504,12 @@ export async function playStream(
       infoHash: stream.infoHash ?? null,
     })
     // alang/slang drive mpv's preferred-language track auto-selection.
+    const embedStartedAt = performance.now()
+    traceResolve(trace, 'player embed start', {
+      subtitles: subtitles.length,
+      audioTracks: audioTracks.length,
+      resumeSeconds: Math.round(startSeconds),
+    })
     await invoke('player_embed', {
       url: stream.url,
       startSeconds: startSeconds || undefined,
@@ -2003,6 +2520,18 @@ export async function playStream(
       subtitles: subtitles.length ? subtitles : undefined,
       audioTracks: audioTracks.length ? audioTracks : undefined,
     })
+    traceResolve(trace, 'player embed accepted', {
+      durationMs: Math.round(performance.now() - embedStartedAt),
+    })
+    if (directPlaybackId != null) void directTorrentPlayerAttached(directPlaybackId)
+    if (!stillOwnsPlayback()) {
+      const canceledWithoutReplacement = currentPlaybackOwner() === null
+      await abandonIfStale()
+      // If Back canceled this load and no replacement exists, undo an embed that crossed the
+      // cancellation boundary. Never close here when a newer source owns the player.
+      if (canceledWithoutReplacement) await invoke('close_player').catch(() => {})
+      return
+    }
     // This episode+source is now the one on screen, so the watchdog may recover against it.
     recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
     if (directPlaybackId != null && directTorrentSubtitles.length) {
@@ -2020,6 +2549,17 @@ export async function playStream(
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
     if (episode != null) attach(media, episode, onState)
+    if (directPlaybackId != null) {
+      traceResolve(trace, 'waiting for first video frame')
+      void waitForDesktopFirstFrame(DIRECT_TORRENT_START_TIMEOUT_MS).then((ready) => {
+        if (!stillOwnsPlayback()) return
+        finishResolveTrace(
+          trace,
+          ready ? 'first video frame' : 'first video frame timeout',
+          streamTraceDetails(stream),
+        )
+      })
+    }
     // Late online subtitles: when the embed's short race above lost to a slow subtitle addon, fold
     // the results in once they land — menu entries plus URL tracks attached to the live player —
     // instead of dropping them for the whole episode. `playGen` pins the results to THIS play.
@@ -2038,6 +2578,11 @@ export async function playStream(
     }
   }
   catch (e) {
+    if (!stillOwnsPlayback()) {
+      await abandonIfStale()
+      return
+    }
+    traceResolveError(trace, 'player handoff failed', e)
     if (directPlaybackId != null) void stopDirectTorrentPlayback(directPlaybackId)
     onState({ status: 'error', message: String(e) })
   }

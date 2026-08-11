@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   beginPlaybackOwner,
+  cancelPlaybackOwner,
   currentPlaybackOwner,
   invalidatePlaybackOwner,
   ownsPlayback,
@@ -23,5 +24,15 @@ describe('playback ownership', () => {
     const second = beginPlaybackOwner()
     expect(first).not.toBe(second)
     expect(currentPlaybackOwner()).toBe(second)
+  })
+
+  it('cancels only the load that still owns playback', () => {
+    const stale = beginPlaybackOwner()!
+    const current = beginPlaybackOwner()!
+
+    expect(cancelPlaybackOwner(stale)).toBe(false)
+    expect(currentPlaybackOwner()).toBe(current)
+    expect(cancelPlaybackOwner(current)).toBe(true)
+    expect(currentPlaybackOwner()).toBeNull()
   })
 })

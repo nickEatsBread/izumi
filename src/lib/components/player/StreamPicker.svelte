@@ -150,6 +150,11 @@
   // torrent-extension row is uncached by construction, so it would otherwise never be eligible),
   // and a failure walks on instead of dropping them back to a list they asked not to see.
   const autoImmediate = $derived($autoSelectSource && !$autoSelectCountdown && !pick?.manualOnly)
+  // A manual click may intentionally wait for a rare release. Automatic mode has alternatives in
+  // hand, so a dead hash gets a much smaller budget before the chain advances. Fifteen seconds is
+  // long enough for a warmed DHT/trackers to answer without reproducing the minute-long stalls from
+  // the field traces; the native command still retains its 60-second default for manual choices.
+  const AUTO_DIRECT_STARTUP_TIMEOUT_MS = 15_000
   let failedKeys = $state<string[]>([])
   const hasFailed = (s: StreamInfo['stream']) => failedKeys.includes(keyOf(describe(s))) || isDead(s)
   const candidates = $derived(pickCandidates(
@@ -160,7 +165,7 @@
   // indistinguishable from a hang. Higher when the user opted out of choosing — a whole page of
   // releases blocked for the same legal reason is common, and giving up after three hands them
   // back the list they asked not to see.
-  const AUTO_MAX_TRIES = $derived(autoImmediate ? 8 : 3)
+  const AUTO_MAX_TRIES = $derived(autoImmediate ? (directP2p ? 4 : 8) : 3)
   let autoIdx = $state(0)
   const bestStream = $derived(candidates[autoIdx])
   const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
@@ -346,6 +351,7 @@
     busy = true; error = ''; blockedRetry = null
     chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
     streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
+    const automatic = fromAuto || autoImmediate
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
       if (s.status === 'playing') streamPicker.set(null)
       else if (s.status === 'error') {
@@ -358,7 +364,10 @@
         blockedRetry = s.debridBlocked ? info : null
       }
       else if (s.status === 'idle') { busy = false } // caching canceled — re-enable the list
-    }, { autoplay: pick.autoplay })
+    }, {
+      autoplay: pick.autoplay,
+      directStartupTimeoutMs: automatic && directP2p ? AUTO_DIRECT_STARTUP_TIMEOUT_MS : undefined,
+    })
   }
   /** Retry the debrid-blocked stream over the local P2P engine — one-off, mode setting untouched. */
   async function watchP2p() {
