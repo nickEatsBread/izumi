@@ -6,7 +6,7 @@ vi.mock('$lib/net/http', () => ({ invokeNativeHttp: mocks.post }))
 
 import { gql } from '@urql/core'
 import { anilistToken } from './auth'
-import { anilist } from './client'
+import { anilist, parseRateLimitHeaders } from './client'
 
 const QUERY = gql`query ($id: Int!) { Media(id: $id) { id mediaListEntry { id progress } } }`
 
@@ -55,5 +55,20 @@ describe('anilist client', () => {
     anilistToken.set('token-same')
     await anilist.query<Entry>(QUERY, { id: 1 }).toPromise()
     expect(mocks.post).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AniList rate-limit headers', () => {
+  it('reads the shared-IP remainder and reset without inventing absent values', () => {
+    expect(parseRateLimitHeaders(new Headers())).toEqual({
+      limit: undefined,
+      remaining: undefined,
+      resetAtMs: undefined,
+    })
+    expect(parseRateLimitHeaders(new Headers({
+      'x-ratelimit-limit': '30',
+      'x-ratelimit-remaining': '0',
+      'x-ratelimit-reset': '2000000000',
+    }))).toEqual({ limit: 30, remaining: 0, resetAtMs: 2_000_000_000_000 })
   })
 })

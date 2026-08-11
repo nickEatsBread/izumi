@@ -36,6 +36,7 @@ export function episodeRatingPercent(rating: number | undefined, released: boole
 const key = (id: number) => `anizip-${id}`
 const fetchedAtKey = (id: number) => `anizip-${id}-fetched-at`
 const MISSING_TITLE_RETRY_MS = 60 * 60 * 1000
+const EPISODE_META_REFRESH_MS = 24 * 60 * 60 * 1000
 
 function hasEpisodeTitlesThrough(res: AniZipResponse, episode: number): boolean {
   for (let n = 1; n <= episode; n++) {
@@ -59,11 +60,12 @@ export function fetchAniZip(
   anilistId: number,
   wantEpisode?: number,
   requireTitlesThrough?: number,
+  maxAgeMs?: number,
 ): Promise<AniZipResponse | undefined> {
-  const k = `${anilistId}|${wantEpisode ?? ''}|${requireTitlesThrough ?? ''}`
+  const k = `${anilistId}|${wantEpisode ?? ''}|${requireTitlesThrough ?? ''}|${maxAgeMs ?? ''}`
   const running = inflight.get(k)
   if (running) return running
-  const p = fetchAniZipUncached(anilistId, wantEpisode, requireTitlesThrough)
+  const p = fetchAniZipUncached(anilistId, wantEpisode, requireTitlesThrough, maxAgeMs)
     .finally(() => inflight.delete(k))
   inflight.set(k, p)
   return p
@@ -73,6 +75,7 @@ async function fetchAniZipUncached(
   anilistId: number,
   wantEpisode?: number,
   requireTitlesThrough?: number,
+  maxAgeMs?: number,
 ): Promise<AniZipResponse | undefined> {
   const [cached, fetchedAt] = await Promise.all([
     get<AniZipResponse>(key(anilistId)),
@@ -84,7 +87,8 @@ async function fetchAniZipUncached(
   if (cached && (wantEpisode == null || cached.episodes?.[String(wantEpisode)])) {
     const titlesReady = requireTitlesThrough == null || hasEpisodeTitlesThrough(cached, requireTitlesThrough)
     const recentlyFetched = fetchedAt != null && Date.now() - fetchedAt < MISSING_TITLE_RETRY_MS
-    if (titlesReady || recentlyFetched) return cached
+    const refreshDue = maxAgeMs != null && (fetchedAt == null || Date.now() - fetchedAt >= maxAgeMs)
+    if ((titlesReady || recentlyFetched) && !refreshDue) return cached
   }
   try {
     const r = await phttp(`https://api.ani.zip/mappings?anilist_id=${anilistId}`)
@@ -102,9 +106,23 @@ async function fetchAniZipUncached(
 
 /** Per-episode metadata (thumbnail/title/rating) for an AniList id.
  *  Best-effort: returns `{}` on any error. */
-export async function getEpisodeMeta(anilistId: number, watchedThrough?: number): Promise<Record<number, EpMeta>> {
+export async function getEpisodeMeta(
+  anilistId: number,
+  watchedThrough?: number,
+  onRefresh?: (meta: Record<number, EpMeta>) => void,
+): Promise<Record<number, EpMeta>> {
   const requireTitlesThrough = watchedThrough && watchedThrough > 0 ? Math.floor(watchedThrough) : undefined
-  return parseEpisodes(await fetchAniZip(anilistId, undefined, requireTitlesThrough))
+  // Render an existing cache immediately. Refreshing AniZip is useful for newly-aired episodes, but
+  // it must never hold every thumbnail placeholder hostage while the network request completes.
+  let cached: AniZipResponse | undefined
+  try { cached = await get<AniZipResponse>(key(anilistId)) } catch { /* fall through to network */ }
+  if (cached) {
+    void fetchAniZip(anilistId, undefined, requireTitlesThrough, EPISODE_META_REFRESH_MS)
+      .then((fresh) => { if (fresh && fresh !== cached) onRefresh?.(parseEpisodes(fresh)) })
+      .catch(() => {})
+    return parseEpisodes(cached)
+  }
+  return parseEpisodes(await fetchAniZip(anilistId, undefined, requireTitlesThrough, EPISODE_META_REFRESH_MS))
 }
 
 /** The Kitsu id AniZip maps this AniList id to, if any. Used as a fallback when

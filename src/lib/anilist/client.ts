@@ -54,14 +54,61 @@ const limiter = new Bottleneck({
   minTime: 220,
 })
 
-// AniList's `X-RateLimit-Limit` is authoritative and accurate again since 2025-08. If it ever
-// reports a higher ceiling than we seeded, raise the refresh amount so we stop over-throttling.
+export interface AniListRateLimitHeaders {
+  limit?: number
+  remaining?: number
+  resetAtMs?: number
+}
+
+/** Parse AniList's server-authoritative quota state. Kept pure so header edge cases are testable. */
+export function parseRateLimitHeaders(headers: Headers): AniListRateLimitHeaders {
+  const positive = (name: string) => {
+    const raw = headers.get(name)
+    if (raw == null || raw.trim() === '') return undefined
+    const value = Number(raw)
+    return Number.isFinite(value) && value > 0 ? value : undefined
+  }
+  const nonNegative = (name: string) => {
+    const raw = headers.get(name)
+    if (raw == null || raw.trim() === '') return undefined
+    const value = Number(raw)
+    return Number.isFinite(value) && value >= 0 ? value : undefined
+  }
+  const resetSeconds = positive('x-ratelimit-reset')
+  return {
+    limit: positive('x-ratelimit-limit'),
+    remaining: nonNegative('x-ratelimit-remaining'),
+    resetAtMs: resetSeconds == null ? undefined : resetSeconds * 1000,
+  }
+}
+
+// AniList's headers are authoritative for the whole public IP, including calls made by discussion
+// providers or another izumi process. Mirror a LOWER server remainder into Bottleneck so those
+// out-of-band calls cannot leave this client believing it has tokens that no longer exist.
 let knownLimit = RATE_LIMIT
-function seedReservoirFromLimit(res: Response) {
-  const lim = Number(res.headers.get('x-ratelimit-limit'))
-  if (Number.isFinite(lim) && lim > 0 && lim !== knownLimit) {
-    knownLimit = lim
-    limiter.updateSettings({ reservoirRefreshAmount: lim })
+let knownResetAtMs = 0
+let resetTimer: ReturnType<typeof setTimeout> | undefined
+async function syncReservoirFromHeaders(res: Response) {
+  const { limit, remaining, resetAtMs } = parseRateLimitHeaders(res.headers)
+  if (limit != null && limit !== knownLimit) {
+    knownLimit = limit
+    await limiter.updateSettings({ reservoirRefreshAmount: limit })
+  }
+  if (remaining != null) {
+    const current = await limiter.currentReservoir()
+    if (current != null && remaining < current) await limiter.incrementReservoir(remaining - current)
+  }
+  // Bottleneck's periodic refresh is anchored to app startup, whereas AniList's window is not.
+  // Wake queued work at the server's actual reset too; the next response immediately corrects the
+  // count downward if another consumer on the same IP spent tokens in the meantime.
+  if (resetAtMs != null && resetAtMs !== knownResetAtMs) {
+    knownResetAtMs = resetAtMs
+    if (resetTimer) clearTimeout(resetTimer)
+    const delay = Math.max(0, resetAtMs - Date.now()) + 50
+    resetTimer = setTimeout(() => {
+      knownResetAtMs = 0
+      void limiter.updateSettings({ reservoir: knownLimit })
+    }, delay)
   }
 }
 
@@ -77,7 +124,7 @@ async function fetchWithBackoff(input: RequestInfo | URL, init?: RequestInit, at
   const wait = cooldownUntil - Date.now()
   if (wait > 0) await sleep(wait)
   const res = await nativeFetch(input, init)
-  seedReservoirFromLimit(res)
+  await syncReservoirFromHeaders(res)
   if (res.status !== 429 || attempt >= 5) return res
   const retryAfter = res.headers.get('retry-after')
   const reset = res.headers.get('x-ratelimit-reset')

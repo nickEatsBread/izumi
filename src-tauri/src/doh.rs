@@ -22,6 +22,13 @@ struct CacheEntry {
     expires: Instant,
 }
 
+#[derive(Default)]
+struct DohHealth {
+    bypass_until: Option<Instant>,
+}
+
+const UNHEALTHY_BYPASS: Duration = Duration::from_secs(5 * 60);
+
 /// Custom reqwest resolver that answers via a DoH JSON endpoint. Cheap to clone
 /// (the cache + bootstrap client are shared), which the `Resolve` impl relies on to
 /// hand a `'static` future to reqwest.
@@ -31,6 +38,7 @@ pub struct DohResolver {
     /// resolver (no DoH wrapper) so reaching the DoH host can't recurse.
     boot: reqwest::Client,
     cache: Arc<Mutex<HashMap<String, CacheEntry>>>,
+    health: Arc<Mutex<DohHealth>>,
 }
 
 impl DohResolver {
@@ -43,6 +51,7 @@ impl DohResolver {
             doh_url,
             boot,
             cache: Arc::new(Mutex::new(HashMap::new())),
+            health: Arc::new(Mutex::new(DohHealth::default())),
         }
     }
 
@@ -51,12 +60,14 @@ impl DohResolver {
             doh_url: self.doh_url.clone(),
             boot: self.boot.clone(),
             cache: self.cache.clone(),
+            health: self.health.clone(),
         }
     }
 
     /// One DoH JSON query for a record type (1 = A, 28 = AAAA). Returns (ip, ttl)
-    /// pairs; empty on any failure (caller decides fallback).
-    async fn query(&self, host: &str, qtype: u16) -> Vec<(IpAddr, u32)> {
+    /// pairs. Transport/status/JSON failures are distinct from a valid empty DNS answer so one
+    /// nonexistent hostname cannot incorrectly mark the whole configured resolver unhealthy.
+    async fn query(&self, host: &str, qtype: u16) -> Result<Vec<(IpAddr, u32)>, ()> {
         let url = format!("{}?name={}&type={}", self.doh_url, host, qtype);
         let resp = match self
             .boot
@@ -66,15 +77,18 @@ impl DohResolver {
             .await
         {
             Ok(r) => r,
-            Err(_) => return Vec::new(),
+            Err(_) => return Err(()),
         };
+        if !resp.status().is_success() {
+            return Err(());
+        }
         let body = match resp.text().await {
             Ok(t) => t,
-            Err(_) => return Vec::new(),
+            Err(_) => return Err(()),
         };
         let json: serde_json::Value = match serde_json::from_str(&body) {
             Ok(j) => j,
-            Err(_) => return Vec::new(),
+            Err(_) => return Err(()),
         };
         let mut out = Vec::new();
         if let Some(answers) = json.get("Answer").and_then(|a| a.as_array()) {
@@ -92,7 +106,7 @@ impl DohResolver {
                 }
             }
         }
-        out
+        Ok(out)
     }
 
     async fn lookup(&self, host: &str) -> Result<Vec<SocketAddr>, BoxError> {
@@ -103,9 +117,22 @@ impl DohResolver {
         if let Some(ips) = self.cached(host) {
             return Ok(with_port(ips));
         }
+        // After one proven transport failure, use system DNS immediately for all uncached hosts
+        // for a short period. This turns a blocked/custom DoH endpoint from a six-second delay per
+        // hostname into one initial failure followed by fast, working lookups.
+        if self.doh_bypassed() {
+            return self.system(host).await;
+        }
         // A + AAAA concurrently.
-        let (mut recs, aaaa) = tokio::join!(self.query(host, 1), self.query(host, 28));
-        recs.extend(aaaa);
+        let (a, aaaa) = tokio::join!(self.query(host, 1), self.query(host, 28));
+        let reachable = a.is_ok() || aaaa.is_ok();
+        let mut recs = a.unwrap_or_default();
+        recs.extend(aaaa.unwrap_or_default());
+        if reachable {
+            self.mark_doh_healthy();
+        } else {
+            self.mark_doh_unhealthy();
+        }
         if recs.is_empty() {
             // DoH unreachable / empty → system resolver so the app keeps working. Negative-cache
             // the fallback for a short TTL: without this, a blackholed/blocked/mistyped DoH
@@ -157,6 +184,26 @@ impl DohResolver {
             );
         }
     }
+
+    fn doh_bypassed(&self) -> bool {
+        self.health
+            .lock()
+            .ok()
+            .and_then(|health| health.bypass_until)
+            .is_some_and(|until| until > Instant::now())
+    }
+
+    fn mark_doh_unhealthy(&self) {
+        if let Ok(mut health) = self.health.lock() {
+            health.bypass_until = Some(Instant::now() + UNHEALTHY_BYPASS);
+        }
+    }
+
+    fn mark_doh_healthy(&self) {
+        if let Ok(mut health) = self.health.lock() {
+            health.bypass_until = None;
+        }
+    }
 }
 
 /// Port is a placeholder — hyper overrides it with the request's target port.
@@ -173,5 +220,20 @@ impl Resolve for DohResolver {
             let iter: Addrs = Box::new(addrs.into_iter());
             Ok(iter)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unhealthy_resolver_is_temporarily_bypassed() {
+        let resolver = DohResolver::new("https://example.invalid/dns-query".into());
+        assert!(!resolver.doh_bypassed());
+        resolver.mark_doh_unhealthy();
+        assert!(resolver.doh_bypassed());
+        resolver.mark_doh_healthy();
+        assert!(!resolver.doh_bypassed());
     }
 }

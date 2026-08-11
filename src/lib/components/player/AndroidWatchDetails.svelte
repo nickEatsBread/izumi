@@ -122,12 +122,13 @@
     threads = []
     commentsLoading = true
     active = 'comments'
-    fetchDiscussion(media, ep).then((value) => {
+    const applyThreads = (value: DiscussionThread[]) => {
       if (key !== discussionKey) return
       threads = value
       commentsLoading = false
       if (!preferredMobileDiscussion(value) && !tabTouched) active = 'episodes'
-    })
+    }
+    fetchDiscussion(media, ep, applyThreads).then(applyThreads)
   })
   const discussion = $derived(preferredMobileDiscussion(threads))
   const tabs = $derived<Tab[]>(
@@ -252,9 +253,10 @@
     const key = `${id}:${watched}`
     if (key === metaKey) return
     metaKey = key
-    getEpisodeMeta(id, watched).then((value) => {
+    const applyMeta = (value: Record<number, EpMeta>) => {
       if (key === metaKey) episodeMeta = value
-    })
+    }
+    getEpisodeMeta(id, watched, applyMeta).then(applyMeta)
   })
   const knownTotal = $derived((total ?? totalEpisodes(media)) || 0)
   const aired = $derived.by(() => {

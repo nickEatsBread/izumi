@@ -17,6 +17,13 @@ export interface NativeHttpOptions {
   background?: boolean
 }
 
+export interface NativeHttpTimings {
+  queueMs: number
+  responseMs: number
+  bodyMs: number
+  nativeTotalMs: number
+}
+
 let requestSequence = 0
 let debugRequestSequence = 0
 
@@ -75,16 +82,31 @@ export async function invokeNativeHttp<T>(
     if (options.signal) pending.push(aborted)
     if (options.timeoutMs != null) pending.push(timedOut)
     const result = await Promise.race(pending)
-    if (trace) traceResolve(trace, `HTTP ${debugId} finish`, {
+    const ipcMs = Math.round((globalThis.performance?.now?.() ?? Date.now()) - debugStartedAt)
+    const timings = typeof result === 'object' && result && 'timings' in result
+      ? (result as { timings?: NativeHttpTimings }).timings
+      : undefined
+    const details = {
       command,
       target: safeRequestTarget(args.url),
-      durationMs: Math.round((globalThis.performance?.now?.() ?? Date.now()) - debugStartedAt),
+      durationMs: ipcMs,
+      ...timings,
       status: typeof result === 'object' && result && 'status' in result
         ? (result as { status?: unknown }).status
         : undefined,
-    })
+      lane: options.priority ? 'playback' : options.background ? 'background' : 'metadata',
+    }
+    if (import.meta.env.DEV) console.debug('[izumi net]', details)
+    if (trace) traceResolve(trace, `HTTP ${debugId} finish`, details)
     return result
   } catch (error) {
+    if (import.meta.env.DEV) console.warn('[izumi net] failed', {
+      command,
+      target: safeRequestTarget(args.url),
+      durationMs: Math.round((globalThis.performance?.now?.() ?? Date.now()) - debugStartedAt),
+      lane: options.priority ? 'playback' : options.background ? 'background' : 'metadata',
+      error: error instanceof Error ? error.message : String(error),
+    })
     if (trace) traceResolveError(trace, `HTTP ${debugId} failed`, error, {
       command,
       target: safeRequestTarget(args.url),

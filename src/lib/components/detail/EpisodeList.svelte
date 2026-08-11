@@ -132,7 +132,8 @@
     if (offline) { meta = {}; metaLoading = false; return } // no per-episode metadata fetch offline
     let cancelled = false
     metaLoading = true
-    getEpisodeMeta(media.id, watchedThrough).then((m) => { if (!cancelled) { meta = m; metaLoading = false } })
+    const applyMeta = (m: Record<number, EpMeta>) => { if (!cancelled) { meta = m; metaLoading = false } }
+    getEpisodeMeta(media.id, watchedThrough, applyMeta).then(applyMeta)
     return () => { cancelled = true }
   })
 
