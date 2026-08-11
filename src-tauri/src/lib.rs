@@ -3172,10 +3172,12 @@ async fn da_login(app: tauri::AppHandle, base: String) -> Result<bool, String> {
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
         waited += 800;
         let Ok(current) = win.url() else { break }; // user closed the window
-        // Read through the main window, not the login one: the jar is shared by every webview in the
-        // app, and the login window can be torn down mid-read (the user closing it) — which on the
-        // GTK backend means blocking on a callback the dead webview will never fire.
-        let reader = app.get_webview_window("main").unwrap_or_else(|| win.clone());
+                                                    // Read through the main window, not the login one: the jar is shared by every webview in the
+                                                    // app, and the login window can be torn down mid-read (the user closing it) — which on the
+                                                    // GTK backend means blocking on a callback the dead webview will never fire.
+        let reader = app
+            .get_webview_window("main")
+            .unwrap_or_else(|| win.clone());
         let c = read_cookies(reader, format!("{base}/")).await;
         if has_auth_cookie(&c) {
             eprintln!("[da_login] session cookie appeared — signed in");
