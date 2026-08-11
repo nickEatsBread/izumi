@@ -52,6 +52,8 @@ regex = "1"
 # OpenSSL, which has no Android target here.
 tauri-plugin-http = { version = "2.5.9", default-features = false, features = ["rustls-tls"] }
 tokio = { version = "1", features = ["time", "fs", "io-util", "net", "sync", "process"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tokio-util = { version = "0.7", features = ["io"] }
 anyhow = "1"
 blake3 = "1"
 # Account-free device sync. Keep only the runtime features Izumi uses: relay-capable

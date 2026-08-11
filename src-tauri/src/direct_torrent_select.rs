@@ -29,6 +29,54 @@ fn normalized(name: &str) -> String {
     name.replace('\\', "/").trim().to_lowercase()
 }
 
+/// Rank how well a torrent path belongs to the requested series title. `1` deliberately means
+/// "unknown": episode-only filenames remain usable, but an explicit sequel marker after an exact
+/// base-title match ranks below them. This distinguishes `Sword Art Online - 03` from
+/// `Sword Art Online II - 03` without assuming every torrent uses season tags.
+fn series_title_affinity(name: &str, series_title: Option<&str>) -> u8 {
+    static BRACKETS: OnceLock<Regex> = OnceLock::new();
+    let Some(series_title) = series_title.filter(|title| !title.trim().is_empty()) else {
+        return 1;
+    };
+    let wanted = normalized(series_title)
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if wanted.is_empty() {
+        return 1;
+    }
+
+    let clean_name = rx(&BRACKETS, r"\[[^\]]*\]")
+        .replace_all(&normalized(name), " ")
+        .into_owned();
+    let tokens = clean_name
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    let Some(start) = tokens.windows(wanted.len()).position(|window| {
+        window
+            .iter()
+            .zip(&wanted)
+            .all(|(found, wanted)| *found == wanted)
+    }) else {
+        return 1;
+    };
+
+    // A Roman numeral immediately following the complete requested title is part of an anime's
+    // title surprisingly often (SAO II, Megalo Box 2, Lupin III). Treat it as a different series
+    // unless the requested title itself included that marker.
+    const SEQUEL_MARKERS: [&str; 10] = [
+        "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "second",
+    ];
+    let following = tokens.get(start + wanted.len()).copied();
+    if following.is_some_and(|token| SEQUEL_MARKERS.contains(&token)) {
+        0
+    } else {
+        2
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct FileEpisode {
     season: Option<u32>,
@@ -226,6 +274,17 @@ pub(crate) fn select_file(
     absolute_episode: Option<u32>,
     season: Option<u32>,
 ) -> Option<TorrentFile> {
+    select_file_for_title(files, preferred, None, episode, absolute_episode, season)
+}
+
+pub(crate) fn select_file_for_title(
+    files: &[TorrentFile],
+    preferred: Option<&str>,
+    series_title: Option<&str>,
+    episode: Option<u32>,
+    absolute_episode: Option<u32>,
+    season: Option<u32>,
+) -> Option<TorrentFile> {
     if let Some(preferred) = preferred.map(normalized).filter(|name| !name.is_empty()) {
         let preferred_basename = preferred.rsplit('/').next().unwrap_or(&preferred);
         if let Some(found) = files.iter().find(|file| {
@@ -251,7 +310,8 @@ pub(crate) fn select_file(
                 (season, parsed.season),
                 (Some(wanted), Some(found_season)) if wanted != found_season
             );
-            if !number_conflicts && !season_conflicts {
+            let series_conflicts = series_title_affinity(&found.name, series_title) == 0;
+            if !number_conflicts && !season_conflicts && !series_conflicts {
                 return Some(found.clone());
             }
         }
@@ -280,6 +340,7 @@ pub(crate) fn select_file(
 
         matching.sort_by_key(|(file, parsed)| {
             (
+                series_title_affinity(&file.name, series_title),
                 usize::from(season.is_some() && parsed.season == season),
                 usize::from(parsed.season.is_some()),
                 file.length,
@@ -348,6 +409,56 @@ mod tests {
                 Some(7),
                 None,
                 Some(1),
+            )
+            .unwrap()
+            .index,
+            1
+        );
+    }
+
+    #[test]
+    fn base_series_episode_beats_same_number_from_roman_numeral_sequel() {
+        let files = vec![
+            file(
+                0,
+                "[Shio-freeka] Sword Art Online II/Sword Art Online II - 03.mkv",
+                1_200,
+            ),
+            file(
+                1,
+                "[Shio-freeka] Sword Art Online/Sword Art Online - 03.mkv",
+                900,
+            ),
+        ];
+        assert_eq!(
+            select_file_for_title(
+                &files,
+                Some("Sword Art Online II - 03.mkv"),
+                Some("Sword Art Online"),
+                Some(3),
+                None,
+                Some(1),
+            )
+            .unwrap()
+            .index,
+            1
+        );
+    }
+
+    #[test]
+    fn roman_numeral_sequel_still_selects_its_own_episode() {
+        let files = vec![
+            file(0, "Sword Art Online/Sword Art Online - 03.mkv", 1_200),
+            file(1, "Sword Art Online II/Sword Art Online II - 03.mkv", 900),
+        ];
+        assert_eq!(
+            select_file_for_title(
+                &files,
+                None,
+                Some("Sword Art Online II"),
+                Some(3),
+                None,
+                Some(2),
             )
             .unwrap()
             .index,

@@ -9,6 +9,8 @@ vi.mock('$lib/settings/ui', () => ({ torrentAndroidPostSeed: writable(false) }))
 
 import {
   activateDirectTorrentPlayback,
+  directTorrentPlayerAttached,
+  prepareDirectTorrentNext,
   reportDirectTorrentBuffer,
 } from './direct-torrent'
 
@@ -40,6 +42,45 @@ describe('direct torrent buffer governor', () => {
 
     expect(mocks.invoke.mock.calls
       .filter(([command]) => command === 'torrent_playback_streaming')).toHaveLength(0)
+  })
+
+  it('releases the native startup priority stream after mpv accepts the URL', async () => {
+    await directTorrentPlayerAttached(101)
+
+    expect(mocks.invoke).toHaveBeenCalledWith('torrent_playback_player_attached', {
+      playbackId: 101,
+    })
+  })
+
+  it('prepares the next file inside the active season pack', async () => {
+    mocks.invoke.mockResolvedValue({
+      fileIndex: 3,
+      filename: 'Show S01E04.mkv',
+      size: 400_000_000,
+      downloadedBytes: 0,
+      sameTorrent: false,
+    })
+
+    await prepareDirectTorrentNext({
+      infoHash: 'a'.repeat(40),
+      magnet: `magnet:?xt=urn:btih:${'a'.repeat(40)}`,
+      preferredFilename: 'Show S01E04.mkv',
+      seriesTitle: 'Show',
+      episode: 4,
+      absoluteEpisode: 4,
+      season: 1,
+    })
+
+    expect(mocks.invoke).toHaveBeenCalledWith('torrent_playback_prepare_next', {
+      playbackId: 101,
+      infoHash: 'a'.repeat(40),
+      magnet: `magnet:?xt=urn:btih:${'a'.repeat(40)}`,
+      preferredFilename: 'Show S01E04.mkv',
+      seriesTitle: 'Show',
+      episode: 4,
+      absoluteEpisode: 4,
+      season: 1,
+    })
   })
 
   it('retries an unchanged threshold when the native update rejects', async () => {

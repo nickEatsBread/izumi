@@ -1,7 +1,9 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod cache_gc;
 mod direct_torrent;
+mod direct_torrent_range;
 mod direct_torrent_select;
+mod direct_torrent_stream;
 mod doh;
 mod download;
 mod extension_package;
@@ -4238,7 +4240,10 @@ pub fn run() {
             download::download_dir_default,
             download::reveal_in_folder,
             direct_torrent::torrent_engine_warmup,
+            direct_torrent::torrent_playback_cancel_start,
             direct_torrent::torrent_playback_url,
+            direct_torrent::torrent_playback_player_attached,
+            direct_torrent::torrent_playback_prepare_next,
             direct_torrent::torrent_playback_add_subtitle,
             direct_torrent::torrent_playback_health,
             direct_torrent::torrent_playback_buffer,
@@ -4301,7 +4306,10 @@ pub fn run() {
         download::download_dir_default,
         download::reveal_in_folder,
         direct_torrent::torrent_engine_warmup,
+        direct_torrent::torrent_playback_cancel_start,
         direct_torrent::torrent_playback_url,
+        direct_torrent::torrent_playback_player_attached,
+        direct_torrent::torrent_playback_prepare_next,
         direct_torrent::torrent_playback_health,
         direct_torrent::torrent_playback_buffer,
         direct_torrent::torrent_playback_stop,

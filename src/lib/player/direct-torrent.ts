@@ -7,6 +7,7 @@ import {
 } from '$lib/settings/ui'
 import { torrentProxyEndpoint } from './torrent-proxy'
 import { listenSafe } from '$lib/util/listen'
+import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
 
 /** The network/limit snapshot every native torrent job takes. Single-sourced so streaming and
  * offline downloads cannot drift — above all the proxy kill switch, which THROWS on a bad endpoint
@@ -72,26 +73,101 @@ export type DirectTorrentHealth = {
   state: string
   finished: boolean
   error: string | null
+  // Last localhost request mpv made. These prove whether a probe was truly range-limited.
+  streamRequestCount: number
+  streamFileIndex: number | null
+  streamRequestRange: string | null
+  streamStatus: number | null
+  streamResponseBytes: number | null
+  nextPreloadFileIndex: number | null
+  nextPreloadDownloadedBytes: number
+  nextPreloadSize: number
+}
+
+export type DirectTorrentNextPreload = {
+  fileIndex: number
+  filename: string
+  size: number
+  downloadedBytes: number
+  sameTorrent: boolean
 }
 
 let activePlaybackId: number | null = null
 let lastBufferLow: boolean | null = null
+let startupSequence = 0
+let lastHealthTraceAt = 0
+
+/** Monotonic within this webview. The native side uses equality, not ordering, so a hot reload that
+ * resets the counter is still safe: a newly stored id supersedes the old request atomically. */
+export function nextDirectTorrentStartupId(): number {
+  startupSequence = startupSequence >= Number.MAX_SAFE_INTEGER ? 1 : startupSequence + 1
+  return startupSequence
+}
 
 /** Mark the native torrent returned for the stream that is about to enter the player. */
 export function activateDirectTorrentPlayback(playbackId: number) {
   activePlaybackId = playbackId
   lastBufferLow = null
+  lastHealthTraceAt = 0
 }
 
 export function currentDirectTorrentPlaybackId(): number | null {
   return activePlaybackId
 }
 
+/** Widen the active season-pack selection and prioritize the next file without replacing the
+ * episode mpv is reading. The native side rejects different infohashes and stale playback ids. */
+export async function prepareDirectTorrentNext(input: {
+  infoHash: string
+  magnet?: string
+  preferredFilename?: string
+  seriesTitle: string
+  episode: number
+  absoluteEpisode?: number
+  season?: number
+}): Promise<DirectTorrentNextPreload | null> {
+  const playbackId = activePlaybackId
+  if (playbackId == null) return null
+  return await invoke<DirectTorrentNextPreload>('torrent_playback_prepare_next', {
+    playbackId,
+    infoHash: input.infoHash,
+    magnet: input.magnet,
+    preferredFilename: input.preferredFilename,
+    seriesTitle: input.seriesTitle,
+    episode: input.episode,
+    absoluteEpisode: input.absoluteEpisode,
+    season: input.season,
+  })
+}
+
+/** Tell the native engine that mpv owns the real HTTP stream now, so its temporary byte-zero
+ * priority stream can be dropped without leaving two competing range cursors. */
+export async function directTorrentPlayerAttached(playbackId: number) {
+  await invoke('torrent_playback_player_attached', { playbackId }).catch(() => {})
+}
+
+/** Cancel metadata/initialization work that has not produced a playback id yet. Starting another
+ * torrent also supersedes the previous generation natively; this explicit command covers Back and
+ * Cancel, where there may be no replacement invoke to do that for us. */
+export async function cancelDirectTorrentStartup(startupId: number) {
+  await invoke('torrent_playback_cancel_start', { startupId }).catch(() => {})
+}
+
 /** Read native download progress for startup/recovery liveness checks. */
 export async function directTorrentHealth(): Promise<DirectTorrentHealth | null> {
   const playbackId = activePlaybackId
   if (playbackId == null) return null
-  return await invoke<DirectTorrentHealth>('torrent_playback_health', { playbackId }).catch(() => null)
+  const health = await invoke<DirectTorrentHealth>('torrent_playback_health', { playbackId }).catch(() => null)
+  if (import.meta.env.DEV && health && activePlaybackId === playbackId) {
+    const now = performance.now()
+    // Two independent watchdogs can poll during startup. Keep the useful one-second timeline
+    // without printing the same native snapshot twice in one tick.
+    if (now - lastHealthTraceAt >= 900) {
+      lastHealthTraceAt = now
+      traceResolve(currentResolveTrace(), 'direct P2P health', { playbackId, ...health })
+    }
+  }
+  return health
 }
 
 /** Feed mpv's buffered end timestamp into the native upload governor. Only threshold changes cross
@@ -133,4 +209,14 @@ export async function stopDirectTorrentPlayback(playbackId: number | null = acti
     ? await androidAllowsPostPlaybackSeed()
     : true
   await invoke('torrent_playback_stop', { playbackId, allowPostPlaybackSeed }).catch(() => {})
+}
+
+/** Abandon a torrent that never reached playback. Unlike a normal stop, this must not leave a
+ * background seeding session behind: the user canceled it or a better source superseded it. */
+export async function discardDirectTorrentPlayback(playbackId: number) {
+  if (activePlaybackId === playbackId) {
+    activePlaybackId = null
+    lastBufferLow = null
+  }
+  await invoke('torrent_playback_stop', { playbackId, allowPostPlaybackSeed: false }).catch(() => {})
 }
