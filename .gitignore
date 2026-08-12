@@ -24,6 +24,9 @@ src-tauri/macos-frameworks/
 # Subtitle font staged into the Android mpv plugin at build time (scripts/fetch-subtitle-font.mjs)
 src-tauri/tauri-plugin-mpv/android/src/main/assets/fonts/
 
+# Security-pinned libmpv AAR staged from source by scripts/ci/libmpv-android.sh
+src-tauri/tauri-plugin-mpv/android/libs/libmpv.aar
+
 # Local Flatpak bundle artifact (built + deployed, not committed)
 izumi.flatpak
 
