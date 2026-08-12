@@ -71,4 +71,9 @@ describe('mobileEmbedSrc', () => {
     expect(mobileEmbedSrc('/disqus-embed.html?f=anime&t_i=ep-1'))
       .toBe('/disqus-embed.html?f=anime&t_i=ep-1&izumi_expand=1')
   })
+
+  it('leaves a DiscussAnime archive URL for the official theme bridge', () => {
+    expect(mobileEmbedSrc('https://discussanime.moe/embed/discussion/episode-1'))
+      .toBe('https://discussanime.moe/embed/discussion/episode-1')
+  })
 })

@@ -34,21 +34,6 @@ grep -q '#0E1524' src-tauri/gen/android/app/src/main/res/values/ic_launcher_back
 # never fire on Android. Applies to BOTH flavors (both are WebView apps).
 sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
 
-# The in-player discussion embeds are cross-origin iframes that pick their theme from
-# `prefers-color-scheme` — and on targetSdk >= 33 the WebView derives that solely from the host app
-# theme's `isLightTheme`, NOT from any WebSettings call. The scaffolded theme is DayNight, so on a
-# phone in light mode those embeds rendered light inside izumi's dark UI. This is the Android
-# counterpart of the desktop `set_webview_dark` (WebView2 SetPreferredColorScheme) in
-# src-tauri/src/lib.rs. Both theme variants are patched: the night one already resolves dark, but
-# stating it keeps the two files from diverging.
-for t in src-tauri/gen/android/app/src/main/res/values/themes.xml \
-         src-tauri/gen/android/app/src/main/res/values-night/themes.xml; do
-  sed -i -E 's#(<style name="Theme\.[^"]+"[^>]*>)#\1\n        <item name="android:isLightTheme">false</item>#' "$t"
-  # The style name follows the product name, so match it loosely — but still fail loudly rather
-  # than silently shipping light-mode embeds if the template shape changes.
-  grep -q 'android:isLightTheme' "$t" || { echo "themes.xml patch missed: $t"; exit 1; }
-done
-
 # Kotlin toolchain — BOTH flavors. tauri-plugin-extplayer is built for lite and full alike, and its
 # dependencies resolve kotlin-stdlib 2.1.20; the scaffolded Kotlin Gradle plugin is older, so
 # compiling the plugin against that stdlib fails with "Class 'kotlin.Unit' was compiled with an

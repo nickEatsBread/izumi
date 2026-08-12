@@ -348,7 +348,7 @@
           <div class="space-y-2">{#each Array.from({ length: 4 }) as _}<div class="h-20 animate-pulse rounded-xl bg-white/[0.06]"></div>{/each}</div>
         {:else if discussion?.kind === 'disqus'}
           <iframe bind:this={disqusFrame} title="Episode comments" src={discussion.embedSrc} scrolling="no"
-            style:height={`${disqusHeight}px`} style:color-scheme="dark" class="min-h-[30rem] w-full rounded-xl border-0 bg-[#0e0e0e]"
+            style:height={`${disqusHeight}px`} class="min-h-[30rem] w-full rounded-xl border-0 bg-[#0e0e0e]"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
         {:else if discussion?.kind === 'reddit'}
           <article class="rounded-xl bg-white/[0.05] px-3 py-2">
