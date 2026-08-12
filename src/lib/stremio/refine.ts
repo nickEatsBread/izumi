@@ -68,11 +68,6 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
   // under the 2026 series. Drop those; keep every S01E01 + season pack. Not applied to movies.
   const isSeries = media.format !== 'MOVIE' && totalEps > 1
   const expectedSeconds = (media.duration ?? 0) * 60
-  // Direct streams and id-VERIFIED extension results skip the release-NAME heuristics: a source
-  // that matched this exact episode's production id (accuracy 'high') outranks any title parse —
-  // e.g. a CJK-titled release carries zero romaji/english tokens and relevant() would drop it.
-  const trusted = (s: Stream) => !!s.__stream || s.__accuracy === 'high'
-
   // Ordered, so a row is attributed to the FIRST rule that objects to it.
   const why = (s: Stream): RejectReason | null => {
     // A source can be title-correct yet point at a mini-episode. Compare its declared bytes with
@@ -83,12 +78,18 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
     if (isSeries && expectedSeconds >= 10 * 60 && size != null && size < expectedSeconds * 16 * 1024) {
       return 'implausibly-small'
     }
-    if (!relevant(s, wantedTitles)) return 'title-mismatch'
-    if (likelyOtherProduction(s, animeYear, absoluteNumbered)) return 'other-production'
+    // A resolved online stream is already the provider's exact episode and has no torrent release
+    // name to validate. An id-verified torrent may also use a CJK-only name, so it skips fuzzy title
+    // matching. Neither form of trust can make an impossibly small file into a full episode.
+    if (s.__stream) return null
+    const idVerified = s.__accuracy === 'high'
+    if (!idVerified && !relevant(s, wantedTitles)) return 'title-mismatch'
+    if (!idVerified && likelyOtherProduction(s, animeYear, absoluteNumbered)) return 'other-production'
     if (isEpisodeExtra(s)) return 'episode-extra'
-    if (isSeries && isStandaloneMovie(s)) return 'standalone-movie'
-    // Same-franchise wrong season: base-entry request pulling in "… The Final Season" / "Season 2"
-    // files a number-less season gate can't catch (Attack on Titan S1 → Final Season episodes).
+    if (!idVerified && isSeries && isStandaloneMovie(s)) return 'standalone-movie'
+    // Same-franchise wrong season: a number-less season gate cannot catch an explicitly named
+    // sequel. Some episode-id feeds contain such rows despite labelling the lookup exact, so the
+    // filename contradiction must beat source confidence.
     if (wrongFranchiseSeason(s, wantedTitles)) return 'wrong-franchise-season'
     return null
   }
@@ -98,7 +99,7 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
   const rejected: Rejection[] = []
   const seenRejects = new Set<string>()
   for (const s of pool) {
-    const reason = trusted(s) ? null : why(s)
+    const reason = why(s)
     if (!reason) { kept.push(s); continue }
     // The kept list is deduped below; rejections have to be deduped too or the "Filtered (N)"
     // count reports the same release once per addon that returned it.
@@ -113,7 +114,7 @@ export function refineStreams(media: Media, raw: Stream[]): Refined {
   // Never restore a known extra or physically implausible file just because every source was bad.
   // The safety net remains for fuzzy title/season heuristics, where uncertainty is real.
   if (!kept.length && !rejected.some(({ reason }) =>
-    reason === 'episode-extra' || reason === 'implausibly-small')) {
+    reason === 'episode-extra' || reason === 'implausibly-small' || reason === 'wrong-franchise-season')) {
     return { kept: dedupeStreams(pool), rejected: [] }
   }
   return { kept: dedupeStreams(kept), rejected }

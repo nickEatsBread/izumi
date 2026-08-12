@@ -91,7 +91,7 @@ describe('refineStreams', () => {
     expect(r.rejected).toHaveLength(0)
   })
 
-  it('never filters an id-verified or direct-stream source', () => {
+  it('lets id verification bypass fuzzy title matching and trusts direct streams', () => {
     const r = refineStreams(media, [
       named('[SubsPlease] Dr STONE S04E25 1080p'),
       named('Totally Unrelated Thing', { __accuracy: 'high' }),
@@ -99,6 +99,28 @@ describe('refineStreams', () => {
     ] as never)
     expect(r.kept).toHaveLength(3)
     expect(r.rejected).toHaveLength(0)
+  })
+
+  it('rejects an explicit wrong season even when the source marks the row id-verified', () => {
+    const r = refineStreams(media, [
+      named('[Group] Dr. Stone Season 2 - 01 (1080p)', {
+        __accuracy: 'high',
+        behaviorHints: { filename: '[Group] Dr. Stone Season 2 - 01 (1080p).mkv', videoSize: 800_000_000 },
+      }),
+    ] as never)
+    expect(r.kept).toHaveLength(0)
+    expect(r.rejected[0]?.reason).toBe('wrong-franchise-season')
+  })
+
+  it('still applies physical size checks to an id-verified torrent', () => {
+    const r = refineStreams(media, [
+      named('氷菓子 - 01', {
+        __accuracy: 'high',
+        behaviorHints: { filename: '氷菓子 - 01.mkv', videoSize: 5_000_000 },
+      }),
+    ] as never)
+    expect(r.kept).toHaveLength(0)
+    expect(r.rejected[0]?.reason).toBe('implausibly-small')
   })
 
   it('reports each rejected row once, not once per duplicate', () => {
