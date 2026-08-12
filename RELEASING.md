@@ -73,6 +73,17 @@ ignores them; the Worker returns `403` if they're missing/wrong.
    libmpv build your local setup uses (see your windows-build-env notes) and make sure
    `libmpv-2.dll` ends up beside the installed binary.
 
+7. **Register the sideloaded Android app before developer-verification enforcement.** The
+   GitHub-APK updater remains a supported distribution path, but Android requires the package and
+   signing identity to belong to a verified developer. In the Android Developer Console, register
+   package **`com.nicho.izumi`** and the SHA-256 certificate digest of the same release keystore held
+   in `ANDROID_KEYSTORE_BASE64`. Obtain the digest from any release APK without exposing the key:
+   ```sh
+   apksigner verify --print-certs izumi-android-full.apk
+   ```
+   Repeat the registration if the package name or signing key ever changes. This is an account-side
+   release gate; changing the in-app GitHub downloader cannot bypass it.
+
 ## Cutting a release
 
 **Automated (recommended).** Actions tab → **version bump** → *Run workflow* → pick
@@ -105,8 +116,9 @@ from triggering workflows, so without the PAT the tag is created but you re-run
    git tag v0.3.0-beta.1 && git push origin v0.3.0-beta.1
    ```
 3. CI (`release.yml`) creates the release (deleting the old rolling `beta` first for
-   betas), builds Windows / Linux (AppImage), uploads signed
-   artifacts + a merged `latest.json`, then publishes it.
+   betas), builds Windows / Linux (AppImage), uploads signed artifacts + a merged `latest.json`,
+   builds the Android player against libass 0.17.5, and refuses APKs whose ZIP entries or ELF LOAD
+   segments are not 16 KiB aligned before publishing.
 
 ## How the app updates
 

@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "app.izumi.extplayer"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26
