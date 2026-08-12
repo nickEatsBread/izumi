@@ -37,6 +37,7 @@ pub(crate) enum RequestClass {
     Playback,
 }
 
+#[derive(Debug)]
 pub(crate) struct RunResult<T> {
     pub value: T,
     pub queue_ms: u64,
