@@ -32,6 +32,10 @@ describe('atorrentToResult', () => {
   it('tags batches', () => {
     expect(atorrentToResult({ name: 'Pack', isBatch: true }, H)?.type).toBe('batch')
   })
+  it('normalizes numeric-string counts returned by providers', () => {
+    expect(atorrentToResult({ name: 'Rel', seeders: '1,234', leechers: '8' }, H))
+      .toMatchObject({ seeders: 1234, leechers: 8 })
+  })
   it('drops a torrent with no valid 40-hex infohash', () => {
     expect(atorrentToResult({ name: 'x' }, '')).toBeNull()
     expect(atorrentToResult({ name: 'x' }, 'nothex')).toBeNull()
