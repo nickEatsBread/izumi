@@ -8,6 +8,7 @@ import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
+import { scoreInfo } from './score'
 
 /** Ranking inputs that live in settings rather than on a stream. The non-interactive paths must
  *  use the same ones the picker does, or "best" means two different things depending on whether a
@@ -134,8 +135,9 @@ function addonTraceName(base: string): string {
   catch { return 'configured-addon' }
 }
 
-function streamTraceDetails(stream: Stream) {
+function streamTraceDetails(stream: Stream, options?: RankOptions) {
   const parsed = describe(stream)
+  const ranking = options ? scoreInfo(parsed, options) : undefined
   return {
     provider: stream.__origin?.name ?? stream.__addonName ?? 'unknown',
     kind: stream.__stream ? 'online' : stream.url ? 'resolved-url' : stream.infoHash ? 'torrent' : 'unknown',
@@ -143,10 +145,12 @@ function streamTraceDetails(stream: Stream) {
     cache: parsed.cached,
     cacheSource: parsed.cacheSource,
     audio: stream.__audio ?? (parsed.dualAudio ? 'dual' : undefined),
-    seeders: stream.__seeders,
-    sizeMiB: stream.behaviorHints?.videoSize
-      ? Math.round(stream.behaviorHints.videoSize / 1024 / 1024)
+    seeders: parsed.seeders,
+    sizeMiB: parsed.sizeBytes
+      ? Math.round(parsed.sizeBytes / 1024 / 1024)
       : undefined,
+    rankScore: ranking?.score,
+    rankReasons: ranking?.reasons,
   }
 }
 
@@ -1901,7 +1905,7 @@ export async function playStream(
     title: title(media),
     entry: options.recoveryOwner ? 'watchdog source replacement' : 'source selection',
   })
-  traceResolve(trace, 'source selected', streamTraceDetails(stream))
+  traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(media.id)))
   const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
   if (!playbackOwner) {
     finishResolveTrace(trace, 'stale source selection')
