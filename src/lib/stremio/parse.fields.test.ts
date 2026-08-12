@@ -42,6 +42,14 @@ suite('size', () => {
 })
 
 suite('seeders', () => {
+  it('prefers a positive structural extension count', () => {
+    expect(describe({ infoHash: 'abc', __seeders: 1234, title: '👤 12' }).seeders).toBe(1234)
+  })
+
+  it('keeps a structural placeholder zero unknown when no text reports a count', () => {
+    expect(describe({ infoHash: 'abc', __seeders: 0 }).seeders).toBeUndefined()
+  })
+
   it('reads the person glyph', () => {
     expect(describe({ url: 'u', title: '👤 152' }).seeders).toBe(152)
   })

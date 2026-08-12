@@ -28,6 +28,17 @@ describe('extToStream', () => {
     expect(s.__seeders).toBe(41)
   })
 
+  it('normalizes a numeric-string seeder count returned across the worker boundary', () => {
+    const s = extToStream({ ...base, seeders: '1,234' } as never, 'Nyaa')
+    expect(s.__seeders).toBe(1234)
+    expect(s.title).toContain('👤 1234')
+  })
+
+  it('drops an invalid or negative seeder count instead of poisoning rank comparisons', () => {
+    expect(extToStream({ ...base, seeders: -1 }, 'Nyaa').__seeders).toBeUndefined()
+    expect(extToStream({ ...base, seeders: Number.NaN }, 'Nyaa').__seeders).toBeUndefined()
+  })
+
   it('leaves the title bare when there is no metadata at all', () => {
     const s = extToStream(base, 'Nyaa')
     expect(s.title).toBe('Rel S01E03')

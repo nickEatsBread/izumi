@@ -39,6 +39,20 @@ export const TRUSTED_GROUPS = [
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
 const TRUSTED = new Set(TRUSTED_GROUPS.map(norm))
 
+/** Convert a source-reported swarm count into ranking points.
+ *
+ * Debrid only needs enough peers for the provider to acquire the release, so it retains the
+ * conservative historical cap. Direct playback is different: the swarm supplies the first frame,
+ * and flattening every count above 100 made a 100-seeder torrent indistinguishable from a
+ * 1,000-seeder one. A logarithmic curve keeps that useful distinction without allowing very large,
+ * noisy tracker estimates to dominate every other signal. */
+export function seederPoints(seeders: number, directP2p = false): number {
+  if (!Number.isFinite(seeders) || seeders <= 0) return 0
+  if (!directP2p) return Math.min(Math.floor(seeders / 10), 10)
+  if (seeders < 100) return Math.floor(seeders / 10)
+  return Math.min(10 + Math.floor(Math.log2(seeders / 100)), 20)
+}
+
 /** Resolution as POINTS, not a veto.
  *
  *  It used to be a hard sort key, which meant any 4K release outranked every 1080p one no matter
@@ -61,10 +75,9 @@ export function scoreInfo(info: StreamInfo, opts: ScoreOptions = {}): { score: n
   const res = RESOLUTION_POINTS.find(([q]) => info.quality >= q)
   if (res) add(`${info.quality}p`, res[1])
 
-  // Seeders, capped. A swarm of 5000 is not fifty times better than one of 100 — past a point the
-  // torrent simply saturates the connection, and letting the number run would drown every other
-  // signal exactly the way the old ladder did.
-  if (info.seeders != null) add('seeders', Math.min(Math.floor(info.seeders / 10), 10))
+  // A swarm of 5000 is not fifty times better than one of 100. Direct mode keeps a bounded,
+  // logarithmic distinction above 100; debrid uses the smaller historical cap.
+  if (info.seeders != null) add('seeders', seederPoints(info.seeders, !!opts.directP2p))
 
   if (opts.directP2p && info.stream.infoHash && !info.stream.url && info.sizeBytes != null) {
     const mib = info.sizeBytes / (1024 ** 2)

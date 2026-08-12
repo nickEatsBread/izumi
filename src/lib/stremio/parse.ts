@@ -298,7 +298,13 @@ function parseStream(s: Stream): StreamInfo {
   const seedersTxt = hay.match(/[👤👥]\s*(\d+)/u)?.[1]
     ?? hay.match(/\bseeders?\s*[:=]\s*(\d+)/i)?.[1]
     ?? hay.match(/(?:^|[\s|([])S\s*[:=]\s*(\d+)/i)?.[1]
-  const seeders = seedersTxt != null ? Number(seedersTxt) : undefined
+  // Prefer a positive structural count supplied by an extension. Zero remains unknown here: some
+  // indexers use it as a placeholder when they do not measure tracker health, so treating every
+  // structural zero as a dead swarm hides otherwise playable torrents.
+  const structuralSeeders = s.__seeders != null && Number.isFinite(s.__seeders) && s.__seeders > 0
+    ? Math.floor(s.__seeders)
+    : undefined
+  const seeders = structuralSeeders ?? (seedersTxt != null ? Number(seedersTxt) : undefined)
   const sizeTxt = hay.match(/💾\s*([\d.]+\s*[KMGT]i?B)/i)?.[1]?.replace(/\s+/g, ' ').trim()
   // Structured first (authoritative), then the text the addon wrote. The LABEL keeps the addon's
   // own wording when it gave one — it is what the user sees on the row, and rounding it through

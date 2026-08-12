@@ -1,5 +1,5 @@
 import { describe as suite, it, expect } from 'vitest'
-import { scoreInfo, RESOLUTION_POINTS, TRUSTED_GROUPS } from './score'
+import { scoreInfo, RESOLUTION_POINTS, TRUSTED_GROUPS, seederPoints } from './score'
 import { describe } from './parse'
 
 const info = (filename: string, extra: Record<string, unknown> = {}) =>
@@ -21,6 +21,36 @@ suite('scoreInfo', () => {
 
   it('caps the seeder reward so a swarm cannot outweigh everything else', () => {
     expect(score('Show - 01 👤 100000')).toBe(score('Show - 01 👤 100'))
+  })
+
+  it('keeps materially healthier swarms distinct for direct P2P without making growth linear', () => {
+    expect(seederPoints(28, true)).toBe(seederPoints(28, false))
+    expect(seederPoints(1_000, true)).toBeGreaterThan(seederPoints(100, true))
+    expect(seederPoints(1_000, true) - seederPoints(100, true)).toBe(3)
+    expect(seederPoints(100_000, true)).toBe(19)
+    expect(seederPoints(1_000, true) - seederPoints(100, true)).toBeLessThan(10)
+  })
+
+  it('does not over-reward a small swarm merely because its encode is compact', () => {
+    const torrent = (filename: string, sizeMiB: number, seeders: number) => describe({
+      infoHash: String(seeders),
+      __seeders: seeders,
+      behaviorHints: { filename, videoSize: sizeMiB * 1024 ** 2 },
+    })
+    const smallSwarm = torrent('[MiniDual] Show - 01 [1080p HEVC 10bit Dual Audio]', 333, 28)
+    const healthy = torrent('[Erai-raws] Show - 01 [1080p HEVC]', 587, 117)
+    expect(scoreInfo(healthy, { directP2p: true }).score)
+      .toBeGreaterThan(scoreInfo(smallSwarm, { directP2p: true }).score)
+  })
+
+  it('prefers a similarly sized torrent with substantially more peers in direct P2P', () => {
+    const torrent = (sizeMiB: number, seeders: number) => describe({
+      infoHash: String(seeders),
+      __seeders: seeders,
+      behaviorHints: { filename: 'Show - 01 (1080p).mkv', videoSize: sizeMiB * 1024 ** 2 },
+    })
+    expect(scoreInfo(torrent(286, 1_134), { directP2p: true }).score)
+      .toBeGreaterThan(scoreInfo(torrent(266, 268), { directP2p: true }).score)
   })
 
   it('favours a smaller healthy encode when bytes must come directly from P2P', () => {
