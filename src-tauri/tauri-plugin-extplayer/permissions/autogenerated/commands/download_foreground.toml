@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-download-foreground"
+description = "Enables the download_foreground command without any pre-configured scope."
+commands.allow = ["download_foreground"]
+
+[[permission]]
+identifier = "deny-download-foreground"
+description = "Denies the download_foreground command without any pre-configured scope."
+commands.deny = ["download_foreground"]

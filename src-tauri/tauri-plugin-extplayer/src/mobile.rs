@@ -6,9 +6,9 @@ use tauri::{
 
 use crate::models::{
     AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DaLoginRequest, DaLoginResponse,
-    DaReactRequest, DaReactionStateRequest, DeviceStatus, InstallRequest, JsonResponse,
-    LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest, ReactResponse,
-    ReactionStateResponse,
+    DaReactRequest, DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest,
+    InstallRequest, JsonResponse, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
+    ReactResponse, ReactionStateResponse,
 };
 
 #[cfg(target_os = "android")]
@@ -48,6 +48,12 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn device_status(&self) -> crate::Result<DeviceStatus> {
         self.0
             .run_mobile_plugin("deviceStatus", ())
+            .map_err(Into::into)
+    }
+
+    pub fn download_foreground(&self, payload: DownloadForegroundRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("downloadForeground", payload)
             .map_err(Into::into)
     }
 
