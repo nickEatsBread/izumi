@@ -10,7 +10,7 @@ import {
   cwSnapshot, reconciling, reconciledOnce, CAP, type CwEntry,
 } from './continue-watching'
 import { LIST_QUERY, MEDIA_BY_MAL_QUERY, MEDIA_BY_IDS_QUERY } from '$lib/anilist/lists'
-import { localHistory, sessionProgress, type HistoryEntry } from './history'
+import { durableHistory as localHistory, sessionProgress, type HistoryEntry } from './history'
 import type { Media } from '$lib/anilist/types'
 
 // ── fixtures ───────────────────────────────────────────────────────────────────

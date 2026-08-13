@@ -5,6 +5,7 @@ import { anilistToken, malToken, malUser, malClientId } from './config'
 import { malFetch } from './mal-auth'
 import { malHttpFetch } from './mal-http'
 import { recordProgress, localHistory } from '$lib/player/history'
+import { incognito } from '$lib/stores/incognito'
 import {
   enqueue, markConfirmed, confirmedFloor, flushQueue, registerReplay, classifyStatus, dropSuperseded,
   type TrackerOp, type TrackerName, type PushResult, type ProgressExtras,
@@ -142,6 +143,9 @@ registerReplay(replayEntry)
 // Run one op against each connected tracker, enqueuing on a transient failure and confirming the
 // progress floor on success. Best-effort; never throws. Returns which trackers took it live.
 async function push(media: Media, op: Omit<TrackerOp, 'mediaId' | 'idMal'>): Promise<string[]> {
+  // Incognito: nothing may reach a tracker — not live, and not via the queue (a queued op would
+  // outlive the session and sync after incognito ends). Ops queued BEFORE incognito still flush.
+  if (get(incognito)) return []
   const results: string[] = []
   const idMal = media.idMal ?? undefined
   const prog = op.kind === 'progress' ? op.progress ?? 0 : undefined
@@ -226,6 +230,7 @@ export function removeFromList(media: Media): Promise<string[]> {
 // favourite endpoint). Requires an AniList token. Throws on failure so the UI
 // can surface it / not flip its optimistic state.
 export async function toggleFavourite(media: Media) {
+  if (get(incognito)) throw new Error('Incognito mode is on — nothing is sent to AniList')
   if (!get(anilistToken)) throw new Error('AniList not connected')
   await anilist.mutation(TOGGLE_FAVOURITE, { animeId: media.id }).toPromise()
 }

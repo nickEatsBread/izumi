@@ -4,6 +4,7 @@
   import Background from '$lib/components/shell/Background.svelte'
   import Titlebar from '$lib/components/shell/Titlebar.svelte'
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
+  import IncognitoBanner from '$lib/components/shell/IncognitoBanner.svelte'
   import { androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
@@ -256,6 +257,7 @@
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile}<Titlebar />{/if}
   <OnlineBanner />
+  <IncognitoBanner />
 {/if}
 <!-- Lo-fi speaker: only while an uncached torrent is caching at the debrid service
      (the loading screen). Sits above the caching overlay (z-[60]). Desktop only. -->
