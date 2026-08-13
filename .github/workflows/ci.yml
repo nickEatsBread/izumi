@@ -110,7 +110,8 @@ jobs:
   compile-android:
     runs-on: ubuntu-latest
     env:
-      NDK_VERSION: "27.0.12077973"
+      # r28+ emits 16 KiB-aligned ELF LOAD segments by default. Match the pinned libmpv build.
+      NDK_VERSION: "29.0.14206865"
     steps:
       - uses: actions/checkout@v7
 

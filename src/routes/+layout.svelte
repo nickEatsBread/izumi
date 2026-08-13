@@ -34,4 +34,7 @@
     return startThemeSync()
   })
 </script>
+<svelte:head>
+  <script type="module" src="https://discussanime.moe/embed.js"></script>
+</svelte:head>
 {@render children()}

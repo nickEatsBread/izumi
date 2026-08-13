@@ -343,6 +343,18 @@
           "markdownDescription": "Denies the device_status command without any pre-configured scope."
         },
         {
+          "description": "Enables the download_foreground command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-download-foreground",
+          "markdownDescription": "Enables the download_foreground command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download_foreground command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-download-foreground",
+          "markdownDescription": "Denies the download_foreground command without any pre-configured scope."
+        },
+        {
           "description": "Enables the install_apk command without any pre-configured scope.",
           "type": "string",
           "const": "allow-install-apk",
@@ -379,10 +391,10 @@
           "markdownDescription": "Denies the play_external command without any pre-configured scope."
         },
         {
-          "description": "Allow Android playback, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-open-browser`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`",
+          "description": "Allow Android playback, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-open-browser`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow Android playback, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-open-browser`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`"
+          "markdownDescription": "Allow Android playback, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-open-browser`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`"
         }
       ]
     }

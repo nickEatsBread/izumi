@@ -53,7 +53,6 @@ export function mobileEmbedSrc(embed: string): string {
       out.set('izumi_expand', '1')
       return `/disqus-embed.html?${out.toString()}`
     }
-    url.searchParams.set('theme', 'dark')
     return url.toString()
   } catch {
     return embed

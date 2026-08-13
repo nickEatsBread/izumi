@@ -1,5 +1,5 @@
 import type { Media } from '$lib/anilist/types'
-import type { TorrentResult, TorrentQuery } from './types'
+import { normalizeTorrentCount, type TorrentResult, type TorrentQuery } from './types'
 import { runningTorrentProviderExtensions } from './manager'
 import { currentResolveTrace, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
 
@@ -10,7 +10,7 @@ export interface SnMedia {
   synonyms: string[]; isAdult: boolean; startDate?: { year?: number; month?: number; day?: number }
 }
 export interface AnimeTorrent {
-  name?: string; size?: number; seeders?: number; leechers?: number; downloadCount?: number
+  name?: string; size?: number; seeders?: number | string; leechers?: number | string; downloadCount?: number | string
   link?: string; downloadUrl?: string; magnetLink?: string; infoHash?: string
   resolution?: string; isBatch?: boolean; episodeNumber?: number
 }
@@ -43,9 +43,9 @@ export function atorrentToResult(t: AnimeTorrent, hash: string): TorrentResult |
     title: t.name ?? 'Torrent',
     link: t.magnetLink || t.downloadUrl || t.link,
     hash: h,
-    seeders: t.seeders,
-    leechers: t.leechers,
-    downloads: t.downloadCount,
+    seeders: normalizeTorrentCount(t.seeders),
+    leechers: normalizeTorrentCount(t.leechers),
+    downloads: normalizeTorrentCount(t.downloadCount),
     size: t.size,
     type: t.isBatch ? 'batch' : 'best',
   }

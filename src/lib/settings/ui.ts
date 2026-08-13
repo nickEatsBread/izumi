@@ -212,6 +212,9 @@ export const wheelScrollAcross = persisted<boolean>('carousel-wheel-scroll', fal
 export const uiScale = persisted<number>('ui-scale', 1)
 /** Include 18+ / adult titles in browse + search (AniList isAdult filter). */
 export const showAdult = persisted<boolean>('show-adult', false)
+/** Auto-enter incognito whenever an adult (isAdult) title starts playing, and leave it (purging
+ *  the session overlay) when playback closes — unless incognito was already on manually. */
+export const autoIncognitoAdult = persisted<boolean>('auto-incognito-adult', false)
 /** Haptic feedback on taps/toggles/actions (Android only; desktop has no haptics engine and
  *  always no-ops regardless). Default on. */
 export const haptics = persisted<boolean>('haptics', true)

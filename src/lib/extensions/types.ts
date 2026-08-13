@@ -70,3 +70,12 @@ export interface ExtensionConfig {
   moduleCode?: string
   signed?: boolean
 }
+
+/** Extension workers are an untyped runtime boundary. Accept numeric strings, but never let NaN,
+ * negatives or fractional tracker values leak into ranking and dedupe comparisons. */
+export function normalizeTorrentCount(value: unknown): number | undefined {
+  const normalized = typeof value === 'string' ? value.replace(/,/g, '').trim() : value
+  if (normalized === '') return undefined
+  const number = Number(normalized)
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : undefined
+}

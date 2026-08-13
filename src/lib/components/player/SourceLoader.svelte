@@ -30,7 +30,7 @@
 
   // SVG Lottie mutates several DOM nodes every frame. That is cheap on Desktop, but in Gamescope it
   // invalidates the full WebKit surface and competes with mpv on the Deck iGPU — so game mode swaps
-  // in a tiny stepped CSS ring instead.
+  // in the transform-only CSS bar instead (same left-right motion, compositor-cheap).
   //
   // That contention only exists while mpv is actually rendering, which on the route INTO playback it
   // is not: this screen is the whole picture until the first frame arrives. Gating on `$playing` as
@@ -69,7 +69,7 @@
 
   {#if cheapSpinner}
     <div class="grid h-28 w-52 place-items-center" aria-hidden="true">
-      <div class="loading-spinner size-14 animate-spin rounded-full border-4 border-white/20 border-t-white"></div>
+      <div class="bar-loader h-1.5 w-40 rounded-full bg-white/20"></div>
     </div>
   {:else}
     <div bind:this={host} class="h-28 w-52" aria-hidden="true"></div>
