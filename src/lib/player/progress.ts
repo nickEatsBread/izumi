@@ -1,5 +1,6 @@
 import { persisted } from 'svelte-persisted-store'
-import { get } from 'svelte/store'
+import { derived, get, writable, type Readable } from 'svelte/store'
+import { incognito, onIncognitoPurge } from '$lib/stores/incognito'
 
 /** Saved playback state for a media + episode: last position + known duration (seconds). */
 export interface Pos {
@@ -11,8 +12,20 @@ export interface Pos {
   cleared?: true
 }
 
-/** Persisted map of `${mediaId}:${episode}` -> `{ pos, dur }`. */
-export const positions = persisted<Record<string, Pos>>('player-positions', {})
+/** The PERSISTED map of `${mediaId}:${episode}` -> `{ pos, dur }`. Device sync and export read
+ *  this store; display/resume paths read the merged `positions` below. */
+export const durablePositions = persisted<Record<string, Pos>>('player-positions', {})
+
+/** In-memory resume points for incognito plays; wiped when incognito ends. Never persisted. */
+export const incognitoPositions = writable<Record<string, Pos>>({})
+onIncognitoPurge(() => incognitoPositions.set({}))
+
+/** What the UI reads: persisted positions overlaid with this session's incognito ones. Writes go
+ *  through save/clearPosition, which route by incognito state. */
+export const positions: Readable<Record<string, Pos>> = derived(
+  [durablePositions, incognitoPositions],
+  ([$durable, $incognito]) => ({ ...$durable, ...$incognito }),
+)
 
 // The map is rewritten whole to localStorage on every save, so its size is a per-save cost that
 // otherwise only ever grows: `clearPosition` leaves a `cleared` tombstone (never deletes) and
@@ -47,9 +60,11 @@ export function positionPercent(position?: Pos): number {
   return Math.min(1, Math.max(0, position.pos / position.dur))
 }
 
-/** Persist the current playback position (and duration, when known) for a media + episode. */
+/** Persist the current playback position (and duration, when known) for a media + episode.
+ *  In incognito the position lands in the in-memory overlay instead of localStorage. */
 export function savePosition(mediaId: number, episode: number, pos: number, dur = 0) {
-  positions.update((p) => {
+  const target = get(incognito) ? incognitoPositions : durablePositions
+  target.update((p) => {
     const k = progressKey(mediaId, episode)
     return prune({ ...p, [k]: { pos, dur: dur || p[k]?.dur || 0, updatedAt: Date.now() } })
   })
@@ -80,7 +95,8 @@ export function episodeBarPercent(position: Pos | undefined, watchedThrough: boo
 
 /** Forget the saved position for a media + episode (e.g. once finished). */
 export function clearPosition(mediaId: number, episode: number) {
-  positions.update((p) => {
+  const target = get(incognito) ? incognitoPositions : durablePositions
+  target.update((p) => {
     const k = progressKey(mediaId, episode)
     return prune({ ...p, [k]: { pos: 0, dur: p[k]?.dur ?? 0, updatedAt: Date.now(), cleared: true } })
   })

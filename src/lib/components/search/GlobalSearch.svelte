@@ -27,6 +27,8 @@
     rankQuickSearchResults,
   } from '$lib/search/global-search'
   import { hotkeyBindings } from '$lib/settings/ui'
+  import { incognito } from '$lib/stores/incognito'
+  import { get } from 'svelte/store'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
 
   type SearchState = 'idle' | 'typing' | 'loading' | 'done' | 'error'
@@ -58,6 +60,7 @@
   }
 
   function remember(value = query) {
+    if (get(incognito)) return // incognito searches never join the recent list
     const next = addRecentSearch(recent, value)
     if (next.join('\n') === recent.join('\n')) return
     recent = next

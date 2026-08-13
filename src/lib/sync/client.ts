@@ -4,8 +4,10 @@ import { get } from "svelte/store";
 import { persisted } from "svelte-persisted-store";
 import { anilistToken } from "$lib/anilist/auth";
 import { malToken } from "$lib/trackers/config";
-import { localHistory } from "$lib/player/history";
-import { positions } from "$lib/player/progress";
+// Durable stores only: an incognito overlay change must not schedule a device-sync push (and
+// exportJson reads the durable stores anyway, so pushing on overlay edits would be pure noise).
+import { durableHistory } from "$lib/player/history";
+import { durablePositions } from "$lib/player/progress";
 import { sourceOrigins } from "$lib/player/source-origin";
 import { exportJson, importJson } from "$lib/player/history-io";
 import {
@@ -141,10 +143,10 @@ export function initDeviceSync() {
   if (initialized) return;
   initialized = true;
   let primed = false;
-  localHistory.subscribe(() => {
+  durableHistory.subscribe(() => {
     if (primed && !trackersOwnProgress()) scheduleWatchPush();
   });
-  positions.subscribe(() => {
+  durablePositions.subscribe(() => {
     if (primed) scheduleWatchPush();
   });
   sourceOrigins.subscribe(() => {

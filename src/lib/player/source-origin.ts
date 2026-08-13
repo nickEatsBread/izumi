@@ -1,5 +1,6 @@
 import { get } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
+import { incognito } from '$lib/stores/incognito'
 import type { StreamOrigin } from '$lib/stremio/parse'
 
 export interface SourceRelease {
@@ -53,6 +54,7 @@ export function capRememberedSources(entries: Record<number, RememberedSource>):
 }
 
 export function rememberSourceOrigin(mediaId: number, origin: StreamOrigin | undefined, release?: SourceRelease): void {
+  if (get(incognito)) return // never persist which source an incognito play used
   const valid = validRememberedSource({ origin, release, updatedAt: Date.now() })
   if (!Number.isInteger(mediaId) || !valid) return
   sourceOrigins.update((current) => capRememberedSources({ ...current, [mediaId]: valid }))
