@@ -96,19 +96,33 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia,
           durationMs: Math.round(performance.now() - searchStartedAt),
           rows: list.length,
         })
-        const out: TorrentResult[] = []
         const missingHashes = list.filter((torrent) => !torrent.infoHash).length
         if (missingHashes) traceResolve(trace, 'anime torrent hash lookups start', {
           provider: p.name, torrents: missingHashes,
         })
-        for (const t of list) {
-          // getTorrentInfoHash is one dispatch PER torrent; discard the batch instead of walking it.
-          if (signal?.aborted) return []
-          let hash = (t.infoHash ?? '').toLowerCase()
-          if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
-          const r = atorrentToResult(t, hash)
-          if (r) out.push({ ...r, provider: p.name, providerId: p.id, logo: p.icon })
+        // getTorrentInfoHash is one worker dispatch PER torrent. It used to run strictly serially,
+        // so a 50-row result with no infoHash field was 50 back-to-back round-trips (each with a
+        // 20s cap) before ANY row reached the picker. Run them through a small window instead —
+        // wide enough to hide the per-dispatch latency, narrow enough not to stampede a provider
+        // that resolves each hash with its own HTTP fetch. Order is preserved via the slot array.
+        const HASH_LOOKUP_CONCURRENCY = 6
+        const slots: (TorrentResult | undefined)[] = new Array(list.length)
+        let next = 0
+        const lookupWorker = async () => {
+          while (next < list.length) {
+            // A superseded resolve must not issue further worker queries; leave the rest unslotted.
+            if (signal?.aborted) return
+            const index = next++
+            const t = list[index]
+            let hash = (t.infoHash ?? '').toLowerCase()
+            if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
+            const r = atorrentToResult(t, hash)
+            if (r) slots[index] = { ...r, provider: p.name, providerId: p.id, logo: p.icon }
+          }
         }
+        await Promise.all(Array.from({ length: Math.min(HASH_LOOKUP_CONCURRENCY, list.length) }, lookupWorker))
+        if (signal?.aborted) return []
+        const out: TorrentResult[] = slots.filter((r): r is TorrentResult => !!r)
         if (onBatch && out.length) onBatch(out)
         traceResolve(trace, 'anime torrent provider finish', {
           provider: p.name,

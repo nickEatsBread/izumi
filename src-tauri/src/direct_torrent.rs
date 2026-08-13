@@ -79,6 +79,9 @@ pub struct DirectTorrentState {
     /// torrent lock. The webview cannot abort a Tauri invoke directly, so this generation is the
     /// cancellation boundary shared by explicit Back/Cancel and replacement source attempts.
     active_startup_id: AtomicU64,
+    /// Info hashes with a metadata PREFETCH in flight, so the picker re-arming on every rank
+    /// change cannot stack duplicate DHT lookups for the same candidate.
+    prefetching: Mutex<HashSet<String>>,
 }
 
 struct DirectTorrentEngine {
@@ -708,6 +711,87 @@ pub fn torrent_playback_cancel_start(state: tauri::State<'_, DirectTorrentState>
         Ordering::AcqRel,
         Ordering::Acquire,
     );
+}
+
+/// Warm the metadata cache for a magnet the picker is about to auto-commit. The DHT/tracker
+/// metadata exchange is the dominant variable in click-to-first-frame for direct P2P (routinely
+/// 2-15 s), and the auto-pick countdown is pure dead time in front of it — this runs the same
+/// list-only lookup and cache writes as torrent_playback_url so the commit that follows finds the
+/// metadata already in memory/on disk. Best-effort by design: any failure is reported as `false`
+/// and the real start simply repeats the lookup with its own budget. Returns `true` when the
+/// metadata is cached (already or freshly).
+#[tauri::command]
+pub async fn torrent_metadata_prefetch(
+    app: AppHandle,
+    state: tauri::State<'_, DirectTorrentState>,
+    magnet: String,
+    socks_proxy_url: Option<String>,
+    bind_interface: Option<String>,
+    timeout_ms: Option<u64>,
+) -> Result<bool, String> {
+    let magnet = magnet.trim();
+    if !magnet.to_ascii_lowercase().starts_with("magnet:?") {
+        return Ok(false);
+    }
+    let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
+    let magnet = add_public_trackers(magnet)?;
+    let magnet = proxy_safe_magnet(&magnet, socks_proxy_url.is_some())?;
+    let parsed = Magnet::parse(&magnet).map_err(|e| format!("Could not parse the magnet link: {e:#}"))?;
+    let Some(info_hash) = parsed.as_id20() else { return Ok(false) };
+    let info_hash_key = info_hash.as_string();
+
+    if state.metadata_cache.lock().await.contains_key(&info_hash_key) {
+        return Ok(true);
+    }
+    let disk_cache_path = metadata_cache_path(&app, &info_hash_key)?;
+    if read_disk_metadata(&disk_cache_path).await.is_some() {
+        return Ok(true);
+    }
+    {
+        let mut inflight = state.prefetching.lock().await;
+        if !inflight.insert(info_hash_key.clone()) {
+            return Ok(false); // one lookup per hash at a time; the commit path has its own budget
+        }
+    }
+    let result = async {
+        // A prefetch must never be the thing that surfaces a VPN/kill-switch error — that belongs
+        // to a real playback attempt the user can see fail.
+        if app.state::<crate::net_interfaces::VpnGuard>().ensure_up().is_err() {
+            return Ok(false);
+        }
+        let engine = state.get(&app, socks_proxy_url, bind_interface).await?;
+        let allowance = timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or(STARTUP_STREAM_PRIORITY_TIMEOUT)
+            .clamp(MIN_STARTUP_TIMEOUT, METADATA_TIMEOUT);
+        let listing = match list_torrent_metadata(&engine.session, AddTorrent::from_url(&magnet), allowance).await {
+            Ok(AddTorrentResponse::ListOnly(listing)) => listing,
+            _ => return Ok(false),
+        };
+        if listing.info_hash.as_string() != info_hash_key {
+            return Ok(false);
+        }
+        let torrent_bytes = listing.torrent_bytes.to_vec();
+        let mut cache = state.metadata_cache.lock().await;
+        if cache.len() >= METADATA_CACHE_ENTRIES {
+            if let Some(oldest) = cache.keys().next().cloned() {
+                cache.remove(&oldest);
+            }
+        }
+        cache.insert(
+            info_hash_key.clone(),
+            CachedTorrentMetadata {
+                torrent_bytes: torrent_bytes.clone(),
+                seen_peers: listing.seen_peers.clone(),
+            },
+        );
+        drop(cache);
+        tauri::async_runtime::spawn(write_disk_metadata(disk_cache_path, torrent_bytes, 0));
+        Ok(true)
+    }
+    .await;
+    state.prefetching.lock().await.remove(&info_hash_key);
+    result
 }
 
 #[tauri::command]
