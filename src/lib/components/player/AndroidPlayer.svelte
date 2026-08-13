@@ -1390,6 +1390,7 @@
   <section bind:this={rootEl} class="video-frame relative touch-none bg-transparent"
     style:transform={`translate3d(0, ${pullTranslateY}px, 0) scale(${pullScale})`}
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture}
+    oncontextmenu={(e) => e.preventDefault()}
     onpointerdowncapture={noteDownTarget} onclickcapture={suppressGhostClick} role="presentation">
   <!-- Loading with the controls hidden (or locked): the spinner is the only thing on screen, so it
        still reads as "working on it" without a tap. With controls up it moves into the transport
