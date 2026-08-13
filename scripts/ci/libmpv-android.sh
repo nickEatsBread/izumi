@@ -23,6 +23,15 @@ if [ ! -s "$CACHED_AAR" ]; then
   grep -q '^v_ndk=29\.' "$WORK/source/buildscripts/include/depinfo.sh"
   grep -q '^v_libass=0\.17\.5$' "$WORK/source/buildscripts/include/depinfo.sh"
 
+  # The libmpv AAR module declares no abiFilters, so its Gradle assembly compiles the CMake
+  # wrapper (libplayer.so) for every default ABI — but `--arch arm64` below stages native deps
+  # for arm64 only, and ninja then fails on the missing armeabi-v7a libmpv.so. The shipped APK is
+  # aarch64-only; constrain the AAR to match.
+  sed -i 's/minSdk = 26/minSdk = 26\n        ndk { abiFilters.add("arm64-v8a") }/' \
+    "$WORK/source/libmpv/build.gradle.kts"
+  grep -q 'abiFilters.add("arm64-v8a")' "$WORK/source/libmpv/build.gradle.kts" \
+    || { echo "abiFilters patch missed — libmpv build.gradle.kts shape changed"; exit 1; }
+
   (
     cd "$WORK/source/buildscripts"
     ./download.sh
