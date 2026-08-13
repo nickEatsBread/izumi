@@ -736,7 +736,10 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
 async function extToStreams(
   media: Media,
   episode: number | undefined,
-  kitsu: number | undefined,
+  // A concrete id or an in-flight lookup: the fan-out no longer waits for Kitsu before
+  // dispatching this wave, so it hands the promise over and we join it with our own AniZip
+  // lookup below — the two run concurrently instead of back-to-back.
+  kitsuLike: number | null | undefined | Promise<number | null | undefined>,
   onBatch: (s: Stream[]) => void,
   onlyOriginId?: string,
   signal?: AbortSignal,
@@ -747,7 +750,8 @@ async function extToStreams(
     // with the season map, so no extra round-trip. Titles include synonyms for string-search
     // providers. This is what lets extensions resolve new/ambiguous anime the kitsu:id:ep addon
     // path misses.
-    const ids = await getExtensionIds(media.id, episode)
+    const [ids, kitsuResolved] = await Promise.all([getExtensionIds(media.id, episode), Promise.resolve(kitsuLike)])
+    const kitsu = kitsuResolved ?? undefined
     // Titles handed to extensions, shaped for how their search runtimes consume them:
     // - ( ) " | are boolean operators on nyaa-style engines, and the extension runtime joins our
     //   titles into (a)|(b) groups VERBATIM — one parenthesized synonym ("… (Seikatsu Nouryoku
@@ -1343,19 +1347,27 @@ export async function playEpisode(
     // One provider is not one source: AllAnime and similar providers can expose several hosts,
     // qualities, subtitle sets, or audio variants. A manual episode click therefore keeps the
     // chooser visible regardless of provider count; the normal Auto preference may choose later.
+    //
+    // Addons index by Kitsu id; extensions search by title/MAL/AniDB — so the extension waves do
+    // not need this lookup at all. It used to be awaited HERE, serializing the entire fan-out
+    // behind up to three network hops (cold Fribb index + two AniZip fallbacks): with extensions
+    // installed nothing was dispatched until Kitsu answered. Now only the addon wave awaits it
+    // (inside its own barrier slot); the extension waves dispatch immediately. Extensions are the
+    // dominant torrent source on Android, so this takes the mapping RTT off the critical path
+    // exactly where it hurt most.
     const kitsuStartedAt = performance.now()
     traceResolve(trace, 'Kitsu mapping start')
-    const kitsu = await resolveKitsu(media)
-    traceResolve(trace, 'Kitsu mapping finish', {
+    const kitsuP = resolveKitsu(media).catch(() => undefined)
+    void kitsuP.then((kitsu) => traceResolve(trace, 'Kitsu mapping finish', {
       durationMs: Math.round(performance.now() - kitsuStartedAt),
       found: kitsu != null,
       kitsuId: kitsu,
-    })
-    // Addons index by Kitsu id; extensions search by title/MAL/AniDB. A title with no Kitsu id
-    // (e.g. an OVA that isn't in Kitsu) can still be sourced by extensions, so only hard-fail when
-    // there's no Kitsu id AND no extension to fall back on. When kitsu is missing we skip the addon
-    // queries entirely and let the extension wave do the sourcing.
-    if (!kitsu && !hasExt) throw new Error('No addon mapping for this title (not in Kitsu). Add a source extension to find it by title.')
+    }))
+    // A title with no Kitsu id (e.g. an OVA that isn't in Kitsu) can still be sourced by
+    // extensions, so only hard-fail when there's no Kitsu id AND no extension to fall back on.
+    // Without extensions the addon wave is the only wave — awaiting here loses nothing.
+    const kitsu = hasExt ? undefined : await kitsuP
+    if (!hasExt && kitsu == null) throw new Error('No addon mapping for this title (not in Kitsu). Add a source extension to find it by title.')
 
     const type = media.format === 'MOVIE' ? 'movie' : 'series'
     const seasonStartedAt = performance.now()
@@ -1405,6 +1417,24 @@ export async function playEpisode(
     let heldKey = ''
     let heldSince = 0
     const clearReadyTimer = () => { if (readyTimer) { clearTimeout(readyTimer); readyTimer = undefined } }
+    // The hold + countdown in front of an auto-committed torrent pick is dead time the DHT
+    // metadata exchange (the dominant direct-P2P startup cost) can spend instead: the moment a
+    // torrent row becomes the would-be pick, warm its metadata into the native cache so the commit
+    // skips the exchange. Keyed per hash so re-ranks don't stack lookups; a superseded candidate's
+    // lookup just finishes into the cache (metadata is immutable per hash — never wasted).
+    let prefetchedMetaHash = ''
+    const prefetchTopMetadata = (top: Stream | undefined) => {
+      if (!top?.infoHash || top.url || !directP2pEnabled()) return
+      if (top.infoHash === prefetchedMetaHash) return
+      prefetchedMetaHash = top.infoHash
+      traceResolve(trace, 'metadata prefetch start', { infoHash: top.infoHash })
+      void invoke<boolean>('torrent_metadata_prefetch', {
+        magnet: top.__magnet ?? `magnet:?xt=urn:btih:${top.infoHash}`,
+        ...torrentEngineNetworkOptions(),
+      })
+        .then((cached) => traceResolve(trace, 'metadata prefetch finish', { cached }))
+        .catch(() => {})
+    }
     const scheduleReady = (s: Stream[]) => {
       if (autoReady || !s.length) return
       const now = Date.now()
@@ -1413,6 +1443,7 @@ export async function playEpisode(
       // row is even the right episode, so the confident path stays shut (the same gate the
       // same-release continuation uses).
       const top = seasonSettled ? pickBest(s, get(preferredQuality), want, rankOpts(media.id)) : undefined
+      prefetchTopMetadata(top)
       let deadline: number
       if (top) {
         const key = top.url ?? top.infoHash ?? ''
@@ -1534,14 +1565,16 @@ export async function playEpisode(
     // it lands — a genuine multi-source trickle + live re-sort, not a
     // late extension dump. `resolving` only flips false once ALL sources settle (so
     // the autoplay countdown targets the FINAL best pick).
-    // Addons only when we have the Kitsu id they need; the extension wave always runs if configured.
+    // The extension waves always run if configured; the addon wave is ONE barrier slot that first
+    // awaits the Kitsu id it needs (skipping itself when there is none), so extension dispatch is
+    // never serialized behind that lookup.
     // +1 slot for the aligned-imdb wave below, which has to be waited on even though it fires
     // late: for a title whose addons are all imdb-only, it is the wave that returns everything,
     // and settling without it would show "no sources found" a moment before they arrive.
-    let pending = (kitsu != null ? bases.length : 0) + (hasExt ? 2 : 0) + (bases.length ? 1 : 0)
+    let pending = (bases.length ? 2 : 0) + (hasExt ? 2 : 0)
     traceResolve(trace, 'source fan-out start', {
       pendingWaves: pending,
-      kitsuAddonRequests: kitsu != null ? bases.length : 0,
+      kitsuAddonRequests: bases.length,
       alignedIdWave: bases.length > 0,
       torrentExtensions: hasExt,
       onlineExtensions: hasExt,
@@ -1553,28 +1586,30 @@ export async function playEpisode(
       signal.addEventListener('abort', () => resolve(), { once: true })
       if (!pending) return resolve()
       const done = () => { if (--pending === 0) resolve() }
-      if (kitsu != null) {
-        const id = streamId(kitsu, episode)
-        for (const base of bases) {
-          const provider = addonTraceName(base)
-          const addonStartedAt = performance.now()
-          traceResolve(trace, 'add-on request start', { provider, namespace: 'kitsu' })
-          // An addon that blows its budget is slow, not wrong: its rows still fold into an open
-          // picker whenever they land, instead of being dropped on the floor as they used to be.
-          fetchAddonStreams(base, id, type, (late) => {
-            if (!stillCurrent()) return
-            traceResolve(trace, 'add-on late batch', {
-              provider,
-              durationMs: Math.round(performance.now() - addonStartedAt),
-              rawRows: late.total,
-              ...batchTraceDetails(late.streams),
-            })
-            acc = [...acc, ...late.streams]; totalRaw += late.total
-            // A response that outlived the whole resolve must not put a settled picker back into
-            // its loading state — the rows just appear.
-            refresh(!resolveSettled)
-          }, signal)
-            .then((r) => {
+      if (bases.length) {
+        void kitsuP.then(async (kitsuId) => {
+          if (kitsuId == null || signal.aborted) return
+          const id = streamId(kitsuId, episode)
+          await Promise.all(bases.map(async (base) => {
+            const provider = addonTraceName(base)
+            const addonStartedAt = performance.now()
+            traceResolve(trace, 'add-on request start', { provider, namespace: 'kitsu' })
+            // An addon that blows its budget is slow, not wrong: its rows still fold into an open
+            // picker whenever they land, instead of being dropped on the floor as they used to be.
+            try {
+              const r = await fetchAddonStreams(base, id, type, (late) => {
+                if (!stillCurrent()) return
+                traceResolve(trace, 'add-on late batch', {
+                  provider,
+                  durationMs: Math.round(performance.now() - addonStartedAt),
+                  rawRows: late.total,
+                  ...batchTraceDetails(late.streams),
+                })
+                acc = [...acc, ...late.streams]; totalRaw += late.total
+                // A response that outlived the whole resolve must not put a settled picker back
+                // into its loading state — the rows just appear.
+                refresh(!resolveSettled)
+              }, signal)
               traceResolve(trace, 'add-on request finish', {
                 provider,
                 durationMs: Math.round(performance.now() - addonStartedAt),
@@ -1582,12 +1617,13 @@ export async function playEpisode(
                 ...batchTraceDetails(r.streams),
               })
               acc = [...acc, ...r.streams]; totalRaw += r.total; refresh(true)
-            })
-            .catch((error) => traceResolveError(trace, 'add-on request failed', error, {
-              provider, durationMs: Math.round(performance.now() - addonStartedAt),
-            }))
-            .finally(done)
-        }
+            } catch (error) {
+              traceResolveError(trace, 'add-on request failed', error, {
+                provider, durationMs: Math.round(performance.now() - addonStartedAt),
+              })
+            }
+          }))
+        }).finally(done)
       }
       // Second wave, on the id namespace the anime one cannot reach. A stream addon configured
       // for imdb ids returns nothing for `kitsu:` and was previously the entirety of what izumi
@@ -1657,7 +1693,7 @@ export async function playEpisode(
         })
       }
       if (hasExt) {
-        budget('torrent extension', extToStreams(media, episode, kitsu, (s) => {
+        budget('torrent extension', extToStreams(media, episode, kitsuP, (s) => {
           if (s.length) {
             traceResolve(trace, 'torrent extension batch', batchTraceDetails(s))
             acc = [...acc, ...s]; refresh(true)
@@ -2305,8 +2341,11 @@ export async function playStream(
       if (androidEmbedded) {
         // Same short gate as the desktop embed (it was 4s here — pure added latency on every
         // Android episode transition whenever a subtitle addon was slow); late results attach to
-        // the live player below instead of being dropped.
-        const addonSubs = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), 1500))])
+        // the live player below instead of being dropped. Direct P2P skips the gate entirely: the
+        // torrent's own muxed/companion subs are already in hand, external results attach live via
+        // sub-add, and the swarm wait dwarfs anything a 1.5s hold could buy — it was pure latency.
+        const subGateMs = directPlaybackId != null ? 0 : 1500
+        const addonSubs = await Promise.race([subsP, new Promise<SubtitleCandidate[]>((r) => setTimeout(() => r([]), subGateMs))])
         if (await abandonIfStale()) return
         onlineSubCandidates.set({
           status: addonSubs.length ? 'ready' : 'searching',
