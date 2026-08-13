@@ -6,6 +6,7 @@ import { torrentEngineNetworkOptions } from '$lib/player/direct-torrent'
 import { downloadDir, downloadConcurrency } from '$lib/settings/ui'
 import { downloads, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem, type DownloadPreferences } from './state'
 import { getEpisodeMeta } from '$lib/anizip'
+import { isAndroid } from '$lib/platform'
 import type { Media } from '$lib/anilist/types'
 
 // Download queue + actions + event wiring. Reads data from ./state (which play.ts
@@ -122,12 +123,57 @@ export async function revealDownload(id: string) {
   if (it?.path) { try { await invoke('reveal_in_folder', { path: it.path }) } catch { /* ignore */ } }
 }
 
+// --- Android background downloads -------------------------------------------------------------
+// A dataSync foreground service (extplayer plugin) keeps the process alive and unfrozen while
+// anything is downloading, so backgrounding the app no longer suspends the queue: the Rust
+// engine keeps streaming and the JS pump keeps advancing. Synced from the `downloads` store —
+// every progress write lands here — throttled to 1/s, started only while the app can legally
+// start it (we're in the foreground whenever a download begins), stopped when the queue drains.
+let fgOn = false
+let fgLastSent = 0
+let fgTrailing: ReturnType<typeof setTimeout> | undefined
+function syncDownloadForeground() {
+  if (!get(isAndroid)) return
+  const all = Object.values(get(downloads))
+  const activeItems = all.filter((x) => x.status === 'downloading')
+  const queued = all.filter((x) => x.status === 'queued').length
+  if (!activeItems.length) {
+    clearTimeout(fgTrailing)
+    if (fgOn) {
+      fgOn = false
+      // A failed stop re-arms the flag so the next store change retries, instead of leaving a
+      // zombie notification with no download behind it.
+      void invoke('plugin:extplayer|download_foreground', { payload: { active: false } }).catch(() => { fgOn = true })
+    }
+    return
+  }
+  const now = Date.now()
+  if (now - fgLastSent < 1000) {
+    // Trailing update so the final state (e.g. 99% → done) is never dropped by the throttle.
+    clearTimeout(fgTrailing)
+    fgTrailing = setTimeout(syncDownloadForeground, 1000 - (now - fgLastSent))
+    return
+  }
+  fgLastSent = now
+  const known = activeItems.filter((x) => x.bytes > 0)
+  const total = known.reduce((sum, x) => sum + x.bytes, 0)
+  const received = known.reduce((sum, x) => sum + x.downloaded, 0)
+  fgOn = true
+  void invoke('plugin:extplayer|download_foreground', { payload: {
+    active: true,
+    title: activeItems.length === 1 ? activeItems[0].title : 'Downloading episodes',
+    progress: total > 0 ? Math.min(100, Math.round((received / total) * 100)) : null,
+    count: activeItems.length + queued,
+  } }).catch(() => {})
+}
+
 // Attached once at app start (from the app layout). Wires progress/done/paused
 // events and resumes any download interrupted by an app kill.
 let attached = false
 export function attachDownloadEvents() {
   if (attached) return
   attached = true
+  downloads.subscribe(syncDownloadForeground)
   listen<[string, number, number, number]>('download-progress', (e) => {
     const [id, received, total, speed] = e.payload
     // Monotonic: ignore any backward value (a stray/duplicate stream) so the bar
