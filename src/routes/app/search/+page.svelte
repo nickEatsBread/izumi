@@ -8,6 +8,7 @@
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { page } from '$app/state'
   import { replaceState } from '$app/navigation'
+  import type { Snapshot } from './$types'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
   heroMedia.set(null)
@@ -18,7 +19,8 @@
   // SearchResults, replaying the card animation a second time.
   const sp = page.url.searchParams
   const seed: SearchFilters = {
-    search: sp.get('search') ?? undefined,
+    // `q` is what magnet/izumi:// deep links carry (deep-link-target.ts); `search` is ours.
+    search: sp.get('search') ?? sp.get('q') ?? undefined,
     sort: sp.get('sort') ?? undefined,
     genres: sp.get('genre') ? [sp.get('genre') as string] : undefined,
     season: sp.get('season') ?? undefined,
@@ -27,6 +29,19 @@
   let filters = $state<SearchFilters>({ ...seed })
   let debounced = $state<SearchFilters>({ ...seed })
   let t: ReturnType<typeof setTimeout>
+
+  // The URL round-trip below covers only the quick-bar fields; a second genre and everything from
+  // the Advanced modal (formats, statuses, tags, score, episode range, …) has no URL form, so a
+  // Back from a series page silently dropped them. The history-entry snapshot restores the FULL
+  // filter set — it runs after the URL seed above, so on a back-navigation it wins, while a fresh
+  // visit or shared link still seeds from the URL alone.
+  export const snapshot: Snapshot<SearchFilters> = {
+    capture: () => $state.snapshot(filters) as SearchFilters,
+    restore: (value) => {
+      filters = { ...value }
+      debounced = { ...value } // same value for both — no debounce swap, no replayed card animation
+    },
+  }
 
   // Debounce filter changes ~300ms, then hand a snapshot to the child store.
   $effect(() => {
