@@ -82,6 +82,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'UI scale', category: 'Interface', href: '/app/settings/interface', keywords: 'zoom size accessibility' },
   { title: 'Hide spoilers', category: 'Interface', href: '/app/settings/interface', keywords: 'blur episode thumbnails titles ratings', anchored: true },
   { title: 'Show 18+ content', category: 'Interface', href: '/app/settings/interface', keywords: 'adult nsfw mature', anchored: true },
+  { title: 'Incognito for 18+ titles', category: 'Interface', href: '/app/settings/interface', keywords: 'adult nsfw private auto incognito ghost secret no sync', anchored: true },
   { title: 'Wheel-scroll carousels', category: 'Interface', href: '/app/settings/interface', keywords: 'mouse horizontal home rows', anchored: true },
 
   { title: 'Navigation items', category: 'Navigation', href: '/app/settings/navigation', keywords: 'bottom tabs top bar hidden reorder Android' },

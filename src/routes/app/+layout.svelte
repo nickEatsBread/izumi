@@ -48,6 +48,7 @@
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { initTrackerQueue } from '$lib/trackers/queue'
+  import { initAutoIncognito } from '$lib/player/auto-incognito'
   import { initDeviceSync } from '$lib/sync/client'
   import { initAutoDownloads } from '$lib/downloads/rules'
   import { initWatchTogether } from '$lib/watch-together/client'
@@ -104,6 +105,7 @@
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
+    initAutoIncognito() // adult play → incognito (setting-gated); exits + purges when playback closes
     initDeviceSync() // account-free Iroh watch sync (automatically gated off by AniList/MAL)
     const stopAutoDownloads = initAutoDownloads()
     const stopWatchTogether = initWatchTogether()
