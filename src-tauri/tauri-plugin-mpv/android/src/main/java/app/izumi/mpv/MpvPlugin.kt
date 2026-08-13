@@ -228,6 +228,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     private var contentView: ViewGroup? = null
     /** Kept separately so native PiP can hide every HTML overlay even after Android freezes JS. */
     private var webView: WebView? = null
+    /** Android WebView supplies its own long-press vibration before the web player's hold-to-2x
+     *  gesture fires. Remember the host setting so playback can suppress that duplicate feedback
+     *  without changing the rest of the app once the native player closes. */
+    private var webViewHapticsWereEnabled: Boolean? = null
     private var pipLayoutListener: View.OnLayoutChangeListener? = null
     private var pipReceiver: BroadcastReceiver? = null
     /** Pre-31 auto-PiP hook, see [installAutoPipHook]. Null on API 31+, where the system does it. */
@@ -387,6 +391,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val web = findWebView(content)
         webView = web
         if (web != null) {
+            webViewHapticsWereEnabled = web.isHapticFeedbackEnabled
+            web.isHapticFeedbackEnabled = false
             web.setBackgroundColor(Color.TRANSPARENT)
             web.background = null
             Log.i("MpvPlugin", "webview made transparent (${web.javaClass.simpleName})")
@@ -1551,6 +1557,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         mpv = null
         view = null
         container = null
+        webView?.let { web ->
+            webViewHapticsWereEnabled?.let { web.isHapticFeedbackEnabled = it }
+        }
+        webViewHapticsWereEnabled = null
         webView = null
         pendingSurfaceLoad = null
         // The system is still holding the last params, which armed auto-enter. Publish once more
