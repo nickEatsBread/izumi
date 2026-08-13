@@ -2,6 +2,7 @@ const COMMANDS: &[&str] = &[
     "play_external",
     "install_apk",
     "device_status",
+    "download_foreground",
     "open_browser",
     "da_reaction_state",
     "da_react",

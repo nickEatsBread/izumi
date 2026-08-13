@@ -7,11 +7,11 @@
   // no imports at all. If this file ever grows an import, check first that it does not drag the very
   // chunk it is covering for into the boot bundle.
   //
-  // The markup deliberately MIRRORS SourceLoader's game-mode branch (same backdrop, same title, same
-  // ring in the same 28x52 slot, same tracked caption). It used to be a bare ring on a grey scrim,
-  // which on the Deck — where the chunk is slowest, so this holds the screen longest — read as a
-  // cheap loading blip before the real connecting screen. Matching the two makes the handover
-  // invisible instead: the same screen simply gains its animation once the chunk lands.
+  // The markup deliberately MIRRORS SourceLoader (same backdrop, same title, same bar in the same
+  // 28x52 slot, same tracked caption). It used to show a circular ring here, which read as "the
+  // wrong loader" whenever this stand-in held the screen — on a cold chunk cache it IS the source
+  // loader for a second or two. The CSS `bar-loader` matches the Lottie bar's motion, so the real
+  // screen replaces this in place and simply refines the animation once the chunk lands.
   let { label, caption = 'Connecting', art = '' }: {
     label: string
     caption?: string
@@ -33,8 +33,7 @@
       <h1 class="text-3xl font-black leading-tight tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] sm:text-4xl">{label}</h1>
     {/if}
     <div class="grid h-28 w-52 place-items-center" aria-hidden="true">
-      <!-- `loading-spinner` is what app.css steps down to 8 discrete turns/second in game mode. -->
-      <div class="loading-spinner size-14 animate-spin rounded-full border-4 border-white/20 border-t-white"></div>
+      <div class="bar-loader h-1.5 w-40 rounded-full bg-white/20"></div>
     </div>
     <p class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
   </div>

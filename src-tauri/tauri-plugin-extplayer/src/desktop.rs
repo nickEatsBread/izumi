@@ -3,8 +3,8 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
     BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
-    DeviceStatus, InstallRequest, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
-    ReactResponse, ReactionStateResponse,
+    DeviceStatus, DownloadForegroundRequest, InstallRequest, LanDiscoveryRequest, OAuthRequest,
+    OAuthResponse, PlayRequest, ReactResponse, ReactionStateResponse,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -39,6 +39,11 @@ impl<R: Runtime> ExtPlayer<R> {
     }
 
     pub fn set_lan_discovery(&self, _payload: LanDiscoveryRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    // Desktop processes are not frozen when backgrounded — there is no service to run.
+    pub fn download_foreground(&self, _payload: DownloadForegroundRequest) -> crate::Result<()> {
         Ok(())
     }
 
