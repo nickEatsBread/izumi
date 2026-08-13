@@ -57,6 +57,9 @@ export function mediaSnapshot(m: Media): Media {
     id: m.id,
     idMal: m.idMal,
     title: m.title,
+    // Auto-incognito keys off isAdult at play time; without it in the snapshot, resuming an adult
+    // title from a Continue Watching card (snapshot media, not the detail query) would skip the gate.
+    isAdult: m.isAdult,
     coverImage: m.coverImage,
     bannerImage: m.bannerImage,
     episodes: m.episodes,
