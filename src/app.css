@@ -92,6 +92,22 @@ body { overflow-x: clip; }
   animation-timing-function: steps(8, end) !important;
   contain: paint;
 }
+/* The source loader's left-right bar in pure CSS, for the two paths that cannot run the Lottie
+   version: the eagerly-bundled PlayFeedback stand-in (import-free by design) and the game-mode
+   mid-playback branch of SourceLoader. Transform-only, same reasoning as `.indeterminate` — the
+   segment composites without repainting the track, so it's as cheap as the stepped ring it
+   replaces while finally looking like the loader it stands in for. */
+@keyframes bar-sweep { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
+.bar-loader { position: relative; overflow: hidden; }
+.bar-loader::before {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 25%;
+  border-radius: 9999px;
+  background: white;
+  animation: bar-sweep 1.2s ease-in-out infinite;
+}
 /* Hover-preview card fade/scale-in (smooth crossfade between adjacent cards). */
 @keyframes preview-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 .preview-in { animation: preview-in 0.14s ease-out both; }

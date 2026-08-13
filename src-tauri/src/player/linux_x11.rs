@@ -65,6 +65,21 @@ extern "C" {
         nelements: c_int,
     ) -> c_int;
     fn XSetIOErrorHandler(handler: Option<XIOErrorHandler>) -> Option<XIOErrorHandler>;
+    fn XCloseDisplay(dpy: *mut c_void) -> c_int;
+}
+
+// libXtst (XTEST extension). Gamescope delivers Deck touch to this XWayland client as synthesized
+// core-pointer button events; a release swallowed by the compositor (Steam overlay appearing under
+// a held finger — wlserver_touchup skips the whole release when mouse_focus_surface is NULL) leaves
+// the X core pointer with the button logically HELD, and WebKitGTK's pointer state stuck with it —
+// unreachable from JS. A faked ButtonRelease is the one lever that clears both: the server routes
+// it through the implicit grab like a real release, WebKit sees a normal button-up, and its
+// synthesized pointer sequence ends. Releasing a button that is not pressed is discarded by the
+// server's device state check, so firing this blind is safe.
+#[allow(non_snake_case)]
+#[link(name = "Xtst")]
+extern "C" {
+    fn XTestFakeButtonEvent(dpy: *mut c_void, button: u32, is_press: c_int, delay: c_ulong) -> c_int;
 }
 
 // Xlib IO-error plumbing (see install_io_guard). The classic handler is PROCESS-GLOBAL; the
@@ -157,6 +172,25 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Force-release core-pointer buttons 1-3 at the X server (see the XTest extern's comment for
+/// why). Runs on a throwaway thread with its own short-lived Display: XOpenDisplay can block on a
+/// stalled server, and this is called from watchdog/focus paths that must never wedge. Fire and
+/// forget by design — there is nothing actionable to await.
+pub fn unstick_pointer() {
+    std::thread::spawn(|| unsafe {
+        let dpy = XOpenDisplay(std::ptr::null());
+        if dpy.is_null() {
+            crate::player::linux_embed::elog("x11: unstick: XOpenDisplay failed");
+            return;
+        }
+        for button in 1..=3u32 {
+            XTestFakeButtonEvent(dpy, button, 0, 0);
+        }
+        XFlush(dpy);
+        XCloseDisplay(dpy);
+    });
 }
 
 /// Webview-reported "a finger is physically on the screen" edge (see native_touch_hold).

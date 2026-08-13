@@ -41,9 +41,12 @@ export function initGmTouchWatchdog(): () => void {
     void invoke('native_touch_hold', { held: h }).catch(() => {})
   }
   const down = (e: PointerEvent) => {
-    // Compatibility mouse pointers are not fingers and can legitimately lose their release when
-    // a clicked control unmounts. Tracking them held native touch routing for ten seconds.
-    if (e.pointerType !== 'touch') return
+    // Track EVERY pointer type. WebKitGTK 2.48-2.50 (the shipped Deck runtime) compiles touch
+    // pointer events out entirely — every finger arrives as a synthesized MOUSE pointer (id 1) —
+    // so the old `pointerType === 'touch'` filter made the watchdog and the keepalive hold inert
+    // on the exact platform they were built for. The cost the filter guarded against (a mouse
+    // click whose control unmounts losing its release) is covered anyway: the capture-phase
+    // window listener still sees the retargeted pointerup, and the 6s watchdog recovers the rest.
     active.set(e.pointerId, { downAt: Date.now(), lastAt: Date.now(), captured: null })
     setHold(true)
   }
@@ -73,6 +76,10 @@ export function initGmTouchWatchdog(): () => void {
     // where real touch pointerIds die with their sequence).
     try { p.captured?.releasePointerCapture(id) } catch { /* already released */ }
     window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, bubbles: true }))
+    // DOM cleanup alone cannot reach WebKit's internal pointer state — if the compositor swallowed
+    // the release, WebKit still believes a button is held and every later tap continues the
+    // phantom drag. The X-level fake ButtonRelease is what actually ends the stuck sequence.
+    void invoke('gm_touch_unstick').catch(() => {})
     void invoke('gm_log', {
       message: `touch-watchdog: recovered stuck pointer ${id} (${why}, held ${Date.now() - p.downAt}ms, capture=${hadCapture})`,
     }).catch(() => {})
@@ -91,6 +98,19 @@ export function initGmTouchWatchdog(): () => void {
     active.clear()
     setHold(false)
   }
+  // Coming BACK (overlay/OSK closed, window refocused) is the moment a swallowed release has just
+  // happened — an ordinary reset() only fires when something was tracked, but the swipe that
+  // opened the overlay may never have produced a pointerdown here at all (gamescope can route the
+  // whole gesture to the overlay). Unstick unconditionally and re-assert passthrough: both are
+  // no-ops when nothing is stuck.
+  const returned = () => {
+    reset()
+    void invoke('gm_touch_unstick').catch(() => {})
+    const restore = () => void invoke('restore_native_touch').catch(() => {})
+    requestAnimationFrame(restore)
+    window.setTimeout(restore, 240)
+  }
+  const onVisibility = () => (document.visibilityState === 'visible' ? returned() : reset())
   window.addEventListener('pointerdown', down, true)
   window.addEventListener('pointermove', move, true)
   window.addEventListener('pointerup', clear, true)
@@ -98,8 +118,9 @@ export function initGmTouchWatchdog(): () => void {
   window.addEventListener('gotpointercapture', got, true)
   window.addEventListener('lostpointercapture', lost, true)
   window.addEventListener('blur', reset)
+  window.addEventListener('focus', returned)
   window.addEventListener('gm-touch-reset', reset)
-  document.addEventListener('visibilitychange', reset)
+  document.addEventListener('visibilitychange', onVisibility)
   return () => {
     clearInterval(timer)
     setHold(false)
@@ -110,7 +131,8 @@ export function initGmTouchWatchdog(): () => void {
     window.removeEventListener('gotpointercapture', got, true)
     window.removeEventListener('lostpointercapture', lost, true)
     window.removeEventListener('blur', reset)
+    window.removeEventListener('focus', returned)
     window.removeEventListener('gm-touch-reset', reset)
-    document.removeEventListener('visibilitychange', reset)
+    document.removeEventListener('visibilitychange', onVisibility)
   }
 }

@@ -478,6 +478,17 @@ fn native_touch_hold(held: bool) {
     let _ = held;
 }
 
+/// Escalated Game-mode touch recovery: fake a ButtonRelease at the X server for any stuck
+/// core-pointer button. This is the only recovery that reaches WebKit's INTERNAL pointer state —
+/// a compositor-swallowed touch-release leaves it holding a phantom press forever, every later
+/// tap reads as a drag continuation, and no amount of DOM-side cleanup can clear it.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn gm_touch_unstick() {
+    #[cfg(target_os = "linux")]
+    player::linux_x11::unstick_pointer();
+}
+
 /// Game-mode input diagnostics from the webview, persisted through the same file+stderr channel
 /// as native logs — the Flatpak sandbox swallows webview console output and the Game-mode session
 /// has no devtools, so this is the only way frontend incident reports survive to be read.
@@ -4099,6 +4110,10 @@ pub fn run() {
                     // passthrough after GTK receives focus; this remains compositor-level native
                     // input routing and does not synthesize or reinterpret any gestures.
                     if matches!(event, tauri::WindowEvent::Focused(true)) {
+                        // Focus returning usually means an overlay (Steam menu/OSK/QAM) just
+                        // closed — the exact transition that can swallow a touch-release and
+                        // strand a phantom button press. Clear it before re-asserting the mode.
+                        player::linux_x11::unstick_pointer();
                         if let Err(e) = player::linux_x11::enable_native_touch(&touch_win) {
                             player::linux_embed::elog(&format!("x11: focus touch passthrough failed: {e}"));
                         }
@@ -4179,6 +4194,7 @@ pub fn run() {
             set_webview_zoom,
             restore_native_touch,
             native_touch_hold,
+            gm_touch_unstick,
             gm_log,
             set_webview_accel,
             steam_show_osk,

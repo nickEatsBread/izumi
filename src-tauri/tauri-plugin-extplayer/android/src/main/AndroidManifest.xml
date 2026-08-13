@@ -6,7 +6,19 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Determine whether optional post-play torrent seeding is on an unmetered network. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Background episode downloads: a dataSync foreground service (with a progress
+         notification + partial wake lock) keeps the process alive and unfrozen so the Rust
+         download engine and the JS queue keep running when the app is backgrounded. Declared
+         here (not only in the mpv plugin) because this plugin ships in BOTH flavors. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <application>
+        <service
+            android:name="app.izumi.extplayer.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!-- Share a downloaded file to the external video player through a content:// URI
              (a raw file path can't be ACTION_VIEW'd across apps since Android 7). A UNIQUE
              subclass + authority so the library-manifest merge never collides with a
