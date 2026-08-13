@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
-import { localHistory } from './history'
+import { durableHistory as localHistory } from './history'
 import { exportJson, importJson } from './history-io'
-import { positions } from './progress'
+import { durablePositions as positions } from './progress'
 import { sourceOrigins } from './source-origin'
 
 const bundle = (position: Record<string, unknown>) => JSON.stringify({

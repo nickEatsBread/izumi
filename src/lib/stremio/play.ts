@@ -43,6 +43,7 @@ import { extToStream } from './ext-stream'
 import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
+import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
 import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
 import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery } from '$lib/player/session'
 import {
@@ -1912,6 +1913,9 @@ export async function playStream(
     return
   }
   const stillOwnsPlayback = () => ownsPlayback(playbackOwner)
+  // Before ANY history/tracker write below: an adult title flips incognito on (setting-gated), so
+  // the whole play — recordPlay, positions, markWatched — lands in the session overlay.
+  maybeAutoEnterIncognito(media)
   const directStartupId = nextDirectTorrentStartupId()
   const cancelPlaybackStart = () => {
     if (!cancelPlaybackOwner(playbackOwner)) return

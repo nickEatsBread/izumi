@@ -5,7 +5,8 @@ import { LIST_QUERY, MEDIA_BY_IDS_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries } fr
 import { getMalListProgressOrThrow, setStatus } from '$lib/trackers'
 import { cwDismissAction } from '$lib/settings/ui'
 import { hasAiredEpisodeToWatch } from '$lib/anilist/media'
-import { localHistory, sessionProgress, historyEntries, mediaSnapshot, type HistoryEntry } from './history'
+import { localHistory, durableHistory, sessionProgress, historyEntries, mediaSnapshot, type HistoryEntry } from './history'
+import { incognito, onIncognitoPurge } from '$lib/stores/incognito'
 import type { Media } from '$lib/anilist/types'
 
 // Local-first "Continue Watching": the row paints instantly from an on-device copy, then AniList/MAL
@@ -30,6 +31,12 @@ export const cwSnapshot = persisted<CwEntry[]>('cw-snapshot', [])
  *  tracker reconcile — yet the series reappears automatically once a NEWER episode is watched
  *  (progress exceeds the floor). No manual "un-dismiss" needed. */
 export const cwDismissed = persisted<Record<number, number>>('cw-dismissed', {})
+
+/** Session-only dismissals made while incognito. Kept out of the persisted `cwDismissed` for two
+ *  reasons: the media id itself shouldn't be recorded, and an incognito progress floor would
+ *  wrongly hide the show from normal-mode Continue Watching after the session ends. */
+export const incognitoDismissed = writable<Record<number, number>>({})
+onIncognitoPurge(() => incognitoDismissed.set({}))
 
 /** True while a background reconcile is in flight (drives the grayed-out "provisional" cue). */
 export const reconciling = writable(false)
@@ -79,14 +86,17 @@ export function mergeInstant(
 
 /** Renders instantly from the local snapshot ∪ history (minus dismissals); recomputes as any store changes. */
 export const continueWatching: Readable<CwEntry[]> = derived(
-  [cwSnapshot, localHistory, sessionProgress, cwDismissed],
-  ([$snapshot, $history, $session, $dismissed]) => mergeInstant($snapshot, $history, $session, $dismissed),
+  [cwSnapshot, localHistory, sessionProgress, cwDismissed, incognitoDismissed],
+  ([$snapshot, $history, $session, $dismissed, $incognitoDismissed]) =>
+    mergeInstant($snapshot, $history, $session, { ...$dismissed, ...$incognitoDismissed }),
 )
 
 /** Remove a series from Continue Watching. Records a dismissed floor (survives reconcile, self-heals
- *  on a new watch) and applies the configured tracker side-effect (none / On Hold / Dropped). */
+ *  on a new watch) and applies the configured tracker side-effect (none / On Hold / Dropped).
+ *  In incognito the floor is session-only and the tracker side-effect is suppressed upstream. */
 export function dismissContinueWatching(media: Media, progress: number): void {
-  cwDismissed.update((d) => ({ ...d, [media.id]: progress }))
+  const target = get(incognito) ? incognitoDismissed : cwDismissed
+  target.update((d) => ({ ...d, [media.id]: progress }))
   const action = get(cwDismissAction)
   if (action === 'dropped') void setStatus(media, 'DROPPED')
   else if (action === 'paused') void setStatus(media, 'PAUSED')
@@ -212,7 +222,7 @@ async function refreshLocalMedia(client: QueryClient): Promise<{ media: Record<n
   // historyEntries() is already most-recent-first. The Continue Watching row (and buildSnapshot's
   // own CAP slice) never renders more than CAP entries, so refreshing metadata for the rest of a
   // user's lifetime history is pure waste — cap here to the same bound, keeping the most recent ids.
-  const ids = [...new Set(historyEntries(get(localHistory)).map((e) => e.media.id))].slice(0, CAP)
+  const ids = [...new Set(historyEntries(get(durableHistory)).map((e) => e.media.id))].slice(0, CAP)
   if (!ids.length) return { media: {}, failed: false }
   try {
     const media: Record<number, Media> = {}
@@ -256,11 +266,13 @@ export async function reconcileContinueWatching(client: QueryClient, userName: s
       ])
       const enabledTrackerFailed = (!!userName && ani.failed) || (malActive && mal.failed)
       if (enabledTrackerFailed) return // keep the snapshot; can't tell "removed" from "unreachable"
+      // durableHistory, NOT localHistory: the snapshot is persisted, so an incognito overlay entry
+      // must never be baked into it (sessionProgress is likewise never written by incognito plays).
       cwSnapshot.set(buildSnapshot({
         ani: ani.items,
         mal: mal.items,
         refreshedMedia: refreshed.media,
-        history: get(localHistory),
+        history: get(durableHistory),
         session: get(sessionProgress),
         prior: get(cwSnapshot),
       }))

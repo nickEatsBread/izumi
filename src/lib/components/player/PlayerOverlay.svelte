@@ -38,6 +38,7 @@
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
+  import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -320,7 +321,7 @@
       // titles this effect can see the OUTGOING title next to the INCOMING isAdult flag. Treat a
       // mismatched pair as private: the panel shows the placeholder for the second it takes the
       // two stores to agree instead of publishing the previous (possibly adult) episode name.
-      private: !!media?.isAdult || (media != null && np.id != null && media.id !== np.id),
+      private: !!media?.isAdult || $incognito || (media != null && np.id != null && media.id !== np.id),
       seekSeconds: $seekDuration,
     }
     const decision = presenceDecision(presenceThrottle, payload, Date.now())

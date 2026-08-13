@@ -7,12 +7,14 @@
   import Cloud from '@lucide/svelte/icons/cloud'
   import Users from '@lucide/svelte/icons/users'
   import Settings from '@lucide/svelte/icons/settings'
+  import VenetianMask from '@lucide/svelte/icons/venetian-mask'
   import LogIn from '@lucide/svelte/icons/log-in'
   import { page } from '$app/state'
   import { playing } from '$lib/player/session'
   import { inputType } from '$lib/nav'
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
+  import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { m } from '$lib/paraglide/messages.js'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
@@ -92,6 +94,17 @@
 
   <!-- Spacer pushes Settings + profile to the bottom. -->
   <div class="flex-1"></div>
+
+  <!-- Incognito toggle: same row anatomy as the links; violet accent + tinted icon while active
+       (the top banner is the loud indicator — this stays quiet). -->
+  <button onclick={toggleIncognito} title={m.nav_incognito()} data-focusable={df} tabindex={tab}
+     aria-pressed={$incognito}
+     class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 text-left transition-colors hover:bg-accent hover:text-foreground
+       {$incognito ? 'bg-foreground/[0.06] text-foreground' : 'text-muted-foreground'}">
+    {#if $incognito}<span class="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-violet-500"></span>{/if}
+    <span class="grid w-8 shrink-0 place-items-center"><VenetianMask size={20} class="group-hover:animate-[wiggle_0.4s_ease] {$incognito ? 'text-violet-400' : ''}" /></span>
+    <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">{m.nav_incognito()}</span>
+  </button>
 
   <a href="/app/settings" title={m.nav_settings()} data-focusable={df} tabindex={tab}
      class="group relative flex h-11 shrink-0 items-center gap-3 rounded-md pl-3 transition-colors hover:bg-accent hover:text-foreground

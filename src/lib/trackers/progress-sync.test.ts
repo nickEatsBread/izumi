@@ -13,7 +13,7 @@ vi.mock('./mal-auth', () => ({
   malFetch: mocks.malFetch,
 }))
 
-import { localHistory, sessionProgress } from '$lib/player/history'
+import { durableHistory as localHistory, sessionProgress } from '$lib/player/history'
 import { saveLocalHistory } from '$lib/settings/ui'
 import { anilistToken, malToken } from './config'
 import { markWatched } from './index'

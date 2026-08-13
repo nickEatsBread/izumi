@@ -82,10 +82,12 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'UI scale', category: 'Interface', href: '/app/settings/interface', keywords: 'zoom size accessibility' },
   { title: 'Hide spoilers', category: 'Interface', href: '/app/settings/interface', keywords: 'blur episode thumbnails titles ratings', anchored: true },
   { title: 'Show 18+ content', category: 'Interface', href: '/app/settings/interface', keywords: 'adult nsfw mature', anchored: true },
+  { title: 'Incognito for 18+ titles', category: 'Interface', href: '/app/settings/interface', keywords: 'adult nsfw private auto incognito ghost secret no sync', anchored: true },
   { title: 'Wheel-scroll carousels', category: 'Interface', href: '/app/settings/interface', keywords: 'mouse horizontal home rows', anchored: true },
 
   { title: 'Navigation items', category: 'Navigation', href: '/app/settings/navigation', keywords: 'bottom tabs top bar hidden reorder Android' },
   { title: 'Save watch history on this device', category: 'History', href: '/app/settings/history', keywords: 'local progress privacy', anchored: true },
+  { title: 'Incognito mode', category: 'History', href: '/app/settings/history', keywords: 'private browsing session ghost pause tracking sync anilist mal secret', anchored: true },
   { title: 'Source Store', category: 'Sources', href: '/app/settings/sources', keywords: 'addons extensions marketplace discover install enabled packages' },
   { title: 'Import & export history', category: 'History', href: '/app/settings/history', keywords: 'backup restore json' },
   { title: 'Clear watch history', category: 'History', href: '/app/settings/history', keywords: 'delete forget watched' },

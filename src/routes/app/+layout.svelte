@@ -4,6 +4,7 @@
   import Background from '$lib/components/shell/Background.svelte'
   import Titlebar from '$lib/components/shell/Titlebar.svelte'
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
+  import IncognitoBanner from '$lib/components/shell/IncognitoBanner.svelte'
   import { androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
@@ -47,6 +48,7 @@
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { initTrackerQueue } from '$lib/trackers/queue'
+  import { initAutoIncognito } from '$lib/player/auto-incognito'
   import { initDeviceSync } from '$lib/sync/client'
   import { initAutoDownloads } from '$lib/downloads/rules'
   import { initWatchTogether } from '$lib/watch-together/client'
@@ -103,6 +105,7 @@
     initGameMode() // resolve gamescope/Deck fullscreen-touch mode once (drives chrome-hiding)
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
+    initAutoIncognito() // adult play → incognito (setting-gated); exits + purges when playback closes
     initDeviceSync() // account-free Iroh watch sync (automatically gated off by AniList/MAL)
     const stopAutoDownloads = initAutoDownloads()
     const stopWatchTogether = initWatchTogether()
@@ -256,6 +259,7 @@
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile}<Titlebar />{/if}
   <OnlineBanner />
+  <IncognitoBanner />
 {/if}
 <!-- Lo-fi speaker: only while an uncached torrent is caching at the debrid service
      (the loading screen). Sits above the caching overlay (z-[60]). Desktop only. -->
