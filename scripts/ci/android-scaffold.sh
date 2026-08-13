@@ -26,16 +26,15 @@ grep -q 'compileSdk = 36' src-tauri/gen/android/app/build.gradle.kts \
 grep -q 'targetSdk = 36' src-tauri/gen/android/app/build.gradle.kts \
   || { echo "targetSdk 36 patch missed — scaffold shape changed"; exit 1; }
 
-# Tauri 2.11's generated WryActivity disables its AndroidX callback, then falls through via the
-# deprecated Activity.onBackPressed(). Android 16 no longer calls that method for targetSdk 36.
-# Fall through through the dispatcher instead: AndroidX bridges it to OnBackInvokedDispatcher and
-# preserves WebView history plus predictive back-to-home when there is no earlier callback.
-WRY_ACTIVITY="$(find src-tauri/gen/android/app/src/main/java -name WryActivity.kt -print -quit)"
-test -n "$WRY_ACTIVITY" || { echo "generated WryActivity.kt not found"; exit 1; }
-sed -i 's/this@WryActivity\.onBackPressed()/this@WryActivity.onBackPressedDispatcher.onBackPressed()/' \
-  "$WRY_ACTIVITY"
-grep -q 'this@WryActivity.onBackPressedDispatcher.onBackPressed()' "$WRY_ACTIVITY" \
-  || { echo "predictive-back patch missed — WryActivity template changed"; exit 1; }
+# NOTE on back navigation: an earlier revision patched the generated WryActivity's back-press
+# fall-through here. That was doubly wrong. (1) WryActivity.kt is written by wry's BUILD SCRIPT
+# during `tauri android build`, not by `tauri android init` — at scaffold time the file does not
+# exist on a fresh checkout (the find below failed CI), and wry rewrites any file whose content
+# differs from its template, so a patch could never survive the build anyway. (2) The code being
+# patched is unreachable: the generated TauriActivity sets `handleBackNavigation = false`, so
+# wry's back callback — the only caller of the patched line — is never registered in a Tauri app.
+# Back-press behavior is what it was in every prior release; changing it belongs in MainActivity
+# (app-owned, patchable here) via wry's `open` hooks, not in wry's regenerated file.
 
 # The generated MainActivity already opts into AndroidX's inset handling. Make a template change
 # fail the build rather than silently shipping content under the status/navigation bars.
