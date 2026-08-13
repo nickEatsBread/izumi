@@ -7,6 +7,7 @@ Allow Android playback, browser authentication, self-update, and power/network c
 - `allow-play-external`
 - `allow-install-apk`
 - `allow-device-status`
+- `allow-download-foreground`
 - `allow-open-browser`
 - `allow-da-reaction-state`
 - `allow-da-react`
@@ -121,6 +122,32 @@ Enables the device_status command without any pre-configured scope.
 <td>
 
 Denies the device_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-download-foreground`
+
+</td>
+<td>
+
+Enables the download_foreground command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-download-foreground`
+
+</td>
+<td>
+
+Denies the download_foreground command without any pre-configured scope.
 
 </td>
 </tr>

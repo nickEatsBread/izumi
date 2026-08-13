@@ -31,6 +31,8 @@ $AndroidProject = Join-Path $ProjectRoot "src-tauri\gen\android"
 $LocalProperties = Join-Path $AndroidProject "local.properties"
 $UnsignedApk = Join-Path $AndroidProject "app\build\outputs\apk\universal\release\app-universal-release-unsigned.apk"
 $SignedApk = Join-Path $AndroidProject "app\build\outputs\apk\universal\release\app-universal-release-debug-signed.apk"
+$AlignedApk = Join-Path $AndroidProject "app\build\outputs\apk\universal\release\app-universal-release-16k-aligned.apk"
+$SecureLibmpv = Join-Path $ProjectRoot "src-tauri\tauri-plugin-mpv\android\libs\libmpv.aar"
 $DebugKeystore = Join-Path $env:USERPROFILE ".android\debug.keystore"
 
 function Write-Step([string]$Message) {
@@ -146,6 +148,9 @@ try {
     Push-Location $ProjectRoot
     try {
         if (-not $SkipBuild) {
+            if (-not (Test-Path -LiteralPath $SecureLibmpv)) {
+                throw "Secure libmpv AAR is missing. From WSL in this repository, run: bash scripts/ci/libmpv-android.sh"
+            }
             Write-Step "Building the arm64 release APK with embedded mpv"
             $npx = Get-Command npx.cmd -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1
             if (-not $npx) { throw "npx.cmd was not found. Install Node.js and run npm install first." }
@@ -163,14 +168,20 @@ try {
 
         Ensure-DebugKeystore
         $apksigner = Find-LatestBuildTool $sdk "apksigner.bat"
+        $zipalign = Find-LatestBuildTool $sdk "zipalign.exe"
+        Write-Step "Aligning native libraries for 16 KiB Android kernels"
+        if (Test-Path -LiteralPath $AlignedApk) { Remove-Item -LiteralPath $AlignedApk -Force }
+        Invoke-Checked $zipalign @("-f", "-P", "16", "4", $UnsignedApk, $AlignedApk)
         Write-Step "Signing the release APK with the local Android debug key"
         if (Test-Path -LiteralPath $SignedApk) { Remove-Item -LiteralPath $SignedApk -Force }
         Invoke-Checked $apksigner @(
             "sign", "--ks", $DebugKeystore, "--ks-key-alias", $KeyAlias,
             "--ks-pass", "pass:$KeyPassword", "--key-pass", "pass:$KeyPassword",
-            "--out", $SignedApk, $UnsignedApk
+            "--out", $SignedApk, $AlignedApk
         )
         Invoke-Checked $apksigner @("verify", "--verbose", $SignedApk)
+        Invoke-Checked $zipalign @("-c", "-P", "16", "-v", "4", $SignedApk)
+        Remove-Item -LiteralPath $AlignedApk -Force
 
         Write-Step "Installing on $model ($serial) without clearing app data"
         Invoke-Checked $adb @("-s", $serial, "install", "-r", "-d", $SignedApk)

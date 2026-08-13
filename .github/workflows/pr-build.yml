@@ -129,16 +129,16 @@ jobs:
     # Only the `full` flavor: the embedded-player build is the one worth device-testing, and
     # building both would double the slowest job in this workflow for little extra signal.
     env:
-      NDK_VERSION: "27.0.12077973"
-      BUILD_TOOLS: "35.0.0"
+      NDK_VERSION: "29.0.14206865"
+      BUILD_TOOLS: "36.0.0"
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup JDK 17
+      - name: Setup JDK 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
@@ -169,6 +169,15 @@ jobs:
       - name: Install JS deps
         run: npm ci
 
+      - name: Cache secure libmpv build
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/izumi-libmpv-android
+          key: libmpv-android-arm64-f77f62c316c6
+
+      - name: Build libmpv with libass 0.17.5
+        run: bash scripts/ci/libmpv-android.sh
+
       - name: Stage the subtitle font
         run: |
           set -euo pipefail
@@ -197,10 +206,12 @@ jobs:
           UNSIGNED="$(find src-tauri/gen/android -path '*release*' -name '*-unsigned.apk' | head -1)"
           if [ -z "$UNSIGNED" ]; then echo "no unsigned APK produced"; exit 1; fi
           OUT="izumi-preview-android-arm64-full.apk"
-          "$BT/zipalign" -f -p 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
+          "$BT/zipalign" -f -P 16 4 "$UNSIGNED" "$RUNNER_TEMP/aligned.apk"
           "$BT/apksigner" sign --ks "$KS" --ks-pass pass:preview --ks-key-alias preview \
             --key-pass pass:preview --out "$OUT" "$RUNNER_TEMP/aligned.apk"
           "$BT/apksigner" verify --verbose "$OUT"
+          READELF="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          bash scripts/ci/verify-android-native.sh "$OUT" "$BT/zipalign" "$READELF"
           rm -f "$KS" "$RUNNER_TEMP/aligned.apk"
 
       - name: Upload APK

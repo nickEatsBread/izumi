@@ -125,3 +125,16 @@ pub struct ReactResponse {
 pub struct DaLoginResponse {
     pub ok: bool,
 }
+
+/// Drive the Android background-download foreground service: `active: true` starts it (or
+/// refreshes its progress notification), `false` stops it. No-op on desktop.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadForegroundRequest {
+    pub active: bool,
+    pub title: Option<String>,
+    /// 0-100; omit for an indeterminate bar.
+    pub progress: Option<u32>,
+    /// Active + queued item count, shown under the title.
+    pub count: Option<u32>,
+}

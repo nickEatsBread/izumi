@@ -478,6 +478,17 @@ fn native_touch_hold(held: bool) {
     let _ = held;
 }
 
+/// Escalated Game-mode touch recovery: fake a ButtonRelease at the X server for any stuck
+/// core-pointer button. This is the only recovery that reaches WebKit's INTERNAL pointer state —
+/// a compositor-swallowed touch-release leaves it holding a phantom press forever, every later
+/// tap reads as a drag continuation, and no amount of DOM-side cleanup can clear it.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn gm_touch_unstick() {
+    #[cfg(target_os = "linux")]
+    player::linux_x11::unstick_pointer();
+}
+
 /// Game-mode input diagnostics from the webview, persisted through the same file+stderr channel
 /// as native logs — the Flatpak sandbox swallows webview console output and the Game-mode session
 /// has no devtools, so this is the only way frontend incident reports survive to be read.
@@ -1854,35 +1865,10 @@ fn set_webview_transparent(win: &tauri::WebviewWindow) {
     });
 }
 
-/// Force the WebView2 to report `prefers-color-scheme: dark` for ALL content, including third-party
-/// iframes. The Tauri/wry window-theme path (`.theme(Dark)`) does not reliably reach WebView2's color
-/// scheme here, so we set it directly on the profile. This is what the in-player discussion embeds
-/// (the discussanime archive + Disqus) key their dark mode off — their dark tokens are gated purely on
-/// `@media (prefers-color-scheme: dark)`, not on a theme param. No-op if the runtime is too old for
-/// ICoreWebView2_13 (the Profile interface).
-// Injected into every frame at document-creation. The cross-origin archive iframe (which the profile
-// preference + top-session CDP emulation can't reach) is themed by its OWN CSS off `data-theme` on
-// <html>/.dq-archive, so in that frame we set it to "dark": the transparent archive then shows a dark
-// body + dark cards. A MutationObserver keeps it dark if the archive's own hydration resets it. Only
-// runs in the /embed/discussion frame; every other frame returns immediately.
-//
-// Setting <html data-theme="dark"> is also what fixes the frame's CANVAS, not just its tokens: the
-// archive pins a cross-origin embed's root to `color-scheme: normal`, izumi's embedder side is
-// `color-scheme: dark` (app.css), and mismatched schemes make Chromium paint the iframe on an OPAQUE
-// canvas in the frame's own scheme — normal ⇒ WHITE, i.e. the "light" archive embed. The attribute
-// flips the archive root to `color-scheme: dark`, schemes match, and the canvas turns transparent.
-// Windows adds the script natively below (AddScriptToExecuteOnDocumentCreated runs in all frames);
-// Android registers it as a plugin init script in `run()` — wry feeds those through
-// WebViewCompat.addDocumentStartJavaScript with origin rule "*", which also runs in cross-origin
-// subframes. (The Android `isLightTheme=false` theme patch cannot fix this: it only flips
-// `prefers-color-scheme`, and a `normal` root mismatches a dark embedder regardless.)
-#[cfg(any(windows, target_os = "android"))]
-const DARK_FRAME_SCRIPT: &str = "(function(){try{if(location.pathname.indexOf('/embed/discussion')!==0)return;var set=function(){var r=document.documentElement;if(!r)return;if(r.getAttribute('data-theme')!=='dark')r.setAttribute('data-theme','dark');var a=document.getElementsByClassName('dq-archive');for(var i=0;i<a.length;i++){if(a[i].getAttribute('data-theme')!=='dark')a[i].setAttribute('data-theme','dark');}};set();new MutationObserver(set).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['data-theme']});document.addEventListener('DOMContentLoaded',set);}catch(e){}})();";
-
 // Routes Disqus profile links inside the live discussanime embed through the forum's own
 // profile-redirect endpoint: `disqus.com/by/<user>` → `discussanime.moe/api/profile-redirect/<user>`,
 // so a tapped username lands on the forum's profile instead of dropping the viewer on disqus.com.
-// Injected into every frame like DARK_FRAME_SCRIPT, but self-gates to the cross-origin
+// Injected into every frame, but self-gates to the cross-origin
 // `disqus.com/embed/comments` inner iframe of the `f=discussanime` forum — other forums' embeds are
 // untouched, because the redirect endpoint only knows discussanime accounts.
 //
@@ -1932,54 +1918,44 @@ new MutationObserver(schedule).observe(document,{childList:true,subtree:true,att
 }catch(e){}})();"#;
 
 #[cfg(windows)]
-static DARK_SCRIPT_ADDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static FRAME_SCRIPT_ADDED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(windows)]
-fn set_webview_dark(win: &tauri::WebviewWindow) {
+fn install_webview_frame_scripts(win: &tauri::WebviewWindow) {
     use std::sync::atomic::Ordering;
     let r = win.with_webview(|webview| {
         use webview2_com::AddScriptToExecuteOnDocumentCreatedCompletedHandler;
-        use webview2_com::Microsoft::Web::WebView2::Win32::{
-            ICoreWebView2_13, COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK,
-        };
-        use windows::core::{Interface, HSTRING, PCWSTR};
+        use windows::core::{HSTRING, PCWSTR};
         unsafe {
             let core = match webview.controller().CoreWebView2() {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!("[dark] CoreWebView2() failed: {e:?}");
+                    eprintln!("[embed] CoreWebView2() failed: {e:?}");
                     return;
                 }
             };
-            // Top-document preference (harmless; the injected script handles the cross-origin iframe).
-            if let Ok(profile) = core.cast::<ICoreWebView2_13>().and_then(|w| w.Profile()) {
-                let _ = profile.SetPreferredColorScheme(COREWEBVIEW2_PREFERRED_COLOR_SCHEME_DARK);
-            }
-            // Add the per-frame scripts ONCE (they persist + apply to future documents, including
-            // the embed iframes opened later): dark-forcing plus the Disqus profile-redirect
-            // rewrite. Both self-gate on their frame, so a duplicate add after a partial failure
-            // is harmless (the profile script also latches on window.__izumiDisqusProfile).
-            if !DARK_SCRIPT_ADDED.swap(true, Ordering::SeqCst) {
-                for script in [DARK_FRAME_SCRIPT, DISQUS_PROFILE_SCRIPT] {
-                    let js = HSTRING::from(script);
-                    let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(
-                        Box::new(|hr, _id| {
-                            eprintln!("[dark] AddScriptToExecuteOnDocumentCreated → {hr:?}");
-                            Ok(())
-                        }),
-                    );
-                    if let Err(e) =
-                        core.AddScriptToExecuteOnDocumentCreated(PCWSTR(js.as_ptr()), &handler)
-                    {
-                        DARK_SCRIPT_ADDED.store(false, Ordering::SeqCst);
-                        eprintln!("[dark] AddScriptToExecuteOnDocumentCreated failed: {e:?}");
-                    }
+            // The profile-link rewrite must run inside the cross-origin Disqus frame. Register it
+            // once for this WebView2 environment; the script self-gates and latches per document.
+            if !FRAME_SCRIPT_ADDED.swap(true, Ordering::SeqCst) {
+                let js = HSTRING::from(DISQUS_PROFILE_SCRIPT);
+                let handler = AddScriptToExecuteOnDocumentCreatedCompletedHandler::create(
+                    Box::new(|hr, _id| {
+                        eprintln!("[embed] AddScriptToExecuteOnDocumentCreated → {hr:?}");
+                        Ok(())
+                    }),
+                );
+                if let Err(e) =
+                    core.AddScriptToExecuteOnDocumentCreated(PCWSTR(js.as_ptr()), &handler)
+                {
+                    FRAME_SCRIPT_ADDED.store(false, Ordering::SeqCst);
+                    eprintln!("[embed] AddScriptToExecuteOnDocumentCreated failed: {e:?}");
                 }
             }
         }
     });
     if let Err(e) = r {
-        eprintln!("[dark] with_webview failed: {e:?}");
+        eprintln!("[embed] with_webview failed: {e:?}");
     }
 }
 
@@ -3755,22 +3731,9 @@ pub fn run() {
     let builder = builder.manage(PipWindowState::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder.manage(jvm_extensions::Runtime::default());
-    // Android's main window is config-defined (tauri.android.conf.json — no WebviewWindowBuilder to
-    // hang an initialization_script on), so the discussion embeds' dark-canvas script ships as a
-    // plugin init script instead: wry passes those to addDocumentStartJavaScript(script, ["*"]),
-    // which runs at document start in EVERY frame — including the cross-origin discussanime archive
-    // iframe, which otherwise renders on an opaque white canvas (see DARK_FRAME_SCRIPT). Android-only:
-    // Windows already injects the same script natively in set_webview_dark, so registering this
-    // plugin there would run it twice per frame.
-    #[cfg(target_os = "android")]
-    let builder = builder.plugin(
-        tauri::plugin::Builder::<tauri::Wry>::new("embed-dark")
-            .js_init_script(DARK_FRAME_SCRIPT.to_string())
-            .build(),
-    );
     // Same per-frame delivery for the Disqus profile-redirect rewrite (see DISQUS_PROFILE_SCRIPT):
     // it must run inside the cross-origin disqus.com inner iframe, which only the
-    // addDocumentStartJavaScript path reaches on Android. Windows injects it in set_webview_dark.
+    // addDocumentStartJavaScript path reaches on Android. Windows injects it through WebView2.
     #[cfg(target_os = "android")]
     let builder = builder.plugin(
         tauri::plugin::Builder::<tauri::Wry>::new("disqus-profile")
@@ -3844,18 +3807,9 @@ pub fn run() {
                     } else {
                         ""
                     })
-                    // Force the webview to report prefers-color-scheme: dark. The app itself is dark via
-                    // CSS classes (darkMode:'class', no prefers-color-scheme queries), so this doesn't
-                    // change our UI — but the discussion embeds (discussanime archive, Disqus) keep
-                    // their "canvas" on the system color scheme, which was light in the webview and left
-                    // the forum embed light. Dark here makes those embeds' canvas dark too.
-                    .theme(Some(tauri::Theme::Dark))
-                    // Re-assert dark prefers-color-scheme on every page load too. The setup-time
-                    // set_webview_dark call can no-op if CoreWebView2 isn't fully initialized yet;
-                    // on_page_load runs after the document loads, when the profile is guaranteed ready.
                     .on_page_load(|win, payload| {
                         #[cfg(windows)]
-                        set_webview_dark(&win);
+                        install_webview_frame_scripts(&win);
                         if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
                             let _ = win.show();
                         }
@@ -4119,9 +4073,7 @@ pub fn run() {
             if let Some(win) = app.get_webview_window("main") {
                 // Opaque window, transparent webview background (Stremio model).
                 set_webview_transparent(&win);
-                // Force prefers-color-scheme: dark on the WebView2 (incl. iframes) — the discussion
-                // embeds key their dark mode off it. .theme(Dark) above doesn't reliably reach it.
-                set_webview_dark(&win);
+                install_webview_frame_scripts(&win);
                 if let Ok(h) = win.hwnd() {
                     let raw = h.0 as isize;
                     // Create the mpv container child window HERE (main/UI thread) — NOT
@@ -4158,6 +4110,10 @@ pub fn run() {
                     // passthrough after GTK receives focus; this remains compositor-level native
                     // input routing and does not synthesize or reinterpret any gestures.
                     if matches!(event, tauri::WindowEvent::Focused(true)) {
+                        // Focus returning usually means an overlay (Steam menu/OSK/QAM) just
+                        // closed — the exact transition that can swallow a touch-release and
+                        // strand a phantom button press. Clear it before re-asserting the mode.
+                        player::linux_x11::unstick_pointer();
                         if let Err(e) = player::linux_x11::enable_native_touch(&touch_win) {
                             player::linux_embed::elog(&format!("x11: focus touch passthrough failed: {e}"));
                         }
@@ -4238,6 +4194,7 @@ pub fn run() {
             set_webview_zoom,
             restore_native_touch,
             native_touch_hold,
+            gm_touch_unstick,
             gm_log,
             set_webview_accel,
             steam_show_osk,

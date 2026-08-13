@@ -105,6 +105,15 @@ class DaLoginArgs {
     var base: String = ""
 }
 
+@InvokeArg
+class DownloadForegroundArgs {
+    var active: Boolean = false
+    var title: String? = null
+    /** 0-100, or null/absent for indeterminate. */
+    var progress: Int? = null
+    var count: Int? = null
+}
+
 @TauriPlugin
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     private val aniyomiLock = Any()
@@ -461,6 +470,29 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 origins,
             )
         }
+    }
+
+    @Command
+    fun downloadForeground(invoke: Invoke) {
+        val args = invoke.parseArgs(DownloadForegroundArgs::class.java)
+        val context = activity.applicationContext
+        val intent = Intent(context, DownloadService::class.java)
+        if (args.active) {
+            intent.putExtra(DownloadService.EXTRA_TITLE, args.title)
+            intent.putExtra(DownloadService.EXTRA_PROGRESS, args.progress ?: -1)
+            intent.putExtra(DownloadService.EXTRA_COUNT, args.count ?: 1)
+            try {
+                // startForegroundService both starts the service and refreshes the notification
+                // on subsequent calls (onStartCommand re-posts it). Foreground-start restrictions
+                // are handled inside the service; a refusal degrades to foreground-only downloads.
+                androidx.core.content.ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                Log.w("ExtPlayerPlugin", "download service start failed: $e")
+            }
+        } else {
+            context.stopService(intent)
+        }
+        invoke.resolve()
     }
 
     @Command

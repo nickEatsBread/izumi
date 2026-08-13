@@ -17,6 +17,33 @@ esac
 
 npx tauri android init
 
+# Android 16 / API 36 is required for Play submissions from 2026-08-31. Pin both generated
+# values instead of relying on whichever defaults happen to ship in the installed Tauri CLI.
+sed -i -E 's/compileSdk = [0-9]+/compileSdk = 36/' src-tauri/gen/android/app/build.gradle.kts
+sed -i -E 's/targetSdk = [0-9]+/targetSdk = 36/' src-tauri/gen/android/app/build.gradle.kts
+grep -q 'compileSdk = 36' src-tauri/gen/android/app/build.gradle.kts \
+  || { echo "compileSdk 36 patch missed — scaffold shape changed"; exit 1; }
+grep -q 'targetSdk = 36' src-tauri/gen/android/app/build.gradle.kts \
+  || { echo "targetSdk 36 patch missed — scaffold shape changed"; exit 1; }
+
+# Tauri 2.11's generated WryActivity disables its AndroidX callback, then falls through via the
+# deprecated Activity.onBackPressed(). Android 16 no longer calls that method for targetSdk 36.
+# Fall through through the dispatcher instead: AndroidX bridges it to OnBackInvokedDispatcher and
+# preserves WebView history plus predictive back-to-home when there is no earlier callback.
+WRY_ACTIVITY="$(find src-tauri/gen/android/app/src/main/java -name WryActivity.kt -print -quit)"
+test -n "$WRY_ACTIVITY" || { echo "generated WryActivity.kt not found"; exit 1; }
+sed -i 's/this@WryActivity\.onBackPressed()/this@WryActivity.onBackPressedDispatcher.onBackPressed()/' \
+  "$WRY_ACTIVITY"
+grep -q 'this@WryActivity.onBackPressedDispatcher.onBackPressed()' "$WRY_ACTIVITY" \
+  || { echo "predictive-back patch missed — WryActivity template changed"; exit 1; }
+
+# The generated MainActivity already opts into AndroidX's inset handling. Make a template change
+# fail the build rather than silently shipping content under the status/navigation bars.
+MAIN_ACTIVITY="$(find src-tauri/gen/android/app/src/main/java -name MainActivity.kt -print -quit)"
+test -n "$MAIN_ACTIVITY" || { echo "generated MainActivity.kt not found"; exit 1; }
+grep -q 'enableEdgeToEdge()' "$MAIN_ACTIVITY" \
+  || { echo "edge-to-edge setup missing from MainActivity"; exit 1; }
+
 # `android init` synthesizes launcher resources from the generic desktop icon and can overwrite the
 # hand-tuned adaptive foreground. Install the canonical Izumi Android resources after scaffolding so
 # both the APK installer preview and launcher use Izumi, never Tauri's template icon. Also declare
@@ -34,21 +61,6 @@ grep -q '#0E1524' src-tauri/gen/android/app/src/main/res/values/ic_launcher_back
 # never fire on Android. Applies to BOTH flavors (both are WebView apps).
 sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
 
-# The in-player discussion embeds are cross-origin iframes that pick their theme from
-# `prefers-color-scheme` — and on targetSdk >= 33 the WebView derives that solely from the host app
-# theme's `isLightTheme`, NOT from any WebSettings call. The scaffolded theme is DayNight, so on a
-# phone in light mode those embeds rendered light inside izumi's dark UI. This is the Android
-# counterpart of the desktop `set_webview_dark` (WebView2 SetPreferredColorScheme) in
-# src-tauri/src/lib.rs. Both theme variants are patched: the night one already resolves dark, but
-# stating it keeps the two files from diverging.
-for t in src-tauri/gen/android/app/src/main/res/values/themes.xml \
-         src-tauri/gen/android/app/src/main/res/values-night/themes.xml; do
-  sed -i -E 's#(<style name="Theme\.[^"]+"[^>]*>)#\1\n        <item name="android:isLightTheme">false</item>#' "$t"
-  # The style name follows the product name, so match it loosely — but still fail loudly rather
-  # than silently shipping light-mode embeds if the template shape changes.
-  grep -q 'android:isLightTheme' "$t" || { echo "themes.xml patch missed: $t"; exit 1; }
-done
-
 # Kotlin toolchain — BOTH flavors. tauri-plugin-extplayer is built for lite and full alike, and its
 # dependencies resolve kotlin-stdlib 2.1.20; the scaffolded Kotlin Gradle plugin is older, so
 # compiling the plugin against that stdlib fails with "Class 'kotlin.Unit' was compiled with an
@@ -60,6 +72,16 @@ grep -q 'kotlin-gradle-plugin:2.2.0' src-tauri/gen/android/build.gradle.kts \
   || { echo "kotlin-gradle-plugin bump missed — scaffold shape changed"; exit 1; }
 
 if [ "$FLAVOR" = "full" ]; then
+  # Never let a distributable full APK silently fall back to Maven Central's 0.17.4 AAR. The
+  # workflow must stage the reviewed source build before scaffolding; assert both its presence and
+  # the libass version embedded in the actual libmpv payload.
+  LIBMPV_AAR="src-tauri/tauri-plugin-mpv/android/libs/libmpv.aar"
+  test -s "$LIBMPV_AAR" \
+    || { echo "secure libmpv AAR missing — run scripts/ci/libmpv-android.sh first"; exit 1; }
+  unzip -p "$LIBMPV_AAR" jni/arm64-v8a/libmpv.so \
+    | strings | grep 'commit: 0\.17\.5-' >/dev/null \
+    || { echo "staged libmpv does not contain libass 0.17.5"; exit 1; }
+
   # Picture-in-picture is a full-flavor feature: it needs the embedded player. `resizeableActivity`
   # is the other half of the contract — an activity the system treats as non-resizeable is refused
   # entry to PiP on some OEM builds even with the flag above, and the scaffolded manifest never

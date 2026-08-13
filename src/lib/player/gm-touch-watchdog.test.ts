@@ -5,8 +5,15 @@ import { describe, expect, it } from 'vitest'
 const src = readFileSync(fileURLToPath(new URL('./gm-touch-watchdog.ts', import.meta.url)), 'utf8')
 
 describe('Game-mode touch watchdog', () => {
-  it('tracks only real touch pointers, not compatibility mouse events', () => {
-    expect(src).toContain("if (e.pointerType !== 'touch') return")
+  it('tracks every pointer type — Deck WebKitGTK synthesizes touch as mouse pointers', () => {
+    // The old `pointerType !== 'touch'` filter made the watchdog inert on the shipped Deck
+    // runtime (WebKitGTK 2.48-2.50 has no touch pointer events at all). Guard the regression.
+    expect(src).not.toContain("e.pointerType !== 'touch'")
+  })
+
+  it('escalates recovery to the X-level unstick (WebKit-internal state is out of JS reach)', () => {
+    expect(src).toContain("invoke('gm_touch_unstick')")
+    expect(src).toContain("window.addEventListener('focus', returned)")
   })
 
   it('provides a transition reset for releases swallowed by comments iframes', () => {

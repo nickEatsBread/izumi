@@ -3,7 +3,8 @@ use tauri::{command, AppHandle, Runtime};
 use crate::{
     models::{
         BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
-        DeviceStatus, InstallRequest, PlayRequest, ReactResponse, ReactionStateResponse,
+        DeviceStatus, DownloadForegroundRequest, InstallRequest, PlayRequest, ReactResponse,
+        ReactionStateResponse,
     },
     ExtPlayerExt, Result,
 };
@@ -21,6 +22,15 @@ pub(crate) async fn play_external<R: Runtime>(
 #[command]
 pub(crate) async fn device_status<R: Runtime>(app: AppHandle<R>) -> Result<DeviceStatus> {
     app.extplayer().device_status()
+}
+
+/// Start/update/stop the Android background-download foreground service (no-op on desktop).
+#[command]
+pub(crate) async fn download_foreground<R: Runtime>(
+    app: AppHandle<R>,
+    payload: DownloadForegroundRequest,
+) -> Result<()> {
+    app.extplayer().download_foreground(payload)
 }
 
 /// Hand a downloaded APK to the system package installer (Android self-update).

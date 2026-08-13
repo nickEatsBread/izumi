@@ -1,5 +1,6 @@
 <script lang="ts">
   import { saveLocalHistory } from '$lib/settings/ui'
+  import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { localHistory, historyEntries, clearHistory, forgetMedia } from '$lib/player/history'
   import { exportJson, exportMalXml, importJson, ioErrorMessage, saveTextFile } from '$lib/player/history-io'
   import { title as mediaTitle } from '$lib/anilist/media'
@@ -58,6 +59,13 @@
       desc="Record what you watch and how far you got, locally. Turn off to stop recording (existing history is kept until you clear it)."
       value={$saveLocalHistory}
       onToggle={() => ($saveLocalHistory = !$saveLocalHistory)}
+    />
+
+    <Toggle
+      label="Incognito mode"
+      desc="Watch without a trace: nothing is pushed to AniList/MyAnimeList and nothing is saved to this device. Continue Watching still works, but only until you turn this off. Resets on restart."
+      value={$incognito}
+      onToggle={toggleIncognito}
     />
 
     <!-- Backup / move / seed a tracker -->
