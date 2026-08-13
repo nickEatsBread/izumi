@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, wheelScrollAcross, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -270,6 +270,7 @@
       <Toggle label="Series-wide episode numbers" desc="Number episodes by their position in the whole series instead of the current season, where the two differ (episode 5 of a second season shows as A29). Affects the labels only — playback, downloads and tracking are unchanged." value={$absoluteEpisodeNumbers} onToggle={() => ($absoluteEpisodeNumbers = !$absoluteEpisodeNumbers)} />
       <Toggle label={m.settings_hide_spoilers()} desc={m.settings_hide_spoilers_hint()} value={$hideSpoilers} onToggle={() => ($hideSpoilers = !$hideSpoilers)} />
       <Toggle label={m.settings_show_adult()} desc={m.settings_show_adult_hint()} value={$showAdult} onToggle={() => ($showAdult = !$showAdult)} />
+      <Toggle label={m.settings_auto_incognito()} desc={m.settings_auto_incognito_hint()} value={$autoIncognitoAdult} onToggle={() => ($autoIncognitoAdult = !$autoIncognitoAdult)} />
       <Toggle label="Wheel-scroll carousels" desc="Let the mouse wheel scroll home rows sideways. Off = use the row's ‹ › arrows." value={$wheelScrollAcross} onToggle={() => ($wheelScrollAcross = !$wheelScrollAcross)} />
     </div>
   </div>

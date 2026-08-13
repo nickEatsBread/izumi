@@ -1,6 +1,7 @@
 import { persisted } from 'svelte-persisted-store'
-import { get, writable } from 'svelte/store'
+import { derived, get, writable, type Readable } from 'svelte/store'
 import { saveLocalHistory } from '$lib/settings/ui'
+import { incognito, onIncognitoPurge } from '$lib/stores/incognito'
 import type { Media } from '$lib/anilist/types'
 import { clearSourceOrigins, forgetSourceOrigin } from './source-origin'
 
@@ -21,11 +22,28 @@ export interface HistoryEntry {
   release?: { group?: string; bingeGroup?: string }
 }
 
-/** Persisted local watch history: `mediaId -> HistoryEntry`. */
-export const localHistory = persisted<Record<number, HistoryEntry>>('local-history', {})
+/** The PERSISTED history (`mediaId -> HistoryEntry`). Everything that must never see an incognito
+ *  entry — export/import, device sync, airing notifications, the Continue Watching reconcile that
+ *  writes the persisted snapshot — reads THIS store. Display paths read `localHistory` below. */
+export const durableHistory = persisted<Record<number, HistoryEntry>>('local-history', {})
+
+/** In-memory history for incognito plays. Merged into `localHistory` so Continue Watching, episode
+ *  lists and resume all work during the session; wiped when incognito ends. Never persisted. */
+export const incognitoHistory = writable<Record<number, HistoryEntry>>({})
+onIncognitoPurge(() => incognitoHistory.set({}))
+
+/** What the UI reads: persisted history overlaid with this session's incognito plays (an incognito
+ *  entry for the same anime wins — it is by construction the newer one). Read-only by design: all
+ *  writes go through the record/forget/clear functions, which route by incognito state. */
+export const localHistory: Readable<Record<number, HistoryEntry>> = derived(
+  [durableHistory, incognitoHistory],
+  ([$durable, $incognito]) => ({ ...$durable, ...$incognito }),
+)
 
 // Session-only progress keeps tracker-backed Continue Watching rows reactive even when the user has
-// disabled persisted local history. It is deliberately not saved across launches.
+// disabled persisted local history. It is deliberately not saved across launches. Incognito plays
+// do NOT write it (they live in incognitoHistory instead) — it feeds the persisted Continue
+// Watching snapshot's only-increase floor, which must never learn an incognito count.
 export const sessionProgress = writable<Record<number, number>>({})
 /** Exact progress chosen from the episode tools. Unlike normal playback progress, this may move
  * backwards, so it must override the detail query's stale tracker snapshot until a refetch. */
@@ -39,6 +57,9 @@ export function mediaSnapshot(m: Media): Media {
     id: m.id,
     idMal: m.idMal,
     title: m.title,
+    // Auto-incognito keys off isAdult at play time; without it in the snapshot, resuming an adult
+    // title from a Continue Watching card (snapshot media, not the detail query) would skip the gate.
+    isAdult: m.isAdult,
     coverImage: m.coverImage,
     bannerImage: m.bannerImage,
     episodes: m.episodes,
@@ -62,11 +83,14 @@ export function mediaSnapshot(m: Media): Media {
 /** Record that an episode was OPENED (updates last-opened episode + timestamp + the release just
  *  played). Does NOT bump the watched count — opening isn't finishing; `recordProgress` does that.
  *  A release with neither group nor bingeGroup (e.g. an offline/direct play) keeps the prior one.
- *  No-op when history is off. */
+ *  No-op when history is off; in incognito it records to the in-memory overlay instead (the
+ *  session still gets Continue Watching + same-release resume, nothing touches disk). */
 export function recordPlay(media: Media, episode: number | undefined, release?: { group?: string; bingeGroup?: string }) {
-  if (episode == null || !get(saveLocalHistory)) return
+  if (episode == null) return
+  const target = get(incognito) ? incognitoHistory : durableHistory
+  if (target === durableHistory && !get(saveLocalHistory)) return
   const rel = release && (release.group || release.bingeGroup) ? release : undefined
-  localHistory.update((h) => {
+  target.update((h) => {
     const prev = h[media.id]
     return { ...h, [media.id]: {
       media: mediaSnapshot(media),
@@ -79,14 +103,28 @@ export function recordPlay(media: Media, episode: number | undefined, release?: 
 }
 
 /** Record that an episode was WATCHED (crossed the completion threshold) — bumps the in-session
- *  count, plus persisted local history when enabled. Mirrors what we push to the trackers. */
+ *  count, plus persisted local history when enabled. Mirrors what we push to the trackers.
+ *  In incognito the bump goes to the in-memory overlay only. */
 export function recordProgress(media: Media, episode: number) {
+  if (get(incognito)) {
+    incognitoHistory.update((h) => {
+      const prev = h[media.id]
+      return { ...h, [media.id]: {
+        media: mediaSnapshot(media),
+        episode: Math.max(prev?.episode ?? 0, episode),
+        progress: Math.max(prev?.progress ?? 0, episode),
+        updatedAt: Date.now(),
+        release: prev?.release,
+      } }
+    })
+    return
+  }
   sessionProgress.update((progress) => ({
     ...progress,
     [media.id]: Math.max(progress[media.id] ?? 0, episode),
   }))
   if (!get(saveLocalHistory)) return
-  localHistory.update((h) => {
+  durableHistory.update((h) => {
     const prev = h[media.id]
     return { ...h, [media.id]: {
       media: mediaSnapshot(media),
@@ -102,10 +140,23 @@ export function recordProgress(media: Media, episode: number) {
  * by the caller; this updates the immediate local/session view, including deliberate rewinds. */
 export function setLocalProgress(media: Media, progress: number) {
   const value = Math.max(0, Math.floor(progress))
+  if (get(incognito)) {
+    incognitoHistory.update((history) => {
+      const previous = history[media.id]
+      return { ...history, [media.id]: {
+        media: mediaSnapshot(media),
+        episode: value > 0 ? value : previous?.episode ?? 1,
+        progress: value,
+        updatedAt: Date.now(),
+        release: previous?.release,
+      } }
+    })
+    return
+  }
   manualProgressOverrides.update((all) => ({ ...all, [media.id]: value }))
   sessionProgress.update((all) => ({ ...all, [media.id]: value }))
   if (!get(saveLocalHistory)) return
-  localHistory.update((history) => {
+  durableHistory.update((history) => {
     const previous = history[media.id]
     return {
       ...history,
@@ -120,15 +171,17 @@ export function setLocalProgress(media: Media, progress: number) {
   })
 }
 
-/** Drop one anime from local history. */
+/** Drop one anime from local history (both the persisted store and any incognito overlay entry). */
 export function forgetMedia(mediaId: number) {
-  localHistory.update((h) => { const n = { ...h }; delete n[mediaId]; return n })
+  durableHistory.update((h) => { const n = { ...h }; delete n[mediaId]; return n })
+  incognitoHistory.update((h) => { const n = { ...h }; delete n[mediaId]; return n })
   forgetSourceOrigin(mediaId)
 }
 
 /** Wipe all local watch history. */
 export function clearHistory() {
-  localHistory.set({})
+  durableHistory.set({})
+  incognitoHistory.set({})
   clearSourceOrigins()
 }
 

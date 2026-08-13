@@ -2,8 +2,10 @@ import { get } from 'svelte/store'
 import { save } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { title } from '$lib/anilist/media'
-import { localHistory, historyEntries, type HistoryEntry } from './history'
-import { positions, type Pos } from './progress'
+// durableHistory/durablePositions, NOT the merged views: an export or device-sync push must never
+// carry this session's incognito entries; an import writes straight to the persisted stores.
+import { durableHistory, historyEntries, type HistoryEntry } from './history'
+import { durablePositions, type Pos } from './progress'
 import { mergeSourceOrigins, sourceOrigins, type RememberedSource } from './source-origin'
 
 // Import / export of the on-device watch history, so it can be backed up, moved between installs,
@@ -32,8 +34,8 @@ interface WatchJsonOptions {
 export function exportJson(options: WatchJsonOptions = {}): string {
   const bundle: ExportBundle = {
     app: 'izumi', kind: 'watch-history', version: 1, exportedAt: Date.now(),
-    history: options.includeHistory === false ? {} : get(localHistory),
-    positions: get(positions),
+    history: options.includeHistory === false ? {} : get(durableHistory),
+    positions: get(durablePositions),
     origins: get(sourceOrigins),
   }
   return JSON.stringify(bundle, null, 2)
@@ -44,7 +46,7 @@ const xmlEscape = (s: string) => s.replace(/]]>/g, ']]]]><![CDATA[>')
 /** MyAnimeList-compatible XML (importable into MAL/AniList). Only entries that carry a MAL id can be
  *  exported — MAL keys anime by that id. Returns the XML plus how many entries were skipped. */
 export function exportMalXml(): { xml: string; total: number; skipped: number } {
-  const entries = historyEntries(get(localHistory))
+  const entries = historyEntries(get(durableHistory))
   const withMal = entries.filter((e) => e.media.idMal)
   const items = withMal.map((e) => {
     const total = e.media.episodes ?? 0
@@ -91,7 +93,7 @@ export function importJson(text: string, options: WatchJsonOptions = {}): { impo
   let imported = 0
   if (options.includeHistory !== false) {
     const incoming = data.history
-    const next = { ...get(localHistory) }
+    const next = { ...get(durableHistory) }
     for (const [k, raw] of Object.entries(incoming)) {
       const id = Number(k)
       // Reject non-numeric keys, mismatched ids, and non-object entries — a hostile/corrupt file
@@ -111,11 +113,11 @@ export function importJson(text: string, options: WatchJsonOptions = {}): { impo
         imported++
       }
     }
-    if (imported) localHistory.set(next)
+    if (imported) durableHistory.set(next)
   }
   let positionsImported = 0
   if (data.positions && typeof data.positions === 'object') {
-    const current = get(positions)
+    const current = get(durablePositions)
     const next = { ...current }
     for (const [k, v] of Object.entries(data.positions)) {
       // Only accept well-shaped {pos, dur} numbers — a string pos would flow into player_embed.
@@ -135,7 +137,7 @@ export function importJson(text: string, options: WatchJsonOptions = {}): { impo
         }
       }
     }
-    if (positionsImported) positions.set(next)
+    if (positionsImported) durablePositions.set(next)
   }
   const originsImported = mergeSourceOrigins(data.origins)
   return { imported, positionsImported, originsImported }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { get } from 'svelte/store'
-import { clearPosition, positionPercent, positions, progressKey, savePosition, watched, episodeBarPercent } from './progress'
+import { clearPosition, positionPercent, durablePositions as positions, progressKey, savePosition, watched, episodeBarPercent } from './progress'
 
 describe('progress helpers', () => {
   it('keys by media + episode', () => expect(progressKey(101, 3)).toBe('101:3'))

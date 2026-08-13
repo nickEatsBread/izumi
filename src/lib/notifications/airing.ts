@@ -1,6 +1,8 @@
 import { get } from 'svelte/store'
 import { cancel, isPermissionGranted, requestPermission, Schedule, sendNotification } from '@tauri-apps/plugin-notification'
-import { localHistory, type HistoryEntry } from '$lib/player/history'
+// durableHistory, NOT the merged view: incognito plays must not schedule OS notifications that
+// name the show (and persist their ids) beyond the session.
+import { durableHistory, type HistoryEntry } from '$lib/player/history'
 import { title } from '$lib/anilist/media'
 import {
   airingNotifications,
@@ -71,7 +73,7 @@ export function initAiringNotifications(): () => void {
       scheduledAiringNotificationIds.set([])
       return
     }
-    const plan = notificationPlan(get(localHistory), Date.now(), get(airingNotificationLeadMinutes))
+    const plan = notificationPlan(get(durableHistory), Date.now(), get(airingNotificationLeadMinutes))
     for (const item of plan) {
       sendNotification({
         id: item.id,
@@ -88,7 +90,7 @@ export function initAiringNotifications(): () => void {
   const unsubscribers = [
     airingNotifications.subscribe(queue),
     airingNotificationLeadMinutes.subscribe(queue),
-    localHistory.subscribe(queue),
+    durableHistory.subscribe(queue),
   ]
   return () => {
     started = false
