@@ -30,12 +30,11 @@
   } = $props()
 
   let i = $state(0)
-  let progress = $state(0)
+  let cycle = $state(0)
   let scrolled = $state(false)
-  let start: number | null = null
   const DURATION = 15000 // a 15s cadence
 
-  function go(n: number) { i = n; progress = 0; start = null }
+  function go(n: number) { i = n; cycle += 1 }
 
   // Swipe left/right to change the featured slide (only when there's more than one). `touch-pan-y`
   // on the container lets the browser own vertical scroll while horizontal swipes reach here.
@@ -69,28 +68,22 @@
     oninfo?.(current)
   }
 
-  // rAF auto-advance + scroll fade, only when there's an overlay (Home).
+  // Auto-advance + scroll fade, only when there's an overlay (Home).
   $effect(() => {
     const n = medias.length
     if (!n || !showOverlay) return
-    let raf = 0
+    // Track manual navigation too: changing `cycle` tears down/re-arms this one-shot timer and
+    // restarts the compositor-only progress animation below.
+    void cycle
+    let timer: ReturnType<typeof setTimeout> | undefined
     // The home route is HIDDEN, not unmounted, while the player is up (see app/+layout.svelte's
-    // `class:hidden={$playing || $androidMpvActive}`). Without this gate the carousel kept running a
-    // 60Hz Svelte flush + inline style writes underneath mpv for the whole episode — worst exactly
-    // where webview/mpv GPU contention hurts most, and resume-from-home is the common play path.
-    // Stop re-arming while hidden or playing, and restart when that changes.
+    // `class:hidden={$playing || $androidMpvActive}`). Do not advance underneath mpv; restart a full
+    // interval when the home page becomes visible again.
     const stalled = () => document.hidden || get(playing) || get(androidMpvActive)
-    const tick = (t: number) => {
-      if (stalled()) { raf = 0; return }
-      if (start == null) start = t
-      progress = Math.min(1, (t - start) / DURATION)
-      if (progress >= 1) { i = (i + 1) % n; start = t; progress = 0 }
-      raf = requestAnimationFrame(tick)
-    }
     const arm = () => {
-      if (raf || stalled()) return
-      start = null // don't count paused time against the current slide
-      raf = requestAnimationFrame(tick)
+      if (timer) clearTimeout(timer)
+      timer = undefined
+      if (!stalled()) timer = setTimeout(() => go((i + 1) % n), DURATION)
     }
     arm()
     const onWake = () => arm()
@@ -104,7 +97,7 @@
     const onHeroNav = (e: Event) => go((i + (e as CustomEvent<number>).detail + n) % n)
     window.addEventListener('hero-nav', onHeroNav)
     return () => {
-      cancelAnimationFrame(raf)
+      if (timer) clearTimeout(timer)
       cancelAnimationFrame(swipeResetFrame)
       document.removeEventListener('visibilitychange', onWake)
       stopPlaying()
@@ -264,7 +257,13 @@
               <button data-focusable onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
                       class="h-1 overflow-hidden rounded-full bg-white/25 transition-all duration-700"
                       style="width:{idx === i ? '3rem' : '1.5rem'}">
-                <div class="h-full" style="width:{idx < i ? 100 : idx === i ? progress * 100 : 0}%;background:var(--accent)"></div>
+                {#if idx === i}
+                  {#key cycle}
+                    <div class="hero-progress h-full" style="background:var(--accent)"></div>
+                  {/key}
+                {:else}
+                  <div class="h-full origin-left" style="transform:scaleX({idx < i ? 1 : 0});background:var(--accent)"></div>
+                {/if}
               </button>
             {/each}
           </div>
@@ -274,3 +273,15 @@
   </div>
   {/if}
 {/if}
+
+<style>
+  @keyframes hero-progress-fill {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  .hero-progress {
+    width: 100%;
+    transform-origin: left;
+    animation: hero-progress-fill 15s linear forwards;
+  }
+</style>
