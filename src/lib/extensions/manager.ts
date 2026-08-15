@@ -12,6 +12,7 @@ import { trackFetch, fetchEpoch } from './fetch-registry'
 import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
 import { afterExtensionReady, settleExtensionMethods } from './method-stream'
 import { loadCachedExtensionModule } from './module-cache'
+import { extensionSourceScheduler } from './source-scheduler'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -427,59 +428,61 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
       // Await only THIS worker. A broken worker may consume its 20s cap, but a sibling that loaded
       // in 200ms can already query and release rows through onBatch.
       if (!await e.ready) return []
-      const providerStartedAt = performance.now()
-      traceResolve(trace, 'legacy torrent provider start', { provider: e.cfg.name })
-      // A superseded resolve (source already picked) must not issue further worker queries — each
-      // one spawns HTTP that competes with the picked source's playback path.
-      const queried = await settleExtensionMethods(methods, async (method) => {
-        const methodStartedAt = performance.now()
-        traceResolve(trace, 'legacy torrent provider method start', { provider: e.cfg.name, method })
-        const results = signal?.aborted ? [] : await call(e, method, query)
-        traceResolve(trace, 'legacy torrent provider method finish', {
-          provider: e.cfg.name,
-          method,
-          durationMs: Math.round(performance.now() - methodStartedAt),
-          rows: results.length,
+      return extensionSourceScheduler.run(`torrent:${e.cfg.id}`, async () => {
+        const providerStartedAt = performance.now()
+        traceResolve(trace, 'legacy torrent provider start', { provider: e.cfg.name })
+        // A superseded resolve (source already picked) must not issue further worker queries — each
+        // one spawns HTTP that competes with the picked source's playback path.
+        const queried = await settleExtensionMethods(methods, async (method) => {
+          const methodStartedAt = performance.now()
+          traceResolve(trace, 'legacy torrent provider method start', { provider: e.cfg.name, method })
+          const results = signal?.aborted ? [] : await call(e, method, query)
+          traceResolve(trace, 'legacy torrent provider method finish', {
+            provider: e.cfg.name,
+            method,
+            durationMs: Math.round(performance.now() - methodStartedAt),
+            rows: results.length,
+          })
+          return results.map((result) => ({
+            ...(method === 'batch' && result.type == null ? { ...result, type: 'batch' as const } : result),
+            provider: result.provider ?? e.cfg.name,
+            providerId: e.cfg.id,
+            logo: result.logo ?? e.cfg.icon,
+          }))
+        }, (_method, results) => {
+          // Treat single() and batch() as independent tasks: an episode lookup must not sit hidden
+          // behind a slow season-pack query.
+          if (onBatch && results.length) onBatch(results)
         })
-        return results.map((result) => ({
-          ...(method === 'batch' && result.type == null ? { ...result, type: 'batch' as const } : result),
-          provider: result.provider ?? e.cfg.name,
-          providerId: e.cfg.id,
-          logo: result.logo ?? e.cfg.icon,
-        }))
-      }, (_method, results) => {
-        // Treat single() and batch() as independent tasks: an episode lookup must not sit hidden
-        // behind a slow season-pack query.
-        if (onBatch && results.length) onBatch(results)
-      })
-      // Preserve which SDK method produced the row. A lot of Blu-ray packs are named only
-      // "[Group] Title (BD 1080p)" with no textual batch marker, so losing `batch()` here made
-      // refinement label them "movie, not an episode". If single() and batch() return the same
-      // hash, merge the structural batch fact before the incremental callback sees it.
-      const byHash = new Map<string, TorrentResult>()
-      const noHash: TorrentResult[] = []
-      for (const { result: results } of queried) {
-        for (const result of results) {
-          const next = result
-          if (!next.hash) {
-            noHash.push(next)
-            continue
-          }
-          const previous = byHash.get(next.hash)
-          if (!previous) {
-            byHash.set(next.hash, next)
-          } else if (next.type === 'batch' && previous.type !== 'batch') {
-            byHash.set(next.hash, { ...previous, type: 'batch' })
+        // Preserve which SDK method produced the row. A lot of Blu-ray packs are named only
+        // "[Group] Title (BD 1080p)" with no textual batch marker, so losing `batch()` here made
+        // refinement label them "movie, not an episode". If single() and batch() return the same
+        // hash, merge the structural batch fact before the incremental callback sees it.
+        const byHash = new Map<string, TorrentResult>()
+        const noHash: TorrentResult[] = []
+        for (const { result: results } of queried) {
+          for (const result of results) {
+            const next = result
+            if (!next.hash) {
+              noHash.push(next)
+              continue
+            }
+            const previous = byHash.get(next.hash)
+            if (!previous) {
+              byHash.set(next.hash, next)
+            } else if (next.type === 'batch' && previous.type !== 'batch') {
+              byHash.set(next.hash, { ...previous, type: 'batch' })
+            }
           }
         }
-      }
-      const stamped = [...byHash.values(), ...noHash]
-      traceResolve(trace, 'legacy torrent provider finish', {
-        provider: e.cfg.name,
-        durationMs: Math.round(performance.now() - providerStartedAt),
-        rows: stamped.length,
+        const stamped = [...byHash.values(), ...noHash]
+        traceResolve(trace, 'legacy torrent provider finish', {
+          provider: e.cfg.name,
+          durationMs: Math.round(performance.now() - providerStartedAt),
+          rows: stamped.length,
+        })
+        return stamped
       })
-      return stamped
     }))
     const seen = new Set<string>()
     const out: TorrentResult[] = []
@@ -742,7 +745,7 @@ async function runningJvmExtensions(onlyId?: string): Promise<
  *  torrentProvider.queryTorrentProviders drives search/smartSearch through it. */
 export async function runningTorrentProviderExtensions(onlyId?: string): Promise<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  { id: string; name: string; icon?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
+  { id: string; name: string; icon?: string; ready: Promise<boolean>; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
   const exts = await ensureRunning()
   return exts
@@ -751,6 +754,7 @@ export async function runningTorrentProviderExtensions(onlyId?: string): Promise
       id: e.cfg.id,
       name: e.cfg.name,
       icon: e.cfg.icon,
+      ready: e.ready,
       call: afterExtensionReady(
         e.ready,
         (method: string, ...args: unknown[]) => callRaw(e, method, args),

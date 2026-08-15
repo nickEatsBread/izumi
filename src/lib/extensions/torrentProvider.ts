@@ -2,6 +2,7 @@ import type { Media } from '$lib/anilist/types'
 import { normalizeTorrentCount, type TorrentResult, type TorrentQuery } from './types'
 import { runningTorrentProviderExtensions } from './manager'
 import { currentResolveTrace, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
+import { extensionSourceScheduler } from './source-scheduler'
 
 // anime-torrent-provider SDK shapes. Fields we consume.
 export interface SnMedia {
@@ -74,76 +75,79 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia,
       // one spawns HTTP that competes with the picked source's playback path. Re-checked before
       // every dispatch tier, since getSettings/search can settle after the abort lands.
       if (signal?.aborted) return []
-      const providerStartedAt = performance.now()
-      traceResolve(trace, 'anime torrent provider start', { provider: p.name })
-      try {
-        const settingsStartedAt = performance.now()
-        const s = (await p.call('getSettings').catch(() => null)) as AtpSettings | null
-        traceResolve(trace, 'anime torrent provider settings ready', {
-          provider: p.name,
-          durationMs: Math.round(performance.now() - settingsStartedAt),
-          smartSearch: !!s?.canSmartSearch,
-        })
-        if (signal?.aborted) return []
-        const searchStartedAt = performance.now()
-        const raw = (s?.canSmartSearch
-          ? await p.call('smartSearch', { media, query: hasId ? '' : romaji, batch: false, episodeNumber: query.episode ?? -1, anidbAID: query.anidbAid, anidbEID: query.anidbEid, bestReleases: false })
-          : await p.call('search', { media, query: romaji })) as unknown
-        const list: AnimeTorrent[] = Array.isArray(raw) ? raw : []
-        traceResolve(trace, 'anime torrent provider search finish', {
-          provider: p.name,
-          method: s?.canSmartSearch ? 'smartSearch' : 'search',
-          durationMs: Math.round(performance.now() - searchStartedAt),
-          rows: list.length,
-        })
-        const missingHashes = list.filter((torrent) => !torrent.infoHash).length
-        if (missingHashes) traceResolve(trace, 'anime torrent hash lookups start', {
-          provider: p.name, torrents: missingHashes,
-        })
-        // getTorrentInfoHash is one worker dispatch PER torrent. It used to run strictly serially,
-        // so a 50-row result with no infoHash field was 50 back-to-back round-trips (each with a
-        // 20s cap) before ANY row reached the picker. Run them through a small window instead —
-        // wide enough to hide the per-dispatch latency, narrow enough not to stampede a provider
-        // that resolves each hash with its own HTTP fetch. Order is preserved via the slot array.
-        const HASH_LOOKUP_CONCURRENCY = 6
-        const slots: (TorrentResult | undefined)[] = new Array(list.length)
-        let next = 0
-        const lookupWorker = async () => {
-          while (next < list.length) {
-            // A superseded resolve must not issue further worker queries; leave the rest unslotted.
-            if (signal?.aborted) return
-            const index = next++
-            const t = list[index]
-            let hash = (t.infoHash ?? '').toLowerCase()
-            if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
-            const r = atorrentToResult(t, hash)
-            if (r) slots[index] = { ...r, provider: p.name, providerId: p.id, logo: p.icon }
+      if (!await p.ready || signal?.aborted) return []
+      return extensionSourceScheduler.run(`torrent-provider:${p.id}`, async () => {
+        const providerStartedAt = performance.now()
+        traceResolve(trace, 'anime torrent provider start', { provider: p.name })
+        try {
+          const settingsStartedAt = performance.now()
+          const s = (await p.call('getSettings').catch(() => null)) as AtpSettings | null
+          traceResolve(trace, 'anime torrent provider settings ready', {
+            provider: p.name,
+            durationMs: Math.round(performance.now() - settingsStartedAt),
+            smartSearch: !!s?.canSmartSearch,
+          })
+          if (signal?.aborted) return []
+          const searchStartedAt = performance.now()
+          const raw = (s?.canSmartSearch
+            ? await p.call('smartSearch', { media, query: hasId ? '' : romaji, batch: false, episodeNumber: query.episode ?? -1, anidbAID: query.anidbAid, anidbEID: query.anidbEid, bestReleases: false })
+            : await p.call('search', { media, query: romaji })) as unknown
+          const list: AnimeTorrent[] = Array.isArray(raw) ? raw : []
+          traceResolve(trace, 'anime torrent provider search finish', {
+            provider: p.name,
+            method: s?.canSmartSearch ? 'smartSearch' : 'search',
+            durationMs: Math.round(performance.now() - searchStartedAt),
+            rows: list.length,
+          })
+          const missingHashes = list.filter((torrent) => !torrent.infoHash).length
+          if (missingHashes) traceResolve(trace, 'anime torrent hash lookups start', {
+            provider: p.name, torrents: missingHashes,
+          })
+          // getTorrentInfoHash is one worker dispatch PER torrent. It used to run strictly serially,
+          // so a 50-row result with no infoHash field was 50 back-to-back round-trips (each with a
+          // 20s cap) before ANY row reached the picker. Run them through a small window instead —
+          // wide enough to hide the per-dispatch latency, narrow enough not to stampede a provider
+          // that resolves each hash with its own HTTP fetch. Order is preserved via the slot array.
+          const HASH_LOOKUP_CONCURRENCY = 6
+          const slots: (TorrentResult | undefined)[] = new Array(list.length)
+          let next = 0
+          const lookupWorker = async () => {
+            while (next < list.length) {
+              // A superseded resolve must not issue further worker queries; leave the rest unslotted.
+              if (signal?.aborted) return
+              const index = next++
+              const t = list[index]
+              let hash = (t.infoHash ?? '').toLowerCase()
+              if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
+              const r = atorrentToResult(t, hash)
+              if (r) slots[index] = { ...r, provider: p.name, providerId: p.id, logo: p.icon }
+            }
           }
+          await Promise.all(Array.from({ length: Math.min(HASH_LOOKUP_CONCURRENCY, list.length) }, lookupWorker))
+          if (signal?.aborted) return []
+          const out: TorrentResult[] = slots.filter((r): r is TorrentResult => !!r)
+          if (onBatch && out.length) onBatch(out)
+          traceResolve(trace, 'anime torrent provider finish', {
+            provider: p.name,
+            durationMs: Math.round(performance.now() - providerStartedAt),
+            rawRows: list.length,
+            usableRows: out.length,
+            hashLookups: missingHashes,
+          })
+          return out
         }
-        await Promise.all(Array.from({ length: Math.min(HASH_LOOKUP_CONCURRENCY, list.length) }, lookupWorker))
-        if (signal?.aborted) return []
-        const out: TorrentResult[] = slots.filter((r): r is TorrentResult => !!r)
-        if (onBatch && out.length) onBatch(out)
-        traceResolve(trace, 'anime torrent provider finish', {
-          provider: p.name,
-          durationMs: Math.round(performance.now() - providerStartedAt),
-          rawRows: list.length,
-          usableRows: out.length,
-          hashLookups: missingHashes,
-        })
-        return out
-      }
-      catch (err) {
-        // Silently degrade in release, but surface which provider threw during dev — a provider that
-        // finds the anime then throws (e.g. on the torrent-fetch step) otherwise looks like an empty
-        // result with no clue why. `import.meta.env.DEV` is compiled to `false` in release builds.
-        if (import.meta.env.DEV) console.warn(`[torrent-provider: ${p.name}] threw during query`, err)
-        traceResolveError(trace, 'anime torrent provider failed', err, {
-          provider: p.name,
-          durationMs: Math.round(performance.now() - providerStartedAt),
-        })
-        return []
-      }
+        catch (err) {
+          // Silently degrade in release, but surface which provider threw during dev — a provider that
+          // finds the anime then throws (e.g. on the torrent-fetch step) otherwise looks like an empty
+          // result with no clue why. `import.meta.env.DEV` is compiled to `false` in release builds.
+          if (import.meta.env.DEV) console.warn(`[torrent-provider: ${p.name}] threw during query`, err)
+          traceResolveError(trace, 'anime torrent provider failed', err, {
+            provider: p.name,
+            durationMs: Math.round(performance.now() - providerStartedAt),
+          })
+          throw err
+        }
+      }).catch(() => [])
     }))
     const seen = new Set<string>()
     return per.flat().filter((r) => { if (seen.has(r.hash)) return false; seen.add(r.hash); return true })
