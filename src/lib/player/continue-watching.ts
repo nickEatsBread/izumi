@@ -1,8 +1,8 @@
 import { derived, get, writable, type Readable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
 import type { Client } from '@urql/svelte'
-import { LIST_QUERY, MEDIA_BY_IDS_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries } from '$lib/anilist/lists'
-import { getMalListProgressOrThrow, setStatus } from '$lib/trackers'
+import { LIST_QUERY, MEDIA_BY_IDS_QUERY, flattenEntries } from '$lib/anilist/lists'
+import { getMalAnimeListMediaOrThrow, setStatus } from '$lib/trackers'
 import { cwDismissAction } from '$lib/settings/ui'
 import { hasAiredEpisodeToWatch } from '$lib/anilist/media'
 import { localHistory, durableHistory, sessionProgress, historyEntries, mediaSnapshot, type HistoryEntry } from './history'
@@ -194,25 +194,15 @@ async function fetchAni(client: QueryClient, userName: string | undefined): Prom
   catch { return { items: [], failed: true } }
 }
 
-async function fetchMal(client: QueryClient, malActive: boolean): Promise<{ items: Item[]; failed: boolean }> {
+async function fetchMal(malActive: boolean): Promise<{ items: Item[]; failed: boolean }> {
   if (!malActive) return { items: [], failed: false }
   try {
-    const list = await getMalListProgressOrThrow('watching', CAP)
-    if (!list.length) return { items: [], failed: false }
-    // MEDIA_BY_MAL_QUERY is `Page(perPage: 50)`, but CAP is 60 — asking for 60 ids silently
-    // returned only 50 and the unmatched entries were dropped by the `.filter` below, so a
-    // MAL user with >50 watching entries lost actively-watched shows from Continue Watching
-    // (and from the persisted snapshot). Chunk by the page size, as refreshLocalMedia does.
-    const malIds = list.map((e) => e.idMal)
-    const byMal = new Map<number | undefined, Media>()
-    for (let i = 0; i < malIds.length; i += 50) {
-      const res = await client.query(MEDIA_BY_MAL_QUERY, { ids: malIds.slice(i, i + 50) }, MEDIA_DEFAULT).toPromise()
-      if (res.error) return { items: [], failed: true }
-      for (const m of ((res.data as { Page?: { media?: Media[] } })?.Page?.media ?? [])) byMal.set(m.idMal, m)
-    }
-    const items = list
-      .map((e) => { const media = byMal.get(e.idMal); return media ? { media, progress: e.progress, updatedAt: e.updatedAt } : null })
-      .filter((x): x is Item => !!x)
+    const list = await getMalAnimeListMediaOrThrow('watching', CAP)
+    const items = list.map((entry) => ({
+      media: entry.media,
+      progress: entry.progress,
+      updatedAt: entry.updatedAt,
+    }))
     return { items, failed: false }
   }
   catch { return { items: [], failed: true } }
@@ -261,7 +251,7 @@ export async function reconcileContinueWatching(client: QueryClient, userName: s
     try {
       const [ani, mal, refreshed] = await Promise.all([
         fetchAni(client, userName),
-        fetchMal(client, malActive),
+        fetchMal(malActive),
         refreshLocalMedia(client),
       ])
       const enabledTrackerFailed = (!!userName && ani.failed) || (malActive && mal.failed)

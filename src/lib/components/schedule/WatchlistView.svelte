@@ -4,8 +4,8 @@
   // caught-up shows dimmed below with a next-episode countdown.
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { LIST_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries, type Entry } from '$lib/anilist/lists'
-  import { getMalListProgress, type MalListEntry } from '$lib/trackers'
+  import { LIST_QUERY, flattenEntries, type Entry } from '$lib/anilist/lists'
+  import { getMalAnimeListMediaOrThrow, type MalListEntry } from '$lib/trackers'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
   import { title as mediaTitle, cover, mediaHref, totalEpisodes } from '$lib/anilist/media'
@@ -32,10 +32,15 @@
 
   async function malSide(): Promise<{ entries: MalListEntry[]; media: Media[] }> {
     try {
-      const entries = await getMalListProgress('watching', 100)
-      if (!entries.length) return { entries: [], media: [] }
-      const r = await client.query(MEDIA_BY_MAL_QUERY, { ids: entries.map((e) => e.idMal) }).toPromise()
-      return { entries, media: (r.data?.Page?.media ?? []) as Media[] }
+      const list = await getMalAnimeListMediaOrThrow('watching', 100)
+      return {
+        entries: list.flatMap((entry) => entry.media.idMal == null ? [] : [{
+          idMal: entry.media.idMal,
+          progress: entry.progress,
+          updatedAt: entry.updatedAt,
+        }]),
+        media: list.map((entry) => entry.media),
+      }
     }
     catch { return { entries: [], media: [] } }
   }

@@ -3,13 +3,13 @@ import { get } from 'svelte/store'
 
 // Isolate the module from the real trackers stack (client/mal-auth/queue) — it only needs this one fn.
 const mocks = vi.hoisted(() => ({ malList: vi.fn() }))
-vi.mock('$lib/trackers', () => ({ getMalListProgressOrThrow: mocks.malList }))
+vi.mock('$lib/trackers', () => ({ getMalAnimeListMediaOrThrow: mocks.malList }))
 
 import {
   mergeInstant, buildSnapshot, reconcileContinueWatching,
   cwSnapshot, reconciling, reconciledOnce, CAP, type CwEntry,
 } from './continue-watching'
-import { LIST_QUERY, MEDIA_BY_MAL_QUERY, MEDIA_BY_IDS_QUERY } from '$lib/anilist/lists'
+import { LIST_QUERY, MEDIA_BY_IDS_QUERY } from '$lib/anilist/lists'
 import { durableHistory as localHistory, sessionProgress, type HistoryEntry } from './history'
 import type { Media } from '$lib/anilist/types'
 
@@ -168,8 +168,8 @@ describe('reconcileContinueWatching', () => {
   })
 
   it('writes the rebuilt snapshot from a successful MAL fetch', async () => {
-    mocks.malList.mockResolvedValue([{ idMal: 202, progress: 5, updatedAt: 1234 }])
-    await reconcileContinueWatching(okClient([media(101, { idMal: 202 })]) as never, undefined, true, true)
+    mocks.malList.mockResolvedValue([{ media: media(101, { idMal: 202 }), progress: 5, updatedAt: 1234 }])
+    await reconcileContinueWatching(okClient([]) as never, undefined, true, true)
     const snap = get(cwSnapshot)
     expect(snap.length).toBe(1)
     expect(snap[0].media.id).toBe(101)
@@ -178,12 +178,11 @@ describe('reconcileContinueWatching', () => {
     expect(get(reconciledOnce)).toBe(true)
   })
 
-  it('revalidates only the list read; the two media-metadata reads stay cache-first', async () => {
+  it('revalidates only the AniList list read; MAL supplies its own card metadata', async () => {
     // cache-first would serve the list from the process-lifetime normalized cache after the first
     // sync, so a reconcile could never see progress from another device or a list removal. The
-    // media-metadata reads (MAL id matching, local-history refresh) don't need that: titles/covers/
-    // episode counts don't change minute to minute, and fanning those out with cache-and-network on
-    // every mount was the expensive half of the original fix.
+    // MAL list nodes now provide their own titles/covers/episode counts, while the local-history
+    // refresh remains cache-first because that metadata does not change minute to minute.
     const calls: { query: unknown; requestPolicy: string | undefined }[] = []
     const spyClient = {
       query: (q: unknown, _v: unknown, ctx?: { requestPolicy?: string }) => {
@@ -191,15 +190,12 @@ describe('reconcileContinueWatching', () => {
         return { toPromise: async () => ({ data: { Page: { media: [media(101, { idMal: 202 })] } } }) }
       },
     }
-    mocks.malList.mockResolvedValue([{ idMal: 202, progress: 5, updatedAt: 1234 }])
+    mocks.malList.mockResolvedValue([{ media: media(101, { idMal: 202 }), progress: 5, updatedAt: 1234 }])
     localHistory.set({ 101: hist(101) }) // gives refreshLocalMedia an id to look up
     await reconcileContinueWatching(spyClient as never, 'someone', true, true)
-    expect(calls).toHaveLength(3)
-    // fetchAni/fetchMal/refreshLocalMedia race concurrently (Promise.all), so only the LIST call is
-    // order-guaranteed (it has no await ahead of it); match the two media calls by query identity.
+    expect(calls).toHaveLength(2)
     const byQuery = new Map(calls.map((c) => [c.query, c.requestPolicy]))
     expect(byQuery.get(LIST_QUERY)).toBe('cache-and-network')
-    expect(byQuery.get(MEDIA_BY_MAL_QUERY)).not.toBe('cache-and-network')
     expect(byQuery.get(MEDIA_BY_IDS_QUERY)).not.toBe('cache-and-network')
   })
 

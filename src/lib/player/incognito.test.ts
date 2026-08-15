@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 // continue-watching pulls in the whole trackers stack for its dismiss side-effect; stub it out.
-vi.mock('$lib/trackers', () => ({ setStatus: vi.fn(), getMalListProgressOrThrow: vi.fn() }))
+vi.mock('$lib/trackers', () => ({ setStatus: vi.fn(), getMalAnimeListMediaOrThrow: vi.fn() }))
 
 import { enterIncognito, exitIncognito, incognito } from '$lib/stores/incognito'
 import { saveLocalHistory, cwDismissAction } from '$lib/settings/ui'

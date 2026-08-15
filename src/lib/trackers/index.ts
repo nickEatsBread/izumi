@@ -4,6 +4,8 @@ import { gql } from '@urql/core'
 import { anilistToken, malToken, malUser, malClientId } from './config'
 import { malFetch } from './mal-auth'
 import { malHttpFetch } from './mal-http'
+import { getIndex, lookupAnilistByMal } from '$lib/stremio/idmap'
+import { mapMalAnimeListMedia, type MalAnimeListNode } from './mal-list-media'
 import { recordProgress, localHistory } from '$lib/player/history'
 import { incognito } from '$lib/stores/incognito'
 import {
@@ -254,17 +256,28 @@ export async function getMalProgress(idMal?: number): Promise<{ progress: number
 
 // One MAL animelist row (shared shape of the OAuth @me and public-username endpoints — MAL
 // returns identical JSON for both).
-interface MalListNode { node?: { id?: number }; list_status?: { num_episodes_watched?: number; updated_at?: string } }
+interface MalListNode { node?: MalAnimeListNode; list_status?: { num_episodes_watched?: number; updated_at?: string } }
 type MalListKind = 'anime' | 'manga'
+
+const MAL_ANIME_LIST_FIELDS = [
+  'list_status', 'alternative_titles', 'start_date', 'mean', 'num_list_users', 'media_type',
+  'status', 'num_episodes', 'start_season', 'average_episode_duration', 'rating',
+].join(',')
 
 // Fetch a MAL anime list for `status`, most-recently-updated first. Prefers the signed-in
 // viewer (OAuth @me); falls back to the PUBLIC list of a read-only `malUser` username, which
 // MAL's official API serves with just the app's X-MAL-CLIENT-ID header (no token). Returns
 // null when neither is configured; throws on an HTTP error so callers can tell "offline/error"
 // from "genuinely empty".
-async function fetchMalListRaw(status: string, limit: number, kind: MalListKind = 'anime'): Promise<MalListNode[] | null> {
+async function fetchMalListRaw(
+  status: string,
+  limit: number,
+  kind: MalListKind = 'anime',
+  includeMedia = false,
+): Promise<MalListNode[] | null> {
   const endpoint = kind === 'manga' ? 'mangalist' : 'animelist'
-  const q = `${endpoint}?status=${status}&sort=list_updated_at&limit=${limit}&fields=list_status`
+  const fields = kind === 'anime' && includeMedia ? MAL_ANIME_LIST_FIELDS : 'list_status'
+  const q = `${endpoint}?status=${status}&sort=list_updated_at&limit=${limit}&fields=${fields}`
   if (get(malToken)) {
     const r = await malFetch(`https://api.myanimelist.net/v2/users/@me/${q}`)
     if (!r) return null
@@ -285,7 +298,7 @@ async function fetchMalListRaw(status: string, limit: number, kind: MalListKind 
 // Fetch the viewer's MAL anime-list ids for a status (e.g. 'watching',
 // 'plan_to_watch'), most-recently-updated first, so the home rows can show the
 // MAL library for MAL-primary users. Returns [] if MAL isn't connected/set. Map these
-// ids to AniList media via MEDIA_BY_MAL_QUERY to render cards.
+// ids to canonical media only when a caller needs the compact membership set.
 export async function getMalAnimeIdsOrThrow(status: string, limit = 20): Promise<number[]> {
   const data = await fetchMalListRaw(status, limit)
   if (!data) return []
@@ -295,6 +308,35 @@ export async function getMalAnimeIdsOrThrow(status: string, limit = 20): Promise
 export async function getMalAnimeIds(status: string, limit = 20): Promise<number[]> {
   try { return await getMalAnimeIdsOrThrow(status, limit) }
   catch { return [] }
+}
+
+export interface MalAnimeMediaListEntry {
+  media: Media
+  progress: number
+  updatedAt: number
+}
+
+/** Fetch a MAL anime list with enough embedded metadata to render it without an AniList query.
+ * The cached Fribb map supplies canonical AniList ids, preserving existing detail/playback routes. */
+export async function getMalAnimeListMediaOrThrow(
+  status: string,
+  limit = 20,
+): Promise<MalAnimeMediaListEntry[]> {
+  const data = await fetchMalListRaw(status, limit, 'anime', true)
+  if (!data?.length) return []
+  const index = await getIndex()
+  const mapped = data.flatMap((entry) => {
+    const malId = entry.node?.id
+    const anilistId = malId == null ? undefined : lookupAnilistByMal(index, malId)
+    if (!entry.node || anilistId == null) return []
+    return [{
+      media: mapMalAnimeListMedia(entry.node, anilistId),
+      progress: entry.list_status?.num_episodes_watched ?? 0,
+      updatedAt: Date.parse(entry.list_status?.updated_at ?? '') || 0,
+    }]
+  })
+  if (!mapped.length) throw new Error('MyAnimeList titles could not be mapped for playback')
+  return mapped
 }
 
 // MAL exposes manga and light novels through one manga-list endpoint. AniList's matching MANGA
