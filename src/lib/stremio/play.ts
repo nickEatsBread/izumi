@@ -2704,11 +2704,13 @@ export async function playStream(
     if (episode != null) attach(media, episode, onState)
     if (directPlaybackId != null) {
       traceResolve(trace, 'waiting for first video frame')
-      void waitForDesktopFirstFrame(DIRECT_TORRENT_START_TIMEOUT_MS).then((ready) => {
+      void waitForDesktopFirstFrame(stream.url!, DIRECT_TORRENT_START_TIMEOUT_MS, trace).then((result) => {
         if (!stillOwnsPlayback()) return
         finishResolveTrace(
           trace,
-          ready ? 'first video frame' : 'first video frame timeout',
+          result === 'ready' ? 'first video frame'
+            : result === 'load-error' ? 'player load error'
+              : 'first video frame timeout',
           streamTraceDetails(stream),
         )
       })
@@ -2744,20 +2746,30 @@ export async function playStream(
 /** `player_embed` resolving means mpv accepted the URL, not that the replacement produced video.
  * Direct torrents can sit there downloading indefinitely, so recovery must wait for a real
  * duration/progress event before declaring a candidate healthy. */
-async function waitForDesktopFirstFrame(timeoutMs: number): Promise<boolean> {
-  if (get(isAndroid) || get(enableExternalPlayer)) return true
-  return await new Promise<boolean>(async (resolve) => {
+type DesktopFirstFrameResult = 'ready' | 'timeout' | 'load-error'
+
+async function waitForDesktopFirstFrame(
+  expectedUrl: string,
+  timeoutMs: number,
+  trace = currentResolveTrace(),
+): Promise<DesktopFirstFrameResult> {
+  if (get(isAndroid) || get(enableExternalPlayer)) return 'ready'
+  return await new Promise<DesktopFirstFrameResult>(async (resolve) => {
     let settled = false
-    let unlisten: (() => void) | null = null
+    let unlistenProgress: (() => void) | null = null
+    let unlistenLoaded: (() => void) | null = null
+    let unlistenError: (() => void) | null = null
     let lastDownloadedBytes = 0
     let lastAdvancedAt = Date.now()
     const startedAt = Date.now()
-    const finish = (ready: boolean) => {
+    const finish = (result: DesktopFirstFrameResult) => {
       if (settled) return
       settled = true
       clearInterval(timer)
-      unlisten?.()
-      resolve(ready)
+      unlistenProgress?.()
+      unlistenLoaded?.()
+      unlistenError?.()
+      resolve(result)
     }
     const timer = setInterval(() => {
       void directTorrentHealth().then((health) => {
@@ -2770,18 +2782,32 @@ async function waitForDesktopFirstFrame(timeoutMs: number): Promise<boolean> {
         if (now - startedAt >= DIRECT_TORRENT_HARD_START_TIMEOUT_MS
           || (now - startedAt >= timeoutMs
             && now - lastAdvancedAt >= DIRECT_TORRENT_NO_PROGRESS_TIMEOUT_MS)) {
-          finish(false)
+          finish('timeout')
         }
       })
     }, 1_000)
     try {
-      const off = await listen<[number, number]>('player-progress', (event) => {
-        if (event.payload[1] > 0) finish(true)
-      })
-      if (settled) return off()
-      unlisten = off
+      const listeners = await Promise.all([
+        listen<[number, number]>('player-progress', (event) => {
+          if (event.payload[1] > 0) finish('ready')
+        }),
+        listen<string>('player-file-loaded', (event) => {
+          if (event.payload !== expectedUrl) return
+          traceResolve(trace, 'desktop mpv FILE_LOADED')
+        }),
+        listen<string>('player-load-error', (event) => {
+          if (event.payload !== expectedUrl) return
+          traceResolve(trace, 'desktop mpv load error')
+          finish('load-error')
+        }),
+      ])
+      if (settled) {
+        listeners.forEach((off) => off())
+        return
+      }
+      ;[unlistenProgress, unlistenLoaded, unlistenError] = listeners
     } catch {
-      finish(false)
+      finish('timeout')
     }
   })
 }
@@ -2887,10 +2913,16 @@ export async function recoverPlaybackSource(
     if (!stillOwnsPlayback()) return false
     const directCandidate = directP2p && !!candidate.infoHash && !candidate.url
     if (played && directCandidate) {
-      played = await waitForDesktopFirstFrame(DIRECT_TORRENT_RECOVERY_TIMEOUT_MS)
+      const firstFrame = await waitForDesktopFirstFrame(
+        get(nowPlayingStream).url,
+        DIRECT_TORRENT_RECOVERY_TIMEOUT_MS,
+      )
+      played = firstFrame === 'ready'
       if (!stillOwnsPlayback()) return false
       if (!played) {
-        lastError = 'Replacement torrent also failed to produce video.'
+        lastError = firstFrame === 'load-error'
+          ? 'The player rejected the replacement source.'
+          : 'Replacement torrent also failed to produce video.'
         await stopDirectTorrentPlayback()
       }
     }

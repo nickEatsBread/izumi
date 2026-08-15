@@ -163,7 +163,7 @@ fn spawn_event_loop(app: AppHandle, sock: String) {
         let Some(mut s) = stream else { return };
 
         // Observe the properties that drive progress + end-of-file.
-        for (id, prop) in ["time-pos", "duration", "eof-reached", "mute"]
+        for (id, prop) in ["time-pos", "duration", "eof-reached", "mute", "path"]
             .iter()
             .enumerate()
         {
@@ -175,6 +175,7 @@ fn spawn_event_loop(app: AppHandle, sock: String) {
 
         let reader = BufReader::new(s);
         let mut duration = 0.0f64;
+        let mut path = String::new();
         for line in reader.lines().map_while(Result::ok) {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
                 continue;
@@ -198,13 +199,24 @@ fn spawn_event_loop(app: AppHandle, sock: String) {
                                 let _ = app.emit("player-muted", muted);
                             }
                         }
+                        "path" => {
+                            if let Some(value) = v.get("data").and_then(|d| d.as_str()) {
+                                path = value.to_string();
+                            }
+                        }
                         _ => {}
                     }
                 }
                 Some("end-file") => {
                     // Normal completion → let the frontend auto-advance.
-                    if v.get("reason").and_then(|r| r.as_str()) == Some("eof") {
-                        let _ = app.emit("player-ended", ());
+                    match v.get("reason").and_then(|r| r.as_str()) {
+                        Some("eof") => {
+                            let _ = app.emit("player-ended", ());
+                        }
+                        Some("error") => {
+                            let _ = app.emit("player-load-error", path.clone());
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}
