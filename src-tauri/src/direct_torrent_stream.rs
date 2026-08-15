@@ -189,7 +189,7 @@ async fn stream_file(
     request_headers: HeaderMap,
 ) -> Response {
     let api = &state.api;
-    let mut stream = match api.api_stream(torrent_id, file_id) {
+    let mut stream = match api.api_stream(torrent_id, file_id).await {
         Ok(stream) => stream,
         Err(error) => return text_error(StatusCode::NOT_FOUND, error.to_string()),
     };
