@@ -1581,6 +1581,9 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // window, with a small fast-start probe.
         let _ = init.set_option("cache", "yes");
         let _ = init.set_option("force-seekable", "yes");
+        // Refill in chunks rather than waking the demuxer continuously. mpv recommends 10s as a
+        // general power/load-saving value; useful on handhelds and inert during initial probing.
+        let _ = init.set_option("demuxer-hysteresis-secs", "10");
         // Prebuffer a small cushion before the first unpause so a cold stream doesn't play a
         // fraction of a second then stall — see new_mpv_with_vo.
         let _ = init.set_option("cache-pause-initial", "yes");
@@ -1792,6 +1795,9 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // a real "loaded" extent to show.
         let _ = init.set_option("cache", "yes");
         let _ = init.set_option("force-seekable", "yes");
+        // Refill in chunks rather than waking the demuxer continuously. mpv recommends 10s as a
+        // general power/load-saving value; useful on handhelds and inert during initial probing.
+        let _ = init.set_option("demuxer-hysteresis-secs", "10");
         // Accumulate a small cushion before the FIRST unpause. A cold debrid link whose
         // throughput ramps over the first second otherwise "plays 0.5s then spins to buffer"
         // because the demuxer cache underruns right after the first frame. Prebuffer trades a
