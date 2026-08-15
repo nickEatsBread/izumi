@@ -10,3 +10,12 @@ export async function settleExtensionMethods<M, R>(
     return { method, result }
   }))
 }
+
+/** Bind work to one extension's readiness without making sibling extensions wait for it. */
+export function afterExtensionReady<A extends unknown[], R>(
+  ready: Promise<boolean>,
+  run: (...args: A) => Promise<R>,
+  unavailable: R,
+): (...args: A) => Promise<R> {
+  return async (...args: A) => (await ready ? run(...args) : unavailable)
+}

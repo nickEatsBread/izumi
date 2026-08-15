@@ -10,7 +10,7 @@ import { clearProviderCache } from '$lib/stremio/online-cache'
 import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
 import { trackFetch, fetchEpoch } from './fetch-registry'
 import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
-import { settleExtensionMethods } from './method-stream'
+import { afterExtensionReady, settleExtensionMethods } from './method-stream'
 import { loadCachedExtensionModule } from './module-cache'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
@@ -305,9 +305,9 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
   }
   ext.ready = new Promise<boolean>((resolve) => {
     const id = ++ext.seq
-    // A wedged worker (e.g. a shim module-eval error before onmessage is wired) must NOT hang the
-    // pipeline — queryExtensions/runningStreamExtensions Promise.all on every ext.ready. Time out to
-    // "not ready" after 20s, and treat a worker error the same way.
+    // A wedged worker (e.g. a shim module-eval error before onmessage is wired) must eventually
+    // leave its own provider task. Siblings no longer wait for it, but the overall resolve still
+    // needs this 20s backstop before it can report that every provider has settled.
     const t = setTimeout(() => { ext.waits.delete(id); resolve(false) }, 20000)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ext.waits.set(id, (m: any) => { clearTimeout(t); resolve(!m.error) })
@@ -389,8 +389,8 @@ export async function runningExtensionCount(): Promise<number> {
 
 /** Pre-boot the extension runtime (manifest + modules + workers) off the click-to-play path.
  *  Called once at app start; the first picker open then only pays the actual search. */
-export function warmExtensions(): void {
-  void ensureRunning().catch(() => {})
+export async function warmExtensions(): Promise<void> {
+  await ensureRunning().then(() => {}, () => {})
 }
 
 function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<TorrentResult[]> {
@@ -412,20 +412,21 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
     const trace = currentResolveTrace(query.anilistId, query.episode)
     const exts = await ensureRunning()
     const candidates = exts.filter((e) => !onlyId || e.cfg.id === onlyId)
-    const live = (await Promise.all(candidates.map(async (e) => ((await e.ready) ? e : null))))
-      .filter((e): e is RunningExt => !!e)
     // Movies also get single(): SDK sources treat single() as the universal entry (their movie()
     // often returns [] with "single already gets movies with matching media id").
     const methods = query.episode != null ? ['single', 'batch'] : ['single', 'movie']
     traceResolve(trace, 'legacy torrent extensions ready', {
       configured: exts.length,
-      queried: live.map((extension) => extension.cfg.name),
+      candidates: candidates.length,
       methods,
     })
     // Stamp each result with the extension that produced it (name + icon), mirroring the
     // torrent-provider path, so the picker labels the row with the real source instead of the
     // generic "Extension" fallback. Per-extension map (not a flat fan-out) keeps that association.
-    const batches = await Promise.all(live.map(async (e) => {
+    const batches = await Promise.all(candidates.map(async (e) => {
+      // Await only THIS worker. A broken worker may consume its 20s cap, but a sibling that loaded
+      // in 200ms can already query and release rows through onBatch.
+      if (!await e.ready) return []
       const providerStartedAt = performance.now()
       traceResolve(trace, 'legacy torrent provider start', { provider: e.cfg.name })
       // A superseded resolve (source already picked) must not issue further worker queries — each
@@ -511,12 +512,19 @@ export async function runningStreamExtensions(onlyId?: string): Promise<
   { id: string; name: string; lang?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
   const [exts, jvm] = await Promise.all([ensureRunning(), runningJvmExtensions(onlyId)])
-  const live = (await Promise.all(
-    exts.filter((e) => !onlyId || e.cfg.id === onlyId)
-      .map(async (e) => ((await e.ready) && e.cfg.type === 'onlinestream-provider' ? e : null)),
-  )).filter(Boolean) as RunningExt[]
+  const candidates = exts.filter((e) =>
+    (!onlyId || e.cfg.id === onlyId) && e.cfg.type === 'onlinestream-provider')
   return [
-    ...live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, lang: e.cfg.lang, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) })),
+    ...candidates.map((e) => ({
+      id: e.cfg.id,
+      name: e.cfg.name,
+      lang: e.cfg.lang,
+      call: afterExtensionReady(
+        e.ready,
+        (method: string, ...args: unknown[]) => callRaw(e, method, args),
+        null,
+      ),
+    })),
     ...jvm,
   ]
 }
@@ -737,9 +745,16 @@ export async function runningTorrentProviderExtensions(onlyId?: string): Promise
   { id: string; name: string; icon?: string; call: (method: string, ...args: unknown[]) => Promise<any> }[]
 > {
   const exts = await ensureRunning()
-  const live = (await Promise.all(
-    exts.filter((e) => !onlyId || e.cfg.id === onlyId)
-      .map(async (e) => ((await e.ready) && e.cfg.type === 'anime-torrent-provider' ? e : null)),
-  )).filter(Boolean) as RunningExt[]
-  return live.map((e) => ({ id: e.cfg.id, name: e.cfg.name, icon: e.cfg.icon, call: (method: string, ...args: unknown[]) => callRaw(e, method, args) }))
+  return exts
+    .filter((e) => (!onlyId || e.cfg.id === onlyId) && e.cfg.type === 'anime-torrent-provider')
+    .map((e) => ({
+      id: e.cfg.id,
+      name: e.cfg.name,
+      icon: e.cfg.icon,
+      call: afterExtensionReady(
+        e.ready,
+        (method: string, ...args: unknown[]) => callRaw(e, method, args),
+        null,
+      ),
+    }))
 }

@@ -39,7 +39,7 @@
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { getIndex } from '$lib/stremio/idmap'
-  import { idle } from '$lib/util/idle'
+  import { scheduleBootWork } from '$lib/util/boot-work'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { enabledAddonUrls } from '$lib/stremio/sources'
   import { warmExtensions } from '$lib/extensions/manager'
@@ -122,7 +122,6 @@
     // and walks it all to build the index, which is enough to push out first paint on the Deck.
     // Nothing on the home render path touches it, and both real consumers await getIndex()
     // themselves, so this only moves WHEN the warm happens, never whether.
-    idle(() => { getIndex().catch(() => {}) }, 3000)
     // Warm each addon's connection on the shared pooled HTTP client (and cache its
     // manifest) so the FIRST play skips the ~200ms TLS handshake and the picker has
     // logos ready. Only effective now that http_get pools connections.
@@ -135,14 +134,19 @@
     // bundle carries cheerio + crypto-js + sucrase and cannot be code-split. Starting N of those
     // while the shell is still painting is the single most contended moment on the Deck. Idle is
     // still far earlier than any realistic first Play click, so the warm contract is unchanged.
-    idle(() => warmExtensions(), 5000)
+    void scheduleBootWork('extensions', warmExtensions, 1800)
     // Warm the lazily-split player chunk once boot is quiet, so the FIRST Play / source pick pays
     // no module-load delay — the bytes are just off the first-paint critical path, not off the
     // device. Browser-cached, so these resolve instantly when the real mount happens.
-    idle(() => {
-      void loadStreamPicker(); void loadSourceConnecting()
-      void (get(isAndroid) ? loadAndroidPlayer() : loadPlayerOverlay())
-    }, 6000)
+    void scheduleBootWork('player', async () => {
+      await Promise.all([
+        loadStreamPicker(), loadSourceConnecting(),
+        get(isAndroid) ? loadAndroidPlayer() : loadPlayerOverlay(),
+      ])
+    }, 2500)
+    // The large ID map goes last in the serialized queue. A real lookup still calls getIndex()
+    // directly and shares its cached promise, so user work is never forced to wait for this slot.
+    void scheduleBootWork('id-map', async () => { await getIndex() }, 3500)
     // Refresh the signed-in profile (name + avatar) for an already-connected session,
     // so the sidebar shows the real picture without needing a re-login. No-op if not
     // connected. Fire-and-forget.

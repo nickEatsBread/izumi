@@ -18,7 +18,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, oneshot, Mutex, OnceCell},
+    sync::{mpsc, oneshot, watch, Mutex, OnceCell},
     task::JoinHandle,
     time::{sleep, timeout, Instant},
 };
@@ -79,9 +79,52 @@ pub struct DirectTorrentState {
     /// torrent lock. The webview cannot abort a Tauri invoke directly, so this generation is the
     /// cancellation boundary shared by explicit Back/Cancel and replacement source attempts.
     active_startup_id: AtomicU64,
-    /// Info hashes with a metadata PREFETCH in flight, so the picker re-arming on every rank
-    /// change cannot stack duplicate DHT lookups for the same candidate.
-    prefetching: Mutex<HashSet<String>>,
+    /// The single speculative metadata lookup. Re-ranking cancels stale work; selecting the same
+    /// hash joins this flight instead of starting a second DHT/tracker exchange beside it.
+    prefetching: Mutex<Option<MetadataFlightEntry>>,
+}
+
+struct MetadataFlightEntry {
+    info_hash: String,
+    flight: Arc<MetadataFlight>,
+}
+
+struct MetadataFlight {
+    cancel: watch::Sender<bool>,
+    result: watch::Sender<MetadataFlightResult>,
+}
+
+#[derive(Clone)]
+enum MetadataFlightResult {
+    Pending,
+    Ready(CachedTorrentMetadata),
+    Failed,
+}
+
+impl MetadataFlight {
+    fn new() -> Self {
+        let (cancel, _) = watch::channel(false);
+        let (result, _) = watch::channel(MetadataFlightResult::Pending);
+        Self { cancel, result }
+    }
+
+    fn cancel(&self) {
+        self.cancel.send_replace(true);
+    }
+
+    async fn wait(&self) -> Option<CachedTorrentMetadata> {
+        let mut result = self.result.subscribe();
+        loop {
+            match result.borrow().clone() {
+                MetadataFlightResult::Pending => {}
+                MetadataFlightResult::Ready(metadata) => return Some(metadata),
+                MetadataFlightResult::Failed => return None,
+            }
+            if result.changed().await.is_err() {
+                return None;
+            }
+        }
+    }
 }
 
 struct DirectTorrentEngine {
@@ -748,13 +791,73 @@ pub fn torrent_playback_cancel_start(state: tauri::State<'_, DirectTorrentState>
     );
 }
 
+async fn begin_metadata_flight(
+    state: &DirectTorrentState,
+    info_hash: &str,
+) -> (Arc<MetadataFlight>, bool) {
+    let mut current = state.prefetching.lock().await;
+    if let Some(entry) = current.as_ref() {
+        if entry.info_hash == info_hash {
+            return (entry.flight.clone(), false);
+        }
+        entry.flight.cancel();
+    }
+    let flight = Arc::new(MetadataFlight::new());
+    *current = Some(MetadataFlightEntry {
+        info_hash: info_hash.to_string(),
+        flight: flight.clone(),
+    });
+    (flight, true)
+}
+
+async fn matching_metadata_flight(
+    state: &DirectTorrentState,
+    info_hash: &str,
+) -> Option<Arc<MetadataFlight>> {
+    state
+        .prefetching
+        .lock()
+        .await
+        .as_ref()
+        .filter(|entry| entry.info_hash == info_hash)
+        .map(|entry| entry.flight.clone())
+}
+
+async fn cancel_other_metadata_flight(state: &DirectTorrentState, info_hash: &str) {
+    let current = state.prefetching.lock().await;
+    if let Some(entry) = current.as_ref() {
+        if entry.info_hash != info_hash {
+            entry.flight.cancel();
+        }
+    }
+}
+
+async fn finish_metadata_flight(
+    state: &DirectTorrentState,
+    info_hash: &str,
+    flight: &Arc<MetadataFlight>,
+    metadata: Option<CachedTorrentMetadata>,
+) {
+    flight.result.send_replace(match metadata {
+        Some(metadata) => MetadataFlightResult::Ready(metadata),
+        None => MetadataFlightResult::Failed,
+    });
+    let mut current = state.prefetching.lock().await;
+    if current
+        .as_ref()
+        .is_some_and(|entry| entry.info_hash == info_hash && Arc::ptr_eq(&entry.flight, flight))
+    {
+        *current = None;
+    }
+}
+
 /// Warm the metadata cache for a magnet the picker is about to auto-commit. The DHT/tracker
 /// metadata exchange is the dominant variable in click-to-first-frame for direct P2P (routinely
 /// 2-15 s), and the auto-pick countdown is pure dead time in front of it — this runs the same
 /// list-only lookup and cache writes as torrent_playback_url so the commit that follows finds the
 /// metadata already in memory/on disk. Best-effort by design: any failure is reported as `false`
-/// and the real start simply repeats the lookup with its own budget. Returns `true` when the
-/// metadata is cached (already or freshly).
+/// and the real start falls back with its remaining budget. A real start for the same hash joins
+/// this lookup instead of duplicating it. Returns `true` when metadata is cached (already/freshly).
 #[tauri::command]
 pub async fn torrent_metadata_prefetch(
     app: AppHandle,
@@ -787,13 +890,18 @@ pub async fn torrent_metadata_prefetch(
     if read_disk_metadata(&disk_cache_path).await.is_some() {
         return Ok(true);
     }
-    {
-        let mut inflight = state.prefetching.lock().await;
-        if !inflight.insert(info_hash_key.clone()) {
-            return Ok(false); // one lookup per hash at a time; the commit path has its own budget
-        }
+    let (flight, owns_flight) = begin_metadata_flight(&state, &info_hash_key).await;
+    if !owns_flight {
+        return Ok(flight.wait().await.is_some());
     }
-    let result = async {
+    let mut cancel = flight.cancel.subscribe();
+    let result: Result<Option<CachedTorrentMetadata>, String> = tokio::select! {
+      _ = async {
+        if !*cancel.borrow() {
+            let _ = cancel.changed().await;
+        }
+      } => Ok(None),
+      result = async {
         // A prefetch must never be the thing that surfaces a VPN/kill-switch error — that belongs
         // to a real playback attempt the user can see fail.
         if app
@@ -801,7 +909,7 @@ pub async fn torrent_metadata_prefetch(
             .ensure_up()
             .is_err()
         {
-            return Ok(false);
+            return Ok(None);
         }
         let engine = state.get(&app, socks_proxy_url, bind_interface).await?;
         let allowance = timeout_ms
@@ -813,12 +921,16 @@ pub async fn torrent_metadata_prefetch(
                 .await
             {
                 Ok(AddTorrentResponse::ListOnly(listing)) => listing,
-                _ => return Ok(false),
+                _ => return Ok(None),
             };
         if listing.info_hash.as_string() != info_hash_key {
-            return Ok(false);
+            return Ok(None);
         }
         let torrent_bytes = listing.torrent_bytes.to_vec();
+        let metadata = CachedTorrentMetadata {
+            torrent_bytes: torrent_bytes.clone(),
+            seen_peers: listing.seen_peers.clone(),
+        };
         let mut cache = state.metadata_cache.lock().await;
         if cache.len() >= METADATA_CACHE_ENTRIES {
             if let Some(oldest) = cache.keys().next().cloned() {
@@ -827,18 +939,23 @@ pub async fn torrent_metadata_prefetch(
         }
         cache.insert(
             info_hash_key.clone(),
-            CachedTorrentMetadata {
-                torrent_bytes: torrent_bytes.clone(),
-                seen_peers: listing.seen_peers.clone(),
-            },
+            metadata.clone(),
         );
         drop(cache);
         tauri::async_runtime::spawn(write_disk_metadata(disk_cache_path, torrent_bytes, 0));
-        Ok(true)
+        Ok(Some(metadata))
+      } => result,
+    };
+    match result {
+        Ok(metadata) => {
+            finish_metadata_flight(&state, &info_hash_key, &flight, metadata.clone()).await;
+            Ok(metadata.is_some())
+        }
+        Err(error) => {
+            finish_metadata_flight(&state, &info_hash_key, &flight, None).await;
+            Err(error)
+        }
     }
-    .await;
-    state.prefetching.lock().await.remove(&info_hash_key);
-    result
 }
 
 #[tauri::command]
@@ -880,6 +997,10 @@ pub async fn torrent_playback_url(
         .as_id20()
         .ok_or("Direct playback currently needs a BitTorrent v1 info hash.")?;
     let info_hash_key = info_hash.as_string();
+    // A speculative lookup for a candidate the user did not choose has no value now and can
+    // contend with the selected torrent on constrained Android devices. Preserve the matching
+    // flight so this startup can join it below.
+    cancel_other_metadata_flight(&state, &info_hash_key).await;
     let magnet_trackers = parsed_magnet.trackers;
     let tracker_count = magnet_trackers.len();
     let engine_started = Instant::now();
@@ -909,13 +1030,12 @@ pub async fn torrent_playback_url(
         None
     };
     let disk_cached = disk_metadata.is_some();
-    let cached_metadata = memory_metadata.or_else(|| {
+    let mut cached_metadata = memory_metadata.or_else(|| {
         disk_metadata.map(|torrent_bytes| CachedTorrentMetadata {
             torrent_bytes,
             seen_peers: Vec::new(),
         })
     });
-    let mut metadata_cached = cached_metadata.is_some();
     let mut metadata_cache = if memory_cached {
         "memory"
     } else if disk_cached {
@@ -923,6 +1043,22 @@ pub async fn torrent_playback_url(
     } else {
         "miss"
     };
+    if cached_metadata.is_none() {
+        if let Some(flight) = matching_metadata_flight(&state, &info_hash_key).await {
+            let allowance = remaining_startup_time(startup_budget_started, startup_timeout);
+            let joined = tokio::select! {
+                result = timeout(allowance, flight.wait()) => result.ok().flatten(),
+                _ = wait_for_startup_cancellation(&state, startup_id) => {
+                    return Err(STARTUP_CANCELED.into());
+                }
+            };
+            if joined.is_some() {
+                metadata_cache = "prefetch";
+                cached_metadata = joined;
+            }
+        }
+    }
+    let mut metadata_cached = cached_metadata.is_some();
     let cached_peers = cached_metadata
         .as_ref()
         .map(|cached| cached.seen_peers.clone())
@@ -1847,12 +1983,12 @@ pub async fn torrent_playback_stop(
 #[cfg(test)]
 mod tests {
     use super::{
-        add_public_trackers, configured_startup_timeout, empty_fastresume_bitfield_len,
-        mbps_to_bps, metadata_prefetch_source, normalized_socks_proxy, peer_listener_enabled,
-        proxy_safe_magnet, ratio_target_bytes, remaining_startup_time,
-        selected_file_downloaded_bytes, selection_needs_restoring, startup_is_current,
-        upload_limit, upnp_enabled, DirectTorrentState, METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT,
-        PUBLIC_TRACKERS,
+        add_public_trackers, begin_metadata_flight, configured_startup_timeout,
+        empty_fastresume_bitfield_len, mbps_to_bps, metadata_prefetch_source,
+        normalized_socks_proxy, peer_listener_enabled, proxy_safe_magnet, ratio_target_bytes,
+        remaining_startup_time, selected_file_downloaded_bytes, selection_needs_restoring,
+        startup_is_current, upload_limit, upnp_enabled, DirectTorrentState, METADATA_TIMEOUT,
+        MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
     };
     use std::sync::atomic::Ordering;
 
@@ -1910,6 +2046,24 @@ mod tests {
         state.active_startup_id.store(second, Ordering::Release);
         assert!(!startup_is_current(&state, first));
         assert!(startup_is_current(&state, second));
+    }
+
+    #[test]
+    fn metadata_prefetch_is_single_flight_and_replacing_it_cancels_stale_work() {
+        tauri::async_runtime::block_on(async {
+            let state = DirectTorrentState::default();
+            let (first, owns_first) = begin_metadata_flight(&state, "first").await;
+            let (same, owns_same) = begin_metadata_flight(&state, "first").await;
+            assert!(owns_first);
+            assert!(!owns_same);
+            assert!(std::sync::Arc::ptr_eq(&first, &same));
+
+            let mut canceled = first.cancel.subscribe();
+            let (_replacement, owns_replacement) = begin_metadata_flight(&state, "second").await;
+            assert!(owns_replacement);
+            canceled.changed().await.unwrap();
+            assert!(*canceled.borrow());
+        });
     }
 
     #[test]
