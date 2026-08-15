@@ -9,8 +9,8 @@
   import { androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
-  // Lazy-mounted: the player stack + its source-resolve overlays (which drag in lottie-web) are
-  // ~30% of the app JS but never render until playback/resolve starts. Loading them on demand
+  // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
+  // until playback/resolve starts. Loading them on demand
   // keeps first home paint off that code entirely. See Lazy.svelte.
   import Lazy from '$lib/components/Lazy.svelte'
   import PlayFeedback from '$lib/components/PlayFeedback.svelte'
@@ -38,7 +38,6 @@
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
-  import { getIndex } from '$lib/stremio/idmap'
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { enabledAddonUrls } from '$lib/stremio/sources'
@@ -114,14 +113,6 @@
     const stopVpnToasts = initTorrentVpnToasts()
     let stopDeepLinks: () => void = () => {}
     initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
-    // Pre-warm the Fribb id map (kitsu lookup) at boot — it's a ~6MB one-time fetch
-    // (persisted to idb after), so a fresh install's FIRST play doesn't eat it on the
-    // click-to-play path. Fire-and-forget; getIndex is cached/idempotent.
-    //
-    // Deferred to idle: even on the warm path this deserialises a ~30-40k-entry array out of idb
-    // and walks it all to build the index, which is enough to push out first paint on the Deck.
-    // Nothing on the home render path touches it, and both real consumers await getIndex()
-    // themselves, so this only moves WHEN the warm happens, never whether.
     // Warm each addon's connection on the shared pooled HTTP client (and cache its
     // manifest) so the FIRST play skips the ~200ms TLS handshake and the picker has
     // logos ready. Only effective now that http_get pools connections.
@@ -144,9 +135,6 @@
         get(isAndroid) ? loadAndroidPlayer() : loadPlayerOverlay(),
       ])
     }, 2500)
-    // The large ID map goes last in the serialized queue. A real lookup still calls getIndex()
-    // directly and shares its cached promise, so user work is never forced to wait for this slot.
-    void scheduleBootWork('id-map', async () => { await getIndex() }, 3500)
     // Refresh the signed-in profile (name + avatar) for an already-connected session,
     // so the sidebar shows the real picture without needing a re-login. No-op if not
     // connected. Fire-and-forget.
@@ -283,11 +271,11 @@
 {#if $androidMpvActive}<Lazy load={loadAndroidPlayer} />{/if}
 {#if $androidMpvActive}<Lazy load={loadCommentsPanel} />{/if}
 {#if $androidMpvActive}<Lazy load={loadPartyPresence} props={{ floating: true }} />{/if}
-<!-- Player-flow overlays: self-gated on their trigger store here so the module (and lottie-web,
-     which SourceLoader pulls in) loads only when a resolve/cache/picker actually starts. -->
+<!-- Player-flow overlays: self-gated on their trigger store here so the module loads only when a
+     resolve/cache/picker actually starts. -->
 <!-- These two ARE the feedback for a tap on Play or an episode, so they carry a `pending` stand-in:
-     their chunk graph includes lottie-web, and on a cold cache the gate opened while the module was
-     still on the network — the click produced an empty screen and then, seconds later, a video.
+     on a cold cache the gate can open while the module is still on the network — without this the
+     click produced an empty screen and then, seconds later, a video.
      The continuation case stays silent on purpose: a binge keeps the picker hidden, so covering the
      screen there would flash a selector the user never asked for. -->
 {#if $streamPicker}

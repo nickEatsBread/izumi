@@ -3,7 +3,7 @@
   // stays OUT of the eager boot bundle. Gate the surrounding {#if} on whatever store makes the
   // component relevant; the module then loads on first use and the browser caches it, so a
   // second open is instant. This is how the whole player stack (PlayerOverlay, AndroidPlayer,
-  // StreamPicker, and lottie-web via SourceLoader — ~30% of the app JS) is kept off first paint.
+  // StreamPicker and the player stack) is kept off first paint.
   import { untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -13,9 +13,8 @@
     // Rendered while the import is in flight. Optional, because most lazy mounts are things the
     // user did not ask to see yet — but a mount that IS the user's feedback (a resolve starting, a
     // picker opening) must show something, or the gate opening produces an empty screen for as long
-    // as the chunk takes. That window is not small: the picker's graph carries lottie-web, ~300KB,
-    // and on a cold HTTP cache (a fresh install, or the first play after an update) it is fetched
-    // from the network at the moment of the click. Symptom without this: you tap an episode, get no
+    // as the chunk takes. On a cold HTTP cache (a fresh install, or the first play after an update)
+    // it is fetched from the network at the moment of the click. Symptom without this: tap, get no
     // loading state at all, and land in the video seconds later.
     pending?: Snippet
   } = $props()

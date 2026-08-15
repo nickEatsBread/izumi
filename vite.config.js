@@ -24,6 +24,10 @@ export default defineConfig(async () => ({
   // entry to fall back on) while taking the bytes off the boot path. Do NOT use 'none'.
   esbuild: /** @type {import('vite').ESBuildOptions} */ ({ legalComments: "external" }),
 
+  // Module workers can split their runtime shims. The default IIFE format forced every extension
+  // worker to parse cheerio, crypto and the TypeScript transpiler even when its format used none.
+  worker: { format: /** @type {'es'} */ ("es") },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

@@ -1,16 +1,16 @@
 <script lang="ts">
   // The stand-in shown between a Play/episode tap and the real player-flow overlay being ready.
   //
-  // It exists because those overlays are lazily imported and their graph carries lottie-web (~300KB),
+  // It exists because those overlays are lazily imported with the player stack,
   // so on a cold HTTP cache the gate opens and the chunk is still on the network. Everything here is
-  // therefore deliberately cheap and EAGERLY bundled: no lottie, no images, no store subscriptions,
+  // therefore deliberately cheap and EAGERLY bundled: no animation library, images, or stores,
   // no imports at all. If this file ever grows an import, check first that it does not drag the very
   // chunk it is covering for into the boot bundle.
   //
   // The markup deliberately MIRRORS SourceLoader (same backdrop, same title, same bar in the same
   // 28x52 slot, same tracked caption). It used to show a circular ring here, which read as "the
   // wrong loader" whenever this stand-in held the screen — on a cold chunk cache it IS the source
-  // loader for a second or two. The CSS `bar-loader` matches the Lottie bar's motion, so the real
+  // loader for a second or two. The CSS `bar-loader` matches the source bar's motion, so the real
   // screen replaces this in place and simply refines the animation once the chunk lands.
   let { label, caption = 'Connecting', art = '' }: {
     label: string

@@ -3,6 +3,7 @@ import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
 import { addonOriginId, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
+import { resolveKitsuMapping } from './kitsu-resolution'
 import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
@@ -682,14 +683,16 @@ function verifySeason(streams: Stream[], want: EpisodeWant): Stream[] {
 // picker afterwards, because their results are uncached (never auto-play) and their
 // worker-spawn + esm.sh + search latency must NOT sit on the click-to-play path.
 // Returns the ranked list (cached first) + cached count + season target + kitsu id.
-// Resolve the Kitsu id (addons index by it). Prefer the Fribb id list; fall back to
-// AniZip's mapping, then Kitsu-from-MAL, when it misses (some titles aren't in Fribb).
+// Resolve the Kitsu id (addons index by it). AniZip is already requested for this episode's season
+// metadata and persists one small title record, so use that first. The old order blocked every cold
+// addon query behind a ~6MB bulk download + 30–40k-entry Map build. Keep both independent fallbacks
+// for titles missing from AniZip or when that service is unavailable.
 async function resolveKitsu(media: Media): Promise<number | undefined> {
-  const idx = await getIndex()
-  let kitsu = lookupKitsu(idx, media.id)
-  if (!kitsu) kitsu = await getKitsuId(media.id)
-  if (!kitsu) kitsu = await kitsuIdFromMal(media.idMal)
-  return kitsu
+  return resolveKitsuMapping(
+    () => getKitsuId(media.id),
+    () => kitsuIdFromMal(media.idMal),
+    async () => lookupKitsu(await getIndex(), media.id),
+  )
 }
 
 async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: EpisodeWant; kitsu?: number }> {
@@ -1160,7 +1163,6 @@ export async function playEpisode(
   // Their underlying loaders are promise-cached, so foreground consumers share rather than repeat.
   promoteBootWork('extensions')
   promoteBootWork('player')
-  promoteBootWork('id-map')
   const trace = beginResolveTrace({
     mediaId: media.id,
     episode,
