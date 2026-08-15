@@ -5,6 +5,7 @@
   import { heroMedia } from '$lib/stores/hero'
   import { showAdult } from '$lib/settings/ui'
   import { offlineMode } from '$lib/stores/offline'
+  import { anilistDegraded } from '$lib/anilist/degraded'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
   import { page } from '$app/state'
   import { replaceState } from '$app/navigation'
@@ -86,7 +87,9 @@
 {#if $offlineMode}
   <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
 {:else}
-  <div class="p-4 sm:p-8">
+  <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
+       its 1.75rem height as well so it cannot cover the browse controls. -->
+  <div class="p-4 sm:p-8 {$anilistDegraded ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}">
     <FilterBar bind:filters />
     <div class="mt-6">
       {#key key}

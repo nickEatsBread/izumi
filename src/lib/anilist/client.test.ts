@@ -1,12 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
-const mocks = vi.hoisted(() => ({ post: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  post: vi.fn(), get: vi.fn(), getIndex: vi.fn(), lookupMal: vi.fn(), lookupKitsu: vi.fn(),
+}))
 
-vi.mock('$lib/net/http', () => ({ invokeNativeHttp: mocks.post }))
+vi.mock('$lib/net/http', () => ({ invokeNativeHttp: mocks.post, phttp: mocks.get }))
+vi.mock('$lib/stremio/idmap', () => ({
+  getIndex: mocks.getIndex,
+  lookupAnilistByMal: mocks.lookupMal,
+  lookupAnilistByKitsu: mocks.lookupKitsu,
+}))
 
 import { gql } from '@urql/core'
 import { anilistToken } from './auth'
 import { anilist, parseRateLimitHeaders } from './client'
+import { anilistDegraded, clearAniListDegraded } from './degraded'
+import { PAGE_QUERY } from './queries'
+import { MEDIA_BY_ID } from './detail-queries'
 
 const QUERY = gql`query ($id: Int!) { Media(id: $id) { id mediaListEntry { id progress } } }`
 
@@ -27,7 +38,14 @@ const reply = (progress: number) => ({
 })
 
 describe('anilist client', () => {
-  beforeEach(() => { mocks.post.mockReset() })
+  beforeEach(() => {
+    mocks.post.mockReset()
+    mocks.get.mockReset()
+    mocks.getIndex.mockReset()
+    mocks.lookupMal.mockReset()
+    mocks.lookupKitsu.mockReset()
+    clearAniListDegraded()
+  })
 
   it('never serves the previous account\'s list entry after a token change', async () => {
     anilistToken.set('token-a')
@@ -55,6 +73,207 @@ describe('anilist client', () => {
     anilistToken.set('token-same')
     await anilist.query<Entry>(QUERY, { id: 1 }).toPromise()
     expect(mocks.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('serves a public catalog query from Jikan when AniList reports its stability shutdown', async () => {
+    const query = gql`query Hero($perPage: Int) {
+      Page(perPage: $perPage) { media { id idMal title { userPreferred } coverImage { extraLarge } } }
+    }`
+    const message = 'The AniList API has been temporarily disabled due to severe stability issues.'
+    mocks.post.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: JSON.stringify({ errors: [{ message }] }),
+    })
+    mocks.get.mockResolvedValue({
+      ok: false, status: 404, json: async () => ({}),
+    }).mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({
+          data: [{
+            mal_id: 52991,
+            title: 'Sousou no Frieren',
+            title_english: "Frieren: Beyond Journey's End",
+            images: { webp: { large_image_url: 'https://img.test/frieren.webp' } },
+            score: 9.3,
+          }],
+          pagination: { has_next_page: false, current_page: 1, items: { total: 1 } },
+        }),
+      })
+    mocks.getIndex.mockResolvedValue(new Map())
+    mocks.lookupMal.mockReturnValue(154587)
+
+    const result = await anilist.query<{ Page: { media: { id: number; idMal: number }[] } }>(
+      query, { perPage: 15 }, { requestPolicy: 'network-only' },
+    ).toPromise()
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.Page.media[0]).toMatchObject({ id: 154587, idMal: 52991 })
+    expect(mocks.get.mock.calls[1][0]).toContain('api.jikan.moe/v4/anime')
+    expect(get(anilistDegraded)?.error).toBe(`[GraphQL] ${message}`)
+    expect(get(anilistDegraded)?.fallbackError).toBeUndefined()
+  })
+
+  it('records when the Jikan backup catalog is unavailable too', async () => {
+    const query = gql`query PageAll($page: Int) { Page(page: $page) { media { id } } }`
+    const message = 'The AniList API has been temporarily disabled due to severe stability issues.'
+    mocks.post.mockResolvedValue({
+      status: 200,
+      headers: {},
+      body: JSON.stringify({ errors: [{ message }] }),
+    })
+    mocks.get.mockResolvedValue({ ok: false, status: 404, json: async () => ({}) })
+
+    const result = await anilist.query(query, { page: 991 }, { requestPolicy: 'network-only' }).toPromise()
+
+    expect(result.error).toBeDefined()
+    expect(get(anilistDegraded)).toMatchObject({
+      error: `[GraphQL] ${message}`,
+      fallbackError: 'Kitsu: Kitsu returned HTTP 404\nJikan: Jikan returned HTTP 404',
+    })
+  })
+
+  it('uses Kitsu when both AniList and Jikan are unavailable', async () => {
+    const query = gql`query Search($search: String) { Page { media(search: $search) { id title { userPreferred } } } }`
+    const message = 'The AniList API has been temporarily disabled due to severe stability issues.'
+    mocks.post.mockResolvedValue({ status: 200, headers: {}, body: JSON.stringify({ errors: [{ message }] }) })
+    mocks.get.mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({
+          data: [{ id: '42', attributes: { canonicalTitle: 'Backup Anime', titles: { en: 'Backup Anime' } } }],
+          links: { next: null }, meta: { count: 1 },
+        }),
+      })
+    mocks.getIndex.mockResolvedValue(new Map())
+    mocks.lookupKitsu.mockReturnValue(9001)
+
+    const result = await anilist.query<{ Page: { media: { id: number }[] } }>(
+      query, { search: 'backup' }, { requestPolicy: 'network-only' },
+    ).toPromise()
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.Page.media[0].id).toBe(9001)
+    expect(mocks.get.mock.calls[0][0]).toContain('kitsu.io/api/edge/anime')
+    expect(get(anilistDegraded)?.provider).toBe('Kitsu')
+    expect(get(anilistDegraded)?.fallbackError).toBeUndefined()
+  })
+
+  it('uses Kitsu embedded AniList mappings without the cached Fribb index', async () => {
+    const query = gql`query SearchAll($search: String) { Page { media(search: $search) { id title { userPreferred } } } }`
+    const message = 'The AniList API has been temporarily disabled due to severe stability issues.'
+    mocks.post.mockResolvedValue({ status: 200, headers: {}, body: JSON.stringify({ errors: [{ message }] }) })
+    mocks.get.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ({
+        data: [{
+          id: '7442', attributes: { canonicalTitle: 'Attack on Titan' },
+          relationships: { mappings: { data: [{ type: 'mappings', id: '254628' }] } },
+        }],
+        included: [{
+          type: 'mappings', id: '254628',
+          attributes: { externalSite: 'anilist/anime', externalId: '16498' },
+        }],
+        links: { next: null }, meta: { count: 1 },
+      }),
+    })
+
+    const result = await anilist.query<{ Page: { media: { id: number }[] } }>(
+      query, { search: 'attack on titan' }, { requestPolicy: 'network-only' },
+    ).toPromise()
+
+    expect(result.data?.Page.media).toMatchObject([{ id: 16498 }])
+    expect(mocks.getIndex).not.toHaveBeenCalled()
+    expect(mocks.get.mock.calls[0][0]).toContain('include=mappings')
+  })
+
+  it('hydrates a complete Home row from Kitsu through graphcache', async () => {
+    const message = 'The AniList API has been temporarily disabled due to severe stability issues.'
+    mocks.post.mockResolvedValue({ status: 200, headers: {}, body: JSON.stringify({ errors: [{ message }] }) })
+    mocks.get.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ({
+        data: [{
+          id: '7442',
+          attributes: {
+            canonicalTitle: 'Attack on Titan', titles: { en: 'Attack on Titan' },
+            posterImage: { large: 'https://img.test/aot.jpg' }, averageRating: '82.4',
+          },
+          relationships: { mappings: { data: [{ type: 'mappings', id: '254628' }] } },
+        }],
+        included: [{
+          type: 'mappings', id: '254628',
+          attributes: { externalSite: 'anilist/anime', externalId: '16498' },
+        }],
+        links: { next: null }, meta: { count: 1 },
+      }),
+    })
+
+    const result = await anilist.query<{ Page: { media: { id: number; title: { userPreferred: string }; coverImage: { large: string } }[] } }>(
+      PAGE_QUERY, { perPage: 20, sort: ['POPULARITY_DESC'], season: 'SUMMER', seasonYear: 2026 },
+      { requestPolicy: 'network-only' },
+    ).toPromise()
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.Page.media).toEqual([expect.objectContaining({
+      id: 16498, title: expect.objectContaining({ userPreferred: 'Attack on Titan' }),
+      coverImage: expect.objectContaining({ large: 'https://img.test/aot.jpg' }),
+    })])
+  })
+
+  it('hydrates the anime detail page from Kitsu when AniList is unavailable', async () => {
+    const message = 'The AniList API has been temporarily disabled due to severe stability issues.'
+    mocks.post.mockResolvedValue({ status: 200, headers: {}, body: JSON.stringify({ errors: [{ message }] }) })
+    mocks.get
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({ data: [{ relationships: { item: { data: { type: 'anime', id: '7442' } } } }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true, status: 200,
+        json: async () => ({
+          data: {
+            id: '7442',
+            attributes: {
+              canonicalTitle: 'Attack on Titan', titles: { en: 'Attack on Titan' },
+              synopsis: 'Humanity fights for survival.', episodeCount: 25,
+              posterImage: { large: 'https://img.test/aot.jpg' },
+            },
+            relationships: { categories: { data: [{ type: 'categories', id: '1' }] } },
+          },
+          included: [
+            { type: 'mappings', id: '2', attributes: { externalSite: 'myanimelist/anime', externalId: '16498' } },
+            { type: 'categories', id: '1', attributes: { title: 'Action', nsfw: false } },
+          ],
+        }),
+      })
+
+    const result = await anilist.query<{ Media: { id: number; idMal: number; genres: string[]; relations: { edges: unknown[] } } }>(
+      MEDIA_BY_ID, { id: 16498 }, { requestPolicy: 'network-only' },
+    ).toPromise()
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.Media).toMatchObject({
+      id: 16498, idMal: 16498, genres: ['Action'], relations: { edges: [] },
+      title: { userPreferred: 'Attack on Titan' }, episodes: 25,
+    })
+    expect(mocks.get.mock.calls.map((call) => call[0])).toEqual([
+      expect.stringMatching(/\/mappings\?.*include=item/),
+      expect.stringContaining('/anime/7442?include=mappings%2Ccategories'),
+    ])
+  })
+
+  it('does not mask an unsupported non-catalog AniList failure with a backup', async () => {
+    const query = gql`query MediaTagCollection { MediaTagCollection { name } }`
+    mocks.post.mockResolvedValue({
+      status: 503,
+      headers: {},
+      body: JSON.stringify({ errors: [{ message: 'Unavailable' }] }),
+    })
+    const result = await anilist.query(query, {}, { requestPolicy: 'network-only' }).toPromise()
+    expect(result.error).toBeDefined()
+    expect(mocks.get).not.toHaveBeenCalled()
+    expect(get(anilistDegraded)).toBeNull()
   })
 })
 

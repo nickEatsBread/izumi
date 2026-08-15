@@ -32,4 +32,8 @@ describe('search URL state', () => {
   it('settles instead of rewriting the URL on every run', () => {
     expect(page).toContain('if (next === page.url.pathname + page.url.search) return')
   })
+
+  it('keeps browse controls below the fixed degraded alert', () => {
+    expect(page).toContain("$anilistDegraded ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''")
+  })
 })

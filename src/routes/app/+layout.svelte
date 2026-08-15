@@ -5,6 +5,7 @@
   import Titlebar from '$lib/components/shell/Titlebar.svelte'
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
   import IncognitoBanner from '$lib/components/shell/IncognitoBanner.svelte'
+  import AniListDegradedBanner from '$lib/components/shell/AniListDegradedBanner.svelte'
   import { androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
@@ -260,6 +261,9 @@
   {#if !$gameMode && !$isMobile}<Titlebar />{/if}
   <OnlineBanner />
   <IncognitoBanner />
+  <!-- Playback must remain visually clean, including the windowed desktop player where the shell
+       chrome stays mounted. The degraded state is preserved and the banner returns on exit. -->
+  {#if !$playing}<AniListDegradedBanner />{/if}
 {/if}
 <!-- Lo-fi speaker: only while an uncached torrent is caching at the debrid service
      (the loading screen). Sits above the caching overlay (z-[60]). Desktop only. -->

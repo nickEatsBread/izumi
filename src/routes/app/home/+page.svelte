@@ -16,6 +16,7 @@
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META } from '$lib/settings/nav'
   import type { Media } from '$lib/anilist/types'
+  import { anilistDegraded } from '$lib/anilist/degraded'
   import { DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, type HomeRowId } from '$lib/settings/ui'
 
   const client = getContextClient()
@@ -34,17 +35,13 @@
     return order.filter((id) => !$hiddenHomeRows.includes(id)) as HomeRowId[]
   })
   const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
+  const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)
 
-  // The hero query doubles as the page's health canary. Rate limits (429) are retried
-  // INSIDE the AniList client, so the store stays `fetching` (→ skeleton) and never lands
-  // in an error state — only HARD failures do (API disabled/5xx/network). On such a failure
-  // we show one page-level error + Try again instead of an army of empty rows / a hero that
-  // skeleton-loads forever.
+  // Rate limits (429) are retried inside the AniList client; hard catalog failures are offered to
+  // Jikan there. If BOTH providers fail, this store may still error — that must only remove the
+  // public hero, never replace Continue Watching / MAL / local rows with a full-page error.
   type HeroResult = { fetching: boolean; error?: { message: string }; data?: { Page: { media: Media[] } } }
 
-  // Bumping `retryKey` remounts the row components (each owns its own query → refetch);
-  // reassigning `heroStore` refetches the hero. Together = a full homepage retry.
-  let retryKey = $state(0)
   let heroStore = $state(makeHeroStore())
   let hero = $state<HeroResult>({ fetching: true })
 
@@ -79,14 +76,8 @@
       .sort((a, b) => ((a.id * 2654435761) >>> 0) - ((b.id * 2654435761) >>> 0))
       .slice(0, 7)
   })
+  const homeNeedsAlertInset = $derived(!!$anilistDegraded && heroMedias.length === 0)
 
-  // Hard failure = errored with nothing cached to show.
-  const failed = $derived(!!hero.error && !hero.data)
-
-  function retry() {
-    heroStore = makeHeroStore()
-    retryKey++
-  }
 </script>
 
 {#if $isMobile}
@@ -129,24 +120,14 @@
     {/key}
     <DownloadedLibrary />
   </div>
-{:else if failed}
-  <div class="grid min-h-[60vh] place-items-center p-8 text-center">
-    <div class="max-w-md">
-      <h2 class="mb-2 text-lg font-black">Couldn't reach AniList</h2>
-      <p class="mb-5 text-sm text-muted-foreground">
-        {hero.error?.message || 'AniList is unavailable right now. This is usually temporary.'}
-      </p>
-      <button data-focusable onclick={retry}
-        class="rounded-md bg-secondary px-4 py-2 text-sm font-bold hover:bg-accent">
-        Try again
-      </button>
-    </div>
-  </div>
 {:else}
-  <div class="pb-16">
-    {#if heroMedias.length}
+  <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. The hero
+       normally owns that edge-to-edge space, so keep the inset scoped to the all-catalogs-down
+       branch and leave the healthy Home composition unchanged. -->
+  <div class="pb-16 {homeNeedsAlertInset ? 'pt-7 sm:pt-[3.75rem]' : ''}">
+    {#if !catalogUnavailable && heroMedias.length}
       <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} oninfo={(m) => goto(`/app/anime/${m.id}`)} />
-    {:else}
+    {:else if !catalogUnavailable && hero.fetching}
       {#if $isMobile}
         <div class="relative mx-4 mb-6 h-[46vh] overflow-hidden rounded-2xl bg-muted shadow-xl">
           <div class="absolute inset-0 skeloader"></div>
@@ -166,24 +147,22 @@
       {/if}
     {/if}
 
-    {#key retryKey}
-      {#each orderedRows as row (row)}
-        {#if row === 'continue'}
-          {#key listUser}
-            <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
-          {/key}
-        {:else if row === 'list'}
-          {#if listUser}
-            {#key listUser}<ListRow title="Your List" userName={listUser} status="PLANNING" />{/key}
-          {/if}
-          {#if $malToken || $malUser}<MalListRow title="Your List" status="plan_to_watch" />{/if}
-        {:else if row === 'recommendations'}
-          {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} />{/key}{/if}
-        {:else}
-          {@const section = sectionMap.get(row)}
-          {#if section}<HomeRow title={section.title} vars={section.vars} />{/if}
+    {#each orderedRows as row (row)}
+      {#if row === 'continue'}
+        {#key listUser}
+          <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
+        {/key}
+      {:else if row === 'list'}
+        {#if listUser}
+          {#key listUser}<ListRow title="Your List" userName={listUser} status="PLANNING" />{/key}
         {/if}
-      {/each}
-    {/key}
+        {#if $malToken || $malUser}<MalListRow title="Your List" status="plan_to_watch" />{/if}
+      {:else if row === 'recommendations'}
+        {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} />{/key}{/if}
+      {:else}
+        {@const section = sectionMap.get(row)}
+        {#if section && !catalogUnavailable}<HomeRow title={section.title} vars={section.vars} />{/if}
+      {/if}
+    {/each}
   </div>
 {/if}

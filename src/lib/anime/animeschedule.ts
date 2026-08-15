@@ -1,5 +1,8 @@
 import { phttp } from '$lib/net/http'
 import { del, get, set } from 'idb-keyval'
+import type { Media } from '$lib/anilist/types'
+import type { Airing } from '$lib/anilist/schedule'
+import { fetchKitsuScheduleIndex } from '$lib/anilist/kitsu-catalog'
 
 // AnimeSchedule's airing metadata — the things AniList carries no field for at all: whether a show
 // is sitting out a cour break or has slipped a week, and the separate sub / dub release slots.
@@ -21,7 +24,19 @@ export interface RawAnime {
   title?: string
   status?: string
   names?: { romaji?: string; english?: string; native?: string }
-  websites?: { aniList?: string }
+  websites?: { aniList?: string; mal?: string }
+  description?: string
+  year?: number
+  season?: { season?: string; year?: string }
+  genres?: { name?: string }[]
+  studios?: { name?: string }[]
+  sources?: { name?: string }[]
+  mediaTypes?: { name?: string }[]
+  episodes?: number
+  lengthMin?: number
+  imageVersionRoute?: string
+  posterDominantColor?: string
+  stats?: { averageScore?: number; trackedCount?: number }
   delayedTimetable?: string
   delayedFrom?: string
   delayedUntil?: string
@@ -191,6 +206,148 @@ export function slotLines(info: ScheduleInfo | null): string[] {
 export function anilistIdOf(raw: RawAnime): number | null {
   const m = /anilist\.co\/anime\/(\d+)/i.exec(raw.websites?.aniList ?? '')
   return m ? Number(m[1]) : null
+}
+
+const malIdOf = (raw: RawAnime): number | undefined => {
+  const match = /myanimelist\.net\/anime\/(\d+)/i.exec(raw.websites?.mal ?? '')
+  return match ? Number(match[1]) : undefined
+}
+
+/** Convert AnimeSchedule's public anime record to the card shape already used by the schedule UI. */
+export function mapAnimeScheduleMedia(raw: RawAnime): Media | null {
+  const id = anilistIdOf(raw)
+  if (id == null) return null
+  const image = raw.imageVersionRoute
+    ? `https://img.animeschedule.net/production/assets/public/img/${raw.imageVersionRoute}`
+    : undefined
+  const format = raw.mediaTypes?.[0]?.name?.toUpperCase().replaceAll(' ', '_')
+  const status = /ongoing/i.test(raw.status ?? '') ? 'RELEASING'
+    : /finished/i.test(raw.status ?? '') ? 'FINISHED'
+      : 'NOT_YET_RELEASED'
+  return {
+    __typename: 'Media', id, idMal: malIdOf(raw), type: 'ANIME',
+    title: {
+      __typename: 'MediaTitle', romaji: raw.names?.romaji ?? raw.title,
+      english: raw.names?.english, native: raw.names?.native,
+      userPreferred: raw.names?.english ?? raw.names?.romaji ?? raw.title,
+    },
+    description: raw.description,
+    season: raw.season?.season?.toUpperCase(),
+    seasonYear: Number(raw.season?.year ?? raw.year) || undefined,
+    format, status, episodes: raw.episodes, duration: raw.lengthMin,
+    averageScore: raw.stats?.averageScore == null ? undefined : Math.round(raw.stats.averageScore),
+    popularity: raw.stats?.trackedCount,
+    genres: raw.genres?.flatMap((genre) => genre.name ? [genre.name] : []),
+    studios: { __typename: 'StudioConnection', nodes: raw.studios?.flatMap((studio) => studio.name ? [{ __typename: 'Studio', name: studio.name }] : []) ?? [] },
+    coverImage: { __typename: 'MediaCoverImage', extraLarge: image, large: image, medium: image, color: raw.posterDominantColor },
+  } as Media
+}
+
+interface TimetableCard { route: string; title: string; episode: number; airingAt: number }
+
+/** ISO week understood by AnimeSchedule's public weekly page. */
+export function isoWeek(atSeconds: number): { year: number; week: number } {
+  const local = new Date(atSeconds * 1000)
+  const date = new Date(Date.UTC(local.getFullYear(), local.getMonth(), local.getDate()))
+  const day = (date.getUTCDay() + 6) % 7
+  date.setUTCDate(date.getUTCDate() - day + 3)
+  const year = date.getUTCFullYear()
+  const firstThursday = new Date(Date.UTC(year, 0, 4))
+  const firstDay = (firstThursday.getUTCDay() + 6) % 7
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - firstDay + 3)
+  return { year, week: 1 + Math.round((date.getTime() - firstThursday.getTime()) / WEEK_MS) }
+}
+
+export function parseTimetable(html: string, start: number, end: number): TimetableCard[] {
+  // Slice at each outer card instead of matching nested HTML with one regex. The attributes and
+  // <time> we need all occur before the following card and contain no encoded free-form text.
+  const starts = [...html.matchAll(/<div\b[^>]*class="[^"]*\btimetable-column-show\b[^"]*"[^>]*>/gi)]
+  const seen = new Set<string>()
+  return starts.flatMap((match, index) => {
+    const card = html.slice(match.index, starts[index + 1]?.index ?? html.length)
+    if (!/\bairtype="raw"/i.test(card)) return []
+    const route = /\broute="([^"]+)"/i.exec(match[0])?.[1] ?? ''
+    const encodedTitle = /<h2\b[^>]*class="[^"]*\bshow-title-bar\b[^"]*"[^>]*>([\s\S]*?)<\/h2>/i.exec(card)?.[1] ?? ''
+    const title = encodedTitle.replace(/<[^>]+>/g, '').replace(/&#x([0-9a-f]+);/gi, (_m, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_m, decimal) => String.fromCodePoint(Number(decimal)))
+      .replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&apos;|&#39;/gi, "'").trim()
+    const episode = Number(/\bairedepisode="(\d+)"/i.exec(match[0])?.[1])
+    // AnimeSchedule HTML-encodes the `+` in timezone offsets (`&#43;01:00`). Passing that
+    // string straight to Date.parse yields NaN, which silently filtered every otherwise-valid
+    // weekly card out of the fallback schedule.
+    const datetime = /<time\b[^>]*\bdatetime="([^"]+)"/i.exec(card)?.[1]
+      ?.replace(/&#x([0-9a-f]+);/gi, (_m, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+      .replace(/&#(\d+);/g, (_m, decimal) => String.fromCodePoint(Number(decimal)))
+      .replace(/&amp;/gi, '&')
+    const airingAt = datetime ? Math.floor(Date.parse(datetime) / 1000) : NaN
+    const key = `${route}:${episode}:${airingAt}`
+    if (!route || !title || !Number.isFinite(episode) || episode < 1 || !Number.isFinite(airingAt)
+      || airingAt < start || airingAt >= end || seen.has(key)) return []
+    seen.add(key)
+    return [{ route, title, episode, airingAt }]
+  })
+}
+
+const SEASON_INDEX_TTL = 6 * 3600e3
+const seasonIndexKey = (year: number, season: string) => `animeschedule-season-${year}-${season}-v1`
+
+async function fetchSeasonPage(year: number, season: string, page: number): Promise<SearchPage | null> {
+  try {
+    const response = await phttp(`${API}?years=${year}&seasons=${season}&st=popularity&page=${page}`, {
+      timeoutMs: 12_000, maxBytes: 4 * 1024 * 1024, background: true,
+    })
+    if (!response.ok) return null
+    return (await response.json()) as SearchPage
+  } catch { return null }
+}
+
+async function animeScheduleSeasonIndex(year: number, season: string): Promise<Map<string, Media>> {
+  const key = seasonIndexKey(year, season)
+  let anime = await readCache<RawAnime[]>(key, SEASON_INDEX_TTL)
+  if (!anime?.length) {
+    const first = await fetchSeasonPage(year, season, 1)
+    anime = [...(first?.anime ?? [])]
+    const pages = Math.min(6, Math.max(1, Math.ceil((first?.totalAmount ?? anime.length) / 18)))
+    // The endpoint is intentionally paced; it rejects a rapid catalogue burst even though each
+    // individual page is public and small.
+    for (let page = 2; page <= pages; page++) {
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      const next = await fetchSeasonPage(year, season, page)
+      if (!next) break
+      anime.push(...(next.anime ?? []))
+    }
+    if (anime.length) await writeCache(key, anime)
+  }
+  const out = new Map<string, Media>()
+  for (const raw of anime ?? []) {
+    const media = mapAnimeScheduleMedia(raw)
+    if (raw.route && media) out.set(raw.route.toLowerCase(), media)
+  }
+  return out
+}
+
+/** Weekly raw-broadcast fallback used only when AniList's airing schedule is unavailable. */
+export async function getWeeklySchedule(start: number, end: number): Promise<Airing[]> {
+  const { year, week } = isoWeek(start)
+  const response = await phttp(`https://animeschedule.net/?year=${year}&week=${week}`, {
+    timeoutMs: 20_000, maxBytes: 12 * 1024 * 1024, background: true,
+  })
+  if (!response.ok) throw new Error(`AnimeSchedule timetable returned HTTP ${response.status}`)
+  const cards = parseTimetable(await response.text(), start, end)
+  if (!cards.length) throw new Error('AnimeSchedule returned no weekly airings')
+  const midpoint = new Date((start + 3 * 86400) * 1000)
+  const season = ['winter', 'winter', 'winter', 'spring', 'spring', 'spring', 'summer', 'summer', 'summer', 'fall', 'fall', 'fall'][midpoint.getMonth()]
+  const exact = await animeScheduleSeasonIndex(midpoint.getFullYear(), season)
+  let media = new Map<string, Media>()
+  try { media = await fetchKitsuScheduleIndex(midpoint.getFullYear(), season, exact.size < 54) }
+  catch (error) { if (!exact.size) throw error }
+  const airings = cards.flatMap((card) => {
+    const item = exact.get(card.route.toLowerCase())
+      ?? media.get(card.route.toLowerCase()) ?? media.get(titleKey(card.title))
+    return item ? [{ airingAt: card.airingAt, episode: card.episode, media: item }] : []
+  })
+  if (!airings.length) throw new Error('AnimeSchedule could not map weekly titles to AniList')
+  return airings.sort((a, b) => a.airingAt - b.airingAt)
 }
 
 /** Loose title key for the fallback match — the two databases disagree on case, punctuation and

@@ -6,12 +6,90 @@ vi.mock('idb-keyval', () => ({ get: mocks.get, set: mocks.set, del: mocks.del })
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 
 import {
-  activeDelay, anilistIdOf, delayLabel, delayLines, getScheduleInfo, getScheduleInfoMany, normalize,
-  nextOccurrence, parseTime, pickEntry, resolveRoute, scheduleTitles, slotLabel, slotLines, titleKey,
+  activeDelay, anilistIdOf, delayLabel, delayLines, getScheduleInfo, getScheduleInfoMany,
+  getWeeklySchedule, isoWeek,
+  mapAnimeScheduleMedia, normalize, nextOccurrence, parseTime, parseTimetable, pickEntry, resolveRoute,
+  scheduleTitles, slotLabel, slotLines, titleKey,
   type RawAnime,
 } from './animeschedule'
 
 const ZERO = '0001-01-01T00:00:00Z'
+
+describe('weekly fallback mapping', () => {
+  beforeEach(() => {
+    mocks.get.mockReset().mockResolvedValue(undefined)
+    mocks.set.mockReset().mockResolvedValue(undefined)
+    mocks.phttp.mockReset()
+  })
+
+  it('uses the ISO week expected by the public timetable', () => {
+    expect(isoWeek(new Date(2026, 7, 10, 0, 0, 0).getTime() / 1000)).toEqual({ year: 2026, week: 33 })
+  })
+
+  it('keeps AniList ids canonical when mapping schedule cards', () => {
+    expect(mapAnimeScheduleMedia({
+      route: 'backup-anime', title: 'Backup Anime', status: 'Ongoing', episodes: 12,
+      names: { english: 'Backup Anime' },
+      websites: { aniList: 'anilist.co/anime/1234/Backup-Anime', mal: 'myanimelist.net/anime/5678/Backup_Anime' },
+      imageVersionRoute: 'anime/jpg/default/backup.jpg', stats: { averageScore: 81.6 },
+    })).toMatchObject({ id: 1234, idMal: 5678, status: 'RELEASING', episodes: 12, averageScore: 82 })
+  })
+
+  it('reads only native broadcasts from the weekly timetable', () => {
+    const html = `
+      <div route="backup-anime" airedEpisode="7" class="timetable-column-show aired">
+        <h2 class="show-title-bar">Backup Anime</h2>
+        <time datetime="2026-08-11T15:30+01:00"></time><span airType="raw">JPN</span>
+      </div>
+      <div route="backup-anime" airedEpisode="7" class="timetable-column-show aired">
+        <h2 class="show-title-bar">Backup Anime</h2>
+        <time datetime="2026-08-11T17:00+01:00"></time><span airType="sub">SUB</span>
+      </div>`
+    const start = new Date('2026-08-10T00:00:00+01:00').getTime() / 1000
+    const end = start + 7 * 86400
+    expect(parseTimetable(html, start, end)).toEqual([{
+      route: 'backup-anime', title: 'Backup Anime', episode: 7,
+      airingAt: new Date('2026-08-11T15:30+01:00').getTime() / 1000,
+    }])
+  })
+
+  it('decodes the timezone offset used by the live AnimeSchedule HTML', () => {
+    const html = `<div route="backup-anime" airedEpisode="7" class="timetable-column-show aired">
+      <h2 class="show-title-bar">Backup Anime</h2>
+      <time datetime="2026-08-11T15:30&#43;01:00"></time><span airType="raw">JPN</span>
+    </div>`
+    const start = new Date('2026-08-10T00:00:00+01:00').getTime() / 1000
+    expect(parseTimetable(html, start, start + 7 * 86400)).toMatchObject([{
+      route: 'backup-anime', episode: 7,
+      airingAt: new Date('2026-08-11T15:30+01:00').getTime() / 1000,
+    }])
+  })
+
+  it('renders AnimeSchedule results even when supplemental Kitsu pages are throttled', async () => {
+    const start = new Date('2026-08-10T00:00:00+01:00').getTime() / 1000
+    const html = `<div route="backup-anime" airedEpisode="7" class="timetable-column-show aired">
+      <h2 class="show-title-bar">Backup Anime</h2>
+      <time datetime="2026-08-11T15:30+01:00"></time><span airType="raw">JPN</span>
+    </div>`
+    const raw: RawAnime = {
+      route: 'backup-anime', title: 'Backup Anime', status: 'Ongoing',
+      websites: { aniList: 'anilist.co/anime/1234/Backup-Anime' },
+    }
+    mocks.phttp.mockImplementation(async (url: string) => {
+      if (url.startsWith('https://animeschedule.net/?')) {
+        return { ok: true, status: 200, text: async () => html, json: async () => ({}) }
+      }
+      if (url.includes('animeschedule.net/api/v3/anime?years=')) {
+        return { ok: true, status: 200, text: async () => '', json: async () => ({ totalAmount: 1, anime: [raw] }) }
+      }
+      return { ok: false, status: 429, text: async () => 'throttled', json: async () => ({}) }
+    })
+
+    await expect(getWeeklySchedule(start, start + 7 * 86400)).resolves.toMatchObject([{
+      episode: 7, media: { id: 1234 },
+    }])
+  })
+})
 
 // Shapes lifted from live `/api/v3/anime/{route}` responses.
 const FRIEREN: RawAnime = {

@@ -11,6 +11,7 @@
   import { gameMode } from '$lib/player/session'
   import { isMobile } from '$lib/platform'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
+  import { anilistDegraded } from '$lib/anilist/degraded'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
   heroMedia.set(null)
@@ -60,10 +61,14 @@
   // (app.css forces will-change:auto under .gamemode, so the layer is never promoted), and the
   // controller UI has no need for a sticky filter it can reach with one D-pad press.
   const stickyActive = $derived(tab === 'schedule' && $scheduleStickyHeader && !$gameMode)
-  const stickyTop = $derived($isMobile ? 'top-[env(safe-area-inset-top)]' : 'top-8')
+  const stickyTop = $derived($isMobile
+    ? ($anilistDegraded ? 'top-[calc(env(safe-area-inset-top)+1.75rem)]' : 'top-[env(safe-area-inset-top)]')
+    : ($anilistDegraded ? 'top-[3.75rem]' : 'top-8'))
   // What the header actually occludes at the top of the viewport: itself plus the titlebar above
   // it. Handed down to ScheduleGrid, which forwards it to the agenda view's scroll-to-today gate.
-  const headerOffset = $derived(stickyActive ? headerH + ($isMobile ? 0 : TITLEBAR_H) : 0)
+  const headerOffset = $derived(stickyActive
+    ? headerH + ($isMobile ? 0 : TITLEBAR_H) + ($anilistDegraded ? 28 : 0)
+    : 0)
 </script>
 
 {#if $offlineMode}
@@ -71,7 +76,16 @@
 {:else}
 <!-- Extra desktop top padding: `p-8` put the title flush against the bottom edge of the 32px window
      titlebar, so the page's top-left content read as a continuation of the window-control row. -->
-<div class="px-4 pb-8 pt-5 sm:px-8 sm:pb-8 sm:pt-10">
+<div class="px-4 pb-8 pt-5 sm:px-8 sm:pb-8 sm:pt-10
+            {$anilistDegraded ? 'pt-[3rem] sm:pt-[4.25rem]' : ''}">
+  <!-- The global desktop titlebar is transparent so hero artwork can extend to the window edge.
+       Schedule has no hero, though, and its rows would remain visible through that strip once this
+       page's toolbar became sticky. Paint only that reserved 32px titlebar area while pinned; the
+       real titlebar stays above it at z-50, so the window controls and drag region are unchanged. -->
+  {#if stickyActive && !$isMobile}
+    <div data-schedule-titlebar-shield aria-hidden="true" class="pointer-events-none fixed inset-x-0 top-0 z-20 h-8 bg-background"></div>
+  {/if}
+
   <!-- Schedule/Watchlist tabs, week nav, and (schedule tab only) the My Shows/All filter all share
        one header row so a phone spends a single row on controls instead of two. Wraps on narrow
        widths rather than squashing — this row already carried week nav before the filter joined
