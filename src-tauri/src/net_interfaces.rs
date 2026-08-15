@@ -1,14 +1,12 @@
 //! Direct P2P VPN binding: adapter enumeration plus the session-level kill switch.
 //!
-//! librqbit 8.1.1 exposes no socket-bind option (its TCP listener is hardcoded to 0.0.0.0 and
-//! outgoing peer/DHT/tracker sockets connect unbound), so qBittorrent-style adapter binding is
-//! enforced at the session layer instead:
+//! Izumi's cross-platform adapter binding is enforced at the session layer:
 //!   * a bound engine refuses to START unless the adapter is up with a routable address;
 //!   * a network monitor pauses every torrent in every engine the moment the adapter drops and
 //!     resumes them when it returns, so a crashed VPN cannot quietly continue on the ISP route;
 //!   * while the VPN is connected its default route carries the traffic, like any other app.
-//! When librqbit ships bind-to-device on stable (v9's `bind_device` is Linux/macOS-only as of
-//! its rc.0), the same config plugs into SessionOptions here and this file keeps the watchdog.
+//! librqbit 9 can bind by device name on Unix, but not Windows. Keep one consistent fail-closed
+//! behavior until the native path can be validated on ordinary Linux/Deck accounts and Android.
 
 use std::{
     net::IpAddr,

@@ -25,8 +25,8 @@ use std::{
 };
 
 use librqbit::{
-    api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Session,
-    SessionOptions,
+    api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, ConnectionOptions,
+    DhtSessionConfig, Session, SessionOptions,
 };
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
@@ -136,12 +136,17 @@ impl TorrentDownloads {
                     SessionOptions {
                         // Same privacy kill switch as playback: with a SOCKS5 proxy configured,
                         // UDP DHT would bypass it entirely, so it is turned off rather than leaked.
-                        disable_dht: configured.is_some(),
-                        // Playback owns the persisted DHT routing file; a second session must not
-                        // write the same one.
-                        disable_dht_persistence: true,
+                        dht: configured.is_none().then_some(DhtSessionConfig {
+                            // Playback owns the persisted DHT routing file; a second session must
+                            // not write the same one.
+                            persistence: None,
+                            ..Default::default()
+                        }),
                         persistence: None,
-                        socks_proxy_url: configured.clone(),
+                        connect: Some(ConnectionOptions {
+                            proxy_url: configured.clone(),
+                            ..Default::default()
+                        }),
                         ..Default::default()
                     },
                 )
@@ -269,14 +274,11 @@ async fn run(
     let files = listing
         .info
         .iter_file_details()
-        .map_err(|e| format!("Could not read the torrent file list: {e:#}"))?
         .enumerate()
-        .filter_map(|(index, details)| {
-            details.filename.to_string().ok().map(|name| TorrentFile {
-                index,
-                name,
-                length: details.len,
-            })
+        .map(|(index, details)| TorrentFile {
+            index,
+            name: details.filename.to_string(),
+            length: details.len,
         })
         .collect::<Vec<_>>();
     let selected = select_file(

@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, SocketAddr, TcpListener as StdTcpListener},
     num::NonZeroU32,
     path::{Path, PathBuf},
     sync::{
@@ -11,8 +11,9 @@ use std::{
 };
 
 use librqbit::{
-    api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Api, Magnet,
-    ManagedTorrent, Session, SessionOptions, SessionPersistenceConfig,
+    api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Api,
+    ConnectionOptions, DhtSessionConfig, ListenerOptions, Magnet, ManagedTorrent, Session,
+    SessionOptions, SessionPersistenceConfig,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -36,7 +37,6 @@ const METADATA_CACHE_ENTRIES: usize = 16;
 const MAX_CACHED_TORRENT_BYTES: u64 = 16 * 1024 * 1024;
 const METADATA_CACHE_DIR: &str = "torrent-metadata";
 const DIRECT_PEER_PORTS: std::ops::Range<u16> = 42400..42500;
-const DEFERRED_WRITE_MIB: usize = 32;
 const POST_PLAYBACK_SEED_TIME: Duration = Duration::from_secs(30 * 60);
 const SEED_CHECK_INTERVAL: Duration = Duration::from_secs(10);
 const PLAYBACK_BUFFER_FLOOR_SECONDS: f64 = 60.0;
@@ -50,6 +50,14 @@ fn peer_listener_enabled(has_proxy: bool, has_bound_interface: bool) -> bool {
 
 fn upnp_enabled(is_android: bool, has_proxy: bool, has_bound_interface: bool) -> bool {
     !is_android && peer_listener_enabled(has_proxy, has_bound_interface)
+}
+
+/// librqbit 9 accepts one listener address rather than a port range. Retain the old behavior by
+/// selecting the first currently-free port from Izumi's existing range. Binding happens
+/// immediately afterwards; if another process wins that tiny race, session startup fails safely.
+fn available_peer_port() -> Option<u16> {
+    let mut ports = DIRECT_PEER_PORTS;
+    ports.find(|port| StdTcpListener::bind((Ipv4Addr::UNSPECIFIED, *port)).is_ok())
 }
 
 /// Anime-oriented public trackers used by Hayase in addition to a torrent's own announce list.
@@ -351,22 +359,18 @@ fn selected_file_downloaded_bytes(
 fn managed_torrent_files(handle: &ManagedTorrent) -> Result<Vec<TorrentFile>, String> {
     handle
         .with_metadata(|metadata| {
-            let details = metadata
+            metadata
                 .info
                 .iter_file_details()
-                .map_err(|error| format!("Could not read the torrent file list: {error:#}"))?;
-            Ok(details
                 .enumerate()
-                .filter_map(|(index, details)| {
-                    details.filename.to_string().ok().map(|name| TorrentFile {
-                        index,
-                        name,
-                        length: details.len,
-                    })
+                .map(|(index, details)| TorrentFile {
+                    index,
+                    name: details.filename.to_string(),
+                    length: details.len,
                 })
-                .collect::<Vec<_>>())
+                .collect::<Vec<_>>()
         })
-        .map_err(|error| format!("Could not read the active torrent metadata: {error:#}"))?
+        .map_err(|error| format!("Could not read the active torrent metadata: {error:#}"))
 }
 
 /// Empty/whitespace means "no binding". The value is an OS interface name picked from
@@ -587,47 +591,66 @@ impl DirectTorrentState {
                 } else {
                     None
                 };
+                let dht = if configured_proxy.is_some() {
+                    None
+                } else {
+                    Some(DhtSessionConfig {
+                        persistence: Some(librqbit::dht::DhtPersistenceConfig {
+                            config_filename: android_dht_path,
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })
+                };
+                let listen =
+                    if peer_listener_enabled(configured_proxy.is_some(), configured_bind.is_some())
+                    {
+                        let port = available_peer_port().ok_or_else(|| {
+                            format!(
+                                "Could not find a free incoming peer port in {}-{}.",
+                                DIRECT_PEER_PORTS.start,
+                                DIRECT_PEER_PORTS.end - 1
+                            )
+                        })?;
+                        Some(ListenerOptions {
+                            // Keep the established IPv4 listener behavior while librqbit 9's DHT and
+                            // outgoing connector gain dual-stack peer discovery and connections.
+                            listen_addr: (Ipv4Addr::UNSPECIFIED, port).into(),
+                            enable_upnp_port_forwarding: upnp_enabled(
+                                cfg!(target_os = "android"),
+                                configured_proxy.is_some(),
+                                configured_bind.is_some(),
+                            ),
+                            ..Default::default()
+                        })
+                    } else {
+                        None
+                    };
                 let session = Session::new_with_opts(
                     folder,
                     SessionOptions {
                         // Proxy mode disables UDP DHT completely to prevent bypassing SOCKS5.
-                        disable_dht: configured_proxy.is_some(),
-                        disable_dht_persistence: configured_proxy.is_some(),
-                        dht_config: android_dht_path.map(|config_filename| {
-                            librqbit::dht::PersistentDhtConfig {
-                                config_filename: Some(config_filename),
-                                ..Default::default()
-                            }
-                        }),
+                        dht,
                         // Persistence supplies rqbit's bitfield store. Payload retention remains
                         // ephemeral: this database lives inside the disposable playback folder.
                         persistence: Some(SessionPersistenceConfig::Json {
                             folder: Some(fastresume_folder.clone()),
                         }),
                         fastresume: true,
-                        socks_proxy_url: configured_proxy.clone(),
+                        connect: Some(ConnectionOptions {
+                            proxy_url: configured_proxy.clone(),
+                            ..Default::default()
+                        }),
                         // A real listen port lets DHT/trackers announce us and allows peers to
                         // connect back. Android supports ordinary server sockets too; keeping it
                         // outbound-only made Wi-Fi/manual-forwarding and VPN-forwarded ports
-                        // unusable. Keep proxy/VPN-bound sessions closed because rqbit 8's listener
-                        // cannot bind to a named interface safely.
-                        listen_port_range: peer_listener_enabled(
-                            configured_proxy.is_some(),
-                            configured_bind.is_some(),
-                        )
-                        .then_some(DIRECT_PEER_PORTS),
+                        // unusable. Keep proxy/VPN-bound sessions closed until native device
+                        // binding is supported consistently across desktop and Android.
+                        listen,
                         // Do not silently create a home-router mapping on Android: it can bypass a
                         // system VPN's tunnel and cellular CGNAT cannot benefit. The TCP listener
                         // still works with VPN/manual port forwarding. Desktop retains its existing
                         // UPnP behavior when no explicit privacy route is configured.
-                        enable_upnp_port_forwarding: upnp_enabled(
-                            cfg!(target_os = "android"),
-                            configured_proxy.is_some(),
-                            configured_bind.is_some(),
-                        ),
-                        // Keep completed pieces briefly in memory so a slow Windows disk cannot
-                        // stall the priority HTTP reader behind synchronous writes.
-                        defer_writes_up_to: Some(DEFERRED_WRITE_MIB),
                         ..Default::default()
                     },
                 )
@@ -1141,18 +1164,15 @@ pub async fn torrent_playback_url(
         ));
     }
     let metadata_peers = listing.seen_peers.len();
-    let piece_hash_bytes = listing.info.pieces.as_ref().len();
+    let piece_hash_bytes = listing.info.info().pieces.as_ref().len();
     let files = listing
         .info
         .iter_file_details()
-        .map_err(|e| format!("Could not read the torrent file list: {e:#}"))?
         .enumerate()
-        .filter_map(|(index, details)| {
-            details.filename.to_string().ok().map(|name| TorrentFile {
-                index,
-                name,
-                length: details.len,
-            })
+        .map(|(index, details)| TorrentFile {
+            index,
+            name: details.filename.to_string(),
+            length: details.len,
         })
         .collect::<Vec<_>>();
     let torrent_size = files
@@ -1350,7 +1370,7 @@ pub async fn torrent_playback_url(
     // librqbit gives every active FileStream's 32 MiB look-ahead precedence over its natural-order
     // queue. Previously the torrent was live for the whole JS/cache/player handoff, so peers could
     // fill their request queues with background pieces before mpv opened the loopback URL.
-    let startup_stream = match handle.clone().stream(selected.index) {
+    let startup_stream = match handle.clone().stream(selected.index).await {
         Ok(stream) => stream,
         Err(error) => {
             if delete_on_failure {
@@ -1439,7 +1459,7 @@ pub async fn torrent_playback_url(
         metadata_cached,
         metadata_cache: metadata_cache.to_string(),
         tracker_count,
-        incoming_peer_port: engine.session.tcp_listen_port(),
+        incoming_peer_port: engine.session.listen_addr().map(|address| address.port()),
         fastresume_primed: !reused_torrent || claimed_prepared,
     })
 }
@@ -1510,6 +1530,7 @@ pub async fn torrent_playback_prepare_next(
             .handle
             .clone()
             .stream(selected.index)
+            .await
             .map_err(|error| format!("Could not prioritize the next episode: {error:#}"))?;
         let next_subtitle_indices = subtitle_files
             .iter()
@@ -1597,14 +1618,11 @@ pub async fn torrent_playback_prepare_next(
     let files = listing
         .info
         .iter_file_details()
-        .map_err(|error| format!("Could not read the next torrent file list: {error:#}"))?
         .enumerate()
-        .filter_map(|(index, details)| {
-            details.filename.to_string().ok().map(|name| TorrentFile {
-                index,
-                name,
-                length: details.len,
-            })
+        .map(|(index, details)| TorrentFile {
+            index,
+            name: details.filename.to_string(),
+            length: details.len,
         })
         .collect::<Vec<_>>();
     let selected = select_file_for_title(
@@ -1633,7 +1651,7 @@ pub async fn torrent_playback_prepare_next(
     prime_empty_fastresume(
         &engine.fastresume_folder,
         &info_hash,
-        listing.info.pieces.as_ref().len(),
+        listing.info.info().pieces.as_ref().len(),
     )
     .await?;
     let preload_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1664,6 +1682,7 @@ pub async fn torrent_playback_prepare_next(
         let preload_stream = handle
             .clone()
             .stream(selected.index)
+            .await
             .map_err(|error| format!("Could not prioritize the prepared episode: {error:#}"))?;
         engine
             .session
@@ -1839,13 +1858,13 @@ pub async fn torrent_playback_health(
         downloaded_bytes,
         selected_size: current.selected_size,
         download_mbps: live.map(|l| l.download_speed.mbps).unwrap_or(0.0),
-        live_peers: peers.map(|p| p.live).unwrap_or(0),
+        live_peers: peers.map(|p| p.live as usize).unwrap_or(0),
         upload_mbps: live.map(|l| l.upload_speed.mbps).unwrap_or(0.0),
-        queued_peers: peers.map(|p| p.queued).unwrap_or(0),
-        connecting_peers: peers.map(|p| p.connecting).unwrap_or(0),
-        dead_peers: peers.map(|p| p.dead).unwrap_or(0),
-        not_needed_peers: peers.map(|p| p.not_needed).unwrap_or(0),
-        seen_peers: peers.map(|p| p.seen).unwrap_or(0),
+        queued_peers: peers.map(|p| p.queued as usize).unwrap_or(0),
+        connecting_peers: peers.map(|p| p.connecting as usize).unwrap_or(0),
+        dead_peers: peers.map(|p| p.dead as usize).unwrap_or(0),
+        not_needed_peers: peers.map(|p| p.not_needed as usize).unwrap_or(0),
+        seen_peers: peers.map(|p| p.seen as usize).unwrap_or(0),
         fetched_bytes: live.map(|l| l.snapshot.fetched_bytes).unwrap_or(0),
         state: stats.state.to_string(),
         finished: stats.finished,

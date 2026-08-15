@@ -97,7 +97,7 @@ tauri-plugin-dialog = "2"
 url = "2"
 # Embedded BitTorrent engine. Its read-only localhost HTTP endpoint supports
 # byte ranges, so mpv can seek while only the selected episode is downloaded.
-librqbit = { version = "8.1.1", default-features = false, features = ["rust-tls", "http-api", "tracing-subscriber-utils"] }
+librqbit = { version = "9.0.0", default-features = false, features = ["rust-tls", "http-api", "tracing-subscriber-utils"] }
 
 # Native-player + desktop-only deps, EXCLUDED from the Android build (which delegates playback to
 # an external app): libmpv (no Android target here), the scrub-thumbnail image codec (its only
