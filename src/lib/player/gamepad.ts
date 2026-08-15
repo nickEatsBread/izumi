@@ -1,6 +1,7 @@
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { RepeatTimer } from './repeat'
+import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 
 // Tunables (seconds + ms). Ramp/interval numbers govern how fast a held trigger scrubs;
 // tune on-device if the fast end feels too slow/quick.
@@ -132,15 +133,26 @@ export function startNativeGamepadSeek(d: SeekDeps): () => void {
   const l2 = new TriggerScrubber(-1, d)
   const r2 = new TriggerScrubber(+1, d)
   const held = { L: false, R: false }
-  let raf = 0
   let unlisten: (() => void) | null = null
   let disposed = false
 
   invoke('gamepad_start').catch(() => {})
 
+  const tick = () => {
+    const now = performance.now()
+    l2.update(held.L, now)
+    r2.update(held.R, now)
+    return held.L || held.R
+  }
+  const repeatLoop = new ActiveFrameLoop(tick)
+
   listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
     if (e.payload.name === 'l2') held.L = e.payload.pressed
     else if (e.payload.name === 'r2') held.R = e.payload.pressed
+    else return
+    tick()
+    if (held.L || held.R) repeatLoop.start()
+    else repeatLoop.stop()
   }).then(async (u) => {
     if (disposed) { u(); return }
     unlisten = u
@@ -149,21 +161,15 @@ export function startNativeGamepadSeek(d: SeekDeps): () => void {
       if (!disposed) {
         held.L = state.l2
         held.R = state.r2
+        tick()
+        if (held.L || held.R) repeatLoop.start()
       }
     } catch { /* best effort: live events will still update state */ }
   })
 
-  const loop = () => {
-    const now = performance.now()
-    l2.update(held.L, now)
-    r2.update(held.R, now)
-    raf = requestAnimationFrame(loop)
-  }
-  raf = requestAnimationFrame(loop)
-
   return () => {
     disposed = true
-    cancelAnimationFrame(raf)
+    repeatLoop.stop()
     unlisten?.()
   }
 }

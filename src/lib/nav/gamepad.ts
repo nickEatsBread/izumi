@@ -7,6 +7,7 @@ import { seekDuration } from '$lib/settings/ui'
 import { inputType } from './input'
 import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
+import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
@@ -32,8 +33,13 @@ export function startGamepadNav(): () => void {
   const timers: Record<Dir, RepeatTimer> = {
     up: new RepeatTimer(cfg), down: new RepeatTimer(cfg), left: new RepeatTimer(cfg), right: new RepeatTimer(cfg),
   }
-  let raf = 0
   let unlisten: (() => void) | null = null
+
+  const repeatLoop = new ActiveFrameLoop(() => {
+    const now = performance.now()
+    for (const dir of DIRS) if (held[dir] && timers[dir].tick(now)) fireDir(dir)
+    return DIRS.some((dir) => held[dir])
+  })
 
   const inPlayer = () => get(playing)
 
@@ -92,6 +98,7 @@ export function startGamepadNav(): () => void {
       held[dir] = true
       timers[dir].press(performance.now())
       fireDir(dir)
+      repeatLoop.start()
       return
     }
     // The on-screen keyboard (if up) owns A/B: A types the focused key; B closes it. D-pad nav
@@ -181,6 +188,7 @@ export function startGamepadNav(): () => void {
       const dir = name as Dir
       held[dir] = false
       timers[dir].release()
+      if (!DIRS.some((heldDir) => held[heldDir])) repeatLoop.stop()
     }
   }
 
@@ -189,12 +197,5 @@ export function startGamepadNav(): () => void {
     else onRelease(e.payload.name)
   }).then((u) => { unlisten = u })
 
-  const loop = () => {
-    const now = performance.now()
-    for (const dir of DIRS) if (held[dir] && timers[dir].tick(now)) fireDir(dir)
-    raf = requestAnimationFrame(loop)
-  }
-  raf = requestAnimationFrame(loop)
-
-  return () => { cancelAnimationFrame(raf); unlisten?.(); unsubPlaying() }
+  return () => { repeatLoop.stop(); unlisten?.(); unsubPlaying() }
 }
