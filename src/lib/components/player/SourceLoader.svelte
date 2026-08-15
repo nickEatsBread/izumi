@@ -8,9 +8,7 @@
   // Layout is title → animation → status → release, over a blurred still of the show's own
   // artwork. izumi has no clear-art logo layer, so the title renders as text, which is the same
   // fallback the shape is borrowed from.
-  import { onDestroy } from 'svelte'
-  import lottie, { type AnimationItem } from 'lottie-web'
-  import animationData from './source-loader.json'
+  import { sourceLoaderMotion as motion } from './source-loader-motion'
   import { gameMode, playing } from '$lib/player/session'
 
   let { title = '', caption = 'Connecting', detail = '', onCancel }: {
@@ -20,15 +18,12 @@
     onCancel?: () => void
   } = $props()
 
-  let host = $state<HTMLDivElement | null>(null)
-  let anim: AnimationItem | undefined
-
   // The OS asking for less motion is not a request for a static lottie — it is a request for the
   // animation not to run. It still renders one frame, so the screen keeps its shape and its text.
   const reduced = typeof window !== 'undefined'
     && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-  // SVG Lottie mutates several DOM nodes every frame. That is cheap on Desktop, but in Gamescope it
+  // SVG animation mutates a tiny pair of rectangle attributes. That is cheap on Desktop, but in Gamescope it
   // invalidates the full WebKit surface and competes with mpv on the Deck iGPU — so game mode swaps
   // in the transform-only CSS bar instead (same left-right motion, compositor-cheap).
   //
@@ -39,25 +34,6 @@
   // before the player opens.
   const cheapSpinner = $derived($gameMode && $playing)
 
-  $effect(() => {
-    if (cheapSpinner) {
-      anim?.destroy()
-      anim = undefined
-      return
-    }
-    if (!host || anim) return
-    anim = lottie.loadAnimation({
-      container: host,
-      renderer: 'svg',
-      loop: !reduced,
-      autoplay: !reduced,
-      animationData: structuredClone(animationData),
-      rendererSettings: { preserveAspectRatio: 'xMidYMid meet', progressiveLoad: false },
-    })
-    if (reduced) anim.goToAndStop(0, true)
-  })
-
-  onDestroy(() => anim?.destroy())
 </script>
 
 <div class="flex w-full max-w-xl flex-col items-center gap-6 px-6 text-center">
@@ -72,7 +48,36 @@
       <div class="bar-loader h-1.5 w-40 rounded-full bg-white/20"></div>
     </div>
   {:else}
-    <div bind:this={host} class="h-28 w-52" aria-hidden="true"></div>
+    <!-- Literal transcription of source-loader.json: same 800×600 composition, 540×10 track,
+         clipped moving bar, 30fps/26-frame loop, keyframe easing and final one-frame hold. -->
+    <svg class="h-28 w-52" viewBox={motion.viewBox} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      <defs>
+        <clipPath id="source-loader-track-clip">
+          <path d={motion.clipPath} />
+        </clipPath>
+      </defs>
+      <rect x={motion.track.x} y={motion.track.y} width={motion.track.width}
+        height={motion.track.height} fill={motion.track.fill} />
+      <g clip-path="url(#source-loader-track-clip)">
+        <g transform="translate(107 300)">
+          {#if !reduced}
+            <animateTransform attributeName="transform" type="translate" dur={motion.duration}
+              repeatCount="indefinite" calcMode="spline" keyTimes={motion.positionKeyTimes}
+              keySplines={motion.positionKeySplines} values={motion.positionValues} />
+          {/if}
+          <rect x="-36" y="-5" width="72" height="10" fill={motion.bar.fill} opacity={motion.bar.opacity}>
+            {#if !reduced}
+              <animate attributeName="x" dur={motion.duration} repeatCount="indefinite"
+                calcMode="spline" keyTimes={motion.sizeKeyTimes} keySplines={motion.sizeKeySplines}
+                values={motion.halfWidthValues} />
+              <animate attributeName="width" dur={motion.duration} repeatCount="indefinite"
+                calcMode="spline" keyTimes={motion.sizeKeyTimes} keySplines={motion.sizeKeySplines}
+                values={motion.widthValues} />
+            {/if}
+          </rect>
+        </g>
+      </g>
+    </svg>
   {/if}
 
   <!-- `w-full min-w-0` is load-bearing: the column centres its children rather than stretching them,

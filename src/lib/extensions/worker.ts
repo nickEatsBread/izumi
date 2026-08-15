@@ -1,11 +1,6 @@
 /// <reference lib="webworker" />
-// Seanime provider globals (statically imported: Vite builds this worker as `iife`, which can't
-// code-split, so a dynamic import here breaks the build — the cost is cheerio riding in the one
-// shared worker chunk even for torrent extensions, which is fine).
-import { LoadDoc as ShimLoadDoc, Buffer as ShimBuffer, CryptoJS as ShimCryptoJS, transpileSeanime, habari as ShimHabari, getUserPreference as ShimGetUserPreference } from './seanime-shim'
-import { loadExtractor as runExtractor, loadEpisodeServer as runEpisodeServer } from './extractors/registry'
 import { unpack as unpackJs } from './extractors/jsunpacker'
-import { parseMiruHeader, createExtensionBase, adaptMiru } from './miru-shim'
+import { parseMiruHeader } from './miru-header'
 import { markExtensionNavigatorOnline } from './worker-connectivity'
 // One source-extension per module Worker. Untrusted extension code is loaded via a
 // Blob-URL dynamic import. Isolation: a Worker has NO
@@ -67,10 +62,12 @@ let extensionName: string | undefined
 // `$unpack` is exposed alongside for providers that need the decoded page for their own parsing.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ;(globalThis as any).$loadExtractor = (url: string, referer?: string) =>
-  runExtractor(url, { fetch: bridgedFetch as never, referer, extension: extensionName })
+  import('./extractors/registry').then(({ loadExtractor }) =>
+    loadExtractor(url, { fetch: bridgedFetch as never, referer, extension: extensionName }))
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ;(globalThis as any).$loadEpisodeServer = (url: string, referer?: string) =>
-  runEpisodeServer(url, { fetch: bridgedFetch as never, referer, extension: extensionName })
+  import('./extractors/registry').then(({ loadEpisodeServer }) =>
+    loadEpisodeServer(url, { fetch: bridgedFetch as never, referer, extension: extensionName }))
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ;(globalThis as any).$unpack = unpackJs
 
@@ -101,7 +98,7 @@ let parseProbe = 0
 // marker below is the module's first statement, so it can only have run if the whole module parsed;
 // it is kept on line 1 so the payload's own line numbers stay intact in stack traces.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function importSeanimeProvider(code: string): Promise<any> {
+async function importSeanimeProvider(code: string, transpile: (source: string) => string): Promise<any> {
   const withDefault = (src: string) => `${src}\n;export default (typeof Provider !== 'undefined' ? new Provider() : {});`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const g = globalThis as any
@@ -109,7 +106,7 @@ async function importSeanimeProvider(code: string): Promise<any> {
   try { return await importModule(`;globalThis[${JSON.stringify(marker)}]=1;${withDefault(code)}`) }
   catch (err) {
     if (g[marker] === 1 || !isSyntaxError(err)) throw err
-    return await importModule(withDefault(transpileSeanime(code)))
+    return await importModule(withDefault(transpile(code)))
   }
   finally { delete g[marker] }
 }
@@ -127,6 +124,7 @@ self.onmessage = async (e: MessageEvent<any>) => {
       // Extension` needs that base class present as a global BEFORE the module is evaluated.
       const miruMeta = parseMiruHeader(code)
       if (miruMeta) {
+        const { createExtensionBase, adaptMiru } = await import('./miru-shim')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const g = globalThis as any
         g.Extension = createExtensionBase(miruMeta, bridgedFetch as never)
@@ -147,17 +145,18 @@ self.onmessage = async (e: MessageEvent<any>) => {
       // Seanime providers are a bare `class Provider {}` (no export) using a global `fetch`
       // (already overridden above) + occasionally `$sleep`. Instantiate it + provide $sleep.
       if (msg.kind === 'seanime' || msg.kind === 'atp') {
+        const shim = await import('./seanime-shim')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const g = globalThis as any
         g.$sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-        g.LoadDoc = ShimLoadDoc
-        g.Buffer = ShimBuffer
-        g.CryptoJS = ShimCryptoJS
+        g.LoadDoc = shim.LoadDoc
+        g.Buffer = shim.Buffer
+        g.CryptoJS = shim.CryptoJS
         if (msg.kind === 'atp') {
-          g.$habari = ShimHabari
-          g.$getUserPreference = ShimGetUserPreference
+          g.$habari = shim.habari
+          g.$getUserPreference = shim.getUserPreference
         }
-        mod = await importSeanimeProvider(code)
+        mod = await importSeanimeProvider(code, shim.transpileSeanime)
       } else {
         mod = await importModule(code)
       }

@@ -12,47 +12,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import * as cheerio from 'cheerio'
-
-/** Metadata from the userscript-style banner every extension carries. */
-export interface MiruMeta {
-  name?: string
-  package?: string
-  type?: string
-  lang?: string
-  webSite?: string
-  version?: string
-  icon?: string
-  nsfw?: boolean
-}
-
-const BANNER_RE = /==MiruExtension==([\s\S]*?)==\/MiruExtension==/
-
-/** True when the payload is one of these extensions rather than another format's. */
-export const isMiruExtension = (code: string): boolean => BANNER_RE.test(code)
-
-/**
- * Parse the `// @key value` banner. Returns null when the payload has no banner, which is how the
- * worker decides whether to use this runtime at all.
- */
-export function parseMiruHeader(code: string): MiruMeta | null {
-  const block = code.match(BANNER_RE)?.[1]
-  if (!block) return null
-  const meta: Record<string, string> = {}
-  for (const line of block.split('\n')) {
-    const m = line.match(/@(\w+)\s+(.+?)\s*$/)
-    if (m) meta[m[1]] = m[2].trim()
-  }
-  return {
-    name: meta.name,
-    package: meta.package,
-    type: meta.type,
-    lang: meta.lang,
-    webSite: meta.webSite?.replace(/\/+$/, ''),
-    version: meta.version,
-    icon: meta.icon,
-    nsfw: meta.nsfw === 'true',
-  }
-}
+import type { MiruMeta } from './miru-header'
+export { isMiruExtension, parseMiruHeader, type MiruMeta } from './miru-header'
 
 /** Which of the element accessors an extension asked for. */
 type ElementOp = 'text' | 'outerHTML' | 'innerHTML'

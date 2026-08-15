@@ -8,8 +8,8 @@ import { describe, expect, it } from 'vitest'
 // The only pre-playback feedback is the stream picker's skeleton (a direct tap) or SourceConnecting
 // (a resume), and both mount through Lazy. Lazy's `{#await mod then …}` had no pending branch, so
 // from the click until the dynamic import resolved the DOM held nothing. That import graph carries
-// lottie-web — the largest chunk in the build — so on a cold HTTP cache (a fresh install, the first
-// play after an update) it was fetched from the network at the moment of the tap, racing the resolve
+// a large player graph — so on a cold HTTP cache (a fresh install, the first play after an update)
+// it was fetched from the network at the moment of the tap, racing the resolve
 // it was supposed to be reporting on. When the resolve won, the loading state never appeared at all.
 
 const lazy = readFileSync(fileURLToPath(new URL('./Lazy.svelte', import.meta.url)), 'utf8')
