@@ -1,5 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -17,8 +19,48 @@ vi.mock('@tauri-apps/api/core', () => ({
 }))
 
 import {
-  getChapterList, mpvLoad, mpvState, seekRelative, startMpvEvents, waitForMpvFirstFrame,
+  getChapterList, mpvLoad, mpvPreparationSnapshot, mpvState, mpvStop, prepareEmbeddedPlayer,
+  seekRelative, startMpvEvents, waitForMpvFirstFrame,
 } from './android-mpv'
+
+const nativePlugin = readFileSync(fileURLToPath(new URL(
+  '../../../src-tauri/tauri-plugin-mpv/android/src/main/java/app/izumi/mpv/MpvPlugin.kt',
+  import.meta.url,
+)), 'utf8')
+
+describe('Android mpv idle preparation', () => {
+  beforeEach(() => {
+    mocks.invoke.mockReset()
+    mocks.invoke.mockResolvedValue({ created: true, durationMs: 42 })
+  })
+
+  it('warms the native core without loading media and records only timing state', async () => {
+    await expect(prepareEmbeddedPlayer()).resolves.toBe(true)
+    expect(mocks.invoke).toHaveBeenCalledWith('plugin:mpv|mpv_prepare')
+    expect(mocks.invoke).not.toHaveBeenCalledWith('plugin:mpv|mpv_load', expect.anything())
+    expect(mpvPreparationSnapshot()).toEqual({ ready: true, created: true, durationMs: 42 })
+
+    mocks.invoke.mockResolvedValue(undefined)
+    await mpvStop()
+    expect(mpvPreparationSnapshot().ready).toBe(false)
+  })
+
+  it('keeps idle preparation out of the Android view and immersive-mode path', () => {
+    const core = nativePlugin.slice(
+      nativePlugin.indexOf('private fun ensureCore()'),
+      nativePlugin.indexOf('/** Attach the prepared core'),
+    )
+    const prepare = nativePlugin.slice(
+      nativePlugin.indexOf('fun prepare(invoke: Invoke)'),
+      nativePlugin.indexOf('// --- Picture-in-picture'),
+    )
+    expect(core).not.toContain('findViewById')
+    expect(core).not.toContain('IzumiMpvView')
+    expect(core).not.toContain('setImmersive')
+    expect(prepare).toContain('ensureCore()')
+    expect(prepare).not.toMatch(/\bensure\(\)/)
+  })
+})
 
 describe('Android mpv seek coordination', () => {
   beforeAll(async () => {

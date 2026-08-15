@@ -2,6 +2,7 @@
 // base-class commands that back `addPluginListener` (event subscription) — they need permissions
 // generated + granted too, or the ACL denies the event stream.
 const COMMANDS: &[&str] = &[
+    "mpv_prepare",
     "mpv_load",
     "mpv_command",
     "mpv_get",

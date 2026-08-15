@@ -20,6 +20,10 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Mpv<R: Runtime>(#[allow(dead_code)] AppHandle<R>);
 
 impl<R: Runtime> Mpv<R> {
+    pub fn prepare(&self) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::json!({ "created": false, "durationMs": 0 }))
+    }
+
     pub fn load(&self, _payload: LoadRequest) -> crate::Result<()> {
         Ok(())
     }

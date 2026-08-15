@@ -35,6 +35,15 @@ describe('app layout mounting', () => {
     }
   })
 
+  it('prepares the Android mpv core only inside deferred player boot work', () => {
+    const playerBoot = layout.slice(
+      layout.indexOf("scheduleBootWork('player'"),
+      layout.indexOf("}, 2500)") + "}, 2500)".length,
+    )
+    expect(playerBoot).toContain('prepareEmbeddedPlayer()')
+    expect(playerBoot).toContain('if (get(isAndroid))')
+  })
+
   it('never mounts the AniList degraded banner over active playback', () => {
     expect(layout).toContain('{#if !$playing}<AniListDegradedBanner />{/if}')
   })

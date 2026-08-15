@@ -15,7 +15,7 @@
   import AddonLogo from './AddonLogo.svelte'
   import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
-  import { playStream, cancelResolve, type PlayState } from '$lib/stremio/play'
+  import { playStream, cancelResolve, prefetchSourceMetadata, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
@@ -278,6 +278,10 @@
   let autoStart = 0
   function stopAutoTimer() { if (autoTimer) { clearInterval(autoTimer); autoTimer = undefined } }
   function cancelAuto() { stopAutoTimer(); if (autoState === 'counting') autoState = 'off'; autoProgress = 0 }
+  function targetSource(info: StreamInfo) {
+    cancelAuto()
+    if (directP2p) void prefetchSourceMetadata(info.stream, 'targeted')
+  }
   onDestroy(stopAutoTimer)
 
   // Reset per EPISODE only — NOT on every progressive stream update (which would keep
@@ -548,8 +552,8 @@
     tabindex="0"
     aria-disabled={disabled}
     onclick={() => choose(info)}
-    onpointerenter={cancelAuto}
-    onfocus={cancelAuto}
+    onpointerenter={() => targetSource(info)}
+    onfocus={() => targetSource(info)}
     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
     class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
   >

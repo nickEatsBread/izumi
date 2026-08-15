@@ -4,6 +4,7 @@ Allow controlling the embedded libmpv player.
 
 #### This default permission set includes the following:
 
+- `allow-mpv-prepare`
 - `allow-mpv-load`
 - `allow-mpv-command`
 - `allow-mpv-get`
@@ -396,6 +397,32 @@ Enables the mpv_pip command without any pre-configured scope.
 <td>
 
 Denies the mpv_pip command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-prepare`
+
+</td>
+<td>
+
+Enables the mpv_prepare command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-prepare`
+
+</td>
+<td>
+
+Denies the mpv_prepare command without any pre-configured scope.
 
 </td>
 </tr>

@@ -107,6 +107,47 @@ function clearPendingSeek(generation?: number) {
 }
 
 let embeddedChecked: boolean | undefined
+export interface MpvPreparation {
+  ready: boolean
+  created: boolean
+  durationMs: number
+}
+let preparation: MpvPreparation = { ready: false, created: false, durationMs: 0 }
+let preparationPromise: Promise<boolean> | null = null
+
+/** Snapshot included in redacted resolve diagnostics; contains timing/state only. */
+export const mpvPreparationSnapshot = (): MpvPreparation => ({ ...preparation })
+
+/**
+ * Create the Android libmpv core during serialized idle boot work. The native command deliberately
+ * leaves the SurfaceView and WebView untouched; first playback only has to attach the warm core.
+ * Promise-cached so boot promotion and another caller can safely meet here.
+ */
+export function prepareEmbeddedPlayer(): Promise<boolean> {
+  if (preparation.ready) return Promise.resolve(true)
+  if (preparationPromise) return preparationPromise
+  const started = performance.now()
+  const pending = invoke<{ created?: boolean; durationMs?: number }>('plugin:mpv|mpv_prepare')
+    .then((result) => {
+      embeddedChecked = true
+      preparation = {
+        ready: true,
+        created: result?.created !== false,
+        durationMs: Number.isFinite(result?.durationMs)
+          ? Number(result.durationMs)
+          : Math.round(performance.now() - started),
+      }
+      return true
+    })
+    .catch(() => {
+      embeddedChecked = false
+      preparation = { ready: false, created: false, durationMs: 0 }
+      return false
+    })
+  preparationPromise = pending
+  return pending.finally(() => { if (preparationPromise === pending) preparationPromise = null })
+}
+
 /** Whether the embedded-player plugin is compiled in (full flavor). Cached after first probe. */
 export async function hasEmbeddedPlayer(): Promise<boolean> {
   if (embeddedChecked !== undefined) return embeddedChecked
@@ -275,6 +316,9 @@ export async function mpvGet(property: string): Promise<string | null> {
 
 export async function mpvStop(): Promise<void> {
   await invoke('plugin:mpv|mpv_stop')
+  // Native stop destroys the core as well as the SurfaceView; the next play must not mistake the
+  // prior idle preparation for a still-live core.
+  preparation = { ready: false, created: false, durationMs: 0 }
   seekGeneration++
   clearPendingSeekTimers()
   mpvState.set({ ...IDLE_STATE })

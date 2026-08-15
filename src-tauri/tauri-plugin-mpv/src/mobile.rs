@@ -27,6 +27,10 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct Mpv<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> Mpv<R> {
+    pub fn prepare(&self) -> crate::Result<serde_json::Value> {
+        self.0.run_mobile_plugin("prepare", ()).map_err(Into::into)
+    }
+
     pub fn load(&self, payload: LoadRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("load", payload)

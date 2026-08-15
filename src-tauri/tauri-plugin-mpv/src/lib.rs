@@ -41,6 +41,7 @@ impl<R: Runtime, T: Manager<R>> MpvExt<R> for T {
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("mpv")
         .invoke_handler(tauri::generate_handler![
+            commands::mpv_prepare,
             commands::mpv_load,
             commands::mpv_command,
             commands::mpv_get,

@@ -49,4 +49,10 @@ describe('mobile source picker layout', () => {
     // on it would push one history entry per addon that lands.
     expect(source).toContain('const backTrapOpen = $derived($isMobile && !!pick && !pick.hidden)')
   })
+
+  it('uses pointer and controller focus time to prefetch the targeted source metadata', () => {
+    expect(source).toContain("prefetchSourceMetadata(info.stream, 'targeted')")
+    expect(source).toContain('onpointerenter={() => targetSource(info)}')
+    expect(source).toContain('onfocus={() => targetSource(info)}')
+  })
 })

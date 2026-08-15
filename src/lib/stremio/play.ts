@@ -10,6 +10,7 @@ import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
 import { scoreInfo } from './score'
+import { directMetadataPrefetchKey, directMetadataPrefetchRequest } from './direct-metadata-prefetch'
 
 /** Ranking inputs that live in settings rather than on a stream. The non-interactive paths must
  *  use the same ones the picker does, or "best" means two different things depending on whether a
@@ -85,7 +86,8 @@ import {
 } from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
 import {
-  hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents,
+  prepareEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents,
+  mpvPreparationSnapshot,
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
@@ -693,6 +695,59 @@ async function resolveKitsu(media: Media): Promise<number | undefined> {
     () => kitsuIdFromMal(media.idMal),
     async () => lookupKitsu(await getIndex(), media.id),
   )
+}
+
+let activeMetadataPrefetch: { key: string; promise: Promise<boolean> } | null = null
+
+/**
+ * Warm the native metadata cache for the source the ranker or user is currently targeting.
+ * The native side owns cancellation/single-flight; this layer only suppresses duplicate UI events.
+ */
+export function prefetchSourceMetadata(
+  stream: Stream,
+  reason: 'ranked' | 'targeted' | 'selected' = 'targeted',
+  forceDirect = false,
+): Promise<boolean> {
+  if (!forceDirect && !directP2pEnabled()) return Promise.resolve(false)
+  const request = directMetadataPrefetchRequest(stream)
+  if (!request) return Promise.resolve(false)
+  const key = directMetadataPrefetchKey(request)
+  if (activeMetadataPrefetch?.key === key) return activeMetadataPrefetch.promise
+
+  const trace = currentResolveTrace()
+  const startedAt = performance.now()
+  traceResolve(trace, 'metadata prefetch start', {
+    reason,
+    input: request.timeoutMs ? 'torrent-file' : 'magnet',
+  })
+  const promise = invoke<boolean>('torrent_metadata_prefetch', {
+    ...request,
+    ...torrentEngineNetworkOptions(),
+  }).then((cached) => {
+    traceResolve(trace, 'metadata prefetch finish', {
+      reason,
+      input: request.timeoutMs ? 'torrent-file' : 'magnet',
+      durationMs: Math.round(performance.now() - startedAt),
+      cached,
+    })
+    return cached
+  }).catch(() => {
+    traceResolve(trace, 'metadata prefetch finish', {
+      reason,
+      input: request.timeoutMs ? 'torrent-file' : 'magnet',
+      durationMs: Math.round(performance.now() - startedAt),
+      cached: false,
+      failed: true,
+    })
+    return false
+  })
+  activeMetadataPrefetch = { key, promise }
+  void promise.finally(() => {
+    if (activeMetadataPrefetch?.key === key && activeMetadataPrefetch.promise === promise) {
+      activeMetadataPrefetch = null
+    }
+  })
+  return promise
 }
 
 async function resolveStreams(media: Media, episode: number | undefined): Promise<{ streams: Stream[]; cachedCount: number; want?: EpisodeWant; kitsu?: number }> {
@@ -1429,22 +1484,15 @@ export async function playEpisode(
     // torrent row becomes the would-be pick, warm its metadata into the native cache so the commit
     // joins or skips the exchange. Native single-flight keeps only the current candidate alive, so
     // rapid re-ranking cannot stack DHT lookups that contend with the source ultimately selected.
-    let prefetchedMetaHash = ''
+    let prefetchedMetaKey = ''
     const prefetchTopMetadata = (top: Stream | undefined) => {
-      if (!top?.infoHash || top.url || !directP2pEnabled()) return
-      // HTTP .torrent metadata is fetched synchronously on an actual pick below. Starting it here
-      // could race that pick (the native dedupe intentionally does not make callers wait).
-      if (top.__torrentUrl) return
-      if (top.infoHash === prefetchedMetaHash) return
-      prefetchedMetaHash = top.infoHash
-      traceResolve(trace, 'metadata prefetch start', { infoHash: top.infoHash })
-      void invoke<boolean>('torrent_metadata_prefetch', {
-        magnet: top.__magnet ?? `magnet:?xt=urn:btih:${top.infoHash}`,
-        expectedInfoHash: top.infoHash,
-        ...torrentEngineNetworkOptions(),
-      })
-        .then((cached) => traceResolve(trace, 'metadata prefetch finish', { cached }))
-        .catch(() => {})
+      if (!top || !directP2pEnabled()) return
+      const request = directMetadataPrefetchRequest(top)
+      if (!request) return
+      const key = directMetadataPrefetchKey(request)
+      if (key === prefetchedMetaKey) return
+      prefetchedMetaKey = key
+      void prefetchSourceMetadata(top, 'ranked')
     }
     const scheduleReady = (s: Stream[]) => {
       if (autoReady || !s.length) return
@@ -1954,6 +2002,7 @@ export async function playStream(
     entry: options.recoveryOwner ? 'watchdog source replacement' : 'source selection',
   })
   traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(media.id)))
+  const mpvPreparedAtSelection = mpvPreparationSnapshot()
   const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
   if (!playbackOwner) {
     finishResolveTrace(trace, 'stale source selection')
@@ -1962,12 +2011,8 @@ export async function playStream(
   // Manual picks are not necessarily the row the autoplay ranker prefetched. Start/promote the
   // chosen hash immediately, before platform checks and episode mapping; native single-flight
   // cancels a stale candidate and the playback invoke below joins this exact lookup.
-  if (!stream.url && stream.infoHash && !stream.__torrentUrl && directP2pEnabled()) {
-    void invoke<boolean>('torrent_metadata_prefetch', {
-      magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${stream.infoHash}`,
-      expectedInfoHash: stream.infoHash,
-      ...torrentEngineNetworkOptions(),
-    }).catch(() => {})
+  if (!stream.url && stream.infoHash && directP2pEnabled()) {
+    void prefetchSourceMetadata(stream, 'selected')
   }
   const stillOwnsPlayback = () => ownsPlayback(playbackOwner)
   // Before ANY history/tracker write below: an adult title flips incognito on (setting-gated), so
@@ -2072,10 +2117,17 @@ export async function playStream(
   // Also skipped in offline mode — the external-subtitle addons are network-only, and offline
   // playback is always a local file (any embedded/downloaded subs travel with it).
   const platformStartedAt = performance.now()
-  const androidEmbedded = get(isAndroid) ? await hasEmbeddedPlayer() : false
+  const android = get(isAndroid)
+  // Join the deferred warm-up if it is still running. Starting it here is also the full-flavor
+  // probe, and overlaps the metadata prefetch launched above instead of racing a later mpv_load.
+  const androidEmbedded = android ? await prepareEmbeddedPlayer() : false
+  const mpvPreparation = mpvPreparationSnapshot()
   traceResolve(trace, 'playback platform ready', {
     durationMs: Math.round(performance.now() - platformStartedAt),
-    android: get(isAndroid), androidEmbedded, externalPlayer: get(enableExternalPlayer),
+    android, androidEmbedded, externalPlayer: get(enableExternalPlayer),
+    mpvCorePreparedAtSelection: mpvPreparedAtSelection.ready,
+    mpvCorePrepared: mpvPreparation.ready,
+    mpvCorePrepareMs: mpvPreparation.durationMs,
   })
   if (!stillOwnsPlayback()) return
   // Note: the picker closes itself on the 'playing' state (so an embed error stays
@@ -2107,14 +2159,7 @@ export async function playStream(
         // starting the magnet to skip the variable DHT metadata phase.
         if (stream.__torrentUrl) {
           const metadataStartedAt = performance.now()
-          const cached = await invoke<boolean>('torrent_metadata_prefetch', {
-            magnet: stream.__torrentUrl,
-            expectedInfoHash: stream.infoHash,
-            // A direct metadata URL should answer quickly. Never delay the magnet fallback by the
-            // full DHT-oriented prefetch budget when that origin is down.
-            timeoutMs: 5_000,
-            ...torrentEngineNetworkOptions(),
-          }).catch(() => false)
+          const cached = await prefetchSourceMetadata(stream, 'selected', true)
           traceResolve(trace, 'extension torrent metadata fetch finish', {
             durationMs: Math.round(performance.now() - metadataStartedAt), cached,
           })
