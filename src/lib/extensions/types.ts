@@ -33,6 +33,11 @@ export interface TorrentQuery {
   // (sources destructure exactly these), not our internal ExtIds names — see extToStreams.
   anidbAid?: number
   anidbEid?: number // AniDB episode id (episode-level; some indexers search by it)
+  // Manifest-v2 and older source SDKs use different names for these ids; the query builder sends
+  // both aliases for compatibility.
+  tvdbId?: number
+  tmdbId?: number | string
+  absoluteEpisodeNumber?: number
   tvdbAid?: number // TVDB show id
   tvdbEid?: number // TVDB episode id
   mvdbAid?: number | string // TMDB id
@@ -44,6 +49,31 @@ export interface TorrentQuery {
   mappingsA?: Record<string, unknown>
   mappingsE?: Record<string, unknown>
   isAndroid?: boolean
+}
+
+export function torrentQueryIdFields(ids: {
+  anidbAid?: number
+  anidbEid?: number
+  tvdbId?: number
+  tvdbEId?: number
+  tmdbId?: number | string
+  imdbId?: string
+  season?: number
+  absoluteEpisodeNumber?: number
+}): Partial<TorrentQuery> {
+  return {
+    anidbAid: ids.anidbAid,
+    anidbEid: ids.anidbEid,
+    tvdbId: ids.tvdbId,
+    tvdbAid: ids.tvdbId,
+    tvdbEid: ids.tvdbEId,
+    tmdbId: ids.tmdbId,
+    mvdbAid: ids.tmdbId,
+    imdbAid: ids.imdbId,
+    season: ids.season,
+    absoluteEpisode: ids.absoluteEpisodeNumber,
+    absoluteEpisodeNumber: ids.absoluteEpisodeNumber,
+  }
 }
 
 /** Normalized extension config (both flat config and manifest

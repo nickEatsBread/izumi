@@ -405,6 +405,41 @@ fn metadata_cache_path(app: &AppHandle, info_hash: &str) -> Result<PathBuf, Stri
         .join(format!("{}.torrent", info_hash.to_ascii_lowercase())))
 }
 
+/// Resolve a metadata prefetch input without touching the network. Magnets keep their tracker
+/// enrichment; an extension-provided HTTP(S) .torrent needs the independently reported hash so a
+/// malicious or stale URL cannot populate another torrent's cache slot.
+fn metadata_prefetch_source(
+    value: &str,
+    expected_info_hash: Option<&str>,
+    proxy_enabled: bool,
+) -> Result<Option<(String, String)>, String> {
+    let value = value.trim();
+    if value.to_ascii_lowercase().starts_with("magnet:?") {
+        let magnet = add_public_trackers(value)?;
+        let magnet = proxy_safe_magnet(&magnet, proxy_enabled)?;
+        let parsed = Magnet::parse(&magnet)
+            .map_err(|error| format!("Could not parse the magnet link: {error:#}"))?;
+        let Some(info_hash) = parsed.as_id20() else {
+            return Ok(None);
+        };
+        return Ok(Some((info_hash.as_string(), magnet)));
+    }
+
+    let Ok(url) = url::Url::parse(value) else {
+        return Ok(None);
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return Ok(None);
+    }
+    let Some(expected) = expected_info_hash.map(str::trim) else {
+        return Ok(None);
+    };
+    if expected.len() != 40 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Ok(None);
+    }
+    Ok(Some((expected.to_ascii_lowercase(), url.into())))
+}
+
 async fn read_disk_metadata(path: &Path) -> Option<Vec<u8>> {
     let metadata = tokio::fs::metadata(path).await.ok()?;
     if metadata.len() == 0 || metadata.len() > MAX_CACHED_TORRENT_BYTES {
@@ -725,22 +760,27 @@ pub async fn torrent_metadata_prefetch(
     app: AppHandle,
     state: tauri::State<'_, DirectTorrentState>,
     magnet: String,
+    expected_info_hash: Option<String>,
     socks_proxy_url: Option<String>,
     bind_interface: Option<String>,
     timeout_ms: Option<u64>,
 ) -> Result<bool, String> {
-    let magnet = magnet.trim();
-    if !magnet.to_ascii_lowercase().starts_with("magnet:?") {
-        return Ok(false);
-    }
     let socks_proxy_url = normalized_socks_proxy(socks_proxy_url)?;
-    let magnet = add_public_trackers(magnet)?;
-    let magnet = proxy_safe_magnet(&magnet, socks_proxy_url.is_some())?;
-    let parsed = Magnet::parse(&magnet).map_err(|e| format!("Could not parse the magnet link: {e:#}"))?;
-    let Some(info_hash) = parsed.as_id20() else { return Ok(false) };
-    let info_hash_key = info_hash.as_string();
+    let Some((info_hash_key, source)) = metadata_prefetch_source(
+        &magnet,
+        expected_info_hash.as_deref(),
+        socks_proxy_url.is_some(),
+    )?
+    else {
+        return Ok(false);
+    };
 
-    if state.metadata_cache.lock().await.contains_key(&info_hash_key) {
+    if state
+        .metadata_cache
+        .lock()
+        .await
+        .contains_key(&info_hash_key)
+    {
         return Ok(true);
     }
     let disk_cache_path = metadata_cache_path(&app, &info_hash_key)?;
@@ -756,7 +796,11 @@ pub async fn torrent_metadata_prefetch(
     let result = async {
         // A prefetch must never be the thing that surfaces a VPN/kill-switch error — that belongs
         // to a real playback attempt the user can see fail.
-        if app.state::<crate::net_interfaces::VpnGuard>().ensure_up().is_err() {
+        if app
+            .state::<crate::net_interfaces::VpnGuard>()
+            .ensure_up()
+            .is_err()
+        {
             return Ok(false);
         }
         let engine = state.get(&app, socks_proxy_url, bind_interface).await?;
@@ -764,10 +808,13 @@ pub async fn torrent_metadata_prefetch(
             .map(Duration::from_millis)
             .unwrap_or(STARTUP_STREAM_PRIORITY_TIMEOUT)
             .clamp(MIN_STARTUP_TIMEOUT, METADATA_TIMEOUT);
-        let listing = match list_torrent_metadata(&engine.session, AddTorrent::from_url(&magnet), allowance).await {
-            Ok(AddTorrentResponse::ListOnly(listing)) => listing,
-            _ => return Ok(false),
-        };
+        let listing =
+            match list_torrent_metadata(&engine.session, AddTorrent::from_url(&source), allowance)
+                .await
+            {
+                Ok(AddTorrentResponse::ListOnly(listing)) => listing,
+                _ => return Ok(false),
+            };
         if listing.info_hash.as_string() != info_hash_key {
             return Ok(false);
         }
@@ -1801,10 +1848,11 @@ pub async fn torrent_playback_stop(
 mod tests {
     use super::{
         add_public_trackers, configured_startup_timeout, empty_fastresume_bitfield_len,
-        mbps_to_bps, normalized_socks_proxy, peer_listener_enabled, proxy_safe_magnet,
-        ratio_target_bytes, remaining_startup_time, selected_file_downloaded_bytes,
-        selection_needs_restoring, startup_is_current, upload_limit, upnp_enabled,
-        DirectTorrentState, METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
+        mbps_to_bps, metadata_prefetch_source, normalized_socks_proxy, peer_listener_enabled,
+        proxy_safe_magnet, ratio_target_bytes, remaining_startup_time,
+        selected_file_downloaded_bytes, selection_needs_restoring, startup_is_current,
+        upload_limit, upnp_enabled, DirectTorrentState, METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT,
+        PUBLIC_TRACKERS,
     };
     use std::sync::atomic::Ordering;
 
@@ -1907,6 +1955,33 @@ mod tests {
                 url::form_urlencoded::byte_serialize(tracker.as_bytes()).collect::<String>();
             assert!(enriched.contains(&encoded));
         }
+    }
+
+    #[test]
+    fn metadata_prefetch_accepts_hash_pinned_torrent_urls() {
+        let hash = "0123456789012345678901234567890123456789";
+        let (key, source) = metadata_prefetch_source(
+            "https://example.com/torrents/123/download?public=true",
+            Some(hash),
+            false,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(key, hash);
+        assert_eq!(
+            source,
+            "https://example.com/torrents/123/download?public=true"
+        );
+        assert!(
+            metadata_prefetch_source("https://example.com/file", None, false)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            metadata_prefetch_source("file:///tmp/a.torrent", Some(hash), false)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]

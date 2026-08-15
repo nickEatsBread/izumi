@@ -10,6 +10,7 @@ import { clearProviderCache } from '$lib/stremio/online-cache'
 import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
 import { trackFetch, fetchEpoch } from './fetch-registry'
 import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
+import { settleExtensionMethods } from './method-stream'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -422,7 +423,7 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
       traceResolve(trace, 'legacy torrent provider start', { provider: e.cfg.name })
       // A superseded resolve (source already picked) must not issue further worker queries — each
       // one spawns HTTP that competes with the picked source's playback path.
-      const queried = await Promise.all(methods.map(async (method) => {
+      const queried = await settleExtensionMethods(methods, async (method) => {
         const methodStartedAt = performance.now()
         traceResolve(trace, 'legacy torrent provider method start', { provider: e.cfg.name, method })
         const results = signal?.aborted ? [] : await call(e, method, query)
@@ -432,19 +433,26 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
           durationMs: Math.round(performance.now() - methodStartedAt),
           rows: results.length,
         })
-        return { method, results }
-      }))
+        return results.map((result) => ({
+          ...(method === 'batch' && result.type == null ? { ...result, type: 'batch' as const } : result),
+          provider: result.provider ?? e.cfg.name,
+          providerId: e.cfg.id,
+          logo: result.logo ?? e.cfg.icon,
+        }))
+      }, (_method, results) => {
+        // Treat single() and batch() as independent tasks: an episode lookup must not sit hidden
+        // behind a slow season-pack query.
+        if (onBatch && results.length) onBatch(results)
+      })
       // Preserve which SDK method produced the row. A lot of Blu-ray packs are named only
       // "[Group] Title (BD 1080p)" with no textual batch marker, so losing `batch()` here made
       // refinement label them "movie, not an episode". If single() and batch() return the same
       // hash, merge the structural batch fact before the incremental callback sees it.
       const byHash = new Map<string, TorrentResult>()
       const noHash: TorrentResult[] = []
-      for (const { method, results } of queried) {
+      for (const { result: results } of queried) {
         for (const result of results) {
-          const next = method === 'batch' && result.type == null
-            ? { ...result, type: 'batch' as const }
-            : result
+          const next = result
           if (!next.hash) {
             noHash.push(next)
             continue
@@ -457,14 +465,7 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
           }
         }
       }
-      const rs = [...byHash.values(), ...noHash]
-      const stamped = rs.map((r) => ({
-        ...r,
-        provider: r.provider ?? e.cfg.name,
-        providerId: e.cfg.id,
-        logo: r.logo ?? e.cfg.icon,
-      }))
-      if (onBatch && stamped.length) onBatch(stamped)
+      const stamped = [...byHash.values(), ...noHash]
       traceResolve(trace, 'legacy torrent provider finish', {
         provider: e.cfg.name,
         durationMs: Math.round(performance.now() - providerStartedAt),

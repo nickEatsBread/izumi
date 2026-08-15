@@ -20,6 +20,7 @@ export function extToStream(r: TorrentResult, extName: string): Stream {
     // Keep the full magnet (trackers included) when the result carried one, so debrid can find
     // peers for an uncached torrent instead of resolving a bare, trackerless hash.
     __magnet: r.link?.startsWith('magnet:') ? r.link : undefined,
+    __torrentUrl: /^https?:\/\//i.test(r.link ?? '') ? r.link : undefined,
     // Source-declared confidence: 'high' = id-verified by the source → refine trusts it.
     __accuracy: r.accuracy,
     __batch: r.type === 'batch',

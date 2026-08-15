@@ -28,6 +28,9 @@ export interface Stream {
   // Full magnet URI (with trackers) when the source provided one — preferred over a bare-hash
   // magnet for resolving UNCACHED torrents on debrid (the trackers help it find peers).
   __magnet?: string
+  // Direct .torrent payload supplied by an extension. The native engine can fetch this metadata
+  // immediately instead of rediscovering it over DHT from the info hash.
+  __torrentUrl?: string
   behaviorHints?: {
     filename?: string // clean release name — present on BOTH addons
     videoSize?: number // bytes

@@ -52,4 +52,11 @@ describe('extToStream', () => {
     }, 'Nyaa')
     expect(s.__batch).toBe(true)
   })
+
+  it('preserves an extension torrent URL for native metadata loading', () => {
+    const url = 'https://example.com/torrents/123/download'
+    const s = extToStream({ ...base, link: url }, 'Example')
+    expect(s.__torrentUrl).toBe(url)
+    expect(s.__magnet).toBeUndefined()
+  })
 })

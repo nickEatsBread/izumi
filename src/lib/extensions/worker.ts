@@ -6,6 +6,7 @@ import { LoadDoc as ShimLoadDoc, Buffer as ShimBuffer, CryptoJS as ShimCryptoJS,
 import { loadExtractor as runExtractor, loadEpisodeServer as runEpisodeServer } from './extractors/registry'
 import { unpack as unpackJs } from './extractors/jsunpacker'
 import { parseMiruHeader, createExtensionBase, adaptMiru } from './miru-shim'
+import { markExtensionNavigatorOnline } from './worker-connectivity'
 // One source-extension per module Worker. Untrusted extension code is loaded via a
 // Blob-URL dynamic import. Isolation: a Worker has NO
 // access to @tauri-apps/api / invoke, so the extension can't touch the OS or the
@@ -14,6 +15,10 @@ import { parseMiruHeader, createExtensionBase, adaptMiru } from './miru-shim'
 // to the extension AND sidestep webview CORS. This file runs in a worker context.
 
 interface FetchResp { ok: boolean; status: number; url?: string; headers?: Record<string, string>; setCookie?: string[]; body: string }
+
+// A source should attempt its bridged request and let that real request establish connectivity.
+// WebView/worker navigator hints describe the web sandbox, while our HTTP actually runs in Rust.
+markExtensionNavigatorOnline(globalThis.navigator)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let source: any = null
