@@ -1,14 +1,14 @@
 <script lang="ts">
   // A home row sourced from the viewer's MyAnimeList list (for MAL-primary users,
-  // whose AniList list may be empty). Fetches MAL ids for a status, maps them to
-  // AniList media (one `idMal_in` query) so the cards + navigation work exactly
-  // like the AniList rows, then re-sorts into MAL's recency order.
+  // whose AniList list may be empty). Anime rows render the metadata embedded in MAL's list
+  // response and use the local id map for canonical navigation, so an AniList outage cannot hide
+  // the viewer's MAL library. Reading rows still use AniList because the anime id map has no manga.
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
   import {
-    MEDIA_BY_MAL_QUERY, READING_MEDIA_BY_MAL_QUERY, matchesLibraryKind, type LibraryKind,
+    READING_MEDIA_BY_MAL_QUERY, matchesLibraryKind, type LibraryKind,
   } from '$lib/anilist/lists'
-  import { getMalAnimeIdsOrThrow, getMalMangaIdsOrThrow } from '$lib/trackers'
+  import { getMalAnimeListMediaOrThrow, getMalMangaIdsOrThrow } from '$lib/trackers'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
   import type { Media } from '$lib/anilist/types'
@@ -29,12 +29,14 @@
     loading = true
     error = ''
     try {
-      const ids = kind === 'anime'
-        ? await getMalAnimeIdsOrThrow(status)
-        : await getMalMangaIdsOrThrow(status)
+      if (kind === 'anime') {
+        medias = (await getMalAnimeListMediaOrThrow(status)).map((entry) => entry.media)
+        return
+      }
+      const ids = await getMalMangaIdsOrThrow(status)
       if (!ids.length) return
       const res = await client
-        .query(kind === 'anime' ? MEDIA_BY_MAL_QUERY : READING_MEDIA_BY_MAL_QUERY, { ids })
+        .query(READING_MEDIA_BY_MAL_QUERY, { ids })
         .toPromise()
       if (res.error) throw res.error
       const list = ((res.data?.Page?.media ?? []) as Media[])
