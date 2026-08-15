@@ -38,7 +38,7 @@ import { normalizeLang } from './sublang'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
 import { cancelExtensionFetches } from '$lib/extensions/fetch-registry'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
-import type { TorrentResult } from '$lib/extensions/types'
+import { torrentQueryIdFields, type TorrentResult } from '$lib/extensions/types'
 import { extToStream } from './ext-stream'
 import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
@@ -770,14 +770,13 @@ async function extToStreams(
       .filter((t) => t.length > 3)
     const query = {
       anilistId: media.id, malId: media.idMal ?? undefined, kitsuId: kitsu,
-      // Field names are the extension-SDK contract — sources destructure tvdbAid/tvdbEid/mvdbAid/
-      // imdbAid/absoluteEpisode VERBATIM. Sending our internal names (tvdbId/tvdbEId/tmdbId/imdbId/
-      // absoluteEpisodeNumber) starved every TVDB-keyed provider into a silent [] (it resolved the
-      // media by title similarity, then bailed at its episode gate with all ids undefined).
-      anidbAid: ids.anidbAid, anidbEid: ids.anidbEid, tvdbAid: ids.tvdbId, tvdbEid: ids.tvdbEId,
-      mvdbAid: ids.tmdbId, imdbAid: ids.imdbId, season: ids.season,
-      // Same fallback the reference runtime uses: absolute when mapped, else the per-season number.
-      absoluteEpisode: ids.absoluteEpisodeNumber ?? ids.episodeNumber,
+      // Manifest-v2 and older SDK providers use different names for the same ids. Send both
+      // aliases so compatible repositories behave consistently.
+      ...torrentQueryIdFields({
+        ...ids,
+        // Same fallback the reference runtime uses: absolute when mapped, else per-season.
+        absoluteEpisodeNumber: ids.absoluteEpisodeNumber ?? ids.episodeNumber,
+      }),
       titles,
       // Full media + raw AniZip objects are part of the SDK's TorrentQuery — sources may read
       // production fields we don't distill into ids.
@@ -1425,11 +1424,15 @@ export async function playEpisode(
     let prefetchedMetaHash = ''
     const prefetchTopMetadata = (top: Stream | undefined) => {
       if (!top?.infoHash || top.url || !directP2pEnabled()) return
+      // HTTP .torrent metadata is fetched synchronously on an actual pick below. Starting it here
+      // could race that pick (the native dedupe intentionally does not make callers wait).
+      if (top.__torrentUrl) return
       if (top.infoHash === prefetchedMetaHash) return
       prefetchedMetaHash = top.infoHash
       traceResolve(trace, 'metadata prefetch start', { infoHash: top.infoHash })
       void invoke<boolean>('torrent_metadata_prefetch', {
         magnet: top.__magnet ?? `magnet:?xt=urn:btih:${top.infoHash}`,
+        expectedInfoHash: top.infoHash,
         ...torrentEngineNetworkOptions(),
       })
         .then((cached) => traceResolve(trace, 'metadata prefetch finish', { cached }))
@@ -2082,6 +2085,23 @@ export async function playStream(
         startupTimeoutMs: options.directStartupTimeoutMs ?? 60_000,
       })
       try {
+        // A .torrent response already contains the file tree and piece hashes. Cache it before
+        // starting the magnet to skip the variable DHT metadata phase.
+        if (stream.__torrentUrl) {
+          const metadataStartedAt = performance.now()
+          const cached = await invoke<boolean>('torrent_metadata_prefetch', {
+            magnet: stream.__torrentUrl,
+            expectedInfoHash: stream.infoHash,
+            // A direct metadata URL should answer quickly. Never delay the magnet fallback by the
+            // full DHT-oriented prefetch budget when that origin is down.
+            timeoutMs: 5_000,
+            ...torrentEngineNetworkOptions(),
+          }).catch(() => false)
+          traceResolve(trace, 'extension torrent metadata fetch finish', {
+            durationMs: Math.round(performance.now() - metadataStartedAt), cached,
+          })
+          if (!stillOwnsPlayback()) return
+        }
         const playback = await invoke<DirectTorrentPlayback>('torrent_playback_url', {
           magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${torrent}`,
           preferredFilename: stream.behaviorHints?.filename,
