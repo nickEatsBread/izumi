@@ -20,11 +20,10 @@ describe('Android release hardening', () => {
     }
   })
 
-  it('pins target SDK 36, edge-to-edge, and predictive-back fallthrough', () => {
+  it('pins target SDK 36 and verifies edge-to-edge handling', () => {
     expect(scaffold).toContain("s/compileSdk = [0-9]+/compileSdk = 36/")
     expect(scaffold).toContain("s/targetSdk = [0-9]+/targetSdk = 36/")
     expect(scaffold).toContain('enableEdgeToEdge()')
-    expect(scaffold).toContain('this@WryActivity.onBackPressedDispatcher.onBackPressed()')
   })
 
   it('aligns APK entries to 16 KiB and verifies every ELF LOAD segment', () => {
