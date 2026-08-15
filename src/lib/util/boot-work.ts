@@ -1,0 +1,83 @@
+import { idle } from './idle'
+
+type BootTask = {
+  key: string
+  readyAt: number
+  promoted: boolean
+  run: () => void | Promise<void>
+  resolve: () => void
+}
+
+/** One-at-a-time post-boot work. Delays are minimums; promotion makes user-needed work next. */
+export class BootWorkQueue {
+  private readonly startedAt = Date.now()
+  private tasks: BootTask[] = []
+  private running = false
+  private timer: ReturnType<typeof setTimeout> | undefined
+  private idleHandle: { cancel: () => void } | undefined
+
+  schedule(key: string, run: () => void | Promise<void>, delayMs: number): Promise<void> {
+    const existing = this.tasks.find((task) => task.key === key)
+    if (existing) return Promise.resolve()
+    const promise = new Promise<void>((resolve) => {
+      this.tasks.push({ key, run, resolve, readyAt: this.startedAt + Math.max(0, delayMs), promoted: false })
+    })
+    // A newly registered task may have an earlier minimum than the timer already armed.
+    this.arm(true)
+    return promise
+  }
+
+  promote(key: string): void {
+    const task = this.tasks.find((candidate) => candidate.key === key)
+    if (!task) return
+    task.promoted = true
+    task.readyAt = Date.now()
+    this.arm(true)
+  }
+
+  private next(): BootTask | undefined {
+    return [...this.tasks].sort((a, b) =>
+      Number(b.promoted) - Number(a.promoted) || a.readyAt - b.readyAt)[0]
+  }
+
+  private arm(rearm = false): void {
+    if (this.running) return
+    if (rearm) {
+      if (this.timer) clearTimeout(this.timer)
+      this.idleHandle?.cancel()
+      this.timer = undefined
+      this.idleHandle = undefined
+    } else if (this.timer || this.idleHandle) return
+    const task = this.next()
+    if (!task) return
+    const wait = Math.max(0, task.readyAt - Date.now())
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      this.idleHandle = idle(() => {
+        this.idleHandle = undefined
+        void this.runNext()
+      }, task.promoted ? 0 : 250)
+    }, wait)
+  }
+
+  private async runNext(): Promise<void> {
+    if (this.running) return
+    const task = this.next()
+    if (!task || task.readyAt > Date.now()) { this.arm(); return }
+    this.tasks = this.tasks.filter((candidate) => candidate !== task)
+    this.running = true
+    try { await task.run() } catch { /* warm work is best-effort */ }
+    finally {
+      this.running = false
+      task.resolve()
+      this.arm()
+    }
+  }
+}
+
+const bootWork = new BootWorkQueue()
+
+export const scheduleBootWork = (key: string, run: () => void | Promise<void>, delayMs: number) =>
+  bootWork.schedule(key, run, delayMs)
+
+export const promoteBootWork = (key: string) => bootWork.promote(key)

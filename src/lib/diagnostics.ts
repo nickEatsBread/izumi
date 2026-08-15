@@ -1,4 +1,5 @@
 import { get, writable } from 'svelte/store'
+import { clearResolveDiagnostics, recentResolveDiagnostics } from '$lib/debug/resolve-trace'
 
 export type DiagnosticEvent = {
   at: string
@@ -65,6 +66,7 @@ export function diagnosticsSnapshot(extra: Record<string, unknown> = {}) {
       width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio,
     },
     events: get(diagnosticEvents),
+    resolveTraces: recentResolveDiagnostics(),
     settings,
     ...extra,
   }, null, 2)
@@ -72,5 +74,6 @@ export function diagnosticsSnapshot(extra: Record<string, unknown> = {}) {
 
 export function clearDiagnostics() {
   diagnosticEvents.set([])
+  clearResolveDiagnostics()
   try { sessionStorage.removeItem(STORAGE_KEY) } catch { /* unavailable */ }
 }

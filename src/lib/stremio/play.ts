@@ -36,6 +36,7 @@ import { fetchExternalSubtitles } from './subtitles'
 import type { SubtitleCandidate } from './subtitles/types'
 import { normalizeLang } from './sublang'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
+import { promoteBootWork } from '$lib/util/boot-work'
 import { cancelExtensionFetches } from '$lib/extensions/fetch-registry'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import { torrentQueryIdFields, type TorrentResult } from '$lib/extensions/types'
@@ -1155,6 +1156,11 @@ export async function playEpisode(
   onState: (s: PlayState) => void,
   options: PlayEpisodeOptions = {},
 ) {
+  // A play click promotes the expensive boot warmers ahead of purely speculative background work.
+  // Their underlying loaders are promise-cached, so foreground consumers share rather than repeat.
+  promoteBootWork('extensions')
+  promoteBootWork('player')
+  promoteBootWork('id-map')
   const trace = beginResolveTrace({
     mediaId: media.id,
     episode,
@@ -1419,8 +1425,8 @@ export async function playEpisode(
     // The hold + countdown in front of an auto-committed torrent pick is dead time the DHT
     // metadata exchange (the dominant direct-P2P startup cost) can spend instead: the moment a
     // torrent row becomes the would-be pick, warm its metadata into the native cache so the commit
-    // skips the exchange. Keyed per hash so re-ranks don't stack lookups; a superseded candidate's
-    // lookup just finishes into the cache (metadata is immutable per hash — never wasted).
+    // joins or skips the exchange. Native single-flight keeps only the current candidate alive, so
+    // rapid re-ranking cannot stack DHT lookups that contend with the source ultimately selected.
     let prefetchedMetaHash = ''
     const prefetchTopMetadata = (top: Stream | undefined) => {
       if (!top?.infoHash || top.url || !directP2pEnabled()) return
@@ -1950,6 +1956,16 @@ export async function playStream(
   if (!playbackOwner) {
     finishResolveTrace(trace, 'stale source selection')
     return
+  }
+  // Manual picks are not necessarily the row the autoplay ranker prefetched. Start/promote the
+  // chosen hash immediately, before platform checks and episode mapping; native single-flight
+  // cancels a stale candidate and the playback invoke below joins this exact lookup.
+  if (!stream.url && stream.infoHash && !stream.__torrentUrl && directP2pEnabled()) {
+    void invoke<boolean>('torrent_metadata_prefetch', {
+      magnet: stream.__magnet ?? `magnet:?xt=urn:btih:${stream.infoHash}`,
+      expectedInfoHash: stream.infoHash,
+      ...torrentEngineNetworkOptions(),
+    }).catch(() => {})
   }
   const stillOwnsPlayback = () => ownsPlayback(playbackOwner)
   // Before ANY history/tracker write below: an adult title flips incognito on (setting-gated), so

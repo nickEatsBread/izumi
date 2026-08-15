@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { beginResolveTrace, finishResolveTrace, safeRequestTarget, traceResolve } from './resolve-trace'
+import {
+  beginResolveTrace, clearResolveDiagnostics, finishResolveTrace,
+  recentResolveDiagnostics, safeRequestTarget, traceResolve,
+} from './resolve-trace'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { vi.restoreAllMocks(); clearResolveDiagnostics() })
 
 describe('resolve trace redaction', () => {
   it('keeps only a host and shallow route label for request targets', () => {
@@ -29,5 +32,25 @@ describe('resolve trace redaction', () => {
     // behind an interactive `{…}` preview.
     expect(info.mock.calls.every((call) => call.length === 1 && typeof call[0] === 'string')).toBe(true)
     expect(output).toContain('\\"mediaId\\":1')
+  })
+
+  it('keeps bounded release timings without source names, URLs, hashes, or titles', () => {
+    const trace = beginResolveTrace({ mediaId: 7, episode: 3, title: 'Private title', entry: 'test' })
+    traceResolve(trace, 'provider finish', {
+      provider: 'Private provider',
+      url: 'https://example.test/private',
+      infoHash: '0123456789abcdef0123456789abcdef01234567',
+      durationMs: 321,
+      rows: 4,
+      method: 'search',
+    })
+    finishResolveTrace(trace, 'playing')
+
+    const report = JSON.stringify(recentResolveDiagnostics())
+    expect(report).toContain('321')
+    expect(report).toContain('search')
+    expect(report).not.toContain('Private')
+    expect(report).not.toContain('example.test')
+    expect(report).not.toContain('0123456789abcdef')
   })
 })
