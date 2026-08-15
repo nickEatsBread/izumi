@@ -11,6 +11,7 @@ import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './
 import { trackFetch, fetchEpoch } from './fetch-registry'
 import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
 import { settleExtensionMethods } from './method-stream'
+import { loadCachedExtensionModule } from './module-cache'
 
 // Main-thread orchestrator for source extensions. Loads each manifest, spawns one
 // isolated Worker per extension, bridges the extensions' HTTP through the CORS-free
@@ -254,7 +255,7 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
 // Fetch an extension's module source. esm.sh often returns a tiny re-export STUB
 // pointing at the hashed build (`export * from "/gh/…"`); a blob import of that text
 // can't resolve the relative target, so follow it once to the real module.
-async function fetchModuleCode(url: string): Promise<string | null> {
+async function fetchRemoteModuleCode(url: string): Promise<string | null> {
   const r = await phttp(url)
   if (!r.ok) return null
   const code = await r.text()
@@ -354,7 +355,13 @@ async function ensureRunning(): Promise<RunningExt[]> {
     const cfgs = await loadConfigs()
     const codes = await Promise.all(cfgs.map(async (cfg) => {
       try {
-        return { cfg, code: cfg.moduleCode ?? await fetchModuleCode(cfg.code) }
+        return {
+          cfg,
+          code: cfg.moduleCode ?? await loadCachedExtensionModule(
+            cfg,
+            () => fetchRemoteModuleCode(cfg.code),
+          ),
+        }
       } catch {
         return { cfg, code: null }
       }
