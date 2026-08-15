@@ -30,6 +30,7 @@
   })
 
   const gib = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GiB`
+  const mib = (bytes: number) => `${(bytes / 1024 ** 2).toFixed(bytes < 10 * 1024 ** 2 ? 2 : 0)} MiB`
   // The engine reporting "finished" while the player is still waiting means the torrent believes
   // it has nothing left to fetch, and it will shed its seeders — call that out rather than making
   // it inferable from a peer count.
@@ -51,6 +52,9 @@
     <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">Dropped</span><span class="truncate text-right {p2p.notNeededPeers > 0 ? 'text-amber-400' : ''}">{p2p.notNeededPeers} not-needed / {p2p.deadPeers} dead</span></div>
     <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">Seen</span><span class="truncate text-right">{p2p.seenPeers}</span></div>
     <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">File</span><span class="truncate text-right">{gib(p2p.downloadedBytes)} / {gib(p2p.selectedSize)}</span></div>
+    {#if p2p.streamRequestCount > 0}
+      <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">Local stream</span><span class="truncate text-right {p2p.streamReadFailed ? 'text-red-400' : ''}">{p2p.streamStatus ?? '—'} · {mib(p2p.streamBytesServed)} · {p2p.streamFirstByteMs == null ? 'waiting' : `${p2p.streamFirstByteMs} ms`}{p2p.streamReadFailed ? ' · failed' : p2p.streamReadFinished ? ' · done' : ''}</span></div>
+    {/if}
     {#if p2p.finished}
       <div class="mt-1 rounded bg-amber-500/20 px-1.5 py-1 text-[10px] leading-tight text-amber-300">Engine reports FINISHED — it will stop asking peers for data.</div>
     {/if}

@@ -87,6 +87,13 @@ export type DirectTorrentHealth = {
   streamRequestRange: string | null
   streamStatus: number | null
   streamResponseBytes: number | null
+  streamRangeStart: number | null
+  /** Exclusive end, matching Rust's parsed range. */
+  streamRangeEnd: number | null
+  streamFirstByteMs: number | null
+  streamBytesServed: number
+  streamReadFinished: boolean
+  streamReadFailed: boolean
   nextPreloadFileIndex: number | null
   nextPreloadDownloadedBytes: number
   nextPreloadSize: number
@@ -166,13 +173,33 @@ export async function directTorrentHealth(): Promise<DirectTorrentHealth | null>
   const playbackId = activePlaybackId
   if (playbackId == null) return null
   const health = await invoke<DirectTorrentHealth>('torrent_playback_health', { playbackId }).catch(() => null)
-  if (import.meta.env.DEV && health && activePlaybackId === playbackId) {
+  if (health && activePlaybackId === playbackId) {
     const now = performance.now()
     // Two independent watchdogs can poll during startup. Keep the useful one-second timeline
     // without printing the same native snapshot twice in one tick.
     if (now - lastHealthTraceAt >= 900) {
       lastHealthTraceAt = now
-      traceResolve(currentResolveTrace(), 'direct P2P health', { playbackId, ...health })
+      // Persist numeric delivery evidence in release diagnostics too. Omit the raw Range header
+      // and native error text; those are useful in the developer console but not needed to tell
+      // player rejection from local-server starvation.
+      const safeHealth = import.meta.env.DEV ? health : {
+        downloadedBytes: health.downloadedBytes,
+        selectedSize: health.selectedSize,
+        downloadMbps: health.downloadMbps,
+        livePeers: health.livePeers,
+        fetchedBytes: health.fetchedBytes,
+        streamRequestCount: health.streamRequestCount,
+        streamFileIndex: health.streamFileIndex,
+        streamStatus: health.streamStatus,
+        streamResponseBytes: health.streamResponseBytes,
+        streamRangeStart: health.streamRangeStart,
+        streamRangeEnd: health.streamRangeEnd,
+        streamFirstByteMs: health.streamFirstByteMs,
+        streamBytesServed: health.streamBytesServed,
+        streamReadFinished: health.streamReadFinished,
+        streamReadFailed: health.streamReadFailed,
+      }
+      traceResolve(currentResolveTrace(), 'direct P2P health', { playbackId, ...safeHealth })
     }
   }
   return health

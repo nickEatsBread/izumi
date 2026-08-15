@@ -1476,11 +1476,18 @@ pub(crate) fn spawn_event_loop(
                     }
                     _ => {}
                 },
-                // Only auto-advance on a natural end-of-file (Eof). Quit/Stop/
-                // Error/Redirect must NOT trigger the next episode.
+                // Only auto-advance on a natural end-of-file (Eof). A load/decode error is a
+                // distinct recovery signal; silently dropping it made the frontend wait through
+                // the full startup timeout while the torrent continued downloading normally.
                 Some(Ok(Event::EndFile(reason))) => {
                     if reason == libmpv2::mpv_end_file_reason::Eof {
                         let _ = app.emit("player-ended", ());
+                    } else if reason == libmpv2::mpv_end_file_reason::Error {
+                        // Include the failed path so a late EndFile from a replaced source cannot
+                        // make the frontend discard the new file that already owns the player.
+                        if let Ok(path) = client.get_property::<String>("path") {
+                            let _ = app.emit("player-load-error", path);
+                        }
                     }
                 }
                 // Core is going away — stop pumping so the thread can exit.

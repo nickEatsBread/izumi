@@ -738,6 +738,16 @@
       listen<string>('player-file-loaded', (e) => (loadedUrl = e.payload)),
       listen<boolean>('player-seeking', (e) => (seeking = e.payload)),
       listen<boolean>('player-eof', (e) => (eof = e.payload)),
+      listen<string>('player-load-error', (e) => {
+        if (!$playing || recoveryBusy || e.payload !== $nowPlayingStream.url) return
+        recoveryBusy = true
+        void recoverPlaybackSource(pos, !paused, 'Player could not open this source — trying another…')
+          .catch((error) => {
+            console.warn('automatic playback recovery', error)
+            playerNotice.set('Automatic source recovery failed')
+          })
+          .finally(() => { recoveryBusy = false })
+      }),
       listen<NativeMediaAction>('native-media-control', (e) => {
         const value = Number(e.payload.value ?? 0)
         if (e.payload.action === 'play') cmd('set', ['pause', 'no'])

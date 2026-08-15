@@ -1,6 +1,9 @@
 use std::{
     io::SeekFrom,
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context as TaskContext, Poll},
+    time::Instant,
 };
 
 use anyhow::Context;
@@ -31,28 +34,116 @@ pub(crate) struct StreamDiagnosticsSnapshot {
     pub(crate) request_range: Option<String>,
     pub(crate) status: Option<u16>,
     pub(crate) response_bytes: Option<u64>,
+    pub(crate) range_start: Option<u64>,
+    pub(crate) range_end: Option<u64>,
+    pub(crate) first_byte_ms: Option<u64>,
+    pub(crate) bytes_served: u64,
+    pub(crate) read_finished: bool,
+    pub(crate) read_failed: bool,
 }
 
 impl StreamDiagnostics {
-    fn record(
+    fn record_request(
         &self,
         file_index: usize,
         request_range: Option<&str>,
         status: StatusCode,
         response_bytes: Option<u64>,
-    ) {
+        range: Option<(u64, u64)>,
+    ) -> u64 {
         let Ok(mut snapshot) = self.0.lock() else {
-            return;
+            return 0;
         };
         snapshot.request_count = snapshot.request_count.saturating_add(1);
         snapshot.file_index = Some(file_index);
         snapshot.request_range = request_range.map(str::to_owned);
         snapshot.status = Some(status.as_u16());
         snapshot.response_bytes = response_bytes;
+        snapshot.range_start = range.map(|value| value.0);
+        snapshot.range_end = range.map(|value| value.1);
+        snapshot.first_byte_ms = None;
+        snapshot.bytes_served = 0;
+        snapshot.read_finished = false;
+        snapshot.read_failed = false;
+        snapshot.request_count
+    }
+
+    fn record_read(&self, request_id: u64, started_at: Instant, bytes: usize) {
+        let Ok(mut snapshot) = self.0.lock() else {
+            return;
+        };
+        // mpv can overlap a long body with a newer range request. Only the latest request may
+        // update the visible snapshot; otherwise an older reader makes the new request appear to
+        // have delivered bytes before it actually did.
+        if request_id == 0 || snapshot.request_count != request_id {
+            return;
+        }
+        if bytes == 0 {
+            snapshot.read_finished = true;
+            return;
+        }
+        if snapshot.first_byte_ms.is_none() {
+            snapshot.first_byte_ms = Some(started_at.elapsed().as_millis() as u64);
+        }
+        snapshot.bytes_served = snapshot.bytes_served.saturating_add(bytes as u64);
+    }
+
+    fn record_read_failure(&self, request_id: u64) {
+        let Ok(mut snapshot) = self.0.lock() else {
+            return;
+        };
+        if request_id != 0 && snapshot.request_count == request_id {
+            snapshot.read_failed = true;
+        }
     }
 
     pub(crate) fn snapshot(&self) -> StreamDiagnosticsSnapshot {
         self.0.lock().map(|value| value.clone()).unwrap_or_default()
+    }
+}
+
+/// Observe the bytes axum actually pulls from librqbit. Recording a 206 response only proves that
+/// headers were built; this distinguishes a player/demux failure from a body blocked on pieces.
+struct DiagnosticReader<R> {
+    inner: R,
+    diagnostics: StreamDiagnostics,
+    request_id: u64,
+    started_at: Instant,
+}
+
+impl<R> DiagnosticReader<R> {
+    fn new(inner: R, diagnostics: StreamDiagnostics, request_id: u64) -> Self {
+        Self {
+            inner,
+            diagnostics,
+            request_id,
+            started_at: Instant::now(),
+        }
+    }
+}
+
+impl<R: AsyncRead + Unpin> AsyncRead for DiagnosticReader<R> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buffer: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        let before = buffer.filled().len();
+        match Pin::new(&mut self.inner).poll_read(cx, buffer) {
+            Poll::Ready(Ok(())) => {
+                self.diagnostics.record_read(
+                    self.request_id,
+                    self.started_at,
+                    buffer.filled().len().saturating_sub(before),
+                );
+                Poll::Ready(Ok(()))
+            }
+            Poll::Ready(Err(error)) => {
+                self.diagnostics.record_read_failure(self.request_id);
+                Poll::Ready(Err(error))
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -114,10 +205,11 @@ async fn stream_file(
     {
         Ok(range) => range,
         Err(()) => {
-            state.diagnostics.record(
+            state.diagnostics.record_request(
                 file_id,
                 request_range.and_then(|value| value.to_str().ok()),
                 StatusCode::RANGE_NOT_SATISFIABLE,
+                None,
                 None,
             );
             let mut response = text_error(
@@ -180,11 +272,12 @@ async fn stream_file(
         }
     }
 
-    state.diagnostics.record(
+    let request_id = state.diagnostics.record_request(
         file_id,
         request_range.and_then(|value| value.to_str().ok()),
         status,
         Some(response_length),
+        Some((start, end)),
     );
     eprintln!(
         "[direct-torrent stream] torrent={torrent_id:?} file={file_id} method={method} request_range={request_range_text:?} response={} bytes={start}-{} length={response_length} total={total_length}",
@@ -192,7 +285,7 @@ async fn stream_file(
         end.saturating_sub(1),
     );
     let body = Body::from_stream(tokio_util::io::ReaderStream::with_capacity(
-        stream,
+        DiagnosticReader::new(stream, state.diagnostics.clone(), request_id),
         64 * 1024,
     ));
     (status, headers, body).into_response()
@@ -218,8 +311,10 @@ pub async fn serve(
 
 #[cfg(test)]
 mod tests {
-    use super::notify_request_started;
+    use super::{notify_request_started, DiagnosticReader, StreamDiagnostics};
+    use axum::http::StatusCode;
     use librqbit::{api::TorrentIdOrHash, dht::Id20};
+    use tokio::io::AsyncReadExt;
     use tokio::sync::mpsc::unbounded_channel;
 
     #[test]
@@ -237,5 +332,67 @@ mod tests {
         let (sender, mut receiver) = unbounded_channel();
         notify_request_started(&sender, TorrentIdOrHash::Hash(Id20::new([1; 20])), 7, None);
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn body_reads_report_first_byte_and_completion() {
+        let diagnostics = StreamDiagnostics::default();
+        let request_id = diagnostics.record_request(
+            3,
+            Some("bytes=10-14"),
+            StatusCode::PARTIAL_CONTENT,
+            Some(5),
+            Some((10, 15)),
+        );
+        let mut reader = DiagnosticReader::new(
+            tokio::io::repeat(7).take(5),
+            diagnostics.clone(),
+            request_id,
+        );
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).await.unwrap();
+
+        let snapshot = diagnostics.snapshot();
+        assert_eq!(bytes, vec![7; 5]);
+        assert_eq!(snapshot.range_start, Some(10));
+        assert_eq!(snapshot.range_end, Some(15));
+        assert!(snapshot.first_byte_ms.is_some());
+        assert_eq!(snapshot.bytes_served, 5);
+        assert!(snapshot.read_finished);
+        assert!(!snapshot.read_failed);
+    }
+
+    #[tokio::test]
+    async fn older_overlapping_reader_cannot_overwrite_latest_request() {
+        let diagnostics = StreamDiagnostics::default();
+        let old_request =
+            diagnostics.record_request(1, None, StatusCode::OK, Some(4), Some((0, 4)));
+        let new_request = diagnostics.record_request(
+            2,
+            Some("bytes=8-9"),
+            StatusCode::PARTIAL_CONTENT,
+            Some(2),
+            Some((8, 10)),
+        );
+        let mut old_reader = DiagnosticReader::new(
+            tokio::io::repeat(1).take(4),
+            diagnostics.clone(),
+            old_request,
+        );
+        let mut old_bytes = Vec::new();
+        old_reader.read_to_end(&mut old_bytes).await.unwrap();
+
+        let mut new_reader = DiagnosticReader::new(
+            tokio::io::repeat(2).take(2),
+            diagnostics.clone(),
+            new_request,
+        );
+        let mut new_bytes = Vec::new();
+        new_reader.read_to_end(&mut new_bytes).await.unwrap();
+
+        let snapshot = diagnostics.snapshot();
+        assert_eq!(snapshot.file_index, Some(2));
+        assert_eq!(snapshot.bytes_served, 2);
+        assert!(snapshot.read_finished);
     }
 }
