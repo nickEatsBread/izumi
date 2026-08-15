@@ -86,7 +86,7 @@ function timingValue(value: unknown, key = '', depth = 0): unknown {
   if (depth > 4) return '[omitted]'
   if (value == null || typeof value === 'number' || typeof value === 'boolean') return value
   if (typeof value === 'string') {
-    if (/^(method|audio|status|mode|metadataCache|cache)$/i.test(key)
+    if (/^(method|audio|status|mode|metadataCache|cache|reason|input)$/i.test(key)
       && /^[a-z0-9 _.-]{1,32}$/i.test(value)) return value
     return '[text]'
   }

@@ -10,6 +10,11 @@ use crate::{
 };
 
 #[command]
+pub(crate) async fn mpv_prepare<R: Runtime>(app: AppHandle<R>) -> Result<serde_json::Value> {
+    app.mpv().prepare()
+}
+
+#[command]
 pub(crate) async fn mpv_load<R: Runtime>(app: AppHandle<R>, payload: LoadRequest) -> Result<()> {
     app.mpv().load(payload)
 }

@@ -341,8 +341,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }
     }
 
-    /** Lazily create the mpv core + surface view on first play. Must run on the UI thread. */
-    private fun ensure(): MPVLib {
+    /** Create and configure libmpv without touching the view hierarchy. UI thread only. */
+    private fun ensureCore(): MPVLib {
         mpv?.let { return it }
         val m = MPVLib.create(activity) ?: error("libmpv: MPVLib.create returned null")
         // izumi controls all options — never read the user's ~/.config/mpv.
@@ -388,7 +388,14 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // unbuffered data froze on the last frame with no indication anything was happening.
         m.observeProperty("seeking", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
         m.observeProperty("core-idle", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
+        mpv = m
+        return m
+    }
 
+    /** Attach the prepared core to a SurfaceView on first playback. UI thread only. */
+    private fun ensure(): MPVLib {
+        val m = ensureCore()
+        if (view != null) return m
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
         // Make WRY's WebView transparent so the SurfaceView (added behind it) shows through.
         val web = findWebView(content)
@@ -433,7 +440,6 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         content.addView(playerContainer, 0, lp) // index 0 → behind the WebView
         setImmersive(true)
         Log.i("MpvPlugin", "surface added; content children=${content.childCount}")
-        mpv = m
         view = v
         container = playerContainer
         // A fresh container starts with the view flag cleared, so re-assert whatever the web side
@@ -444,6 +450,25 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         installAutoPipHook()
         installResumeGuard()
         return m
+    }
+
+    /** Pay libmpv and font initialization while the app is idle, without exposing a video view. */
+    @Command
+    fun prepare(invoke: Invoke) {
+        activity.runOnUiThread {
+            val created = mpv == null
+            val started = System.nanoTime()
+            try {
+                ensureCore()
+                invoke.resolve(
+                    JSObject()
+                        .put("created", created)
+                        .put("durationMs", (System.nanoTime() - started) / 1_000_000),
+                )
+            } catch (error: Exception) {
+                invoke.reject(error.message ?: "mpv-prepare-failed")
+            }
+        }
     }
 
     // --- Picture-in-picture -------------------------------------------------------------------

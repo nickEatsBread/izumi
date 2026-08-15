@@ -43,12 +43,16 @@ describe('resolve trace redaction', () => {
       durationMs: 321,
       rows: 4,
       method: 'search',
+      reason: 'targeted',
+      input: 'torrent-file',
     })
     finishResolveTrace(trace, 'playing')
 
     const report = JSON.stringify(recentResolveDiagnostics())
     expect(report).toContain('321')
     expect(report).toContain('search')
+    expect(report).toContain('targeted')
+    expect(report).toContain('torrent-file')
     expect(report).not.toContain('Private')
     expect(report).not.toContain('example.test')
     expect(report).not.toContain('0123456789abcdef')

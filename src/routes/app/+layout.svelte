@@ -6,7 +6,7 @@
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
   import IncognitoBanner from '$lib/components/shell/IncognitoBanner.svelte'
   import AniListDegradedBanner from '$lib/components/shell/AniListDegradedBanner.svelte'
-  import { androidMpvActive } from '$lib/player/android-mpv'
+  import { androidMpvActive, prepareEmbeddedPlayer } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
@@ -134,6 +134,9 @@
         loadStreamPicker(), loadSourceConnecting(),
         get(isAndroid) ? loadAndroidPlayer() : loadPlayerOverlay(),
       ])
+      // The full Android flavor can initialize libmpv without attaching its SurfaceView. Doing so
+      // here keeps core/font setup off the first selected source; the lite flavor simply declines.
+      if (get(isAndroid)) await prepareEmbeddedPlayer()
     }, 2500)
     // Refresh the signed-in profile (name + avatar) for an already-connected session,
     // so the sidebar shows the real picture without needing a re-login. No-op if not
