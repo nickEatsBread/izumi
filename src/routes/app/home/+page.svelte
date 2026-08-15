@@ -86,7 +86,9 @@
        offline/online split so the offline home shares the same chrome. -->
   <!-- pt-3 only: <main> already adds env(safe-area-inset-top) on mobile, so re-adding it here
        double-counted the status-bar inset and left a big black gap above the logo. -->
-  <div class="flex items-center justify-between px-4 pb-3 pt-3">
+  <!-- The degraded strip is fixed at the same safe-area edge as this in-flow toolbar. Reserve its
+       height while visible so the logo and top actions remain fully tappable on Android. -->
+  <div class="flex items-center justify-between px-4 pb-3 pt-3 {$anilistDegraded ? 'mt-7' : ''}">
     <a href="/app/home" aria-label="Home" class="flex items-center gap-2">
       <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
       <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
@@ -121,10 +123,9 @@
     <DownloadedLibrary />
   </div>
 {:else}
-  <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. The hero
-       normally owns that edge-to-edge space, so keep the inset scoped to the all-catalogs-down
-       branch and leave the healthy Home composition unchanged. -->
-  <div class="pb-16 {homeNeedsAlertInset ? 'pt-7 sm:pt-[3.75rem]' : ''}">
+  <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. Mobile's
+       toolbar above already reserves the alert height, so this extra inset is desktop-only. -->
+  <div class="pb-16 {homeNeedsAlertInset ? 'sm:pt-[3.75rem]' : ''}">
     {#if !catalogUnavailable && heroMedias.length}
       <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} oninfo={(m) => goto(`/app/anime/${m.id}`)} />
     {:else if !catalogUnavailable && hero.fetching}
