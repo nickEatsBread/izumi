@@ -365,6 +365,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // those bytes are arriving as torrent pieces. Two MiB / one second remains large enough
         // to discover anime's secondary audio and subtitle tracks.
         m.setOptionString("force-seekable", "yes")
+        // Refill the demuxer cache in chunks instead of waking continuously to keep it topped up.
+        // mpv recommends 10 seconds for lower CPU/network load and better handheld battery life.
+        m.setOptionString("demuxer-hysteresis-secs", "10")
         m.setOptionString("demuxer-lavf-probesize", "2097152")
         m.setOptionString("demuxer-lavf-analyzeduration", "1")
         // Avoid a run of tiny loopback reads while libavformat probes MKV headers and Cues.
