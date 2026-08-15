@@ -68,21 +68,25 @@
 </script>
 
 <div bind:this={el}>
-  <Carousel {title} viewMoreHref={viewMoreHref(vars)}>
-    <!-- Skeletons also stand in while NOT yet visible, so the row keeps its height and lower rows
-         stay below the fold until scrolled to (otherwise every row reveals at once). -->
-    {#if !visible || $store.fetching}
-      {#each Array.from({ length: 8 }) as _}
-        <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
-      {/each}
-    {:else if $store.data}
-      {#each $store.data.Page.media as media (media.id)}
-        <!-- load-in: one-shot slide-up+fade (gamemode-disabled in app.css). Cards animate in when
-             this row's deferred query resolves — the per-row staggered reveal as you scroll. -->
-        <div class="load-in shrink-0">
-          <SmallCard {media} />
-        </div>
-      {/each}
-    {/if}
-  </Carousel>
+  <!-- Keep the observer anchor, but do not leave a heading/View-more shell behind if every
+       catalogue provider genuinely returned an empty page. -->
+  {#if !visible || $store.fetching || ($store.data?.Page.media.length ?? 0) > 0}
+    <Carousel {title} viewMoreHref={viewMoreHref(vars)}>
+      <!-- Skeletons also stand in while NOT yet visible, so the row keeps its height and lower rows
+           stay below the fold until scrolled to (otherwise every row reveals at once). -->
+      {#if !visible || $store.fetching}
+        {#each Array.from({ length: 8 }) as _}
+          <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
+        {/each}
+      {:else if $store.data}
+        {#each $store.data.Page.media as media (media.id)}
+          <!-- load-in: one-shot slide-up+fade (gamemode-disabled in app.css). Cards animate in when
+               this row's deferred query resolves — the per-row staggered reveal as you scroll. -->
+          <div class="load-in shrink-0">
+            <SmallCard {media} />
+          </div>
+        {/each}
+      {/if}
+    </Carousel>
+  {/if}
 </div>

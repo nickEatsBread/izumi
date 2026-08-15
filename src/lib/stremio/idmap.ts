@@ -10,6 +10,34 @@ export function buildIndex(entries: MapEntry[]): Index {
 export function lookupKitsu(idx: Index, anilistId: number): number | undefined {
   return idx.get(anilistId)?.kitsu_id
 }
+const malIndexes = new WeakMap<Index, Map<number, number>>()
+const kitsuIndexes = new WeakMap<Index, Map<number, number>>()
+/** Reverse lookup for metadata providers such as Jikan, which identify titles by MAL id while the
+ *  rest of Izumi deliberately keeps AniList ids canonical. Built lazily from the already-cached
+ *  Fribb map so catalog fallback does not add another mapping download. */
+export function lookupAnilistByMal(idx: Index, malId: number): number | undefined {
+  let reverse = malIndexes.get(idx)
+  if (!reverse) {
+    reverse = new Map()
+    for (const [anilistId, entry] of idx) {
+      if (entry.mal_id != null && !reverse.has(entry.mal_id)) reverse.set(entry.mal_id, anilistId)
+    }
+    malIndexes.set(idx, reverse)
+  }
+  return reverse.get(malId)
+}
+/** Reverse lookup for Kitsu's JSON:API catalogue. */
+export function lookupAnilistByKitsu(idx: Index, kitsuId: number): number | undefined {
+  let reverse = kitsuIndexes.get(idx)
+  if (!reverse) {
+    reverse = new Map()
+    for (const [anilistId, entry] of idx) {
+      if (entry.kitsu_id != null && !reverse.has(entry.kitsu_id)) reverse.set(entry.kitsu_id, anilistId)
+    }
+    kitsuIndexes.set(idx, reverse)
+  }
+  return reverse.get(kitsuId)
+}
 const URL = 'https://raw.githubusercontent.com/Fribb/anime-lists/master/anime-list-mini.json'
 const KEY = 'anime-id-map-v1', TS = 'anime-id-map-ts'
 let cached: Index | null = null

@@ -10,6 +10,16 @@ import { invokeNativeHttp } from '$lib/net/http'
 import Bottleneck from 'bottleneck/light'
 import { anilistToken, getToken } from './auth'
 import { ANILIST_CACHE_KEYS } from './cache'
+import {
+  aniListCatalogFailure, aniListNetworkFailure, fetchJikanCatalog, parseJikanCatalogRequest,
+} from './jikan'
+import {
+  fetchKitsuCatalog, fetchKitsuDetail, parseKitsuDetailRequest, type KitsuDetailRequest,
+} from './kitsu-catalog'
+import {
+  clearAniListDegraded, markAniListDegraded, markCatalogProvider,
+  markJikanCatalogUnavailable, shouldUseJikanCatalog,
+} from './degraded'
 
 // Normalize any HeadersInit (Headers | array | record) to a plain object for the
 // Rust command.
@@ -138,8 +148,75 @@ async function fetchWithBackoff(input: RequestInfo | URL, init?: RequestInit, at
   return fetchWithBackoff(input, init, attempt + 1)
 }
 
+/** AniList stays authoritative. Only named, public catalog queries can cross this boundary: after a
+ *  hard availability failure they receive an equivalent Jikan-shaped GraphQL response, while
+ *  detail/account/tracker operations keep their normal AniList errors and retry semantics. */
+type BackupRequest =
+  | { kind: 'catalog'; request: NonNullable<ReturnType<typeof parseJikanCatalogRequest>> }
+  | { kind: 'detail'; request: KitsuDetailRequest }
+
+async function fetchFromBackup(request: BackupRequest): Promise<Response> {
+  if (request.kind === 'detail') {
+    const response = await fetchKitsuDetail(request.request)
+    markCatalogProvider('Kitsu')
+    return response
+  }
+  let kitsuError: unknown
+  try {
+    // Kitsu is independent of MyAnimeList. Try it first: Jikan can be healthy while its upstream
+    // MAL dependency is down, which otherwise makes every degraded row wait through retries.
+    const response = await fetchKitsuCatalog(request.request)
+    markCatalogProvider('Kitsu')
+    return response
+  } catch (error) {
+    kitsuError = error
+  }
+  try {
+    const response = await fetchJikanCatalog(request.request)
+    markCatalogProvider('Jikan')
+    return response
+  } catch (jikanError) {
+    const kitsu = kitsuError instanceof Error ? kitsuError.message : String(kitsuError)
+    const jikan = jikanError instanceof Error ? jikanError.message : String(jikanError)
+    markJikanCatalogUnavailable(`Kitsu: ${kitsu}\nJikan: ${jikan}`)
+    throw jikanError
+  }
+}
+
+async function fetchWithCatalogFallback(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const catalog = parseJikanCatalogRequest(init?.body)
+  const detail = parseKitsuDetailRequest(init?.body)
+  const backup: BackupRequest | null = catalog
+    ? { kind: 'catalog', request: catalog }
+    : detail ? { kind: 'detail', request: detail } : null
+  if (backup && shouldUseJikanCatalog()) {
+    try { return await fetchFromBackup(backup) }
+    catch { /* Every backup is unavailable too — let the once-per-minute AniList probe run. */ }
+  }
+
+  try {
+    // Only actual AniList traffic spends AniList reservoir tokens. Once the circuit is open,
+    // Jikan-backed rows must not stall behind or drain the failed service's quota queue.
+    const response = await limiter.schedule(() => fetchWithBackoff(input, init)) as Response
+    if (!backup) return response
+    const failure = await aniListCatalogFailure(response)
+    if (!failure) {
+      clearAniListDegraded()
+      return response
+    }
+    markAniListDegraded(failure)
+    try { return await fetchFromBackup(backup) }
+    catch { return response }
+  } catch (error) {
+    if (!backup) throw error
+    markAniListDegraded(aniListNetworkFailure(error))
+    try { return await fetchFromBackup(backup) }
+    catch { throw error }
+  }
+}
+
 const limitedFetch: typeof fetch = (input, init) =>
-  limiter.schedule(() => fetchWithBackoff(input as RequestInfo | URL, init)) as Promise<Response>
+  fetchWithCatalogFallback(input as RequestInfo | URL, init)
 
 function createAnilistClient() {
   return new Client({

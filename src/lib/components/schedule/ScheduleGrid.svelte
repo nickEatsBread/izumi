@@ -13,7 +13,8 @@
   import {
     loadMySets, classifyMine, isMine, hasMySources, emptyMySets, type MySets, type MineKind,
   } from '$lib/anilist/my-shows'
-  import { getScheduleInfoMany, scheduleTitles, type ScheduleInfo } from '$lib/anime/animeschedule'
+  import { getScheduleInfoMany, getWeeklySchedule, scheduleTitles, type ScheduleInfo } from '$lib/anime/animeschedule'
+  import { markAniListDegraded, markCatalogProvider, markJikanCatalogUnavailable } from '$lib/anilist/degraded'
   import { anilistUserName, malToken } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
   import { localHistory } from '$lib/player/history'
@@ -73,7 +74,23 @@
         }
         if (!cancelled) airings = all
       } catch (err) {
-        if (!cancelled) error = err instanceof Error ? err.message : String(err)
+        if (!cancelled) {
+          const primaryError = err instanceof Error ? err.message : String(err)
+          markAniListDegraded(primaryError)
+          try {
+            const fallback = await getWeeklySchedule(s, e)
+            if (!cancelled) {
+              airings = fallback
+              markCatalogProvider('AnimeSchedule')
+            }
+          } catch (fallbackError) {
+            if (!cancelled) {
+              markJikanCatalogUnavailable(fallbackError)
+              const message = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+              error = `Backup schedule unavailable: ${message}`
+            }
+          }
+        }
       }
       if (!cancelled) loading = false
     })()

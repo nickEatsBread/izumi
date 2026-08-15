@@ -71,4 +71,20 @@ describe('schedule page header', () => {
   it('no longer renders the My Shows toggle inside ScheduleGrid itself', () => {
     expect(grid).not.toContain("pick('mine')")
   })
+
+  it('masks the transparent desktop titlebar while the schedule header is pinned', () => {
+    expect(page).toContain('{#if stickyActive && !$isMobile}')
+    expect(page).toMatch(/data-schedule-titlebar-shield[^>]+fixed[^>]+top-0[^>]+z-20[^>]+h-8[^>]+bg-background/)
+  })
+
+  it('keeps both the normal and sticky schedule header below the degraded alert', () => {
+    expect(page).toContain("$anilistDegraded ? 'pt-[3rem] sm:pt-[4.25rem]' : ''")
+    expect(page).toContain("$anilistDegraded ? 'top-[3.75rem]' : 'top-8'")
+    expect(page).toContain('($anilistDegraded ? 28 : 0)')
+  })
+
+  it('shows the backup failure instead of repeating the AniList error', () => {
+    expect(grid).toContain('error = `Backup schedule unavailable: ${message}`')
+    expect(grid).not.toContain('error = primaryError')
+  })
 })

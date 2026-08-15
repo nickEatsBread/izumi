@@ -34,4 +34,8 @@ describe('app layout mounting', () => {
       expect(layout).toContain(`Lazy load={${loader}}`)
     }
   })
+
+  it('never mounts the AniList degraded banner over active playback', () => {
+    expect(layout).toContain('{#if !$playing}<AniListDegradedBanner />{/if}')
+  })
 })
