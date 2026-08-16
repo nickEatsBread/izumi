@@ -86,8 +86,7 @@ import {
 } from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
 import {
-  prepareEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents,
-  mpvPreparationSnapshot,
+  hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents,
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
@@ -2002,7 +2001,6 @@ export async function playStream(
     entry: options.recoveryOwner ? 'watchdog source replacement' : 'source selection',
   })
   traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(media.id)))
-  const mpvPreparedAtSelection = mpvPreparationSnapshot()
   const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
   if (!playbackOwner) {
     finishResolveTrace(trace, 'stale source selection')
@@ -2118,16 +2116,12 @@ export async function playStream(
   // playback is always a local file (any embedded/downloaded subs travel with it).
   const platformStartedAt = performance.now()
   const android = get(isAndroid)
-  // Join the deferred warm-up if it is still running. Starting it here is also the full-flavor
-  // probe, and overlaps the metadata prefetch launched above instead of racing a later mpv_load.
-  const androidEmbedded = android ? await prepareEmbeddedPlayer() : false
-  const mpvPreparation = mpvPreparationSnapshot()
+  // Probe for the full Android flavor without constructing libmpv. Core initialization belongs to
+  // mpvLoad, where it cannot block source resolution before the P2P startup watchdog exists.
+  const androidEmbedded = android ? await hasEmbeddedPlayer() : false
   traceResolve(trace, 'playback platform ready', {
     durationMs: Math.round(performance.now() - platformStartedAt),
     android, androidEmbedded, externalPlayer: get(enableExternalPlayer),
-    mpvCorePreparedAtSelection: mpvPreparedAtSelection.ready,
-    mpvCorePrepared: mpvPreparation.ready,
-    mpvCorePrepareMs: mpvPreparation.durationMs,
   })
   if (!stillOwnsPlayback()) return
   // Note: the picker closes itself on the 'playing' state (so an embed error stays

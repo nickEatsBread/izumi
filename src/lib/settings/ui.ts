@@ -2,6 +2,7 @@ import { persisted } from 'svelte-persisted-store'
 import { derived } from 'svelte/store'
 import type { StreamSort } from '$lib/stremio/addon'
 import type { SourcePriorityMode } from '$lib/stremio/source-priority'
+import type { P2PStatusVisibility } from '$lib/player/p2p-status'
 
 /** How the episode list renders. Names are intentionally generic.
  *  `grid` is the dense number-tile layout — the only workable shape for a long-runner. */
@@ -112,6 +113,9 @@ export const preferredStreamSort = persisted<StreamSort>('preferred-stream-sort'
 export const seadexAnnotations = persisted<boolean>('seadex-annotations', true)
 
 // --- Player behaviour ---
+/** Compact transfer/peer status shown over local P2P playback. The default only covers the wait
+ * for the first rendered frame; debrid playback never displays it. */
+export const p2pStatusVisibility = persisted<P2PStatusVisibility>('player-p2p-status-visibility', 'initial')
 /** Auto-play the next episode when one finishes. Default on. */
 export const autoplayNext = persisted<boolean>('player-autoplay-next', true)
 /** Binge next episode: keep the SAME release across episodes (Stremio bingeGroup) so

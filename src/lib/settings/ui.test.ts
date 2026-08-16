@@ -17,6 +17,7 @@ import {
   enabledSubtitleProviders,
   absoluteEpisodeNumbers,
   torrentBindInterface,
+  p2pStatusVisibility,
 } from './ui'
 
 describe('source autoplay defaults', () => {
@@ -64,6 +65,10 @@ describe('player enhancement defaults', () => {
 })
 
 describe('direct p2p defaults', () => {
+  it('shows transfer status only while the first frame buffers', () => {
+    expect(get(p2pStatusVisibility)).toBe('initial')
+  })
+
   it('binds to no network interface until the user picks a VPN adapter', () => {
     expect(get(torrentBindInterface)).toBe('')
   })

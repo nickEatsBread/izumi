@@ -5,6 +5,7 @@
     scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
+    p2pStatusVisibility,
   } from '$lib/settings/ui'
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -149,6 +150,19 @@
     </label>
     {/if}
   </div>
+
+  <label class="mb-4 flex max-w-2xl flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+    <span class="min-w-0">
+      <span class="block font-bold">P2P playback status</span>
+      <span class="mt-1 block text-xs text-muted-foreground">Show live download, upload, peer, and progress details over Direct P2P playback. Debrid playback is never included.</span>
+    </span>
+    <SelectMenu className="w-full shrink-0 sm:w-56" bind:value={$p2pStatusVisibility} ariaLabel="P2P playback status" options={[
+      { value: 'hidden', label: 'Always hidden' },
+      { value: 'buffering', label: 'While buffering' },
+      { value: 'initial', label: 'Initial buffering only' },
+      { value: 'always', label: 'Always visible' },
+    ]} />
+  </label>
 
   <!-- The mpv-side tuning below (cache, quality presets, external player) is desktop-only; Android
        gets the handful of options that do apply to the built-in player. -->

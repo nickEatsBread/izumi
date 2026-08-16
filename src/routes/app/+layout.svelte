@@ -6,7 +6,7 @@
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
   import IncognitoBanner from '$lib/components/shell/IncognitoBanner.svelte'
   import AniListDegradedBanner from '$lib/components/shell/AniListDegradedBanner.svelte'
-  import { androidMpvActive, prepareEmbeddedPlayer } from '$lib/player/android-mpv'
+  import { androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
@@ -134,9 +134,6 @@
         loadStreamPicker(), loadSourceConnecting(),
         get(isAndroid) ? loadAndroidPlayer() : loadPlayerOverlay(),
       ])
-      // The full Android flavor can initialize libmpv without attaching its SurfaceView. Doing so
-      // here keeps core/font setup off the first selected source; the lite flavor simply declines.
-      if (get(isAndroid)) await prepareEmbeddedPlayer()
     }, 2500)
     // Refresh the signed-in profile (name + avatar) for an already-connected session,
     // so the sidebar shows the real picture without needing a re-login. No-op if not
@@ -255,7 +252,9 @@
        minimize/maximize/close icons are meaningless + unreachable there) or on mobile. -->
   {#if !$gameMode && !$isMobile}<Titlebar />{/if}
   <OnlineBanner />
-  <IncognitoBanner />
+  <!-- Incognito remains active during playback, but its persistent browse reminder must not cover
+       the video or controls. It returns unchanged as soon as the player closes. -->
+  {#if !$playing && !$androidMpvActive}<IncognitoBanner />{/if}
   <!-- Playback must remain visually clean, including the windowed desktop player where the shell
        chrome stays mounted. The degraded state is preserved and the banner returns on exit. -->
   {#if !$playing}<AniListDegradedBanner />{/if}

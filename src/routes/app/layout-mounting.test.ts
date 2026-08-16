@@ -8,6 +8,10 @@ import { describe, expect, it } from 'vitest'
 // set must stay eagerly mounted, or the gate becomes circular and the feature silently dies.
 
 const layout = readFileSync(fileURLToPath(new URL('./+layout.svelte', import.meta.url)), 'utf8')
+const play = readFileSync(
+  fileURLToPath(new URL('../../lib/stremio/play.ts', import.meta.url)),
+  'utf8',
+)
 const deckWarning = readFileSync(
   fileURLToPath(new URL('../../lib/components/shell/DeckKeyboardWarning.svelte', import.meta.url)),
   'utf8',
@@ -35,16 +39,25 @@ describe('app layout mounting', () => {
     }
   })
 
-  it('prepares the Android mpv core only inside deferred player boot work', () => {
+  it('never initializes the Android mpv core during deferred boot or source resolution', () => {
     const playerBoot = layout.slice(
       layout.indexOf("scheduleBootWork('player'"),
       layout.indexOf("}, 2500)") + "}, 2500)".length,
     )
-    expect(playerBoot).toContain('prepareEmbeddedPlayer()')
-    expect(playerBoot).toContain('if (get(isAndroid))')
+    const sourceSelection = play.slice(
+      play.indexOf('export async function playStream'),
+      play.indexOf("traceResolve(trace, 'torrent episode mapping ready'"),
+    )
+    expect(playerBoot).not.toContain('prepareEmbeddedPlayer()')
+    expect(sourceSelection).not.toContain('prepareEmbeddedPlayer()')
+    expect(sourceSelection).toContain('hasEmbeddedPlayer()')
   })
 
   it('never mounts the AniList degraded banner over active playback', () => {
     expect(layout).toContain('{#if !$playing}<AniListDegradedBanner />{/if}')
+  })
+
+  it('never mounts the Incognito banner over desktop or Android playback', () => {
+    expect(layout).toContain('{#if !$playing && !$androidMpvActive}<IncognitoBanner />{/if}')
   })
 })
