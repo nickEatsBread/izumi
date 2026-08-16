@@ -210,23 +210,31 @@ export function pickCandidates(
 
 const DIRECT_AUTO_STARTUP_MAX_BYTES = 2 * 1024 ** 3
 
-/** Keep automatic direct playback inside the selected quality tier, but put streamable-size
- * episodes before multi-gigabyte archival encodes. The full ranked chain remains as fallback, and
- * an oversized file keeps its place when it is the only choice at that quality. */
+/** Keep automatic direct playback inside the selected quality tier, but prefer candidates whose
+ * startup is less likely to stall. A hash-pinned metadata URL with confirmed peers outranks an
+ * unknown-health bare hash because it skips DHT metadata discovery; otherwise streamable-size
+ * episodes lead multi-gigabyte archival encodes. The full ranked chain remains as fallback. */
 export function preferDirectStartupCandidates(candidates: Stream[]): Stream[] {
   const first = candidates[0]
   if (!first) return candidates
   const firstInfo = describe(first)
   if (!first.infoHash || first.url) return candidates
-  const faster = candidates.filter((stream) => {
+  const sameQuality = candidates.filter((stream) => {
     const info = describe(stream)
     return !!stream.infoHash
       && !stream.url
       && info.quality === firstInfo.quality
-      && info.seeders !== 0
+  })
+  const metadataReady = firstInfo.seeders == null && !first.__torrentUrl
+    ? sameQuality.filter((stream) => !!stream.__torrentUrl && (describe(stream).seeders ?? 0) > 0)
+    : []
+  const compact = sameQuality.filter((stream) => {
+    const info = describe(stream)
+    return info.seeders !== 0
       && info.sizeBytes != null
       && info.sizeBytes <= DIRECT_AUTO_STARTUP_MAX_BYTES
   })
+  const faster = [...new Set([...metadataReady, ...compact])]
   if (!faster.length || faster[0] === first) return candidates
   const promoted = new Set(faster)
   return [...faster, ...candidates.filter((stream) => !promoted.has(stream))]

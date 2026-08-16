@@ -4,7 +4,7 @@ import { get } from 'svelte/store'
 import { enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
-import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
+import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
@@ -1649,7 +1649,10 @@ export async function playEpisode(
       // Season correctness outranks speed: until AniZip has answered we cannot know that the top
       // row is even the right episode, so the confident path stays shut (the same gate the
       // same-release continuation uses).
-      const top = seasonSettled ? pickBest(s, get(preferredQuality), want, rankOpts(media.id)) : undefined
+      const ranked = seasonSettled
+        ? pickCandidates(s, get(preferredQuality), want, undefined, rankOpts(media.id))
+        : []
+      const top = directP2pEnabled() ? preferDirectStartupCandidates(ranked)[0] : ranked[0]
       prefetchTopMetadata(top)
       let deadline: number
       if (top) {
