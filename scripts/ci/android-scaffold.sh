@@ -43,6 +43,42 @@ test -n "$MAIN_ACTIVITY" || { echo "generated MainActivity.kt not found"; exit 1
 grep -q 'enableEdgeToEdge()' "$MAIN_ACTIVITY" \
   || { echo "edge-to-edge setup missing from MainActivity"; exit 1; }
 
+# Reqwest's rustls backend delegates certificate verification to Android. The Rust verifier needs
+# both its bundled Kotlin component and a JVM Context before any async HTTP worker starts. Load the
+# native library and initialize it before `super.onCreate`: Tauri starts the Rust app from inside
+# that call, so doing this afterwards leaves a race with startup sync and source requests.
+CARGO_BIN="$(command -v cargo || command -v cargo.exe)" \
+  || { echo "cargo not found while locating rustls Android support"; exit 1; }
+NODE_BIN="$(command -v node || command -v node.exe)" \
+  || { echo "node not found while locating rustls Android support"; exit 1; }
+RUSTLS_ANDROID_MANIFEST="$(
+  "$CARGO_BIN" metadata \
+    --manifest-path src-tauri/Cargo.toml \
+    --format-version 1 \
+    --filter-platform aarch64-linux-android \
+    | "$NODE_BIN" -e 'let input=""; process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => { const pkg = JSON.parse(input).packages.find(candidate => candidate.name === "rustls-platform-verifier-android"); if (!pkg) process.exit(1); process.stdout.write(pkg.manifest_path); });'
+)" || { echo "rustls Android support crate not found in Cargo metadata"; exit 1; }
+if command -v wslpath >/dev/null && [[ "$RUSTLS_ANDROID_MANIFEST" =~ ^[A-Za-z]:\\ ]]; then
+  RUSTLS_ANDROID_MANIFEST="$(wslpath -u "$RUSTLS_ANDROID_MANIFEST")"
+fi
+RUSTLS_ANDROID_AAR="$(find "$(dirname "$RUSTLS_ANDROID_MANIFEST")/maven" -name '*.aar' -print -quit)"
+test -s "$RUSTLS_ANDROID_AAR" \
+  || { echo "rustls Android verifier AAR not found"; exit 1; }
+mkdir -p src-tauri/gen/android/app/libs
+cp "$RUSTLS_ANDROID_AAR" src-tauri/gen/android/app/libs/rustls-platform-verifier.aar
+cp src-tauri/android/AndroidTlsVerifier.kt "$(dirname "$MAIN_ACTIVITY")/AndroidTlsVerifier.kt"
+cp src-tauri/android/proguard-rustls.pro src-tauri/gen/android/app/proguard-rustls.pro
+sed -i '/implementation(files("libs\/rustls-platform-verifier.aar"))/d' \
+  src-tauri/gen/android/app/build.gradle.kts
+sed -i '/dependencies {/a\    implementation(files("libs/rustls-platform-verifier.aar"))' \
+  src-tauri/gen/android/app/build.gradle.kts
+sed -i '/AndroidTlsVerifier.initialize(applicationContext)/d' "$MAIN_ACTIVITY"
+sed -i '/enableEdgeToEdge()/i\    AndroidTlsVerifier.initialize(applicationContext)' "$MAIN_ACTIVITY"
+test "$(grep -c 'implementation(files("libs/rustls-platform-verifier.aar"))' src-tauri/gen/android/app/build.gradle.kts)" -eq 1 \
+  || { echo "rustls Android verifier dependency is missing or duplicated"; exit 1; }
+test "$(grep -c 'AndroidTlsVerifier.initialize(applicationContext)' "$MAIN_ACTIVITY")" -eq 1 \
+  || { echo "rustls Android verifier startup hook is missing or duplicated"; exit 1; }
+
 # `android init` synthesizes launcher resources from the generic desktop icon and can overwrite the
 # hand-tuned adaptive foreground. Install the canonical Izumi Android resources after scaffolding so
 # both the APK installer preview and launcher use Izumi, never Tauri's template icon. Also declare
@@ -58,7 +94,12 @@ grep -q '#0E1524' src-tauri/gen/android/app/src/main/res/values/ic_launcher_back
 # navigator.onLine only reflects real connectivity when the app holds ACCESS_NETWORK_STATE; without
 # it the WebView always reports online, so offline mode's launch auto-detect + the offline banner
 # never fire on Android. Applies to BOTH flavors (both are WebView apps).
-sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />#' src-tauri/gen/android/app/src/main/AndroidManifest.xml
+sed -i '/<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" \/>/d' \
+  src-tauri/gen/android/app/src/main/AndroidManifest.xml
+sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />#' \
+  src-tauri/gen/android/app/src/main/AndroidManifest.xml
+test "$(grep -c 'android.permission.ACCESS_NETWORK_STATE' src-tauri/gen/android/app/src/main/AndroidManifest.xml)" -eq 1 \
+  || { echo "ACCESS_NETWORK_STATE permission is missing or duplicated"; exit 1; }
 
 # Kotlin toolchain — BOTH flavors. tauri-plugin-extplayer is built for lite and full alike, and its
 # dependencies resolve kotlin-stdlib 2.1.20; the scaffolded Kotlin Gradle plugin is older, so
