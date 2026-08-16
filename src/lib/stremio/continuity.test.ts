@@ -3,6 +3,7 @@ import {
   matchesRelease,
   pickDirectContinuationCandidate,
   pickDirectPreloadCandidate,
+  REMEMBERED_SOURCE_MAX_AGE_MS,
   rememberedContinueHint,
   type ContinueHint,
 } from './play'
@@ -172,14 +173,50 @@ describe('remembered Continue Watching identity', () => {
     expect(rememberedContinueHint({
       origin: { kind: 'online-extension', id: 'provider' },
       updatedAt: 1,
-    })).toEqual({ originId: 'provider', online: true })
+    }, 2)).toEqual({ originId: 'provider', online: true, originRequired: true })
   })
 
   it('does not hide the picker for a torrent origin with no remembered release', () => {
     expect(rememberedContinueHint({
       origin: { kind: 'torrent-extension', id: 'provider' },
       updatedAt: 1,
-    })).toBeUndefined()
+    }, 2)).toBeUndefined()
+  })
+
+  it('forgets source priority once the memory is 30 days old', () => {
+    const now = Date.now()
+    const remembered = {
+      origin: { kind: 'online-extension' as const, id: 'provider' },
+      updatedAt: now - REMEMBERED_SOURCE_MAX_AGE_MS,
+    }
+
+    expect(rememberedContinueHint(remembered, now)).toBeUndefined()
+    expect(rememberedContinueHint({ ...remembered, updatedAt: remembered.updatedAt + 1 }, now))
+      .toMatchObject({ originId: 'provider', originRequired: true })
+  })
+})
+
+describe('remembered source matching', () => {
+  const remembered = {
+    group: 'Group',
+    originId: 'remembered-origin',
+    originRequired: true,
+  }
+
+  it('requires the remembered origin as well as the release identity', () => {
+    const sameReleaseOtherOrigin = {
+      name: 'Source',
+      infoHash: 'other',
+      __origin: { kind: 'torrent-extension' as const, id: 'other-origin' },
+      behaviorHints: { filename: '[Group] Show S01E02 1080p.mkv' },
+    } as Stream
+    const sameReleaseSameOrigin = {
+      ...sameReleaseOtherOrigin,
+      __origin: { kind: 'torrent-extension' as const, id: 'remembered-origin' },
+    } as Stream
+
+    expect(matchesRelease(sameReleaseOtherOrigin, remembered)).toBe(false)
+    expect(matchesRelease(sameReleaseSameOrigin, remembered)).toBe(true)
   })
 })
 

@@ -96,7 +96,13 @@ vi.mock('$lib/player/source-origin', () => ({
   rememberSourceOrigin: vi.fn(),
 }))
 
-const { cancelResolve, playEpisode, resumeEpisode } = await import('./play')
+const {
+  cancelResolve,
+  playEpisode,
+  REMEMBERED_SOURCE_MAX_AGE_MS,
+  REMEMBERED_SOURCE_PRIORITY_MS,
+  resumeEpisode,
+} = await import('./play')
 
 const media = {
   id: 1,
@@ -177,9 +183,55 @@ describe('Continue Watching source resolution', () => {
       episode: 2,
       resolving: true,
       hidden: true,
+      continuationPending: true,
     }))
     expect(resolveOnlineStreams).toHaveBeenCalled()
     expect(resolveOnlineStreams.mock.calls.every((call) => call[2] === undefined)).toBe(true)
+
+    cancelResolve()
+    await resolving
+  })
+
+  it('reveals parallel fallbacks after the remembered-source priority window', async () => {
+    vi.useFakeTimers()
+    try {
+      fetchMediaById.mockResolvedValue(media)
+      resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
+      rememberedSources.set({
+        1: { origin: { kind: 'online-extension', id: 'remembered-provider' }, updatedAt: Date.now() },
+      })
+
+      const resolving = resumeEpisode(media as never, 2, () => {})
+      await vi.advanceTimersByTimeAsync(0)
+      expect(get(picker)).toMatchObject({ hidden: true, continuationPending: true })
+
+      await vi.advanceTimersByTimeAsync(REMEMBERED_SOURCE_PRIORITY_MS)
+      expect(get(picker)).toMatchObject({ hidden: false, continuationPending: false })
+
+      cancelResolve()
+      await resolving
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not prioritize a source remembered 30 days ago', async () => {
+    fetchMediaById.mockResolvedValue(media)
+    resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
+    rememberedSources.set({
+      1: {
+        origin: { kind: 'online-extension', id: 'stale-provider' },
+        updatedAt: Date.now() - REMEMBERED_SOURCE_MAX_AGE_MS,
+      },
+    })
+
+    const resolving = resumeEpisode(media as never, 2, () => {})
+    await vi.waitFor(() => expect(get(picker)).toMatchObject({
+      episode: 2,
+      resolving: true,
+      hidden: false,
+    }))
+    expect(get(picker)).not.toMatchObject({ continuationPending: true })
 
     cancelResolve()
     await resolving

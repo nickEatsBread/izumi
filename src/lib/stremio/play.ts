@@ -116,6 +116,9 @@ export type PlayState = {
 
 export type PlayEpisodeOptions = {
   continuation?: ContinueHint
+  /** Keep automatic/manual fallback dormant for this long while a remembered continuation folds
+   * in through the normal parallel fan-out. Omitted for ordinary binge continuation. */
+  continuationPriorityMs?: number
   forceManual?: boolean
   autoplay?: boolean
 }
@@ -891,8 +894,11 @@ export interface ContinueHint {
   /** This hash belongs to the in-memory torrent session that is playing right now. A persisted
    * remembered hash is useful for release matching, but cannot claim cheap native session reuse. */
   active?: boolean
+  /** Persisted Continue Watching memory must match both its release and its exact source. */
+  originRequired?: boolean
 }
 export function matchesRelease(s: Stream, c: ContinueHint): boolean {
+  if (c.originRequired && (!c.originId || s.__origin?.id !== c.originId)) return false
   return !!(
     (c.bingeGroup && s.behaviorHints?.bingeGroup === c.bingeGroup)
     || (c.infoHash && s.infoHash === c.infoHash)
@@ -1306,6 +1312,7 @@ export async function playEpisode(
   // Cancel a watchdog replacement immediately, before this new episode has even resolved a source.
   invalidatePlaybackOwner()
   const cont = options.continuation
+  const continuationPriorityMs = cont ? Math.max(0, options.continuationPriorityMs ?? 0) : 0
   const autoplay = options.autoplay ?? true
   // Supersede any resolve still running from a previous click (its fetches keep going in the
   // background, but this one owns the picker now). `signal` also lets an explicit close abort us.
@@ -1342,6 +1349,7 @@ export async function playEpisode(
     streams: [],
     cachedCount: 0,
     resolving: true,
+    continuationPending: continuationPriorityMs > 0,
     hidden: hideForContinuation,
     manualOnly: options.forceManual,
     autoplay,
@@ -1517,10 +1525,21 @@ export async function playEpisode(
     // mounted until playStream reports `playing`; on failure it remains available as the fallback.
     let continuationAttempted = false
     let continuationAttempt: Promise<boolean> | null = null
-    let continuationPending = false
+    let continuationPriorityActive = continuationPriorityMs > 0
+    let continuationPriorityTimer: ReturnType<typeof setTimeout> | undefined
+    let continuationPending = continuationPriorityActive
     let continuationError = ''
     let seasonSettled = false // AniZip season target resolved (or known-absent) — gates auto-continue
+    const continuationCanStart = () => continuationPriorityMs === 0 || continuationPriorityActive
+    const clearContinuationPriorityTimer = () => {
+      if (continuationPriorityTimer) {
+        clearTimeout(continuationPriorityTimer)
+        continuationPriorityTimer = undefined
+      }
+    }
     const tryContinuation = (stream: Stream) => {
+      clearContinuationPriorityTimer()
+      continuationPriorityActive = false
       continuationAttempted = true
       continuationPending = true
       streamPicker.update((current) => current ? { ...current, continuationPending: true } : current)
@@ -1649,7 +1668,7 @@ export async function playEpisode(
       // seasonSettled so a same-group WRONG-season file can't sneak in before AniZip answers, and on
       // no debrid cache being in flight so we never stomp a source the user just picked themselves
       // (an uncached manual pick keeps the picker open while it caches).
-      if (cont && !continuationAttempted && seasonSettled && !get(debridCaching)) {
+      if (cont && continuationCanStart() && !continuationAttempted && seasonSettled && !get(debridCaching)) {
         const directTorrentContinuation = directP2pEnabled() && !cont.online
         const hit = directTorrentContinuation
           ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(media.id))
@@ -1683,6 +1702,7 @@ export async function playEpisode(
     // A superseded or closed picker must not keep timers alive behind it.
     signal.addEventListener('abort', () => {
       clearReadyTimer()
+      clearContinuationPriorityTimer()
       if (queuedPaint) { clearTimeout(queuedPaint); queuedPaint = undefined }
     }, { once: true })
 
@@ -1701,6 +1721,24 @@ export async function playEpisode(
       })
       refresh(true)
     })
+
+    // Continue Watching gives its fresh remembered source a short head start, without serializing
+    // the work: every alternative below is already resolving in parallel. When the window expires,
+    // reveal the populated picker and let its normal auto/manual selection own the request. A late
+    // remembered result cannot then replace the fallback the user is already seeing or starting.
+    if (continuationPriorityActive) {
+      traceResolve(trace, 'remembered source priority start', { budgetMs: continuationPriorityMs })
+      continuationPriorityTimer = setTimeout(() => {
+        continuationPriorityTimer = undefined
+        continuationPriorityActive = false
+        continuationPending = false
+        traceResolve(trace, 'remembered source priority expired', { budgetMs: continuationPriorityMs })
+        revealPicker()
+        if (stillCurrent()) {
+          streamPicker.update((current) => current ? { ...current, continuationPending: false } : current)
+        }
+      }, continuationPriorityMs)
+    }
 
     // Each SOURCE (every addon + the extensions as one wave) folds into the picker as
     // it lands — a genuine multi-source trickle + live re-sort, not a
@@ -1890,7 +1928,7 @@ export async function playEpisode(
     // picked (which closed this picker) or a different episode they navigated to meanwhile, and on
     // no debrid cache in flight (an uncached manual pick keeps the picker open while it caches, so
     // stillCurrent() alone wouldn't catch it).
-    if (cont && !continuationAttempted && stillCurrent() && !get(debridCaching)) {
+    if (cont && continuationCanStart() && !continuationAttempted && stillCurrent() && !get(debridCaching)) {
       let s = refineStreams(media, acc).kept
       if (want) s = verifySeason(s, want)
       const hit = directP2pEnabled() && !cont.online
@@ -1909,6 +1947,12 @@ export async function playEpisode(
     // Every continuation route is exhausted (none matched, or the attempt failed), so the user has
     // to choose after all — reveal the picker. Up to this point it stayed hidden so a successful
     // binge continuation never flashes a selector on its way to the next episode.
+    clearContinuationPriorityTimer()
+    continuationPriorityActive = false
+    continuationPending = false
+    if (stillCurrent()) {
+      streamPicker.update((current) => current ? { ...current, continuationPending: false } : current)
+    }
     if (hideForContinuation) revealPicker()
 
     // The user already acted on this picker (picked a source / navigated away) → it's no longer
@@ -1936,17 +1980,25 @@ export async function playEpisode(
 }
 
 const CONTINUE_MEDIA_REFRESH_BUDGET_MS = 750
+const DAY_MS = 24 * 60 * 60 * 1000
+export const REMEMBERED_SOURCE_MAX_AGE_MS = 30 * DAY_MS
+export const REMEMBERED_SOURCE_PRIORITY_MS = 1500
 
 /** Convert persisted source memory into the same release identity used by progressive episode
  * resolution. Torrent origins need a release identity; an online origin is itself the identity. */
-export function rememberedContinueHint(remembered: RememberedSource | undefined): ContinueHint | undefined {
+export function rememberedContinueHint(
+  remembered: RememberedSource | undefined,
+  now = Date.now(),
+): ContinueHint | undefined {
   if (!remembered) return undefined
+  if (!Number.isFinite(remembered.updatedAt)
+    || now - remembered.updatedAt >= REMEMBERED_SOURCE_MAX_AGE_MS) return undefined
   const release = remembered.release ?? {}
   if (remembered.origin.kind === 'online-extension') {
-    return { ...release, originId: remembered.origin.id, online: true }
+    return { ...release, originId: remembered.origin.id, online: true, originRequired: true }
   }
   if (!release.infoHash && !release.bingeGroup && !release.group) return undefined
-  return { ...release, originId: remembered.origin.id }
+  return { ...release, originId: remembered.origin.id, originRequired: true }
 }
 
 async function refreshContinueMedia(media: Media): Promise<Media> {
@@ -1981,7 +2033,10 @@ export async function resumeEpisode(media: Media, episode: number, onState: (s: 
   // started. Progressive resolution starts every source once and auto-continues the remembered
   // release if it arrives safely.
   const continuation = rememberedContinueHint(get(sourceOrigins)[current.id])
-  return await playEpisode(current, episode, onState, { continuation })
+  return await playEpisode(current, episode, onState, {
+    continuation,
+    continuationPriorityMs: continuation ? REMEMBERED_SOURCE_PRIORITY_MS : undefined,
+  })
 }
 
 // Advance to an episode (auto next-episode + the in-player Prev/Next buttons). Continues
