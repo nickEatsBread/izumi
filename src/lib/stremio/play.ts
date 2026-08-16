@@ -89,6 +89,7 @@ import {
   hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents,
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
+import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
 import type { Media } from '$lib/anilist/types'
 import {
   activateDirectTorrentPlayback, cancelDirectTorrentStartup, currentDirectTorrentPlaybackId, directTorrentHealth,
@@ -2740,15 +2741,13 @@ export async function playStream(
 /** `player_embed` resolving means mpv accepted the URL, not that the replacement produced video.
  * Direct torrents can sit there downloading indefinitely, so recovery must wait for a real
  * duration/progress event before declaring a candidate healthy. */
-type DesktopFirstFrameResult = 'ready' | 'timeout' | 'load-error'
-
 async function waitForDesktopFirstFrame(
   expectedUrl: string,
   timeoutMs: number,
   trace = currentResolveTrace(),
-): Promise<DesktopFirstFrameResult> {
-  if (get(isAndroid) || get(enableExternalPlayer)) return 'ready'
-  return await new Promise<DesktopFirstFrameResult>(async (resolve) => {
+): Promise<RecoveryFirstFrameResult> {
+  if (get(enableExternalPlayer)) return 'ready'
+  return await new Promise<RecoveryFirstFrameResult>(async (resolve) => {
     let settled = false
     let unlistenProgress: (() => void) | null = null
     let unlistenLoaded: (() => void) | null = null
@@ -2756,7 +2755,7 @@ async function waitForDesktopFirstFrame(
     let lastDownloadedBytes = 0
     let lastAdvancedAt = Date.now()
     const startedAt = Date.now()
-    const finish = (result: DesktopFirstFrameResult) => {
+    const finish = (result: RecoveryFirstFrameResult) => {
       if (settled) return
       settled = true
       clearInterval(timer)
@@ -2907,10 +2906,17 @@ export async function recoverPlaybackSource(
     if (!stillOwnsPlayback()) return false
     const directCandidate = directP2p && !!candidate.infoHash && !candidate.url
     if (played && directCandidate) {
-      const firstFrame = await waitForDesktopFirstFrame(
-        get(nowPlayingStream).url,
-        DIRECT_TORRENT_RECOVERY_TIMEOUT_MS,
-      )
+      const firstFrame = await waitForRecoveryFirstFrame({
+        // This is the authoritative signal that the embedded Android player owns the screen.
+        // It is deliberately stronger than re-reading the boot-time platform flag here.
+        androidEmbedded: get(androidMpvActive),
+        androidTimeoutMs: DIRECT_TORRENT_HARD_START_TIMEOUT_MS,
+        waitForAndroid: waitForMpvFirstFrame,
+        waitForDesktop: () => waitForDesktopFirstFrame(
+          get(nowPlayingStream).url,
+          DIRECT_TORRENT_RECOVERY_TIMEOUT_MS,
+        ),
+      })
       played = firstFrame === 'ready'
       if (!stillOwnsPlayback()) return false
       if (!played) {
