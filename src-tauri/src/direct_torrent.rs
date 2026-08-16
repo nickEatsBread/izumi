@@ -52,15 +52,11 @@ fn upnp_enabled(is_android: bool, has_proxy: bool, has_bound_interface: bool) ->
     !is_android && peer_listener_enabled(has_proxy, has_bound_interface)
 }
 
-fn peer_listener_mode(is_android: bool) -> ListenerMode {
-    if is_android {
-        // Mobile peers are frequently behind NAT and some swarms expose materially more uTP than
-        // TCP endpoints. librqbit 9 keeps uTP opt-in; use both on Android so metadata discovery can
-        // fall back after the initial TCP attempt.
-        ListenerMode::TcpAndUtp
-    } else {
-        ListenerMode::TcpOnly
-    }
+fn peer_listener_mode() -> ListenerMode {
+    // Some swarms expose materially more uTP than TCP endpoints. librqbit 9 only creates its
+    // outgoing uTP connector when the session owns a uTP listener socket, so TCP-only mode can
+    // exhaust metadata discovery even when another client reaches the same swarm immediately.
+    ListenerMode::TcpAndUtp
 }
 
 /// librqbit 9 accepts one listener address rather than a port range. Retain the old behavior by
@@ -624,7 +620,7 @@ impl DirectTorrentState {
                             )
                         })?;
                         Some(ListenerOptions {
-                            mode: peer_listener_mode(cfg!(target_os = "android")),
+                            mode: peer_listener_mode(),
                             // Keep the established IPv4 listener behavior while librqbit 9's DHT and
                             // outgoing connector gain dual-stack peer discovery and connections.
                             listen_addr: (Ipv4Addr::UNSPECIFIED, port).into(),
@@ -1044,8 +1040,21 @@ pub async fn torrent_playback_url(
     cancel_other_metadata_flight(&state, &info_hash_key).await;
     let magnet_trackers = parsed_magnet.trackers;
     let tracker_count = magnet_trackers.len();
+    // Engine construction, metadata discovery, and torrent initialization share one deadline. In
+    // particular, do not let a stalled OnceCell initializer leave Android source selection waiting
+    // forever before the metadata timeout has even started.
+    let startup_budget_started = Instant::now();
     let engine_started = Instant::now();
-    let engine = state.get(&app, socks_proxy_url, bind_interface).await?;
+    let engine_allowance = remaining_startup_time(startup_budget_started, startup_timeout);
+    let engine = tokio::select! {
+        result = timeout(engine_allowance, state.get(&app, socks_proxy_url, bind_interface)) => {
+            result
+                .map_err(|_| "Timed out while starting the torrent engine. Please try again.".to_string())??
+        }
+        _ = wait_for_startup_cancellation(&state, startup_id) => {
+            return Err(STARTUP_CANCELED.into());
+        }
+    };
     let engine_ready_ms = engine_started.elapsed().as_millis() as u64;
     if !startup_is_current(&state, startup_id) {
         return Err(STARTUP_CANCELED.into());
@@ -1053,9 +1062,8 @@ pub async fn torrent_playback_url(
     // With the kill switch engaged, the metadata fetch below would sit on a paused session until
     // its 60 s timeout and then blame the seeders. Fail fast with the real reason instead.
     app.state::<crate::net_interfaces::VpnGuard>().ensure_up()?;
-    // Metadata and local initialization share ONE attempt budget. Applying the allowance to each
-    // phase separately could turn a 15-second automatic attempt into a 30-second one.
-    let startup_budget_started = Instant::now();
+    // Every remaining phase consumes what is left of the same attempt budget. Applying the full
+    // allowance to each phase separately could turn a 15-second automatic attempt into 45 seconds.
     let metadata_started = Instant::now();
     let memory_metadata = state
         .metadata_cache
@@ -2051,13 +2059,11 @@ mod tests {
     }
 
     #[test]
-    fn android_can_listen_for_peers_without_enabling_upnp() {
+    fn direct_sessions_keep_tcp_and_utp_peer_paths_available() {
         assert!(peer_listener_enabled(false, false));
         assert!(!upnp_enabled(true, false, false));
-        assert!(peer_listener_mode(true).tcp_enabled());
-        assert!(peer_listener_mode(true).utp_enabled());
-        assert!(peer_listener_mode(false).tcp_enabled());
-        assert!(!peer_listener_mode(false).utp_enabled());
+        assert!(peer_listener_mode().tcp_enabled());
+        assert!(peer_listener_mode().utp_enabled());
         assert!(!peer_listener_enabled(true, false));
         assert!(!peer_listener_enabled(false, true));
     }
@@ -2076,7 +2082,7 @@ mod tests {
     }
 
     #[test]
-    fn metadata_and_initialization_share_one_startup_budget() {
+    fn engine_metadata_and_initialization_share_one_startup_budget() {
         let started = tokio::time::Instant::now();
         let remaining = remaining_startup_time(started, std::time::Duration::from_secs(15));
         assert!(remaining <= std::time::Duration::from_secs(15));

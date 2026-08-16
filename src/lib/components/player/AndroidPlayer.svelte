@@ -103,6 +103,7 @@
   import Maximize from '@lucide/svelte/icons/maximize'
   import Minimize from '@lucide/svelte/icons/minimize'
   import AndroidWatchDetails from './AndroidWatchDetails.svelte'
+  import P2PStatusOverlay from './P2PStatusOverlay.svelte'
   import BufferSpinner from './BufferSpinner.svelte'
 
   let controlsShown = $state(true)
@@ -239,6 +240,7 @@
   // Seekbar ticks only need the times; the titles feed the sheet's Chapters page.
   const chapterTimes = $derived(chapters.map((c) => c.time))
   let segKey = ''
+  let firstFrameSeen = $state(false)
   let autoSkipped = $state(new Set<number>())
   // AnimeThemes: don't auto-skip the episode where an OP/ED first debuts, so each new theme is
   // heard once. Matches the desktop overlay — and it matters more now that chapter-derived
@@ -265,6 +267,7 @@
   let loadKey = ''
   let handoverDur: number | null = null
   function resetForNewFile() {
+    firstFrameSeen = false
     segments = []
     chapters = []
     chapterStore.set([])
@@ -303,6 +306,9 @@
         segments = mergeSkipSegments(segs, segmentsFromChapters(chapterList, dur))
       })()
     }
+  })
+  $effect(() => {
+    if ($mpvState.frameReady) firstFrameSeen = true
   })
   $effect(() => {
     const seg = currentSeg
@@ -1400,6 +1406,7 @@
       <BufferSpinner size={48} />
     </div>
   {/if}
+  <P2PStatusOverlay buffering={loading || recovering} {firstFrameSeen} />
   <!-- Transient toast (auto-advance failures, recovery progress, "no later episode yet"). The
        desktop overlay renders $playerNotice; Android never did, so every one of those messages
        was written into the void and failures looked like silent no-ops. -->

@@ -16,6 +16,7 @@ export const settingKey = (title: string) =>
 export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Audio language', category: 'Player', href: '/app/settings/player', keywords: 'Japanese English dub' },
   { title: 'Subtitle language', category: 'Player', href: '/app/settings/player', keywords: 'captions default language off' },
+  { title: 'P2P playback status', category: 'Player', href: '/app/settings/player', keywords: 'torrent download upload speed peers buffering initial always hidden direct' },
   { title: 'Auto-play next episode', category: 'Player', href: '/app/settings/player', anchored: true, desktopOnly: true },
   { title: 'Discord Rich Presence', category: 'Player', href: '/app/settings/player', keywords: 'discord rpc activity status sharing privacy', anchored: true, desktopOnly: true },
   { title: 'Keep screen awake while playing', category: 'Player', href: '/app/settings/player', keywords: 'sleep dim battery', anchored: true, desktopOnly: true },
