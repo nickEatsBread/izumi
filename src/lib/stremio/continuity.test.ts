@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { matchesRelease, pickDirectPreloadCandidate, type ContinueHint } from './play'
+import {
+  matchesRelease,
+  pickDirectContinuationCandidate,
+  pickDirectPreloadCandidate,
+  rememberedContinueHint,
+  type ContinueHint,
+} from './play'
 import type { Stream } from './parse'
 
 // Release continuity across episodes. A torrent row is identified by bingeGroup / infoHash /
@@ -110,6 +116,70 @@ describe('matchesRelease — torrent identities still work', () => {
     expect(pickDirectPreloadCandidate([doomdos, toonsHub], hint, {
       season: 1, episode: 6, abs: 6,
     })).toBe(toonsHub)
+  })
+})
+
+describe('safe direct-P2P continuation', () => {
+  const torrent = (name: string, hash: string, sizeMiB: number, seeders?: number) => ({
+    name: 'Source',
+    title: seeders === 0 ? `${name} 👤 0` : name,
+    infoHash: hash,
+    __seeders: seeders,
+    behaviorHints: { filename: name, videoSize: sizeMiB * 1024 ** 2 },
+  } as Stream)
+
+  it('reuses the exact active season pack regardless of its aggregate size', () => {
+    const pack = torrent('[Group] Show S01E07 1080p.mkv', 'same-pack', 20_000)
+    expect(pickDirectContinuationCandidate([pack], {
+      infoHash: 'same-pack',
+      group: 'Group',
+      active: true,
+    })).toBe(pack)
+  })
+
+  it('does not treat a remembered hash as an active multi-gigabyte pack', () => {
+    const remembered = torrent('[Group] Show S01E07 1080p.mkv', 'remembered', 3_451, 68)
+    expect(pickDirectContinuationCandidate([remembered], {
+      infoHash: 'remembered',
+      group: 'Group',
+    })).toBeUndefined()
+  })
+
+  it('keeps an unknown-health continuation bounded instead of jumping to a large 4K row', () => {
+    const large4k = torrent('[Group] Show S01E07 2160p.mkv', '4k', 1_300)
+    const efficient1080 = torrent('[Group] Show S01E07 1080p.mkv', '1080', 450)
+
+    expect(pickDirectContinuationCandidate(
+      [large4k, efficient1080],
+      { infoHash: 'previous', group: 'Group' },
+      { episode: 7, season: 1 },
+      'any',
+      { directP2p: true },
+    )).toBe(efficient1080)
+  })
+
+  it('does not auto-continue an explicitly dead changed hash', () => {
+    const dead = torrent('[Group] Show S01E07 1080p.mkv', 'dead', 400, 0)
+    expect(pickDirectContinuationCandidate([dead], {
+      infoHash: 'previous',
+      group: 'Group',
+    })).toBeUndefined()
+  })
+})
+
+describe('remembered Continue Watching identity', () => {
+  it('uses an online origin as the continuation identity', () => {
+    expect(rememberedContinueHint({
+      origin: { kind: 'online-extension', id: 'provider' },
+      updatedAt: 1,
+    })).toEqual({ originId: 'provider', online: true })
+  })
+
+  it('does not hide the picker for a torrent origin with no remembered release', () => {
+    expect(rememberedContinueHint({
+      origin: { kind: 'torrent-extension', id: 'provider' },
+      updatedAt: 1,
+    })).toBeUndefined()
   })
 })
 

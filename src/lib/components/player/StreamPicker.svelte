@@ -10,12 +10,12 @@
   import { fade } from 'svelte/transition'
   import { pushState } from '$app/navigation'
   import { streamPicker, gameMode, bingeSource, debridCaching, connecting } from '$lib/player/session'
-  import { rankInfos, pickCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
+  import { rankInfos, pickCandidates, preferDirectStartupCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
   import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
-  import { playStream, cancelResolve, prefetchSourceMetadata, type PlayState } from '$lib/stremio/play'
+  import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState } from '$lib/stremio/play'
   import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
@@ -149,18 +149,22 @@
   // resolve screen stands in for the picker, the auto-pick may commit to an uncached source (every
   // torrent-extension row is uncached by construction, so it would otherwise never be eligible),
   // and a failure walks on instead of dropping them back to a list they asked not to see.
-  const autoImmediate = $derived($autoSelectSource && !$autoSelectCountdown && !pick?.manualOnly)
+  const autoImmediate = $derived($autoSelectSource && !$autoSelectCountdown && !pick?.manualOnly && !pick?.continuationPending)
   // A manual click may intentionally wait for a rare release. Automatic mode has alternatives in
-  // hand, so a dead hash gets a much smaller budget before the chain advances. Fifteen seconds is
-  // long enough for a warmed DHT/trackers to answer without reproducing the minute-long stalls from
-  // the field traces; the native command still retains its 60-second default for manual choices.
-  const AUTO_DIRECT_STARTUP_TIMEOUT_MS = 15_000
+  // hand, so a dead hash gets a much smaller budget before the chain advances. Healthy candidates
+  // in field traces return metadata in roughly 2–3s; eight seconds leaves room for a cold mobile
+  // DHT while preventing a misleading tracker count from pinning the chain for 15s. The native
+  // command still retains its 60-second default for manual choices.
+  const AUTO_DIRECT_STARTUP_TIMEOUT_MS = 8_000
   let failedKeys = $state<string[]>([])
   const hasFailed = (s: StreamInfo['stream']) => failedKeys.includes(keyOf(describe(s))) || isDead(s)
-  const candidates = $derived(pickCandidates(
+  const rankedCandidates = $derived(pickCandidates(
     visible.map((i) => i.stream), $preferredQuality, undefined, hasFailed,
     { ...rankOpts, allowUncached: autoImmediate },
   ))
+  const candidates = $derived(directP2p
+    ? preferDirectStartupCandidates(rankedCandidates)
+    : rankedCandidates)
   // Cap the chain: each attempt is a real resolve, and walking twenty broken sources in a row is
   // indistinguishable from a hang. Higher when the user opted out of choosing — a whole page of
   // releases blocked for the same legal reason is common, and giving up after three hands them
@@ -327,7 +331,7 @@
       autoState = 'off'
       return
     }
-    if (autoState === 'idle' && autoReady && !!best && !busy && $autoSelectSource && !pick?.manualOnly) {
+    if (autoState === 'idle' && autoReady && !!best && !busy && $autoSelectSource && !pick?.manualOnly && !pick?.continuationPending) {
       if (!$autoSelectCountdown) { autoState = 'off'; autoBest(); return }
       autoState = 'counting'
       autoStart = performance.now()
@@ -351,7 +355,7 @@
     if (busy || !pick) return
     // Picking a source supersedes the in-flight resolve: stop it folding in more sources (and, for
     // an auto-advance picker, stop its same-release auto-continue from firing over this choice).
-    cancelResolve()
+    commitResolveSelection()
     busy = true; error = ''; blockedRetry = null
     chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
     streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
@@ -381,7 +385,7 @@
     const info = blockedRetry
     if (!info || busy || !pick) return
     cancelAuto()
-    cancelResolve()
+    commitResolveSelection()
     busy = true; error = ''; blockedRetry = null
     chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
     streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)

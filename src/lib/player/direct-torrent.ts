@@ -155,8 +155,8 @@ export async function prepareDirectTorrentNext(input: {
   })
 }
 
-/** Tell the native engine that mpv owns the real HTTP stream now, so its temporary byte-zero
- * priority stream can be dropped without leaving two competing range cursors. */
+/** Safety fallback after the player has produced a frame. The native HTTP-request notification is
+ * the normal handoff; calling this when player_embed merely accepts a URL is too early. */
 export async function directTorrentPlayerAttached(playbackId: number) {
   await invoke('torrent_playback_player_attached', { playbackId }).catch(() => {})
 }

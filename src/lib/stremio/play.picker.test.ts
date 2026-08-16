@@ -7,6 +7,7 @@ const rememberedSources = writable<Record<number, unknown>>({})
 const hasConfiguredExtensions = vi.fn(async () => true)
 const runningExtensionCount = vi.fn(async () => 1)
 const resolveOnlineStreams = vi.fn((..._args: unknown[]): Promise<unknown[]> => new Promise(() => {}))
+const fetchMediaById = vi.fn()
 const automaticSources = writable(true)
 
 vi.mock('./sources', () => ({
@@ -87,12 +88,15 @@ vi.mock('$lib/player/session', () => ({
   torrentSubtitleState: writable({ status: 'idle', tracks: [] }),
   playbackRecovery: writable(null),
 }))
+vi.mock('$lib/anilist/fetch-media', () => ({
+  fetchMediaById: (...args: unknown[]) => fetchMediaById(...args),
+}))
 vi.mock('$lib/player/source-origin', () => ({
   sourceOrigins: rememberedSources,
   rememberSourceOrigin: vi.fn(),
 }))
 
-const { cancelResolve, playEpisode } = await import('./play')
+const { cancelResolve, playEpisode, resumeEpisode } = await import('./play')
 
 const media = {
   id: 1,
@@ -108,6 +112,7 @@ afterEach(() => {
   picker.set(null)
   connecting.set(null)
   rememberedSources.set({})
+  fetchMediaById.mockReset()
   vi.clearAllMocks()
 })
 
@@ -155,5 +160,28 @@ describe('manual episode source chooser', () => {
     expect(resolveOnlineStreams.mock.calls.every((call) => call[2] === undefined)).toBe(true)
     expect(get(picker)).toMatchObject({ hidden: false })
     expect(get(connecting)).toBeNull()
+  })
+})
+
+describe('Continue Watching source resolution', () => {
+  it('starts the progressive picker instead of blocking on a pinned remembered provider', async () => {
+    fetchMediaById.mockResolvedValue(media)
+    resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
+    rememberedSources.set({
+      1: { origin: { kind: 'online-extension', id: 'remembered-provider' }, updatedAt: Date.now() },
+    })
+
+    const resolving = resumeEpisode(media as never, 2, () => {})
+
+    await vi.waitFor(() => expect(get(picker)).toMatchObject({
+      episode: 2,
+      resolving: true,
+      hidden: true,
+    }))
+    expect(resolveOnlineStreams).toHaveBeenCalled()
+    expect(resolveOnlineStreams.mock.calls.every((call) => call[2] === undefined)).toBe(true)
+
+    cancelResolve()
+    await resolving
   })
 })

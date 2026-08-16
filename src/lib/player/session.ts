@@ -27,6 +27,10 @@ export const streamPicker = writable<{
   // season-verified row has been sitting on screen since the first second. Set once a pick is
   // trustworthy, and unconditionally when the resolve finishes.
   autoReady?: boolean
+  // A same-release continuation already owns playback startup. Keep the picker's independent
+  // auto-selector dormant until that attempt either starts playing or fails; otherwise both paths
+  // can commit different torrents a few hundred milliseconds apart.
+  continuationPending?: boolean
   playbackError?: string
   // "Change source" is always a user choice, regardless of the global automatic-source setting.
   manualOnly?: boolean

@@ -208,6 +208,30 @@ export function pickCandidates(
   return rank.map((i) => i.stream)
 }
 
+const DIRECT_AUTO_STARTUP_MAX_BYTES = 2 * 1024 ** 3
+
+/** Keep automatic direct playback inside the selected quality tier, but put streamable-size
+ * episodes before multi-gigabyte archival encodes. The full ranked chain remains as fallback, and
+ * an oversized file keeps its place when it is the only choice at that quality. */
+export function preferDirectStartupCandidates(candidates: Stream[]): Stream[] {
+  const first = candidates[0]
+  if (!first) return candidates
+  const firstInfo = describe(first)
+  if (!first.infoHash || first.url) return candidates
+  const faster = candidates.filter((stream) => {
+    const info = describe(stream)
+    return !!stream.infoHash
+      && !stream.url
+      && info.quality === firstInfo.quality
+      && info.seeders !== 0
+      && info.sizeBytes != null
+      && info.sizeBytes <= DIRECT_AUTO_STARTUP_MAX_BYTES
+  })
+  if (!faster.length || faster[0] === first) return candidates
+  const promoted = new Set(faster)
+  return [...faster, ...candidates.filter((stream) => !promoted.has(stream))]
+}
+
 /** The single best auto-pick — the head of the candidate list. Undefined when nothing is cached. */
 export function pickBest(
   streams: Stream[],

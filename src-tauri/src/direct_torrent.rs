@@ -1438,6 +1438,9 @@ pub async fn torrent_playback_url(
     let playback_id = state.next_playback_id.fetch_add(1, Ordering::Relaxed) + 1;
     let uploaded_at_start = handle.stats().uploaded_bytes;
     let torrent_id = handle.id();
+    // Stream diagnostics belong to one playback owner. Without this reset the new episode's first
+    // health poll reports the previous file's request count/range until mpv opens the replacement.
+    engine.stream_diagnostics.reset();
     let subtitles = subtitle_files
         .iter()
         .map(|file| DirectTorrentSubtitle {

@@ -1,10 +1,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
-import { addonOriginId, enabledAddonUrls } from './sources'
+import { enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
-import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, rankStreams, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
+import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
@@ -381,6 +381,7 @@ function pushListen<T>(event: string, handler: EventCallback<T>) {
 // usually belong to the same title, and their settled answers warm the memo cache the
 // replacement resolve is about to read.
 let resolveAbort: AbortController | null = null
+const committedResolveAborts = new WeakSet<AbortController>()
 /** Abort the in-flight source resolve — called when the picker is closed (X / click-off / Esc). */
 export function cancelResolve() {
   finishResolveTrace(currentResolveTrace(), 'canceled by user')
@@ -388,6 +389,16 @@ export function cancelResolve() {
   resolveAbort = null
   // The fetches were "best-effort background" once; on a click they are contention on the very
   // lanes the picked source needs. Cut them loose — reissued fresh next resolve.
+  cancelExtensionFetches()
+}
+
+/** Stop source discovery because one of its rows is being handed to playStream. Unlike a user
+ * dismissal, this keeps the active resolve trace open so engine startup and first-frame timings
+ * remain part of the same click-to-video trace. */
+export function commitResolveSelection() {
+  if (resolveAbort) committedResolveAborts.add(resolveAbort)
+  resolveAbort?.abort()
+  resolveAbort = null
   cancelExtensionFetches()
 }
 
@@ -870,7 +881,17 @@ async function extToStreams(
 // shares the Stremio bingeGroup, the exact pack infoHash, OR the parsed release group
 // (fansub author) — the group match is what continues extension/fansub content, which
 // carries no bingeGroup. `describe(s).group` is the same parse the picker heading uses.
-export interface ContinueHint { bingeGroup?: string; infoHash?: string; group?: string; originId?: string; online?: boolean; audio?: 'sub' | 'dub' }
+export interface ContinueHint {
+  bingeGroup?: string
+  infoHash?: string
+  group?: string
+  originId?: string
+  online?: boolean
+  audio?: 'sub' | 'dub'
+  /** This hash belongs to the in-memory torrent session that is playing right now. A persisted
+   * remembered hash is useful for release matching, but cannot claim cheap native session reuse. */
+  active?: boolean
+}
 export function matchesRelease(s: Stream, c: ContinueHint): boolean {
   return !!(
     (c.bingeGroup && s.behaviorHints?.bingeGroup === c.bingeGroup)
@@ -891,6 +912,42 @@ export function matchesRelease(s: Stream, c: ContinueHint): boolean {
   )
 }
 
+const DIRECT_CONTINUE_UNKNOWN_HEALTH_MAX_BYTES = 1024 ** 3
+const DIRECT_CONTINUE_KNOWN_HEALTH_MAX_BYTES = 2 * 1024 ** 3
+
+/** Pick a release-continuity torrent without letting continuity silently commit direct playback to
+ * an enormous or explicitly dead per-episode file. Only an actually active infohash bypasses the
+ * size gate: native playback can narrow a season pack and reuse its existing peer session. */
+export function pickDirectContinuationCandidate(
+  streams: Stream[],
+  hint: ContinueHint | undefined,
+  want?: EpisodeWant,
+  quality = 'any',
+  opts: RankOptions = {},
+): Stream | undefined {
+  if (!hint) return undefined
+  const eligible = streams.filter((stream) =>
+    !(want && isWrongSeason(stream, want)) && matchesRelease(stream, hint))
+  const hashOf = (stream: Stream) => stream.infoHash
+    ?? torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
+  const exact = hint.active && hint.infoHash
+    ? eligible.find((stream) => hashOf(stream)?.toLowerCase() === hint.infoHash!.toLowerCase())
+    : undefined
+  if (exact) return exact
+
+  const safe = eligible.filter((stream) => {
+    if (!hashOf(stream)) return false
+    const info = describe(stream)
+    if (info.seeders === 0) return false
+    if (info.sizeBytes == null) return false
+    const max = info.seeders == null
+      ? DIRECT_CONTINUE_UNKNOWN_HEALTH_MAX_BYTES
+      : DIRECT_CONTINUE_KNOWN_HEALTH_MAX_BYTES
+    return info.sizeBytes <= max
+  })
+  return pickBest(safe, quality, want, opts)
+}
+
 /** Pick a torrent that can continue the active release. Input order is already the addon's
  * ranking order. The exact pack wins; otherwise a per-episode torrent from the same release group
  * is valid. Kept pure/exported so real provider-shaped rows can regression-test the preloader. */
@@ -909,11 +966,23 @@ export function pickDirectPreloadCandidate(
 // The continuity hint for the NEXT episode of `media`: the release identity of what's
 // playing now. undefined when continuity is off, nothing is playing, or it's a different
 // title — the caller then just opens the picker normally.
-function continueHint(media: Media): ContinueHint | undefined {
-  if (!get(bingePreload) && !get(autoplayNext)) return undefined
+function activeReleaseHint(media: Media): ContinueHint | undefined {
   const b = get(bingeSource)
   if (!b || b.mediaId !== media.id || !(b.bingeGroup || b.infoHash || b.group || b.originId)) return undefined
-  return { bingeGroup: b.bingeGroup, infoHash: b.infoHash, group: b.group, originId: b.originId, online: b.online, audio: b.audio }
+  return {
+    bingeGroup: b.bingeGroup,
+    infoHash: b.infoHash,
+    group: b.group,
+    originId: b.originId,
+    online: b.online,
+    audio: b.audio,
+    active: true,
+  }
+}
+
+function continueHint(media: Media): ContinueHint | undefined {
+  if (!get(bingePreload) && !get(autoplayNext)) return undefined
+  return activeReleaseHint(media)
 }
 // A stream mpv can start without a multi-minute debrid cache: a direct online stream, an
 // already-resolved url, or a debrid-cached torrent (⚡ — resolves in ~1s).
@@ -1381,6 +1450,7 @@ export async function playEpisode(
   // resolving state. A newer request replaces the controller; the superseded caller must not emit
   // a late idle/error that can overwrite that newer request's state.
   const settleCancellation = () => {
+    if (committedResolveAborts.delete(abort)) return
     if (resolveAbort === null) {
       finishResolveTrace(trace, 'source discovery canceled')
       onState({ status: 'idle' })
@@ -1447,10 +1517,13 @@ export async function playEpisode(
     // mounted until playStream reports `playing`; on failure it remains available as the fallback.
     let continuationAttempted = false
     let continuationAttempt: Promise<boolean> | null = null
+    let continuationPending = false
     let continuationError = ''
     let seasonSettled = false // AniZip season target resolved (or known-absent) — gates auto-continue
     const tryContinuation = (stream: Stream) => {
       continuationAttempted = true
+      continuationPending = true
+      streamPicker.update((current) => current ? { ...current, continuationPending: true } : current)
       continuationAttempt = (async () => {
         let played = false
         await playStream(media, episode, stream, (state) => {
@@ -1459,7 +1532,12 @@ export async function playEpisode(
           continuationError ||= result.error
         }, { autoplay })
         return played
-      })()
+      })().finally(() => {
+        continuationPending = false
+        if (stillCurrent()) {
+          streamPicker.update((current) => current ? { ...current, continuationPending: false } : current)
+        }
+      })
     }
     // Autoplay readiness. Three ways to become ready, earliest wins:
     //   * the pick we would actually commit to is cached, in the user's language and past the
@@ -1560,6 +1638,7 @@ export async function playEpisode(
         cachedCount: s.filter((x) => describe(x).cached === 'instant').length,
         resolving,
         autoReady,
+        continuationPending,
         hidden: hideForContinuation,
         manualOnly: options.forceManual,
         autoplay,
@@ -1571,7 +1650,10 @@ export async function playEpisode(
       // no debrid cache being in flight so we never stomp a source the user just picked themselves
       // (an uncached manual pick keeps the picker open while it caches).
       if (cont && !continuationAttempted && seasonSettled && !get(debridCaching)) {
-        const hit = s.find((x) => matchesRelease(x, cont) && playableNow(x) && !isUncached(x) && !(want && isWrongSeason(x, want)))
+        const directTorrentContinuation = directP2pEnabled() && !cont.online
+        const hit = directTorrentContinuation
+          ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(media.id))
+          : s.find((x) => matchesRelease(x, cont) && playableNow(x) && !isUncached(x) && !(want && isWrongSeason(x, want)))
         if (hit) tryContinuation(hit)
       }
       // Kick off the next batched cache lookup for whatever just folded in. Only while resolving:
@@ -1811,7 +1893,9 @@ export async function playEpisode(
     if (cont && !continuationAttempted && stillCurrent() && !get(debridCaching)) {
       let s = refineStreams(media, acc).kept
       if (want) s = verifySeason(s, want)
-      const hit = s.find((x) => matchesRelease(x, cont))
+      const hit = directP2pEnabled() && !cont.online
+        ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(media.id))
+        : s.find((x) => matchesRelease(x, cont))
       if (hit) {
         tryContinuation(hit)
         if (continuationAttempt && await continuationAttempt) return
@@ -1851,44 +1935,30 @@ export async function playEpisode(
   }
 }
 
-/** Query the last successful origin for Continue Watching using a freshly fetched Media record.
- *  Resolved URLs are never reused (they expire and can carry credentials); the origin performs a
- *  new lookup for this episode. A missing origin/release or unusable result returns undefined so
- *  the unrestricted progressive picker can take over. */
-async function resolveRememberedSource(media: Media, episode: number, remembered: RememberedSource): Promise<Stream | undefined> {
-  let streams: Stream[] = []
-  if (remembered.origin.kind === 'addon') {
-    const base = get(enabledAddonUrls).find((url) => addonOriginId(url) === remembered.origin.id)
-    if (!base) return undefined
-    const kitsu = await resolveKitsu(media)
-    if (!kitsu) return undefined
-    streams = (await fetchAddonStreams(base, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')).streams
-  } else if (remembered.origin.kind === 'online-extension') {
-    streams = await resolveOnlineStreams(media, episode, remembered.origin.id)
-  } else {
-    const kitsu = await resolveKitsu(media)
-    await extToStreams(media, episode, kitsu, (batch) => { streams = [...streams, ...batch] }, remembered.origin.id)
-  }
+const CONTINUE_MEDIA_REFRESH_BUDGET_MS = 750
 
-  streams = refineStreams(media, streams).kept
-  const map = await getEpisodeSeasonMap(media.id).catch(() => ({} as Record<number, { season?: number; abs?: number }>))
-  const want: EpisodeWant = { episode, ...(map[episode] ?? {}) }
-  streams = verifySeason(streams, want)
-  if (!streams.length) return undefined
-
-  const release = remembered.release
-  const same = release && (release.infoHash || release.bingeGroup || release.group)
-    ? streams.find((stream) => matchesRelease(stream, release))
-    : undefined
-  if (remembered.origin.kind === 'torrent-extension') {
-    // Torrent extensions cannot advertise debrid cache state. Only reuse the exact release;
-    // an unrelated first search result is not a continuation.
-    return same
+/** Convert persisted source memory into the same release identity used by progressive episode
+ * resolution. Torrent origins need a release identity; an online origin is itself the identity. */
+export function rememberedContinueHint(remembered: RememberedSource | undefined): ContinueHint | undefined {
+  if (!remembered) return undefined
+  const release = remembered.release ?? {}
+  if (remembered.origin.kind === 'online-extension') {
+    return { ...release, originId: remembered.origin.id, online: true }
   }
-  if (same && playableNow(same) && !isUncached(same)) return same
-  // Same origin remains useful even if that origin renamed/repacked the episode. Within the pinned
-  // origin, prefer its best ready source; never auto-start an uncached unrelated torrent.
-  return pickBest(rankStreams(streams, 'quality', rankOpts(media.id)), get(preferredQuality), want, rankOpts(media.id))
+  if (!release.infoHash && !release.bingeGroup && !release.group) return undefined
+  return { ...release, originId: remembered.origin.id }
+}
+
+async function refreshContinueMedia(media: Media): Promise<Media> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const fallback = new Promise<Media>((resolve) => {
+    timer = setTimeout(() => resolve(media), CONTINUE_MEDIA_REFRESH_BUDGET_MS)
+  })
+  try {
+    return await Promise.race([fetchMediaById(media.id).catch(() => media), fallback])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 /** Resume from Continue Watching / the detail Continue button. Refresh the trimmed home-card Media
@@ -1904,26 +1974,14 @@ export async function resumeEpisode(media: Media, episode: number, onState: (s: 
     art: banner(media) || cover(media),
     cancel: () => { connecting.set(null); cancelResolve() },
   })
-  const current = await fetchMediaById(media.id).catch(() => media)
-  // "Continue" is an explicit request for continuity, independent of the general source-picker
-  // mode. Always try the last successful provider/release first; countdown/manual preferences only
-  // govern the recovery picker when that remembered source is missing or can no longer play.
-  const remembered = get(sourceOrigins)[current.id]
-  if (remembered) {
-    try {
-      const stream = await resolveRememberedSource(current, episode, remembered)
-      if (stream) {
-        let played = false
-        await playStream(current, episode, stream, (state) => {
-          if (state.status === 'playing') played = true
-          // Do not surface the remembered-source error yet: the complete picker is the recovery UI.
-          if (state.status !== 'error') onState(state)
-        })
-        if (played) return
-      }
-    } catch { /* stale/offline origin: the complete picker below is the recovery path */ }
-  }
-  return await playEpisode(current, episode, onState)
+  const current = await refreshContinueMedia(media)
+  // Use the normal progressive fan-out immediately and carry the remembered release as its hidden
+  // continuation target. The old path queried that provider serially, then repeated the complete
+  // query after a miss; a slow provider therefore produced an unbounded blank wait before P2P even
+  // started. Progressive resolution starts every source once and auto-continues the remembered
+  // release if it arrives safely.
+  const continuation = rememberedContinueHint(get(sourceOrigins)[current.id])
+  return await playEpisode(current, episode, onState, { continuation })
 }
 
 // Advance to an episode (auto next-episode + the in-player Prev/Next buttons). Continues
@@ -1958,8 +2016,8 @@ async function resolveAndPlayBest(
   }
   // Seamless continuity: if the addons already have a CACHED source from the same release
   // we were watching, play it straight away — no picker between back-to-back episodes.
-  // Direct P2P deliberately skips this shortcut: preserving a group must not bypass the torrent
-  // health/size ranking and commit Next to another multi-gigabyte release.
+  // Direct P2P resolves progressively below because its continuation requires explicit size and
+  // health gates before an uncached torrent can be committed.
   if (!directP2pEnabled()) {
     try {
       const { streams, want } = await resolveStreams(media, episode)
@@ -1975,13 +2033,12 @@ async function resolveAndPlayBest(
   // lands (extension/fansub content), and otherwise the user picks. This replaces the old
   // dead-end "no cached source" toast — the next episode always goes somewhere.
   //
-  // Direct-P2P blocks TORRENT continuations on purpose (Next must not silently commit to another
-  // multi-gigabyte release without the health/size ranking) — but that rationale has nothing to
-  // say about ONLINE streaming sources, and blocking those forced extension binges through the
-  // full visible picker on every single episode. A hint marked `online` continues in every mode.
-  const hint = continueHint(media)
+  // An explicit Prev/Next request should retain the active release even when automatic binge
+  // settings are disabled. Direct torrents pass through pickDirectContinuationCandidate inside
+  // playEpisode, so exact season packs are reused and changed hashes remain size/health bounded.
+  const hint = directP2pEnabled() ? activeReleaseHint(media) : continueHint(media)
   return await playEpisode(media, episode, onState, {
-    continuation: directP2pEnabled() && !hint?.online ? undefined : hint,
+    continuation: hint,
     autoplay,
   })
 }
@@ -2395,9 +2452,8 @@ export async function playStream(
     // purpose: the Android and external-player paths return before the desktop embed, and skipping
     // them left `bingeSource` pointing at whatever release a previous playStream set — so on those
     // paths "Next" continued the pre-change release after a manual source change.
-    // `online` marks a DIRECT streaming source (no torrent behind it) — the flag that lets
-    // same-origin continuation stay on in Direct-P2P mode, where torrent continuations are
-    // deliberately blocked (see resolveAndPlayBest).
+    // `online` distinguishes same-origin web streams from torrents; direct torrent continuation
+    // additionally passes through the size/health gate in pickDirectContinuationCandidate.
     const releaseIdentity = { bingeGroup: stream.behaviorHints?.bingeGroup, infoHash: stream.infoHash, group: describe(stream).group, originId: stream.__origin?.id, online: !!stream.__stream, audio: stream.__audio }
     bingeSource.set({ mediaId: media.id, ...releaseIdentity })
     // A prefetched next episode continues the release that was playing when the prefetch ran.
@@ -2671,7 +2727,6 @@ export async function playStream(
     traceResolve(trace, 'player embed accepted', {
       durationMs: Math.round(performance.now() - embedStartedAt),
     })
-    if (directPlaybackId != null) void directTorrentPlayerAttached(directPlaybackId)
     if (!stillOwnsPlayback()) {
       const canceledWithoutReplacement = currentPlaybackOwner() === null
       await abandonIfStale()
@@ -2698,9 +2753,14 @@ export async function playStream(
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
     if (episode != null) attach(media, episode, onState)
     if (directPlaybackId != null) {
+      const playbackId = directPlaybackId
       traceResolve(trace, 'waiting for first video frame')
       void waitForDesktopFirstFrame(stream.url!, DIRECT_TORRENT_START_TIMEOUT_MS, trace).then((result) => {
         if (!stillOwnsPlayback()) return
+        // The native localhost server normally releases the synthetic byte-zero cursor on mpv's
+        // first real HTTP request. A first frame is the safe fallback; player_embed merely accepting
+        // a URL is too early and used to leave a gap with no active range priority at all.
+        void directTorrentPlayerAttached(playbackId)
         finishResolveTrace(
           trace,
           result === 'ready' ? 'first video frame'
