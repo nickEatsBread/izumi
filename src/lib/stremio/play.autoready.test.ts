@@ -7,11 +7,13 @@ import { get, readable, writable } from 'svelte/store'
 
 const picker = writable<Record<string, unknown> | null>(null)
 const phttp = vi.fn()
+const addonUrls = writable<string[]>(['https://addon.test'])
+const queryExtensions = vi.fn(async (..._args: unknown[]) => [])
 
 vi.mock('$lib/net/http', () => ({ phttp: (...a: unknown[]) => phttp(...a) }))
 vi.mock('./manifest', async (actual) => ({ ...(await actual() as object), fetchManifest: async () => ({ id: 'a', name: 'Addon', version: '1' }) }))
 vi.mock('./sources', () => ({
-  enabledAddonUrls: readable<string[]>(['https://addon.test']),
+  enabledAddonUrls: addonUrls,
   addonOriginId: () => 'addon',
 }))
 vi.mock('./idmap', () => ({ getIndex: async () => ({}), lookupKitsu: () => undefined }))
@@ -25,7 +27,7 @@ vi.mock('$lib/anizip', () => ({
 vi.mock('$lib/downloads/state', () => ({ downloadOf: () => undefined }))
 vi.mock('$lib/extensions/manager', () => ({
   hasConfiguredExtensions: async () => true,
-  queryExtensions: async () => [],
+  queryExtensions: (...args: unknown[]) => queryExtensions(...args),
   runningExtensionCount: async () => 1,
 }))
 vi.mock('$lib/extensions/torrentProvider', () => ({
@@ -81,7 +83,7 @@ vi.mock('$lib/player/session', () => ({
   playbackRecovery: writable(null),
 }))
 
-const { cancelResolve, playEpisode } = await import('./play')
+const { cancelResolve, playEpisode, resolveDirectPreloadStream } = await import('./play')
 
 const media = {
   id: 1,
@@ -97,7 +99,45 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 afterEach(() => {
   cancelResolve()
   picker.set(null)
+  addonUrls.set(['https://addon.test'])
+  queryExtensions.mockReset()
+  queryExtensions.mockResolvedValue([])
   vi.clearAllMocks()
+})
+
+describe('direct-P2P next-episode preload', () => {
+  it('resolves the current extension origin when no addon URLs are configured', async () => {
+    addonUrls.set([])
+    queryExtensions.mockImplementation(async (...args: unknown[]) => {
+      const onBatch = args[1] as ((rows: unknown[]) => void) | undefined
+      expect(args[2]).toBe('provider-1')
+      onBatch?.([{
+        title: '[Group] Test Anime - 02 [1080p].mkv',
+        hash: '0123456789abcdef0123456789abcdef01234567',
+        seeders: 20,
+        size: 300 * 1024 ** 2,
+        accuracy: 'high',
+        provider: 'Provider',
+        providerId: 'provider-1',
+      }])
+      return []
+    })
+
+    const result = await resolveDirectPreloadStream(media as never, 2, {
+      infoHash: 'previous-episode-hash',
+      group: 'Group',
+      originId: 'provider-1',
+    })
+
+    expect(result).toMatchObject({
+      provider: 'Provider',
+      rows: 1,
+      stream: {
+        infoHash: '0123456789abcdef0123456789abcdef01234567',
+        __origin: { kind: 'torrent-extension', id: 'provider-1' },
+      },
+    })
+  })
 })
 
 describe('autoplay readiness', () => {

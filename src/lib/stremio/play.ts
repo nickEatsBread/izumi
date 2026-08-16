@@ -1034,26 +1034,25 @@ const prefetchKey = (mediaId: number, episode: number) => `${mediaId}:${episode}
 function resetPrefetchMiss() { prefetchMiss = null }
 
 /** Resolve a direct-P2P continuation progressively. `getStreams()` deliberately waits for every
- * configured addon; that is useful for a complete picker, but disastrous for background preload:
- * one unrelated addon consuming its 22 s budget used to hide a Torrentio match that arrived in
- * ~200 ms. Race each addon and stop at the first continuity-safe torrent instead. */
-async function resolveDirectPreloadStream(
+ * configured source; that is useful for a complete picker, but disastrous for background preload:
+ * one unrelated source consuming its full budget can hide a continuity match that arrived quickly.
+ * Race addons with the active extension origin and stop at the first continuity-safe torrent. */
+export async function resolveDirectPreloadStream(
   media: Media,
   episode: number,
   hint: ContinueHint | undefined,
 ): Promise<{ stream: Stream; want: EpisodeWant; provider: string; rows: number } | undefined> {
   if (!hint) return undefined
   const bases = get(enabledAddonUrls)
-  if (!bases.length) return undefined
-  const [kitsu, seasonMap] = await Promise.all([
-    resolveKitsu(media),
-    getEpisodeSeasonMap(media.id).catch(() => ({} as Record<number, { season?: number; abs?: number }>)),
-  ])
-  if (!kitsu) return undefined
+  // Start Kitsu in parallel because addon endpoints require it and some extensions benefit from it,
+  // but do not make it a prerequisite: ID-aware extension providers can resolve titles absent from
+  // the Kitsu map and were previously excluded from direct-P2P preload entirely.
+  const kitsuPromise = resolveKitsu(media)
+  const seasonMap = await getEpisodeSeasonMap(media.id)
+    .catch(() => ({} as Record<number, { season?: number; abs?: number }>))
   const mapped = seasonMap[episode]
   const want: EpisodeWant = { episode, ...(mapped ?? {}) }
   const controller = new AbortController()
-  const id = streamId(kitsu, episode)
   const kind = media.format === 'MOVIE' ? 'movie' : 'series'
   const waitForHedge = (delayMs: number) => new Promise<void>((resolve, reject) => {
     const timer = setTimeout(resolve, delayMs)
@@ -1062,7 +1061,7 @@ async function resolveDirectPreloadStream(
       reject(new DOMException('Aborted', 'AbortError'))
     }, { once: true })
   })
-  const query = async (base: string, delayMs = 0) => {
+  const query = async (base: string, id: string, delayMs = 0) => {
     if (delayMs) await waitForHedge(delayMs)
     const provider = `${addonTraceName(base)}${delayMs ? ' (hedge)' : ''}`
     const startedAt = performance.now()
@@ -1083,13 +1082,60 @@ async function resolveDirectPreloadStream(
     if (!stream) throw new Error(`${provider}: no continuity match`)
     return { stream, want, provider, rows: normalized.length }
   }
-  const attempts = bases.flatMap((base) => [
-    query(base),
-    // The supplied log ended at 22,017 ms — Torrentio's exact budget — despite this episode being
-    // present on its endpoint. A delayed duplicate is a standard hedge against a single wedged
-    // request. It never runs when the first call is healthy and is aborted with every loser.
-    ...(/torrentio/i.test(base) ? [query(base, 1_200)] : []),
-  ])
+
+  type DirectPreloadResult = { stream: Stream; want: EpisodeWant; provider: string; rows: number }
+  const attempts: Promise<DirectPreloadResult>[] = []
+
+  if (bases.length) {
+    attempts.push((async () => {
+      const kitsu = await kitsuPromise
+      if (!kitsu) throw new Error('addons: no Kitsu mapping')
+      const id = streamId(kitsu, episode)
+      return await Promise.any(bases.flatMap((base) => [
+        query(base, id),
+        // A delayed duplicate is a standard hedge against a single wedged request. It never runs
+        // when the first call is healthy and is aborted with every loser.
+        ...(/torrentio/i.test(base) ? [query(base, id, 1_200)] : []),
+      ]))
+    })())
+  }
+
+  // Extension torrents use a separate worker/provider runtime from Stremio addons. The old direct
+  // preloader only inspected `enabledAddonUrls`, so an extension-only setup logged START then MISS
+  // in ~1 ms and never reached `torrent_playback_prepare_next`. Query the origin that is playing
+  // now and resolve as soon as that provider emits a season-safe same-release row.
+  attempts.push((async () => {
+    if (!await hasConfiguredExtensions()) throw new Error('extensions: none configured')
+    return await new Promise<DirectPreloadResult>((resolve, reject) => {
+      let settled = false
+      let rows = 0
+      const finish = (result: DirectPreloadResult) => {
+        if (settled) return
+        settled = true
+        resolve(result)
+      }
+      void extToStreams(media, episode, kitsuPromise, (batch) => {
+        if (settled || controller.signal.aborted) return
+        const refined = verifySeason(refineStreams(media, batch).kept, want)
+        rows += refined.length
+        const stream = pickDirectPreloadCandidate(refined, hint, want)
+        if (import.meta.env.DEV) console.info(`[binge-preload] EXTENSION episode ${episode}`, {
+          provider: stream?.__origin?.name ?? stream?.__addonName ?? hint.originId,
+          rows: refined.length,
+          continuityMatch: !!stream,
+        })
+        if (stream) finish({
+          stream,
+          want,
+          provider: stream.__origin?.name ?? stream.__addonName ?? 'Extension',
+          rows,
+        })
+      }, hint.originId, controller.signal).then(() => {
+        if (!settled) reject(new Error('extensions: no continuity match'))
+      }, reject)
+    })
+  })())
+
   try {
     return await Promise.any(attempts)
   } catch {
