@@ -15,6 +15,26 @@ export function preferredMobileDiscussion(threads: DiscussionThread[]): MobileDi
   return reddit ? { kind: 'reddit', thread: reddit } : null
 }
 
+/**
+ * First-party discussion page suitable for a real browser. Google deliberately refuses OAuth in
+ * embedded WebViews, so Android offers this URL as the secure sign-in/commenting fallback.
+ */
+export function discussionBrowserUrl(thread: DiscussionThread): string | null {
+  const candidates = [thread.url]
+  if (thread.embedUrl) {
+    try { candidates.push(new URL(thread.embedUrl).searchParams.get('t_u') ?? undefined) }
+    catch { /* A malformed embed URL simply has no browser fallback. */ }
+  }
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    try {
+      const url = new URL(candidate)
+      if (url.protocol === 'https:') return url.toString()
+    } catch { /* Try the next candidate. */ }
+  }
+  return null
+}
+
 /** Origin of the cross-origin discussanime archive embed (the mapper's `forum` threads). */
 export const ARCHIVE_EMBED_ORIGIN = 'https://discussanime.moe'
 
