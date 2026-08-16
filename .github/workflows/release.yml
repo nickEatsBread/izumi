@@ -110,6 +110,8 @@ jobs:
 
   build:
     needs: create-release
+    env:
+      PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
     strategy:
       fail-fast: false
       matrix:
@@ -267,6 +269,8 @@ jobs:
   flatpak:
     needs: create-release
     runs-on: ubuntu-24.04
+    env:
+      PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
     steps:
       - uses: actions/checkout@v7
 
@@ -398,6 +402,7 @@ jobs:
     env:
       NDK_VERSION: "29.0.14206865"
       BUILD_TOOLS: "36.0.0"
+      PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
     steps:
       - uses: actions/checkout@v7
 
