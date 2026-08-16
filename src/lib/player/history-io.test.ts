@@ -3,7 +3,7 @@ import { get } from 'svelte/store'
 import { durableHistory as localHistory } from './history'
 import { exportJson, importJson } from './history-io'
 import { durablePositions as positions } from './progress'
-import { sourceOrigins } from './source-origin'
+import { episodeSourceOrigins, sourceOrigins } from './source-origin'
 
 const bundle = (position: Record<string, unknown>) => JSON.stringify({
   app: 'izumi', kind: 'watch-history', version: 1, exportedAt: 1,
@@ -11,7 +11,12 @@ const bundle = (position: Record<string, unknown>) => JSON.stringify({
 })
 
 describe('watch history import merge', () => {
-  afterEach(() => { localHistory.set({}); positions.set({}); sourceOrigins.set({}) })
+  afterEach(() => {
+    localHistory.set({})
+    positions.set({})
+    sourceOrigins.set({})
+    episodeSourceOrigins.set({})
+  })
 
   it('uses the newest per-episode resume position across devices', () => {
     positions.set({ '1:1': { pos: 10, dur: 100, updatedAt: 10 } })
@@ -45,7 +50,12 @@ describe('watch history import merge', () => {
     expect(get(localHistory)[1].media.title.romaji).toBe('Local')
     expect(get(localHistory)[2]).toBeUndefined()
     expect(get(positions)['2:2']).toMatchObject({ pos: 900, dur: 1440, updatedAt: 20 })
-    expect(merged).toEqual({ imported: 0, positionsImported: 1, originsImported: 0 })
+    expect(merged).toEqual({
+      imported: 0,
+      positionsImported: 1,
+      originsImported: 0,
+      episodeOriginsImported: 0,
+    })
   })
 
   it('exports positions but omits history when a tracker owns episode counts', () => {
@@ -59,6 +69,7 @@ describe('watch history import merge', () => {
     expect(exported.history).toEqual({})
     expect(exported.positions['2:2']).toMatchObject({ pos: 900, dur: 1440, updatedAt: 20 })
     expect(exported.origins).toEqual({})
+    expect(exported.episodeOrigins).toEqual({})
   })
 
   it('does not rewrite the position store when peers have nothing newer', () => {
@@ -100,6 +111,28 @@ describe('watch history import merge', () => {
       origin: { kind: 'torrent-extension', id: 'remote-origin' },
       release: { infoHash: 'abcdef', group: 'NewGroup' },
       updatedAt: 20,
+    })
+  })
+
+  it('syncs an exact episode source origin', () => {
+    const incoming = JSON.stringify({
+      app: 'izumi', kind: 'watch-history', version: 1, exportedAt: 20,
+      history: {}, positions: {},
+      episodeOrigins: {
+        '2:4': {
+          origin: { kind: 'torrent-extension', id: 'episode-origin' },
+          release: { group: 'Group' },
+          updatedAt: 20,
+        },
+      },
+    })
+
+    const merged = importJson(incoming, { includeHistory: false })
+
+    expect(merged.episodeOriginsImported).toBe(1)
+    expect(get(episodeSourceOrigins)['2:4']).toMatchObject({
+      origin: { id: 'episode-origin' },
+      release: { group: 'Group' },
     })
   })
 })

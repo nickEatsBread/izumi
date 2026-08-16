@@ -6,6 +6,7 @@
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
     p2pStatusVisibility,
+    continueSourcePreference,
   } from '$lib/settings/ui'
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -161,6 +162,18 @@
       { value: 'buffering', label: 'While buffering' },
       { value: 'initial', label: 'Initial buffering only' },
       { value: 'always', label: 'Always visible' },
+    ]} />
+  </label>
+
+  <label class="mb-4 flex max-w-2xl flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+    <span class="min-w-0">
+      <span class="block font-bold">Continue Watching source</span>
+      <span class="mt-1 block text-xs text-muted-foreground">Choose when Continue Watching briefly prefers a recent source. Source memories expire after 30 days; alternatives still resolve in parallel.</span>
+    </span>
+    <SelectMenu className="w-full shrink-0 sm:w-56" bind:value={$continueSourcePreference} ariaLabel="Continue Watching source" options={[
+      { value: 'resumed', label: 'Resumed episodes' },
+      { value: 'always', label: 'Every episode' },
+      { value: 'never', label: 'Never' },
     ]} />
   </label>
 

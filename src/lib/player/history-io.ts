@@ -6,7 +6,13 @@ import { title } from '$lib/anilist/media'
 // carry this session's incognito entries; an import writes straight to the persisted stores.
 import { durableHistory, historyEntries, type HistoryEntry } from './history'
 import { durablePositions, type Pos } from './progress'
-import { mergeSourceOrigins, sourceOrigins, type RememberedSource } from './source-origin'
+import {
+  episodeSourceOrigins,
+  mergeEpisodeSourceOrigins,
+  mergeSourceOrigins,
+  sourceOrigins,
+  type RememberedSource,
+} from './source-origin'
 
 // Import / export of the on-device watch history, so it can be backed up, moved between installs,
 // or used to seed an AniList/MyAnimeList account (or another tracker). Two export formats:
@@ -23,6 +29,8 @@ interface ExportBundle {
   positions: Record<string, Pos>
   /** Bounded, credential-free source preferences; always exported even when a tracker owns progress. */
   origins?: Record<number, RememberedSource>
+  /** Exact per-episode source preferences used by the default Continue Watching mode. */
+  episodeOrigins?: Record<string, RememberedSource>
 }
 
 interface WatchJsonOptions {
@@ -37,6 +45,7 @@ export function exportJson(options: WatchJsonOptions = {}): string {
     history: options.includeHistory === false ? {} : get(durableHistory),
     positions: get(durablePositions),
     origins: get(sourceOrigins),
+    episodeOrigins: get(episodeSourceOrigins),
   }
   return JSON.stringify(bundle, null, 2)
 }
@@ -85,7 +94,12 @@ function validRelease(r: unknown): HistoryEntry['release'] {
 /** Merge an izumi JSON export back into local history + resume positions. Malformed entries are
  *  skipped (never poison the store). Existing entries are kept if they're further along (higher
  *  progress / later timestamp). Returns how many merged. */
-export function importJson(text: string, options: WatchJsonOptions = {}): { imported: number; positionsImported: number; originsImported: number } {
+export function importJson(text: string, options: WatchJsonOptions = {}): {
+  imported: number
+  positionsImported: number
+  originsImported: number
+  episodeOriginsImported: number
+} {
   const data = JSON.parse(text) as Partial<ExportBundle>
   if (data.app !== 'izumi' || data.kind !== 'watch-history' || !data.history || typeof data.history !== 'object') {
     throw new Error('Not an izumi watch-history export.')
@@ -140,7 +154,8 @@ export function importJson(text: string, options: WatchJsonOptions = {}): { impo
     if (positionsImported) durablePositions.set(next)
   }
   const originsImported = mergeSourceOrigins(data.origins)
-  return { imported, positionsImported, originsImported }
+  const episodeOriginsImported = mergeEpisodeSourceOrigins(data.episodeOrigins)
+  return { imported, positionsImported, originsImported, episodeOriginsImported }
 }
 
 /** Tauri rejects with a plain STRING — permission denials, IO errors, everything — never an Error.

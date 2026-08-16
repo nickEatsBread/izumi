@@ -47,7 +47,7 @@ import { markWatched } from '$lib/trackers'
 import { savePosition, getPosition, clearPosition, watched, positions, progressKey } from '$lib/player/progress'
 import { recordPlay, localHistory } from '$lib/player/history'
 import { maybeAutoEnterIncognito } from '$lib/player/auto-incognito'
-import { rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
+import { episodeSourceOrigins, rememberSourceOrigin, sourceOrigins, type RememberedSource } from '$lib/player/source-origin'
 import { connecting, nextEpisodeReady, playing, playerLoadId, nowPlaying, nowPlayingUrl, nowPlayingStream, streamPicker, playerNotice, spriteKey, bingeSource, nowPlayingMedia, nowPlayingPartySource, debridCaching, onlineSubCandidates, subtitleNotice, torrentSubtitleState, playerSleep, playbackRecovery } from '$lib/player/session'
 import {
   DIRECT_TORRENT_START_TIMEOUT_MS,
@@ -66,7 +66,7 @@ import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
-  sourcePriority, sourcePriorityMode,
+  sourcePriority, sourcePriorityMode, continueSourcePreference,
 } from '$lib/settings/ui'
 import { applyPriorityFilter } from './source-priority'
 import { fillerEpisodes } from '$lib/anime/filler'
@@ -1984,6 +1984,14 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export const REMEMBERED_SOURCE_MAX_AGE_MS = 30 * DAY_MS
 export const REMEMBERED_SOURCE_PRIORITY_MS = 1500
 
+function continueRememberedSource(mediaId: number, episode: number): RememberedSource | undefined {
+  const preference = get(continueSourcePreference)
+  if (preference === 'never') return undefined
+  if (preference === 'always') return get(sourceOrigins)[mediaId]
+  if (getPosition(mediaId, episode) <= 0) return undefined
+  return get(episodeSourceOrigins)[progressKey(mediaId, episode)]
+}
+
 /** Convert persisted source memory into the same release identity used by progressive episode
  * resolution. Torrent origins need a release identity; an online origin is itself the identity. */
 export function rememberedContinueHint(
@@ -2032,7 +2040,7 @@ export async function resumeEpisode(media: Media, episode: number, onState: (s: 
   // query after a miss; a slow provider therefore produced an unbounded blank wait before P2P even
   // started. Progressive resolution starts every source once and auto-continues the remembered
   // release if it arrives safely.
-  const continuation = rememberedContinueHint(get(sourceOrigins)[current.id])
+  const continuation = rememberedContinueHint(continueRememberedSource(current.id, episode))
   return await playEpisode(current, episode, onState, {
     continuation,
     continuationPriorityMs: continuation ? REMEMBERED_SOURCE_PRIORITY_MS : undefined,
@@ -2479,7 +2487,7 @@ export async function playStream(
     infoHash: stream.infoHash,
     bingeGroup: stream.behaviorHints?.bingeGroup,
     group: describe(stream).group,
-  })
+  }, episode)
   try {
     currentMedia = media
     playerLoadId.update((id) => id + 1)
