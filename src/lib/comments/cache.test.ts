@@ -4,16 +4,21 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 // episode twice. `getDiscussion` counts calls, so a memoized fetch shows up as a flat call count.
 const mocks = vi.hoisted(() => ({
   nativeHttp: vi.fn(),
+  phttp: vi.fn(),
+  clientOptions: vi.fn(),
   getDiscussion: vi.fn(async () => [
     { platform: 'reddit', id: 't1', title: 'Episode 1 discussion', comments: [] },
   ]),
 }))
 vi.mock('@nicholasyoannou/hayami-sdk', () => ({
-  createDiscussionClient: () => ({ getDiscussion: mocks.getDiscussion }),
+  createDiscussionClient: (options: unknown) => {
+    mocks.clientOptions(options)
+    return { getDiscussion: mocks.getDiscussion }
+  },
 }))
-vi.mock('$lib/net/http', () => ({ invokeNativeHttp: mocks.nativeHttp }))
+vi.mock('$lib/net/http', () => ({ invokeNativeHttp: mocks.nativeHttp, phttp: mocks.phttp }))
 
-import { fetchDiscussion, discussionKey, clearDiscussionCache, commentsBackendUrl } from './index'
+import { fetchDiscussion, discussionKey, clearDiscussionCache } from './index'
 import type { Media } from '$lib/anilist/types'
 
 const media = (id: number, idMal: number | null = 100): Media =>
@@ -21,12 +26,19 @@ const media = (id: number, idMal: number | null = 100): Media =>
 
 beforeEach(() => {
   clearDiscussionCache()
-  commentsBackendUrl.set('')
   mocks.getDiscussion.mockReset()
   mocks.getDiscussion.mockResolvedValue([
     { platform: 'reddit', id: 't1', title: 'Episode 1 discussion', comments: [] },
   ])
   mocks.nativeHttp.mockReset()
+  mocks.clientOptions.mockReset()
+  mocks.phttp.mockReset()
+  mocks.phttp.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ threads: [], has_more: false, page: 1 }),
+    text: async () => '{"threads":[]}',
+  })
 })
 
 describe('discussionKey', () => {
@@ -78,21 +90,20 @@ describe('fetchDiscussion', () => {
   })
 
   it('publishes an embeddable forum thread before slow aggregation completes', async () => {
-    commentsBackendUrl.set('https://mapper.example')
     let finishAggregation!: (threads: any[]) => void
     mocks.getDiscussion.mockImplementationOnce(() => new Promise((resolve) => { finishAggregation = resolve }))
-    mocks.nativeHttp.mockResolvedValue({
+    mocks.phttp.mockResolvedValue({
+      ok: true,
       status: 200,
-      headers: {},
-      body: JSON.stringify({
+      json: async () => ({
         threads: [{
           id: 12, slug: 'show-episode-3', title: 'Episode 3', episode_number: 3,
           episode_number_end: null, comment_count: 42, created_at: 1,
-          identifier: 'show-episode-3', url: 'https://example.com/thread',
-          forum_shortname: 'discussanime', is_embed: 0,
+          mal_id: 100, url: 'https://discussanime.moe/thread/show-episode-3',
         }],
-        has_more: false,
+        has_more: false, page: 1,
       }),
+      text: async () => '',
     })
     const early = vi.fn()
     const pending = fetchDiscussion(media(1), 3, early)
@@ -100,6 +111,14 @@ describe('fetchDiscussion', () => {
     await vi.waitFor(() => expect(early).toHaveBeenCalledOnce())
     expect(early.mock.calls[0][0][0]).toMatchObject({ source: 'Disqus', replyCount: 42 })
     expect(early.mock.calls[0][0][0].embedUrl).toContain('disqus.com/embed/comments')
+    expect(early.mock.calls[0][0][0].embedUrl).toContain('t_i=thread-12')
+    expect(mocks.phttp).toHaveBeenCalledWith(
+      expect.stringContaining('https://discussanime.moe/api/v1/threads?'),
+      expect.objectContaining({
+        headers: { 'X-API-Key': 'dak_00000000000000000000000000000000' },
+        timeoutMs: 5_000,
+      }),
+    )
 
     finishAggregation([{ platform: 'reddit', id: 'r3', title: 'Episode 3', comments: [] }])
     await expect(pending).resolves.toEqual(expect.arrayContaining([
@@ -109,5 +128,17 @@ describe('fetchDiscussion', () => {
     const cachedEarly = vi.fn()
     await fetchDiscussion(media(1), 3, cachedEarly)
     expect(cachedEarly).not.toHaveBeenCalled()
+  })
+
+  it('answers the SDK legacy mapper locally instead of making a hidden request', async () => {
+    await fetchDiscussion(media(1), 3)
+    const options = mocks.clientOptions.mock.calls[0][0] as {
+      endpoints: { mapper: string }
+      http: (url: string) => Promise<{ json: () => Promise<unknown> }>
+    }
+    expect(options.endpoints.mapper).toBe('https://izumi.invalid/disabled-discussion-mapper')
+    const response = await options.http(`${options.endpoints.mapper}/api/threads/by-anime`)
+    await expect(response.json()).resolves.toEqual({ threads: [], has_more: false, page: 1 })
+    expect(mocks.nativeHttp).not.toHaveBeenCalled()
   })
 })

@@ -4,12 +4,8 @@ import {
   createDiscussionClient, type DiscussionClient, type HttpAdapter,
   type Thread as SdkThread, type Comment as SdkComment,
 } from '@nicholasyoannou/hayami-sdk'
-import {
-  byAnimeUrl, matchEpisodeThread, rowToThreadRef,
-  type AnimeThreadRow, type ByAnimeResponse,
-} from '@nicholasyoannou/hayami-sdk/forum'
 import { anilistToken } from '$lib/anilist/auth'
-import { commentsBackendUrl } from './config'
+import { fetchDiscussAnimeThread } from './discussanime'
 import type { Media } from '$lib/anilist/types'
 import type { DiscussionThread, DiscussionComment } from './types'
 
@@ -17,10 +13,11 @@ export type { DiscussionThread, DiscussionComment, ScriptEmbed } from './types'
 export { commentsBackendUrl, defaultDiscussionPlatform, discussionExpanded } from './config'
 
 // The discussion aggregation (map id+episode → per-platform threads + comments across Reddit / AniList
-// / MAL / YouTube / the forum) is provided by the headless SDK. izumi supplies only the pieces the SDK
+// / MAL / YouTube) is provided by the headless SDK. izumi supplies only the pieces the SDK
 // can't have: a CORS-free HTTP adapter (its Rust `ext_fetch`, which forwards any header — User-Agent /
 // Referer / Authorization — un-stripped, unlike the webview fetch) and the AniList token for authed
-// reads/posts. Reddit/AniList/MAL/YouTube need no backend; the forum comes from the user-set mapper URL.
+// reads/posts. Discuss Anime is resolved separately through its official v1 API on the pooled native
+// client, which lets its Disqus embed mount without waiting for this slower aggregation fan-out.
 const performHttp: HttpAdapter = async (url, init) => {
   const r = await invokeNativeHttp<{ status: number; headers: Record<string, string>; body: string }>('ext_fetch', {
     url, method: init?.method ?? 'GET', headers: init?.headers, body: init?.body,
@@ -34,10 +31,21 @@ const performHttp: HttpAdapter = async (url, init) => {
   }
 }
 
-// The early forum lookup and Hayami's full aggregation ask for the same anonymous mapper URL.
-// Share that exact GET so mounting Disqus early does not double network traffic.
+// Hayami currently resolves every provider before applying a source filter, including its legacy
+// forum mapper. Point that provider at a sentinel and answer locally so it never makes a hidden
+// api.hayami.moe request. Official Discuss Anime metadata is fetched below instead.
+const DISABLED_SDK_MAPPER = 'https://izumi.invalid/disabled-discussion-mapper'
 const anonymousGetInflight = new Map<string, ReturnType<HttpAdapter>>()
 const http: HttpAdapter = (url, init) => {
+  if (url.startsWith(DISABLED_SDK_MAPPER)) {
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: {},
+      text: async () => '{"threads":[],"has_more":false,"page":1}',
+      json: async () => ({ threads: [], has_more: false, page: 1 }),
+    })
+  }
   const method = (init?.method ?? 'GET').toUpperCase()
   const anonymousGet = method === 'GET' && !init?.body && !Object.keys(init?.headers ?? {}).length
   if (!anonymousGet) return performHttp(url, init)
@@ -77,13 +85,13 @@ function mapThread(t: SdkThread): DiscussionThread {
   }
 }
 
-// One client per call (cheap; picks up the current mapper URL + AniList token each time). The Disqus
+// One client per call (cheap; picks up the current AniList token each time). The Disqus
 // loader page fetches its reaction counts directly (CORS-open), so the app doesn't wire the SDK's
 // getReactions/react here — see static/disqus-embed.html.
 function makeClient(): DiscussionClient {
   return createDiscussionClient({
     http,
-    mapperBaseUrl: get(commentsBackendUrl) || undefined, // forum source; empty ⇒ SDK's default / disabled
+    endpoints: { mapper: DISABLED_SDK_MAPPER },
     getToken: (p) => (p === 'anilist' ? get(anilistToken) || undefined : undefined),
   })
 }
@@ -133,7 +141,7 @@ export function fetchDiscussion(
   // An empty result is "nothing found YET" as often as it is "nothing exists" — a transient SDK/network
   // failure returns [] too (getDiscussion never rejects). Caching that would hide real comments for the
   // whole TTL, so only a non-empty aggregation is retained.
-  const early = fetchForumUncached(media, episode)
+  const early = fetchDiscussAnimeThread(media, episode)
   const value = Promise.all([fetchDiscussionUncached(media, episode), early])
     .then(([threads, forum]) => [
       ...forum,
@@ -169,39 +177,6 @@ function deliverEarly(entry: DiscussionCacheEntry, callback?: (threads: Discussi
   ]).then((result) => { if (result.early && result.threads.length) callback(result.threads) })
 }
 
-async function fetchForumUncached(
-  media: Media,
-  episode: number | null | undefined,
-): Promise<DiscussionThread[]> {
-  const base = get(commentsBackendUrl).trim().replace(/\/+$/, '')
-  if (!base) return []
-  const episodeHint = typeof episode === 'number' && episode > 0 ? episode : null
-  const url = byAnimeUrl(base, {
-    malId: media.idMal ?? undefined,
-    anilistId: media.id,
-    episodeHint,
-    limit: 50,
-    page: 1,
-  })
-  if (!url) return []
-  try {
-    const response = await http(url)
-    if (!response.ok) return []
-    const body = await response.json() as ByAnimeResponse
-    const rows: AnimeThreadRow[] = Array.isArray(body?.threads) ? body.threads : []
-    const hit = matchEpisodeThread(rows, {
-      episodeCandidates: [episode],
-      isMovie: media.format === 'MOVIE',
-    })
-    if (!hit) return []
-    const ref = rowToThreadRef(hit)
-    return [mapThread({ ...ref, title: hit.title ?? '', replyCount: ref.commentCount })]
-  } catch (error) {
-    console.warn('[izumi comments] fast forum lookup failed:', error)
-    return []
-  }
-}
-
 async function fetchDiscussionUncached(media: Media, episode: number | null | undefined): Promise<DiscussionThread[]> {
   const titles = [...new Set([media.title.romaji, media.title.english, media.title.userPreferred].filter((t): t is string => !!t))]
   const client = makeClient()
@@ -210,8 +185,6 @@ async function fetchDiscussionUncached(media: Media, episode: number | null | un
       { anilistId: media.id, malId: media.idMal ?? undefined, titles, episode: episode ?? null, isMovie: media.format === 'MOVIE' },
       { withComments: true },
     )
-    // DIAGNOSTIC (temporary): what the SDK returned for this title/episode.
-    console.log('[izumi comments] sdk returned', threads.length, 'thread(s):', threads.map((t) => `${t.platform}(${t.comments?.length ?? 0})`).join(', '))
     return threads.map(mapThread)
   }
   catch (e) { console.warn('[izumi comments] getDiscussion failed:', e); return [] }

@@ -9,6 +9,7 @@ export default defineConfig({
     alias: {
       $lib: fileURLToPath(new URL('./src/lib', import.meta.url)),
       '$env/static/public': fileURLToPath(new URL('./src/test/env-public-stub.ts', import.meta.url)),
+      '$env/dynamic/public': fileURLToPath(new URL('./src/test/env-public-stub.ts', import.meta.url)),
     },
   },
 })

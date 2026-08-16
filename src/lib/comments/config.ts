@@ -1,9 +1,7 @@
 import { persisted } from 'svelte-persisted-store'
 
-// Optional discussion MAPPER backend — a generic endpoint that maps an anime id + episode to
-// per-platform discussion threads (reddit/forum/youtube/…). izumi ships NO default (user-provided
-// only, mirroring the zero-default stream-source policy); an empty value means "AniList threads only".
-// Used by the aggregation providers (phase 2+).
+// Kept only so existing settings/backups remain readable after the official Discuss Anime API
+// migration. New discussion requests do not use this legacy mapper URL.
 export const commentsBackendUrl = persisted<string>('comments-backend-url', '')
 
 // Which discussion source the panel opens on. Default 'disqus' — it embeds inline, so the panel
