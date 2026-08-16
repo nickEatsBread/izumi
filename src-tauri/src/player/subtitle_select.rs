@@ -16,8 +16,22 @@ fn canonical_track_lang(value: &str) -> &str {
 }
 
 fn is_signs_only_title(title: &str) -> bool {
-    let title = title.to_ascii_lowercase();
-    title.contains("sign") && (title.contains("song") || title.contains("karaoke"))
+    let title = title.trim().to_ascii_lowercase();
+    let bracketed_signs = [
+        "[sign]", "[signs]", "(sign)", "(signs)", "{sign}", "{signs}",
+    ]
+    .iter()
+    .any(|marker| title.contains(marker));
+    let plain_signs = matches!(
+        title.as_str(),
+        "sign" | "signs" | "english sign" | "english signs" | "eng sign" | "eng signs"
+    );
+    title.contains("sign")
+        && (title.contains("song")
+            || title.contains("karaoke")
+            || title.contains("signs only")
+            || bracketed_signs
+            || plain_signs)
 }
 
 fn is_full_dialogue_title(title: &str) -> bool {
@@ -25,6 +39,14 @@ fn is_full_dialogue_title(title: &str) -> bool {
     (title.contains("full")
         && (title.contains("subtitle") || title.contains(" subs") || title.ends_with("subs")))
         || title.contains("dialogue")
+}
+
+fn is_dialogue_candidate_title(title: &str) -> bool {
+    let title = title.to_ascii_lowercase();
+    !is_signs_only_title(&title)
+        && !title.contains("commentary")
+        && !title.contains("forced")
+        && !title.contains("karaoke")
 }
 
 /// Anime muxes commonly tag tracks by the audio they accompany rather than by the text language:
@@ -53,14 +75,20 @@ pub(super) fn preferred_full_subtitle_id(
         return None;
     }
 
-    let full_tracks = tracks
+    let dialogue_tracks = tracks
         .iter()
-        .filter(|track| track.kind == "sub" && is_full_dialogue_title(&track.title))
+        .filter(|track| track.kind == "sub" && is_dialogue_candidate_title(&track.title))
         .collect::<Vec<_>>();
-    // A correctly tagged full English track always wins over Signs & Songs.
-    if let Some(track) = full_tracks
+    // A correctly tagged English dialogue track always wins over signs-only.
+    if let Some(track) = dialogue_tracks
         .iter()
-        .find(|track| canonical_track_lang(&track.lang) == preferred_lang)
+        .filter(|track| canonical_track_lang(&track.lang) == preferred_lang)
+        .find(|track| is_full_dialogue_title(&track.title))
+        .or_else(|| {
+            dialogue_tracks
+                .iter()
+                .find(|track| canonical_track_lang(&track.lang) == preferred_lang)
+        })
     {
         return Some(track.id);
     }
@@ -74,9 +102,12 @@ pub(super) fn preferred_full_subtitle_id(
     if audio_lang != "jpn" {
         return None;
     }
-    full_tracks
+    dialogue_tracks
         .into_iter()
-        .find(|track| matches!(canonical_track_lang(&track.lang), "jpn" | "und"))
+        .find(|track| {
+            is_full_dialogue_title(&track.title)
+                && matches!(canonical_track_lang(&track.lang), "jpn" | "und")
+        })
         .map(|track| track.id)
 }
 
@@ -124,5 +155,30 @@ mod tests {
             track(3, "sub", "Full Subtitles", "eng", false),
         ];
         assert_eq!(preferred_full_subtitle_id("eng", &tracks), Some(3));
+    }
+
+    #[test]
+    fn bracketed_signs_uses_plain_english_dialogue() {
+        let tracks = vec![
+            track(1, "audio", "Japanese", "jpn", true),
+            track(2, "sub", "English [Signs]", "eng", true),
+            track(3, "sub", "English", "eng", false),
+        ];
+        assert_eq!(preferred_full_subtitle_id("eng", &tracks), Some(3));
+    }
+
+    #[test]
+    fn commentary_does_not_replace_signs_only() {
+        let tracks = vec![
+            track(1, "audio", "Japanese", "jpn", true),
+            track(2, "sub", "English [Signs]", "eng", true),
+            track(3, "sub", "English Commentary", "eng", false),
+        ];
+        assert_eq!(preferred_full_subtitle_id("eng", &tracks), None);
+    }
+
+    #[test]
+    fn sign_language_is_not_mistaken_for_signs_only() {
+        assert!(!is_signs_only_title("English Sign Language"));
     }
 }

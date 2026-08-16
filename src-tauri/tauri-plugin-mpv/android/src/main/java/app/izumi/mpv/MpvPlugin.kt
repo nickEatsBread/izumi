@@ -933,42 +933,29 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         invoke.resolve(JSObject().put("granted", granted))
     }
 
-    private fun normalizedLanguage(raw: String?): String = when (raw?.trim()?.lowercase()) {
-        "en", "eng", "english" -> "eng"
-        "ja", "jpn", "japanese" -> "jpn"
-        "zh", "chi", "zho", "chinese" -> "chi"
-        "ko", "kor", "korean" -> "kor"
-        "es", "spa", "spanish" -> "spa"
-        "fr", "fre", "fra", "french" -> "fre"
-        "de", "ger", "deu", "german" -> "ger"
-        "it", "ita", "italian" -> "ita"
-        "pt", "por", "portuguese" -> "por"
-        "ru", "rus", "russian" -> "rus"
-        "ar", "ara", "arabic" -> "ara"
-        "pl", "pol", "polish" -> "pol"
-        "tr", "tur", "turkish" -> "tur"
-        else -> raw?.trim()?.lowercase().orEmpty()
-    }
-
     /** mpv treats `slang` as a preference, not a restriction: if English is absent it may still
      * select a source-default Chinese track. Enforce the user's language once the file's embedded
      * track list exists; an explicitly-selected external English track added just after load can
      * still override this through `sub-add ... select`. */
     private fun enforcePreferredSubtitle(m: MPVLib) {
-        val preferred = normalizedLanguage(preferredSubLanguage)
+        val preferred = normalizedTrackLanguage(preferredSubLanguage)
         if (preferred.isEmpty()) return
         if (preferred == "none") {
             m.setPropertyString("sid", "no")
             return
         }
         val count = m.getPropertyString("track-list/count")?.toIntOrNull() ?: 0
-        var match: String? = null
-        for (index in 0 until count) {
-            if (m.getPropertyString("track-list/$index/type") != "sub") continue
-            if (normalizedLanguage(m.getPropertyString("track-list/$index/lang")) != preferred) continue
-            match = m.getPropertyString("track-list/$index/id")
-            if (!match.isNullOrBlank()) break
+        val tracks = (0 until count).map { index ->
+            SemanticTrack(
+                id = m.getPropertyString("track-list/$index/id").orEmpty(),
+                kind = m.getPropertyString("track-list/$index/type").orEmpty(),
+                title = m.getPropertyString("track-list/$index/title").orEmpty(),
+                lang = m.getPropertyString("track-list/$index/lang").orEmpty(),
+                selected = m.getPropertyString("track-list/$index/selected")
+                    .equals("yes", ignoreCase = true),
+            )
         }
+        val match = preferredSubtitleId(preferred, tracks)
         m.setPropertyString("sid", match?.takeIf { it.isNotBlank() } ?: "no")
     }
 
