@@ -248,6 +248,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     /** Mirror of mpv's `pause`, kept from the observer so the UI thread never has to read back into
      *  libmpv just to decide whether playback is live. */
     private var corePaused = false
+    /** A prepared mpv core is deliberately kept alive while browsing and after EOF. Neither state
+     *  owns a video that Android may shrink into PiP, so track FILE_LOADED separately from `mpv`. */
+    private var mediaLoaded = false
     private var mediaReceiver: BroadcastReceiver? = null
 
     private fun stopLandscapeReleaseListener() {
@@ -585,7 +588,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             // animation instead of a request we fire after the window has already gone away.
             // Armed only while a video is actually playing, or every trip to the home screen would
             // leave a miniplayer behind.
-            builder.setAutoEnterEnabled(autoPipEnabled && mpv != null && !corePaused)
+            builder.setAutoEnterEnabled(autoPipEnabled && mediaLoaded && !corePaused)
             builder.setSeamlessResizeEnabled(true)
         }
         return builder.build()
@@ -686,6 +689,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         activity.runOnUiThread {
             if (Build.VERSION.SDK_INT < 26) {
                 invoke.reject("pip-unsupported")
+                return@runOnUiThread
+            }
+            if (!mediaLoaded) {
+                invoke.reject("pip-no-active-video")
                 return@runOnUiThread
             }
             // Reshape BEFORE the transition: the system captures the window during the animation, so
@@ -793,7 +800,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      */
     private fun autoPipOnLeave() {
         if (Build.VERSION.SDK_INT !in 26..30) return
-        if (!autoPipEnabled || mpv == null || corePaused || pipActive || pipRequested) return
+        if (!autoPipEnabled || !mediaLoaded || corePaused || pipActive || pipRequested) return
         if (activity.isFinishing || activity.isChangingConfigurations) return
         val power = activity.getSystemService(Context.POWER_SERVICE) as? PowerManager
         if (power != null && !power.isInteractive) return
@@ -966,6 +973,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     }
 
     private fun loadIntoCore(m: MPVLib, args: LoadArgs) {
+        // Replacing a file is asynchronous. Until FILE_LOADED confirms the new entry, there is no
+        // current video for Android to auto-enter into; this also ignores the outgoing file's tail.
+        mediaLoaded = false
         args.alang?.takeIf { it.isNotBlank() }?.let {
             m.setPropertyString("alang", it)
         }
@@ -1532,6 +1542,12 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // audio and auto-enter stays armed — pressing home in that window would still shrink the
         // app into a miniplayer. libmpv's command queue is thread-safe, so this needs no hop.
         mpv?.command(arrayOf("stop"))
+        // Disarm Android 12+ auto-enter immediately. Teardown may legitimately wait several
+        // seconds for a GIF worker, during which the prepared core still exists.
+        activity.runOnUiThread {
+            mediaLoaded = false
+            publishPipParams()
+        }
         // A GIF worker pulls frames out of the LIVE core, so destroying the handle while it sits in
         // a blocking `screenshot-to-file` (which is exactly what it does on a stalled network
         // stream) is a use-after-free. Wait for it to exit BEFORE tearing the core down — on a
@@ -1570,6 +1586,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         pipRequested = false
         pipSourceHint = null
         corePaused = false
+        mediaLoaded = false
         lastViewport = null
         showWebPlayerUi(true)
         setImmersive(false)
@@ -1635,10 +1652,17 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // otherwise leave metadata (including duration) visible while the event loop and decoder
         // remain stuck at 0:00. Posting also preserves the original reason for waiting until
         // FILE_LOADED: adding sidecars immediately after `loadfile` races the async replacement.
-        if (eventId == 8) {
+        if (eventId == 7) {
+            activity.window.decorView.post {
+                mediaLoaded = false
+                publishPipParams()
+            }
+        } else if (eventId == 8) {
             val loadedCore = mpv
             activity.window.decorView.post {
                 if (loadedCore == null || mpv !== loadedCore) return@post
+                mediaLoaded = true
+                publishPipParams()
                 val pending = pendingSubtitles
                 if (pending != null && loadedCore.getPropertyString("path") == pending.url) {
                     pendingSubtitles = null
