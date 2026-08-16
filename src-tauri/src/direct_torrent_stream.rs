@@ -43,6 +43,12 @@ pub(crate) struct StreamDiagnosticsSnapshot {
 }
 
 impl StreamDiagnostics {
+    pub(crate) fn reset(&self) {
+        if let Ok(mut snapshot) = self.0.lock() {
+            *snapshot = StreamDiagnosticsSnapshot::default();
+        }
+    }
+
     fn record_request(
         &self,
         file_index: usize,
@@ -394,5 +400,25 @@ mod tests {
         assert_eq!(snapshot.file_index, Some(2));
         assert_eq!(snapshot.bytes_served, 2);
         assert!(snapshot.read_finished);
+    }
+
+    #[test]
+    fn a_new_playback_does_not_inherit_the_previous_stream_snapshot() {
+        let diagnostics = StreamDiagnostics::default();
+        diagnostics.record_request(
+            19,
+            Some("bytes=100-199"),
+            StatusCode::PARTIAL_CONTENT,
+            Some(100),
+            Some((100, 200)),
+        );
+
+        diagnostics.reset();
+
+        let snapshot = diagnostics.snapshot();
+        assert_eq!(snapshot.request_count, 0);
+        assert_eq!(snapshot.file_index, None);
+        assert_eq!(snapshot.range_start, None);
+        assert_eq!(snapshot.bytes_served, 0);
     }
 }

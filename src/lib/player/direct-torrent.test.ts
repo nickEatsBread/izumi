@@ -44,7 +44,7 @@ describe('direct torrent buffer governor', () => {
       .filter(([command]) => command === 'torrent_playback_streaming')).toHaveLength(0)
   })
 
-  it('releases the native startup priority stream after mpv accepts the URL', async () => {
+  it('can release the native startup priority stream after a confirmed frame', async () => {
     await directTorrentPlayerAttached(101)
 
     expect(mocks.invoke).toHaveBeenCalledWith('torrent_playback_player_attached', {

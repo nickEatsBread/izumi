@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pickCandidates, pickBest, rankStreams } from './addon'
+import { pickCandidates, pickBest, preferDirectStartupCandidates, rankStreams } from './addon'
 import { RESOLUTION_POINTS } from './score'
 
 const row = (url: string, quality: string, extra: Record<string, unknown> = {}) =>
@@ -56,6 +56,30 @@ describe('pickCandidates', () => {
     const bad = row('bad', '2160p')
     const candidates = pickCandidates([bad, good], 'any', undefined, (s) => s.url === 'bad')
     expect(candidates.map((s) => s.url)).toEqual(['good', 'bad'])
+  })
+})
+
+describe('direct P2P automatic startup order', () => {
+  const torrent = (hash: string, quality: string, sizeMiB: number, seeders: number) => ({
+    infoHash: hash,
+    name: 'Source',
+    title: `[Group] Show - 01 (${quality}) 👤 ${seeders}`,
+    __seeders: seeders,
+    behaviorHints: { filename: `[Group] Show - 01 (${quality}).mkv`, videoSize: sizeMiB * 1024 ** 2 },
+  }) as never
+
+  it('promotes a streamable-size episode within the leading quality tier', () => {
+    const huge = torrent('huge', '1080p', 3_451, 68)
+    const efficient = torrent('efficient', '1080p', 650, 35)
+    const lower = torrent('lower', '720p', 400, 100)
+    expect(preferDirectStartupCandidates([huge, efficient, lower]))
+      .toEqual([efficient, huge, lower])
+  })
+
+  it('keeps an oversized episode when that quality has no faster alternative', () => {
+    const huge = torrent('huge', '1080p', 3_451, 68)
+    const lower = torrent('lower', '720p', 400, 100)
+    expect(preferDirectStartupCandidates([huge, lower])).toEqual([huge, lower])
   })
 })
 
