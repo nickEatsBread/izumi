@@ -355,7 +355,10 @@
     busy = true; error = ''; blockedRetry = null
     chosenLabel = info.filename ?? info.label ?? info.group ?? info.addon ?? ''
     streamPicker.update((current) => current ? { ...current, playbackError: undefined } : current)
-    const automatic = fromAuto || autoImmediate
+    // An explicit tap is manual even when "auto-select immediately" is enabled. The automatic
+    // picker still calls this with `fromAuto = true`; a retry chosen by the user gets the full
+    // native metadata allowance instead of inheriting the short automatic-chain budget.
+    const automatic = fromAuto
     await playStream(pick.media, pick.episode, info.stream, (s: PlayState) => {
       if (s.status === 'playing') streamPicker.set(null)
       else if (s.status === 'error') {
@@ -363,7 +366,7 @@
         // Only the AUTOMATIC path walks on. A source the user picked by hand deserves its error
         // shown, not a silent substitution — and must never be remembered as failed on their
         // behalf, since they may well want to retry it.
-        if ((fromAuto || autoImmediate) && advanceAuto(info)) return
+        if (fromAuto && advanceAuto(info)) return
         error = s.message ?? 'Playback failed.'
         blockedRetry = s.debridBlocked ? info : null
       }

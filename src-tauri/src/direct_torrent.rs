@@ -12,8 +12,8 @@ use std::{
 
 use librqbit::{
     api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, Api,
-    ConnectionOptions, DhtSessionConfig, ListenerOptions, Magnet, ManagedTorrent, Session,
-    SessionOptions, SessionPersistenceConfig,
+    ConnectionOptions, DhtSessionConfig, ListenerMode, ListenerOptions, Magnet, ManagedTorrent,
+    Session, SessionOptions, SessionPersistenceConfig,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
@@ -50,6 +50,17 @@ fn peer_listener_enabled(has_proxy: bool, has_bound_interface: bool) -> bool {
 
 fn upnp_enabled(is_android: bool, has_proxy: bool, has_bound_interface: bool) -> bool {
     !is_android && peer_listener_enabled(has_proxy, has_bound_interface)
+}
+
+fn peer_listener_mode(is_android: bool) -> ListenerMode {
+    if is_android {
+        // Mobile peers are frequently behind NAT and some swarms expose materially more uTP than
+        // TCP endpoints. librqbit 9 keeps uTP opt-in; use both on Android so metadata discovery can
+        // fall back after the initial TCP attempt.
+        ListenerMode::TcpAndUtp
+    } else {
+        ListenerMode::TcpOnly
+    }
 }
 
 /// librqbit 9 accepts one listener address rather than a port range. Retain the old behavior by
@@ -613,6 +624,7 @@ impl DirectTorrentState {
                             )
                         })?;
                         Some(ListenerOptions {
+                            mode: peer_listener_mode(cfg!(target_os = "android")),
                             // Keep the established IPv4 listener behavior while librqbit 9's DHT and
                             // outgoing connector gain dual-stack peer discovery and connections.
                             listen_addr: (Ipv4Addr::UNSPECIFIED, port).into(),
@@ -2016,10 +2028,10 @@ mod tests {
     use super::{
         add_public_trackers, begin_metadata_flight, configured_startup_timeout,
         empty_fastresume_bitfield_len, mbps_to_bps, metadata_prefetch_source,
-        normalized_socks_proxy, peer_listener_enabled, proxy_safe_magnet, ratio_target_bytes,
-        remaining_startup_time, selected_file_downloaded_bytes, selection_needs_restoring,
-        startup_is_current, upload_limit, upnp_enabled, DirectTorrentState, METADATA_TIMEOUT,
-        MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
+        normalized_socks_proxy, peer_listener_enabled, peer_listener_mode, proxy_safe_magnet,
+        ratio_target_bytes, remaining_startup_time, selected_file_downloaded_bytes,
+        selection_needs_restoring, startup_is_current, upload_limit, upnp_enabled,
+        DirectTorrentState, METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
     };
     use std::sync::atomic::Ordering;
 
@@ -2042,6 +2054,10 @@ mod tests {
     fn android_can_listen_for_peers_without_enabling_upnp() {
         assert!(peer_listener_enabled(false, false));
         assert!(!upnp_enabled(true, false, false));
+        assert!(peer_listener_mode(true).tcp_enabled());
+        assert!(peer_listener_mode(true).utp_enabled());
+        assert!(peer_listener_mode(false).tcp_enabled());
+        assert!(!peer_listener_mode(false).utp_enabled());
         assert!(!peer_listener_enabled(true, false));
         assert!(!peer_listener_enabled(false, true));
     }
