@@ -67,6 +67,14 @@ fn available_peer_port() -> Option<u16> {
     ports.find(|port| StdTcpListener::bind((Ipv4Addr::UNSPECIFIED, *port)).is_ok())
 }
 
+/// Windows can add a previously-random DHT port to an excluded Hyper-V/WinNAT range between
+/// launches. Reusing that persisted port then fails with WSAEACCES (10013) before the engine can
+/// start. Port zero keeps the persisted routing table while asking Winsock for a currently-usable
+/// port; other platforms retain librqbit's stable persisted-port behavior.
+fn dht_port_override(is_windows: bool) -> Option<u16> {
+    is_windows.then_some(0)
+}
+
 /// Anime-oriented public trackers used by legacy in addition to a torrent's own announce list.
 /// DHT remains the primary decentralized source; these stop a bare info-hash from depending on a
 /// single discovery mechanism. Dead/duplicate trackers are harmless because rqbit polls them in
@@ -602,6 +610,7 @@ impl DirectTorrentState {
                     None
                 } else {
                     Some(DhtSessionConfig {
+                        port: dht_port_override(cfg!(windows)),
                         persistence: Some(librqbit::dht::DhtPersistenceConfig {
                             config_filename: android_dht_path,
                             ..Default::default()
@@ -2034,7 +2043,7 @@ pub async fn torrent_playback_stop(
 #[cfg(test)]
 mod tests {
     use super::{
-        add_public_trackers, begin_metadata_flight, configured_startup_timeout,
+        add_public_trackers, begin_metadata_flight, configured_startup_timeout, dht_port_override,
         empty_fastresume_bitfield_len, mbps_to_bps, metadata_prefetch_source,
         normalized_socks_proxy, peer_listener_enabled, peer_listener_mode, proxy_safe_magnet,
         ratio_target_bytes, remaining_startup_time, selected_file_downloaded_bytes,
@@ -2066,6 +2075,12 @@ mod tests {
         assert!(peer_listener_mode().utp_enabled());
         assert!(!peer_listener_enabled(true, false));
         assert!(!peer_listener_enabled(false, true));
+    }
+
+    #[test]
+    fn windows_dht_does_not_reuse_a_persisted_udp_port() {
+        assert_eq!(dht_port_override(true), Some(0));
+        assert_eq!(dht_port_override(false), None);
     }
 
     #[test]
