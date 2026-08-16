@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { weekRange, groupByDay, aired, until } from './schedule'
+import { weekRange, groupByDay, remainingSchedulePages, aired, until } from './schedule'
 describe('schedule helpers', () => {
   it('weekRange returns 7-day [start,end] unix seconds', () => {
     const { start, end } = weekRange(new Date('2026-07-02T12:00:00Z'))
@@ -10,6 +10,12 @@ describe('schedule helpers', () => {
     const items = [{ airingAt: start + 3600, episode: 1, media: { id: 1 } }, { airingAt: start + 24*3600 + 3600, episode: 2, media: { id: 2 } }]
     const days = groupByDay(items as any, start)
     expect(days[0].length).toBe(1); expect(days[1].length).toBe(1); expect(days.length).toBe(7)
+  })
+  it('fans out the known schedule remainder with a defensive cap', () => {
+    expect(remainingSchedulePages(4, true)).toEqual([2, 3, 4])
+    expect(remainingSchedulePages(undefined, true)).toEqual([2])
+    expect(remainingSchedulePages(undefined, false)).toEqual([])
+    expect(remainingSchedulePages(99, true)).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
   })
   it('aired() is true at or after the airing time', () => {
     const t = 1_000_000 // unix seconds

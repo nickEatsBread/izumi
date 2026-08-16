@@ -9,7 +9,7 @@
   import { getContextClient } from '@urql/svelte'
   import { listenSafe } from '$lib/util/listen'
   import { SCHEDULE_QUERY } from '$lib/anilist/detail-queries'
-  import { groupByDay, weekRange, type Airing } from '$lib/anilist/schedule'
+  import { groupByDay, remainingSchedulePages, weekRange, type Airing } from '$lib/anilist/schedule'
   import {
     loadMySets, classifyMine, isMine, hasMySources, emptyMySets, type MySets, type MineKind,
   } from '$lib/anilist/my-shows'
@@ -54,25 +54,46 @@
   let loading = $state(true)
   let error = $state('')
 
-  type PageData = { Page?: { airingSchedules?: Airing[]; pageInfo?: { hasNextPage?: boolean } } }
+  type PageData = { Page?: { airingSchedules?: Airing[]; pageInfo?: { hasNextPage?: boolean; lastPage?: number } } }
 
   // Page through EVERY result for the week (cap is a safety net — a week is ~3–6 pages).
   $effect(() => {
     const s = start, e = end
     let cancelled = false
+    const controller = new AbortController()
     ;(async () => {
       loading = true; error = ''
       const all: Airing[] = []
       try {
-        for (let page = 1; page <= 12; page++) {
-          const r = await client.query(SCHEDULE_QUERY, { start: s, end: e, page }).toPromise()
+        const fetchPage = (page: number) => client.query(
+          SCHEDULE_QUERY,
+          { start: s, end: e, page },
+          { fetchOptions: { signal: controller.signal } },
+        ).toPromise()
+        const first = await fetchPage(1)
+        if (cancelled) return
+        if (first.error) throw new Error(first.error.message)
+        const firstPage = (first.data as PageData | undefined)?.Page
+        if (firstPage?.airingSchedules?.length) all.push(...firstPage.airingSchedules)
+
+        // Page 1 tells us the exact page count. The old loop waited for every 1–8 second AniList
+        // response before even starting the next one, turning an ordinary three-page week into a
+        // long serial waterfall. Fetch the bounded remainder together; the shared client still
+        // enforces AniList's 30/min quota and concurrency ceiling.
+        const remainingPages = remainingSchedulePages(
+          firstPage?.pageInfo?.lastPage,
+          firstPage?.pageInfo?.hasNextPage,
+        )
+        if (remainingPages.length) {
+          const rest = await Promise.all(remainingPages.map(fetchPage))
           if (cancelled) return
-          if (r.error) throw new Error(r.error.message)
-          const p = (r.data as PageData | undefined)?.Page
-          if (p?.airingSchedules?.length) all.push(...p.airingSchedules)
-          if (!p?.pageInfo?.hasNextPage) break
+          for (const result of rest) {
+            if (result.error) throw new Error(result.error.message)
+            const page = (result.data as PageData | undefined)?.Page
+            if (page?.airingSchedules?.length) all.push(...page.airingSchedules)
+          }
         }
-        if (!cancelled) airings = all
+        if (!cancelled) airings = all.sort((a, b) => a.airingAt - b.airingAt)
       } catch (err) {
         if (!cancelled) {
           const primaryError = err instanceof Error ? err.message : String(err)
@@ -94,7 +115,7 @@
       }
       if (!cancelled) loading = false
     })()
-    return () => { cancelled = true }
+    return () => { cancelled = true; controller.abort() }
   })
 
   // ── Personalization ──────────────────────────────────────────────────────────

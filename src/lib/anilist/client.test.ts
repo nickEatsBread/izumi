@@ -14,7 +14,7 @@ vi.mock('$lib/stremio/idmap', () => ({
 
 import { gql } from '@urql/core'
 import { anilistToken } from './auth'
-import { anilist, parseRateLimitHeaders } from './client'
+import { anilist, anilistFetch, anilistRequestPriority, parseRateLimitHeaders } from './client'
 import { anilistDegraded, clearAniListDegraded } from './degraded'
 import { PAGE_QUERY } from './queries'
 import { MEDIA_BY_ID } from './detail-queries'
@@ -275,6 +275,22 @@ describe('anilist client', () => {
     expect(mocks.get).not.toHaveBeenCalled()
     expect(get(anilistDegraded)).toBeNull()
   })
+
+  it('does not turn navigation cancellation into backup-provider traffic', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const body = JSON.stringify({
+      query: 'query Page { Page { media { id } } }',
+      variables: { page: 987 },
+    })
+
+    await expect(anilistFetch('https://graphql.anilist.co', {
+      method: 'POST', body, signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(mocks.post).not.toHaveBeenCalled()
+    expect(mocks.get).not.toHaveBeenCalled()
+    expect(get(anilistDegraded)).toBeNull()
+  })
 })
 
 describe('AniList rate-limit headers', () => {
@@ -289,5 +305,16 @@ describe('AniList rate-limit headers', () => {
       'x-ratelimit-remaining': '0',
       'x-ratelimit-reset': '2000000000',
     }))).toEqual({ limit: 30, remaining: 0, resetAtMs: 2_000_000_000_000 })
+  })
+
+  it('puts interactive navigation ahead of lazy home rows without bypassing the quota', () => {
+    const body = (query: string) => JSON.stringify({ query })
+    expect(anilistRequestPriority(body('mutation Save { SaveMediaListEntry { id } }'))).toBe(0)
+    expect(anilistRequestPriority(body('query MediaById { Media { id } }'))).toBe(1)
+    expect(anilistRequestPriority(body('query Schedule { Page { pageInfo { lastPage } } }'))).toBe(1)
+    expect(anilistRequestPriority(body('query Hero { Page { media { id } } }'))).toBe(2)
+    expect(anilistRequestPriority(body('query Lists { MediaListCollection { lists { name } } }'))).toBe(4)
+    expect(anilistRequestPriority(body('query Page { Page { media { id } } }'))).toBe(7)
+    expect(anilistRequestPriority('not-json')).toBe(3)
   })
 })

@@ -38,7 +38,13 @@ function headersToObject(h?: HeadersInit): Record<string, string> {
 // under urql's concurrent queries → "resource id N is invalid"). We materialize the whole
 // response in Rust and hand urql a real `Response`, so the 429 `Retry-After` header and body
 // parsing work exactly as with a browser fetch — just without CORS or a streamed resource.
-async function nativeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+async function nativeFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  onRequestStart?: () => void,
+): Promise<Response> {
+  if (init?.signal?.aborted) throw new DOMException('The request was aborted', 'AbortError')
+  onRequestStart?.()
   const url = typeof input === 'string' ? input : input.toString()
   const body = typeof init?.body === 'string' ? init.body : ''
   const headers = headersToObject(init?.headers)
@@ -60,9 +66,33 @@ const limiter = new Bottleneck({
   reservoir: RATE_LIMIT,
   reservoirRefreshAmount: RATE_LIMIT,
   reservoirRefreshInterval: 60_000,
-  maxConcurrent: 2,
-  minTime: 220,
+  // The reservoir is the quota guard; concurrency is only a latency control. Two-at-a-time made
+  // Home's independent rows resolve in waves and made Schedule's remaining pages sit behind them.
+  // AniList accepts a modest burst (the server still reports/decrements the same 30/min quota), so
+  // let one screen's visible work overlap while retaining a small start-time stagger.
+  maxConcurrent: 6,
+  minTime: 100,
 })
+
+/** Bottleneck priority for a serialized GraphQL request (0 = first, 9 = last). A navigation to a
+ * detail/search/schedule screen must not wait behind lazy catalogue rows from the page being left. */
+export function anilistRequestPriority(body: BodyInit | null | undefined): number {
+  if (typeof body !== 'string') return 3
+  try {
+    const parsed = JSON.parse(body) as { query?: unknown }
+    if (typeof parsed.query !== 'string') return 3
+    if (/\bmutation\b/.test(parsed.query)) return 0
+    const operation = /\bquery\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(parsed.query)?.[1]
+    if (!operation) return 3
+    if (/^(MediaById|ReadingMediaById|Schedule|Search|SearchAll|SearchCount|SearchCountAll)$/.test(operation)) return 1
+    if (/^Hero/.test(operation)) return 2
+    if (/^(Lists|ReadingLists|ListIds|MediaByIds|MediaByMal|ReadingMediaByMal)$/.test(operation)) return 4
+    if (/^(Page|PageAll|PersonalRecommendations)$/.test(operation)) return 7
+    return 3
+  } catch {
+    return 3
+  }
+}
 
 export interface AniListRateLimitHeaders {
   limit?: number
@@ -130,10 +160,15 @@ let cooldownUntil = 0
 
 // On 429, honor `Retry-After` (seconds) or `X-RateLimit-Reset` (unix seconds), pause, and
 // retry (bounded) — the request eventually succeeds instead of surfacing as an error.
-async function fetchWithBackoff(input: RequestInfo | URL, init?: RequestInit, attempt = 0): Promise<Response> {
+async function fetchWithBackoff(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  attempt = 0,
+  onRequestStart?: () => void,
+): Promise<Response> {
   const wait = cooldownUntil - Date.now()
   if (wait > 0) await sleep(wait)
-  const res = await nativeFetch(input, init)
+  const res = await nativeFetch(input, init, onRequestStart)
   await syncReservoirFromHeaders(res)
   if (res.status !== 429 || attempt >= 5) return res
   const retryAfter = res.headers.get('retry-after')
@@ -145,7 +180,7 @@ async function fetchWithBackoff(input: RequestInfo | URL, init?: RequestInit, at
   ms = Math.min(Math.max(ms, 1000), 65_000)
   cooldownUntil = Date.now() + ms
   await sleep(ms)
-  return fetchWithBackoff(input, init, attempt + 1)
+  return fetchWithBackoff(input, init, attempt + 1, onRequestStart)
 }
 
 /** AniList stays authoritative. Only named, public catalog queries can cross this boundary: after a
@@ -197,7 +232,25 @@ async function fetchWithCatalogFallback(input: RequestInfo | URL, init?: Request
   try {
     // Only actual AniList traffic spends AniList reservoir tokens. Once the circuit is open,
     // Jikan-backed rows must not stall behind or drain the failed service's quota queue.
-    const response = await limiter.schedule(() => fetchWithBackoff(input, init)) as Response
+    const response = await limiter.schedule(
+      { priority: anilistRequestPriority(init?.body) },
+      async () => {
+        // urql aborts a fetch when its component is unmounted. Bottleneck has already debited the
+        // reservoir by the time this callback starts, so refund a queued job that was cancelled
+        // before it touched the network. Without this, browsing quickly through screens could burn
+        // all 30 local tokens on requests AniList never received, freezing useful work until the
+        // next minute boundary.
+        let requestStarted = false
+        try {
+          return await fetchWithBackoff(input, init, 0, () => { requestStarted = true })
+        } catch (error) {
+          if (!requestStarted && error instanceof Error && error.name === 'AbortError') {
+            await limiter.incrementReservoir(1)
+          }
+          throw error
+        }
+      },
+    ) as Response
     if (!backup) return response
     const failure = await aniListCatalogFailure(response)
     if (!failure) {
@@ -208,6 +261,9 @@ async function fetchWithCatalogFallback(input: RequestInfo | URL, init?: Request
     try { return await fetchFromBackup(backup) }
     catch { return response }
   } catch (error) {
+    // Navigation cancellation is expected, not an AniList outage. Starting Kitsu/Jikan work for a
+    // screen that no longer exists only creates more contention for the screen being entered.
+    if (error instanceof Error && error.name === 'AbortError') throw error
     if (!backup) throw error
     markAniListDegraded(aniListNetworkFailure(error))
     try { return await fetchFromBackup(backup) }
@@ -215,7 +271,8 @@ async function fetchWithCatalogFallback(input: RequestInfo | URL, init?: Request
   }
 }
 
-const limitedFetch: typeof fetch = (input, init) =>
+/** Exported for transport-level regression tests; application callers should use `anilist`. */
+export const anilistFetch: typeof fetch = (input, init) =>
   fetchWithCatalogFallback(input as RequestInfo | URL, init)
 
 function createAnilistClient() {
@@ -236,7 +293,7 @@ function createAnilistClient() {
       })),
       fetchExchange,
     ],
-    fetch: limitedFetch,
+    fetch: anilistFetch,
   })
 }
 
