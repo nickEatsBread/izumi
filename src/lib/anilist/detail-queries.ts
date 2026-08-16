@@ -133,7 +133,7 @@ export const COUNTRIES = [
 export const SCHEDULE_QUERY = gql`
   query Schedule($start: Int!, $end: Int!, $page: Int = 1) {
     Page(page: $page, perPage: 50) {
-      pageInfo { hasNextPage }
+      pageInfo { hasNextPage lastPage }
       airingSchedules(airingAt_greater: $start, airingAt_lesser: $end, sort: TIME) {
         airingAt episode
         media { ...ScheduleMediaFields }

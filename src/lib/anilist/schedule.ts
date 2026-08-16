@@ -15,6 +15,15 @@ export function groupByDay(items: Airing[], start: number): Airing[][] {
   return days
 }
 
+/** Pages after page 1 for a weekly schedule response. AniList supplies `lastPage`; the has-next
+ * fallback preserves compatibility with cached/older responses, and the cap prevents a malformed
+ * reply from turning one screen into an unbounded request burst. */
+export function remainingSchedulePages(lastPage?: number, hasNextPage = false): number[] {
+  const reported = Number.isFinite(lastPage) ? Math.floor(lastPage!) : (hasNextPage ? 2 : 1)
+  const bounded = Math.min(12, Math.max(1, reported))
+  return Array.from({ length: bounded - 1 }, (_, index) => index + 2)
+}
+
 /** Local HH:MM airing time. */
 export const airTime = (unix: number) =>
   new Date(unix * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
