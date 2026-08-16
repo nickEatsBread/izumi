@@ -60,12 +60,19 @@ describe('pickCandidates', () => {
 })
 
 describe('direct P2P automatic startup order', () => {
-  const torrent = (hash: string, quality: string, sizeMiB: number, seeders: number) => ({
+  const torrent = (
+    hash: string,
+    quality: string,
+    sizeMiB: number,
+    seeders?: number,
+    extra: Record<string, unknown> = {},
+  ) => ({
     infoHash: hash,
     name: 'Source',
-    title: `[Group] Show - 01 (${quality}) 👤 ${seeders}`,
+    title: `[Group] Show - 01 (${quality})${seeders == null ? '' : ` 👤 ${seeders}`}`,
     __seeders: seeders,
     behaviorHints: { filename: `[Group] Show - 01 (${quality}).mkv`, videoSize: sizeMiB * 1024 ** 2 },
+    ...extra,
   }) as never
 
   it('promotes a streamable-size episode within the leading quality tier', () => {
@@ -80,6 +87,25 @@ describe('direct P2P automatic startup order', () => {
     const huge = torrent('huge', '1080p', 3_451, 68)
     const lower = torrent('lower', '720p', 400, 100)
     expect(preferDirectStartupCandidates([huge, lower])).toEqual([huge, lower])
+  })
+
+  it('avoids DHT-only metadata when a same-quality source has pinned metadata and peers', () => {
+    const unknownPack = torrent('unknown-pack', '1080p', 72_000)
+    const metadataPack = torrent('metadata-pack', '1080p', 13_000, 4, {
+      __torrentUrl: 'https://example.test/metadata.torrent',
+    })
+    const lower = torrent('lower', '720p', 700, 100)
+    expect(preferDirectStartupCandidates([unknownPack, metadataPack, lower]))
+      .toEqual([metadataPack, unknownPack, lower])
+  })
+
+  it('does not displace a same-quality winner with confirmed peers', () => {
+    const healthy = torrent('healthy', '1080p', 3_000, 50)
+    const metadataPack = torrent('metadata-pack', '1080p', 13_000, 4, {
+      __torrentUrl: 'https://example.test/metadata.torrent',
+    })
+    expect(preferDirectStartupCandidates([healthy, metadataPack]))
+      .toEqual([healthy, metadataPack])
   })
 })
 
