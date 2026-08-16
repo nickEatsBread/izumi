@@ -8,7 +8,7 @@ import { malToken } from "$lib/trackers/config";
 // exportJson reads the durable stores anyway, so pushing on overlay edits would be pure noise).
 import { durableHistory } from "$lib/player/history";
 import { durablePositions } from "$lib/player/progress";
-import { sourceOrigins } from "$lib/player/source-origin";
+import { episodeSourceOrigins, sourceOrigins } from "$lib/player/source-origin";
 import { exportJson, importJson } from "$lib/player/history-io";
 import {
   applyManualSnapshot,
@@ -78,7 +78,8 @@ export async function pullWatchProgress(): Promise<number> {
   for (const record of await read("watch")) {
     try {
       const merged = importJson(record.payload, { includeHistory });
-      imported += merged.imported + merged.positionsImported + merged.originsImported;
+      imported += merged.imported + merged.positionsImported + merged.originsImported
+        + merged.episodeOriginsImported;
     } catch {
       /* skip malformed peer record */
     }
@@ -150,6 +151,9 @@ export function initDeviceSync() {
     if (primed) scheduleWatchPush();
   });
   sourceOrigins.subscribe(() => {
+    if (primed) scheduleWatchPush();
+  });
+  episodeSourceOrigins.subscribe(() => {
     if (primed) scheduleWatchPush();
   });
   anilistToken.subscribe(() => {

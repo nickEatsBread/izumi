@@ -96,6 +96,10 @@ export const sourcePriority = persisted<string[]>('source-priority', [])
 /** `prefer` ranks the trusted sources first but still uses the others; `strict` uses ONLY them and
  *  reports an empty result rather than quietly playing a source that was excluded on purpose. */
 export const sourcePriorityMode = persisted<SourcePriorityMode>('source-priority-mode', 'prefer')
+/** How Continue Watching uses recent source memory. `resumed` is episode-specific and only applies
+ * when that episode has saved progress; `always` applies the title's latest source to new episodes. */
+export type ContinueSourcePreference = 'resumed' | 'always' | 'never'
+export const continueSourcePreference = persisted<ContinueSourcePreference>('continue-source-preference', 'resumed')
 
 // --- Source picker ---
 /** Show dead/down sources (uncached torrents with no seeders) in the picker.

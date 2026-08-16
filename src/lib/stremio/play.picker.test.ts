@@ -4,11 +4,13 @@ import { get, readable, writable } from 'svelte/store'
 const picker = writable<Record<string, unknown> | null>(null)
 const connecting = writable<Record<string, unknown> | null>(null)
 const rememberedSources = writable<Record<number, unknown>>({})
+const rememberedEpisodeSources = writable<Record<string, unknown>>({})
 const hasConfiguredExtensions = vi.fn(async () => true)
 const runningExtensionCount = vi.fn(async () => 1)
 const resolveOnlineStreams = vi.fn((..._args: unknown[]): Promise<unknown[]> => new Promise(() => {}))
 const fetchMediaById = vi.fn()
 const automaticSources = writable(true)
+const continueSourcePreference = writable<'resumed' | 'always' | 'never'>('resumed')
 
 vi.mock('./sources', () => ({
   enabledAddonUrls: readable<string[]>([]),
@@ -68,6 +70,7 @@ vi.mock('$lib/settings/ui', () => ({
   torrentUpstreamCapacityMbps: readable(0),
   sourcePriority: readable([]),
   sourcePriorityMode: readable('prefer'),
+  continueSourcePreference,
   seadexAnnotations: readable(false),
 }))
 vi.mock('$lib/player/session', () => ({
@@ -93,6 +96,7 @@ vi.mock('$lib/anilist/fetch-media', () => ({
 }))
 vi.mock('$lib/player/source-origin', () => ({
   sourceOrigins: rememberedSources,
+  episodeSourceOrigins: rememberedEpisodeSources,
   rememberSourceOrigin: vi.fn(),
 }))
 
@@ -103,6 +107,7 @@ const {
   REMEMBERED_SOURCE_PRIORITY_MS,
   resumeEpisode,
 } = await import('./play')
+const { durablePositions } = await import('$lib/player/progress')
 
 const media = {
   id: 1,
@@ -118,6 +123,9 @@ afterEach(() => {
   picker.set(null)
   connecting.set(null)
   rememberedSources.set({})
+  rememberedEpisodeSources.set({})
+  durablePositions.set({})
+  continueSourcePreference.set('resumed')
   fetchMediaById.mockReset()
   vi.clearAllMocks()
 })
@@ -171,6 +179,7 @@ describe('manual episode source chooser', () => {
 
 describe('Continue Watching source resolution', () => {
   it('starts the progressive picker instead of blocking on a pinned remembered provider', async () => {
+    continueSourcePreference.set('always')
     fetchMediaById.mockResolvedValue(media)
     resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
     rememberedSources.set({
@@ -196,6 +205,7 @@ describe('Continue Watching source resolution', () => {
     vi.useFakeTimers()
     try {
       fetchMediaById.mockResolvedValue(media)
+      continueSourcePreference.set('always')
       resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
       rememberedSources.set({
         1: { origin: { kind: 'online-extension', id: 'remembered-provider' }, updatedAt: Date.now() },
@@ -217,6 +227,7 @@ describe('Continue Watching source resolution', () => {
 
   it('does not prioritize a source remembered 30 days ago', async () => {
     fetchMediaById.mockResolvedValue(media)
+    continueSourcePreference.set('always')
     resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
     rememberedSources.set({
       1: {
@@ -232,6 +243,61 @@ describe('Continue Watching source resolution', () => {
       hidden: false,
     }))
     expect(get(picker)).not.toMatchObject({ continuationPending: true })
+
+    cancelResolve()
+    await resolving
+  })
+
+  it('defaults to the exact source of an episode with saved progress', async () => {
+    fetchMediaById.mockResolvedValue(media)
+    resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
+    durablePositions.set({ '1:2': { pos: 300, dur: 1400, updatedAt: Date.now() } })
+    rememberedEpisodeSources.set({
+      '1:2': {
+        origin: { kind: 'online-extension', id: 'episode-source' },
+        updatedAt: Date.now(),
+      },
+    })
+
+    const resolving = resumeEpisode(media as never, 2, () => {})
+    await vi.waitFor(() => expect(get(picker)).toMatchObject({
+      hidden: true,
+      continuationPending: true,
+    }))
+
+    cancelResolve()
+    await resolving
+  })
+
+  it('uses normal ranking for an unwatched episode by default', async () => {
+    fetchMediaById.mockResolvedValue(media)
+    resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
+    rememberedSources.set({
+      1: { origin: { kind: 'online-extension', id: 'title-source' }, updatedAt: Date.now() },
+    })
+    rememberedEpisodeSources.set({
+      '1:2': { origin: { kind: 'online-extension', id: 'episode-source' }, updatedAt: Date.now() },
+    })
+
+    const resolving = resumeEpisode(media as never, 2, () => {})
+    await vi.waitFor(() => expect(get(picker)).toMatchObject({ hidden: false }))
+    expect(get(picker)).not.toMatchObject({ continuationPending: true })
+
+    cancelResolve()
+    await resolving
+  })
+
+  it('can disable source preference even for a resumed episode', async () => {
+    continueSourcePreference.set('never')
+    fetchMediaById.mockResolvedValue(media)
+    resolveOnlineStreams.mockImplementation(() => new Promise(() => {}))
+    durablePositions.set({ '1:2': { pos: 300, dur: 1400, updatedAt: Date.now() } })
+    rememberedEpisodeSources.set({
+      '1:2': { origin: { kind: 'online-extension', id: 'episode-source' }, updatedAt: Date.now() },
+    })
+
+    const resolving = resumeEpisode(media as never, 2, () => {})
+    await vi.waitFor(() => expect(get(picker)).toMatchObject({ hidden: false }))
 
     cancelResolve()
     await resolving

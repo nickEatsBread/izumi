@@ -16,7 +16,11 @@ export interface RememberedSource {
 }
 
 export const MAX_REMEMBERED_SOURCES = 100
+export const MAX_REMEMBERED_EPISODE_SOURCES = 500
 export const sourceOrigins = persisted<Record<number, RememberedSource>>('player-source-origins', {})
+/** Exact per-episode source memory. The title-wide store above remains useful for the optional
+ * "always continue this title's last source" mode; the default resume mode reads this store. */
+export const episodeSourceOrigins = persisted<Record<string, RememberedSource>>('player-episode-source-origins', {})
 
 const cleanString = (value: unknown, max = 256) =>
   typeof value === 'string' && value.length > 0 && value.length <= max ? value : undefined
@@ -53,11 +57,33 @@ export function capRememberedSources(entries: Record<number, RememberedSource>):
   ) as Record<number, RememberedSource>
 }
 
-export function rememberSourceOrigin(mediaId: number, origin: StreamOrigin | undefined, release?: SourceRelease): void {
+function capRememberedEpisodeSources(entries: Record<string, RememberedSource>): Record<string, RememberedSource> {
+  return Object.fromEntries(
+    Object.entries(entries)
+      .sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
+      .slice(0, MAX_REMEMBERED_EPISODE_SOURCES),
+  )
+}
+
+const episodeSourceKey = (mediaId: number, episode: number) => `${mediaId}:${episode}`
+const validEpisodeSourceKey = (key: string) => /^[1-9]\d*:[1-9]\d*$/.test(key)
+
+export function rememberSourceOrigin(
+  mediaId: number,
+  origin: StreamOrigin | undefined,
+  release?: SourceRelease,
+  episode?: number,
+): void {
   if (get(incognito)) return // never persist which source an incognito play used
   const valid = validRememberedSource({ origin, release, updatedAt: Date.now() })
   if (!Number.isInteger(mediaId) || !valid) return
   sourceOrigins.update((current) => capRememberedSources({ ...current, [mediaId]: valid }))
+  if (episode != null && Number.isInteger(episode)) {
+    episodeSourceOrigins.update((current) => capRememberedEpisodeSources({
+      ...current,
+      [episodeSourceKey(mediaId, episode)]: valid,
+    }))
+  }
 }
 
 export function forgetSourceOrigin(mediaId: number): void {
@@ -67,9 +93,16 @@ export function forgetSourceOrigin(mediaId: number): void {
     delete next[mediaId]
     return next
   })
+  const prefix = `${mediaId}:`
+  episodeSourceOrigins.update((current) => Object.fromEntries(
+    Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
+  ))
 }
 
-export function clearSourceOrigins(): void { sourceOrigins.set({}) }
+export function clearSourceOrigins(): void {
+  sourceOrigins.set({})
+  episodeSourceOrigins.set({})
+}
 
 /** Last-write-wins merge used by iroh/import. Returns the number of accepted newer records. */
 export function mergeSourceOrigins(value: unknown): number {
@@ -86,5 +119,21 @@ export function mergeSourceOrigins(value: unknown): number {
     }
   }
   if (imported) sourceOrigins.set(capRememberedSources(next))
+  return imported
+}
+
+export function mergeEpisodeSourceOrigins(value: unknown): number {
+  if (!value || typeof value !== 'object') return 0
+  const next = { ...get(episodeSourceOrigins) }
+  let imported = 0
+  for (const [key, raw] of Object.entries(value)) {
+    const incoming = validRememberedSource(raw)
+    if (!validEpisodeSourceKey(key) || !incoming) continue
+    if (!next[key] || incoming.updatedAt > next[key].updatedAt) {
+      next[key] = incoming
+      imported++
+    }
+  }
+  if (imported) episodeSourceOrigins.set(capRememberedEpisodeSources(next))
   return imported
 }
