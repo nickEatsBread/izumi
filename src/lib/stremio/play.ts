@@ -1504,7 +1504,12 @@ export async function playEpisode(
   // resolving state. A newer request replaces the controller; the superseded caller must not emit
   // a late idle/error that can overwrite that newer request's state.
   const settleCancellation = () => {
-    if (committedResolveAborts.delete(abort)) return
+    // A source selection transfers playback reporting to StreamPicker's own playStream callback,
+    // but the original caller (ContinueCard, episode row, hero CTA) still owns its local spinner.
+    // Settle that caller before going silent or a home page kept mounted behind the player retains
+    // `resolving` forever after Back. This is distinct from a newer play superseding this resolve:
+    // that case must remain silent because both requests can share the same local state owner.
+    if (committedResolveAborts.delete(abort)) return onState({ status: 'idle' })
     if (resolveAbort === null) {
       finishResolveTrace(trace, 'source discovery canceled')
       onState({ status: 'idle' })

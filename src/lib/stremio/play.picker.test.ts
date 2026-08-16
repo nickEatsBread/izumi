@@ -102,6 +102,7 @@ vi.mock('$lib/player/source-origin', () => ({
 
 const {
   cancelResolve,
+  commitResolveSelection,
   playEpisode,
   REMEMBERED_SOURCE_MAX_AGE_MS,
   REMEMBERED_SOURCE_PRIORITY_MS,
@@ -178,6 +179,21 @@ describe('manual episode source chooser', () => {
 })
 
 describe('Continue Watching source resolution', () => {
+  it('settles the card spinner when source selection takes over playback', async () => {
+    fetchMediaById.mockResolvedValue(media)
+    let finishDiscovery!: (streams: unknown[]) => void
+    resolveOnlineStreams.mockImplementation(() => new Promise((resolve) => { finishDiscovery = resolve }))
+    const states: string[] = []
+    const resolving = resumeEpisode(media as never, 2, (state) => states.push(state.status))
+
+    await vi.waitFor(() => expect(get(picker)).toMatchObject({ episode: 2, resolving: true }))
+    commitResolveSelection()
+    finishDiscovery([])
+    await resolving
+
+    expect(states.at(-1)).toBe('idle')
+  })
+
   it('starts the progressive picker instead of blocking on a pinned remembered provider', async () => {
     continueSourcePreference.set('always')
     fetchMediaById.mockResolvedValue(media)
