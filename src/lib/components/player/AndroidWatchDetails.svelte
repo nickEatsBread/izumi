@@ -10,7 +10,7 @@
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
   import { fetchDiscussion } from '$lib/comments'
-  import { embedResizeHeight, preferredMobileDiscussion } from '$lib/comments/mobile'
+  import { discussionBrowserUrl, embedResizeHeight, preferredMobileDiscussion } from '$lib/comments/mobile'
   import { hideSpoilers } from '$lib/settings/ui'
   import { connecting } from '$lib/player/session'
   import { localHistory, sessionProgress } from '$lib/player/history'
@@ -22,6 +22,7 @@
   import SkipBack from '@lucide/svelte/icons/skip-back'
   import SkipForward from '@lucide/svelte/icons/skip-forward'
   import ArrowBigUp from '@lucide/svelte/icons/arrow-big-up'
+  import ExternalLink from '@lucide/svelte/icons/external-link'
 
   type Tab = 'comments' | 'episodes' | 'related'
 
@@ -131,6 +132,7 @@
     fetchDiscussion(media, ep, applyThreads).then(applyThreads)
   })
   const discussion = $derived(preferredMobileDiscussion(threads))
+  const discussionPage = $derived(discussion?.kind === 'disqus' ? discussionBrowserUrl(discussion.thread) : null)
   const tabs = $derived<Tab[]>(
     commentsLoading || discussion ? ['comments', 'episodes', 'related'] : ['episodes', 'comments', 'related'],
   )
@@ -223,6 +225,15 @@
     tabTouched = true
     active = tab
     if (scroll) requestAnimationFrame(() => tabsEl?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }
+
+  async function openDiscussionInBrowser() {
+    if (!discussionPage) return
+    try {
+      await invoke('plugin:extplayer|open_browser', { payload: { url: discussionPage } })
+    } catch {
+      await openUrl(discussionPage)
+    }
   }
 
   let malProgress = $state(0)
@@ -347,6 +358,14 @@
         {#if commentsLoading}
           <div class="space-y-2">{#each Array.from({ length: 4 }) as _}<div class="h-20 animate-pulse rounded-xl bg-white/[0.06]"></div>{/each}</div>
         {:else if discussion?.kind === 'disqus'}
+          {#if discussionPage}
+            <div class="mb-2 flex justify-end">
+              <button onclick={openDiscussionInBrowser}
+                class="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-white/85 active:bg-white/20">
+                Google sign-in in browser <ExternalLink size={14} />
+              </button>
+            </div>
+          {/if}
           <iframe bind:this={disqusFrame} title="Episode comments" src={discussion.embedSrc} scrolling="no"
             style:height={`${disqusHeight}px`} class="min-h-[30rem] w-full rounded-xl border-0 bg-[#0e0e0e]"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>

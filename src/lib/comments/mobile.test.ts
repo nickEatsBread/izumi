@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { embedResizeHeight, mobileEmbedSrc, preferredMobileDiscussion } from './mobile'
+import { discussionBrowserUrl, embedResizeHeight, mobileEmbedSrc, preferredMobileDiscussion } from './mobile'
 import type { DiscussionThread } from './types'
 
 const thread = (source: string, extra: Partial<DiscussionThread> = {}): DiscussionThread => ({
@@ -23,6 +23,28 @@ describe('preferredMobileDiscussion', () => {
 
   it('returns nothing when neither source has renderable comments', () => {
     expect(preferredMobileDiscussion([thread('Reddit'), thread('AniList')])).toBeNull()
+  })
+})
+
+describe('discussionBrowserUrl', () => {
+  it('uses the canonical page carried by a Disqus embed', () => {
+    const canonical = 'https://comments.example/episode/1'
+    const embedUrl = `https://disqus.com/embed/comments/?f=anime&t_u=${encodeURIComponent(canonical)}`
+    expect(discussionBrowserUrl(thread('Disqus', { embedUrl }))).toBe(canonical)
+  })
+
+  it('prefers an explicit HTTPS thread URL', () => {
+    expect(discussionBrowserUrl(thread('Disqus', {
+      url: 'https://comments.example/thread',
+      embedUrl: 'https://disqus.com/embed/comments/?t_u=https%3A%2F%2Ffallback.example',
+    }))).toBe('https://comments.example/thread')
+  })
+
+  it('never hands an unsafe URL to the system browser', () => {
+    expect(discussionBrowserUrl(thread('Disqus', {
+      url: 'javascript:alert(1)',
+      embedUrl: 'https://disqus.com/embed/comments/?t_u=http%3A%2F%2Finsecure.example',
+    }))).toBeNull()
   })
 })
 
