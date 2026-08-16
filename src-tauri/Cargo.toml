@@ -129,6 +129,12 @@ gif = "0.13"
 # so it is never compiled into the desktop/Deck builds. Registered unconditionally on mobile.
 tauri-plugin-haptics = "2"
 
+[target.'cfg(target_os = "android")'.dependencies]
+# Reqwest's rustls backend verifies certificates through Android's system trust store. Its
+# verifier must be initialized from a JVM-owned thread before Tauri starts any async networking.
+jni = "0.22.4"
+rustls-platform-verifier = "0.7.0"
+
 # Raw Win32 for true borderless fullscreen + mpv-child input passthrough, and the
 # WebView2 COM call to make the webview background transparent (Stremio's model:
 # opaque window + transparent webview). windows 0.61 + webview2-com 0.38 match

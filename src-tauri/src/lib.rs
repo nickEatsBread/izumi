@@ -1,4 +1,6 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[cfg(target_os = "android")]
+mod android_tls;
 mod cache_gc;
 mod direct_torrent;
 mod direct_torrent_range;
