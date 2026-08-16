@@ -27,6 +27,7 @@ dependencies {
     // The Tauri Android runtime (Plugin, Invoke, annotations). Resolved from the app's
     // included tauri-android build when the plugin is assembled by the CLI.
     implementation(project(":tauri-android"))
+    testImplementation("junit:junit:4.13.2")
     // Release/preview CI stages an arm64 AAR built from the pinned upstream source commit in
     // scripts/ci/libmpv-android.sh. It includes libass 0.17.5; Maven Central 1.0.0 still embeds
     // vulnerable 0.17.4. Keep the Central fallback only for IDE/debug setup until upstream
