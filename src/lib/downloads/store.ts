@@ -1,12 +1,14 @@
 import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { getCurrentWindow, ProgressBarStatus } from '@tauri-apps/api/window'
 import { resolveDownloadUrl } from '$lib/stremio/play'
 import { torrentEngineNetworkOptions } from '$lib/player/direct-torrent'
 import { downloadDir, downloadConcurrency } from '$lib/settings/ui'
 import { downloads, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem, type DownloadPreferences } from './state'
 import { getEpisodeMeta } from '$lib/anizip'
 import { isAndroid } from '$lib/platform'
+import { downloadTaskbarProgress } from './taskbar'
 import type { Media } from '$lib/anilist/types'
 
 // Download queue + actions + event wiring. Reads data from ./state (which play.ts
@@ -167,13 +169,37 @@ function syncDownloadForeground() {
   } }).catch(() => {})
 }
 
+// Desktop shells expose a native app/taskbar progress indicator (Windows taskbar, macOS Dock,
+// and supported Linux launchers). Only send when the visible integer state changes, so the native
+// bridge does not receive one IPC call per torrent/HTTP progress event when several jobs run.
+let taskbarSignature = ''
+function syncDownloadTaskbar(snapshot: Record<string, DownloadItem>) {
+  if (get(isAndroid)) return
+  const state = downloadTaskbarProgress(Object.values(snapshot))
+  const signature = `${state.status}:${state.status === 'normal' ? state.progress : ''}`
+  if (signature === taskbarSignature) return
+  taskbarSignature = signature
+  const status = state.status === 'normal'
+    ? ProgressBarStatus.Normal
+    : state.status === 'indeterminate'
+      ? ProgressBarStatus.Indeterminate
+      : ProgressBarStatus.None
+  void getCurrentWindow().setProgressBar({
+    status,
+    ...(state.status === 'normal' ? { progress: state.progress } : {}),
+  }).catch(() => {})
+}
+
 // Attached once at app start (from the app layout). Wires progress/done/paused
 // events and resumes any download interrupted by an app kill.
 let attached = false
 export function attachDownloadEvents() {
   if (attached) return
   attached = true
-  downloads.subscribe(syncDownloadForeground)
+  downloads.subscribe((snapshot) => {
+    syncDownloadForeground()
+    syncDownloadTaskbar(snapshot)
+  })
   listen<[string, number, number, number]>('download-progress', (e) => {
     const [id, received, total, speed] = e.payload
     // Monotonic: ignore any backward value (a stray/duplicate stream) so the bar
