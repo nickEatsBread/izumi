@@ -1,4 +1,4 @@
-import { env } from '$env/dynamic/public'
+import { PUBLIC_DISCUSS_ANIME_API_KEY } from '$env/static/public'
 import { phttp } from '$lib/net/http'
 import type { Media } from '$lib/anilist/types'
 import type { DiscussionThread } from './types'
@@ -109,7 +109,10 @@ export async function fetchDiscussAnimeThread(
   media: Media,
   episode: number | null | undefined,
 ): Promise<DiscussionThread[]> {
-  const key = env.PUBLIC_DISCUSS_ANIME_API_KEY?.trim()
+  // Tauri ships an adapter-static client with no server runtime from which `$env/dynamic/public`
+  // could populate values. Bake this public application key into each platform bundle at build
+  // time; the release workflow already supplies it to every build job.
+  const key = PUBLIC_DISCUSS_ANIME_API_KEY?.trim()
   if (!key || !API_KEY_PATTERN.test(key)) {
     if (!warnedMissingKey) {
       warnedMissingKey = true

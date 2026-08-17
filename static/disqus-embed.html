@@ -56,7 +56,11 @@
         onload="this.onload=null;this.rel='stylesheet'" />
   <style>
     html, body { margin: 0; padding: 0; background: #0a0a0b; color-scheme: dark; font-family: 'Roboto', sans-serif; }
-    html.izumi-expand, html.izumi-expand body { overflow: hidden; }
+    /* Keep scrolling as a fallback while expanded. The Android parent normally grows this frame to
+       the reported content height, but the first report can be late (or absent after a renderer
+       reload). Hiding overflow here together with scrolling=no on the host frame left the comments
+       at scroll position zero with no scroll owner at all. */
+    html.izumi-expand, html.izumi-expand body { overflow-x: hidden; overflow-y: auto; }
     html.izumi-expand #disqus_thread { overflow: visible; }
     /* Thin, themed scrollbar (this page is a separate doc, so the app's global scrollbar hiding doesn't
        reach it). STANDARD properties only — ::-webkit-scrollbar custom-painted scrollbars need a

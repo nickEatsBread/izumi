@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
   discussAnimeEmbedUrl,
   discussAnimeThreadsUrl,
@@ -21,6 +23,12 @@ const row = (overrides: Partial<DiscussAnimeThread> = {}): DiscussAnimeThread =>
 })
 
 describe('Discuss Anime API request', () => {
+  it('uses a build-time public key in static Tauri bundles', () => {
+    const source = readFileSync(fileURLToPath(new URL('./discussanime.ts', import.meta.url)), 'utf8')
+    expect(source).toContain("from '$env/static/public'")
+    expect(source).not.toContain("from '$env/dynamic/public'")
+  })
+
   it('uses the MAL id and documented episode pagination parameters', () => {
     const url = new URL(discussAnimeThreadsUrl({ id: 1, idMal: 100, format: 'TV' }, 3))
     expect(url.origin + url.pathname).toBe('https://discussanime.moe/api/v1/threads')
