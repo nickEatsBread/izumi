@@ -70,7 +70,7 @@ export type DirectTorrentHealth = {
   selectedSize: number
   downloadMbps: number
   livePeers: number
-  // Diagnostics — surfaced by the player's stats overlay, not used by the watchdog.
+  // Diagnostics — surfaced by the stats overlay; delivery counters also drive startup recovery.
   uploadMbps: number
   queuedPeers: number
   connectingPeers: number
@@ -135,6 +135,11 @@ export function currentDirectTorrentPlaybackId(): number | null {
 export async function prepareDirectTorrentNext(input: {
   infoHash: string
   magnet?: string
+  metadata?: {
+    magnet: string
+    expectedInfoHash: string
+    timeoutMs?: number
+  }
   preferredFilename?: string
   seriesTitle: string
   episode: number
@@ -143,6 +148,16 @@ export async function prepareDirectTorrentNext(input: {
 }): Promise<DirectTorrentNextPreload | null> {
   const playbackId = activePlaybackId
   if (playbackId == null) return null
+  // Episode-by-episode releases use a new infohash for every transition. When the extension has
+  // already supplied a hash-pinned .torrent URL, cache that file tree first instead of making the
+  // next-torrent preparation rediscover identical metadata through DHT (especially slow on mobile).
+  // Failure remains best-effort: the existing magnet path below is still the fallback.
+  if (input.metadata) {
+    await invoke<boolean>('torrent_metadata_prefetch', {
+      ...input.metadata,
+      ...torrentEngineNetworkOptions(),
+    }).catch(() => false)
+  }
   return await invoke<DirectTorrentNextPreload>('torrent_playback_prepare_next', {
     playbackId,
     infoHash: input.infoHash,

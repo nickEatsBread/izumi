@@ -59,6 +59,8 @@ import {
   recoveryWatchDecision,
   recoveryStreamKey,
   resetRecoveryWatch,
+  resetTorrentDelivery,
+  updateTorrentDelivery,
 } from '$lib/player/recovery-watchdog'
 import { markDead } from './dead-sources'
 import { shareableSource } from '$lib/watch-together/source'
@@ -534,7 +536,8 @@ function attachAndroid(
   let wrongDurationHandled = false
   let latest = get(mpvState)
   let recoveryWatch = resetRecoveryWatch(Date.now())
-  let downloadedBytes = 0
+  let deliveredBytes = 0
+  let delivery = resetTorrentDelivery()
   let selectedSize = 0
   let healthBusy = false
   let recoveryBusy = false
@@ -602,7 +605,12 @@ function attachAndroid(
       void directTorrentHealth()
         .then((health) => {
           if (health && currentDirectTorrentPlaybackId() === playbackId) {
-            downloadedBytes = health.downloadedBytes
+            delivery = updateTorrentDelivery(
+              delivery,
+              health.streamRequestCount,
+              health.streamBytesServed,
+            )
+            deliveredBytes = delivery.totalBytes
             selectedSize = health.selectedSize
           }
         })
@@ -623,7 +631,7 @@ function attachAndroid(
       eof: latest.eof,
       firstFrame: latest.frameReady,
       startTimeoutMs: directP2p ? DIRECT_TORRENT_START_TIMEOUT_MS : undefined,
-      networkBytes: directP2p ? downloadedBytes : undefined,
+      networkBytes: directP2p ? deliveredBytes : undefined,
       minimumStartupBytesPerSecond: directP2p && media.duration && selectedSize > 0
         ? selectedSize / (media.duration * 60) * 0.5
         : undefined,
@@ -633,7 +641,7 @@ function attachAndroid(
     recoveryBusy = true
     void recoverPlaybackSource(
       latest.pos,
-      !latest.paused,
+      latest.frameReady ? !latest.paused : true,
       directP2p
         ? 'P2P source is too slow — trying a healthier torrent…'
         : 'Source failed to start — trying another source…',
@@ -1224,6 +1232,7 @@ async function prefetchNext(media: Media, episode: number) {
       const preload = await prepareDirectTorrentNext({
         infoHash: s.infoHash,
         magnet: s.__magnet ?? `magnet:?xt=urn:btih:${s.infoHash}`,
+        metadata: s.__torrentUrl ? directMetadataPrefetchRequest(s) : undefined,
         preferredFilename: s.behaviorHints?.filename,
         seriesTitle: title(media),
         episode: next,

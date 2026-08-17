@@ -16,3 +16,16 @@ export function shouldShowP2PStatus(
   if (visibility === 'buffering') return buffering
   return buffering && !firstFrameSeen
 }
+
+/** Gamescope cannot blend the live webview over its mpv child, so ordinary loading and scrubbing
+ * use a native ASS overlay. Interactive comments must keep the webview surface, and direct-P2P
+ * startup must keep it long enough to show the richer transfer/peer panel. */
+export function shouldUseGameModeDynamicOverlay(input: {
+  loading: boolean
+  scrubbing: boolean
+  commentsOpen: boolean
+  directP2P: boolean
+}): boolean {
+  if (input.commentsOpen) return false
+  return input.scrubbing || (input.loading && !input.directP2P)
+}

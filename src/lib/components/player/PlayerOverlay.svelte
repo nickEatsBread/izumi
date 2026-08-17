@@ -19,7 +19,10 @@
     DIRECT_TORRENT_START_TIMEOUT_MS,
     recoveryWatchDecision,
     resetRecoveryWatch,
+    resetTorrentDelivery,
+    updateTorrentDelivery,
     type RecoveryWatchState,
+    type TorrentDeliveryState,
   } from '$lib/player/recovery-watchdog'
   import {
     autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
@@ -43,6 +46,7 @@
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
+  import { isDirectP2PStream, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
   import PlayIcon from '@lucide/svelte/icons/play'
@@ -70,7 +74,8 @@
   let loadedUrl = ''
   let recoveryWatch: RecoveryWatchState = resetRecoveryWatch(Date.now())
   let recoveryBusy = false
-  let directTorrentDownloadedBytes = 0
+  let directTorrentDeliveredBytes = 0
+  let directTorrentDelivery: TorrentDeliveryState = resetTorrentDelivery()
   let directTorrentSelectedSize = 0
   let directTorrentHealthBusy = false
   let segments = $state<Segment[]>([])
@@ -377,7 +382,8 @@
     chapterStore.set([])
     coreIdle = true; seeking = false; eof = false; firstFrame = false; loadedUrl = ''
     recoveryWatch = resetRecoveryWatch(Date.now())
-    directTorrentDownloadedBytes = 0
+    directTorrentDeliveredBytes = 0
+    directTorrentDelivery = resetTorrentDelivery()
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
     playerAbLoop.set({ a: null, b: null })
@@ -426,7 +432,13 @@
   // states that made the Deck hitch (loading + active scrub) are native mpv ASS overlays.
   // Bitmap overlays always sit above ASS in mpv, so the snapshot path is disabled while the
   // native dynamic overlay is active.
-  const gmDynamicActive = $derived(gmMode && $playing && (loading || $scrubActive))
+  const directP2pOverlay = $derived(isDirectP2PStream($nowPlayingStream))
+  const gmDynamicActive = $derived(gmMode && $playing && shouldUseGameModeDynamicOverlay({
+    loading,
+    scrubbing: $scrubActive,
+    commentsOpen: $commentsOpen,
+    directP2P: directP2pOverlay,
+  }))
   // …and while the track menu is open, so its (webview-rendered) columns get snapshotted onto
   // the video — otherwise the menu would be invisible behind the opaque mpv surface.
   const overlayActive = $derived(gmMode && $playing && !gmDynamicActive && (controlsVisible || showSkip || !!$playerNotice || $trackMenuOpen || $playerMenuOpen || $commentsOpen))
@@ -842,7 +854,12 @@
             if (currentDirectTorrentPlaybackId() !== playbackId) return
             directTorrentStats.set(health)
             if (health) {
-              directTorrentDownloadedBytes = health.downloadedBytes
+              directTorrentDelivery = updateTorrentDelivery(
+                directTorrentDelivery,
+                health.streamRequestCount,
+                health.streamBytesServed,
+              )
+              directTorrentDeliveredBytes = directTorrentDelivery.totalBytes
               directTorrentSelectedSize = health.selectedSize
             }
           })
@@ -852,13 +869,16 @@
         now: Date.now(),
         position: pos,
         duration: dur,
-        paused,
+        // mpv can carry a paused property into a replacement before it has decoded anything.
+        // Only a pause after a real frame is deliberate; otherwise this would disable recovery
+        // forever on Deck/desktop while the player remains black.
+        paused: paused && firstFrame,
         buffering,
         seeking,
         eof,
         firstFrame,
         startTimeoutMs: directP2p ? DIRECT_TORRENT_START_TIMEOUT_MS : undefined,
-        networkBytes: directP2p ? directTorrentDownloadedBytes : undefined,
+        networkBytes: directP2p ? directTorrentDeliveredBytes : undefined,
         minimumStartupBytesPerSecond: directP2p && $nowPlayingMedia?.media.duration && directTorrentSelectedSize > 0
           ? directTorrentSelectedSize / ($nowPlayingMedia.media.duration * 60) * 0.5
           : undefined,
@@ -868,7 +888,9 @@
       recoveryBusy = true
       void recoverPlaybackSource(
         pos,
-        !paused,
+        // A frameless replacement must be allowed to start even if mpv inherited pause=true from
+        // the failed source. Preserve the user's pause only once an actual frame has existed.
+        firstFrame ? !paused : true,
         directP2p ? 'P2P source is too slow — trying a healthier torrent…' : undefined,
       )
         .catch((error) => {

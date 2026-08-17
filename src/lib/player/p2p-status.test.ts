@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isDirectP2PStream, shouldShowP2PStatus } from './p2p-status'
+import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from './p2p-status'
 
 describe('P2P playback status visibility', () => {
   it('defaults can distinguish the first buffer from a later stall', () => {
@@ -26,5 +26,28 @@ describe('P2P playback status visibility', () => {
       infoHash: 'abc123',
     })).toBe(true)
     expect(isDirectP2PStream({ url: 'http://127.0.0.1:49152/other/7', infoHash: 'abc123' })).toBe(false)
+  })
+})
+
+describe('Game Mode dynamic overlay ownership', () => {
+  it('keeps an open discussion interactive when playback starts buffering', () => {
+    expect(shouldUseGameModeDynamicOverlay({
+      loading: true, scrubbing: false, commentsOpen: true, directP2P: false,
+    })).toBe(false)
+  })
+
+  it('keeps the web overlay visible for direct-P2P startup status', () => {
+    expect(shouldUseGameModeDynamicOverlay({
+      loading: true, scrubbing: false, commentsOpen: false, directP2P: true,
+    })).toBe(false)
+  })
+
+  it('retains native loading and scrub overlays when no interactive web surface needs ownership', () => {
+    expect(shouldUseGameModeDynamicOverlay({
+      loading: true, scrubbing: false, commentsOpen: false, directP2P: false,
+    })).toBe(true)
+    expect(shouldUseGameModeDynamicOverlay({
+      loading: false, scrubbing: true, commentsOpen: false, directP2P: true,
+    })).toBe(true)
   })
 })

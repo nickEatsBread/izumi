@@ -5,7 +5,15 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
 vi.mock('$lib/platform', () => ({ isAndroid: writable(false) }))
-vi.mock('$lib/settings/ui', () => ({ torrentAndroidPostSeed: writable(false) }))
+vi.mock('$lib/settings/ui', () => ({
+  torrentAndroidPostSeed: writable(false),
+  torrentBindInterface: writable(''),
+  torrentDownloadLimitMbps: writable(0),
+  torrentProxyEnabled: writable(false),
+  torrentProxyUrl: writable(''),
+  torrentUploadLimitMode: writable('automatic'),
+  torrentUpstreamCapacityMbps: writable(0),
+}))
 
 import {
   activateDirectTorrentPlayback,
@@ -80,6 +88,46 @@ describe('direct torrent buffer governor', () => {
       episode: 4,
       absoluteEpisode: 4,
       season: 1,
+    })
+  })
+
+  it('caches supplied metadata before preparing a different episode torrent', async () => {
+    mocks.invoke.mockResolvedValue({
+      fileIndex: 0,
+      filename: 'Show S01E05.mkv',
+      size: 400_000_000,
+      downloadedBytes: 0,
+      sameTorrent: false,
+    })
+    const hash = 'b'.repeat(40)
+
+    await prepareDirectTorrentNext({
+      infoHash: hash,
+      magnet: `magnet:?xt=urn:btih:${hash}`,
+      metadata: {
+        magnet: 'https://example.test/episode-5.torrent',
+        expectedInfoHash: hash,
+        timeoutMs: 5_000,
+      },
+      preferredFilename: 'Show S01E05.mkv',
+      seriesTitle: 'Show',
+      episode: 5,
+      absoluteEpisode: 5,
+      season: 1,
+    })
+
+    expect(mocks.invoke.mock.calls.map(([command]) => command)).toEqual([
+      'torrent_metadata_prefetch',
+      'torrent_playback_prepare_next',
+    ])
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, 'torrent_metadata_prefetch', {
+      magnet: 'https://example.test/episode-5.torrent',
+      expectedInfoHash: hash,
+      timeoutMs: 5_000,
+      downloadLimitMbps: 0,
+      upstreamCapacityMbps: null,
+      socksProxyUrl: null,
+      bindInterface: null,
     })
   })
 
