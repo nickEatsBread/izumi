@@ -3700,19 +3700,33 @@ pub fn run() {
     // is solved a different way (self-composite), not by routing through gamescope's compositor.
     let builder = tauri::Builder::default();
     #[cfg(not(target_os = "android"))]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.unminimize();
-            let _ = window.show();
-            let _ = window.set_focus();
-        }
-        // The single-instance plugin forwards argv to the deep-link plugin for us, but that only
-        // covers *configured* schemes. Magnet is never registered, but if the user explicitly
-        // launches Izumi with one, relay that single request ourselves.
-        if let Some(url) = magnet_from_args(_args.iter().map(String::as_str)) {
-            let _ = app.emit("deep-link://new-url", vec![url]);
-        }
-    }));
+    let builder = builder
+        // A fresh desktop window starts centered. Once the user moves or resizes it, restore that
+        // preference on later launches instead. Track only the main window and omit transient
+        // visibility/decorations/fullscreen state used by the player and discussion popups.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::POSITION
+                        | tauri_plugin_window_state::StateFlags::SIZE
+                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
+                )
+                .with_filter(|label| label == "main")
+                .build(),
+        )
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            // The single-instance plugin forwards argv to the deep-link plugin for us, but that only
+            // covers *configured* schemes. Magnet is never registered, but if the user explicitly
+            // launches Izumi with one, relay that single request ourselves.
+            if let Some(url) = magnet_from_args(_args.iter().map(String::as_str)) {
+                let _ = app.emit("deep-link://new-url", vec![url]);
+            }
+        }));
     let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_os::init())
@@ -3796,6 +3810,9 @@ pub fn run() {
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("izumi")
                     .inner_size(1280.0, 800.0)
+                    // This is only the unknown-position default. The window-state plugin restores
+                    // a valid saved main-window position immediately after creation while hidden.
+                    .center()
                     .decorations(false)
                     .background_color(tauri::window::Color(10, 10, 11, 255))
                     // A native webview begins with an opaque white surface. Keep the window hidden
