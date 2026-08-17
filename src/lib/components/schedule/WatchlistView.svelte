@@ -4,7 +4,7 @@
   // caught-up shows dimmed below with a next-episode countdown.
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { LIST_QUERY, flattenEntries, type Entry } from '$lib/anilist/lists'
+  import { LIST_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries, type Entry } from '$lib/anilist/lists'
   import { getMalAnimeListMediaOrThrow, type MalListEntry } from '$lib/trackers'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -33,13 +33,24 @@
   async function malSide(): Promise<{ entries: MalListEntry[]; media: Media[] }> {
     try {
       const list = await getMalAnimeListMediaOrThrow('watching', 100)
+      // MAL's list payload knows the planned total but carries no next-airing episode or schedule.
+      // Enrich all rows in one AniList request so "new" means aired-and-unwatched, as it does in
+      // MALSync. If AniList is unavailable, retain MAL's cards; airedCount's status-aware fallback
+      // refuses to turn their planned totals into false new-episode badges.
+      const ids = list.flatMap((entry) => entry.media.idMal == null ? [] : [entry.media.idMal])
+      let enriched: Media[] = []
+      if (ids.length) {
+        const result = await client.query(MEDIA_BY_MAL_QUERY, { ids }).toPromise()
+        if (!result.error) enriched = (result.data as { Page?: { media?: Media[] } })?.Page?.media ?? []
+      }
+      const enrichedByMal = new Map(enriched.map((media) => [media.idMal, media]))
       return {
         entries: list.flatMap((entry) => entry.media.idMal == null ? [] : [{
           idMal: entry.media.idMal,
           progress: entry.progress,
           updatedAt: entry.updatedAt,
         }]),
-        media: list.map((entry) => entry.media),
+        media: list.map((entry) => enrichedByMal.get(entry.media.idMal) ?? entry.media),
       }
     }
     catch { return { entries: [], media: [] } }

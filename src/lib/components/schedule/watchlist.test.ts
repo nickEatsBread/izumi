@@ -13,6 +13,14 @@ describe('behindCount', () => {
   it('uses the full episode count for FINISHED shows', () => {
     expect(behindCount(media(1, { status: 'FINISHED', episodes: 12 }), 10)).toBe(2)
   })
+  it('does not count a MAL planned total as aired when airing metadata is unavailable', () => {
+    expect(behindCount(media(1, {
+      status: 'RELEASING', episodes: 12, nextAiringEpisode: null, airingSchedule: { nodes: [] },
+    }), 7)).toBe(0)
+  })
+  it('does not count episodes of a not-yet-released title as new', () => {
+    expect(behindCount(media(1, { status: 'NOT_YET_RELEASED', episodes: 12 }), 0)).toBe(0)
+  })
   it('clamps to 0 when progress is ahead of aired', () => {
     const m = media(1, { episodes: 12, nextAiringEpisode: { episode: 4, timeUntilAiring: 60 } })
     expect(behindCount(m, 7)).toBe(0)

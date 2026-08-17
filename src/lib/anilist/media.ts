@@ -93,12 +93,18 @@ const lastScheduled = (m: Media) => scheduleNodes(m).reduce((max, n) => Math.max
 export const totalEpisodes = (m: Media) =>
   m.episodes || lastScheduled(m) || m.nextAiringEpisode?.episode || 0
 
-// Episodes aired so far. nextAiringEpisode is authoritative when present (nextAiring-1);
-// otherwise fall back to the schedule's last-aired episode, then the planned total, then
-// Infinity when nothing is known (so a resume episode is never clamped away).
+// Episodes aired so far. nextAiringEpisode is authoritative when present (nextAiring-1),
+// followed by actual past schedule nodes. A currently-airing MAL-only row has a planned total but
+// no schedule data; that total must NOT be mistaken for aired episodes (it made every remaining
+// future episode appear as "new"). Finished titles can safely use the total. Infinity means the
+// aired count is unknown, so callers such as the watchlist don't claim a false number.
 export const airedCount = (m: Media) => {
   if (m.nextAiringEpisode?.episode) return m.nextAiringEpisode.episode - 1
-  return lastAiredScheduled(m) || (m.episodes ?? Infinity)
+  const scheduled = lastAiredScheduled(m)
+  if (scheduled) return scheduled
+  if (m.status === 'NOT_YET_RELEASED') return 0
+  if (m.status === 'RELEASING' || m.status === 'HIATUS') return Infinity
+  return m.episodes ?? Infinity
 }
 
 /** Whether the viewer has an aired, unwatched episode available right now. */

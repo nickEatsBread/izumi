@@ -78,6 +78,21 @@ describe('media helpers', () => {
     expect(hasAiredEpisodeToWatch(finished, 12)).toBe(false)
   })
 
+  it('does not treat a releasing title planned total as its aired count', () => {
+    const malOnly = {
+      id: 1, title: {}, status: 'RELEASING', episodes: 12,
+      nextAiringEpisode: null, airingSchedule: { nodes: [] },
+    } as any
+    expect(airedCount(malOnly)).toBe(Infinity)
+    expect(hasAiredEpisodeToWatch(malOnly, 7)).toBe(true)
+  })
+
+  it('reports zero aired episodes for a not-yet-released title', () => {
+    const future = { id: 1, title: {}, status: 'NOT_YET_RELEASED', episodes: 12 } as any
+    expect(airedCount(future)).toBe(0)
+    expect(hasAiredEpisodeToWatch(future, 0)).toBe(false)
+  })
+
   it('recovers aired/total from airingSchedule when AniList episode count is null', () => {
     // RELEASING OVA (mirrors AniList id 178445): episodes + nextAiringEpisode are both
     // null; the only episode signal is a fully-aired airingSchedule.
