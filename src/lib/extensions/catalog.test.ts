@@ -226,8 +226,8 @@ describe('sourceLabel', () => {
   it('names a raw GitHub manifest after its repo', () => {
     expect(sourceLabel('https://raw.githubusercontent.com/Seanime-contributions/Seanime-Providers/main/marketplace/main.json'))
       .toBe('Seanime-contributions/Seanime-Providers')
-    expect(sourceLabel('https://raw.githubusercontent.com/ReWelp/HayasexShiru-Extensions/main/hayase/index.json'))
-      .toBe('ReWelp/HayasexShiru-Extensions')
+    expect(sourceLabel('https://raw.githubusercontent.com/example-org/example-extensions/main/catalog/index.json'))
+      .toBe('example-org/example-extensions')
   })
 
   it('names esm.sh and jsDelivr gh paths after the repo too, version suffix dropped', () => {
