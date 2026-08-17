@@ -107,6 +107,7 @@ libmpv2 = "6.0.0"
 libmpv2-sys = "4.0.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 tauri-plugin-updater = "2"
+tauri-plugin-window-state = "2"
 souvlaki = "0.8.3"
 discord-rich-presence = "1.1.0"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
