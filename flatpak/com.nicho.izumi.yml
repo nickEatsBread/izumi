@@ -115,6 +115,10 @@ modules:
     build-options:
       build-args:
         - --share=network
+      # flatpak-builder deliberately strips the host environment. This public build-time key is
+      # supplied by CI and must be forwarded into the isolated npm/SvelteKit build.
+      secret-env:
+        - PUBLIC_DISCUSS_ANIME_API_KEY
       env:
         CARGO_HOME: /run/build/izumi/cargo
         # libmpv2-sys emits `-lmpv` but not a search path; our mpv module installed
