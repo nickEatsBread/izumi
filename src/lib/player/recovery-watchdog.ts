@@ -32,6 +32,45 @@ export interface RecoveryWatchState {
   lastNetworkAdvancedAt: number
 }
 
+export interface TorrentDeliveryState {
+  requestCount: number
+  bytesInRequest: number
+  totalBytes: number
+}
+
+export function resetTorrentDelivery(): TorrentDeliveryState {
+  return { requestCount: 0, bytesInRequest: 0, totalBytes: 0 }
+}
+
+/** Turn the native server's per-request byte counter into a monotonic playback-delivery counter.
+ * mpv replaces its head request with tail/resume ranges while probing a file, and each replacement
+ * resets `streamBytesServed`. Counting positive deltas per request preserves useful progress across
+ * those probes while refusing to mistake pieces merely written to the torrent cache for bytes the
+ * player can actually consume. */
+export function updateTorrentDelivery(
+  previous: TorrentDeliveryState,
+  requestCount: number,
+  bytesInRequest: number,
+): TorrentDeliveryState {
+  const count = Number.isFinite(requestCount) ? Math.max(0, Math.floor(requestCount)) : 0
+  const bytes = Number.isFinite(bytesInRequest) ? Math.max(0, bytesInRequest) : 0
+  if (count < previous.requestCount) {
+    return { requestCount: count, bytesInRequest: bytes, totalBytes: bytes }
+  }
+  if (count > previous.requestCount) {
+    return {
+      requestCount: count,
+      bytesInRequest: bytes,
+      totalBytes: previous.totalBytes + bytes,
+    }
+  }
+  return {
+    requestCount: count,
+    bytesInRequest: Math.max(previous.bytesInRequest, bytes),
+    totalBytes: previous.totalBytes + Math.max(0, bytes - previous.bytesInRequest),
+  }
+}
+
 export interface RecoverySignal {
   now: number
   position: number

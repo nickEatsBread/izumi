@@ -9,6 +9,8 @@ import {
   prematureEof,
   recoveryWatchDecision,
   resetRecoveryWatch,
+  resetTorrentDelivery,
+  updateTorrentDelivery,
 } from './recovery-watchdog'
 
 describe('implausiblyShortEpisode', () => {
@@ -184,5 +186,28 @@ describe('playback recovery watchdog', () => {
     const decision = recoveryWatchDecision(state, signal(1_000 + START_TIMEOUT_MS, { position: 0 }))
     expect(decision.recover).toBe(true)
     expect(decision.reason).toBe('never-started')
+  })
+})
+
+describe('direct torrent stream delivery', () => {
+  it('accumulates bytes across mpv head, tail, and resume requests', () => {
+    let state = resetTorrentDelivery()
+    state = updateTorrentDelivery(state, 1, 64_000)
+    state = updateTorrentDelivery(state, 1, 96_000)
+    state = updateTorrentDelivery(state, 2, 16_000)
+    state = updateTorrentDelivery(state, 3, 128_000)
+    expect(state.totalBytes).toBe(240_000)
+  })
+
+  it('does not double-count an unchanged request snapshot', () => {
+    let state = updateTorrentDelivery(resetTorrentDelivery(), 1, 64_000)
+    state = updateTorrentDelivery(state, 1, 64_000)
+    expect(state.totalBytes).toBe(64_000)
+  })
+
+  it('resets safely when native playback diagnostics restart', () => {
+    let state = updateTorrentDelivery(resetTorrentDelivery(), 4, 512_000)
+    state = updateTorrentDelivery(state, 1, 32_000)
+    expect(state).toEqual({ requestCount: 1, bytesInRequest: 32_000, totalBytes: 32_000 })
   })
 })

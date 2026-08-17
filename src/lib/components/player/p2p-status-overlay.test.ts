@@ -16,4 +16,10 @@ describe('shared P2P status overlay', () => {
       expect(overlay).toContain(`stats.${field}`)
     }
   })
+
+  it('does not let an inherited pre-frame pause disable Deck recovery', () => {
+    const player = read('./PlayerOverlay.svelte')
+    expect(player).toContain('paused: paused && firstFrame')
+    expect(player).toContain('firstFrame ? !paused : true')
+  })
 })

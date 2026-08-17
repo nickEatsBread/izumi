@@ -15,4 +15,11 @@ describe('direct torrent priority handoff', () => {
     expect(between).not.toContain('directTorrentPlayerAttached(')
     expect(source.slice(waiting, waiting + 1_200)).toContain('directTorrentPlayerAttached(playbackId)')
   })
+
+  it('carries an extension torrent URL into next-episode preparation', () => {
+    const prepare = source.indexOf('const preload = await prepareDirectTorrentNext({')
+    expect(prepare).toBeGreaterThan(-1)
+    expect(source.slice(prepare, prepare + 700))
+      .toContain('metadata: s.__torrentUrl ? directMetadataPrefetchRequest(s) : undefined')
+  })
 })
