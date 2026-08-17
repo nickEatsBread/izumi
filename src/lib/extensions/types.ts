@@ -39,7 +39,8 @@ export interface TorrentQuery {
   tmdbId?: number | string
   absoluteEpisodeNumber?: number
   tvdbAid?: number // TVDB show id
-  tvdbEid?: number // TVDB episode id
+  tvdbEid?: number // TVDB episode id (legacy camel-case spelling)
+  tvdbEId?: number // TVDB episode id (manifest-v2 SDK spelling)
   mvdbAid?: number | string // TMDB id
   imdbAid?: string
   season?: number
@@ -67,6 +68,7 @@ export function torrentQueryIdFields(ids: {
     tvdbId: ids.tvdbId,
     tvdbAid: ids.tvdbId,
     tvdbEid: ids.tvdbEId,
+    tvdbEId: ids.tvdbEId,
     tmdbId: ids.tmdbId,
     mvdbAid: ids.tmdbId,
     imdbAid: ids.imdbId,
