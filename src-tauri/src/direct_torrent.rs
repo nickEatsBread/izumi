@@ -75,7 +75,7 @@ fn dht_port_override(is_windows: bool) -> Option<u16> {
     is_windows.then_some(0)
 }
 
-/// Anime-oriented public trackers used by legacy in addition to a torrent's own announce list.
+/// Anime-oriented public trackers used by the client in addition to a torrent's own announce list.
 /// DHT remains the primary decentralized source; these stop a bare info-hash from depending on a
 /// single discovery mechanism. Dead/duplicate trackers are harmless because rqbit polls them in
 /// parallel and de-duplicates URLs.
@@ -440,7 +440,7 @@ pub(crate) fn proxy_safe_magnet(magnet: &str, proxy_enabled: bool) -> Result<Str
 }
 
 /// Add a compact, known-public announce set without rewriting the caller's magnet. Stremio
-/// add-ons frequently provide only an info hash; legacy/the client compensate with application-level
+/// add-ons frequently provide only an info hash; the client compensates with application-level
 /// trackers, while we previously left those torrents entirely at the mercy of a cold DHT table.
 pub(crate) fn add_public_trackers(magnet: &str) -> Result<String, String> {
     let parsed = url::Url::parse(magnet)
