@@ -18,6 +18,7 @@ describe('torrent extension query contract', () => {
       tvdbId: 81797,
       tvdbAid: 81797,
       tvdbEid: 361887,
+      tvdbEId: 361887,
       tmdbId: '37854',
       mvdbAid: '37854',
       imdbAid: 'tt0388629',
