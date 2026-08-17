@@ -22,6 +22,15 @@ describe('DiscussAnime embed theming', () => {
     expect(android).not.toContain('style:color-scheme="dark"')
   })
 
+  it('keeps the expanded Android Disqus frame scrollable', () => {
+    const loader = read('../../../static/disqus-embed.html')
+    const android = read('../components/player/AndroidWatchDetails.svelte')
+
+    expect(loader).toContain('html.izumi-expand, html.izumi-expand body { overflow-x: hidden; overflow-y: auto; }')
+    expect(android).not.toMatch(/title="Episode comments"[^>]*scrolling="no"/)
+    expect(android).toContain('disqusOwnsScroll ? `min(70dvh, ${disqusHeight}px)`')
+  })
+
   it('removes native dark-frame mutation and forced WebView theming', () => {
     const lib = read('../../../src-tauri/src/lib.rs')
     const androidScaffold = read('../../../scripts/ci/android-scaffold.sh')
