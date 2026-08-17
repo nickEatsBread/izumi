@@ -131,14 +131,6 @@
     fetchDiscussion(media, ep, applyThreads).then(applyThreads)
   })
   const discussion = $derived(preferredMobileDiscussion(threads))
-  // The same-origin loader can scroll its full-height inner Disqus frame itself. Keep that outer
-  // frame viewport-sized: if we grow it to the inner document's complete height, a swipe beginning
-  // inside the cross-origin comments frame has no scrollable ancestor in that renderer tree and
-  // never reaches the watch page. Archive embeds are different: they hide their own overflow and
-  // must continue using the height they report.
-  const disqusOwnsScroll = $derived(
-    discussion?.kind === 'disqus' && discussion.embedSrc.startsWith('/disqus-embed.html'),
-  )
   const tabs = $derived<Tab[]>(
     commentsLoading || discussion ? ['comments', 'episodes', 'related'] : ['episodes', 'comments', 'related'],
   )
@@ -355,8 +347,11 @@
         {#if commentsLoading}
           <div class="space-y-2">{#each Array.from({ length: 4 }) as _}<div class="h-20 animate-pulse rounded-xl bg-white/[0.06]"></div>{/each}</div>
         {:else if discussion?.kind === 'disqus'}
-          <iframe bind:this={disqusFrame} title="Episode comments" src={discussion.embedSrc}
-            style:height={disqusOwnsScroll ? `min(70dvh, ${disqusHeight}px)` : `${disqusHeight}px`}
+          <!-- Grow the embed to its reported content height so Android has one continuous page
+               scroller. A viewport-capped, independently scrolling frame makes the gesture change
+               owners at the comments boundary and feels like the page is fighting the finger. -->
+          <iframe bind:this={disqusFrame} title="Episode comments" src={discussion.embedSrc} scrolling="no"
+            style:height={`${disqusHeight}px`}
             class="min-h-[30rem] w-full rounded-xl border-0 bg-[#0e0e0e]"
             sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"></iframe>
         {:else if discussion?.kind === 'reddit'}
