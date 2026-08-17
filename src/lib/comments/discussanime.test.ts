@@ -26,6 +26,7 @@ describe('Discuss Anime API request', () => {
   it('uses a build-time public key in static Tauri bundles', () => {
     const source = readFileSync(fileURLToPath(new URL('./discussanime.ts', import.meta.url)), 'utf8')
     expect(source).toContain("from '$env/static/public'")
+    expect(source).toContain('publicEnv as Record<string, string | undefined>')
     expect(source).not.toContain("from '$env/dynamic/public'")
   })
 

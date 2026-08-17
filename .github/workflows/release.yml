@@ -519,8 +519,8 @@ jobs:
           gh release upload "$T" "izumi-android-${{ matrix.flavor }}.apk" --repo "${{ github.repository }}" --clobber
 
   publish-release:
-    # Keep the release draft if either Android flavor fails the native-security/alignment gates.
-    needs: [create-release, build, android, cleanup-release-signatures]
+    # Keep the release draft if any shipped platform fails its build or validation gates.
+    needs: [create-release, build, flatpak, android, cleanup-release-signatures]
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release (un-draft)
