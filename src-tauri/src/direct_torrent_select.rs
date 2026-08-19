@@ -311,7 +311,15 @@ pub(crate) fn select_file_for_title(
                 (Some(wanted), Some(found_season)) if wanted != found_season
             );
             let series_conflicts = series_title_affinity(&found.name, series_title) == 0;
-            if !number_conflicts && !season_conflicts && !series_conflicts {
+            // With an episode request, an unnumbered exact hint is not evidence: malformed
+            // add-on rows can point it at a special/OVA inside the same pack. Let the numbered
+            // candidate scan below choose the episode instead. A single unnumbered video still
+            // reaches the unambiguous single-file fallback.
+            let number_confirmed = episode.is_none() && absolute_episode.is_none()
+                || parsed.episode.is_some_and(|found_episode| {
+                    episode == Some(found_episode) || absolute_episode == Some(found_episode)
+                });
+            if number_confirmed && !number_conflicts && !season_conflicts && !series_conflicts {
                 return Some(found.clone());
             }
         }
@@ -406,6 +414,32 @@ mod tests {
             select_file(
                 &files,
                 Some("Season 1/Demon Slayer - S01E03 - Sabito And Makomo.mkv"),
+                Some(7),
+                None,
+                Some(1),
+            )
+            .unwrap()
+            .index,
+            1
+        );
+    }
+
+    #[test]
+    fn cowboy_bebop_episode_beats_an_unnumbered_ova_hint() {
+        let files = vec![
+            file(0, "[Judas] Cowboy Bebop - S01E06.mkv", 309),
+            file(1, "[Judas] Cowboy Bebop - S01E07.mkv", 346),
+            file(
+                2,
+                "Extras/[Judas] Cowboy Bebop XX - Mish-Mash Blues.mkv",
+                430,
+            ),
+        ];
+        assert_eq!(
+            select_file_for_title(
+                &files,
+                Some("Extras/[Judas] Cowboy Bebop XX - Mish-Mash Blues.mkv"),
+                Some("Cowboy Bebop"),
                 Some(7),
                 None,
                 Some(1),

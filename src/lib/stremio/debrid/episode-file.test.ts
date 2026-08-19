@@ -79,16 +79,16 @@ describe('pickVideoFile', () => {
     expect(pickVideoFile(emotionBatch, undefined)?.name).toContain('- 04') // largest
     expect(pickVideoFile(emotionBatch, { episode: 9 })?.name).toContain('- 04') // no match -> largest
   })
-  it('prefers an exact filename hint over parsing', () => {
+  it('does not let a contradictory filename hint override the requested episode', () => {
     const hint = '[Emotion] Boku no Risou no Isekai Seikatsu - 02 (DVD 720x480 x264).mkv'
-    expect(pickVideoFile(emotionBatch, { episode: 1, filename: hint })?.name).toBe(hint)
+    expect(pickVideoFile(emotionBatch, { episode: 1, filename: hint })?.name).toContain('- 01')
   })
   it('matches the filename hint against basenames (provider lists carry paths)', () => {
     const files = [
       { name: 'Pack/Show - 01.mkv', bytes: 1 },
       { name: 'Pack/Show - 02.mkv', bytes: 2 },
     ]
-    expect(pickVideoFile(files, { filename: 'Show - 02.mkv' })?.name).toBe('Pack/Show - 02.mkv')
+    expect(pickVideoFile(files, { episode: 2, filename: 'Show - 02.mkv' })?.name).toBe('Pack/Show - 02.mkv')
   })
   it('matches via absolute numbering when the seasonal episode number misses', () => {
     const files = [
@@ -144,6 +144,23 @@ describe('pickVideoFile', () => {
   it('handles the movie/single-file case (no episode markers) via largest fallback', () => {
     const files = [{ name: 'Some Movie (2019) 1080p.mkv', bytes: 5e9 }]
     expect(pickVideoFile(files, { episode: 1 })?.name).toBe('Some Movie (2019) 1080p.mkv')
+  })
+})
+
+describe('Cowboy Bebop season packs', () => {
+  const files = [
+    { name: '[Judas] Cowboy Bebop - S01E06.mkv', bytes: 309_000_000 },
+    { name: '[Judas] Cowboy Bebop - S01E07.mkv', bytes: 346_000_000 },
+    { name: 'Extras/[Judas] Cowboy Bebop - Ein\'s Summer Vacation.mkv', bytes: 21_000_000 },
+    { name: 'Extras/[Judas] Cowboy Bebop XX - Mish-Mash Blues.mkv', bytes: 430_000_000 },
+  ]
+
+  it('episode 7 beats an incorrect unnumbered OVA filename hint', () => {
+    expect(pickEpisodeVideo(files, {
+      episode: 7,
+      season: 1,
+      filename: 'Extras/[Judas] Cowboy Bebop XX - Mish-Mash Blues.mkv',
+    })?.name).toBe('[Judas] Cowboy Bebop - S01E07.mkv')
   })
 })
 

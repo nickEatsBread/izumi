@@ -210,4 +210,13 @@ describe('direct torrent stream delivery', () => {
     state = updateTorrentDelivery(state, 1, 32_000)
     expect(state).toEqual({ requestCount: 1, bytesInRequest: 32_000, totalBytes: 32_000 })
   })
+
+  it('rejects EOF while the player still reports minutes remaining', () => {
+    expect(prematureEof(18 * 60, 24 * 60, 24)).toBe(true)
+  })
+
+  it('rejects a truncated manifest but allows ordinary runtime variation', () => {
+    expect(prematureEof(18 * 60, 18 * 60, 24)).toBe(true)
+    expect(prematureEof(23.5 * 60, 23.5 * 60, 24)).toBe(false)
+  })
 })

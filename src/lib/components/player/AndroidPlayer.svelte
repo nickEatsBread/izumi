@@ -1490,7 +1490,7 @@
          its hit target (you can still pause a stream that is still buffering). -->
     <div in:fade|global={{ duration: 180 }} class="pointer-events-none absolute inset-0 flex items-center justify-center gap-10">
       <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); skip(-$seekDuration) }} class="pointer-events-auto grid h-12 w-12 place-items-center" aria-label="Rewind"><RotateCcw size={30} /></button>
-      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full bg-white/15 backdrop-blur transition-transform active:scale-90" aria-label={loading || recovering ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading || recovering}>
+      <button onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); pressPause() }} class="transport-button pointer-events-auto grid h-[68px] w-[68px] place-items-center rounded-full transition-transform active:scale-90" aria-label={loading || recovering ? 'Loading' : paused ? 'Play' : 'Pause'} aria-busy={loading || recovering}>
         {#if loading || recovering}
           <span in:fade={{ duration: 120 }} class="grid place-items-center">
             <BufferSpinner size={40} />
@@ -1730,6 +1730,9 @@
   .settings-choice { display: flex; width: 100%; align-items: center; justify-content: space-between; border-radius: 0.75rem; padding: 0.8rem 1rem; text-align: left; font-size: 0.875rem; }
   .settings-choice-selected { background: rgb(var(--theme-rgb, 239 42 89) / 0.18); color: var(--theme, #ef2a59); font-weight: 700; }
   .transport-glyph { animation: transport-glyph-pop 160ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  /* backdrop-filter over Android's native video Surface can invalidate a full compositor strip
+     when controls remount. An opaque composited fill gives the same contrast without the flash. */
+  .transport-button { background: rgb(0 0 0 / 0.58); box-shadow: 0 8px 24px rgb(0 0 0 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.14); contain: paint; }
   @keyframes transport-glyph-pop { from { transform: scale(0.5); } to { transform: scale(1); } }
 
   @media (orientation: landscape) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
+  discussAnimeArchiveEmbedUrl,
   discussAnimeEmbedUrl,
   discussAnimeThreadsUrl,
   mapDiscussAnimeThread,
@@ -70,5 +71,19 @@ describe('Discuss Anime Disqus mapping', () => {
     expect(mapDiscussAnimeThread(row())).toMatchObject({
       id: 'disqus-thread-12', source: 'Disqus', replyCount: 42, createdAt: 1_700_000_000_000,
     })
+  })
+
+  it('uses DiscussAnime\'s own renderer for migrated archive threads', () => {
+    const archived = row({ id: 8305, slug: 'archive-liar-game-episode-1-discussion-11040292375' })
+    expect(discussAnimeArchiveEmbedUrl(archived))
+      .toBe('https://discussanime.moe/embed/discussion/archive-liar-game-episode-1-discussion-11040292375')
+    expect(mapDiscussAnimeThread(archived)).toMatchObject({
+      id: 'discussanime-archive-8305',
+      embedUrl: 'https://discussanime.moe/embed/discussion/archive-liar-game-episode-1-discussion-11040292375',
+    })
+  })
+
+  it('keeps live DiscussAnime threads on Disqus', () => {
+    expect(mapDiscussAnimeThread(row()).embedUrl).toContain('https://disqus.com/embed/comments/')
   })
 })
