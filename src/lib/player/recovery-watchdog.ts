@@ -17,11 +17,23 @@ export function implausiblyShortEpisode(expectedMinutes: number | null | undefin
     && expectedSeconds - actualSeconds > 8 * 60
 }
 
-/** Some broken HLS manifests reach FILE_LOADED and immediately EOF without yielding a packet.
- * Treat that as a dead source, while preserving ordinary EOF at the actual end of a file. */
-export function prematureEof(position: number, duration: number): boolean {
-  if (!Number.isFinite(position) || position >= 5) return false
-  return !Number.isFinite(duration) || duration <= 0 || duration - position > 3
+/** Detect EOF that cannot be the requested episode's real end. Broken HLS sources can either
+ * terminate while mpv still knows there are minutes remaining, or publish a truncated manifest
+ * whose own duration ends well before AniList's runtime. Both must trigger source recovery rather
+ * than auto-advancing to the next episode. */
+export function prematureEof(
+  position: number,
+  duration: number,
+  expectedMinutes?: number | null,
+): boolean {
+  if (!Number.isFinite(position) || position < 0) return true
+  if (!Number.isFinite(duration) || duration <= 0) return position < 5
+  if (duration - position > 3) return true
+
+  const expectedSeconds = (expectedMinutes ?? 0) * 60
+  return expectedSeconds >= 10 * 60
+    && expectedSeconds - duration > 4 * 60
+    && duration < expectedSeconds * 0.82
 }
 
 export interface RecoveryWatchState {

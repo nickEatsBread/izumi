@@ -579,12 +579,12 @@ function attachAndroid(
     if ((get(bingePreload) || get(autoplayNext)) && dur > 0 && pos / dur > 0.85) prefetchNext(media, episode)
     if (eof && !ended) {
       ended = true
-      if (prematureEof(pos, dur)) {
+      if (prematureEof(pos, dur, media.duration)) {
         recoveryBusy = true
         void recoverPlaybackSource(
           pos,
           !s.paused,
-          'Source returned no playable video — trying another source…',
+          'Source ended before the episode finished — trying another source…',
         ).catch((error) => {
           console.warn('automatic Android empty-source recovery', error)
           playerNotice.set('Automatic source recovery failed')

@@ -92,15 +92,27 @@ export function discussAnimeEmbedUrl(row: DiscussAnimeThread) {
   return url.toString()
 }
 
+/** The v1 API no longer carries the legacy `is_embed`/`embed_url` fields, but migrated
+ * forum threads have a stable `archive-` slug and are still served by DiscussAnime's own
+ * archive renderer. Live threads continue to use Disqus so sign-in and replies work. */
+export function isArchivedDiscussAnimeThread(row: Pick<DiscussAnimeThread, 'slug'>) {
+  return row.slug.toLowerCase().startsWith('archive-')
+}
+
+export function discussAnimeArchiveEmbedUrl(row: Pick<DiscussAnimeThread, 'slug'>) {
+  return `https://discussanime.moe/embed/discussion/${encodeURIComponent(row.slug)}`
+}
+
 export function mapDiscussAnimeThread(row: DiscussAnimeThread): DiscussionThread {
+  const archived = isArchivedDiscussAnimeThread(row)
   return {
-    id: `disqus-thread-${row.id}`,
+    id: `${archived ? 'discussanime-archive' : 'disqus-thread'}-${row.id}`,
     source: 'Disqus',
     title: row.title,
     url: row.url,
     replyCount: row.comment_count,
     createdAt: row.created_at * 1000,
-    embedUrl: discussAnimeEmbedUrl(row),
+    embedUrl: archived ? discussAnimeArchiveEmbedUrl(row) : discussAnimeEmbedUrl(row),
   }
 }
 
