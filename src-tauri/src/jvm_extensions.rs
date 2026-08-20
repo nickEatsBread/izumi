@@ -23,6 +23,10 @@ const RUNTIME_SHA256: &str = "32ff822ea3475aeafd0c6f987d1549c8cc30fc535a44d07bc7
 const JRE_VERSION: &str = "17.0.12+7";
 const MAX_JRE_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 
+#[path = "jvm_runtime_args.rs"]
+mod jvm_runtime_args;
+use jvm_runtime_args::java_runtime_jvm_args;
+
 struct JreAsset {
     url: &'static str,
     sha256: &'static str,
@@ -577,14 +581,7 @@ async fn start_process(
     );
     let mut command = Command::new(java);
     command
-        .args([
-            "-Dfile.encoding=UTF-8",
-            "-Dsun.stdout.encoding=UTF-8",
-            "-Dsun.stderr.encoding=UTF-8",
-            "-Xms64m",
-            "-Xmx384m",
-            "-jar",
-        ])
+        .args(java_runtime_jvm_args(std::env::consts::OS))
         .arg(runtime)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
