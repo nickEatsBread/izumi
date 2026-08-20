@@ -4,7 +4,7 @@ use crate::{
     models::{
         BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
         DeviceStatus, DownloadForegroundRequest, InstallRequest, PlayRequest, ReactResponse,
-        ReactionStateResponse,
+        ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse,
     },
     ExtPlayerExt, Result,
 };
@@ -76,4 +76,13 @@ pub(crate) async fn da_login<R: Runtime>(
     payload: DaLoginRequest,
 ) -> Result<DaLoginResponse> {
     app.extplayer().da_login(payload)
+}
+
+/// Android Storage Access Framework create-document + write. Desktop returns saved=false.
+#[command]
+pub(crate) async fn save_text_file<R: Runtime>(
+    app: AppHandle<R>,
+    payload: SaveTextFileRequest,
+) -> Result<SaveTextFileResponse> {
+    app.extplayer().save_text_file(payload)
 }

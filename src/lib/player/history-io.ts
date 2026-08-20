@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import { save } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
+import { isAndroid } from '$lib/platform'
 import { title } from '$lib/anilist/media'
 // durableHistory/durablePositions, NOT the merged views: an export or device-sync push must never
 // carry this session's incognito entries; an import writes straight to the persisted stores.
@@ -170,11 +171,18 @@ export function ioErrorMessage(error: unknown, fallback: string): string {
 
 /** Prompt for a location and write the given text there. Returns false if the user cancelled.
  *
- *  On Android `save()` opens the system Storage Access Framework picker
- *  (`ACTION_CREATE_DOCUMENT`) and returns a `content://` URI, not a filesystem
- *  path. `write_text_file` writes that URI through ContentResolver — do not
- *  replace this with `std::fs` or a relative download path; that is "os error 2". */
+ *  Android cannot split picker + write: `dialog.save()` returns a `content://` URI, and
+ *  writing it from Rust via JNI against the Activity pointer crashes the process. The
+ *  native `save_text_file` command opens ACTION_CREATE_DOCUMENT and copies a cache file
+ *  in the activity result, so the document is written even if the picker recreates us. */
 export async function saveTextFile(defaultName: string, contents: string): Promise<boolean> {
+  if (get(isAndroid)) {
+    const mime = defaultName.endsWith('.xml') ? 'text/xml' : 'application/json'
+    const result = await invoke<{ saved: boolean }>('plugin:extplayer|save_text_file', {
+      payload: { fileName: defaultName, mime, contents },
+    })
+    return !!result?.saved
+  }
   const path = await save({
     defaultPath: defaultName,
     filters: defaultName.endsWith('.xml')

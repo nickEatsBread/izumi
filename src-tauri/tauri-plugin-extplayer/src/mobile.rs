@@ -8,7 +8,7 @@ use crate::models::{
     AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DaLoginRequest, DaLoginResponse,
     DaReactRequest, DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest,
     InstallRequest, JsonResponse, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
-    ReactResponse, ReactionStateResponse,
+    ReactResponse, ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse,
 };
 
 #[cfg(target_os = "android")]
@@ -81,6 +81,12 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn da_react(&self, payload: DaReactRequest) -> crate::Result<ReactResponse> {
         self.0
             .run_mobile_plugin("daReact", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn save_text_file(&self, payload: SaveTextFileRequest) -> crate::Result<SaveTextFileResponse> {
+        self.0
+            .run_mobile_plugin("saveTextFile", payload)
             .map_err(Into::into)
     }
 

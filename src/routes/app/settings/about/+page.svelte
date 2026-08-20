@@ -6,8 +6,7 @@
   import { checkForUpdate, applyUpdate, availableUpdate, updatePhase, updateProgress, updateError } from '$lib/updater'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { clearDiagnostics, diagnosticEvents, diagnosticsSnapshot } from '$lib/diagnostics'
-  import { save } from '@tauri-apps/plugin-dialog'
-  import { ioErrorMessage } from '$lib/player/history-io'
+  import { ioErrorMessage, saveTextFile } from '$lib/player/history-io'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
@@ -69,13 +68,11 @@
   }
   async function saveDiagnostics() {
     try {
-      const path = await save({
-        defaultPath: `izumi-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      })
-      if (!path) return
-      await invoke('write_text_file', { path, contents: diagnosticsSnapshot({ appVersion, tauriVersion, mpvVersion, os }) })
-      diagnosticNotice = 'Diagnostics saved'
+      const saved = await saveTextFile(
+        `izumi-diagnostics-${new Date().toISOString().slice(0, 10)}.json`,
+        diagnosticsSnapshot({ appVersion, tauriVersion, mpvVersion, os }),
+      )
+      if (saved) diagnosticNotice = 'Diagnostics saved'
     } catch (error) { diagnosticNotice = ioErrorMessage(error, 'Save failed') }
   }
   async function openDeveloperTools() {

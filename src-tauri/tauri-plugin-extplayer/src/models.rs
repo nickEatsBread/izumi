@@ -1,5 +1,19 @@
 use serde::{Deserialize, Serialize};
 
+/// Combined Android save-picker + write. Desktop never uses this.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveTextFileRequest {
+    pub file_name: String,
+    pub mime: Option<String>,
+    pub contents: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SaveTextFileResponse {
+    pub saved: bool,
+}
+
 /// A request to play a video URL (or a local file path) in an external Android player.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

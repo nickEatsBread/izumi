@@ -4,7 +4,8 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 use crate::models::{
     BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
     DeviceStatus, DownloadForegroundRequest, InstallRequest, LanDiscoveryRequest, OAuthRequest,
-    OAuthResponse, PlayRequest, ReactResponse, ReactionStateResponse,
+    OAuthResponse, PlayRequest, ReactResponse, ReactionStateResponse, SaveTextFileRequest,
+    SaveTextFileResponse,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -70,5 +71,12 @@ impl<R: Runtime> ExtPlayer<R> {
 
     pub fn da_login(&self, _payload: DaLoginRequest) -> crate::Result<DaLoginResponse> {
         Ok(DaLoginResponse { ok: false })
+    }
+
+    pub fn save_text_file(
+        &self,
+        _payload: SaveTextFileRequest,
+    ) -> crate::Result<SaveTextFileResponse> {
+        Ok(SaveTextFileResponse { saved: false })
     }
 }
