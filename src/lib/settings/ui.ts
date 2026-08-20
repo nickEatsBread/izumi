@@ -226,6 +226,9 @@ export const autoIncognitoAdult = persisted<boolean>('auto-incognito-adult', fal
 /** Haptic feedback on taps/toggles/actions (Android only; desktop has no haptics engine and
  *  always no-ops regardless). Default on. */
 export const haptics = persisted<boolean>('haptics', true)
+/** Forward verbose frontend + native/JVM diagnostics to desktop DevTools. Opt-in because provider
+ * logs and Network/Console inspection may expose signed URLs or account material. */
+export const developerLogging = persisted<boolean>('developer-logging', false)
 /** User overrides for keyboard shortcuts. Missing actions fall back to their shipped defaults. */
 export const hotkeyBindings = persisted<Record<string, string>>('hotkey-bindings', {})
 export const DEFAULT_HOME_ROWS = [

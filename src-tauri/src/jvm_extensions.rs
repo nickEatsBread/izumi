@@ -1,12 +1,14 @@
 use futures_util::StreamExt;
+use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use std::time::Instant;
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex, RwLock};
@@ -29,16 +31,52 @@ struct JreAsset {
 
 type Pending = HashMap<String, oneshot::Sender<Result<Value, String>>>;
 
+#[derive(Clone)]
+struct DeveloperLogger {
+    app: AppHandle,
+    enabled: Arc<AtomicBool>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct DeveloperLog<'a> {
+    target: &'a str,
+    level: &'a str,
+    message: &'a str,
+}
+
+impl DeveloperLogger {
+    fn emit(&self, target: &str, level: &str, message: &str) {
+        if self.enabled.load(Ordering::Relaxed) {
+            let _ = self.app.emit(
+                "developer-log",
+                DeveloperLog {
+                    target,
+                    level,
+                    message,
+                },
+            );
+        }
+    }
+}
+
 struct Process {
     child: Mutex<Child>,
     stdin: Mutex<ChildStdin>,
     pending: Arc<Mutex<Pending>>,
     sequence: AtomicU64,
+    logger: DeveloperLogger,
 }
 
 impl Process {
     async fn request(&self, method: &str, args: Value) -> Result<Value, String> {
         let id = self.sequence.fetch_add(1, Ordering::Relaxed).to_string();
+        let started = Instant::now();
+        self.logger.emit(
+            "aniyomi-jvm",
+            "debug",
+            &format!("request {id} started: {method}"),
+        );
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().await.insert(id.clone(), sender);
         let request = json!({ "id": id, "method": method, "args": args });
@@ -57,14 +95,28 @@ impl Process {
                 .await
                 .map_err(|error| format!("Extension runtime flush failed: {error}"))?;
         }
-        match timeout(Duration::from_secs(120), receiver).await {
+        let result = match timeout(Duration::from_secs(120), receiver).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err("Extension runtime stopped before replying".into()),
             Err(_) => {
                 self.pending.lock().await.remove(&id);
                 Err(format!("Extension runtime request timed out: {method}"))
             }
-        }
+        };
+        let outcome = if result.is_ok() {
+            "completed"
+        } else {
+            "failed"
+        };
+        self.logger.emit(
+            "aniyomi-jvm",
+            if result.is_ok() { "debug" } else { "error" },
+            &format!(
+                "request {id} {outcome}: {method} ({} ms)",
+                started.elapsed().as_millis()
+            ),
+        );
+        result
     }
 }
 
@@ -72,6 +124,7 @@ impl Process {
 pub struct Runtime {
     process: Mutex<Option<Arc<Process>>>,
     sources: RwLock<Option<Value>>,
+    developer_logging: Arc<AtomicBool>,
 }
 
 fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -507,7 +560,21 @@ fn parse_java_major(version_output: &str) -> Option<u32> {
     }
 }
 
-async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, String> {
+async fn start_process(
+    app: &AppHandle,
+    java: &Path,
+    runtime: &Path,
+    developer_logging: Arc<AtomicBool>,
+) -> Result<Arc<Process>, String> {
+    let logger = DeveloperLogger {
+        app: app.clone(),
+        enabled: developer_logging,
+    };
+    logger.emit(
+        "aniyomi-jvm",
+        "info",
+        &format!("starting Java extension runtime with {}", java.display()),
+    );
     let mut command = Command::new(java);
     command
         .args([
@@ -554,13 +621,16 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
     let pending: Arc<Mutex<Pending>> = Arc::new(Mutex::new(HashMap::new()));
 
     let output_pending = pending.clone();
+    let output_logger = logger.clone();
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             let Ok(message) = serde_json::from_str::<Value>(&line) else {
+                output_logger.emit("aniyomi-jvm:stdout", "debug", &line);
                 continue;
             };
             let Some(id) = message.get("id").and_then(Value::as_str) else {
+                output_logger.emit("aniyomi-jvm:stdout", "debug", &line);
                 continue;
             };
             if let Some(sender) = output_pending.lock().await.remove(id) {
@@ -589,10 +659,12 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
             let _ = sender.send(Err("Extension runtime exited".into()));
         }
     });
+    let error_logger = logger.clone();
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             eprintln!("[aniyomi-jvm] {line}");
+            error_logger.emit("aniyomi-jvm:stderr", "warn", &line);
         }
     });
 
@@ -601,6 +673,7 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
         stdin: Mutex::new(stdin),
         pending,
         sequence: AtomicU64::new(1),
+        logger,
     }))
 }
 
@@ -630,7 +703,7 @@ impl Runtime {
         }
         let runtime = ensure_runtime_file(app).await?;
         let java = java_command(app).await?;
-        let process = start_process(&java, &runtime).await?;
+        let process = start_process(app, &java, &runtime, self.developer_logging.clone()).await?;
         let folder = extension_dir(app)?;
         tokio::fs::create_dir_all(&folder)
             .await
@@ -652,6 +725,11 @@ impl Runtime {
         }
         *self.sources.write().await = None;
     }
+}
+
+#[tauri::command]
+pub fn jvm_extension_set_debug(enabled: bool, runtime: tauri::State<'_, Runtime>) {
+    runtime.developer_logging.store(enabled, Ordering::Relaxed);
 }
 
 #[tauri::command]

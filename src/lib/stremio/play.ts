@@ -11,6 +11,7 @@ import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
 import { scoreInfo } from './score'
 import { directMetadataPrefetchKey, directMetadataPrefetchRequest } from './direct-metadata-prefetch'
+import { developerConsoleEnabled } from '$lib/debug/log-gate'
 
 /** Ranking inputs that live in settings rather than on a stream. The non-interactive paths must
  *  use the same ones the picker does, or "best" means two different things depending on whether a
@@ -1090,7 +1091,7 @@ export async function resolveDirectPreloadStream(
       return hash ? { ...stream, url: undefined, infoHash: hash } : stream
     })
     const stream = pickDirectPreloadCandidate(normalized, hint, want)
-    if (import.meta.env.DEV) console.info(`[binge-preload] ADDON episode ${episode}`, {
+    if (developerConsoleEnabled()) console.info(`[binge-preload] ADDON episode ${episode}`, {
       provider,
       durationMs: Math.round(performance.now() - startedAt),
       rawRows: response.total,
@@ -1137,7 +1138,7 @@ export async function resolveDirectPreloadStream(
         const refined = verifySeason(refineStreams(media, batch).kept, want)
         rows += refined.length
         const stream = pickDirectPreloadCandidate(refined, hint, want)
-        if (import.meta.env.DEV) console.info(`[binge-preload] EXTENSION episode ${episode}`, {
+        if (developerConsoleEnabled()) console.info(`[binge-preload] EXTENSION episode ${episode}`, {
           provider: stream?.__origin?.name ?? stream?.__addonName ?? hint.originId,
           rows: refined.length,
           continuityMatch: !!stream,
@@ -1180,7 +1181,7 @@ async function prefetchNext(media: Media, episode: number) {
   prefetching = true
   let hit = false
   const startedAt = performance.now()
-  if (import.meta.env.DEV) console.info(`[binge-preload] START episode ${next}`, {
+  if (developerConsoleEnabled()) console.info(`[binge-preload] START episode ${next}`, {
     mediaId: media.id,
     directP2p: directP2pEnabled(),
   })
@@ -1203,7 +1204,7 @@ async function prefetchNext(media: Media, episode: number) {
         prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
         nextEpisodeReady.set({ mediaId: media.id, episode: next })
         hit = true
-        if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+        if (developerConsoleEnabled()) console.info(`[binge-preload] READY episode ${next}`, {
           durationMs: Math.round(performance.now() - startedAt),
           mode: 'online-provider',
         })
@@ -1253,7 +1254,7 @@ async function prefetchNext(media: Media, episode: number) {
       prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
       nextEpisodeReady.set({ mediaId: media.id, episode: next })
       hit = true
-      if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+      if (developerConsoleEnabled()) console.info(`[binge-preload] READY episode ${next}`, {
         durationMs: Math.round(performance.now() - startedAt),
         mode: preload.sameTorrent ? 'direct-p2p-season-pack' : 'direct-p2p-next-torrent',
         provider: directResult?.provider,
@@ -1275,7 +1276,7 @@ async function prefetchNext(media: Media, episode: number) {
       prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
       nextEpisodeReady.set({ mediaId: media.id, episode: next })
       hit = true
-      if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+      if (developerConsoleEnabled()) console.info(`[binge-preload] READY episode ${next}`, {
         durationMs: Math.round(performance.now() - startedAt),
         mode: 'debrid-cdn',
       })
@@ -1291,7 +1292,7 @@ async function prefetchNext(media: Media, episode: number) {
   finally {
     prefetching = false
     prefetchMiss = hit ? null : { key, at: Date.now() }
-    if (import.meta.env.DEV && !hit) console.info(`[binge-preload] MISS episode ${next}`, {
+    if (developerConsoleEnabled() && !hit) console.info(`[binge-preload] MISS episode ${next}`, {
       durationMs: Math.round(performance.now() - startedAt),
       retryAfterMs: PREFETCH_MISS_MS,
     })
