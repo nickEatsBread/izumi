@@ -78,7 +78,9 @@ export function mergeInstant(
     if (s != null && s > e.progress) e.progress = s
   }
   return [...map.values()]
-    .filter((e) => hasAiredEpisodeToWatch(e.media, e.progress))
+    // When a releasing title's cached/MAL projection has no schedule, the last episode actually
+    // opened is valid evidence but `progress + 1` is not. Fresh metadata reconciles moments later.
+    .filter((e) => hasAiredEpisodeToWatch(e.media, e.progress, history[e.media.id]?.episode))
     // Hide user-dismissed series until a NEWER episode is watched (progress passes the floor).
     .filter((e) => { const d = dismissed[e.media.id]; return d == null || e.progress > d })
     .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -169,14 +171,9 @@ type QueryClient = Pick<Client, 'query'>
 // stale in a way the user can notice mid-session.
 const LIST_REVALIDATE = { requestPolicy: 'cache-and-network' } as const
 
-// The two media-metadata lookups below (MAL id matching, local-history refresh) fetch titles, covers
-// and episode counts — they don't change minute to minute, and when they do, the next cold start
-// picks them up. They were the EXPENSIVE half of the original blanket policy: fanned out over every
-// unique id in the user's local history, uncapped, in batches of 50, each batch requesting the full
-// MediaFields fragment. AniList traffic is capped at 2 concurrent requests (see anilist/client.ts),
-// so those batches occupied both slots on every mount of the Continue Watching row and starved the
-// hero + home-row queries queued behind them — which delayed the cards that request cover art in
-// the first place. Left at urql's default cache-first.
+// The compact metadata refresh below fetches titles, covers and airing state. It is capped to the
+// row's own maximum and uses ContinueMediaFields; leaving it cache-first avoids fanning expensive
+// full MediaFields requests over a user's lifetime history on every home mount.
 const MEDIA_DEFAULT = {} as const
 
 async function fetchAni(client: QueryClient, userName: string | undefined): Promise<{ items: Item[]; failed: boolean }> {
@@ -208,11 +205,23 @@ async function fetchMal(malActive: boolean): Promise<{ items: Item[]; failed: bo
   catch { return { items: [], failed: true } }
 }
 
-async function refreshLocalMedia(client: QueryClient): Promise<{ media: Record<number, Media>; failed: boolean }> {
-  // historyEntries() is already most-recent-first. The Continue Watching row (and buildSnapshot's
-  // own CAP slice) never renders more than CAP entries, so refreshing metadata for the rest of a
-  // user's lifetime history is pure waste — cap here to the same bound, keeping the most recent ids.
-  const ids = [...new Set(historyEntries(get(durableHistory)).map((e) => e.media.id))].slice(0, CAP)
+async function refreshContinueMedia(
+  client: QueryClient,
+  malItems: Item[],
+): Promise<{ media: Record<number, Media>; failed: boolean }> {
+  // MAL's embedded list cards know the planned episode total but not the airing schedule. Refresh
+  // those canonical AniList ids alongside local-history cards; otherwise RELEASING rows have an
+  // unknown aired count and Continue Watching can invent progress + 1 before it airs. Keep only the
+  // CAP most-recent candidates because buildSnapshot applies that same final bound.
+  const candidates = new Map<number, number>()
+  for (const item of malItems) candidates.set(item.media.id, item.updatedAt)
+  for (const item of historyEntries(get(durableHistory))) {
+    candidates.set(item.media.id, Math.max(candidates.get(item.media.id) ?? 0, item.updatedAt))
+  }
+  const ids = [...candidates]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, CAP)
+    .map(([id]) => id)
   if (!ids.length) return { media: {}, failed: false }
   try {
     const media: Record<number, Media> = {}
@@ -249,13 +258,13 @@ export async function reconcileContinueWatching(client: QueryClient, userName: s
   const run = (async () => {
     reconciling.set(true)
     try {
-      const [ani, mal, refreshed] = await Promise.all([
+      const [ani, mal] = await Promise.all([
         fetchAni(client, userName),
         fetchMal(malActive),
-        refreshLocalMedia(client),
       ])
       const enabledTrackerFailed = (!!userName && ani.failed) || (malActive && mal.failed)
       if (enabledTrackerFailed) return // keep the snapshot; can't tell "removed" from "unreachable"
+      const refreshed = await refreshContinueMedia(client, mal.items)
       // durableHistory, NOT localHistory: the snapshot is persisted, so an incognito overlay entry
       // must never be baked into it (sessionProgress is likewise never written by incognito plays).
       cwSnapshot.set(buildSnapshot({

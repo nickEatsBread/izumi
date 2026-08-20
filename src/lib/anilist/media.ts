@@ -107,8 +107,18 @@ export const airedCount = (m: Media) => {
   return m.episodes ?? Infinity
 }
 
-/** Whether the viewer has an aired, unwatched episode available right now. */
-export const hasAiredEpisodeToWatch = (m: Media, watched = m.mediaListEntry?.progress ?? 0) => watched < airedCount(m)
+/** Whether the viewer has an aired, unwatched episode available right now. When airing metadata is
+ *  unavailable, an already-opened episode is the only local proof that the next number exists.
+ *  Treating the unknown `Infinity` sentinel as an aired count made Continue Watching advertise
+ *  unaired episodes from MAL-only/cached cards. */
+export const hasAiredEpisodeToWatch = (
+  m: Media,
+  watched = m.mediaListEntry?.progress ?? 0,
+  lastOpened?: number,
+) => {
+  const aired = airedCount(m)
+  return Number.isFinite(aired) ? watched < aired : lastOpened != null && lastOpened > watched
+}
 
 // Resume episode = the one after `watched` (defaults to the tracked progress), capped
 // to what's aired, floored at 1. Pass an explicit count when the progress lives outside

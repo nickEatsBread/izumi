@@ -78,13 +78,14 @@ describe('media helpers', () => {
     expect(hasAiredEpisodeToWatch(finished, 12)).toBe(false)
   })
 
-  it('does not treat a releasing title planned total as its aired count', () => {
+  it('does not invent an unwatched episode when a releasing title has no airing metadata', () => {
     const malOnly = {
       id: 1, title: {}, status: 'RELEASING', episodes: 12,
       nextAiringEpisode: null, airingSchedule: { nodes: [] },
     } as any
     expect(airedCount(malOnly)).toBe(Infinity)
-    expect(hasAiredEpisodeToWatch(malOnly, 7)).toBe(true)
+    expect(hasAiredEpisodeToWatch(malOnly, 7)).toBe(false)
+    expect(hasAiredEpisodeToWatch(malOnly, 7, 8)).toBe(true)
   })
 
   it('reports zero aired episodes for a not-yet-released title', () => {

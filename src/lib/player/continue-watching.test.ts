@@ -74,6 +74,20 @@ describe('mergeInstant (instant paint)', () => {
     expect(out[0].progress).toBe(4)
   })
 
+  it('does not recommend progress + 1 when a releasing MAL card has no airing data', () => {
+    const unknown = media(1, {
+      status: 'RELEASING',
+      nextAiringEpisode: null,
+      airingSchedule: { nodes: [] },
+    })
+    const cached = { media: unknown, progress: 9, updatedAt: 100, source: 'tracker' as const }
+    expect(mergeInstant([cached], {}, {})).toEqual([])
+
+    // An episode that this device already opened remains resumable even while offline.
+    const opened = { 1: hist(1, { media: unknown, episode: 9, progress: 8 }) }
+    expect(mergeInstant([], opened, {})).toHaveLength(1)
+  })
+
   it('hides a dismissed series until a newer episode is watched (dismissed floor)', () => {
     const snapshot = [entry(1, 3, 200), entry(2, 5, 100)]
     // Dismissed id 1 at progress 3 -> hidden while progress stays at/below the floor.
@@ -178,7 +192,28 @@ describe('reconcileContinueWatching', () => {
     expect(get(reconciledOnce)).toBe(true)
   })
 
-  it('revalidates only the AniList list read; MAL supplies its own card metadata', async () => {
+  it('refreshes MAL airing metadata before advertising its next episode', async () => {
+    const stale = media(101, {
+      idMal: 202,
+      status: 'RELEASING',
+      nextAiringEpisode: null,
+      airingSchedule: { nodes: [] },
+    })
+    const fresh = media(101, {
+      idMal: 202,
+      status: 'RELEASING',
+      nextAiringEpisode: { episode: 10, timeUntilAiring: 3600 },
+    })
+    mocks.malList.mockResolvedValue([{ media: stale, progress: 9, updatedAt: 1234 }])
+
+    await reconcileContinueWatching(okClient([fresh]) as never, undefined, true, true)
+
+    const snap = get(cwSnapshot)
+    expect(snap[0].media.nextAiringEpisode?.episode).toBe(10)
+    expect(mergeInstant(snap, {}, {})).toEqual([])
+  })
+
+  it('revalidates only the AniList list read; compact airing refresh stays cache-first', async () => {
     // cache-first would serve the list from the process-lifetime normalized cache after the first
     // sync, so a reconcile could never see progress from another device or a list removal. The
     // MAL list nodes now provide their own titles/covers/episode counts, while the local-history
@@ -191,7 +226,7 @@ describe('reconcileContinueWatching', () => {
       },
     }
     mocks.malList.mockResolvedValue([{ media: media(101, { idMal: 202 }), progress: 5, updatedAt: 1234 }])
-    localHistory.set({ 101: hist(101) }) // gives refreshLocalMedia an id to look up
+    localHistory.set({ 101: hist(101) }) // gives refreshContinueMedia an id to look up
     await reconcileContinueWatching(spyClient as never, 'someone', true, true)
     expect(calls).toHaveLength(2)
     const byQuery = new Map(calls.map((c) => [c.query, c.requestPolicy]))
@@ -199,7 +234,7 @@ describe('reconcileContinueWatching', () => {
     expect(byQuery.get(MEDIA_BY_IDS_QUERY)).not.toBe('cache-and-network')
   })
 
-  it('caps refreshLocalMedia to CAP ids, most recent first, even with far more history', async () => {
+  it('caps refreshContinueMedia to CAP ids, most recent first, even with far more history', async () => {
     const queried: number[][] = []
     const spyClient = {
       query: (q: unknown, v: { ids?: number[] }) => {
@@ -207,7 +242,7 @@ describe('reconcileContinueWatching', () => {
         return { toPromise: async () => ({ data: { Page: { media: [] } } }) }
       },
     }
-    mocks.malList.mockResolvedValue([]) // malActive must be true to reach refreshLocalMedia (a
+    mocks.malList.mockResolvedValue([]) // malActive must be true to reach refreshContinueMedia (a
     // local-only user with no linked tracker returns early with no network at all — by design).
     // CAP + 20 history entries, DESCENDING updatedAt so id 0 is the most recent — historyEntries()
     // sorts by updatedAt desc, and the cap should keep exactly that most-recent slice.
