@@ -2,6 +2,7 @@
 #[cfg(target_os = "android")]
 mod android_tls;
 mod cache_gc;
+mod text_file;
 mod direct_torrent;
 mod direct_torrent_range;
 mod direct_torrent_select;
@@ -921,11 +922,12 @@ fn set_idle_inhibit(app: AppHandle, on: bool) {
     player::wakelock::set(&app, on);
 }
 
-/// Write a UTF-8 text file to an absolute path chosen via the save dialog. Used by the local-history
-/// export (there's no plugin-fs; this is the minimal write primitive the frontend needs).
+/// Write a UTF-8 text file to the location chosen via the save dialog. Used by backup, local-history
+/// export, and diagnostics (there's no plugin-fs; this is the minimal write primitive the frontend
+/// needs). On Android the dialog returns a `content://` URI — see `text_file`.
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| e.to_string())
+    text_file::write(path, contents)
 }
 
 /// Read a bounded UTF-8 text file for subtitle synchronization. This deliberately is not a

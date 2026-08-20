@@ -135,6 +135,8 @@ tauri-plugin-haptics = "2"
 # verifier must be initialized from a JVM-owned thread before Tauri starts any async networking.
 jni = "0.22.4"
 rustls-platform-verifier = "0.7.0"
+# Activity/VM pointers so backup writes can open a Storage Access Framework content URI.
+ndk-context = "0.1"
 
 # Raw Win32 for true borderless fullscreen + mpv-child input passthrough, and the
 # WebView2 COM call to make the webview background transparent (Stremio's model:

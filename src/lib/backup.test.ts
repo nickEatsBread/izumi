@@ -51,6 +51,32 @@ describe('save-dialog capability', () => {
   })
 })
 
+// Android's save picker returns a `content://` URI. Writing that with std::fs is
+// "os error 2" (ENOENT) because the URI is not a filesystem path. The native write
+// primitive has to send those URIs through ContentResolver.openOutputStream so the
+// user can put the backup anywhere the system picker allows.
+describe('Android backup save', () => {
+  const rust = readFileSync(
+    fileURLToPath(new URL('../../src-tauri/src/text_file.rs', import.meta.url)),
+    'utf8',
+  )
+  const helper = readFileSync(
+    fileURLToPath(new URL('./player/history-io.ts', import.meta.url)),
+    'utf8',
+  )
+
+  it('keeps the save-dialog result as the write destination', () => {
+    expect(helper).toMatch(/const path = await save\(/)
+    expect(helper).toMatch(/invoke\('write_text_file',\s*\{\s*path,\s*contents\s*\}/)
+  })
+
+  it('writes content:// URIs through ContentResolver instead of std::fs', () => {
+    expect(rust).toMatch(/starts_with\("content:"\)/)
+    expect(rust).toContain('openOutputStream')
+    expect(rust).toContain('ContentResolver')
+  })
+})
+
 describe('ioErrorMessage', () => {
   it('surfaces a Tauri string rejection instead of the generic fallback', () => {
     expect(ioErrorMessage('dialog.save not allowed', 'Backup failed.')).toBe('dialog.save not allowed')
