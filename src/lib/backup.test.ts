@@ -56,8 +56,8 @@ describe('save-dialog capability', () => {
 // primitive has to send those URIs through ContentResolver.openOutputStream so the
 // user can put the backup anywhere the system picker allows.
 describe('Android backup save', () => {
-  const rust = readFileSync(
-    fileURLToPath(new URL('../../src-tauri/src/text_file.rs', import.meta.url)),
+  const kotlin = readFileSync(
+    fileURLToPath(new URL('../../src-tauri/tauri-plugin-extplayer/android/src/main/java/app/izumi/extplayer/ExtPlayerPlugin.kt', import.meta.url)),
     'utf8',
   )
   const helper = readFileSync(
@@ -65,15 +65,15 @@ describe('Android backup save', () => {
     'utf8',
   )
 
-  it('keeps the save-dialog result as the write destination', () => {
-    expect(helper).toMatch(/const path = await save\(/)
-    expect(helper).toMatch(/invoke\('write_text_file',\s*\{\s*path,\s*contents\s*\}/)
+  it('uses the combined SAF command on Android instead of dialog.save plus write_text_file', () => {
+    expect(helper).toContain("plugin:extplayer|save_text_file")
+    expect(helper).toContain('ACTION_CREATE_DOCUMENT')
   })
 
-  it('writes content:// URIs through ContentResolver instead of std::fs', () => {
-    expect(rust).toMatch(/starts_with\("content:"\)/)
-    expect(rust).toContain('openOutputStream')
-    expect(rust).toContain('ContentResolver')
+  it('writes the picked document through ContentResolver in the activity result', () => {
+    expect(kotlin).toContain('ACTION_CREATE_DOCUMENT')
+    expect(kotlin).toContain('openOutputStream')
+    expect(kotlin).toContain('saveTextFileResult')
   })
 })
 

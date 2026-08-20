@@ -26,6 +26,8 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import androidx.activity.result.ActivityResult
+import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -112,6 +114,13 @@ class DownloadForegroundArgs {
     /** 0-100, or null/absent for indeterminate. */
     var progress: Int? = null
     var count: Int? = null
+}
+
+@InvokeArg
+class SaveTextFileArgs {
+    var fileName: String = ""
+    var mime: String? = null
+    var contents: String = ""
 }
 
 @TauriPlugin
@@ -597,6 +606,64 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         }
         activity.startActivity(intent)
         invoke.resolve()
+    }
+
+    // Combined SAF create + write. Do not split this into dialog.save() + std::fs::write:
+    // Android returns a content:// URI, JNI against the Activity from a worker thread kills
+    // the process, and the picker can recreate the Activity. Write the bytes to cache first
+    // so the document copy in onActivityResult does not depend on the IPC payload still
+    // sitting in memory.
+    @Command
+    fun saveTextFile(invoke: Invoke) {
+        try {
+            val args = invoke.parseArgs(SaveTextFileArgs::class.java)
+            val pending = File(activity.cacheDir, "izumi-pending-save.bin")
+            pending.writeText(args.contents)
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = args.mime?.takeIf { it.isNotBlank() } ?: "*/*"
+                putExtra(Intent.EXTRA_TITLE, args.fileName.ifBlank { "izumi-backup.json" })
+            }
+            startActivityForResult(invoke, intent, "saveTextFileResult")
+        } catch (ex: Exception) {
+            invoke.reject(ex.message ?: "Failed to open the save picker")
+        }
+    }
+
+    @ActivityCallback
+    fun saveTextFileResult(invoke: Invoke, result: ActivityResult) {
+        val pending = File(activity.cacheDir, "izumi-pending-save.bin")
+        fun done(saved: Boolean, error: String? = null) {
+            pending.delete()
+            if (error != null) invoke.reject(error)
+            else invoke.resolve(JSObject().put("saved", saved))
+        }
+        try {
+            if (result.resultCode != Activity.RESULT_OK) {
+                done(false)
+                return
+            }
+            val uri = result.data?.data
+            if (uri == null) {
+                done(false)
+                return
+            }
+            if (!pending.isFile) {
+                done(false, "The backup data was lost before it could be written")
+                return
+            }
+            activity.contentResolver.openOutputStream(uri, "wt").use { out ->
+                if (out == null) {
+                    done(false, "Could not open the chosen location")
+                    return
+                }
+                pending.inputStream().use { input -> input.copyTo(out) }
+                out.flush()
+            }
+            done(true)
+        } catch (ex: Exception) {
+            done(false, ex.message ?: "Failed to write the file")
+        }
     }
 
     // Mobile OAuth: the desktop opens a second window and polls its URL; Android has no second

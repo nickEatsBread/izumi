@@ -3701,7 +3701,6 @@ dependencies = [
  "libmpv2-sys",
  "librqbit",
  "n0-future",
- "ndk-context",
  "netdev",
  "netwatch",
  "raw-window-handle",

@@ -12,6 +12,7 @@ Allow Android playback, browser authentication, self-update, and power/network c
 - `allow-da-reaction-state`
 - `allow-da-react`
 - `allow-da-login`
+- `allow-save-text-file`
 
 ## Permission Table
 
@@ -226,6 +227,32 @@ Enables the play_external command without any pre-configured scope.
 <td>
 
 Denies the play_external command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-save-text-file`
+
+</td>
+<td>
+
+Enables the save_text_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-save-text-file`
+
+</td>
+<td>
+
+Denies the save_text_file command without any pre-configured scope.
 
 </td>
 </tr>

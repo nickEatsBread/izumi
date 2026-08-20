@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "da_reaction_state",
     "da_react",
     "da_login",
+    "save_text_file",
 ];
 
 fn main() {
