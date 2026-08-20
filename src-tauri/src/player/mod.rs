@@ -31,6 +31,11 @@ pub mod shaders;
 // Playback wakelock: inhibit OS idle/screen-blank while a video plays (per-OS backends). See wakelock.rs.
 #[cfg(not(target_os = "android"))]
 pub mod wakelock;
+#[cfg(target_os = "macos")]
+mod macos_geometry;
+// macOS embedded player: an NSView behind the transparent WKWebView, passed as `--wid`.
+#[cfg(target_os = "macos")]
+pub mod macos_embed;
 // Linux embedded player: a wl_subsurface placed below the (transparent) webview,
 // rendered by mpv's OpenGL render API. Never touches the webview's GTK tree.
 #[cfg(target_os = "linux")]
@@ -1745,6 +1750,8 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // On a Windows display at 125%/150% scaling, mpv otherwise renders the video
         // larger than the window and crops it (the "zoomed in" bug). We hand mpv real
         // pixel-sized child windows, so it must not re-apply the OS scale factor.
+        // macOS NSView frames are in points; leave hidpi scaling on so retina still fills.
+        #[cfg(windows)]
         let _ = init.set_option("hidpi-window-scale", "no");
         // Contain (letterbox), never zoom/crop by default — 'fill' fit sets panscan=1.
         let _ = init.set_option("keepaspect", "yes");

@@ -219,21 +219,24 @@ async fn player_embed(
             )?;
         }
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
     {
-        let _ = (
-            &player,
-            &main,
-            &app,
-            &start_seconds,
-            &autoplay,
-            &alang,
-            &slang,
+        let _ = main.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+        player::macos_embed::make_webview_transparent(&main);
+        let wid = player::macos_embed::ensure_ready(&main)?;
+        player.play_embedded(
             &url,
-            &headers,
-            &subtitles,
-            &audio_tracks,
-        );
+            wid,
+            app.clone(),
+            start_seconds,
+            autoplay,
+            alang,
+            slang,
+            headers.clone(),
+            subtitles.clone(),
+            audio_tracks.clone(),
+        )?;
+        player::macos_embed::resize(&main);
     }
     Ok(())
 }
@@ -2226,7 +2229,12 @@ fn player_set_inset(app: AppHandle, left: i32, top: Option<i32>) -> Result<(), S
             resize_mpv_child(w.hwnd().map_err(|e| e.to_string())?.0 as isize);
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        player::macos_embed::set_inset(left.max(0), top.unwrap_or(0).max(0));
+        player::macos_embed::resize_from_app(&app);
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     let _ = (app, left, top);
     Ok(())
 }
@@ -4115,6 +4123,18 @@ pub fn run() {
                         }
                     });
                 }
+            }
+            #[cfg(target_os = "macos")]
+            if let Some(win) = app.get_webview_window("main") {
+                if let Err(e) = player::macos_embed::prepare(&win) {
+                    eprintln!("[player] macOS mpv view prepare failed: {e}");
+                }
+                let w = win.clone();
+                win.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Resized(_)) {
+                        player::macos_embed::resize(&w);
+                    }
+                });
             }
             // Linux: make the WebView background fully TRANSPARENT so the mpv video
             // subsurface below shows through the player's transparent areas. Accelerated
