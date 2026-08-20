@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
-  import { updateChannel } from '$lib/settings/ui'
+  import { developerLogging, updateChannel } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
   import { checkForUpdate, applyUpdate, availableUpdate, updatePhase, updateProgress, updateError } from '$lib/updater'
   import { copyToClipboard } from '$lib/util/clipboard'
@@ -9,6 +9,7 @@
   import { save } from '@tauri-apps/plugin-dialog'
   import { ioErrorMessage } from '$lib/player/history-io'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import Toggle from '$lib/components/settings/Toggle.svelte'
 
   let appVersion = $state('')
   let tauriVersion = $state('')
@@ -167,6 +168,16 @@
   <div class="mt-6 max-w-md" data-setting-key="developer-tools">
     <h3 class="mb-1 text-sm font-black">Diagnostics</h3>
     <p class="mb-3 text-xs text-muted-foreground">Izumi keeps the latest {$diagnosticEvents.length} frontend errors for this session. Reports redact settings whose names look sensitive.</p>
+    {#if !$isAndroid}
+      <div class="mb-3">
+        <Toggle
+          label="Developer logging"
+          desc="Forward verbose frontend, native, and JVM extension-runtime events to DevTools. Logs may contain source URLs or account material; switch this off after debugging."
+          value={$developerLogging}
+          onToggle={() => ($developerLogging = !$developerLogging)}
+        />
+      </div>
+    {/if}
     <div class="flex flex-wrap gap-2">
       <button data-focusable onclick={copyDiagnostics} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Copy report</button>
       <button data-focusable onclick={saveDiagnostics} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Save report</button>

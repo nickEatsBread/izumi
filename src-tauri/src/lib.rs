@@ -4241,6 +4241,7 @@ pub fn run() {
             extension_package::extension_install_url,
             extension_package::extension_list,
             extension_package::extension_remove,
+            jvm_extensions::jvm_extension_set_debug,
             jvm_extensions::jvm_extension_sources,
             jvm_extensions::jvm_extension_call,
             jvm_extensions::jvm_extension_reload,

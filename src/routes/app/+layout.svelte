@@ -60,6 +60,7 @@
   import UpdateToast from '$lib/components/shell/UpdateToast.svelte'
   import { get } from 'svelte/store'
   import { initCrashReporting } from '$lib/diagnostics'
+  import { initDeveloperLogging } from '$lib/debug/native-logging'
   import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
   import { initGmTouchWatchdog, restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
@@ -88,6 +89,7 @@
   $effect(() => {
     initCrashReporting()
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
+    const stopDeveloperLogging = get(isAndroid) ? () => {} : initDeveloperLogging()
     initOffline() // latch offline mode from launch connectivity + the persisted force toggle
     if (get(isAndroid)) initReturnTracking() // return-to-app = watched (external-player flow)
     // Cross-platform update check: a delayed launch check + a 6h interval, always on (there's no
@@ -140,7 +142,7 @@
     // connected. Fire-and-forget.
     refreshAniListAvatar().catch(() => {})
     refreshMalViewer().catch(() => {})
-    return () => { stopUpdates?.(); stopExtensionUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
+    return () => { stopDeveloperLogging(); stopUpdates?.(); stopExtensionUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
   })
 
   // Push the DNS-over-HTTPS setting into the Rust HTTP client. Reactive: runs on
