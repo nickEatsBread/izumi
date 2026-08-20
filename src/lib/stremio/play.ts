@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
-import { enabledAddonUrls } from './sources'
+import { addonUrls, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
 import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
@@ -16,6 +16,18 @@ import { directMetadataPrefetchKey, directMetadataPrefetchRequest } from './dire
  *  use the same ones the picker does, or "best" means two different things depending on whether a
  *  human was looking. */
 const directP2pEnabled = () => get(torrentPlaybackMode) === 'direct' || !get(debridKey)
+const ALL_ADDONS_DISABLED_MESSAGE = 'All configured stream add-ons are disabled — enable one in Settings → Sources.'
+const sourceInventoryError = (enabledAddons: string[]) => (
+  !enabledAddons.length && get(addonUrls).length
+    ? ALL_ADDONS_DISABLED_MESSAGE
+    : 'No sources configured — add an addon URL or install an anime package in Settings.'
+)
+const emptyStreamsError = (total: number, enabledAddons: string[]) => {
+  if (!enabledAddons.length && get(addonUrls).length) return ALL_ADDONS_DISABLED_MESSAGE
+  return total > 0
+    ? `Found ${total} torrents but none are usable (all dead or notice entries). Try another source.`
+    : 'No streams found for this title/episode yet.'
+}
 const rankOpts = (anilistId?: number): RankOptions => ({
   audioLang: get(preferredAudioLang),
   directP2p: directP2pEnabled(),
@@ -776,7 +788,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   const bases = get(enabledAddonUrls)
   if (!bases.length) {
     if (await hasConfiguredExtensions()) return { streams: [], cachedCount: 0 }
-    throw new Error('No sources configured — add an addon URL or install an anime package in Settings.')
+    throw new Error(sourceInventoryError(bases))
   }
   const kitsu = await resolveKitsu(media)
   // No Kitsu id ⇒ addons (which index by it) can't be queried. Auto-advance is cached-addon-only,
@@ -803,9 +815,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   // Only hard-fail when there's nothing playable AND no extensions to fall back on;
   // otherwise let the picker fill from extensions asynchronously.
   if (!streams.length && !await hasConfiguredExtensions()) {
-    throw new Error(total > 0
-      ? `Found ${total} torrents but none are usable (all dead or notice entries). Try another source.`
-      : 'No streams found for this title/episode yet.')
+    throw new Error(emptyStreamsError(total, bases))
   }
   return { streams, cachedCount, want, kitsu }
 }
@@ -1543,7 +1553,7 @@ export async function playEpisode(
       addons: bases.map(addonTraceName),
       extensionsEnabled: hasExt,
     })
-    if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL or install an anime package in Settings.')
+    if (!bases.length && !hasExt) throw new Error(sourceInventoryError(bases))
     // One provider is not one source: AllAnime and similar providers can expose several hosts,
     // qualities, subtitle sets, or audio variants. A manual episode click therefore keeps the
     // chooser visible regardless of provider count; the normal Auto preference may choose later.
@@ -2024,9 +2034,7 @@ export async function playEpisode(
 
     // Nothing playable → honest error.
     if (!get(streamPicker)?.streams.length) {
-      return showPickerError(totalRaw > 0
-        ? `Found ${totalRaw} torrents but none are usable (all dead or notice entries). Try another source.`
-        : 'No streams found for this title/episode yet.')
+      return showPickerError(emptyStreamsError(totalRaw, bases))
     }
     traceResolve(trace, 'picker ready for source selection', {
       rawRows: totalRaw,
