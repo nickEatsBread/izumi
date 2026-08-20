@@ -1,5 +1,20 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { classifyAuth, authError, isArchiveName, isDecoy, poll, debridBlocked, isDebridBlocked, isRetryableStatus, debridHttpError, isDebridRetryable, isDebridThrottled } from './http'
+import { classifyAuth, authError, isArchiveName, isDecoy, poll, debridBlocked, isDebridBlocked, isRetryableStatus, debridHttpError, isDebridRetryable, isDebridThrottled, serializeNativeFormData } from './http'
+
+describe('native debrid request bodies', () => {
+  it('serializes every string FormData field as multipart data', () => {
+    const data = new FormData()
+    data.append('items[]', 'magnet:?xt=urn:btih:aaa')
+    data.append('items[]', 'magnet:?xt=urn:btih:bbb')
+
+    const body = serializeNativeFormData(data, 'test-boundary')
+
+    expect(body.match(/name="items\[\]"/g)).toHaveLength(2)
+    expect(body).toContain('magnet:?xt=urn:btih:aaa')
+    expect(body).toContain('magnet:?xt=urn:btih:bbb')
+    expect(body).toMatch(/--test-boundary--\r\n$/)
+  })
+})
 
 describe('classifyAuth', () => {
   // Real-Debrid — HTTP status only

@@ -45,6 +45,60 @@ export const form = (o: Record<string, string>) => {
   return p.toString()
 }
 
+type NativeBody = { body: string; contentType?: string }
+
+/** Serialize the string-only FormData used by debrid APIs for the native HTTP bridge.
+ *
+ * The pooled Tauri command accepts a string body, not a browser BodyInit. Passing FormData through
+ * without converting it therefore sent an EMPTY POST to TorBox's createtorrent endpoint — the
+ * service quite correctly replied that no file or magnet had been provided. Keep multipart here
+ * (rather than changing TorBox to a different content type) because it is the provider's documented
+ * wire format and Premiumize uses the same shared path. Binary uploads are intentionally rejected:
+ * the string IPC transport cannot preserve arbitrary file bytes, and no shipped debrid call sends
+ * one. */
+export function serializeNativeFormData(data: FormData, boundary: string): string {
+  let body = ''
+  for (const [rawName, value] of data.entries()) {
+    if (typeof value !== 'string') {
+      throw new Error('Binary FormData is not supported by the native HTTP bridge.')
+    }
+    // Header parameters cannot contain raw quotes/newlines. Values belong after the blank line and
+    // may contain ordinary newlines; the per-request random boundary makes a collision negligible.
+    const name = rawName.replace(/[\r\n"]/g, (character) =>
+      character === '"' ? '%22' : character === '\r' ? '%0D' : '%0A')
+    body += `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
+  }
+  return `${body}--${boundary}--\r\n`
+}
+
+function nativeBody(value: unknown): NativeBody {
+  if (typeof value === 'string') return { body: value }
+  if (typeof URLSearchParams !== 'undefined' && value instanceof URLSearchParams) {
+    return { body: value.toString(), contentType: 'application/x-www-form-urlencoded;charset=UTF-8' }
+  }
+  if (typeof FormData !== 'undefined' && value instanceof FormData) {
+    const random = globalThis.crypto?.randomUUID?.().replace(/-/g, '')
+      ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`
+    const boundary = `----izumi-${random}`
+    return {
+      body: serializeNativeFormData(value, boundary),
+      contentType: `multipart/form-data; boundary=${boundary}`,
+    }
+  }
+  return { body: '' }
+}
+
+function defaultHeader(
+  headers: Record<string, string> | undefined,
+  name: string,
+  value: string | undefined,
+): Record<string, string> | undefined {
+  if (!value) return headers
+  const out = { ...(headers ?? {}) }
+  if (!Object.keys(out).some((key) => key.toLowerCase() === name.toLowerCase())) out[name] = value
+  return out
+}
+
 /** Pick the largest real video from a {name,bytes} list (drops samples/extras). */
 export function pickLargestVideo<T extends { name: string; bytes: number }>(files: T[]): T | undefined {
   const vids = files.filter((f) => VIDEO.test(f.name) && !JUNK.test(f.name))
@@ -73,8 +127,13 @@ export function pickLargestVideo<T extends { name: string; bytes: number }>(file
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function jfetch(url: string, init?: any): Promise<{ ok: boolean; status: number; json: any }> {
   const method = String(init?.method ?? 'GET').toUpperCase()
-  const headers = init?.headers as Record<string, string> | undefined
-  const body = typeof init?.body === 'string' ? init.body : undefined
+  const serialized = init?.body == null ? undefined : nativeBody(init.body)
+  const body = serialized?.body
+  const headers = defaultHeader(
+    init?.headers as Record<string, string> | undefined,
+    'Content-Type',
+    serialized?.contentType,
+  )
   const opts = {
     signal: init?.signal as AbortSignal | undefined,
     timeoutMs: init?.timeoutMs as number | undefined,
