@@ -11,8 +11,10 @@ const resolveOnlineStreams = vi.fn((..._args: unknown[]): Promise<unknown[]> => 
 const fetchMediaById = vi.fn()
 const automaticSources = writable(true)
 const continueSourcePreference = writable<'resumed' | 'always' | 'never'>('resumed')
+const configuredAddonUrls = writable<string[]>([])
 
 vi.mock('./sources', () => ({
+  addonUrls: configuredAddonUrls,
   enabledAddonUrls: readable<string[]>([]),
   addonOriginId: () => '',
 }))
@@ -127,11 +129,25 @@ afterEach(() => {
   rememberedEpisodeSources.set({})
   durablePositions.set({})
   continueSourcePreference.set('resumed')
+  configuredAddonUrls.set([])
   fetchMediaById.mockReset()
   vi.clearAllMocks()
+  hasConfiguredExtensions.mockResolvedValue(true)
 })
 
 describe('manual episode source chooser', () => {
+  it('reports disabled add-ons instead of claiming that the episode has no streams', async () => {
+    configuredAddonUrls.set(['https://disabled-addon.test'])
+    hasConfiguredExtensions.mockResolvedValue(false)
+
+    await playEpisode(media as never, 2, () => {})
+
+    expect(get(picker)).toMatchObject({
+      resolving: false,
+      playbackError: 'All configured stream add-ons are disabled — enable one in Settings → Sources.',
+    })
+  })
+
   it('stays visible while a single provider resolves its multiple server choices', async () => {
     const resolving = playEpisode(media as never, 2, () => {})
 
