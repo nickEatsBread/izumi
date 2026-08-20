@@ -8,11 +8,13 @@
 //! Tauri command (worker pool), so [`on_main`] hops `mpv_initialize` there.
 
 use super::macos_geometry::player_area_points;
+use objc2::exception::catch as catch_objc;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject};
 use objc2::{msg_send, ClassType, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{NSView, NSWindow, NSWindowOrderingMode};
-use objc2_foundation::{NSNumber, NSPoint, NSRect, NSSize, NSString};
+use objc2_foundation::{NSPoint, NSRect, NSSize};
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicI32, AtomicIsize, Ordering};
 use tauri::{Manager, WebviewWindow};
 
@@ -73,6 +75,18 @@ pub fn prepare(window: &WebviewWindow) -> Result<(), String> {
         resize(window);
         return Ok(());
     }
+    // AppKit throws NSException (not a Rust Result). Uncaught, that is SIGABRT.
+    // v0.1.40 aborted at launch because prepare ran from DidFinishLaunching.
+    let win = window.clone();
+    match unsafe { catch_objc(AssertUnwindSafe(|| insert_host_view(&win, mtm))) } {
+        Ok(inner) => inner,
+        Err(ex) => Err(format!(
+            "AppKit exception while creating the video view: {ex:?}"
+        )),
+    }
+}
+
+fn insert_host_view(window: &WebviewWindow, mtm: MainThreadMarker) -> Result<(), String> {
     let ns_window = retain_window(window)?;
     let content = ns_window
         .contentView()
@@ -135,26 +149,27 @@ pub fn make_webview_transparent(window: &WebviewWindow) {
     if ns_view.is_null() {
         return;
     }
-    let key = NSString::from_str("drawsBackground");
-    let no = NSNumber::new_bool(false);
     let view = ns_view as *mut AnyObject;
-    unsafe {
-        let _: () = msg_send![&*view, setValue: &*no, forKey: &*key];
-        let layer: *mut AnyObject = msg_send![&*view, layer];
-        if !layer.is_null() {
-            let _: () = msg_send![&*layer, setOpaque: false];
-        }
-        let sel = objc2::sel!(setUnderPageBackgroundColor:);
-        let responds: bool = msg_send![&*view, respondsToSelector: sel];
-        if responds {
-            if let Some(nscolor) = AnyClass::get(c"NSColor") {
-                let clear: *mut AnyObject = msg_send![nscolor, clearColor];
-                if !clear.is_null() {
-                    let _: () = msg_send![&*view, setUnderPageBackgroundColor: &*clear];
+    // Public APIs only. Private WKWebView KVC for the draws-background flag
+    // raised NSUnknownKeyException on macOS 26 and aborted the process.
+    let _ = unsafe {
+        catch_objc(AssertUnwindSafe(|| {
+            let layer: *mut AnyObject = msg_send![&*view, layer];
+            if !layer.is_null() {
+                let _: () = msg_send![&*layer, setOpaque: false];
+            }
+            let sel = objc2::sel!(setUnderPageBackgroundColor:);
+            let responds: bool = msg_send![&*view, respondsToSelector: sel];
+            if responds {
+                if let Some(nscolor) = AnyClass::get(c"NSColor") {
+                    let clear: *mut AnyObject = msg_send![nscolor, clearColor];
+                    if !clear.is_null() {
+                        let _: () = msg_send![&*view, setUnderPageBackgroundColor: &*clear];
+                    }
                 }
             }
-        }
-    }
+        }))
+    };
 }
 
 fn host_parent(
