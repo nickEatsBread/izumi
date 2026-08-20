@@ -74,6 +74,7 @@ vi.mock('$lib/settings/ui', () => ({
   sourcePriorityMode: readable('prefer'),
   continueSourcePreference,
   seadexAnnotations: readable(false),
+  promoteToWatching: readable(false),
 }))
 vi.mock('$lib/player/session', () => ({
   streamPicker: picker,

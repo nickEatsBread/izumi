@@ -1,7 +1,9 @@
 <script lang="ts">
   import { anilistUser } from '$lib/anilist/account'
   import { anilistToken, anilistUserName, malToken, malUserName, malUser } from '$lib/trackers/config'
+  import { promoteToWatching } from '$lib/settings/ui'
   import { trackerQueue } from '$lib/trackers/queue'
+  import Toggle from '$lib/components/settings/Toggle.svelte'
 
   // Read-only usernames (no login) — one per tracker. Public lists only; progress never syncs back.
   let aniInput = $state($anilistUser)
@@ -96,6 +98,14 @@
       {#if aniError}<p class="mt-2 text-sm text-destructive">{aniError}</p>{/if}
     </div>
 
+    <div class="mb-6">
+      <Toggle
+        label="Move to Watching after 90 seconds"
+        desc="If a title is Planning or not on your list, start tracking it as Watching after about 90 seconds of playback. Off by default."
+        value={$promoteToWatching}
+        onToggle={() => ($promoteToWatching = !$promoteToWatching)}
+      />
+    </div>
     {#if $trackerQueue.length}
       <p class="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
         {$trackerQueue.length} tracker update{$trackerQueue.length === 1 ? '' : 's'} waiting to sync. They retry automatically when you are online.

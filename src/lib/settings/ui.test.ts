@@ -64,6 +64,13 @@ describe('player enhancement defaults', () => {
   })
 })
 
+describe('tracker promote-on-play', () => {
+  it('stays off until the user opts in', async () => {
+    const { promoteToWatching } = await import('./ui')
+    expect(get(promoteToWatching)).toBe(false)
+  })
+})
+
 describe('direct p2p defaults', () => {
   it('shows transfer status only while the first frame buffers', () => {
     expect(get(p2pStatusVisibility)).toBe('initial')

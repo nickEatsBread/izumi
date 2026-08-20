@@ -99,6 +99,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Watch progress sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'history positions' },
   { title: 'Settings and extensions sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'sources setup transfer' },
 
+  { title: 'Move to Watching after 90 seconds', category: 'Accounts', href: '/app/settings/accounts', keywords: 'promote planning current tracker auto', anchored: true },
   { title: 'AniList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'username login tracker connect' },
   { title: 'MyAnimeList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'mal username login tracker connect' },
 
