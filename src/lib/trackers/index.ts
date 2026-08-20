@@ -96,8 +96,12 @@ async function pushAniList(op: TrackerOp): Promise<PushResult> {
     } else {
       r = await anilist.mutation(SAVE_SCORE, { mediaId: op.mediaId, scoreRaw: aniScore(op.score ?? 0) }).toPromise()
     }
-    if (!r.error) return { ok: true }
-    return aniClassify(r.error)
+    if (r.error) return aniClassify(r.error)
+    if (op.kind === 'progress') {
+      const echoed = (r.data?.SaveMediaListEntry as { progress?: number } | undefined)?.progress
+      if (typeof echoed === 'number') return { ok: true, echoedProgress: echoed }
+    }
+    return { ok: true }
   } catch { return { ok: false, retryable: true } }
 }
 
@@ -154,13 +158,21 @@ async function push(media: Media, op: Omit<TrackerOp, 'mediaId' | 'idMal'>): Pro
   if (get(anilistToken)) {
     const aop: TrackerOp = { ...op, mediaId: media.id }
     const r = await pushAniList(aop)
-    if (r.ok) { results.push('AniList'); if (prog != null) markConfirmed('AniList', media.id, prog); dropSuperseded('AniList', media.id, op.kind) }
+    if (r.ok) {
+      results.push('AniList')
+      if (prog != null) markConfirmed('AniList', media.id, r.echoedProgress ?? prog)
+      dropSuperseded('AniList', media.id, op.kind)
+    }
     else if (r.retryable) enqueue('AniList', aop)
   }
   if (get(malToken) && idMal) {
     const mop: TrackerOp = { ...op, mediaId: media.id, idMal }
     const r = await pushMal(mop)
-    if (r.ok) { results.push('MAL'); if (prog != null) markConfirmed('MAL', media.id, prog); dropSuperseded('MAL', media.id, op.kind) }
+    if (r.ok) {
+      results.push('MAL')
+      if (prog != null) markConfirmed('MAL', media.id, r.echoedProgress ?? prog)
+      dropSuperseded('MAL', media.id, op.kind)
+    }
     else if (r.retryable) enqueue('MAL', mop)
   }
   if (results.length) void flushQueue() // connectivity just confirmed → drain any backlog

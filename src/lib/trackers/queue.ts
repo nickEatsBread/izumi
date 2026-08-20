@@ -37,7 +37,9 @@ export interface TrackerOp {
   extras?: ProgressExtras
 }
 
-export type PushResult = { ok: true } | { ok: false; retryable: boolean }
+export type PushResult =
+  | { ok: true; echoedProgress?: number }
+  | { ok: false; retryable: boolean }
 
 interface QueueEntry {
   tracker: TrackerName
