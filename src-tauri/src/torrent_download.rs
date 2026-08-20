@@ -15,27 +15,29 @@
 //! path in `download.rs`, so the queue in the web app does not care which engine ran the job.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, Weak,
     },
     time::Duration,
 };
 
 use librqbit::{
     api::TorrentIdOrHash, AddTorrent, AddTorrentOptions, AddTorrentResponse, ConnectionOptions,
-    DhtSessionConfig, Session, SessionOptions,
+    DhtSessionConfig, Magnet, Session, SessionOptions,
 };
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::{
-    sync::{Mutex, OnceCell},
-    time::{sleep, timeout, Instant},
+    io::AsyncReadExt,
+    sync::{Mutex, Notify, OnceCell},
+    time::{timeout, Instant},
 };
 
 use crate::direct_torrent::{
-    mbps_to_bps, normalized_bind_interface, normalized_socks_proxy, proxy_safe_magnet, upload_limit,
+    add_public_trackers, mbps_to_bps, normalized_bind_interface, normalized_socks_proxy,
+    proxy_safe_magnet, upload_limit,
 };
 use crate::direct_torrent_select::{select_file, TorrentFile};
 use crate::download::sanitize;
@@ -43,6 +45,7 @@ use crate::download::sanitize;
 const METADATA_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(400);
 const EMIT_INTERVAL: Duration = Duration::from_millis(300);
+const PRIORITY_READ_BYTES: usize = 1024 * 1024;
 /// A torrent with no seeders never errors — it just sits there. Give up rather than leave a job
 /// "downloading" forever with a spinner and no explanation.
 const STALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -51,6 +54,11 @@ const STALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 pub struct TorrentDownloads {
     engine: OnceCell<Arc<Engine>>,
     jobs: Mutex<HashMap<String, Job>>,
+    /// librqbit owns one output folder and one file selection per info hash. Two queue items from
+    /// the same season pack must therefore take turns; otherwise the second `add_torrent` returns
+    /// the first job's handle and writes into the wrong staging folder. Different torrents remain
+    /// fully concurrent. Weak values keep completed hashes from becoming a permanent map.
+    hash_locks: Mutex<HashMap<String, Weak<Mutex<()>>>>,
 }
 
 struct Engine {
@@ -64,11 +72,18 @@ struct Job {
     stop: Arc<AtomicBool>,
     /// Set by a cancel (as opposed to a pause): discard the partially downloaded data too.
     discard: Arc<AtomicBool>,
+    wake: Arc<Notify>,
 }
 
 enum Outcome {
     Done(u64),
     Stopped(u64),
+}
+
+/// `finished` describes the currently selected piece set, not necessarily the requested file.
+/// A lost/narrowed selection can therefore look complete after one boundary piece of a pack.
+fn selection_needs_restoring(finished: bool, downloaded_bytes: u64, selected_size: u64) -> bool {
+    selected_size > 0 && finished && downloaded_bytes < selected_size
 }
 
 /// Keep the release's real container instead of the guessed `.mkv` the web app supplies for a
@@ -103,6 +118,16 @@ fn staging_dir(dir: &Path, id: &str) -> PathBuf {
 }
 
 impl TorrentDownloads {
+    async fn hash_lock(&self, info_hash: &str) -> Arc<Mutex<()>> {
+        let mut locks = self.hash_locks.lock().await;
+        if let Some(lock) = locks.get(info_hash).and_then(Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(Mutex::new(()));
+        locks.insert(info_hash.to_string(), Arc::downgrade(&lock));
+        lock
+    }
+
     async fn engine(
         &self,
         app: &AppHandle,
@@ -246,7 +271,44 @@ async fn run(
         return Err("This source has no magnet link to download from.".into());
     }
     let proxy = normalized_socks_proxy(socks_proxy_url.clone())?;
-    let magnet = proxy_safe_magnet(magnet, proxy.is_some())?;
+    // Match playback's discovery path. Addon rows often carry only a bare info hash; without the
+    // application tracker set the downloader depended on a cold DHT table, even though streaming
+    // the same row found peers quickly. Preserve the resulting trackers on the real (non-listing)
+    // torrent below too — converting metadata back to `.torrent` bytes otherwise drops magnet-only
+    // announce hints after the first peer has served roughly one piece.
+    let magnet = add_public_trackers(magnet)?;
+    let magnet = proxy_safe_magnet(&magnet, proxy.is_some())?;
+    let parsed = Magnet::parse(&magnet)
+        .map_err(|error| format!("Could not parse the magnet link: {error:#}"))?;
+    let info_hash = parsed
+        .as_id20()
+        .ok_or("Torrent downloads currently need a BitTorrent v1 info hash.")?
+        .as_string();
+    let magnet_trackers = parsed.trackers;
+
+    // A shared rqbit session de-duplicates by info hash. Serialize only identical pack jobs before
+    // metadata discovery so a later episode cannot inherit the first one's output folder/selection.
+    // Pause/cancel remains immediate while waiting for the pack lock.
+    let hash_lock = state.hash_lock(&info_hash).await;
+    let _hash_guard = tokio::select! {
+        guard = hash_lock.lock() => guard,
+        _ = job.wake.notified() => {
+            if job.discard.load(Ordering::Relaxed) {
+                let _ = tokio::fs::remove_dir_all(staging_dir(Path::new(dir), id)).await;
+                return Ok("cancelled".into());
+            }
+            let _ = app.emit("download-paused", (id, 0_u64));
+            return Ok("paused".into());
+        }
+    };
+    if job.stop.load(Ordering::Relaxed) {
+        if job.discard.load(Ordering::Relaxed) {
+            let _ = tokio::fs::remove_dir_all(staging_dir(Path::new(dir), id)).await;
+            return Ok("cancelled".into());
+        }
+        let _ = app.emit("download-paused", (id, 0_u64));
+        return Ok("paused".into());
+    }
     let engine = state.engine(app, socks_proxy_url, bind_interface).await?;
     // Kill switch engaged: fail the job now with the real reason rather than sitting on a paused
     // session until the metadata timeout blames the seeders.
@@ -323,6 +385,7 @@ async fn run(
                 overwrite: true,
                 output_folder: Some(staging.to_string_lossy().into_owned()),
                 initial_peers: Some(listing.seen_peers),
+                trackers: Some(magnet_trackers),
                 ..Default::default()
             }),
         )
@@ -348,50 +411,97 @@ async fn run(
             .ok_or_else(|| "The selected episode is missing from the torrent.".to_string())?;
 
         let total = selected.length;
+        // Keep a moving 32 MiB streaming-priority window over the whole episode. This is the same
+        // proven path playback uses: every successful read advances rqbit's priority range while
+        // selected-file downloading continues in parallel. The bytes are discarded because rqbit
+        // has already written and verified them in the staging file.
+        let mut priority_stream = handle
+            .clone()
+            .stream(selected.index)
+            .await
+            .map_err(|error| format!("Could not prioritize the torrent download: {error:#}"))?;
+        let mut priority_buffer = vec![0_u8; PRIORITY_READ_BYTES];
+        let selected_indices = HashSet::from([selected.index]);
+        let mut streamed = 0_u64;
         let mut last_emit = Instant::now();
         let mut last_bytes = 0_u64;
         let mut best_bytes = 0_u64;
         let mut last_progress_at = Instant::now();
+        let mut poll = tokio::time::interval(POLL_INTERVAL);
+        poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let outcome = loop {
             if job.stop.load(Ordering::Relaxed) {
                 break Outcome::Stopped(best_bytes);
             }
-            let stats = handle.stats();
-            if let Some(error) = stats.error.clone() {
-                return Err(error);
+            tokio::select! {
+                read = priority_stream.read(&mut priority_buffer) => {
+                    let count = read.map_err(|error| format!("Torrent download read failed: {error}"))?;
+                    if count == 0 {
+                        break Outcome::Done(total);
+                    }
+                    streamed = streamed.saturating_add(count as u64).min(total);
+                }
+                _ = job.wake.notified() => {
+                    if job.stop.load(Ordering::Relaxed) {
+                        break Outcome::Stopped(best_bytes);
+                    }
+                }
+                _ = poll.tick() => {
+                    let mut stats = handle.stats();
+                    if let Some(error) = stats.error.clone() {
+                        return Err(error);
+                    }
+                    let mut received = stats
+                        .file_progress
+                        .get(selected.index)
+                        .copied()
+                        .unwrap_or(0)
+                        .max(streamed)
+                        .min(total);
+                    // Self-heal the rqbit state which presents as an exact one-piece (~1 MiB)
+                    // "completed" download for a much larger episode.
+                    if selection_needs_restoring(stats.finished, received, total) {
+                        engine
+                            .session
+                            .update_only_files(&handle, &selected_indices)
+                            .await
+                            .map_err(|error| format!("Could not restore the episode download: {error:#}"))?;
+                        stats = handle.stats();
+                        received = stats
+                            .file_progress
+                            .get(selected.index)
+                            .copied()
+                            .unwrap_or(0)
+                            .max(streamed)
+                            .min(total);
+                    }
+                    if received > best_bytes {
+                        best_bytes = received;
+                        last_progress_at = Instant::now();
+                    }
+                    if last_emit.elapsed() >= EMIT_INTERVAL {
+                        let seconds = last_emit.elapsed().as_secs_f64().max(0.001);
+                        let speed = (received.saturating_sub(last_bytes) as f64 / seconds) as u64;
+                        let _ = app.emit("download-progress", (id, received, total, speed));
+                        last_emit = Instant::now();
+                        last_bytes = received;
+                    }
+                    if total > 0 && received >= total {
+                        break Outcome::Done(received);
+                    }
+                    if app.state::<crate::net_interfaces::VpnGuard>().is_down() {
+                        // The VPN kill switch paused this torrent. It resumes by itself when the
+                        // adapter returns — don't let the no-seeders timeout cancel the job.
+                        last_progress_at = Instant::now();
+                    }
+                    if last_progress_at.elapsed() >= STALL_TIMEOUT {
+                        return Err(
+                            "This torrent stopped making progress — it may have no seeders left. Try another source."
+                                .into(),
+                        );
+                    }
+                }
             }
-            let received = stats
-                .file_progress
-                .get(selected.index)
-                .copied()
-                .unwrap_or(0)
-                .min(total);
-            if received > best_bytes {
-                best_bytes = received;
-                last_progress_at = Instant::now();
-            }
-            if last_emit.elapsed() >= EMIT_INTERVAL {
-                let seconds = last_emit.elapsed().as_secs_f64().max(0.001);
-                let speed = (received.saturating_sub(last_bytes) as f64 / seconds) as u64;
-                let _ = app.emit("download-progress", (id, received, total, speed));
-                last_emit = Instant::now();
-                last_bytes = received;
-            }
-            if total > 0 && received >= total {
-                break Outcome::Done(received);
-            }
-            if app.state::<crate::net_interfaces::VpnGuard>().is_down() {
-                // The VPN kill switch paused this torrent. It resumes by itself when the adapter
-                // returns — don't let the no-seeders stall timeout cancel the job meanwhile.
-                last_progress_at = Instant::now();
-            }
-            if last_progress_at.elapsed() >= STALL_TIMEOUT {
-                return Err(
-                    "This torrent stopped making progress — it may have no seeders left. Try another source."
-                        .into(),
-                );
-            }
-            sleep(POLL_INTERVAL).await;
         };
         Ok((outcome, relative))
     }
@@ -458,6 +568,9 @@ pub async fn torrent_download_cancel(
         Some(job) => {
             job.discard.store(delete_files, Ordering::Relaxed);
             job.stop.store(true, Ordering::Relaxed);
+            // `notify_one` retains a permit when cancellation lands just before the waiter is
+            // registered; `notify_waiters` would lose that race and leave a same-pack job blocked.
+            job.wake.notify_one();
         }
         // Nothing running (already finished, or a leftover from a previous session). A cancel still
         // has to clear whatever partial data is on disk.
@@ -471,7 +584,7 @@ pub async fn torrent_download_cancel(
 
 #[cfg(test)]
 mod tests {
-    use super::{output_name, staging_dir};
+    use super::{output_name, selection_needs_restoring, staging_dir};
     use std::path::Path;
 
     #[test]
@@ -505,5 +618,12 @@ mod tests {
         assert_eq!(staging.parent(), Some(Path::new("/media/anime")));
         // The queue id contains a colon, which is not a legal Windows path character.
         assert!(!staging.file_name().unwrap().to_string_lossy().contains(':'));
+    }
+
+    #[test]
+    fn restores_a_selection_that_claims_finished_before_the_episode_is_complete() {
+        assert!(selection_needs_restoring(true, 1_048_576, 400_000_000));
+        assert!(!selection_needs_restoring(false, 1_048_576, 400_000_000));
+        assert!(!selection_needs_restoring(true, 400_000_000, 400_000_000));
     }
 }
