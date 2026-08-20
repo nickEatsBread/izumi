@@ -168,7 +168,12 @@ export function ioErrorMessage(error: unknown, fallback: string): string {
   return text || fallback
 }
 
-/** Prompt for a location and write the given text there. Returns false if the user cancelled. */
+/** Prompt for a location and write the given text there. Returns false if the user cancelled.
+ *
+ *  On Android `save()` opens the system Storage Access Framework picker
+ *  (`ACTION_CREATE_DOCUMENT`) and returns a `content://` URI, not a filesystem
+ *  path. `write_text_file` writes that URI through ContentResolver — do not
+ *  replace this with `std::fs` or a relative download path; that is "os error 2". */
 export async function saveTextFile(defaultName: string, contents: string): Promise<boolean> {
   const path = await save({
     defaultPath: defaultName,
