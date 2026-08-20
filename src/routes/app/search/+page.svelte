@@ -26,6 +26,9 @@
     genres: sp.get('genre') ? [sp.get('genre') as string] : undefined,
     season: sp.get('season') ?? undefined,
     year: sp.get('year') ? Number(sp.get('year')) : null,
+    studioId: sp.get('studio') ? Number(sp.get('studio')) : undefined,
+    staffId: sp.get('staff') ? Number(sp.get('staff')) : undefined,
+    exploreName: sp.get('name') ?? undefined,
   }
   let filters = $state<SearchFilters>({ ...seed })
   let debounced = $state<SearchFilters>({ ...seed })
@@ -74,6 +77,9 @@
     if (f.genres?.[0]) params.set('genre', f.genres[0])
     if (f.season) params.set('season', f.season)
     if (f.year != null) params.set('year', String(f.year))
+    if (f.studioId) params.set('studio', String(f.studioId))
+    if (f.staffId) params.set('staff', String(f.staffId))
+    if (f.exploreName) params.set('name', f.exploreName)
     const query = params.toString()
     const next = query ? `${page.url.pathname}?${query}` : page.url.pathname
     // Compare against the live URL so this settles instead of re-writing every run.
@@ -90,6 +96,11 @@
   <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
        its 1.75rem height as well so it cannot cover the browse controls. -->
   <div class="p-4 sm:p-8 {$anilistDegraded ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}">
+    {#if filters.studioId || filters.staffId || filters.genres?.[0]}
+      <h1 class="mb-4 text-2xl font-black">
+        {filters.staffId ? (filters.exploreName || 'Voice actor') : filters.studioId ? (filters.exploreName || 'Studio') : filters.genres?.[0]}
+      </h1>
+    {/if}
     <FilterBar bind:filters />
     <div class="mt-6">
       {#key key}

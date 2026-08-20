@@ -10,7 +10,7 @@
   // unkeyed `Page` type — can't hand back a stale/embedded page for page 2+.
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { searchQuery, searchVariables, type SearchFilters } from '$lib/anilist/detail-queries'
+  import { searchQuery, searchVariables, STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY, type SearchFilters } from '$lib/anilist/detail-queries'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import { browseLayout } from '$lib/settings/ui'
   import { title, cover, format, season } from '$lib/anilist/media'
@@ -33,15 +33,43 @@
     if (loading || !hasNext) return
     loading = true
     try {
-      const res = await client
-        .query(searchQuery(), { ...searchVariables(filters), page }, { requestPolicy: 'network-only' })
-        .toPromise()
-      if (res.error) { error = res.error.message; hasNext = false; return }
-      const p = res.data?.Page as { media?: Media[]; pageInfo?: { hasNextPage?: boolean } } | undefined
+      let batch: Media[] = []
+      let nextPage = false
+      if (filters.studioId) {
+        const res = await client
+          .query(STUDIO_MEDIA_QUERY, { id: filters.studioId, page }, { requestPolicy: 'network-only' })
+          .toPromise()
+        if (res.error) { error = res.error.message; hasNext = false; return }
+        const conn = res.data?.Studio?.media as { nodes?: Media[]; pageInfo?: { hasNextPage?: boolean } } | undefined
+        batch = conn?.nodes ?? []
+        nextPage = !!conn?.pageInfo?.hasNextPage
+      } else if (filters.staffId) {
+        const res = await client
+          .query(STAFF_MEDIA_QUERY, { id: filters.staffId, page }, { requestPolicy: 'network-only' })
+          .toPromise()
+        if (res.error) { error = res.error.message; hasNext = false; return }
+        const staff = res.data?.Staff as {
+          staffMedia?: { nodes?: Media[]; pageInfo?: { hasNextPage?: boolean } }
+          characterMedia?: { edges?: { node?: Media }[]; pageInfo?: { hasNextPage?: boolean } }
+        } | undefined
+        const credited = staff?.staffMedia?.nodes ?? []
+        const voiced = (staff?.characterMedia?.edges ?? []).map((edge) => edge.node).filter((item): item is Media => !!item)
+        batch = credited.length ? credited : voiced
+        nextPage = credited.length
+          ? !!staff?.staffMedia?.pageInfo?.hasNextPage
+          : !!staff?.characterMedia?.pageInfo?.hasNextPage
+      } else {
+        const res = await client
+          .query(searchQuery(), { ...searchVariables(filters), page }, { requestPolicy: 'network-only' })
+          .toPromise()
+        if (res.error) { error = res.error.message; hasNext = false; return }
+        const p = res.data?.Page as { media?: Media[]; pageInfo?: { hasNextPage?: boolean } } | undefined
+        batch = p?.media ?? []
+        nextPage = !!p?.pageInfo?.hasNextPage
+      }
       let added = 0
-      for (const m of p?.media ?? []) if (!seen.has(m.id)) { seen.add(m.id); media.push(m); added++ }
-      // Stop if there's no next page OR a page contributed nothing new (guards a loop).
-      hasNext = !!p?.pageInfo?.hasNextPage && added > 0
+      for (const m of batch) if (!seen.has(m.id)) { seen.add(m.id); media.push(m); added++ }
+      hasNext = nextPage && added > 0
       page += 1
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)

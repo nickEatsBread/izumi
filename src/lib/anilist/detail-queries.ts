@@ -89,6 +89,34 @@ const SEARCH_QUERY_ALL = gql`
 /** Search query for the current adult setting. Evaluated at store-creation time. */
 export const searchQuery = () => (get(showAdult) ? SEARCH_QUERY_ALL : SEARCH_QUERY)
 
+export const STUDIO_MEDIA_QUERY = gql`
+  query StudioMedia($id: Int!, $page: Int = 1) {
+    Studio(id: $id) {
+      name
+      media(page: $page, perPage: 30, sort: POPULARITY_DESC, type: ANIME) {
+        pageInfo { hasNextPage }
+        nodes { ...MediaFields }
+      }
+    }
+  }
+  ${MEDIA_FIELDS}`
+
+export const STAFF_MEDIA_QUERY = gql`
+  query StaffMedia($id: Int!, $page: Int = 1) {
+    Staff(id: $id) {
+      name { full }
+      staffMedia(page: $page, perPage: 30, sort: POPULARITY_DESC, type: ANIME) {
+        pageInfo { hasNextPage }
+        nodes { ...MediaFields }
+      }
+      characterMedia(page: $page, perPage: 30, sort: POPULARITY_DESC) {
+        pageInfo { hasNextPage }
+        edges { node { ...MediaFields } }
+      }
+    }
+  }
+  ${MEDIA_FIELDS}`
+
 // Count-only queries backing the Advanced modal's live "Apply · N": same filter args,
 // but only pageInfo.total. Call with `{ ...searchVariables(draft), perPage: 1 }`. The
 // SFW/18+ split matters — adult gating changes the total.
@@ -146,6 +174,9 @@ export interface SearchFilters {
   // Quick bar:
   search?: string; genres?: string[]; season?: string; year?: number | null
   formats?: string[]; statuses?: string[]; sort?: string
+  studioId?: number
+  staffId?: number
+  exploreName?: string
   // Advanced modal:
   tagsIn?: string[]       // tag names to include
   tagsNotIn?: string[]    // tag names to exclude
