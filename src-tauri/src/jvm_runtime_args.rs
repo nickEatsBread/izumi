@@ -1,7 +1,25 @@
 use std::path::{Path, PathBuf};
 
 pub(crate) fn tls_provider_security_properties() -> &'static str {
-    "security.provider.1=org.conscrypt.OpenSSLProvider\n"
+    // Overlay replaces matching keys in the JRE's java.security. Listing only
+    // provider.1 would drop SUN, which supplies SHA-1 for SecureRandom and
+    // File.createTempFile — every extension JAR then fails to load.
+    concat!(
+        "security.provider.1=org.conscrypt.OpenSSLProvider\n",
+        "security.provider.2=SUN\n",
+        "security.provider.3=SunRsaSign\n",
+        "security.provider.4=SunEC\n",
+        "security.provider.5=SunJSSE\n",
+        "security.provider.6=SunJCE\n",
+        "security.provider.7=SunJGSS\n",
+        "security.provider.8=SunSASL\n",
+        "security.provider.9=XMLDSig\n",
+        "security.provider.10=SunPCSC\n",
+        "security.provider.11=JdkLDAP\n",
+        "security.provider.12=JdkSASL\n",
+        "security.provider.13=Apple\n",
+        "security.provider.14=SunPKCS11\n",
+    )
 }
 
 pub(crate) fn tls_provider_security_path(jar: &Path) -> PathBuf {
@@ -67,11 +85,25 @@ mod tests {
             "-Djava.security.properties={}",
             tls_provider_security_path(jar).display()
         )));
-        assert_eq!(
-            tls_provider_security_properties(),
-            "security.provider.1=org.conscrypt.OpenSSLProvider\n"
-        );
         assert_eq!(args.last().map(String::as_str), Some("-jar"));
+    }
+
+    #[test]
+    fn macos_tls_overlay_keeps_sun_after_conscrypt() {
+        let properties = tls_provider_security_properties();
+        let lines: Vec<&str> = properties.lines().collect();
+        assert_eq!(
+            lines.first().copied(),
+            Some("security.provider.1=org.conscrypt.OpenSSLProvider")
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| *line == "security.provider.2=SUN"),
+            "SUN must stay registered so SHA-1/SecureRandom keep working"
+        );
+        assert!(lines.iter().any(|line| line.contains("=Apple")));
+        assert!(lines.iter().any(|line| line.contains("=SunPKCS11")));
     }
 
     #[test]
