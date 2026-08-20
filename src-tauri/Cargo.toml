@@ -27,8 +27,8 @@ lto = true
 codegen-units = 1
 
 [features]
-# Enable the webview inspector in RELEASE builds (used by the build-linux test
-# workflow via `--features devtools`; NOT enabled in the shipped release).
+# Optional alias retained for explicit mobile diagnostic builds. Shipped desktop builds enable
+# Tauri's inspector through the target-specific dependency below.
 devtools = ["tauri/devtools"]
 # The "full" Android flavor: compile in the embedded libmpv player plugin (pulls the ~24 MB
 # libmpv arm64 .so via the plugin's AAR). Omit it for the "lite" flavor (external player, small
@@ -103,6 +103,10 @@ librqbit = { version = "9.0.0", default-features = false, features = ["rust-tls"
 # an external app): libmpv (no Android target here), the scrub-thumbnail image codec (its only
 # consumer is the gated player), and the updater plugin (no Android/app-store updater support).
 [target.'cfg(not(target_os = "android"))'.dependencies]
+# The About > Diagnostics action must also work in production. Keep the feature desktop-only:
+# Android's WebView cannot open an in-app inspector (it requires Chrome remote inspection), and
+# enabling it unconditionally would make every release APK remotely debuggable over ADB.
+tauri = { version = "2", features = ["devtools"] }
 libmpv2 = "6.0.0"
 libmpv2-sys = "4.0.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

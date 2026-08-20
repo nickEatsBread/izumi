@@ -29,6 +29,11 @@ describe('settings search', () => {
     expect(searchSettings('discord rpc')[0]?.title).toBe('Discord Rich Presence')
   })
 
+  it('finds the production inspector on desktop only', () => {
+    expect(searchSettings('inspect element')[0]?.title).toBe('Developer tools')
+    expect(searchSettings('inspect element', true)).toHaveLength(0)
+  })
+
   it('finds the VPN adapter binding by provider names, desktop only', () => {
     expect(searchSettings('nordlynx')[0]?.title).toBe('VPN adapter binding')
     expect(searchSettings('mullvad')[0]?.title).toBe('VPN adapter binding')

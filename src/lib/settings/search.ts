@@ -111,6 +111,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
 
   { title: 'Auto-check for updates', category: 'About', href: '/app/settings/about', keywords: 'upgrade release launch', anchored: true },
   { title: 'Update channel', category: 'About', href: '/app/settings/about', keywords: 'stable beta release' },
+  { title: 'Developer tools', category: 'About', href: '/app/settings/about', keywords: 'inspect element console network logs debug errors', anchored: true, desktopOnly: true },
   { title: 'Changelog', category: 'Changelog', href: '/app/settings/changelog', keywords: 'new changes release notes version' },
   { title: 'App version and licences', category: 'About', href: '/app/settings/about', keywords: 'about legal open source' },
 ]
