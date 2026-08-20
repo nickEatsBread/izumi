@@ -4128,9 +4128,10 @@ pub fn run() {
             }
             #[cfg(target_os = "macos")]
             if let Some(win) = app.get_webview_window("main") {
-                if let Err(e) = player::macos_embed::prepare(&win) {
-                    eprintln!("[player] macOS mpv view prepare failed: {e}");
-                }
+                // Do not create the mpv NSView (or KVC the WKWebView) here. v0.1.40
+                // called prepare() from NSApplicationDidFinishLaunching; an uncaught
+                // NSException aborted the process ~250ms after launch (macOS 26 SIGABRT).
+                // The host view is created on first player_embed instead.
                 let w = win.clone();
                 win.on_window_event(move |event| {
                     if matches!(event, tauri::WindowEvent::Resized(_)) {
