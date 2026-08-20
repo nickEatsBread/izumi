@@ -22,10 +22,15 @@ const RUNTIME_URL: &str = "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBr
 const RUNTIME_SHA256: &str = "32ff822ea3475aeafd0c6f987d1549c8cc30fc535a44d07bc7338b75c44a1d0e";
 const JRE_VERSION: &str = "17.0.12+7";
 const MAX_JRE_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
+const CONSCRYPT_VERSION: &str = "2.6.2";
+const CONSCRYPT_URL: &str = "https://repo1.maven.org/maven2/org/conscrypt/conscrypt-openjdk-uber/2.6.2/conscrypt-openjdk-uber-2.6.2.jar";
+const CONSCRYPT_SHA256: &str = "f8a8f5020c66abc53a3d33cbc855ef8fc06187fa652fb3c0eda6c94e4335b2e9";
 
 #[path = "jvm_runtime_args.rs"]
 mod jvm_runtime_args;
-use jvm_runtime_args::java_runtime_jvm_args;
+use jvm_runtime_args::{
+    java_runtime_jvm_args, tls_provider_security_path, tls_provider_security_properties,
+};
 
 struct JreAsset {
     url: &'static str,
@@ -146,6 +151,13 @@ fn runtime_path(app: &AppHandle) -> Result<PathBuf, String> {
         .join(format!("anymex-desktop-{RUNTIME_VERSION}.jar")))
 }
 
+fn conscrypt_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(data_dir(app)?
+        .join("extensions")
+        .join("runtime")
+        .join(format!("conscrypt-openjdk-uber-{CONSCRYPT_VERSION}.jar")))
+}
+
 fn jre_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(data_dir(app)?
         .join("extensions")
@@ -157,28 +169,30 @@ fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-async fn ensure_runtime_file(app: &AppHandle) -> Result<PathBuf, String> {
-    let path = runtime_path(app)?;
+async fn ensure_hashed_file(
+    path: PathBuf,
+    url: &str,
+    sha256: &str,
+    what: &str,
+) -> Result<PathBuf, String> {
     if let Ok(bytes) = tokio::fs::read(&path).await {
-        if digest(&bytes) == RUNTIME_SHA256 {
+        if digest(&bytes) == sha256 {
             return Ok(path);
         }
     }
-    let response = reqwest::get(RUNTIME_URL)
+    let response = reqwest::get(url)
         .await
-        .map_err(|error| format!("Could not download the extension runtime: {error}"))?
+        .map_err(|error| format!("Could not download the {what}: {error}"))?
         .error_for_status()
-        .map_err(|error| format!("Could not download the extension runtime: {error}"))?;
+        .map_err(|error| format!("Could not download the {what}: {error}"))?;
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| format!("Could not read the extension runtime: {error}"))?;
-    if digest(&bytes) != RUNTIME_SHA256 {
-        return Err("Downloaded extension runtime failed its SHA-256 check".into());
+        .map_err(|error| format!("Could not read the {what}: {error}"))?;
+    if digest(&bytes) != sha256 {
+        return Err(format!("Downloaded {what} failed its SHA-256 check"));
     }
-    let parent = path
-        .parent()
-        .ok_or("Extension runtime path has no parent")?;
+    let parent = path.parent().ok_or(format!("{what} path has no parent"))?;
     tokio::fs::create_dir_all(parent)
         .await
         .map_err(|error| error.to_string())?;
@@ -195,6 +209,33 @@ async fn ensure_runtime_file(app: &AppHandle) -> Result<PathBuf, String> {
         .await
         .map_err(|error| error.to_string())?;
     Ok(path)
+}
+
+async fn ensure_runtime_file(app: &AppHandle) -> Result<PathBuf, String> {
+    ensure_hashed_file(
+        runtime_path(app)?,
+        RUNTIME_URL,
+        RUNTIME_SHA256,
+        "extension runtime",
+    )
+    .await
+}
+
+async fn ensure_macos_tls_provider(app: &AppHandle) -> Result<PathBuf, String> {
+    let jar = ensure_hashed_file(
+        conscrypt_path(app)?,
+        CONSCRYPT_URL,
+        CONSCRYPT_SHA256,
+        "JVM TLS provider",
+    )
+    .await?;
+    tokio::fs::write(
+        tls_provider_security_path(&jar),
+        tls_provider_security_properties(),
+    )
+    .await
+    .map_err(|error| format!("Could not install the JVM TLS provider: {error}"))?;
+    Ok(jar)
 }
 
 fn jre_asset() -> Result<JreAsset, String> {
@@ -568,6 +609,7 @@ async fn start_process(
     app: &AppHandle,
     java: &Path,
     runtime: &Path,
+    tls_provider_jar: Option<&Path>,
     developer_logging: Arc<AtomicBool>,
 ) -> Result<Arc<Process>, String> {
     let logger = DeveloperLogger {
@@ -579,9 +621,19 @@ async fn start_process(
         "info",
         &format!("starting Java extension runtime with {}", java.display()),
     );
+    if let Some(jar) = tls_provider_jar {
+        logger.emit(
+            "aniyomi-jvm",
+            "info",
+            &format!("using Conscrypt TLS provider {}", jar.display()),
+        );
+    }
     let mut command = Command::new(java);
     command
-        .args(java_runtime_jvm_args(std::env::consts::OS))
+        .args(java_runtime_jvm_args(
+            std::env::consts::OS,
+            tls_provider_jar,
+        ))
         .arg(runtime)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -700,7 +752,26 @@ impl Runtime {
         }
         let runtime = ensure_runtime_file(app).await?;
         let java = java_command(app).await?;
-        let process = start_process(app, &java, &runtime, self.developer_logging.clone()).await?;
+        let tls_provider = if cfg!(target_os = "macos") {
+            match ensure_macos_tls_provider(app).await {
+                Ok(path) => Some(path),
+                Err(error) => {
+                    // Sources that do not need Android-like TLS still work on the bundled JSSE.
+                    eprintln!("[aniyomi-jvm] Could not install the JVM TLS provider: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let process = start_process(
+            app,
+            &java,
+            &runtime,
+            tls_provider.as_deref(),
+            self.developer_logging.clone(),
+        )
+        .await?;
         let folder = extension_dir(app)?;
         tokio::fs::create_dir_all(&folder)
             .await
