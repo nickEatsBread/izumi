@@ -58,6 +58,7 @@
   } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, playerLoadId, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
+  import { audioFilter } from '$lib/player/enhancements'
   import { activeChapterIndex, chapterRowLabel, sortChapters } from '$lib/player/chapters'
   import type { Chapter } from '$lib/player/chapter-skip'
   import { reportWatchPlayback } from '$lib/watch-together/client'
@@ -66,7 +67,7 @@
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying, providerAudio,
-    preferredAudioLang, preferredSubLang,
+    preferredAudioLang, preferredSubLang, audioProcessing,
   } from '$lib/settings/ui'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
@@ -323,6 +324,13 @@
       if (id === undefined) return
       return setSubTrack(id)
     }).catch(() => {})
+    const af = audioFilter(get(audioProcessing))
+    void mpvCommand(['set', 'af', af || '']).catch(() => {})
+  })
+  $effect(() => {
+    const af = audioFilter($audioProcessing)
+    if (!firstFrameSeen) return
+    void mpvCommand(['set', 'af', af || '']).catch(() => {})
   })
   $effect(() => {
     const seg = currentSeg

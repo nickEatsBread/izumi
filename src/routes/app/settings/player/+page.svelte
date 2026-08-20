@@ -131,16 +131,6 @@
     {/if}
 
     <label class="flex flex-col gap-1">
-      <span class="text-sm font-bold">Audio processing</span>
-      <SelectMenu bind:value={$audioProcessing} ariaLabel="Audio processing" options={[
-        { value: 'off', label: 'Off' },
-        { value: 'dialogue', label: 'Dialogue boost' },
-        { value: 'night', label: 'Night mode' },
-      ]} />
-      <span class="text-xs text-muted-foreground">Dialogue boost evens out speech; Night mode reduces loud-to-quiet swings. Disable passthrough in an external receiver when using either filter.</span>
-    </label>
-
-    <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Windows driver upscaling</span>
       <SelectMenu bind:value={$windowsVsr} ariaLabel="Windows driver upscaling" options={[
         { value: 'off', label: 'Off' },
@@ -151,6 +141,17 @@
     </label>
     {/if}
   </div>
+
+  <label class="mb-4 flex max-w-2xl flex-col gap-1 rounded-md border border-border p-3">
+    <span class="text-sm font-bold">Audio processing</span>
+    <SelectMenu bind:value={$audioProcessing} ariaLabel="Audio processing" options={[
+      { value: 'off', label: 'Off' },
+      { value: 'dialogue', label: 'Dialogue boost' },
+      { value: 'night', label: 'Night mode' },
+      { value: 'boost', label: 'Volume boost' },
+    ]} />
+    <span class="text-xs text-muted-foreground">Dialogue evens out speech. Night mode compresses loud openings. Volume boost raises quiet rips and limits peaks. Disable passthrough on an external receiver when using a filter.</span>
+  </label>
 
   <label class="mb-4 flex max-w-2xl flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
     <span class="min-w-0">
