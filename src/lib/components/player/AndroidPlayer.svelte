@@ -56,7 +56,7 @@
     HOLD_MS,
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
-  import { nowPlaying, nowPlayingMedia, playerLoadId, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, nowPlayingStream, playerLoadId, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
   import { audioFilter } from '$lib/player/enhancements'
   import { activeChapterIndex, chapterRowLabel, sortChapters } from '$lib/player/chapters'
@@ -101,6 +101,7 @@
   import Gauge from '@lucide/svelte/icons/gauge'
   import Captions from '@lucide/svelte/icons/captions'
   import Volume2 from '@lucide/svelte/icons/volume-2'
+  import Cast from '@lucide/svelte/icons/cast'
   import Check from '@lucide/svelte/icons/check'
   import Settings from '@lucide/svelte/icons/settings'
   import Maximize from '@lucide/svelte/icons/maximize'
@@ -967,6 +968,20 @@
   }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
   async function pickSub(id: number | 'no') { await setSubTrack(id); tracks = await getTracks() }
+  async function castToDevice() {
+    const url = get(nowPlayingStream)?.url
+    if (!url || url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost')) {
+      playerNotice.set('Cast needs a remote stream — Direct P2P stays on this device.')
+      return
+    }
+    try {
+      await invoke('plugin:extplayer|play_external', {
+        payload: { url, title: np.animeTitle ?? np.title, isLocal: false },
+      })
+    } catch (error) {
+      playerNotice.set(error instanceof Error ? error.message : String(error))
+    }
+  }
   // Subtitle style presets: capture the active ASS track's fonting when the subtitles page opens,
   // save it under the release group's name, or apply a saved preset for this session only.
   let styleSaveName = $state('')
@@ -1641,6 +1656,7 @@
             <button onclick={() => (settingsPage = 'display')} class="settings-row"><Ratio size={20} /><span class="flex-1 font-bold">Resize</span><span class="text-sm text-white/50">{FITS[fitIdx]}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'subtitles')} class="settings-row"><Captions size={20} /><span class="flex-1 font-bold">Subtitles</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('sub')}</span><ChevronRight size={18} class="text-white/35" /></button>
             <button onclick={() => (settingsPage = 'audio')} class="settings-row"><Volume2 size={20} /><span class="flex-1 font-bold">Audio track</span><span class="max-w-28 truncate text-sm text-white/50">{selectedTrackLabel('audio')}</span><ChevronRight size={18} class="text-white/35" /></button>
+            <button onclick={() => void castToDevice()} class="settings-row"><Cast size={20} /><span class="flex-1 font-bold">Play on another device</span><span class="text-sm text-white/50">Cast</span></button>
             <button onclick={() => (settingsPage = 'capture')} class="settings-row"><Film size={20} /><span class="flex-1 font-bold">Capture</span><span class="text-sm text-white/50">GIF</span><ChevronRight size={18} class="text-white/35" /></button>
             {#if chapters.length}
               <button onclick={() => (settingsPage = 'chapters')} class="settings-row">
