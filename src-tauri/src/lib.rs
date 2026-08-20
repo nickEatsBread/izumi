@@ -99,6 +99,14 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+/// Opens the main WebView inspector on an explicit user action. Desktop release builds include
+/// Tauri's `devtools` feature so this remains available in shipped binaries, not just debug builds.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn open_developer_tools(window: tauri::WebviewWindow) {
+    window.open_devtools();
+}
+
 /// Embed mpv into the MAIN window and start playback — single-window design.
 ///
 /// The SPA renders the player overlay (transparent video surface + custom
@@ -4193,6 +4201,7 @@ pub fn run() {
         .manage(desktop_presence::DesktopPresence::default())
         .invoke_handler(tauri::generate_handler![
             greet,
+            open_developer_tools,
             take_pending_magnet,
             player_play,
             player_play_embedded,
