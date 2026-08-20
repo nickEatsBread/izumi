@@ -158,6 +158,16 @@ windows = { version = "0.61", features = [
 ] }
 webview2-com = "0.38"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", features = ["NSGeometry", "NSString", "NSValue"] }
+objc2-app-kit = { version = "0.3.2", features = [
+  "NSView",
+  "NSWindow",
+  "NSResponder",
+  "NSGraphics",
+] }
+
 # Linux: embed mpv via its OpenGL render API into a wl_subsurface placed below the
 # transparent webview (see player/linux_embed.rs). gtk3/gdk/glib match Tauri 2.11's
 # webkitgtk stack (window/CSD geometry + main-thread dispatch); khronos-egl builds our
