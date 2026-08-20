@@ -57,6 +57,7 @@
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
   import { nowPlaying, nowPlayingMedia, playerLoadId, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
+  import { pickSubtitleTrackId } from '$lib/player/track-policy'
   import { activeChapterIndex, chapterRowLabel, sortChapters } from '$lib/player/chapters'
   import type { Chapter } from '$lib/player/chapter-skip'
   import { reportWatchPlayback } from '$lib/watch-together/client'
@@ -65,6 +66,7 @@
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying, providerAudio,
+    preferredAudioLang, preferredSubLang,
   } from '$lib/settings/ui'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
@@ -309,6 +311,18 @@
   })
   $effect(() => {
     if ($mpvState.frameReady) firstFrameSeen = true
+  })
+  let subtitlePolicyKey = ''
+  $effect(() => {
+    const key = segKey
+    if (!firstFrameSeen || !key || subtitlePolicyKey === key) return
+    subtitlePolicyKey = key
+    void getTracks().then((list) => {
+      if (key !== segKey) return
+      const id = pickSubtitleTrackId(list, get(preferredAudioLang), get(preferredSubLang))
+      if (id === undefined) return
+      return setSubTrack(id)
+    }).catch(() => {})
   })
   $effect(() => {
     const seg = currentSeg

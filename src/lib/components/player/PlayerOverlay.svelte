@@ -30,6 +30,7 @@
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings, systemMediaControls, discordRichPresence,
+    preferredAudioLang, preferredSubLang,
   } from '$lib/settings/ui'
   import { get } from 'svelte/store'
   import { initScrub, beginScrub, moveScrub, endScrub, scrub, scrubActive } from '$lib/player/scrub'
@@ -39,6 +40,8 @@
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
+  import { pickSubtitleTrackId } from '$lib/player/track-policy'
+  import type { Track } from '$lib/player/track-label'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
@@ -416,6 +419,23 @@
   // 'best' = panscan 0 (letterbox). keepaspect stays yes so quality is never distorted.
   $effect(() => {
     if (firstFrame) cmd('set', ['panscan', $videoFit === 'fill' ? '1.0' : '0.0'])
+  })
+
+  // slang is language-only, so a Signs & Songs track listed first wins on BD remuxes.
+  // Re-select once the file is actually loaded: full dialogue for sub watches, signs/off for dubs.
+  let subtitlePolicyKey = ''
+  $effect(() => {
+    const key = loadedKey
+    if (!firstFrame || !key || subtitlePolicyKey === key) return
+    subtitlePolicyKey = key
+    void invoke<string>('player_tracks')
+      .then((raw) => {
+        if (key !== loadedKey) return
+        const id = pickSubtitleTrackId(JSON.parse(raw) as Track[], get(preferredAudioLang), get(preferredSubLang))
+        if (id === undefined) return
+        cmd('set', ['sid', String(id)])
+      })
+      .catch(() => {})
   })
 
   // Cursor hide over the video: the WebView2 overlay reports JS mousemove (so our idle

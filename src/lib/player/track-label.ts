@@ -110,7 +110,18 @@ const isSdh = (title?: string) => !!title && SDH_RE.test(title)
 // Some releases mark a forced track only in its title, not with the forced flag.
 const isForcedTitle = (title?: string) => !!title && /\bforced\b/i.test(title)
 const isSignsOnlyTitle = (title?: string) => !!title && /signs?.*(songs?|karaoke)|(?:songs?|karaoke).*signs?/i.test(title)
-const isFullDialogueTitle = (title?: string) => !!title && /full[\s_-]*(?:subtitles?|subs?)|dialogue/i.test(title)
+const isFullDialogueTitle = (title?: string) => !!title && /full[\s_-]*(?:subtitles?|subs?)|dialogue|honorific/i.test(title)
+
+export type SubtitleKind = 'signs' | 'forced' | 'sdh' | 'full' | 'other'
+
+/** Classify a subtitle track for auto-selection (Signs vs full dialogue vs forced). */
+export function subtitleKind(t: Track): SubtitleKind {
+  if (isSignsOnlyTitle(t.title)) return 'signs'
+  if (t.forced || isForcedTitle(t.title)) return 'forced'
+  if (isSdh(t.title)) return 'sdh'
+  if (isFullDialogueTitle(t.title)) return 'full'
+  return 'other'
+}
 
 // Some anime muxers tag subtitle tracks by the AUDIO they accompany: `eng / Signs & Songs` and
 // `jpn / Full Subtitles`, even though both tracks contain English text. Correct the menu language
