@@ -15,7 +15,8 @@ import { userFilterChains } from './quality'
 
 export function audioFilter(mode: AudioProcessing): string {
   if (mode === 'dialogue') return 'lavfi=[dynaudnorm=f=150:g=12:p=0.9]'
-  if (mode === 'night') return 'lavfi=[loudnorm=I=-18:LRA=7:TP=-2]'
+  if (mode === 'night') return 'lavfi=[loudnorm=I=-18:LRA=7:TP=-2,alimiter=limit=0.97]'
+  if (mode === 'boost') return 'lavfi=[volume=2.0,alimiter=limit=0.97]'
   return ''
 }
 

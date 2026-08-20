@@ -14,6 +14,7 @@ export const settingKey = (title: string) =>
   title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 
 export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
+  { title: 'Audio processing', category: 'Player', href: '/app/settings/player', keywords: 'night mode dialogue boost volume loudnorm compressor limiter' },
   { title: 'Audio language', category: 'Player', href: '/app/settings/player', keywords: 'Japanese English dub' },
   { title: 'Subtitle language', category: 'Player', href: '/app/settings/player', keywords: 'captions default language off' },
   { title: 'P2P playback status', category: 'Player', href: '/app/settings/player', keywords: 'torrent download upload speed peers buffering initial always hidden direct' },

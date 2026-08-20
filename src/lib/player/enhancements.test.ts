@@ -33,6 +33,7 @@ describe('playback enhancement options', () => {
   it('maps dialogue/night and both driver upscaling modes', () => {
     expect(audioFilter('dialogue')).toContain('dynaudnorm')
     expect(audioFilter('night')).toContain('loudnorm')
+    expect(audioFilter('boost')).toContain('volume=2.0')
     expect(vsrFilter('nvidia')).toBe('d3d11vpp=scaling-mode=nvidia')
     expect(vsrFilter('intel')).toBe('d3d11vpp=scaling-mode=intel')
   })
@@ -63,13 +64,13 @@ describe('filter-chain composition', () => {
   })
 
   it('emits only our filter when the user has no chain', () => {
-    expect(audioChain('', 'night')).toBe('lavfi=[loudnorm=I=-18:LRA=7:TP=-2]')
+    expect(audioChain('', 'night')).toBe('lavfi=[loudnorm=I=-18:LRA=7:TP=-2,alimiter=limit=0.97]')
     expect(videoChain('', 'nvidia')).toBe('d3d11vpp=scaling-mode=nvidia')
   })
 
   it('composes instead of clobbering, with the hardware filter at the head of the video chain', () => {
     expect(audioChain('lavfi=[acompressor]', 'night'))
-      .toBe('lavfi=[acompressor],lavfi=[loudnorm=I=-18:LRA=7:TP=-2]')
+      .toBe('lavfi=[acompressor],lavfi=[loudnorm=I=-18:LRA=7:TP=-2,alimiter=limit=0.97]')
     expect(videoChain('hqdn3d', 'nvidia')).toBe('d3d11vpp=scaling-mode=nvidia,hqdn3d')
   })
 
@@ -82,7 +83,7 @@ describe('filter-chain composition', () => {
     windowsVsr.set('nvidia')
 
     const opts = Object.fromEntries(enhancementOpts())
-    expect(opts.af).toBe('lavfi=[acompressor],lavfi=[loudnorm=I=-18:LRA=7:TP=-2]')
+    expect(opts.af).toBe('lavfi=[acompressor],lavfi=[loudnorm=I=-18:LRA=7:TP=-2,alimiter=limit=0.97]')
     expect(opts.vf).toBe('d3d11vpp=scaling-mode=nvidia,hqdn3d')
 
     audioProcessing.set('off')
@@ -120,7 +121,7 @@ describe('startEnhancementSync', () => {
     startEnhancementSync()
     expect(pushes()).toHaveLength(1)
     const startup = Object.fromEntries(pushes()[0][1].opts)
-    expect(startup.af).toBe('lavfi=[loudnorm=I=-18:LRA=7:TP=-2]')
+    expect(startup.af).toBe('lavfi=[loudnorm=I=-18:LRA=7:TP=-2,alimiter=limit=0.97]')
     expect(startup['sub-filter-sdh']).toBe('yes')
 
     // --- a later change, exactly one push --------------------------------------------------
@@ -134,7 +135,7 @@ describe('startEnhancementSync', () => {
     videoQualityPreset.set('custom')
     rawMpvOptions.set('af=lavfi=[acompressor]')
     const latest = Object.fromEntries(pushes().at(-1)![1].opts)
-    expect(latest.af).toBe('lavfi=[acompressor],lavfi=[loudnorm=I=-18:LRA=7:TP=-2]')
+    expect(latest.af).toBe('lavfi=[acompressor],lavfi=[loudnorm=I=-18:LRA=7:TP=-2,alimiter=limit=0.97]')
     expect(latest.vf).toBe('d3d11vpp=scaling-mode=intel')
 
     // Idempotent: a second call must not add a duplicate set of subscriptions.
