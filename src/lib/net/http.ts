@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { currentResolveTrace, safeRequestTarget, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
+import { developerConsoleEnabled } from '$lib/debug/log-gate'
 
 export interface NativeHttpOptions {
   signal?: AbortSignal
@@ -96,7 +97,7 @@ export async function invokeNativeHttp<T>(
         : undefined,
       lane: options.priority ? 'playback' : options.background ? 'background' : 'metadata',
     }
-    if (import.meta.env.DEV) console.debug('[izumi net]', details)
+    if (developerConsoleEnabled()) console.debug('[izumi net]', details)
     if (trace) traceResolve(trace, `HTTP ${debugId} finish`, details)
     return result
   } catch (error) {

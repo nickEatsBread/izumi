@@ -4,6 +4,8 @@
  * add-ons, extensions and debrid providers can all join the same trace without creating cycles.
  */
 
+import { developerConsoleEnabled } from './log-gate'
+
 export type ResolveTrace = {
   id: string
   mediaId: number
@@ -35,7 +37,6 @@ type TraceDetails = Record<string, unknown>
 let sequence = 0
 let active: ResolveTrace | undefined
 
-const enabled = import.meta.env.DEV
 const now = () => globalThis.performance?.now?.() ?? Date.now()
 const STORAGE_KEY = 'izumi-resolve-diagnostics-v1'
 const MAX_TRACES = 8
@@ -159,7 +160,7 @@ export function beginResolveTrace(input: {
     mediaId: input.mediaId,
     episode: input.episode,
   })
-  if (enabled) console.info(`${prefix(trace, startedAt)} START ${input.entry} ${safeJson({
+  if (developerConsoleEnabled()) console.info(`${prefix(trace, startedAt)} START ${input.entry} ${safeJson({
     title: input.title,
     mediaId: input.mediaId,
     episode: input.episode,
@@ -182,7 +183,7 @@ export function traceResolve(
   if (!trace || trace.closed) return
   const at = now()
   recordTraceEvent(trace, event, at, details)
-  if (enabled) console.info(`${prefix(trace, at)} ${event} ${safeJson(details)}`)
+  if (developerConsoleEnabled()) console.info(`${prefix(trace, at)} ${event} ${safeJson(details)}`)
   trace.lastAt = at
 }
 
@@ -195,7 +196,7 @@ export function traceResolveError(
   if (!trace || trace.closed) return
   const at = now()
   recordTraceEvent(trace, event, at, { ...details, error })
-  if (enabled) console.error(`${prefix(trace, at)} ${event} ${safeJson({ ...details, error })}`)
+  if (developerConsoleEnabled()) console.error(`${prefix(trace, at)} ${event} ${safeJson({ ...details, error })}`)
   trace.lastAt = at
 }
 
@@ -211,7 +212,7 @@ export function finishResolveTrace(
     ...details,
   })
   persist(trace, outcome, at)
-  if (enabled) console.info(`${prefix(trace, at)} END ${outcome} ${safeJson({
+  if (developerConsoleEnabled()) console.info(`${prefix(trace, at)} END ${outcome} ${safeJson({
     totalMs: Math.round(at - trace.startedAt),
     ...details,
   })}`)

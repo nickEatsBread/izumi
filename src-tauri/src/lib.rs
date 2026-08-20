@@ -2,6 +2,7 @@
 #[cfg(target_os = "android")]
 mod android_tls;
 mod cache_gc;
+mod text_file;
 mod direct_torrent;
 mod direct_torrent_range;
 mod direct_torrent_select;
@@ -96,6 +97,14 @@ pub(crate) struct GmDynamicOverlay {
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+/// Opens the main WebView inspector on an explicit user action. Desktop release builds include
+/// Tauri's `devtools` feature so this remains available in shipped binaries, not just debug builds.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn open_developer_tools(window: tauri::WebviewWindow) {
+    window.open_devtools();
 }
 
 /// Embed mpv into the MAIN window and start playback — single-window design.
@@ -921,11 +930,12 @@ fn set_idle_inhibit(app: AppHandle, on: bool) {
     player::wakelock::set(&app, on);
 }
 
-/// Write a UTF-8 text file to an absolute path chosen via the save dialog. Used by the local-history
-/// export (there's no plugin-fs; this is the minimal write primitive the frontend needs).
+/// Write a UTF-8 text file to the location chosen via the save dialog. Used by backup, local-history
+/// export, and diagnostics (there's no plugin-fs; this is the minimal write primitive the frontend
+/// needs). On Android the dialog returns a `content://` URI — see `text_file`.
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
-    std::fs::write(&path, contents).map_err(|e| e.to_string())
+    text_file::write(path, contents)
 }
 
 /// Read a bounded UTF-8 text file for subtitle synchronization. This deliberately is not a
@@ -4191,6 +4201,7 @@ pub fn run() {
         .manage(desktop_presence::DesktopPresence::default())
         .invoke_handler(tauri::generate_handler![
             greet,
+            open_developer_tools,
             take_pending_magnet,
             player_play,
             player_play_embedded,
@@ -4230,6 +4241,7 @@ pub fn run() {
             extension_package::extension_install_url,
             extension_package::extension_list,
             extension_package::extension_remove,
+            jvm_extensions::jvm_extension_set_debug,
             jvm_extensions::jvm_extension_sources,
             jvm_extensions::jvm_extension_call,
             jvm_extensions::jvm_extension_reload,

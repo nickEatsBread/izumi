@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
-  import { updateChannel } from '$lib/settings/ui'
+  import { developerLogging, updateChannel } from '$lib/settings/ui'
   import { isAndroid } from '$lib/platform'
   import { checkForUpdate, applyUpdate, availableUpdate, updatePhase, updateProgress, updateError } from '$lib/updater'
   import { copyToClipboard } from '$lib/util/clipboard'
@@ -9,6 +9,7 @@
   import { save } from '@tauri-apps/plugin-dialog'
   import { ioErrorMessage } from '$lib/player/history-io'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import Toggle from '$lib/components/settings/Toggle.svelte'
 
   let appVersion = $state('')
   let tauriVersion = $state('')
@@ -61,6 +62,7 @@
   }
 
   let diagnosticNotice = $state('')
+  let openingDeveloperTools = $state(false)
   async function copyDiagnostics() {
     const report = diagnosticsSnapshot({ appVersion, tauriVersion, mpvVersion, os })
     diagnosticNotice = copyToClipboard(report) ? 'Diagnostics copied' : 'Copy failed'
@@ -75,6 +77,17 @@
       await invoke('write_text_file', { path, contents: diagnosticsSnapshot({ appVersion, tauriVersion, mpvVersion, os }) })
       diagnosticNotice = 'Diagnostics saved'
     } catch (error) { diagnosticNotice = ioErrorMessage(error, 'Save failed') }
+  }
+  async function openDeveloperTools() {
+    openingDeveloperTools = true
+    try {
+      await invoke('open_developer_tools')
+      diagnosticNotice = 'Developer tools opened'
+    } catch (error) {
+      diagnosticNotice = ioErrorMessage(error, 'Could not open developer tools')
+    } finally {
+      openingDeveloperTools = false
+    }
   }
 </script>
 
@@ -152,14 +165,33 @@
     A native desktop anime client — Stremio add-on + debrid sourcing, native libmpv2 playback.
   </p>
 
-  <div class="mt-6 max-w-md">
+  <div class="mt-6 max-w-md" data-setting-key="developer-tools">
     <h3 class="mb-1 text-sm font-black">Diagnostics</h3>
     <p class="mb-3 text-xs text-muted-foreground">Izumi keeps the latest {$diagnosticEvents.length} frontend errors for this session. Reports redact settings whose names look sensitive.</p>
+    {#if !$isAndroid}
+      <div class="mb-3">
+        <Toggle
+          label="Developer logging"
+          desc="Forward verbose frontend, native, and JVM extension-runtime events to DevTools. Logs may contain source URLs or account material; switch this off after debugging."
+          value={$developerLogging}
+          onToggle={() => ($developerLogging = !$developerLogging)}
+        />
+      </div>
+    {/if}
     <div class="flex flex-wrap gap-2">
       <button data-focusable onclick={copyDiagnostics} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Copy report</button>
       <button data-focusable onclick={saveDiagnostics} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Save report</button>
       <button data-focusable onclick={() => { clearDiagnostics(); diagnosticNotice = 'Diagnostics cleared' }} class="rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-secondary">Clear</button>
+      {#if !$isAndroid}
+        <button data-focusable onclick={openDeveloperTools} disabled={openingDeveloperTools}
+                class="rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-secondary disabled:opacity-60">
+          {openingDeveloperTools ? 'Opening…' : 'Open developer tools'}
+        </button>
+      {/if}
     </div>
+    {#if !$isAndroid}
+      <p class="mt-2 text-xs text-muted-foreground">Inspect the Console and Network panels for live errors. Network requests can contain signed links or account tokens, so redact them before sharing screenshots or logs.</p>
+    {/if}
     {#if diagnosticNotice}<p class="mt-2 text-xs text-muted-foreground">{diagnosticNotice}</p>{/if}
   </div>
 </div>

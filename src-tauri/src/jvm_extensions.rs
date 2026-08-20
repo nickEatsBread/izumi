@@ -1,20 +1,25 @@
 use futures_util::StreamExt;
+use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Manager};
+use std::time::Instant;
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tokio::time::{timeout, Duration};
 
-const RUNTIME_VERSION: &str = "1.9.8";
-const RUNTIME_URL: &str = "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/download/v1.9.8/anymex_desktop_runtime.jar";
-const RUNTIME_SHA256: &str = "f45ccc9a0f1755db0a519abfb921abf2e9e460827aeb228418cfc4dbfb78c2ac";
+// Keep the desktop bridge current with the extension formats shipped by the store. 1.9.8 predates
+// the desktop APK/JAR loader, child-first class loading, and several network/WebView compatibility
+// fixes used by current Aniyomi sources.
+const RUNTIME_VERSION: &str = "2.3.0";
+const RUNTIME_URL: &str = "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/download/v2.3.0/anymex_desktop_runtime.jar";
+const RUNTIME_SHA256: &str = "32ff822ea3475aeafd0c6f987d1549c8cc30fc535a44d07bc7338b75c44a1d0e";
 const JRE_VERSION: &str = "17.0.12+7";
 const MAX_JRE_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 
@@ -26,16 +31,52 @@ struct JreAsset {
 
 type Pending = HashMap<String, oneshot::Sender<Result<Value, String>>>;
 
+#[derive(Clone)]
+struct DeveloperLogger {
+    app: AppHandle,
+    enabled: Arc<AtomicBool>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct DeveloperLog<'a> {
+    target: &'a str,
+    level: &'a str,
+    message: &'a str,
+}
+
+impl DeveloperLogger {
+    fn emit(&self, target: &str, level: &str, message: &str) {
+        if self.enabled.load(Ordering::Relaxed) {
+            let _ = self.app.emit(
+                "developer-log",
+                DeveloperLog {
+                    target,
+                    level,
+                    message,
+                },
+            );
+        }
+    }
+}
+
 struct Process {
     child: Mutex<Child>,
     stdin: Mutex<ChildStdin>,
     pending: Arc<Mutex<Pending>>,
     sequence: AtomicU64,
+    logger: DeveloperLogger,
 }
 
 impl Process {
     async fn request(&self, method: &str, args: Value) -> Result<Value, String> {
         let id = self.sequence.fetch_add(1, Ordering::Relaxed).to_string();
+        let started = Instant::now();
+        self.logger.emit(
+            "aniyomi-jvm",
+            "debug",
+            &format!("request {id} started: {method}"),
+        );
         let (sender, receiver) = oneshot::channel();
         self.pending.lock().await.insert(id.clone(), sender);
         let request = json!({ "id": id, "method": method, "args": args });
@@ -54,14 +95,28 @@ impl Process {
                 .await
                 .map_err(|error| format!("Extension runtime flush failed: {error}"))?;
         }
-        match timeout(Duration::from_secs(120), receiver).await {
+        let result = match timeout(Duration::from_secs(120), receiver).await {
             Ok(Ok(result)) => result,
             Ok(Err(_)) => Err("Extension runtime stopped before replying".into()),
             Err(_) => {
                 self.pending.lock().await.remove(&id);
                 Err(format!("Extension runtime request timed out: {method}"))
             }
-        }
+        };
+        let outcome = if result.is_ok() {
+            "completed"
+        } else {
+            "failed"
+        };
+        self.logger.emit(
+            "aniyomi-jvm",
+            if result.is_ok() { "debug" } else { "error" },
+            &format!(
+                "request {id} {outcome}: {method} ({} ms)",
+                started.elapsed().as_millis()
+            ),
+        );
+        result
     }
 }
 
@@ -69,6 +124,7 @@ impl Process {
 pub struct Runtime {
     process: Mutex<Option<Arc<Process>>>,
     sources: RwLock<Option<Value>>,
+    developer_logging: Arc<AtomicBool>,
 }
 
 fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -243,7 +299,15 @@ fn extract_jre(bytes: &[u8], destination: &Path, gzip: bool) -> Result<(), Strin
 async fn ensure_private_java(app: &AppHandle) -> Result<PathBuf, String> {
     let destination = jre_path(app)?;
     if let Some(java) = find_java(&destination) {
-        return Ok(java);
+        prepare_java_executable(&java)?;
+        if supported_java(&java).await {
+            return Ok(java);
+        }
+        // A partial/corrupt cache used to be returned without ever probing it. Remove it so the
+        // verified Temurin archive below can repair the installation in the same launch.
+        tokio::fs::remove_dir_all(&destination)
+            .await
+            .map_err(|error| format!("Could not replace the private Java runtime: {error}"))?;
     }
     let asset = jre_asset()?;
     let response = reqwest::get(asset.url)
@@ -281,10 +345,11 @@ async fn ensure_private_java(app: &AppHandle) -> Result<PathBuf, String> {
     tokio::task::spawn_blocking(move || extract_jre(&unpack_bytes, &unpack_path, asset.gzip))
         .await
         .map_err(|error| format!("Private Java extraction task failed: {error}"))??;
-    if find_java(&temporary).is_none() {
+    let Some(temporary_java) = find_java(&temporary) else {
         let _ = tokio::fs::remove_dir_all(&temporary).await;
         return Err("Private Java runtime contains no Java executable".into());
-    }
+    };
+    prepare_java_executable(&temporary_java)?;
     if destination.exists() {
         tokio::fs::remove_dir_all(&destination)
             .await
@@ -293,7 +358,39 @@ async fn ensure_private_java(app: &AppHandle) -> Result<PathBuf, String> {
     tokio::fs::rename(&temporary, &destination)
         .await
         .map_err(|error| error.to_string())?;
-    find_java(&destination).ok_or_else(|| "Private Java runtime installation failed".into())
+    let java = find_java(&destination)
+        .ok_or_else(|| "Private Java runtime installation failed".to_string())?;
+    if !supported_java(&java).await {
+        let _ = tokio::fs::remove_dir_all(&destination).await;
+        return Err("Private Java runtime could not be started after installation".into());
+    }
+    Ok(java)
+}
+
+// ZIP extraction on Windows does not carry Unix mode bits, and archives can also lose them while
+// passing through packaging/caches. A Java file without an execute bit is discoverable on macOS
+// but fails only when the user first opens a JVM source. Repair our private, hash-verified runtime
+// before probing it. (System Java installations are deliberately left untouched.)
+#[cfg(unix)]
+fn prepare_java_executable(java: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = std::fs::metadata(java)
+        .map_err(|error| format!("Could not inspect the private Java executable: {error}"))?;
+    let mode = metadata.permissions().mode();
+    if mode & 0o111 == 0 {
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(mode | 0o111);
+        std::fs::set_permissions(java, permissions).map_err(|error| {
+            format!("Could not make the private Java runtime executable: {error}")
+        })?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn prepare_java_executable(_java: &Path) -> Result<(), String> {
+    Ok(())
 }
 
 /// Windows opens a console window for any console-subsystem child, and `java.exe` is one — so the
@@ -344,12 +441,41 @@ fn installed_java_candidates() -> Vec<PathBuf> {
     // Keep the normal process lookup as a final PATH/App Paths fallback.
     push_unique(&mut candidates, PathBuf::from(executable));
 
+    // Finder-launched apps do not inherit the interactive shell PATH. Homebrew's OpenJDK formula
+    // is also intentionally not linked into /Library/Java/JavaVirtualMachines by default, so it
+    // was invisible even though Java 17+ was installed and usable from Terminal.
+    if cfg!(target_os = "macos") {
+        for java in macos_homebrew_java_candidates() {
+            push_unique(&mut candidates, java);
+        }
+    }
+
     for root in standard_java_roots() {
         for java in find_java_executables(&root) {
             push_unique(&mut candidates, java);
         }
     }
     candidates
+}
+
+fn macos_homebrew_java_candidates() -> Vec<PathBuf> {
+    ["/opt/homebrew/opt", "/usr/local/opt"]
+        .into_iter()
+        .flat_map(|prefix| {
+            ["openjdk@17", "openjdk@21", "openjdk"]
+                .into_iter()
+                .map(move |formula| {
+                    PathBuf::from(prefix)
+                        .join(formula)
+                        .join("libexec")
+                        .join("openjdk.jdk")
+                        .join("Contents")
+                        .join("Home")
+                        .join("bin")
+                        .join("java")
+                })
+        })
+        .collect()
 }
 
 fn standard_java_roots() -> Vec<PathBuf> {
@@ -434,7 +560,21 @@ fn parse_java_major(version_output: &str) -> Option<u32> {
     }
 }
 
-async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, String> {
+async fn start_process(
+    app: &AppHandle,
+    java: &Path,
+    runtime: &Path,
+    developer_logging: Arc<AtomicBool>,
+) -> Result<Arc<Process>, String> {
+    let logger = DeveloperLogger {
+        app: app.clone(),
+        enabled: developer_logging,
+    };
+    logger.emit(
+        "aniyomi-jvm",
+        "info",
+        &format!("starting Java extension runtime with {}", java.display()),
+    );
     let mut command = Command::new(java);
     command
         .args([
@@ -450,6 +590,21 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    if let Some(home) = java_home_from_executable(java) {
+        command.env("JAVA_HOME", &home);
+        if let Some(bin) = java.parent() {
+            let mut paths = vec![bin.to_path_buf()];
+            if let Some(existing) = std::env::var_os("PATH") {
+                paths.extend(std::env::split_paths(&existing));
+            }
+            if let Ok(path) = std::env::join_paths(paths) {
+                command.env("PATH", path);
+            }
+        }
+    }
+    if let Some(folder) = runtime.parent() {
+        command.current_dir(folder);
+    }
     hide_console(&mut command);
     let mut child = command
         .spawn()
@@ -466,13 +621,16 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
     let pending: Arc<Mutex<Pending>> = Arc::new(Mutex::new(HashMap::new()));
 
     let output_pending = pending.clone();
+    let output_logger = logger.clone();
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             let Ok(message) = serde_json::from_str::<Value>(&line) else {
+                output_logger.emit("aniyomi-jvm:stdout", "debug", &line);
                 continue;
             };
             let Some(id) = message.get("id").and_then(Value::as_str) else {
+                output_logger.emit("aniyomi-jvm:stdout", "debug", &line);
                 continue;
             };
             if let Some(sender) = output_pending.lock().await.remove(id) {
@@ -501,10 +659,12 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
             let _ = sender.send(Err("Extension runtime exited".into()));
         }
     });
+    let error_logger = logger.clone();
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
             eprintln!("[aniyomi-jvm] {line}");
+            error_logger.emit("aniyomi-jvm:stderr", "warn", &line);
         }
     });
 
@@ -513,7 +673,15 @@ async fn start_process(java: &Path, runtime: &Path) -> Result<Arc<Process>, Stri
         stdin: Mutex::new(stdin),
         pending,
         sequence: AtomicU64::new(1),
+        logger,
     }))
+}
+
+fn java_home_from_executable(java: &Path) -> Option<PathBuf> {
+    let bin = java.parent()?;
+    (bin.file_name().and_then(|name| name.to_str()) == Some("bin"))
+        .then(|| bin.parent().map(Path::to_path_buf))
+        .flatten()
 }
 
 impl Runtime {
@@ -535,7 +703,7 @@ impl Runtime {
         }
         let runtime = ensure_runtime_file(app).await?;
         let java = java_command(app).await?;
-        let process = start_process(&java, &runtime).await?;
+        let process = start_process(app, &java, &runtime, self.developer_logging.clone()).await?;
         let folder = extension_dir(app)?;
         tokio::fs::create_dir_all(&folder)
             .await
@@ -557,6 +725,11 @@ impl Runtime {
         }
         *self.sources.write().await = None;
     }
+}
+
+#[tauri::command]
+pub fn jvm_extension_set_debug(enabled: bool, runtime: tauri::State<'_, Runtime>) {
+    runtime.developer_logging.store(enabled, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -595,7 +768,8 @@ pub async fn jvm_extension_reload(runtime: tauri::State<'_, Runtime>) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::parse_java_major;
+    use super::{java_home_from_executable, macos_homebrew_java_candidates, parse_java_major};
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn parses_modern_and_legacy_java_versions() {
@@ -609,5 +783,29 @@ mod tests {
         );
         assert_eq!(parse_java_major(r#"java version "1.8.0_451""#), Some(8));
         assert_eq!(parse_java_major("not a Java version"), None);
+    }
+
+    #[test]
+    fn derives_java_home_from_macos_bundle_executable() {
+        assert_eq!(
+            java_home_from_executable(Path::new(
+                "/Library/Java/JavaVirtualMachines/temurin-17.jre/Contents/Home/bin/java"
+            )),
+            Some(PathBuf::from(
+                "/Library/Java/JavaVirtualMachines/temurin-17.jre/Contents/Home"
+            ))
+        );
+        assert_eq!(java_home_from_executable(Path::new("java")), None);
+    }
+
+    #[test]
+    fn includes_apple_silicon_and_intel_homebrew_java() {
+        let candidates = macos_homebrew_java_candidates();
+        assert!(candidates.contains(&PathBuf::from(
+            "/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home/bin/java"
+        )));
+        assert!(candidates.contains(&PathBuf::from(
+            "/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java"
+        )));
     }
 }

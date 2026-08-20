@@ -109,16 +109,26 @@ export function pickEpisodeVideo<T extends { name: string; bytes: number }>(
 ): T | undefined {
   if (!want) return undefined
   const base = (n: string) => (n.split(/[/\\]/).pop() ?? n).toLowerCase()
+  const candidates = files.filter((f) => VIDEO.test(f.name) && !JUNK.test(f.name) && !EXTRA.test(f.name))
 
-  // Addon-provided filename hint: authoritative when it names a real video file here.
+  // An add-on filename is a hint, not permission to violate the requested episode. Some feeds
+  // have returned an unnumbered special from a season pack for a normal episode; accepting that
+  // exact basename before examining the pack made Cowboy Bebop E07 play an extra. With episode
+  // context, trust the hint only when its own filename confirms the requested number.
   if (want.filename) {
     const hint = base(want.filename)
-    const hit = files.find((f) => VIDEO.test(f.name) && base(f.name) === hint)
-    if (hit) return hit
+    const hit = candidates.find((f) => base(f.name) === hint)
+    if (hit) {
+      if (want.episode == null && want.abs == null) return hit
+      const parsed = parseFileEpisode(hit.name)
+      const numberMatches = parsed.episode != null
+        && (parsed.episode === want.episode || parsed.episode === want.abs)
+      const seasonMatches = parsed.season == null || want.season == null || parsed.season === want.season
+      if (numberMatches && seasonMatches) return hit
+    }
   }
 
   if (want.episode == null && want.abs == null) return undefined
-  const candidates = files.filter((f) => VIDEO.test(f.name) && !JUNK.test(f.name) && !EXTRA.test(f.name))
   const parsed = candidates.map((f) => ({ f, p: parseFileEpisode(f.name) }))
   // A parsed season contradicting the wanted season disqualifies (multi-season packs).
   const seasonOk = (p: ParsedFileEpisode) => p.season == null || want.season == null || p.season === want.season

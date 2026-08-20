@@ -92,6 +92,11 @@ describe('torbox.resolveHash noAdd', () => {
     ])
     await expect(torbox.resolveHash('key', HASH)).resolves.toBe('https://cdn.torbox/Show_01.mkv')
     expect(called(httpFetch, '/torrents/createtorrent')).toBe(true)
+    const create = httpFetch.mock.calls.find((call) =>
+      String((call[1] as { url?: string })?.url).includes('/torrents/createtorrent'))
+    const args = create?.[1] as { body?: string; headers?: Record<string, string> }
+    expect(args.headers?.['Content-Type']).toMatch(/^multipart\/form-data; boundary=----izumi-/)
+    expect(args.body).toContain(`name="magnet"\r\n\r\nmagnet:?xt=urn:btih:${HASH}`)
   })
 
   it('rides out a single 5xx during the poll instead of throwing the download away', async () => {

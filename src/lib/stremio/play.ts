@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
-import { enabledAddonUrls } from './sources'
+import { addonUrls, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
 import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
@@ -11,11 +11,24 @@ import { shouldShowCachingScreen } from './caching-screen'
 import type { RankOptions } from './addon'
 import { scoreInfo } from './score'
 import { directMetadataPrefetchKey, directMetadataPrefetchRequest } from './direct-metadata-prefetch'
+import { developerConsoleEnabled } from '$lib/debug/log-gate'
 
 /** Ranking inputs that live in settings rather than on a stream. The non-interactive paths must
  *  use the same ones the picker does, or "best" means two different things depending on whether a
  *  human was looking. */
 const directP2pEnabled = () => get(torrentPlaybackMode) === 'direct' || !get(debridKey)
+const ALL_ADDONS_DISABLED_MESSAGE = 'All configured stream add-ons are disabled — enable one in Settings → Sources.'
+const sourceInventoryError = (enabledAddons: string[]) => (
+  !enabledAddons.length && get(addonUrls).length
+    ? ALL_ADDONS_DISABLED_MESSAGE
+    : 'No sources configured — add an addon URL or install an anime package in Settings.'
+)
+const emptyStreamsError = (total: number, enabledAddons: string[]) => {
+  if (!enabledAddons.length && get(addonUrls).length) return ALL_ADDONS_DISABLED_MESSAGE
+  return total > 0
+    ? `Found ${total} torrents but none are usable (all dead or notice entries). Try another source.`
+    : 'No streams found for this title/episode yet.'
+}
 const rankOpts = (anilistId?: number): RankOptions => ({
   audioLang: get(preferredAudioLang),
   directP2p: directP2pEnabled(),
@@ -579,12 +592,12 @@ function attachAndroid(
     if ((get(bingePreload) || get(autoplayNext)) && dur > 0 && pos / dur > 0.85) prefetchNext(media, episode)
     if (eof && !ended) {
       ended = true
-      if (prematureEof(pos, dur)) {
+      if (prematureEof(pos, dur, media.duration)) {
         recoveryBusy = true
         void recoverPlaybackSource(
           pos,
           !s.paused,
-          'Source returned no playable video — trying another source…',
+          'Source ended before the episode finished — trying another source…',
         ).catch((error) => {
           console.warn('automatic Android empty-source recovery', error)
           playerNotice.set('Automatic source recovery failed')
@@ -776,7 +789,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   const bases = get(enabledAddonUrls)
   if (!bases.length) {
     if (await hasConfiguredExtensions()) return { streams: [], cachedCount: 0 }
-    throw new Error('No sources configured — add an addon URL or install an anime package in Settings.')
+    throw new Error(sourceInventoryError(bases))
   }
   const kitsu = await resolveKitsu(media)
   // No Kitsu id ⇒ addons (which index by it) can't be queried. Auto-advance is cached-addon-only,
@@ -803,9 +816,7 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
   // Only hard-fail when there's nothing playable AND no extensions to fall back on;
   // otherwise let the picker fill from extensions asynchronously.
   if (!streams.length && !await hasConfiguredExtensions()) {
-    throw new Error(total > 0
-      ? `Found ${total} torrents but none are usable (all dead or notice entries). Try another source.`
-      : 'No streams found for this title/episode yet.')
+    throw new Error(emptyStreamsError(total, bases))
   }
   return { streams, cachedCount, want, kitsu }
 }
@@ -1080,7 +1091,7 @@ export async function resolveDirectPreloadStream(
       return hash ? { ...stream, url: undefined, infoHash: hash } : stream
     })
     const stream = pickDirectPreloadCandidate(normalized, hint, want)
-    if (import.meta.env.DEV) console.info(`[binge-preload] ADDON episode ${episode}`, {
+    if (developerConsoleEnabled()) console.info(`[binge-preload] ADDON episode ${episode}`, {
       provider,
       durationMs: Math.round(performance.now() - startedAt),
       rawRows: response.total,
@@ -1127,7 +1138,7 @@ export async function resolveDirectPreloadStream(
         const refined = verifySeason(refineStreams(media, batch).kept, want)
         rows += refined.length
         const stream = pickDirectPreloadCandidate(refined, hint, want)
-        if (import.meta.env.DEV) console.info(`[binge-preload] EXTENSION episode ${episode}`, {
+        if (developerConsoleEnabled()) console.info(`[binge-preload] EXTENSION episode ${episode}`, {
           provider: stream?.__origin?.name ?? stream?.__addonName ?? hint.originId,
           rows: refined.length,
           continuityMatch: !!stream,
@@ -1170,7 +1181,7 @@ async function prefetchNext(media: Media, episode: number) {
   prefetching = true
   let hit = false
   const startedAt = performance.now()
-  if (import.meta.env.DEV) console.info(`[binge-preload] START episode ${next}`, {
+  if (developerConsoleEnabled()) console.info(`[binge-preload] START episode ${next}`, {
     mediaId: media.id,
     directP2p: directP2pEnabled(),
   })
@@ -1193,7 +1204,7 @@ async function prefetchNext(media: Media, episode: number) {
         prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
         nextEpisodeReady.set({ mediaId: media.id, episode: next })
         hit = true
-        if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+        if (developerConsoleEnabled()) console.info(`[binge-preload] READY episode ${next}`, {
           durationMs: Math.round(performance.now() - startedAt),
           mode: 'online-provider',
         })
@@ -1243,7 +1254,7 @@ async function prefetchNext(media: Media, episode: number) {
       prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
       nextEpisodeReady.set({ mediaId: media.id, episode: next })
       hit = true
-      if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+      if (developerConsoleEnabled()) console.info(`[binge-preload] READY episode ${next}`, {
         durationMs: Math.round(performance.now() - startedAt),
         mode: preload.sameTorrent ? 'direct-p2p-season-pack' : 'direct-p2p-next-torrent',
         provider: directResult?.provider,
@@ -1265,7 +1276,7 @@ async function prefetchNext(media: Media, episode: number) {
       prefetched = { mediaId: media.id, episode: next, stream: s, at: Date.now() }
       nextEpisodeReady.set({ mediaId: media.id, episode: next })
       hit = true
-      if (import.meta.env.DEV) console.info(`[binge-preload] READY episode ${next}`, {
+      if (developerConsoleEnabled()) console.info(`[binge-preload] READY episode ${next}`, {
         durationMs: Math.round(performance.now() - startedAt),
         mode: 'debrid-cdn',
       })
@@ -1281,7 +1292,7 @@ async function prefetchNext(media: Media, episode: number) {
   finally {
     prefetching = false
     prefetchMiss = hit ? null : { key, at: Date.now() }
-    if (import.meta.env.DEV && !hit) console.info(`[binge-preload] MISS episode ${next}`, {
+    if (developerConsoleEnabled() && !hit) console.info(`[binge-preload] MISS episode ${next}`, {
       durationMs: Math.round(performance.now() - startedAt),
       retryAfterMs: PREFETCH_MISS_MS,
     })
@@ -1543,7 +1554,7 @@ export async function playEpisode(
       addons: bases.map(addonTraceName),
       extensionsEnabled: hasExt,
     })
-    if (!bases.length && !hasExt) throw new Error('No sources configured — add an addon URL or install an anime package in Settings.')
+    if (!bases.length && !hasExt) throw new Error(sourceInventoryError(bases))
     // One provider is not one source: AllAnime and similar providers can expose several hosts,
     // qualities, subtitle sets, or audio variants. A manual episode click therefore keeps the
     // chooser visible regardless of provider count; the normal Auto preference may choose later.
@@ -2024,9 +2035,7 @@ export async function playEpisode(
 
     // Nothing playable → honest error.
     if (!get(streamPicker)?.streams.length) {
-      return showPickerError(totalRaw > 0
-        ? `Found ${totalRaw} torrents but none are usable (all dead or notice entries). Try another source.`
-        : 'No streams found for this title/episode yet.')
+      return showPickerError(emptyStreamsError(totalRaw, bases))
     }
     traceResolve(trace, 'picker ready for source selection', {
       rawRows: totalRaw,
