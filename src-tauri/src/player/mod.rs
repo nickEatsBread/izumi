@@ -23,16 +23,18 @@
 //! (`(pos, duration)`) and `player-ended` (on natural EOF only). See
 //! [`spawn_event_loop`].
 
+mod embed_contract;
 mod headless;
 mod subtitle_select;
+pub use embed_contract::require_live_core;
 // On-demand anime-upscaler shader fetch (Anime video-quality preset). Pinned upstream release,
 // cached under the app config dir; never a user-supplied URL. See shaders.rs.
 pub mod shaders;
 // Playback wakelock: inhibit OS idle/screen-blank while a video plays (per-OS backends). See wakelock.rs.
-#[cfg(not(target_os = "android"))]
-pub mod wakelock;
 #[cfg(target_os = "macos")]
 mod macos_geometry;
+#[cfg(not(target_os = "android"))]
+pub mod wakelock;
 // macOS embedded player: an NSView behind the transparent WKWebView, passed as `--wid`.
 #[cfg(target_os = "macos")]
 pub mod macos_embed;
@@ -71,6 +73,8 @@ use libmpv2::{
     Format, Mpv,
 };
 use serde::Serialize;
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 use tauri::{AppHandle, Emitter};
 
 use headless::HeadlessMpv;
@@ -295,29 +299,31 @@ impl PlayerHandle {
 
         let subs = subtitles.unwrap_or_default();
         let audio = audio_tracks.unwrap_or_default();
-        let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
 
         // If we already have an mpv core, just queue the new file into its
         // existing (embedded) window.
-        if let Some(mpv) = guard.as_ref() {
-            set_langs(mpv, &alang, &slang);
-            load_file(
-                mpv,
-                url,
-                start_seconds,
-                autoplay,
-                &headers,
-                &subs,
-                &audio,
-                &self.pending_external_tracks,
-            )?;
-            return Ok(());
+        {
+            let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+            if let Some(mpv) = guard.as_ref() {
+                set_langs(mpv, &alang, &slang);
+                load_file(
+                    mpv,
+                    url,
+                    start_seconds,
+                    autoplay,
+                    &headers,
+                    &subs,
+                    &audio,
+                    &self.pending_external_tracks,
+                )?;
+                return Ok(());
+            }
         }
 
         // First launch: build a fresh mpv core. Any non-zero handle (Windows HWND or
-        // container child, X11 container id) embeds into it; 0 is the ONLY "no host
-        // window" sentinel any caller produces (non-Windows, no embed yet) → that
-        // alone maps to create_mpv(None) so mpv opens its OWN fullscreen window.
+        // container child, X11 container id, macOS NSView*) embeds into it; 0 is the
+        // ONLY "no host window" sentinel any caller produces → that alone maps to
+        // create_mpv(None) so mpv opens its OWN fullscreen window.
         // Passing Some(0) here told mpv to embed into X-window 0 (the root), which
         // aborts libmpv init on Wayland → the command panicked → invoke rejected with
         // null. The test must be `!= 0` and not `> 0`: a Windows HWND is a pointer
@@ -326,7 +332,11 @@ impl PlayerHandle {
         // fullscreen mpv window. (mpv's own handling of a negative wid on Windows is
         // still an open upstream bug, so such a handle may need a fix inside mpv too —
         // that is not something we can work around from this side.)
-        let mpv = create_mpv(if wid != 0 { Some(wid) } else { None }).map_err(|e| e.to_string())?;
+        //
+        // Do NOT hold `self.mpv` across create_mpv: on macOS we hop to the AppKit main
+        // thread, and a sync `player_command` on main that locks the same mutex would
+        // deadlock.
+        let mpv = create_mpv_for_embed(if wid != 0 { Some(wid) } else { None }, &app)?;
 
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
@@ -344,8 +354,14 @@ impl PlayerHandle {
             &self.pending_external_tracks,
         )?;
 
-        *guard = Some(mpv);
+        *self.mpv.lock().map_err(|e| e.to_string())? = Some(mpv);
         Ok(())
+    }
+
+    /// Whether a live libmpv core is stored. `player_embed` must not return Ok
+    /// without one — that was the macOS spinner (`player_command` → "no player").
+    pub fn has_core(&self) -> bool {
+        matches!(self.mpv.lock(), Ok(g) if g.is_some())
     }
 
     /// Linux embedded playback: create (or reuse) an mpv core with `vo=libmpv`
@@ -1525,9 +1541,33 @@ fn create_mpv(wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
     if wid.is_none() {
         return new_mpv_with_vo("wlshm", wid).or_else(|_| new_mpv_with_vo("x11", wid));
     }
+    // macOS cocoa-cb lives in vo=gpu. gpu-next wants macvk/MoltenVK, which the dmg
+    // does not bundle — a "successful" gpu-next init then paints nothing.
+    #[cfg(target_os = "macos")]
+    {
+        return new_mpv_with_vo("gpu", wid);
+    }
+    #[cfg(not(target_os = "macos"))]
     match new_mpv_with_vo("gpu-next", wid) {
         Ok(mpv) => Ok(mpv),
         Err(_) => new_mpv_with_vo("gpu", wid),
+    }
+}
+
+/// Create the core used by [`PlayerHandle::play_embedded`]. On macOS cocoa-cb
+/// must initialize on the AppKit main thread; elsewhere this is just [`create_mpv`].
+fn create_mpv_for_embed(wid: Option<i64>, app: &AppHandle) -> Result<Mpv, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let window = app
+            .get_webview_window("main")
+            .ok_or_else(|| "no main window".to_string())?;
+        macos_embed::on_main(&window, move || create_mpv(wid))?.map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        create_mpv(wid).map_err(|e| e.to_string())
     }
 }
 
@@ -1877,6 +1917,16 @@ mod tests {
         let h = PlayerHandle::new();
         assert_eq!(
             h.add_subtitle("/tmp/x.srt", "en", "English"),
+            Err("no player".to_string())
+        );
+    }
+
+    #[test]
+    fn has_core_is_false_until_playback() {
+        let h = PlayerHandle::new();
+        assert!(!h.has_core());
+        assert_eq!(
+            h.command("set", &["pause", "yes"]),
             Err("no player".to_string())
         );
     }

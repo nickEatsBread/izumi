@@ -238,7 +238,9 @@ async fn player_embed(
         )?;
         player::macos_embed::resize(&main);
     }
-    Ok(())
+    // Never report success without a live core. The old macOS path returned Ok in ~1ms
+    // and the overlay spun forever while every `player_command` failed with "no player".
+    player::require_live_core(player.has_core())
 }
 
 /// Stop playback: drop the mpv core, which destroys mpv's child surface inside the
