@@ -24,7 +24,7 @@ export interface Media {
   genres?: string[]
   synonyms?: string[]
   startDate?: FuzzyDate | null
-  studios?: { nodes?: { name: string }[] } | null
+  studios?: { nodes?: { id?: number; name: string }[] } | null
   coverImage?: { extraLarge?: string; large?: string; medium?: string; color?: string }
   bannerImage?: string
   trailer?: { id?: string; site?: string } | null

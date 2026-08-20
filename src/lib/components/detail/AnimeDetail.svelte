@@ -440,7 +440,7 @@
             <div class="mt-3 space-y-4">
               {#if m.description}<p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>{/if}
               <dl class="grid grid-cols-1 gap-2 text-sm">
-                {#if m.studios?.nodes?.length}<div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{m.studios.nodes.map((s) => s.name).join(', ')}</dd></div>{/if}
+                {#if m.studios?.nodes?.length}<div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/search?studio=${studio.id}&name=${encodeURIComponent(studio.name)}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>{/if}
                 {#if fmtDate(m.startDate)}<div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>{/if}
                 {#if m.synonyms?.length}<div><dt class="font-bold">Synonyms</dt><dd class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>{/if}
               </dl>
@@ -482,7 +482,7 @@
 
         {#if m.genres?.length}
           <div class="mb-4 flex flex-wrap gap-2">
-            {#each m.genres as g (g)}<span class="rounded-full bg-secondary px-3 py-1 text-xs">{g}</span>{/each}
+            {#each m.genres as g (g)}<a data-focusable href={`/app/search?genre=${encodeURIComponent(g)}`} class="rounded-full bg-secondary px-3 py-1 text-xs hover:bg-accent">{g}</a>{/each}
           </div>
         {/if}
 
@@ -559,7 +559,7 @@
         {/if}
         <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           {#if m.studios?.nodes?.length}
-            <div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{m.studios.nodes.map((s) => s.name).join(', ')}</dd></div>
+            <div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/search?studio=${studio.id}&name=${encodeURIComponent(studio.name)}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>
           {/if}
           {#if fmtDate(m.startDate)}
             <div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>
