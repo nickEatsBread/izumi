@@ -2,6 +2,7 @@
 #[cfg(target_os = "android")]
 mod android_tls;
 mod cache_gc;
+mod gm_perf;
 mod text_file;
 mod direct_torrent;
 mod direct_torrent_range;
@@ -116,6 +117,22 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) bar_y: f64, // vertical CENTRE of the bar
     pub(crate) bar_w: f64,
     pub(crate) bar_h: f64,
+    #[serde(default)]
+    pub(crate) skip_text: String,
+    #[serde(default)]
+    pub(crate) notice_text: String,
+    #[serde(default)]
+    pub(crate) p2p_text: String,
+}
+
+#[derive(Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // fields are consumed on Linux; other targets still deserialize the command
+struct OverlayCrop {
+    x: i64,
+    y: i64,
+    w: i64,
+    h: i64,
 }
 
 #[tauri::command]
@@ -304,12 +321,18 @@ fn player_is_game_mode(app: AppHandle) -> bool {
 /// controls show/hide and mpv bakes a snapshot of them over the video (see linux_overlay).
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn player_gm_overlay(app: AppHandle, visible: bool, fast: Option<bool>) {
+fn player_gm_overlay(
+    app: AppHandle,
+    visible: bool,
+    fast: Option<bool>,
+    crop: Option<OverlayCrop>,
+) {
     #[cfg(target_os = "linux")]
     {
         if let Some(win) = app.get_webview_window("main") {
             if visible {
-                player::linux_overlay::start(app.clone(), win, fast.unwrap_or(false));
+                let crop = crop.map(|c| (c.x, c.y, c.w, c.h));
+                player::linux_overlay::start(app.clone(), win, fast.unwrap_or(false), crop);
             } else {
                 player::linux_overlay::stop(app.clone());
             }
@@ -317,7 +340,7 @@ fn player_gm_overlay(app: AppHandle, visible: bool, fast: Option<bool>) {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, visible, fast);
+        let _ = (app, visible, fast, crop);
     }
 }
 
@@ -640,21 +663,11 @@ fn set_tac_verification_config(
     Ok(())
 }
 
-/// Toggle the WebView's hardware-acceleration policy (Linux, Game mode only). In Game mode the
-/// player controls are NEVER shown on screen by WebKit: the opaque mpv X11 container sits above the
-/// webview, and a snapshot of the (transparent) HTML controls is pushed into mpv as an overlay. GPU
-/// accelerated compositing therefore buys NOTHING for the player UI, yet it captures every element
-/// WebKit puts on its own compositing layer (the audio/subtitle + options menus, popovers) at
-/// reduced fidelity — grayscale AA + a bilinear resample of the layer texture — which is the
-/// pixelated menu text. Forcing the non-accelerated (shared-memory) path while the player is up
-/// renders the whole overlay crisp, so the snapshot is sharp.
-///
-/// This is safe HERE (unlike the global default, which keeps accel ON to fix a Desktop ghost trail
-/// — see the webview setup): the Game-mode menus UNMOUNT (Svelte `{#if}`) rather than hide, so the
-/// accel-only anti-ghost layer promotion isn't needed, and the one element that relied on it (the
-/// moving scrub tooltip) is drawn as a native mpv OSD in Game mode, not HTML. `enabled=true`
-/// restores the on-demand default for the browse UI, which needs accel for smooth page-zoom
-/// scrolling; Desktop never calls this (its controls are live-composited). No-op on non-Linux.
+/// Toggle the WebView's hardware-acceleration policy (Linux). Game mode keeps GPU compositing
+/// (`Always`) even while the player is up: software raster aliases curves and the browse UI is
+/// still live behind the overlay. Ghost trails are handled by `disable_webkit_damage`, not by
+/// forcing `Never`. `enabled=false` is a no-op on gamescope so a stale caller cannot drop the
+/// Deck back onto the software path. Desktop may still request OnDemand vs Never. No-op off-Linux.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn set_webview_accel(app: AppHandle, enabled: bool) {
@@ -663,7 +676,10 @@ fn set_webview_accel(app: AppHandle, enabled: bool) {
         let _ = win.with_webview(move |pw| {
             use webkit2gtk::{HardwareAccelerationPolicy, SettingsExt, WebViewExt};
             if let Some(settings) = pw.inner().settings() {
-                settings.set_hardware_acceleration_policy(if enabled {
+                let gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
+                settings.set_hardware_acceleration_policy(if gamescope {
+                    HardwareAccelerationPolicy::Always
+                } else if enabled {
                     HardwareAccelerationPolicy::OnDemand
                 } else {
                     HardwareAccelerationPolicy::Never
@@ -4958,6 +4974,14 @@ pub fn run() {
                         // Gamescope passthrough lets WebKit's GTK drag/swipe gestures use this
                         // async path, including velocity-based native kinetic scrolling.
                         settings.set_enable_smooth_scrolling(true);
+                        if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+                            && crate::gm_perf::game_mode_uses_hardware_webkit()
+                        {
+                            use webkit2gtk::HardwareAccelerationPolicy;
+                            settings.set_hardware_acceleration_policy(
+                                HardwareAccelerationPolicy::Always,
+                            );
+                        }
                         let sptr = settings.as_ptr() as *mut std::ffi::c_void;
                         unsafe { disable_webkit_damage(sptr) };
                     }
@@ -5087,6 +5111,7 @@ pub fn run() {
             direct_torrent::torrent_playback_add_subtitle,
             direct_torrent::torrent_playback_health,
             direct_torrent::torrent_playback_buffer,
+            direct_torrent::torrent_playback_first_frame,
             direct_torrent::torrent_playback_stop,
             torrent_download::torrent_download_start,
             torrent_download::torrent_download_cancel,
@@ -5153,6 +5178,7 @@ pub fn run() {
         direct_torrent::torrent_playback_prepare_next,
         direct_torrent::torrent_playback_health,
         direct_torrent::torrent_playback_buffer,
+        direct_torrent::torrent_playback_first_frame,
         direct_torrent::torrent_playback_stop,
         torrent_download::torrent_download_start,
         torrent_download::torrent_download_cancel,

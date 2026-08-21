@@ -166,6 +166,7 @@ static TOUCH_DPY_DEAD: AtomicBool = AtomicBool::new(false);
 static TOUCH_DPY_PTR: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 static PREV_IO_HANDLER: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 static IO_HANDLER_INSTALLED: OnceLock<()> = OnceLock::new();
+static LAST_CLIENT_RESTORE_MS: AtomicU64 = AtomicU64::new(0);
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -289,6 +290,12 @@ pub fn enable_native_touch(window: &tauri::WebviewWindow) -> Result<(), String> 
     if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
         return Ok(());
     }
+    let now = now_ms();
+    let last = LAST_CLIENT_RESTORE_MS.load(Ordering::Relaxed);
+    if !crate::gm_perf::should_restore_touch(last, now) {
+        return Ok(());
+    }
+    LAST_CLIENT_RESTORE_MS.store(now, Ordering::Relaxed);
     // Two attempts: a Disconnected sender means the worker died (its Display died, or it wedged
     // and was replaced) — drop it and spawn a fresh one instead of reporting a dead end.
     for attempt in 0..2 {

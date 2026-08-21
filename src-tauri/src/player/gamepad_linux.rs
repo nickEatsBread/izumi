@@ -189,7 +189,7 @@ pub fn start(app: AppHandle) {
             let mut r2_on = false;
             let emit = |app: &AppHandle, i: &Input| {
                 set_trigger_state(i);
-                if i.pressed {
+                if i.pressed && crate::gm_perf::gamepad_input_restores_touch(i.name) {
                     schedule_native_touch_restore(app);
                 }
                 crate::player::linux_embed::elog(&format!("gamepad: {}={}", i.name, i.pressed));

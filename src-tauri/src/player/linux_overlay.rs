@@ -9,10 +9,9 @@
 //! premultiplied-BGRA `overlay-add`. The real HTML controls still receive input behind the
 //! video because the mpv container is input-transparent; this module is only the pixel bridge.
 //!
-//! Snapshotting runs only while controls are visible. The cadence is low while the controls are
-//! idle and faster only while the seekbar is actively being scrubbed. Completed snapshots are
-//! cropped to the non-transparent bounds before being handed to mpv, which avoids uploading a
-//! full viewport of transparent pixels for a bottom control bar.
+//! Snapshotting runs only while controls or menus are visible. Idle chrome is a single cropped
+//! snapshot of the bottom control strip; menus re-snapshot at 60fps. Completed snapshots are
+//! cropped to the non-transparent bounds (then the strip) before being handed to mpv.
 
 #![cfg(target_os = "linux")]
 
@@ -25,14 +24,12 @@ use gtk::glib;
 use tauri::{AppHandle, Manager};
 use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
+use crate::gm_perf::{
+    clip_to_strip, overlay_loop_fps, overlay_should_snapshot, OVERLAY_SCRUB_FPS,
+};
 use crate::player::PlayerHandle;
 
 const OVERLAY_ID: i64 = 1;
-const IDLE_FPS: u64 = 12;
-// "Fast" cadence used while a menu is open / controls are interactive. A snapshot costs only
-// ~9ms (raster ~5ms + crop/diff ~4ms) on the Deck, so 60fps fits the 16ms budget — 30fps made
-// controller menu navigation feel laggy (~33ms per d-pad step).
-const SCRUB_FPS: u64 = 60;
 
 static GEN: AtomicU64 = AtomicU64::new(0);
 static BUSY: AtomicBool = AtomicBool::new(false);
@@ -46,31 +43,47 @@ static PROF_LAST: Mutex<Option<Instant>> = Mutex::new(None);
 static BUF: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 /// Last uploaded crop geometry: x, y, width, height, stride.
 static GEOM: Mutex<Option<(i64, i64, i64, i64, i64)>> = Mutex::new(None);
+/// Idle snapshots clip to this CSS-pixel control strip so we do not upload a full viewport.
+static STRIP: Mutex<Option<(i64, i64, i64, i64)>> = Mutex::new(None);
+static LITE: AtomicBool = AtomicBool::new(false);
 
 /// Begin snapshotting the webview controls into an mpv overlay. Safe to call again while
-/// running; each call supersedes the previous timer loop.
-pub fn start(app: AppHandle, window: tauri::WebviewWindow, fast: bool) {
+/// running; each call supersedes the previous timer loop. Idle (`fast=false`) takes one
+/// snapshot and stops — the control strip does not need 12fps rasters while it is still.
+pub fn start(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    fast: bool,
+    crop: Option<(i64, i64, i64, i64)>,
+) {
     let my_gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
     FAST.store(fast, Ordering::SeqCst);
     FORCE.store(true, Ordering::SeqCst);
+    if let Ok(mut strip) = STRIP.lock() {
+        *strip = if fast { None } else { crop };
+    }
+    hold_lite(&app, true);
 
     let _ = window.with_webview(move |pw| {
         let wv = pw.inner();
         BUSY.store(true, Ordering::SeqCst);
         snapshot_once(&wv, &app);
 
+        if overlay_loop_fps(fast) == 0 {
+            return;
+        }
+
         let app = app.clone();
         let mut last_tick = Instant::now();
-        glib::timeout_add_local(Duration::from_millis(1000 / SCRUB_FPS), move || {
+        glib::timeout_add_local(Duration::from_millis(1000 / OVERLAY_SCRUB_FPS), move || {
             if GEN.load(Ordering::SeqCst) != my_gen {
                 return glib::ControlFlow::Break;
             }
 
-            let fps = if FAST.load(Ordering::Relaxed) {
-                SCRUB_FPS
-            } else {
-                IDLE_FPS
-            };
+            let fps = overlay_loop_fps(FAST.load(Ordering::Relaxed));
+            if fps == 0 {
+                return glib::ControlFlow::Continue;
+            }
             let interval = Duration::from_millis(1000 / fps);
             let now = Instant::now();
             if now.duration_since(last_tick) < interval {
@@ -79,7 +92,9 @@ pub fn start(app: AppHandle, window: tauri::WebviewWindow, fast: bool) {
 
             // Never queue a second WebKit snapshot behind a slow one; the loop self-paces to
             // what the Deck can actually raster.
-            if !BUSY.swap(true, Ordering::SeqCst) {
+            if overlay_should_snapshot(true, false, BUSY.load(Ordering::SeqCst))
+                && !BUSY.swap(true, Ordering::SeqCst)
+            {
                 last_tick = now;
                 snapshot_once(&wv, &app);
             }
@@ -95,8 +110,21 @@ pub fn stop(app: AppHandle) {
     if let Ok(mut geom) = GEOM.lock() {
         *geom = None;
     }
+    if let Ok(mut strip) = STRIP.lock() {
+        *strip = None;
+    }
+    hold_lite(&app, false);
     if let Some(ph) = app.try_state::<PlayerHandle>() {
         let _ = ph.overlay_remove(OVERLAY_ID);
+    }
+}
+
+fn hold_lite(app: &AppHandle, on: bool) {
+    if LITE.swap(on, Ordering::SeqCst) == on {
+        return;
+    }
+    if let Some(ph) = app.try_state::<PlayerHandle>() {
+        ph.set_ui_render_lite(on);
     }
 }
 
@@ -158,9 +186,16 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle) {
 
                 let need = (stride * h) as usize;
                 let data = img.data().ok()?;
-                let Some((x, y, cw, ch)) =
-                    alpha_bounds(&data[..need], w as usize, h as usize, stride as usize)
-                else {
+                let Some((x, y, cw, ch)) = alpha_bounds(
+                    &data[..need],
+                    w as usize,
+                    h as usize,
+                    stride as usize,
+                )
+                .and_then(|bounds| {
+                    let strip = STRIP.lock().ok().and_then(|g| *g);
+                    clip_to_strip(bounds, strip)
+                }) else {
                     let force = FORCE.swap(false, Ordering::SeqCst);
                     let had_overlay = GEOM.lock().ok().and_then(|mut geom| geom.take()).is_some();
                     if force || had_overlay {

@@ -204,9 +204,8 @@ raw-window-handle = "0.6"
 # forward the trigger state to the webview. gilrs handles enumeration + Xbox trigger mapping.
 gilrs = "0.11"
 # Pinned to the exact version wry/Tauri 2.11 links (must unify — one `web_kit2` links key).
-# Used to force HardwareAccelerationPolicy::Never so WebKit renders the UI in software:
-# with accelerated compositing on, WebKit's layer subsurfaces don't clear on a transparent
-# view, leaving ghost rectangles (menus/tooltips) until a resize.
+# Game mode uses HardwareAccelerationPolicy::Always; ghost trails are fixed by turning off
+# WebKitGTK 2.50 damage propagation, not by forcing the software rasterizer.
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 # Steam Deck Flatpak auto-update: prefer org.freedesktop.portal.Flatpak UpdateMonitor to detect +
 # install a pending OSTree update. Older SteamOS portals fall back to a host Flatpak command (the
