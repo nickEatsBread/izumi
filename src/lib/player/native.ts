@@ -52,23 +52,32 @@ export async function playerGifStart(includeSubtitles: boolean): Promise<void> {
     return
   }
   if (drmStream()) throw new Error('DRM GIF capture is unavailable')
-  const plan = gifCapturePlan(get(gifFps), get(gifScale), get(gifMaxSeconds))
-  await invoke('player_gif_start', {
-    includeSubtitles,
-    fps: plan.fps,
-    width: plan.width,
-    maxSeconds: plan.maxSeconds,
-  })
 }
 
-export async function playerGifStop(): Promise<void> {
+export async function playerGifStop(range?: { startSec: number; endSec: number }): Promise<void> {
   const drm = getDrmEngine()
   if (drm?.gifStop) {
     await drm.gifStop()
     return
   }
   if (drmStream()) throw new Error('DRM GIF capture is unavailable')
-  await invoke('player_gif_stop')
+  let start = range?.startSec
+  let end = range?.endSec
+  if (end == null || !Number.isFinite(end)) {
+    const raw = await invoke<string>('player_get_property', { name: 'time-pos' }).catch(() => '')
+    end = Number(raw)
+  }
+  if (start == null || !Number.isFinite(start)) start = Math.max(0, (end ?? 0) - 3)
+  if (!Number.isFinite(end) || end <= start) end = start + 0.4
+  const plan = gifCapturePlan(get(gifFps), get(gifScale), get(gifMaxSeconds))
+  const duration = Math.min(plan.maxSeconds, end - start)
+  await invoke('player_capture_segment', {
+    kind: 'gif',
+    startSec: Math.max(0, end - duration),
+    endSec: end,
+    width: plan.width,
+    fps: plan.fps,
+  })
 }
 
 /** Safe even when no recorder is active; used during close/source replacement. */

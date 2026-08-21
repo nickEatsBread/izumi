@@ -206,13 +206,13 @@
     <div class="rounded-md border border-border p-3 space-y-3" data-setting-key="gif-recorder">
       <div>
         <div class="font-bold">GIF recorder</div>
-        <p class="mt-1 text-xs text-muted-foreground">Anime is 24 fps; 15 fps at 720px for ~10 seconds is the usual high-quality share. Raising fps, width, or length grows the file quickly.</p>
+        <p class="mt-1 text-xs text-muted-foreground">Unencrypted playback cuts the moment from the file and samples it evenly. Encrypted playback grabs every compositor frame it can for as long as you hold record.</p>
       </div>
       <Toggle label="Include subtitles" desc="Burn the currently displayed subtitle track into the GIF." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
       <label class="flex items-center justify-between gap-4">
         <span class="min-w-0">
-          <span class="block font-bold">Frame rate</span>
-          <span class="mt-1 block text-xs text-muted-foreground">15 fps is the usual anime-GIF rate. 20–24 is smoother and much larger.</span>
+          <span class="block font-bold">Clip sampling</span>
+          <span class="mt-1 block text-xs text-muted-foreground">How densely to sample an unencrypted clip. Encrypted streams ignore this and capture at compositor speed.</span>
         </span>
         <SelectMenu className="w-28 shrink-0" value={String($gifFps)} onChange={(value) => { $gifFps = Number(value) }} ariaLabel="GIF frame rate" options={[
           { value: '10', label: '10 fps' },

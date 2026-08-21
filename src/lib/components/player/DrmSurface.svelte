@@ -884,8 +884,9 @@
     const deadline = performance.now() + plan.maxSeconds * 1000
     let consecutiveFailures = 0
     let captured = 0
+    // Burst: grab every compositor frame we can. Spacing grabs like seekbar
+    // tiles (sleep + interval) is what made GIFs look like a skim.
     while (gifActive && performance.now() < deadline && captured < plan.maxFrames) {
-      const frameStarted = performance.now()
       try {
         const video = videoEl
         if (!video || !firstFrame) throw new Error('video frame unavailable')
@@ -897,8 +898,10 @@
         consecutiveFailures++
         console.warn('[drm] GIF frame skipped', captureError)
       }
-      const remaining = plan.intervalMs - (performance.now() - frameStarted)
-      await new Promise((resolve) => setTimeout(resolve, Math.max(20, remaining)))
+      await new Promise<void>((resolve) => {
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve())
+        else setTimeout(resolve, 0)
+      })
       if (consecutiveFailures >= 5) break
     }
   }

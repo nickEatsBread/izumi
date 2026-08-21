@@ -8,7 +8,7 @@ describe('gifCapturePlan', () => {
     expect(plan.width).toBe(720)
     expect(plan.maxSeconds).toBe(10)
     expect(plan.intervalMs).toBe(67)
-    expect(plan.maxFrames).toBe(154)
+    expect(plan.maxFrames).toBe(308)
   })
 
   it('keeps an explicit high-quality plan', () => {
@@ -17,6 +17,6 @@ describe('gifCapturePlan', () => {
     expect(plan.width).toBe(960)
     expect(plan.maxSeconds).toBe(15)
     expect(plan.intervalMs).toBe(42)
-    expect(plan.maxFrames).toBe(364)
+    expect(plan.maxFrames).toBe(458)
   })
 })

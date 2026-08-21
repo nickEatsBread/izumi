@@ -1,6 +1,7 @@
-/** Anime-GIF defaults. Broadcast anime is 24 fps; 15 fps is the usual high-quality
- *  share rate (ffmpeg palettegen + sierra dither). 10 fps is the floor that still
- *  reads as motion. Width 720px, ~10s. */
+/** Clip sampling for unencrypted video: ffmpeg `fps=` takes even ticks from the
+ *  moment you held record, which is how a GIF stays a clip instead of seekbar
+ *  tiles. Encrypted playback ignores this and grabs every compositor frame it can.
+ *  Width 720px, ~10s. */
 
 export const GIF_FPS_OPTIONS = [10, 12, 15, 20, 24] as const
 export const GIF_WIDTH_OPTIONS = [480, 720, 960] as const
@@ -31,6 +32,6 @@ export function gifCapturePlan(fps: number, width: number, maxSeconds: number): 
     width: safeWidth,
     maxSeconds: safeSeconds,
     intervalMs: Math.round(1000 / safeFps),
-    maxFrames: safeFps * safeSeconds + 4,
+    maxFrames: safeSeconds * 30 + 8,
   }
 }

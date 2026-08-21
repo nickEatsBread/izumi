@@ -27,9 +27,10 @@
   async function stopGif(event: MouseEvent) {
     event.stopPropagation()
     if ($gifRecordingStart == null) return
+    const startedAt = $gifRecordingStart
     gifRecordingStart.set(null)
     try {
-      await playerGifStop()
+      await playerGifStop({ startSec: startedAt })
       playerNotice.set('GIF saved to Pictures/izumi')
     } catch (error) {
       playerNotice.set(
