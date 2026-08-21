@@ -60,7 +60,7 @@ export interface ExtensionCatalogPackage {
     language?: string
     baseUrl?: string
   }>
-  backend: 'izumi-js' | 'aniyomi-jvm'
+  backend: 'izumi-js' | 'aniyomi-jvm' | 'izumi-service'
   package: string
   packageSha256: string
   packageBytes: number
@@ -133,6 +133,19 @@ export const SUPPORTED_TYPES = ['torrent', 'onlinestream-provider', 'anime-torre
 /** True when a catalog entry names a type we can't run. Absent type = unknown, so keep it. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const isRunnableType = (e: any): boolean => !e?.type || SUPPORTED_TYPES.includes(e.type)
+
+/** Legacy izumi torrent SDK (`single`/`batch`/`movie`). Streaming and anime-torrent-provider
+ *  extensions have their own query paths and must not be asked for magnets. */
+export function isLegacyTorrentType(type?: string): boolean {
+  return !type || type === 'torrent'
+}
+
+export function extensionBackendLabel(backend: string): string {
+  if (backend === 'izumi-service') return 'Local service'
+  if (backend === 'izumi-js') return 'Native'
+  if (backend === 'aniyomi-jvm') return 'Aniyomi'
+  return backend
+}
 
 // Resolve a catalog entry to the manifest URL it POINTS AT, or null when the entry is a
 // config in its own right. Two catalog dialects:

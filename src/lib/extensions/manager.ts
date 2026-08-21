@@ -3,7 +3,7 @@ import { get } from 'svelte/store'
 import { invokeNativeHttp, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
-import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, manifestProblem, catalogPackages } from './catalog'
+import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
 import { extensionSourceConfigured, liveJvmSources } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
@@ -31,6 +31,7 @@ interface RunningExt {
 
 let running: RunningExt[] | null = null
 let builtFrom = ''
+let emptyBuildAt = 0
 let installedRevision = 0
 let buildGeneration = 0
 
@@ -41,10 +42,11 @@ export interface InstalledExtensionPackage {
   lang?: string
   description?: string
   code?: string
-  backend: 'izumi-js' | 'aniyomi-jvm'
+  backend: 'izumi-js' | 'aniyomi-jvm' | 'izumi-service'
   sourceId: string
   sourceIds: string[]
   signed: boolean
+  serviceEntry?: string
 }
 
 export type { ExtensionCatalogPackage, ExtensionCatalog } from './catalog'
@@ -73,6 +75,7 @@ function resetRunning(): void {
   running?.forEach((extension) => extension.worker.terminate())
   running = null
   builtFrom = ''
+  emptyBuildAt = 0
   buildPromise = null
   buildGeneration += 1
   clearProviderCache()
@@ -117,12 +120,16 @@ async function finishPackageInstall(installed: InstalledExtensionPackage): Promi
   if (installed.backend === 'aniyomi-jvm') {
     await invoke('jvm_extension_reload').catch(() => {})
   }
+  if (installed.backend === 'izumi-service') {
+    await invoke('extension_service_stop', { id: installed.id }).catch(() => {})
+  }
   installedRevision += 1
   resetRunning()
   return installed
 }
 
 export async function removeInstalledExtension(id: string): Promise<void> {
+  await invoke('extension_service_stop', { id }).catch(() => {})
   await invoke('extension_remove', { id })
   await invoke('jvm_extension_reload').catch(() => {})
   installedRevision += 1
@@ -227,6 +234,21 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
   // A source URL expands to many plugins; drop the ones switched off individually. Filtered HERE
   // rather than at query time so a disabled plugin never has its module fetched or a worker spawned.
   const off = get(disabledPlugins)
+  const services = await Promise.all(installed
+    .filter((extension) => extension.backend === 'izumi-service')
+    .map(async (extension) => {
+      if (off.includes(extension.id)) {
+        await invoke('extension_service_stop', { id: extension.id }).catch(() => {})
+        return [] as ExtensionConfig[]
+      }
+      try {
+        const manifest = await invoke<string>('extension_service_ensure', { id: extension.id })
+        return await expandManifest(manifest)
+      } catch (error) {
+        console.warn(`[extensions] local service failed to start: ${extension.name} (${extension.id})`, error)
+        return [] as ExtensionConfig[]
+      }
+    }))
   const local = installed
     .filter((extension) => extension.backend === 'izumi-js' && !!extension.code)
     .map((extension): ExtensionConfig => ({
@@ -242,7 +264,7 @@ async function loadConfigs(): Promise<ExtensionConfig[]> {
     signed: extension.signed,
   }))
   const seen = new Set<string>()
-  return [...results.flat(), ...local].filter((config) => {
+  return [...results.flat(), ...services.flat(), ...local].filter((config) => {
     if (off.includes(config.id) || seen.has(config.id)) return false
     // The same marketplace can be installed through both its catalog URL and an expanded pointer,
     // and two catalogs may contain the same provider. One worker per stable id prevents duplicate
@@ -342,7 +364,9 @@ async function ensureRunning(): Promise<RunningExt[]> {
   // The key must cover the per-plugin switches too: keyed on the URL list alone, toggling a plugin
   // left the previous worker set live and the change did nothing until a URL was added or removed.
   const key = JSON.stringify([get(enabledExtensionUrls), get(disabledPlugins), installedRevision])
-  if (running && builtFrom === key) return running
+  // Do not remember a transient all-failed build forever. A local or remote provider may become
+  // ready just after warmExtensions(); caching [] for the whole app session would prevent retry.
+  if (running && builtFrom === key && (running.length > 0 || Date.now() - emptyBuildAt < 1_000)) return running
   if (buildPromise) return buildPromise
   const generation = buildGeneration
   const promise = (async () => {
@@ -363,7 +387,8 @@ async function ensureRunning(): Promise<RunningExt[]> {
             () => fetchRemoteModuleCode(cfg.code),
           ),
         }
-      } catch {
+      } catch (error) {
+        console.warn(`[extensions] failed to load ${cfg.name} (${cfg.id})`, error)
         return { cfg, code: null }
       }
     }))
@@ -375,6 +400,7 @@ async function ensureRunning(): Promise<RunningExt[]> {
     }
     running = next
     builtFrom = key
+    emptyBuildAt = next.length ? 0 : Date.now()
     return next
   })()
   buildPromise = promise
@@ -416,12 +442,13 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
   try {
     const trace = currentResolveTrace(query.anilistId, query.episode)
     const exts = await ensureRunning()
-    const candidates = exts.filter((e) => !onlyId || e.cfg.id === onlyId)
+    const torrentExts = exts.filter((e) => isLegacyTorrentType(e.cfg.type))
+    const candidates = torrentExts.filter((e) => !onlyId || e.cfg.id === onlyId)
     // Movies also get single(): SDK sources treat single() as the universal entry (their movie()
     // often returns [] with "single already gets movies with matching media id").
     const methods = query.episode != null ? ['single', 'batch'] : ['single', 'movie']
     traceResolve(trace, 'legacy torrent extensions ready', {
-      configured: exts.length,
+      configured: torrentExts.length,
       candidates: candidates.length,
       methods,
     })
@@ -698,6 +725,29 @@ export async function jvmExtensionIcons(): Promise<Map<string, string>> {
       if (source.pkgName && source.iconUrl) icons.set(source.pkgName, source.iconUrl)
     }
   } catch { /* best-effort — the placeholder fallback covers it */ }
+  return icons
+}
+
+export async function ensureExtensionService(id: string): Promise<string> {
+  return invoke<string>('extension_service_ensure', { id })
+}
+
+/** Icons for installed packages: Aniyomi launcher artwork plus the live manifest icon of a
+ *  local-service package. Best-effort; missing entries fall through to the shared placeholder. */
+export async function installedPackageIcons(
+  packages: InstalledExtensionPackage[] = [],
+): Promise<Map<string, string>> {
+  const icons = await jvmExtensionIcons()
+  await Promise.all(packages
+    .filter((extension) => extension.backend === 'izumi-service')
+    .map(async (extension) => {
+      try {
+        const manifestUrl = await ensureExtensionService(extension.id)
+        const info = await fetchExtensionInfo(manifestUrl)
+        const icon = info.configs[0]?.icon
+        if (icon) icons.set(extension.id, icon)
+      } catch { /* placeholder remains */ }
+    }))
   return icons
 }
 

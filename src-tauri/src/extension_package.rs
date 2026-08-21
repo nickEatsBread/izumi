@@ -1,6 +1,6 @@
 use tauri::AppHandle;
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstalledExtension {
     pub id: String,
@@ -13,6 +13,7 @@ pub struct InstalledExtension {
     pub source_id: String,
     pub source_ids: Vec<String>,
     pub signed: bool,
+    pub service_entry: Option<String>,
 }
 
 mod package {
@@ -29,8 +30,20 @@ mod package {
     use tauri::{AppHandle, Manager};
     use zip::ZipArchive;
 
-    const MAX_PACKAGE_BYTES: usize = 8 * 1024 * 1024;
-    const MAX_ENTRY_BYTES: usize = 6 * 1024 * 1024;
+    // Native service packages can contain a self-contained runtime. The strict signed file list,
+    // per-file hashes and package signature still apply; only the size ceiling differs from JS/JVM.
+    const MAX_PACKAGE_BYTES: usize = 160 * 1024 * 1024;
+    const MAX_ENTRY_BYTES: usize = 152 * 1024 * 1024;
+    const PACKAGE_CACHE_VERSION: u8 = 1;
+
+    #[derive(serde::Deserialize, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct PackageCache {
+        version: u8,
+        package_bytes: u64,
+        modified_ns: u128,
+        extension: InstalledExtension,
+    }
 
     fn read_entry<R: std::io::Read + std::io::Seek>(
         archive: &mut ZipArchive<R>,
@@ -157,6 +170,31 @@ mod package {
         archive.by_name("AndroidManifest.xml").is_ok() && archive.by_name("classes.dex").is_ok()
     }
 
+    fn service_filename() -> &'static str {
+        if cfg!(windows) {
+            "service.exe"
+        } else {
+            "service"
+        }
+    }
+
+    fn service_platform() -> &'static str {
+        #[cfg(all(windows, target_arch = "x86_64"))]
+        return "windows-x86_64";
+        #[cfg(all(windows, target_arch = "aarch64"))]
+        return "windows-aarch64";
+        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+        return "linux-x86_64";
+        #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+        return "linux-aarch64";
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        return "macos-x86_64";
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        return "macos-aarch64";
+        #[allow(unreachable_code)]
+        "unsupported"
+    }
+
     // Finder and some macOS ZIP tools add bookkeeping entries without changing the packaged
     // payload. They are never read or extracted by Izumi, so exclude only those well-known
     // metadata names (and directory markers) from the strict signed-file allowlist below.
@@ -184,6 +222,7 @@ mod package {
         let entry = match backend {
             "izumi-js" => "extension.js",
             "aniyomi-jvm" => "extension.jar",
+            "izumi-service" => service_filename(),
             _ => return Err("Extension package uses an unsupported backend".into()),
         };
         let required = [
@@ -249,13 +288,21 @@ mod package {
             return Err(format!("Extension package entry must be {entry}"));
         }
         let compatibility_runtime = compatibility.get("runtime").and_then(Value::as_str);
-        let expected_runtime = if backend == "aniyomi-jvm" {
-            "izumi-aniyomi-jvm-v1"
-        } else {
-            "izumi-anime-extension-v1"
+        let expected_runtime = match backend {
+            "aniyomi-jvm" => "izumi-aniyomi-jvm-v1",
+            "izumi-service" => "izumi-local-service-v1",
+            _ => "izumi-anime-extension-v1",
         };
         if compatibility_runtime != Some(expected_runtime) {
             return Err("Extension compatibility runtime is unsupported".into());
+        }
+        if backend == "izumi-service"
+            && compatibility.get("platform").and_then(Value::as_str) != Some(service_platform())
+        {
+            return Err(format!(
+                "Extension service is not built for {}",
+                service_platform()
+            ));
         }
         let id = string(&manifest, "id")?.to_string();
         if !safe_id(&id) {
@@ -289,16 +336,21 @@ mod package {
             }
         }
         let signed = verify_signature(&signature, &integrity)?;
-        let code = if backend == "izumi-js" {
-            Some(
+        if backend == "izumi-service" && !signed {
+            return Err("Native extension services must be signed".into());
+        }
+        let code = match backend {
+            "izumi-js" => Some(
                 String::from_utf8(entry_bytes.clone())
                     .map_err(|_| "Extension module is not UTF-8")?,
-            )
-        } else {
-            if !entry_bytes.starts_with(b"PK") {
-                return Err("Aniyomi extension entry is not an APK/JAR archive".into());
+            ),
+            "aniyomi-jvm" => {
+                if !entry_bytes.starts_with(b"PK") {
+                    return Err("Aniyomi extension entry is not an APK/JAR archive".into());
+                }
+                None
             }
-            None
+            _ => None,
         };
         if let Some(android_entry) = android_entry_bytes.as_ref() {
             if !is_android_apk(android_entry) {
@@ -358,6 +410,7 @@ mod package {
                 .to_string(),
             source_ids,
             signed,
+            service_entry: (backend == "izumi-service").then(|| entry.to_string()),
         };
         let runtime_entry = if backend == "aniyomi-jvm" {
             #[cfg(target_os = "android")]
@@ -368,6 +421,8 @@ mod package {
             {
                 Some(entry_bytes)
             }
+        } else if backend == "izumi-service" {
+            Some(entry_bytes)
         } else {
             None
         };
@@ -388,6 +443,82 @@ mod package {
         Ok(extension_dir(app)?.join(format!("{id}.izumi-ext")))
     }
 
+    fn cache_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+        if !safe_id(id) {
+            return Err("Extension id is unsafe".into());
+        }
+        Ok(extension_dir(app)?
+            .join("metadata")
+            .join(format!("{id}.json")))
+    }
+
+    fn package_stamp(path: &Path) -> Result<(u64, u128), String> {
+        let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+        let modified_ns = metadata
+            .modified()
+            .map_err(|e| e.to_string())?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos();
+        Ok((metadata.len(), modified_ns))
+    }
+
+    fn cached_extension(
+        app: &AppHandle,
+        package: &Path,
+        id: &str,
+    ) -> Result<InstalledExtension, String> {
+        let cache: PackageCache = serde_json::from_slice(
+            &std::fs::read(cache_path(app, id)?).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        let (package_bytes, modified_ns) = package_stamp(package)?;
+        if cache.version != PACKAGE_CACHE_VERSION
+            || cache.package_bytes != package_bytes
+            || cache.modified_ns != modified_ns
+            || cache.extension.id != id
+        {
+            return Err("Extension package cache is stale".into());
+        }
+        Ok(cache.extension)
+    }
+
+    fn store_cache(
+        app: &AppHandle,
+        package: &Path,
+        extension: &InstalledExtension,
+    ) -> Result<(), String> {
+        let (package_bytes, modified_ns) = package_stamp(package)?;
+        let destination = cache_path(app, &extension.id)?;
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let temporary = destination.with_extension("json.part");
+        let cache = PackageCache {
+            version: PACKAGE_CACHE_VERSION,
+            package_bytes,
+            modified_ns,
+            extension: extension.clone(),
+        };
+        std::fs::write(
+            &temporary,
+            serde_json::to_vec(&cache).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        if destination.exists() {
+            std::fs::remove_file(&destination).map_err(|e| e.to_string())?;
+        }
+        std::fs::rename(temporary, destination).map_err(|e| e.to_string())
+    }
+
+    fn runtime_present(app: &AppHandle, extension: &InstalledExtension) -> bool {
+        match extension.backend.as_str() {
+            "aniyomi-jvm" => jvm_path(app, &extension.id).is_ok_and(|path| path.is_file()),
+            "izumi-service" => service_path(app, &extension.id).is_ok_and(|path| path.is_file()),
+            _ => true,
+        }
+    }
+
     fn jvm_dir(app: &AppHandle) -> Result<PathBuf, String> {
         #[cfg(target_os = "android")]
         return Ok(android_runtime_root(app)?.join("exts"));
@@ -405,18 +536,42 @@ mod package {
         Ok(jvm_dir(app)?.join(format!("{id}.jar")))
     }
 
+    fn service_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+        if !safe_id(id) {
+            return Err("Extension id is unsafe".into());
+        }
+        Ok(extension_dir(app)?.join("services").join(id))
+    }
+
+    fn service_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+        Ok(service_dir(app, id)?.join(service_filename()))
+    }
+
     #[cfg(target_os = "android")]
     pub fn android_runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
         Ok(extension_dir(app)?.join("android"))
     }
 
-    fn store_jvm_entry(app: &AppHandle, id: &str, payload: Option<&[u8]>) -> Result<(), String> {
+    fn store_runtime_entry(
+        app: &AppHandle,
+        extension: &InstalledExtension,
+        payload: Option<&[u8]>,
+    ) -> Result<(), String> {
         let Some(payload) = payload else {
             return Ok(());
         };
-        let dir = jvm_dir(app)?;
+        let service = extension.backend == "izumi-service";
+        let dir = if service {
+            service_dir(app, &extension.id)?
+        } else {
+            jvm_dir(app)?
+        };
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        let destination = jvm_path(app, id)?;
+        let destination = if service {
+            service_path(app, &extension.id)?
+        } else {
+            jvm_path(app, &extension.id)?
+        };
         if std::fs::read(&destination)
             .map(|existing| sha256(&existing) == sha256(payload))
             .unwrap_or(false)
@@ -428,7 +583,14 @@ mod package {
         if destination.exists() {
             std::fs::remove_file(&destination).map_err(|e| e.to_string())?;
         }
-        std::fs::rename(temporary, destination).map_err(|e| e.to_string())
+        std::fs::rename(temporary, &destination).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        if service {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&destination, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     fn install_bytes(app: &AppHandle, bytes: Vec<u8>) -> Result<InstalledExtension, String> {
@@ -442,7 +604,8 @@ mod package {
             std::fs::remove_file(&destination).map_err(|e| e.to_string())?;
         }
         std::fs::rename(&temporary, &destination).map_err(|e| e.to_string())?;
-        store_jvm_entry(app, &extension.id, jar.as_deref())?;
+        store_runtime_entry(app, &extension, jar.as_deref())?;
+        store_cache(app, &destination, &extension)?;
         Ok(extension)
     }
 
@@ -507,9 +670,19 @@ mod package {
             if path.extension().and_then(|value| value.to_str()) != Some("izumi-ext") {
                 continue;
             }
-            if let Ok(bytes) = std::fs::read(path) {
+            let Some(id) = path.file_stem().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if let Ok(extension) = cached_extension(app, &path, id) {
+                if runtime_present(app, &extension) {
+                    extensions.push(extension);
+                    continue;
+                }
+            }
+            if let Ok(bytes) = std::fs::read(&path) {
                 if let Ok((extension, jar)) = parse_package(&bytes) {
-                    let _ = store_jvm_entry(app, &extension.id, jar.as_deref());
+                    let _ = store_runtime_entry(app, &extension, jar.as_deref());
+                    let _ = store_cache(app, &path, &extension);
                     extensions.push(extension);
                 }
             }
@@ -530,7 +703,40 @@ mod package {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error.to_string()),
         };
-        package_result.and(jar_result)
+        let service_result = match std::fs::remove_dir_all(service_dir(app, id)?) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        };
+        let cache_result = match std::fs::remove_file(cache_path(app, id)?) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        };
+        package_result
+            .and(jar_result)
+            .and(service_result)
+            .and(cache_result)
+    }
+
+    pub fn service_entry(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+        let package = package_path(app, id)?;
+        if let Ok(extension) = cached_extension(app, &package, id) {
+            if extension.backend == "izumi-service"
+                && extension.signed
+                && runtime_present(app, &extension)
+            {
+                return service_path(app, id);
+            }
+        }
+        let bytes = std::fs::read(&package).map_err(|e| e.to_string())?;
+        let (extension, payload) = parse_package(&bytes)?;
+        if extension.backend != "izumi-service" || !extension.signed {
+            return Err("Extension is not a signed local service".into());
+        }
+        store_runtime_entry(app, &extension, payload.as_deref())?;
+        store_cache(app, &package, &extension)?;
+        service_path(app, id)
     }
 
     #[cfg(test)]
@@ -614,6 +820,75 @@ mod package {
             writer.finish().unwrap().into_inner()
         }
 
+        fn service_fixture(signed: bool, platform: &str) -> Vec<u8> {
+            let entry = service_filename();
+            let manifest = serde_json::to_vec(&serde_json::json!({
+                "formatVersion": 1,
+                "runtimeAbi": 1,
+                "id": "example.local-service",
+                "name": "Example local service",
+                "version": "1.0.0",
+                "entry": entry,
+                "execution": { "backend": "izumi-service", "status": "compatible" },
+                "sources": [{
+                    "id": "example.provider",
+                    "name": "Example provider",
+                    "language": "en",
+                    "baseUrl": "https://example.test"
+                }]
+            }))
+            .unwrap();
+            let compatibility = serde_json::to_vec(&serde_json::json!({
+                "runtime": "izumi-local-service-v1",
+                "platform": platform,
+            }))
+            .unwrap();
+            let executable = b"service-binary";
+            let integrity = serde_json::json!({
+                "algorithm": "SHA-256",
+                "files": {
+                    "manifest.json": sha256(&manifest),
+                    "compatibility.json": sha256(&compatibility),
+                    (entry): sha256(executable),
+                }
+            });
+            let integrity_bytes = serde_json::to_vec(&integrity).unwrap();
+            let signature = if signed {
+                let key = SigningKey::from_bytes(&[9; 32]);
+                let signed_bytes = key.sign(canonical_json(&integrity).as_bytes());
+                let public_key_der = key.verifying_key().to_public_key_der().unwrap();
+                let public_key = format!(
+                    "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----\n",
+                    base64::engine::general_purpose::STANDARD.encode(public_key_der.as_bytes())
+                );
+                serde_json::to_vec(&serde_json::json!({
+                    "algorithm": "Ed25519",
+                    "signed": true,
+                    "publicKey": public_key,
+                    "signature": base64::engine::general_purpose::STANDARD
+                        .encode(signed_bytes.to_bytes()),
+                }))
+                .unwrap()
+            } else {
+                br#"{"algorithm":"none","signed":false,"signature":null}"#.to_vec()
+            };
+            let cursor = Cursor::new(Vec::new());
+            let mut writer = zip::ZipWriter::new(cursor);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            for (name, bytes) in [
+                ("manifest.json", manifest.as_slice()),
+                ("compatibility.json", compatibility.as_slice()),
+                (entry, executable.as_slice()),
+                ("integrity.json", integrity_bytes.as_slice()),
+                ("signature.json", signature.as_slice()),
+            ] {
+                writer.start_file(name, options).unwrap();
+                writer.write_all(bytes).unwrap();
+            }
+            writer.finish().unwrap().into_inner()
+        }
+
         #[test]
         fn accepts_a_valid_native_package() {
             let (parsed, jar) = parse_package(&fixture(false, false, None)).unwrap();
@@ -627,6 +902,25 @@ mod package {
         #[test]
         fn accepts_a_valid_signed_package() {
             assert!(parse_package(&fixture(false, true, None)).unwrap().0.signed);
+        }
+
+        #[test]
+        fn accepts_a_signed_service_for_the_current_platform() {
+            let (parsed, executable) =
+                parse_package(&service_fixture(true, service_platform())).unwrap();
+            assert_eq!(parsed.backend, "izumi-service");
+            assert_eq!(parsed.service_entry.as_deref(), Some(service_filename()));
+            assert_eq!(executable.as_deref(), Some(b"service-binary".as_slice()));
+        }
+
+        #[test]
+        fn rejects_unsigned_or_wrong_platform_services() {
+            assert!(parse_package(&service_fixture(false, service_platform()))
+                .unwrap_err()
+                .contains("must be signed"));
+            assert!(parse_package(&service_fixture(true, "not-this-platform"))
+                .unwrap_err()
+                .contains("not built for"));
         }
 
         #[test]
@@ -692,6 +986,14 @@ pub async fn extension_list(app: AppHandle) -> Result<Vec<InstalledExtension>, S
 #[tauri::command]
 pub fn extension_remove(app: AppHandle, id: String) -> Result<(), String> {
     package::remove(&app, &id)
+}
+
+#[cfg(not(target_os = "android"))]
+pub(crate) fn extension_service_entry(
+    app: &AppHandle,
+    id: &str,
+) -> Result<std::path::PathBuf, String> {
+    package::service_entry(app, id)
 }
 
 #[cfg(target_os = "android")]

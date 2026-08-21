@@ -29,7 +29,12 @@ describe('extension list logos', () => {
 
   it('loads the installed icons without blocking the package list', () => {
     // The enumeration can spin the JVM runtime; the list must paint first.
-    expect(page).toContain('void jvmExtensionIcons().then(')
+    expect(page).toContain('void installedPackageIcons(localPackages).then(')
+  })
+
+  it('renders installed packages even when no source URL is on the list', () => {
+    expect(page).toContain('Installed packages')
+    expect(page).toContain('<AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={40} />')
   })
 
   it('accepts the bare base64 the native side inlines for an Aniyomi icon', () => {
@@ -62,9 +67,9 @@ describe('store icons', () => {
   })
 
   it('resolves those icons off the render path', () => {
-    // Same shape as the sources screen: the list paints, then icons fill in. jvmExtensionIcons can
+    // Same shape as the sources screen: the list paints, then icons fill in. Icon loading can
     // spin the JVM runtime, so awaiting it before the first paint would stall the whole page.
-    expect(store).toContain('void jvmExtensionIcons().then((icons) => { jvmIcons = icons })')
+    expect(store).toContain('void installedPackageIcons(installedPackages).then((icons) => { jvmIcons = icons })')
     expect(store).toContain('fetchExtensionMeta(spec)')
   })
 })

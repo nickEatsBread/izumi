@@ -2,15 +2,17 @@
   import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
   import {
     fetchExtensionInfo,
+    ensureExtensionService,
     installCatalogPackage,
     installedExtensionPackages,
-    jvmExtensionIcons,
+    installedPackageIcons,
     removeInstalledExtension,
     type ExtensionCatalogPackage,
     type ExtensionSourceInfo,
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
-  import { sourceLabel } from '$lib/extensions/catalog'
+  import { sourceLabel, extensionBackendLabel } from '$lib/extensions/catalog'
+  import { openUrl } from '@tauri-apps/plugin-opener'
   import { langName } from '$lib/player/track-label'
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
@@ -58,7 +60,7 @@
     localPackages = await installedExtensionPackages()
     // After the list, never blocking it: enumerating sources can spin the JVM runtime, and an icon
     // arriving a moment late just swaps the placeholder for the real logo.
-    void jvmExtensionIcons().then((icons) => { jvmIcons = icons })
+    void installedPackageIcons(localPackages).then((icons) => { jvmIcons = icons })
   }
   async function installFromCatalog(url: string, extension: ExtensionCatalogPackage) {
     packageBusy = true
@@ -83,6 +85,14 @@
       packageStatus = { url, text: String(error), ok: false }
     } finally {
       packageBusy = false
+    }
+  }
+  async function openServiceSettings(id: string) {
+    try {
+      const manifestUrl = await ensureExtensionService(id)
+      await openUrl(new URL(manifestUrl).origin + '/')
+    } catch (error) {
+      packageStatus = { url: id, text: String(error), ok: false }
     }
   }
   $effect(() => { void refreshPackages() })
@@ -188,7 +198,7 @@
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Extensions</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">
-    Community source extensions can play through your debrid service or Izumi's built-in direct torrent engine. Their results appear in the source picker alongside your addons.
+    Community source extensions can stream episodes directly, or play through your debrid service / Izumi's built-in torrent engine. Their results appear in the source picker alongside your addons.
     <span class="text-amber-400">Experimental — extensions run as untrusted third-party code in an isolated worker. Only add manifests you trust.</span>
   </p>
 
@@ -295,6 +305,42 @@
         </span>
       </div>
     </div>
+
+    {#if localPackages.length}
+      <h3 class="mb-2 text-sm font-black">Installed packages</h3>
+      <ul class="mb-6 space-y-2">
+        {#each [...localPackages].sort((a, b) => Number(pluginOff(a.id)) - Number(pluginOff(b.id)) || a.name.localeCompare(b.name)) as p (p.id)}
+          {@const pOff = pluginOff(p.id)}
+          <li class="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={pOff}>
+            <div class="flex min-w-0 flex-1 items-center gap-3">
+              <AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={40} />
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="truncate font-bold">{p.name}</span>
+                  <span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{extensionBackendLabel(p.backend)}</span>
+                  {#if p.lang}<span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}
+                  <span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{p.version}</span>
+                  <span class="rounded px-1.5 py-0.5 text-[0.6rem] font-bold {pOff ? 'bg-white/10 text-muted-foreground' : 'bg-emerald-500/15 text-emerald-400'}">{pOff ? 'OFF' : 'ENABLED'}</span>
+                </div>
+                {#if p.description}<p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{p.description}</p>{/if}
+              </div>
+            </div>
+            <div class="flex items-center justify-end gap-2">
+              {#if p.backend === 'izumi-service'}
+                <button data-focusable onclick={() => openServiceSettings(p.id)}
+                  class="rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Configure</button>
+              {/if}
+              <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
+                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+                <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+              </button>
+              <button data-focusable disabled={packageBusy} onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+                class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-8"><Trash2 size={16} /></button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
 
     <p class="mb-2 text-sm text-muted-foreground">Extension sources — a GitHub repo (<code class="rounded bg-secondary px-1 text-xs">gh:owner/repo</code> or <code class="rounded bg-secondary px-1 text-xs">owner/repo/folder</code>), a manifest URL, or a package catalog URL. A catalog lists installable packages instead of live plugins; open it to install them.</p>
     <div class="flex gap-2">
@@ -451,6 +497,8 @@
                               <span class="rounded bg-secondary px-1 py-0.5 text-[0.65rem] font-bold text-muted-foreground sm:text-[0.55rem]">{p.language?.toUpperCase() ?? 'MULTI'}</span>
                               {#if p.backend === 'izumi-js'}
                                 <span class="rounded bg-emerald-500/15 px-1 py-0.5 text-[0.65rem] font-bold text-emerald-400 sm:text-[0.55rem]">NATIVE</span>
+                              {:else if p.backend === 'izumi-service'}
+                                <span class="rounded bg-blue-500/15 px-1 py-0.5 text-[0.65rem] font-bold text-blue-400 sm:text-[0.55rem]">LOCAL</span>
                               {/if}
                               {#if p.nsfw}
                                 <span class="rounded bg-rose-500/15 px-1 py-0.5 text-[0.65rem] font-bold text-rose-400 sm:text-[0.55rem]">18+</span>

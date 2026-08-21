@@ -15,12 +15,13 @@
     fetchExtensionMeta,
     installCatalogPackage,
     installedExtensionPackages,
-    jvmExtensionIcons,
+    installedPackageIcons,
     removeInstalledExtension,
     type ExtensionCatalogPackage,
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { disabledPlugins, enabledExtensionUrls, extensionUrls } from '$lib/settings/ui'
+  import { extensionBackendLabel } from '$lib/extensions/catalog'
   import Search from '@lucide/svelte/icons/search'
   import Star from '@lucide/svelte/icons/star'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
@@ -105,7 +106,7 @@
     installedPackages = await installedExtensionPackages()
     // After the list, never awaited by it: enumerating installed Aniyomi sources can spin the JVM
     // runtime, and an icon arriving a moment late just swaps a placeholder for the real logo.
-    void jvmExtensionIcons().then((icons) => { jvmIcons = icons })
+    void installedPackageIcons(installedPackages).then((icons) => { jvmIcons = icons })
   }
 
   // Manifest icons for the plugins the user's own extension sources expand to. Same shape as the
@@ -399,7 +400,7 @@
             {@const off = $disabledPlugins.includes(item.id)}
             <div class="flex items-center gap-3 rounded-lg border border-border p-3" class:opacity-60={off}>
               <AddonLogo logo={packageIcon(item.id)} name={item.name} id={item.id} size={36} />
-              <span class="min-w-0 flex-1"><span class="block truncate text-sm font-black">{item.name}</span><span class="block text-xs text-muted-foreground">{item.backend} · v{item.version}</span></span>
+              <span class="min-w-0 flex-1"><span class="block truncate text-sm font-black">{item.name}</span><span class="block text-xs text-muted-foreground">{extensionBackendLabel(item.backend)} · v{item.version}</span></span>
               <button data-focusable onclick={() => toggleExtension(item.id)}
                       class="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-black {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">
                 {#if !off}<Check size={12} />{/if}{off ? 'Disabled' : 'Enabled'}
