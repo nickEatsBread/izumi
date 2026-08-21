@@ -252,10 +252,11 @@
         }
         return
       }
+      const startedAt = get(gifRecordingStart)
       gifRecordingStart.set(null)
       playerNotice.set('Saving GIF…')
       try {
-        await playerGifStop()
+        await playerGifStop({ startSec: startedAt ?? Math.max(0, pos - 3), endSec: pos })
         playerNotice.set('GIF saved to Pictures/izumi')
       } catch (error) {
         playerNotice.set(

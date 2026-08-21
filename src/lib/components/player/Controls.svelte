@@ -320,11 +320,12 @@
       } finally { captureBusy = false }
       return
     }
+    const startedAt = $gifRecordingStart
     gifRecordingStart.set(null)
     captureBusy = true
     playerNotice.set('Encoding GIF…')
     try {
-      await playerGifStop()
+      await playerGifStop({ startSec: startedAt ?? Math.max(0, pos - 3), endSec: pos })
       playerNotice.set('GIF saved to Pictures/izumi')
     } catch (error) {
       playerNotice.set(

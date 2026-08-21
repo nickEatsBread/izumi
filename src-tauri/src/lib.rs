@@ -2422,13 +2422,9 @@ fn save_player_png(app: AppHandle, png: Vec<u8>) -> Result<String, String> {
     Ok(dir.to_string_lossy().into_owned())
 }
 
-/// The video lives in the `main` webview. A command's injected `WebviewWindow` is the
-/// *invoking* webview, which is not always the surface that composites the video.
+/// Capture the main window's webview (the surface that composites encrypted video).
 #[cfg(not(target_os = "android"))]
 fn main_video_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
-    if let Some(webview) = app.get_webview("main") {
-        return Ok(webview);
-    }
     app.get_webview_window("main")
         .map(|window| window.as_ref().clone())
         .ok_or_else(|| "no main webview".into())
@@ -2504,66 +2500,6 @@ async fn capture_webview_jpeg(app: AppHandle, quality: Option<u8>) -> Result<Vec
     #[cfg(not(windows))]
     {
         let _ = (app, quality);
-        Err("window capture is only implemented on Windows".into())
-    }
-}
-
-#[cfg(not(target_os = "android"))]
-#[tauri::command]
-async fn capture_webview_jpeg_clip(
-    app: AppHandle,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    scale: f64,
-    quality: Option<u8>,
-) -> Result<Vec<u8>, String> {
-    if !x.is_finite()
-        || !y.is_finite()
-        || !width.is_finite()
-        || !height.is_finite()
-        || !scale.is_finite()
-        || width < 1.0
-        || height < 1.0
-        || scale <= 0.0
-    {
-        return Err("invalid capture rectangle".into());
-    }
-    #[cfg(windows)]
-    {
-        // Viewport.scale in Page.captureScreenshot is applied to the LIVE visual
-        // viewport, not just the captured bitmap. scale != 1 shrinks the playing
-        // video into a corner for the duration of each capture — 10 times a second
-        // while recording a GIF. Always clip at 1 and downscale the JPEG after.
-        let _ = scale;
-        let params = serde_json::json!({
-            "format": "jpeg",
-            "quality": quality.unwrap_or(84).clamp(60, 100),
-            "fromSurface": true,
-            "captureBeyondViewport": false,
-            "clip": {
-                "x": x.max(0.0),
-                "y": y.max(0.0),
-                "width": width,
-                "height": height,
-                "scale": 1.0,
-            }
-        })
-        .to_string();
-        let webview = main_video_webview(&app)?;
-        let jpeg = capture_webview_cdp(&webview, params).await?;
-        if jpeg.len() < 16 || !jpeg.starts_with(&[0xff, 0xd8, 0xff]) {
-            return Err("empty GIF frame".into());
-        }
-        if raster_is_solid_black(&jpeg) {
-            return Err("black screenshot".into());
-        }
-        return Ok(jpeg);
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = (app, x, y, width, height, scale, quality);
         Err("window capture is only implemented on Windows".into())
     }
 }
@@ -2933,6 +2869,8 @@ fn capture_ffmpeg_command(
     kind: &str,
     start: f64,
     duration: f64,
+    fps: f64,
+    width: u32,
     palette: bool,
 ) -> tokio::process::Command {
     let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
@@ -2956,11 +2894,13 @@ fn capture_ffmpeg_command(
         .arg("-t")
         .arg(format!("{duration:.3}"));
     if kind == "gif" {
+        let sample_fps = fps.clamp(8.0, 24.0);
+        let sample_width = width.clamp(160, 1920);
         if palette {
             command.arg("-filter_complex").arg(format!(
                 "[0:v]trim=duration={duration:.3},setpts=PTS-STARTPTS,\
-                 fps=12,scale=640:-1:flags=lanczos,split[s0][s1];\
-                 [s0]palettegen=stats_mode=diff[p];\
+                 fps={sample_fps:.3},scale={sample_width}:-2:flags=lanczos,split[s0][s1];\
+                 [s0]palettegen=stats_mode=full[p];\
                  [s1][p]paletteuse=dither=sierra2_4a"
             ));
         } else {
@@ -2968,7 +2908,7 @@ fn capture_ffmpeg_command(
             // encoder is larger but more permissive, so use it as an automatic second attempt.
             command.arg("-vf").arg(format!(
                 "trim=duration={duration:.3},setpts=PTS-STARTPTS,\
-                 fps=10,scale=480:-1:flags=lanczos,format=rgb8"
+                 fps={sample_fps:.3},scale={sample_width}:-2:flags=lanczos,format=rgb8"
             ));
         }
         command.arg("-an");
@@ -3029,6 +2969,8 @@ async fn player_capture_segment(
     kind: String,
     start_sec: f64,
     end_sec: f64,
+    fps: Option<f64>,
+    width: Option<u32>,
 ) -> Result<String, String> {
     if kind != "gif" && kind != "clip" {
         return Err("unsupported-capture-kind".into());
@@ -3061,9 +3003,20 @@ async fn player_capture_segment(
         "izumi-{kind}-{stamp}.{}",
         if kind == "gif" { "gif" } else { "mp4" }
     ));
+    let sample_fps = fps.unwrap_or(12.0);
+    let sample_width = width.unwrap_or(720);
 
-    let mut primary =
-        capture_ffmpeg_command(&source, &headers, &output, &kind, start, duration, true);
+    let mut primary = capture_ffmpeg_command(
+        &source,
+        &headers,
+        &output,
+        &kind,
+        start,
+        duration,
+        sample_fps,
+        sample_width,
+        true,
+    );
     let first = run_capture_ffmpeg(&mut primary, if kind == "gif" { 90 } else { 180 }).await;
     let result = match first {
         Ok(result) if result.status.success() => result,
@@ -3077,8 +3030,17 @@ async fn player_capture_segment(
                     Err(error) => error.clone(),
                 }
             );
-            let mut fallback =
-                capture_ffmpeg_command(&source, &headers, &output, &kind, start, duration, false);
+            let mut fallback = capture_ffmpeg_command(
+                &source,
+                &headers,
+                &output,
+                &kind,
+                start,
+                duration,
+                sample_fps,
+                sample_width,
+                false,
+            );
             run_capture_ffmpeg(&mut fallback, 90).await?
         }
         Ok(result) => return Err(capture_failure(&result)),
@@ -4690,7 +4652,6 @@ pub fn run() {
             save_player_png,
             capture_webview_png,
             capture_webview_jpeg,
-            capture_webview_jpeg_clip,
             drm_gif_start,
             drm_gif_frame,
             drm_gif_stop,

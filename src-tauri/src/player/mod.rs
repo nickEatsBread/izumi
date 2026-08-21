@@ -706,6 +706,7 @@ impl PlayerHandle {
             let _ = client.set_property("screenshot-jpeg-quality", 92_i64);
             let _ = client.set_property("screenshot-sw", "yes");
             let started = Instant::now();
+            let mut next_due = started;
             let mut frame = 0_u32;
             while !worker_stop.load(Ordering::Relaxed)
                 && frame < max_frames
@@ -721,7 +722,13 @@ impl PlayerHandle {
                     worker_captured_ms
                         .store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
                 }
-                std::thread::sleep(frame_interval);
+                next_due += frame_interval;
+                let now = Instant::now();
+                if next_due > now {
+                    std::thread::sleep(next_due - now);
+                } else {
+                    next_due = now;
+                }
             }
         });
 
