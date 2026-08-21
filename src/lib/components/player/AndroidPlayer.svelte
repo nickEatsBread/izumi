@@ -66,7 +66,7 @@
     autoSkip, seekDuration, scrubThumbnails, openSubtitlesToken,
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
-    gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying, providerAudio,
+    gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
     preferredAudioLang, preferredSubLang, audioProcessing,
   } from '$lib/settings/ui'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
@@ -77,7 +77,7 @@
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playNext, playPrev, playEpisode, playStream, finalizeAndroidWatch, searchOnlineSubtitles } from '$lib/stremio/play'
-  import { audioCounterpart, serverSiblings, variantLabel, variantLabels } from '$lib/player/source-variants'
+  import { serverSiblings, variantLabel, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
@@ -96,7 +96,6 @@
   import Ratio from '@lucide/svelte/icons/ratio'
   import Layers from '@lucide/svelte/icons/layers'
   import List from '@lucide/svelte/icons/list'
-  import Languages from '@lucide/svelte/icons/languages'
   import Server from '@lucide/svelte/icons/server'
   import Film from '@lucide/svelte/icons/film'
   import Gauge from '@lucide/svelte/icons/gauge'
@@ -1048,23 +1047,11 @@
   // already retained in playbackRecovery for the stall watchdog, so switching costs no re-resolve.
   const currentStream = $derived($playbackRecovery?.current ?? null)
   const variantPool = $derived($playbackRecovery?.streams ?? [])
-  const dubSubTarget = $derived(currentStream ? audioCounterpart(currentStream, variantPool) : undefined)
-  // A counterpart can be structurally impossible rather than merely absent: `providerAudio` decides
-  // which flavours are QUERIED at all (passesForAudio, and returnsMixedAudio filtering for Aniyomi
-  // sources), so narrowing it to one flavour means the other never enters the pool. Hiding the row
-  // then reads as "this source has no dub" when the truth is "you told izumi not to look". Say so.
-  const flavourNarrowed = $derived($providerAudio !== 'both')
-  const flavourBlocked = $derived(
-    !dubSubTarget && flavourNarrowed && !!currentStream?.__stream && !!currentStream?.__audio,
-  )
   const altServers = $derived(currentStream ? serverSiblings(currentStream, variantPool) : [])
   // Labelled as a SET: two unnamed mirrors of one site can reduce to the same text, and a menu of
   // identical rows gives no basis to choose. Includes the playing row so its label is numbered
   // consistently with the alternatives it sits above.
   const serverMenuLabels = $derived(variantLabels(currentStream ? [currentStream, ...altServers] : []))
-  // What the flavour row switches TO. Only read when dubSubTarget exists, which guarantees the
-  // current row carries an __audio tag.
-  const otherFlavour = $derived(currentStream?.__audio === 'sub' ? 'Dub' : 'Sub')
   let swapping = $state(false)
 
   /** Replace the playing source with a sibling, resuming where we are. */
@@ -1630,22 +1617,6 @@
         {#if settingsPage === 'main'}
           <div class="overflow-hidden rounded-2xl bg-white/[0.07]">
             <button onclick={changeSource} class="settings-row"><Layers size={20} /><span class="flex-1 font-bold">Change source</span><ChevronRight size={18} class="text-white/35" /></button>
-            <!-- Sibling-source rows sit with "Change source" because they answer the same question,
-                 just without reopening the picker. Both are absent unless the pool actually holds an
-                 alternative, so neither can render as a dead control. -->
-            {#if flavourBlocked}
-              <a data-focusable href="/app/settings/sources" onclick={() => (sheet = null)} class="settings-row">
-                <Languages size={20} />
-                <span class="flex-1 font-bold">Only {$providerAudio === 'dub' ? 'dubbed' : 'subbed'} is fetched</span>
-                <span class="text-sm text-white/50">Change</span>
-              </a>
-            {/if}
-            {#if dubSubTarget}
-              <button onclick={() => dubSubTarget && swapTo(dubSubTarget)} disabled={swapping} class="settings-row disabled:opacity-40">
-                <Languages size={20} /><span class="flex-1 font-bold">Switch to {otherFlavour}</span>
-                <span class="text-sm uppercase text-white/50">{currentStream?.__audio}</span>
-              </button>
-            {/if}
             {#if altServers.length}
               <button onclick={() => (settingsPage = 'servers')} disabled={swapping} class="settings-row disabled:opacity-40">
                 <Server size={20} /><span class="flex-1 font-bold">Server</span>
