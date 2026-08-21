@@ -74,6 +74,10 @@ export function resolveCandidates(candidates: SkipCandidate[]): Segment[] {
 // player then falls back to chapter-derived segments (see player/chapter-skip.ts)
 // and otherwise simply shows no skip button / segments. Uses the Tauri HTTP plugin
 // so it isn't blocked by the webview CORS/scope.
+/** Crowd skip times for a new episode often land hours after broadcast. Retry a
+ *  handful of times instead of locking in an empty result for the whole watch. */
+export const SKIP_RETRY_MS = [0, 12_000, 45_000] as const
+
 export async function getSkipSegments(
   malId: number | null | undefined,
   episode: number | null | undefined,
