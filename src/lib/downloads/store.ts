@@ -10,6 +10,7 @@ import { getEpisodeMeta } from '$lib/anizip'
 import { isAndroid } from '$lib/platform'
 import { downloadTaskbarProgress } from './taskbar'
 import type { Media } from '$lib/anilist/types'
+import { abortShakaOffline, removeShakaOffline, storeShakaOffline } from './shaka-offline'
 
 // Download queue + actions + event wiring. Reads data from ./state (which play.ts
 // also imports, cycle-free). Files stream to disk via the Rust `download_*` commands.
@@ -73,6 +74,7 @@ async function runJob(item: DownloadItem) {
     setItem(item.id, {
       kind: r.kind, url: r.kind === 'http' ? r.url : undefined,
       filename: r.filename, infoHash: r.infoHash, provider: r.provider, quality: r.quality,
+      sourceOriginId: r.kind === 'shaka' ? r.sourceOriginId : item.sourceOriginId,
     })
     // Both resolve when the file is fully written OR paused; progress/done come via events.
     // A torrent pick goes to the local P2P engine — the same one playback uses under Direct P2P —
@@ -84,6 +86,28 @@ async function runJob(item: DownloadItem) {
         episode: r.episode, absoluteEpisode: r.absoluteEpisode, season: r.season,
         ...torrentEngineNetworkOptions(),
       })
+    } else if (r.kind === 'shaka') {
+      const stored = await storeShakaOffline(item.id, r, ({ downloaded, bytes, speed }) => {
+        const current = get(downloads)[item.id]?.downloaded ?? 0
+        if (downloaded < current) return
+        setItem(item.id, { downloaded, ...(bytes ? { bytes } : {}) })
+        setSpeed(item.id, speed)
+      })
+      setItem(item.id, {
+        status: 'done',
+        offlineUri: stored.offlineUri,
+        drmKeySystem: stored.drmKeySystem,
+        requiresOnlineLicense: !stored.persistentLicense,
+        sourceOriginId: r.sourceOriginId,
+        preferences: {
+          ...item.preferences,
+          ...(r.sourceOriginId ? { sourceOriginId: r.sourceOriginId } : {}),
+        },
+        downloaded: stored.bytes,
+        bytes: stored.bytes,
+        completedAt: Date.now(),
+      })
+      setSpeed(item.id, undefined)
     } else {
       await invoke('download_start', { id: item.id, url: r.url, dir, filename: r.filename, headers: r.headers })
     }
@@ -98,6 +122,11 @@ async function runJob(item: DownloadItem) {
 /** Stop an in-flight job through the engine that owns it. `discard` throws the partial data away
  *  (cancel); otherwise it is kept so a later resume continues from it (pause). */
 async function stopJob(id: string, it: DownloadItem | undefined, discard: boolean) {
+  if (it?.kind === 'shaka') {
+    await abortShakaOffline(id)
+    if (discard && it.offlineUri) await removeShakaOffline(it.offlineUri).catch(() => {})
+    return
+  }
   if (it?.kind === 'torrent') {
     await invoke('torrent_download_cancel', { id, deleteFiles: discard, dir: get(downloadDir) })
     return
@@ -117,11 +146,13 @@ export async function cancelDownload(id: string) {
 }
 export async function deleteDownload(id: string) {
   const it = get(downloads)[id]
+  if (it?.offlineUri) await removeShakaOffline(it.offlineUri).catch(() => {})
   if (it?.path) { try { await invoke('download_delete', { path: it.path }) } catch { /* already gone */ } }
   removeItem(id); setSpeed(id, undefined)
 }
 export async function revealDownload(id: string) {
   const it = get(downloads)[id]
+  if (it?.offlineUri) return
   if (it?.path) { try { await invoke('reveal_in_folder', { path: it.path }) } catch { /* ignore */ } }
 }
 

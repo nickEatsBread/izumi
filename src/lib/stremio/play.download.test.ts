@@ -24,7 +24,8 @@ vi.mock('./idmap', () => ({ getIndex: async () => ({}), lookupKitsu: () => undef
 vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
 // Resolves empty (not pending): resolveDownloadUrl now awaits the online wave (with a budget),
 // so a never-settling mock would stall every test to its own timeout.
-vi.mock('./onlinestream', () => ({ resolveOnlineStreams: async () => [] }))
+const resolveOnlineStreams = vi.fn(async () => [])
+vi.mock('./onlinestream', () => ({ resolveOnlineStreams: (...a: unknown[]) => resolveOnlineStreams(...a) }))
 vi.mock('./debrid', () => ({
   resolveHash: (...a: unknown[]) => resolveHash(...a),
   resolveSidecars: async () => [],
@@ -133,6 +134,9 @@ const answer = (streams: unknown[]) =>
 afterEach(() => {
   torrentPlaybackMode.set('direct')
   debridKey.set('')
+  resolveOnlineStreams.mockReset()
+  resolveOnlineStreams.mockResolvedValue([])
+  vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
 
@@ -189,6 +193,93 @@ describe('resolveDownloadUrl source preference', () => {
 
     expect(resolved).toMatchObject({ kind: 'http', url: 'https://host/ep.mkv' })
     expect(resolveHash).not.toHaveBeenCalled()
+  })
+
+  it('routes encrypted DASH to Shaka offline instead of saving the MPD as a file', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({}) })))
+    answer([])
+    resolveOnlineStreams.mockResolvedValueOnce([{
+      url: 'http://127.0.0.1:17902/v/abc/manifest.mpd',
+      name: 'Source',
+      title: 'Source 480p',
+      __drm: { keySystem: 'com.widevine.alpha', licenseUrl: 'http://127.0.0.1:17902/v/abc/license' },
+      __origin: { kind: 'online-extension', id: 'source.izumi', name: 'Source' },
+    }])
+
+    const resolved = await resolveDownloadUrl(1, 2, { quality: '480' })
+
+    expect(resolved).toMatchObject({
+      kind: 'shaka',
+      url: 'http://127.0.0.1:17902/v/abc/manifest.mpd',
+      preferredHeight: 480,
+      sourceOriginId: 'source.izumi',
+    })
+    expect(resolveHash).not.toHaveBeenCalled()
+  })
+
+  it('stores the preferred subtitle sidecar for an encrypted source', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({}) })))
+    const english = {
+      url: 'http://127.0.0.1:17902/v/abc/asset?u=en.ass',
+      lang: 'en-US',
+      kind: 'subtitles' as const,
+    }
+    answer([])
+    resolveOnlineStreams.mockResolvedValueOnce([{
+      url: 'http://127.0.0.1:17902/v/abc/manifest.mpd',
+      name: 'Source',
+      __audio: 'sub',
+      __audioLang: 'ja-JP',
+      __drm: { keySystem: 'com.widevine.alpha', licenseUrl: 'http://127.0.0.1:17902/v/abc/license' },
+      __subtitles: [
+        english,
+        { url: 'http://127.0.0.1:17902/v/abc/asset?u=de.ass', lang: 'de-DE', kind: 'subtitles' },
+      ],
+      __origin: { kind: 'online-extension', id: 'source.izumi', name: 'Source' },
+    }])
+
+    const resolved = await resolveDownloadUrl(1, 2, { quality: '480', audio: 'sub' })
+
+    expect(resolved).toMatchObject({
+      kind: 'shaka',
+      audioLang: 'ja-JP',
+      preferredSubLang: 'eng',
+      subtitles: [english],
+    })
+  })
+
+  it('switches an encrypted download onto the preferred dub manifest', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        audioLang: 'ja-JP',
+        audioTracks: [
+          { language: 'ja-JP', switchUrl: 'http://127.0.0.1:17902/v/abc/manifest.mpd?audio=ja-JP' },
+          { language: 'en-US', switchUrl: 'http://127.0.0.1:17902/v/abc/manifest.mpd?audio=en-US' },
+        ],
+        subtitles: [],
+      }),
+    })))
+    answer([])
+    resolveOnlineStreams.mockResolvedValueOnce([{
+      url: 'http://127.0.0.1:17902/v/abc/manifest.mpd',
+      name: 'Source',
+      __audio: 'sub',
+      __drm: {
+        keySystem: 'com.widevine.alpha',
+        licenseUrl: 'http://127.0.0.1:17902/v/abc/license',
+        refreshUrl: 'http://127.0.0.1:17902/v/abc/source',
+      },
+      __origin: { kind: 'online-extension', id: 'source.izumi', name: 'Source' },
+    }])
+
+    const resolved = await resolveDownloadUrl(1, 2, { quality: '480', audio: 'dub' })
+
+    expect(resolved).toMatchObject({
+      kind: 'shaka',
+      url: 'http://127.0.0.1:17902/v/abc/manifest.mpd?audio=en-US',
+      audioLang: 'en-US',
+    })
   })
 })
 
