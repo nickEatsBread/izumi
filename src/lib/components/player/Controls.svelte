@@ -31,9 +31,9 @@
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
-  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles, providerAudio } from '$lib/settings/ui'
+  import { videoFit, playerTitleTop, openSubtitlesToken, subtitleAutoSync, secondarySubtitles, subtitleLineNavigation, gifIncludeSubtitles } from '$lib/settings/ui'
   import { playPrev, playNext, playEpisode, playStream, searchOnlineSubtitles } from '$lib/stremio/play'
-  import { audioCounterpart, serverSiblings, variantLabels } from '$lib/player/source-variants'
+  import { serverSiblings, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { trackLabel } from '$lib/player/track-label'
@@ -216,19 +216,10 @@
   const recovery = $derived($playbackRecovery)
   const currentStream = $derived(recovery?.current ?? null)
   const variantPool = $derived(recovery?.streams ?? [])
-  const dubSubTarget = $derived(currentStream ? audioCounterpart(currentStream, variantPool) : undefined)
-  // See AndroidPlayer: `providerAudio` decides which flavours are QUERIED, so narrowing it makes a
-  // counterpart impossible rather than absent. Say which, instead of silently having no button.
-  const flavourNarrowed = $derived($providerAudio !== 'both')
-  const flavourBlocked = $derived(
-    !dubSubTarget && flavourNarrowed && !!currentStream?.__stream && !!currentStream?.__audio,
-  )
   const altServers = $derived(currentStream ? serverSiblings(currentStream, variantPool) : [])
   // Labelled as a SET: two unnamed mirrors of one site can reduce to the same text, and a menu of
   // identical rows gives no basis to choose.
   const altServerLabels = $derived(variantLabels(altServers))
-  // What the button switches TO (current sub → "DUB", dub → "SUB").
-  const dubSubLabel = $derived(currentStream?.__audio === 'sub' ? 'DUB' : 'SUB')
   let showServers = $state(false)
   let swapping = $state(false)
   async function swapTo(target: Stream) {
@@ -822,24 +813,6 @@
                 aria-label="Discussion" aria-pressed={$commentsOpen}>
           <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
         </button>
-
-        <!-- SUB↔DUB: one-click swap to this source's other audio flavour. Only rendered when the
-             retained pool actually holds a counterpart row (torrents/debrid never do). -->
-        {#if flavourBlocked}
-          <span class="rounded-md bg-white/5 px-2.5 py-1.5 text-xs font-bold text-white/45"
-                title="Only {$providerAudio === 'dub' ? 'dubbed' : 'subbed'} sources are fetched — change it in Settings.">
-            {$providerAudio === 'dub' ? 'DUB' : 'SUB'} ONLY
-          </span>
-        {/if}
-        {#if dubSubTarget}
-          <button data-focusable disabled={swapping}
-                  onclick={() => dubSubTarget && swapTo(dubSubTarget)}
-                  aria-label="Switch to {dubSubLabel === 'DUB' ? 'dub' : 'sub'} audio"
-                  title="Switch to {dubSubLabel === 'DUB' ? 'dub' : 'sub'} audio"
-                  class="{iconBtn} select-none text-xs font-bold tracking-wide disabled:opacity-40">
-            {dubSubLabel}
-          </button>
-        {/if}
 
         <!-- Alternate servers/qualities for the current source (same site, same flavour). -->
         {#if altServers.length}
