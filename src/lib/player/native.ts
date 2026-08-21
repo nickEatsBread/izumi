@@ -3,7 +3,7 @@ import { get } from 'svelte/store'
 import { getDrmEngine } from './drm'
 import { gifCapturePlan } from './gif-settings'
 import { nowPlayingStream } from './session'
-import { gifFps, gifMaxSeconds, gifScale } from '$lib/settings/ui'
+import { gifMaxSeconds, gifScale } from '$lib/settings/ui'
 
 /** Route player IPC through the in-webview DRM engine when a stream is encrypted. */
 
@@ -69,14 +69,13 @@ export async function playerGifStop(range?: { startSec: number; endSec: number }
   }
   if (start == null || !Number.isFinite(start)) start = Math.max(0, (end ?? 0) - 3)
   if (!Number.isFinite(end) || end <= start) end = start + 0.4
-  const plan = gifCapturePlan(get(gifFps), get(gifScale), get(gifMaxSeconds))
+  const plan = gifCapturePlan(get(gifScale), get(gifMaxSeconds))
   const duration = Math.min(plan.maxSeconds, end - start)
   await invoke('player_capture_segment', {
     kind: 'gif',
     startSec: Math.max(0, end - duration),
     endSec: end,
     width: plan.width,
-    fps: plan.fps,
   })
 }
 
