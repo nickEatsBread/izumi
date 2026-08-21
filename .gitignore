@@ -37,6 +37,9 @@ flatpak/.flatpak-builder/
 /.flatpak-builder/
 flatpak/izumi-key.gpg
 .claude/
+
+# Local capture/probe dumps (not part of the app)
+.probe/
 /src-tauri/.idea
 
 # Local build output (packaged bundles, not committed)
