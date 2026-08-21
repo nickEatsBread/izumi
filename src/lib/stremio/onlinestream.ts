@@ -4,7 +4,8 @@ import type { Media } from '$lib/anilist/types'
 import { title } from '$lib/anilist/media'
 import { preferredAudioLang, preferredSubLang, providerLanguages, providerAudio } from '$lib/settings/ui'
 import { runningStreamExtensions } from '$lib/extensions/manager'
-import { normalizeLang, subtitleTitle } from './sublang'
+import { isBcp47Locale, normalizeLang, subtitleTitle, trackLang } from './sublang'
+import { parseStreamDrm } from '$lib/player/drm'
 import { memo, cacheableList } from './online-cache'
 import { currentResolveTrace, traceResolve, traceResolveError } from '$lib/debug/resolve-trace'
 
@@ -60,8 +61,26 @@ export interface SnEpisode {
 // `default`), so accept them all and normalize in videoSourceToStream.
 // `headers` mirrors the reference's SubtitleFile.headers: some sidecar subtitle URLs are gated on
 // Referer exactly like the video is, and a subtitle fetched without them silently 403s.
-export interface SnVideoSubtitle { url: string; language?: string; lang?: string; label?: string; isDefault?: boolean; default?: boolean; headers?: Record<string, string> }
-export interface SnAudioTrack { url: string; language?: string; lang?: string; label?: string; title?: string; headers?: Record<string, string> }
+export interface SnVideoSubtitle {
+  url: string
+  language?: string
+  lang?: string
+  label?: string
+  isDefault?: boolean
+  default?: boolean
+  headers?: Record<string, string>
+  kind?: 'subtitles' | 'captions'
+  switchUrl?: string
+}
+export interface SnAudioTrack {
+  url?: string
+  language?: string
+  lang?: string
+  label?: string
+  title?: string
+  headers?: Record<string, string>
+  switchUrl?: string
+}
 export interface SnVideoSource {
   url: string
   type?: string
@@ -71,12 +90,18 @@ export interface SnVideoSource {
   server?: string
   /** Actual flavour reported by this individual source; overrides the search pass when present. */
   audio?: 'sub' | 'dub'
+  audioLang?: string
   subtitleMode?: 'soft' | 'hard'
   subtitles?: SnVideoSubtitle[]
   audioTracks?: SnAudioTrack[]
   /** A source can override its server's headers. An explicit empty object is meaningful:
    * some CDNs reject the embed Referer even though the sibling HLS source requires it. */
   headers?: Record<string, string>
+  drm?: unknown
+  /** Seek-bar hover sprite / BIF URL. */
+  previewUrl?: string
+  /** Capability-tokened LAN equivalent returned by a local provider sidecar. */
+  share?: SnVideoSource
 }
 export interface SnEpisodeServer { server?: string; headers?: Record<string, string>; videoSources?: SnVideoSource[] }
 export interface SnSettings { episodeServers?: string[]; supportsDub?: boolean; returnsMixedAudio?: boolean }
@@ -263,12 +288,15 @@ export function videoSourceToStream(
   const sourceServer = vs.server ?? server
   const mappedSubtitles = (vs.subtitles ?? []).map((s) => {
     const raw = s.language ?? s.lang ?? s.label
+    const kind = s.kind === 'captions' ? 'captions' as const : s.kind === 'subtitles' ? 'subtitles' as const : undefined
     return {
       url: s.url,
-      lang: normalizeLang(raw),
-      title: subtitleTitle(raw),
+      lang: trackLang(raw),
+      title: kind === 'captions' ? 'CC' : (isBcp47Locale(raw) ? undefined : subtitleTitle(raw)),
       isDefault: s.isDefault ?? s.default ?? false,
       headers: s.headers,
+      kind,
+      switchUrl: s.switchUrl,
     }
   })
   // Providers frequently return English.vtt without marking it default. `sub-add auto` happens
@@ -277,9 +305,15 @@ export function videoSourceToStream(
   // not choose one itself; "none" remains an explicit request for no subtitles.
   if (preferredSubtitle && preferredSubtitle !== 'none' && !mappedSubtitles.some((s) => s.isDefault)) {
     const preferred = normalizeLang(preferredSubtitle)
-    const match = mappedSubtitles.find((s) => s.lang === preferred)
+    const match = mappedSubtitles.find((s) => normalizeLang(s.lang) === preferred || s.lang === preferredSubtitle)
     if (match) match.isDefault = true
   }
+  const party = vs.share
+    ? videoSourceToStream(
+        { ...vs.share, share: undefined }, server, headers, provider, epTitle, audio, originId,
+        lang, langMismatch, preferredSubtitle, sourceTitle,
+      )
+    : undefined
   return {
     url: vs.url,
     // `⚡` marks it instant-cached (isCached) and the `· quality` token feeds resolutionOf's
@@ -295,6 +329,7 @@ export function videoSourceToStream(
     __stream: true,
     __headers: vs.headers ?? headers,
     __audio: vs.audio ?? audio,
+    __audioLang: vs.audioLang,
     __server: sourceServer && sourceServer !== 'default' ? sourceServer : undefined,
     __quality: quality,
     __subtitleMode: vs.subtitleMode,
@@ -308,9 +343,10 @@ export function videoSourceToStream(
       const raw = track.language ?? track.lang ?? track.label
       return {
         url: track.url,
-        lang: normalizeLang(raw),
-        title: track.title ?? track.label ?? subtitleTitle(raw),
+        lang: trackLang(raw),
+        title: isBcp47Locale(raw) ? undefined : (track.title ?? track.label ?? subtitleTitle(raw)),
         headers: track.headers,
+        switchUrl: track.switchUrl,
       }
     }),
     __lang: lang,
@@ -318,6 +354,17 @@ export function videoSourceToStream(
     __addonName: provider,
     __sourceTitle: sourceTitle?.trim() || undefined,
     __origin: originId ? { kind: 'online-extension', id: originId, name: provider } : undefined,
+    __drm: parseStreamDrm(vs.drm),
+    __previewUrl: vs.previewUrl,
+    __party: party ? {
+      url: party.url,
+      __headers: party.__headers,
+      __drm: party.__drm,
+      __subtitles: party.__subtitles,
+      __audioTracks: party.__audioTracks,
+      __previewUrl: party.__previewUrl,
+      __audioLang: party.__audioLang,
+    } : undefined,
     behaviorHints: { filename: epTitle?.trim() || `Direct ${kind}${sourceServer ? ` · ${sourceServer}` : ''}` },
   }
 }

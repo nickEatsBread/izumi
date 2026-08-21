@@ -72,7 +72,7 @@ describe('provider language', () => {
       'srv', {}, 'ProviderZ', undefined, 'sub', 'provider-z',
     )
     expect(s.__subtitles).toEqual([
-      { url: 'https://s/f.ass', lang: 'fre', title: 'Français', isDefault: false, headers: { Referer: 'https://site/' } },
+      { url: 'https://s/f.ass', lang: 'fre', title: 'Français', isDefault: false, headers: { Referer: 'https://site/' }, kind: undefined, switchUrl: undefined },
     ])
   })
 
@@ -263,6 +263,7 @@ describe('videoSourceToStream', () => {
       lang: 'jpn',
       title: 'Japanese',
       headers: undefined,
+      switchUrl: undefined,
     }])
   })
 
@@ -276,7 +277,7 @@ describe('videoSourceToStream', () => {
     expect(s.__stream).toBe(true)
     expect(s.__headers).toEqual({ Referer: 'https://site' })
     // `lang` is normalized to an ISO code so mpv's `slang` can match it; `title` keeps the label.
-    expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'eng', title: 'en', isDefault: false, headers: undefined }])
+    expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'eng', title: 'en', isDefault: false, headers: undefined, kind: undefined, switchUrl: undefined }])
     expect(s.__audio).toBe('sub')
     expect(s.__addonName).toBe('ProviderX')
     expect(s.__sourceTitle).toBe('Sousou no Frieren')
@@ -369,10 +370,37 @@ describe('videoSourceToStream', () => {
       { url: 'https://cdn/y.m3u8', type: 'm3u8', quality: 'auto', subtitles: [{ url: 'https://s/e.vtt', language: 'en', isDefault: true }] },
       'srv', {}, 'ProviderY', undefined, 'dub',
     )
-    expect(s.__subtitles).toEqual([{ url: 'https://s/e.vtt', lang: 'eng', title: 'en', isDefault: true, headers: undefined }])
+    expect(s.__subtitles).toEqual([{ url: 'https://s/e.vtt', lang: 'eng', title: 'en', isDefault: true, headers: undefined, kind: undefined, switchUrl: undefined }])
     expect(s.__audio).toBe('dub')
     // no episode title → a sensible direct-stream filename
     expect(s.behaviorHints?.filename).toContain('Direct')
+  })
+
+  it('keeps a provider LAN playback equivalent separate from the local source', () => {
+    const s = videoSourceToStream(
+      {
+        url: 'http://127.0.0.1:17871/v/local/manifest.mpd',
+        drm: { licenseUrl: 'http://127.0.0.1:17871/v/local/license' },
+        share: {
+          url: 'http://192.168.1.8:17871/share/cap/v/local/manifest.mpd',
+          drm: {
+            keySystem: 'com.widevine.alpha',
+            licenseUrl: 'http://192.168.1.8:17871/share/cap/v/local/license',
+          },
+          subtitles: [{
+            url: 'http://192.168.1.8:17871/share/cap/v/local/asset?u=en',
+            language: 'en-US',
+          }],
+        },
+      },
+      'LocalService', {}, 'LocalService',
+    )
+    expect(s.url).toContain('127.0.0.1')
+    expect(s.__party).toMatchObject({
+      url: expect.stringContaining('192.168.1.8'),
+      __drm: { keySystem: 'com.widevine.alpha', licenseUrl: expect.stringContaining('/share/cap/') },
+      __subtitles: [{ lang: 'en-US' }],
+    })
   })
 })
 

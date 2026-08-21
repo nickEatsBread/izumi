@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeLang, subtitleTitle, SOURCE_LANGUAGES } from './sublang'
+import { langsEqual, normalizeLang, subtitleTitle, SOURCE_LANGUAGES } from './sublang'
 import { langName } from '$lib/player/track-label'
 
 describe('SOURCE_LANGUAGES', () => {
@@ -75,6 +75,15 @@ describe('normalizeLang', () => {
   it('does not let a noise word match on its own', () => {
     expect(normalizeLang('Subtitles')).toBeUndefined()
     expect(normalizeLang('forced')).toBeUndefined()
+  })
+})
+
+describe('langsEqual', () => {
+  it('treats Spanish regions as different audio/subtitle tracks', () => {
+    expect(langsEqual('es-419', 'es-ES')).toBe(false)
+    expect(langsEqual('es-419', 'es-419')).toBe(true)
+    expect(langsEqual('pt-BR', 'por')).toBe(true)
+    expect(langsEqual('en-US', 'eng')).toBe(true)
   })
 })
 

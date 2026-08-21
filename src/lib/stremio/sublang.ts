@@ -83,6 +83,34 @@ function tokens(raw: string): string[] {
     .filter((t) => t && !NOISE.has(t))
 }
 
+/** Some sources ship BCP-47 locales (`es-419`, `pt-BR`, `zh-HK`). Keep the region
+ *  so Spanish (Spain) and Spanish (Latin America) stay distinct in the player menu. */
+export function isBcp47Locale(raw?: string): boolean {
+  if (!raw) return false
+  return /^[A-Za-z]{2,3}[-_](?:[A-Za-z]{2}|[A-Za-z]{4}|[0-9]{3})$/.test(raw.trim())
+}
+
+/** Prefer a region-tagged locale when the provider sent one; otherwise ISO 639-2 for mpv slang. */
+export function trackLang(raw?: string): string | undefined {
+  const trimmed = raw?.trim()
+  if (!trimmed) return undefined
+  if (isBcp47Locale(trimmed)) return trimmed.replace('_', '-')
+  return normalizeLang(trimmed)
+}
+
+/** Two BCP-47 locales match only when the region matches (`es-419` ≠ `es-ES`).
+ *  A bare ISO code still matches any region of that language (`eng` ≈ `en-US`). */
+export function langsEqual(a?: string, b?: string): boolean {
+  const left = (a ?? '').trim().replace(/_/g, '-')
+  const right = (b ?? '').trim().replace(/_/g, '-')
+  if (!left || !right) return false
+  if (left.toLowerCase() === right.toLowerCase()) return true
+  if (isBcp47Locale(left) && isBcp47Locale(right)) return false
+  const nLeft = normalizeLang(left)
+  const nRight = normalizeLang(right)
+  return !!nLeft && nLeft === nRight
+}
+
 /**
  * Best-effort ISO 639-2/B code for a provider's subtitle label, or undefined when the label
  * carries no recognizable language. Undefined is a real answer — mpv leaves the track unselected

@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
+import { playerCommand } from '$lib/player/native'
 import { nowPlayingMedia, nowPlayingPartySource, playing } from '$lib/player/session'
 import { playStream } from '$lib/stremio/play'
 import { isAndroid } from '$lib/platform'
@@ -217,18 +218,18 @@ async function commandRemote(seekTo: number | null, setPausedTo: boolean | null)
   if (seekTo != null) {
     lastRemoteSeekAt = Date.now()
     if (android) await seekAbsolute(seekTo)
-    else await invoke('player_command', { name: 'seek', args: [seekTo.toFixed(3), 'absolute+exact'] })
+    else await playerCommand('seek', [seekTo.toFixed(3), 'absolute+exact'])
   }
   if (setPausedTo != null) {
     if (android) await setPaused(setPausedTo)
-    else await invoke('player_command', { name: 'set', args: ['pause', setPausedTo ? 'yes' : 'no'] })
+    else await playerCommand('set', ['pause', setPausedTo ? 'yes' : 'no'])
   }
 }
 
 /** Host-side pause, used only by the buffer gate. */
 async function setLocalPaused(paused: boolean) {
   if (get(isAndroid) && get(androidMpvActive)) await setPaused(paused)
-  else await invoke('player_command', { name: 'set', args: ['pause', paused ? 'yes' : 'no'] })
+  else await playerCommand('set', ['pause', paused ? 'yes' : 'no'])
 }
 
 async function applyHostPlayback(playback: PartyPlayback) {

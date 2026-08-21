@@ -1,4 +1,8 @@
 import type { Stream } from '$lib/stremio/parse'
+import { parseStreamDrm, type StreamDrm } from '$lib/player/drm'
+
+type SharedSubtitle = NonNullable<Stream['__subtitles']>[number]
+type SharedAudioTrack = NonNullable<Stream['__audioTracks']>[number]
 
 export type SharedSource =
   | {
@@ -18,6 +22,11 @@ export type SharedSource =
       filename?: string
       videoSize?: number
       headers?: Record<string, string>
+      drm?: StreamDrm
+      subtitles?: SharedSubtitle[]
+      audioTracks?: SharedAudioTrack[]
+      previewUrl?: string
+      audioLang?: string
       name?: string
       title?: string
     }
@@ -67,6 +76,7 @@ function wireHttpUrl(raw: string): string | null {
  * can resolve it locally.
  */
 export function shareableSource(stream: Stream): SharedSourceState {
+  const playback = stream.__party ? { ...stream, ...stream.__party, __party: undefined } : stream
   const filename = short(stream.behaviorHints?.filename, 500)
   const videoSize = Number.isFinite(stream.behaviorHints?.videoSize)
     ? Math.max(0, Math.floor(stream.behaviorHints!.videoSize!))
@@ -74,10 +84,20 @@ export function shareableSource(stream: Stream): SharedSourceState {
   const name = short(stream.name)
   const title = short(stream.title, 500)
 
-  const url = stream.url ? wireHttpUrl(stream.url) : null
+  const url = playback.url ? wireHttpUrl(playback.url) : null
   if (url) {
-    const headers = stream.__headers && Object.keys(stream.__headers).length ? { ...stream.__headers } : undefined
-    return { source: { version: 1, kind: 'http', url, filename, videoSize, headers, name, title }, error: '' }
+    const headers = playback.__headers && Object.keys(playback.__headers).length ? { ...playback.__headers } : undefined
+    return {
+      source: {
+        version: 1, kind: 'http', url, filename, videoSize, headers, name, title,
+        drm: playback.__drm,
+        subtitles: playback.__subtitles,
+        audioTracks: playback.__audioTracks,
+        previewUrl: playback.__previewUrl,
+        audioLang: playback.__audioLang,
+      },
+      error: '',
+    }
   }
 
   if (stream.infoHash) {
@@ -118,13 +138,23 @@ export function streamFromSharedSource(source: SharedSource): Stream {
         behaviorHints,
         __stream: true,
         ...(source.headers ? { __headers: source.headers } : {}),
+        ...(source.drm ? { __drm: source.drm } : {}),
+        ...(source.subtitles ? { __subtitles: source.subtitles } : {}),
+        ...(source.audioTracks ? { __audioTracks: source.audioTracks } : {}),
+        ...(source.previewUrl ? { __previewUrl: source.previewUrl } : {}),
+        ...(source.audioLang ? { __audioLang: source.audioLang } : {}),
       }
 }
 
 /** Validate and normalize an untrusted source received from a peer. */
 export function parseSharedSource(value: unknown): SharedSource | null {
   if (!value || typeof value !== 'object') return null
-  const candidate = value as Partial<SharedSource> & { headers?: unknown }
+  const candidate = value as Partial<SharedSource> & {
+    headers?: unknown
+    drm?: unknown
+    subtitles?: unknown
+    audioTracks?: unknown
+  }
   if (candidate.version !== 1) return null
   if (candidate.kind === 'torrent' && typeof candidate.infoHash === 'string') {
     return shareableSource({
@@ -148,11 +178,50 @@ export function parseSharedSource(value: unknown): SharedSource | null {
       }
       if (Object.keys(clean).length) headers = clean
     }
+    const cleanUrl = (raw: unknown) => typeof raw === 'string' ? wireHttpUrl(raw) ?? undefined : undefined
+    const subtitles = Array.isArray(candidate.subtitles)
+      ? candidate.subtitles.slice(0, 100).flatMap((raw): SharedSubtitle[] => {
+          if (!raw || typeof raw !== 'object') return []
+          const track = raw as Record<string, unknown>
+          const url = cleanUrl(track.url)
+          if (!url) return []
+          return [{
+            url,
+            lang: short(typeof track.lang === 'string' ? track.lang : undefined, 40),
+            title: short(typeof track.title === 'string' ? track.title : undefined, 200),
+            isDefault: track.isDefault === true,
+            kind: track.kind === 'captions' ? 'captions' : 'subtitles',
+            switchUrl: cleanUrl(track.switchUrl),
+          }]
+        })
+      : undefined
+    const audioTracks = Array.isArray(candidate.audioTracks)
+      ? candidate.audioTracks.slice(0, 50).flatMap((raw): SharedAudioTrack[] => {
+          if (!raw || typeof raw !== 'object') return []
+          const track = raw as Record<string, unknown>
+          const url = cleanUrl(track.url)
+          const switchUrl = cleanUrl(track.switchUrl)
+          if (!url && !switchUrl) return []
+          return [{
+            url,
+            switchUrl,
+            lang: short(typeof track.lang === 'string' ? track.lang : undefined, 40),
+            title: short(typeof track.title === 'string' ? track.title : undefined, 200),
+          }]
+        })
+      : undefined
+    const drm = parseStreamDrm(candidate.drm)
+    if (drm && (!drm.licenseUrl || !wireHttpUrl(drm.licenseUrl) || (drm.releaseUrl && !wireHttpUrl(drm.releaseUrl)))) return null
     return shareableSource({
       url: candidate.url,
       __headers: headers,
       name: typeof candidate.name === 'string' ? candidate.name : undefined,
       title: typeof candidate.title === 'string' ? candidate.title : undefined,
+      __drm: drm,
+      __subtitles: subtitles,
+      __audioTracks: audioTracks,
+      __previewUrl: cleanUrl(candidate.previewUrl),
+      __audioLang: short(typeof candidate.audioLang === 'string' ? candidate.audioLang : undefined, 40),
       behaviorHints: {
         filename: typeof candidate.filename === 'string' ? candidate.filename : undefined,
         videoSize: typeof candidate.videoSize === 'number' ? candidate.videoSize : undefined,

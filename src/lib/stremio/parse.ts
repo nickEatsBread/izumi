@@ -59,12 +59,35 @@ export interface Stream {
   // with no debrid. __headers → mpv http-header-fields; __subtitles → external sub tracks.
   __stream?: boolean
   __headers?: Record<string, string>
+  /** Encrypted stream (Widevine/PlayReady). Played in the webview CDM instead of mpv. */
+  __drm?: import('$lib/player/drm').StreamDrm
+  /** Seek-bar hover sprite / BIF URL. */
+  __previewUrl?: string
+  /** Provider-supplied network-safe equivalent for Watch Together guests. The local player
+   * continues to use the faster loopback source; this is only serialized into the room. */
+  __party?: Pick<Stream, 'url' | '__headers' | '__drm' | '__subtitles' | '__audioTracks' | '__previewUrl' | '__audioLang'>
   // `lang` is a normalized ISO code (mpv matches `slang` on codes); `title` is the provider's own
   // label for the track menu; `headers` covers Referer-gated sidecar URLs.
-  __subtitles?: { url: string; lang?: string; title?: string; isDefault?: boolean; headers?: Record<string, string> }[]
+  __subtitles?: {
+    url: string
+    lang?: string
+    title?: string
+    isDefault?: boolean
+    headers?: Record<string, string>
+    kind?: 'subtitles' | 'captions'
+    switchUrl?: string
+  }[]
+  /** BCP-47 / ISO audio language for a muxed direct stream, when known. */
+  __audioLang?: string
   /** Separate audio fragments/tracks supplied with a direct video source (for
    * example AllAnime's split DASH output). Loaded with mpv's `audio-add`. */
-  __audioTracks?: { url: string; lang?: string; title?: string; headers?: Record<string, string> }[]
+  __audioTracks?: {
+    url?: string
+    lang?: string
+    title?: string
+    headers?: Record<string, string>
+    switchUrl?: string
+  }[]
   // Resolved audio track for a direct stream: 'dub' or 'sub' (from the provider search pass).
   __audio?: 'sub' | 'dub'
   // Individual extractor/server identity. Some JVM providers return every server in one response,

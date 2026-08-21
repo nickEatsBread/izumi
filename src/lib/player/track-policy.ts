@@ -1,10 +1,14 @@
 import type { AudioLang, SubLang } from '$lib/settings/ui'
+import { normalizeLang } from '$lib/stremio/sublang'
 import { subtitleKind, type Track } from './track-label'
 
 function langMatches(track: Track, wanted: 'eng' | 'jpn'): boolean {
-  const code = track.lang?.trim().toLowerCase() ?? ''
-  if (wanted === 'eng') return code === 'eng' || code === 'en' || code === 'english'
-  return code === 'jpn' || code === 'ja' || code === 'japanese'
+  const raw = track.lang?.trim().toLowerCase() ?? ''
+  const iso = normalizeLang(track.lang)
+  if (wanted === 'eng') {
+    return iso === 'eng' || raw === 'en' || raw === 'eng' || raw.startsWith('en-') || raw.startsWith('en_')
+  }
+  return iso === 'jpn' || raw === 'ja' || raw === 'jpn' || raw.startsWith('ja-') || raw.startsWith('ja_')
 }
 
 /** Choose the subtitle track after loadfile.

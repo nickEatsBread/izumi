@@ -64,18 +64,82 @@ const LANG_NAMES: Record<string, string> = {
   fil: 'Filipino', tl: 'Filipino',
 }
 
+/** BCP-47 locales. Keep the region so two Spanishes/Portugueses don't collapse
+ *  to "Spanish (1)" / "Spanish (2)" in the player menu. */
+const LOCALE_NAMES: Record<string, string> = {
+  'es-419': 'Spanish (Latin America)',
+  'es-es': 'Spanish (Spain)',
+  'es-mx': 'Spanish (Mexico)',
+  'pt-br': 'Portuguese (Brazil)',
+  'pt-pt': 'Portuguese (Portugal)',
+  'zh-cn': 'Chinese (Simplified)',
+  'zh-hans': 'Chinese (Simplified)',
+  'zh-hk': 'Chinese (Hong Kong)',
+  'zh-tw': 'Chinese (Traditional)',
+  'zh-hant': 'Chinese (Traditional)',
+  'en-us': 'English',
+  'en-gb': 'English (UK)',
+  'ja-jp': 'Japanese',
+  'ar-sa': 'Arabic',
+  'de-de': 'German',
+  'fr-fr': 'French',
+  'it-it': 'Italian',
+  'pl-pl': 'Polish',
+  'ru-ru': 'Russian',
+  'hi-in': 'Hindi',
+  'th-th': 'Thai',
+  'vi-vn': 'Vietnamese',
+  'id-id': 'Indonesian',
+  'ms-my': 'Malay',
+}
+
 /** Map a track language code to an English name, or `undefined` for missing/undetermined
  *  languages ("", "und", "undefined") so the caller falls back to the title. */
 export function langName(lang?: string): string | undefined {
-  const l = lang?.trim().toLowerCase()
+  const l = lang?.trim().toLowerCase().replace(/_/g, '-')
   if (!l || l === 'und' || l === 'undefined' || l === 'unknown') return undefined
   if (LANG_NAMES[l]) return LANG_NAMES[l]
+  if (LOCALE_NAMES[l]) return LOCALE_NAMES[l]
+  const primary = l.split('-')[0] ?? l
+  const region = l.split('-')[1]
+  if (region) {
+    try {
+      const n = new Intl.DisplayNames(['en'], { type: 'language' }).of(l)
+      if (n && n.toLowerCase() !== l && n.toLowerCase() !== primary) return n
+    } catch { /* Intl may reject a malformed locale — fall through */ }
+    const regionLabel = localeRegionName(region)
+    const base = LANG_NAMES[primary]
+    if (base && regionLabel) return `${base} (${regionLabel})`
+  }
+  if (primary && LANG_NAMES[primary]) return LANG_NAMES[primary]
   try {
     // Resolves many 639-1 codes (and some 639-2) the map above doesn't list.
     const n = new Intl.DisplayNames(['en'], { type: 'language' }).of(l)
-    if (n && n.toLowerCase() !== l) return n
+      ?? new Intl.DisplayNames(['en'], { type: 'language' }).of(primary)
+    if (n && n.toLowerCase() !== l && n.toLowerCase() !== primary) return n
   } catch { /* Intl may reject a malformed code — fall through */ }
   return l.toUpperCase()
+}
+
+function localeRegionName(region: string): string | undefined {
+  const known: Record<string, string> = {
+    '419': 'Latin America',
+    es: 'Spain',
+    br: 'Brazil',
+    pt: 'Portugal',
+    mx: 'Mexico',
+    hk: 'Hong Kong',
+    cn: 'Simplified',
+    tw: 'Traditional',
+    gb: 'UK',
+    us: 'US',
+  }
+  if (known[region]) return known[region]
+  try {
+    const n = new Intl.DisplayNames(['en'], { type: 'region' }).of(region.toUpperCase())
+    if (n && n.toLowerCase() !== region) return n
+  } catch { /* ignore */ }
+  return undefined
 }
 
 // Track titles that carry no distinguishing information beyond the language / full-vs-forced
