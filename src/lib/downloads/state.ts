@@ -11,6 +11,8 @@ export interface DownloadPreferences {
   cachedOnly?: boolean
   audio?: 'any' | 'sub' | 'dub'
   codec?: 'any' | 'h264' | 'h265' | 'av1'
+  /** Internal: reacquire a temporary DRM license from the same source as the saved media. */
+  sourceOriginId?: string
 }
 export interface DownloadItem {
   id: string
@@ -23,7 +25,12 @@ export interface DownloadItem {
   url?: string
   /** Which engine is fetching this item. Absent on items queued by older builds, which were all
    *  HTTP (debrid) downloads — pause/cancel must keep routing those to the HTTP job. */
-  kind?: 'http' | 'torrent'
+  kind?: 'http' | 'torrent' | 'shaka'
+  /** Shaka's IndexedDB manifest URI for adaptive/DRM offline playback. */
+  offlineUri?: string
+  drmKeySystem?: string
+  requiresOnlineLicense?: boolean
+  sourceOriginId?: string
   infoHash?: string
   provider?: string
   quality?: string
