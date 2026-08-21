@@ -73,7 +73,7 @@
 
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Sources</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Stremio addons backed by your debrid, and how sources are chosen.</p>
+  <p class="mb-4 text-sm text-muted-foreground">Stremio addons backed by your debrid, and how sources are chosen. Installed anime packages are listed under Extensions and the Source Store.</p>
   <a href="/app/settings/store" data-focusable
      class="mb-6 inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 text-sm font-black transition-colors hover:bg-accent">
     <Store size={16} />

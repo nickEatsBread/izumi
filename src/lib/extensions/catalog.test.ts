@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pointerUrl, normalizeManifest, isRunnableType, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages } from './catalog'
+import { pointerUrl, normalizeManifest, isRunnableType, isLegacyTorrentType, extensionBackendLabel, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages } from './catalog'
 
 // Shapes below are the real ones served by the catalogs we support, trimmed to the fields we read.
 
@@ -66,6 +66,23 @@ describe('isRunnableType', () => {
     // A mixed marketplace also lists manga providers and UI plugins.
     expect(isRunnableType({ type: 'manga-provider' })).toBe(false)
     expect(isRunnableType({ type: 'plugin' })).toBe(false)
+  })
+})
+
+describe('isLegacyTorrentType', () => {
+  it('treats untyped and torrent entries as the magnet SDK, not streaming providers', () => {
+    expect(isLegacyTorrentType(undefined)).toBe(true)
+    expect(isLegacyTorrentType('torrent')).toBe(true)
+    expect(isLegacyTorrentType('onlinestream-provider')).toBe(false)
+    expect(isLegacyTorrentType('anime-torrent-provider')).toBe(false)
+  })
+})
+
+describe('extensionBackendLabel', () => {
+  it('names local-service packages as a local service, not a torrent plugin', () => {
+    expect(extensionBackendLabel('izumi-service')).toBe('Local service')
+    expect(extensionBackendLabel('izumi-js')).toBe('Native')
+    expect(extensionBackendLabel('aniyomi-jvm')).toBe('Aniyomi')
   })
 })
 

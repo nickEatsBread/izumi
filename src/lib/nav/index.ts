@@ -107,7 +107,10 @@ export function initDpadNav() {
     // During playback the player owns the arrow/Enter keys (seek/skip/pause). Spatial focus nav
     // must stay OUT of the way — otherwise a desktop arrow both seeks AND moves focus onto the
     // player controls / across to the sidebar (which then expands over the video).
-    if (get(playing)) return
+    if (get(playing)) {
+      if (dir) e.preventDefault()
+      return
+    }
     if (!dir) {
       // The broad Enter→click is gone: every other focusable either activates natively (button/a/
       // summary/input type=button) or runs its own Enter keydown (the role="button" cards, the

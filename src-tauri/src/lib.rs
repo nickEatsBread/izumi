@@ -11,6 +11,8 @@ mod doh;
 mod download;
 mod extension_package;
 #[cfg(not(target_os = "android"))]
+mod extension_service;
+#[cfg(not(target_os = "android"))]
 mod hls_proxy;
 mod http_lifecycle;
 #[cfg(not(target_os = "android"))]
@@ -25,6 +27,8 @@ mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
 #[cfg(not(target_os = "android"))]
 mod desktop_presence;
+#[cfg(not(target_os = "android"))]
+mod gif_playback;
 #[cfg(not(target_os = "android"))]
 mod player;
 #[cfg(not(target_os = "android"))]
@@ -53,6 +57,22 @@ struct PipSnapshot {
 #[cfg(not(target_os = "android"))]
 #[derive(Default)]
 struct PipWindowState(std::sync::Mutex<Option<PipSnapshot>>);
+
+#[cfg(not(target_os = "android"))]
+struct DrmGifSession {
+    dir: std::path::PathBuf,
+    started: std::time::Instant,
+    frames: u32,
+    width: u32,
+    max_frames: u32,
+    fps: f64,
+}
+
+/// Frame sink for WebView2/Shaka GIF capture. Widevine frames cannot be read through canvas, so
+/// the frontend crops compositor screenshots and streams small JPEGs here as they are produced.
+#[cfg(not(target_os = "android"))]
+#[derive(Default)]
+struct DrmGifCapture(std::sync::Mutex<Option<DrmGifSession>>);
 
 // Unique labels for webview popups created from discussion embeds. Tauri requires each live
 // webview window to have a distinct label, and Disqus can open more than one OAuth hop.
@@ -2358,6 +2378,331 @@ fn player_screenshot(
     Ok(dir_s)
 }
 
+#[cfg(not(target_os = "android"))]
+fn player_pictures_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .picture_dir()
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| e.to_string())?
+        .join("izumi");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+#[cfg(not(target_os = "android"))]
+fn next_shot_path(dir: &std::path::Path) -> std::path::PathBuf {
+    for n in 1..10_000u32 {
+        let path = dir.join(format!("izumi-shot{n:04}.png"));
+        if !path.exists() {
+            return path;
+        }
+    }
+    dir.join(format!(
+        "izumi-shot-{}.png",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    ))
+}
+
+/// Persist a PNG already captured in the webview (encrypted streams don't go through mpv).
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn save_player_png(app: AppHandle, png: Vec<u8>) -> Result<String, String> {
+    if png.len() < 24 {
+        return Err("empty screenshot".into());
+    }
+    if raster_is_solid_black(&png) {
+        return Err("black screenshot".into());
+    }
+    let dir = player_pictures_dir(&app)?;
+    std::fs::write(next_shot_path(&dir), png).map_err(|e| e.to_string())?;
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// The video lives in the `main` webview. A command's injected `WebviewWindow` is the
+/// *invoking* webview, which is not always the surface that composites the video.
+#[cfg(not(target_os = "android"))]
+fn main_video_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
+    if let Some(webview) = app.get_webview("main") {
+        return Ok(webview);
+    }
+    app.get_webview_window("main")
+        .map(|window| window.as_ref().clone())
+        .ok_or_else(|| "no main webview".into())
+}
+
+#[cfg(not(target_os = "android"))]
+fn raster_is_solid_black(bytes: &[u8]) -> bool {
+    let Ok(img) = image::load_from_memory(bytes) else {
+        return false;
+    };
+    let rgb = img.to_rgb8();
+    let (width, height) = rgb.dimensions();
+    if width == 0 || height == 0 {
+        return true;
+    }
+    let step = ((width as usize * height as usize) / 1024).max(1);
+    rgb.pixels()
+        .step_by(step)
+        .all(|pixel| pixel.0[0] <= 8 && pixel.0[1] <= 8 && pixel.0[2] <= 8)
+}
+
+/// Capture the composed webview via Chromium DevTools `Page.captureScreenshot`.
+/// Encrypted video is black in GDI/`drawImage`, but the compositor surface still
+/// has pixels. Returns PNG bytes so the frontend can crop to the video frame.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn capture_webview_png(app: AppHandle) -> Result<Vec<u8>, String> {
+    #[cfg(windows)]
+    {
+        let webview = main_video_webview(&app)?;
+        let png = capture_webview_cdp(
+            &webview,
+            r#"{"format":"png","fromSurface":true,"captureBeyondViewport":false}"#.into(),
+        )
+        .await?;
+        if png.len() < 24 {
+            return Err("empty screenshot".into());
+        }
+        if raster_is_solid_black(&png) {
+            return Err("black screenshot".into());
+        }
+        return Ok(png);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Err("window capture is only implemented on Windows".into())
+    }
+}
+
+/// Full-surface JPEG. Do not pass a CDP `clip`: Chromium applies that viewport
+/// to the live window, which zooms/shrinks the playing video on every sample.
+/// Always screenshots the `main` webview — never the invoking webview.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn capture_webview_jpeg(app: AppHandle, quality: Option<u8>) -> Result<Vec<u8>, String> {
+    #[cfg(windows)]
+    {
+        let q = quality.unwrap_or(84).clamp(60, 100);
+        let params = format!(
+            r#"{{"format":"jpeg","quality":{q},"fromSurface":true,"captureBeyondViewport":false}}"#
+        );
+        let webview = main_video_webview(&app)?;
+        let jpeg = capture_webview_cdp(&webview, params).await?;
+        if jpeg.len() < 16 || !jpeg.starts_with(&[0xff, 0xd8, 0xff]) {
+            return Err("empty screenshot".into());
+        }
+        if raster_is_solid_black(&jpeg) {
+            return Err("black screenshot".into());
+        }
+        return Ok(jpeg);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, quality);
+        Err("window capture is only implemented on Windows".into())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn capture_webview_jpeg_clip(
+    app: AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    scale: f64,
+    quality: Option<u8>,
+) -> Result<Vec<u8>, String> {
+    if !x.is_finite()
+        || !y.is_finite()
+        || !width.is_finite()
+        || !height.is_finite()
+        || !scale.is_finite()
+        || width < 1.0
+        || height < 1.0
+        || scale <= 0.0
+    {
+        return Err("invalid capture rectangle".into());
+    }
+    #[cfg(windows)]
+    {
+        // Viewport.scale in Page.captureScreenshot is applied to the LIVE visual
+        // viewport, not just the captured bitmap. scale != 1 shrinks the playing
+        // video into a corner for the duration of each capture — 10 times a second
+        // while recording a GIF. Always clip at 1 and downscale the JPEG after.
+        let _ = scale;
+        let params = serde_json::json!({
+            "format": "jpeg",
+            "quality": quality.unwrap_or(84).clamp(60, 100),
+            "fromSurface": true,
+            "captureBeyondViewport": false,
+            "clip": {
+                "x": x.max(0.0),
+                "y": y.max(0.0),
+                "width": width,
+                "height": height,
+                "scale": 1.0,
+            }
+        })
+        .to_string();
+        let webview = main_video_webview(&app)?;
+        let jpeg = capture_webview_cdp(&webview, params).await?;
+        if jpeg.len() < 16 || !jpeg.starts_with(&[0xff, 0xd8, 0xff]) {
+            return Err("empty GIF frame".into());
+        }
+        if raster_is_solid_black(&jpeg) {
+            return Err("black screenshot".into());
+        }
+        return Ok(jpeg);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, x, y, width, height, scale, quality);
+        Err("window capture is only implemented on Windows".into())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn drm_gif_start(
+    app: AppHandle,
+    capture: tauri::State<'_, DrmGifCapture>,
+    width: Option<u32>,
+    max_frames: Option<u32>,
+    fps: Option<f64>,
+) -> Result<(), String> {
+    let mut slot = capture.0.lock().map_err(|e| e.to_string())?;
+    if slot.is_some() {
+        return Err("gif-already-recording".into());
+    }
+    let root = app
+        .path()
+        .app_cache_dir()
+        .or_else(|_| app.path().temp_dir())
+        .map_err(|e| e.to_string())?
+        .join("drm-gif-capture");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let dir = root.join(format!("{}-{stamp}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    *slot = Some(DrmGifSession {
+        dir,
+        started: std::time::Instant::now(),
+        frames: 0,
+        width: width.unwrap_or(720).clamp(160, 1920),
+        max_frames: max_frames.unwrap_or(154).clamp(8, 800),
+        fps: fps.unwrap_or(15.0).clamp(8.0, 24.0),
+    });
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn drm_gif_frame(capture: tauri::State<'_, DrmGifCapture>, jpeg: Vec<u8>) -> Result<(), String> {
+    if jpeg.len() < 16 || jpeg.len() > 4 * MIB || !jpeg.starts_with(&[0xff, 0xd8, 0xff]) {
+        return Err("invalid-gif-frame".into());
+    }
+    if raster_is_solid_black(&jpeg) {
+        return Err("black-gif-frame".into());
+    }
+    let mut slot = capture.0.lock().map_err(|e| e.to_string())?;
+    let session = slot.as_mut().ok_or("gif-not-recording")?;
+    if session.frames >= session.max_frames
+        || session.started.elapsed() > std::time::Duration::from_secs(31)
+    {
+        return Err("gif-capture-limit".into());
+    }
+    let path = session.dir.join(format!("f{:05}.jpg", session.frames));
+    std::fs::write(path, jpeg).map_err(|e| e.to_string())?;
+    session.frames += 1;
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn drm_gif_abort(capture: tauri::State<'_, DrmGifCapture>) -> Result<(), String> {
+    let session = capture.0.lock().map_err(|e| e.to_string())?.take();
+    if let Some(session) = session {
+        let _ = std::fs::remove_dir_all(session.dir);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn capture_webview_cdp(
+    webview: &tauri::Webview,
+    params: String,
+) -> Result<Vec<u8>, String> {
+    use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
+    use windows::core::{HSTRING, PCWSTR};
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    let wv = webview.with_webview({
+        let slot = slot.clone();
+        move |pw| unsafe {
+            let fail = |msg: String| {
+                if let Some(t) = slot.lock().unwrap().take() {
+                    let _ = t.send(Err(msg));
+                }
+            };
+            let core = match pw.controller().CoreWebView2() {
+                Ok(c) => c,
+                Err(e) => return fail(e.to_string()),
+            };
+            let method = HSTRING::from("Page.captureScreenshot");
+            let params_h = HSTRING::from(params.as_str());
+            let slot_ok = slot.clone();
+            let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
+                move |hr, json| {
+                    let send = |v: Result<String, String>| {
+                        if let Some(t) = slot_ok.lock().unwrap().take() {
+                            let _ = t.send(v);
+                        }
+                    };
+                    if let Err(e) = hr {
+                        send(Err(format!("CDP screenshot failed: {e}")));
+                        return Ok(());
+                    }
+                    send(Ok(json));
+                    Ok(())
+                },
+            ));
+            if core
+                .CallDevToolsProtocolMethod(
+                    PCWSTR(method.as_ptr()),
+                    PCWSTR(params_h.as_ptr()),
+                    &handler,
+                )
+                .is_err()
+            {
+                fail("CallDevToolsProtocolMethod failed".into());
+            }
+        }
+    });
+    wv.map_err(|e| e.to_string())?;
+    let json = tokio::time::timeout(std::time::Duration::from_secs(8), rx)
+        .await
+        .map_err(|_| "screenshot timed out".to_string())?
+        .map_err(|_| "screenshot cancelled".to_string())??;
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let b64 = parsed
+        .get("data")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "screenshot missing data".to_string())?;
+    data_encoding::BASE64
+        .decode(b64.as_bytes())
+        .map_err(|e| e.to_string())
+}
+
 /// Begin GIF recording by taking frames from the active libmpv core. Unlike
 /// segment capture, this never asks ffmpeg to reopen the media source.
 #[cfg(not(target_os = "android"))]
@@ -2366,6 +2711,9 @@ fn player_gif_start(
     app: AppHandle,
     player: tauri::State<'_, player::PlayerHandle>,
     include_subtitles: bool,
+    fps: Option<f64>,
+    width: Option<u32>,
+    max_seconds: Option<u32>,
 ) -> Result<(), String> {
     let root = app
         .path()
@@ -2380,6 +2728,9 @@ fn player_gif_start(
     player.gif_start(
         root.join(format!("{}-{stamp}", std::process::id())),
         include_subtitles,
+        fps,
+        width,
+        max_seconds,
     )
 }
 
@@ -2395,6 +2746,7 @@ fn gif_frames_ffmpeg(
     palette: Option<&std::path::Path>,
     output: &std::path::Path,
     fps: f64,
+    width: u32,
     palette_pass: bool,
 ) -> tokio::process::Command {
     let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
@@ -2409,10 +2761,11 @@ fn gif_frames_ffmpeg(
         .arg(format!("{fps:.3}"))
         .arg("-i")
         .arg(input);
+    let scale = format!("scale={width}:-2:flags=lanczos");
     if palette_pass {
         command
             .arg("-vf")
-            .arg("scale=640:-2:flags=lanczos,palettegen=stats_mode=diff")
+            .arg(format!("{scale},palettegen=stats_mode=full"))
             .arg("-frames:v")
             .arg("1")
             .arg(output);
@@ -2421,10 +2774,9 @@ fn gif_frames_ffmpeg(
             .arg("-i")
             .arg(palette)
             .arg("-lavfi")
-            .arg(
-                "scale=640:-2:flags=lanczos[x];\
-                 [x][1:v]paletteuse=dither=bayer:bayer_scale=3",
-            )
+            .arg(format!(
+                "{scale}[x];[x][1:v]paletteuse=dither=sierra2_4a"
+            ))
             .arg("-loop")
             .arg("0")
             .arg(output);
@@ -2433,7 +2785,7 @@ fn gif_frames_ffmpeg(
         // palette-free encoder as a last resort for unusual ffmpeg builds.
         command
             .arg("-vf")
-            .arg("scale=480:-2:flags=lanczos,format=rgb8")
+            .arg(format!("{scale},format=rgb8"))
             .arg("-loop")
             .arg("0")
             .arg(output);
@@ -2459,15 +2811,26 @@ async fn encode_gif_frames(app: &AppHandle, frames: &player::GifFrames) -> Resul
         })
         .collect();
     files.sort();
-    if files.len() < 2 {
+    if files.is_empty() {
         return Err("gif-no-frames".into());
     }
+    // A tap-length recording often has a single compositor frame. ffmpeg's image2
+    // demuxer still wants a 2-frame sequence, so duplicate the still.
+    if files.len() == 1 {
+        let name = files[0]
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("f00000");
+        let index = name
+            .trim_start_matches('f')
+            .parse::<u32>()
+            .unwrap_or(0);
+        let duplicate = frames.dir.join(format!("f{:05}.jpg", index.saturating_add(1)));
+        std::fs::copy(&files[0], &duplicate).map_err(|e| e.to_string())?;
+        files.push(duplicate);
+    }
 
-    let fps = if frames.captured_ms >= 200 {
-        (files.len() as f64 / (frames.captured_ms as f64 / 1000.0)).clamp(2.0, 30.0)
-    } else {
-        12.0
-    };
+    let fps = gif_playback::gif_playback_fps(files.len(), frames.captured_ms, frames.fps);
     let dir = app
         .path()
         .picture_dir()
@@ -2483,14 +2846,15 @@ async fn encode_gif_frames(app: &AppHandle, frames: &player::GifFrames) -> Resul
     let input = frames.dir.join("f%05d.jpg");
     let palette = frames.dir.join("palette.png");
 
-    let mut palette_command = gif_frames_ffmpeg(&input, None, &palette, fps, true);
+    let width = frames.width.clamp(160, 1920);
+    let mut palette_command = gif_frames_ffmpeg(&input, None, &palette, fps, width, true);
     let palette_result = run_capture_ffmpeg(&mut palette_command, 90).await;
     if matches!(&palette_result, Err(error) if error == "ffmpeg-unavailable") {
         return Err("ffmpeg-unavailable".into());
     }
 
     if matches!(&palette_result, Ok(result) if result.status.success()) {
-        let mut gif_command = gif_frames_ffmpeg(&input, Some(&palette), &output, fps, false);
+        let mut gif_command = gif_frames_ffmpeg(&input, Some(&palette), &output, fps, width, false);
         match run_capture_ffmpeg(&mut gif_command, 90).await {
             Ok(result) if result.status.success() => {
                 return Ok(output.to_string_lossy().into_owned());
@@ -2515,7 +2879,7 @@ async fn encode_gif_frames(app: &AppHandle, frames: &player::GifFrames) -> Resul
     }
 
     let _ = std::fs::remove_file(&output);
-    let mut fallback = gif_frames_ffmpeg(&input, None, &output, fps, false);
+    let mut fallback = gif_frames_ffmpeg(&input, None, &output, fps, width, false);
     let result = run_capture_ffmpeg(&mut fallback, 90).await?;
     if !result.status.success() {
         let _ = std::fs::remove_file(&output);
@@ -2531,6 +2895,29 @@ async fn player_gif_stop(
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<String, String> {
     let frames = player.gif_stop()?;
+    let result = encode_gif_frames(&app, &frames).await;
+    let _ = std::fs::remove_dir_all(&frames.dir);
+    result
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn drm_gif_stop(
+    app: AppHandle,
+    capture: tauri::State<'_, DrmGifCapture>,
+) -> Result<String, String> {
+    let session = capture
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .take()
+        .ok_or("gif-not-recording")?;
+    let frames = player::GifFrames {
+        dir: session.dir,
+        captured_ms: session.started.elapsed().as_millis() as u64,
+        width: session.width,
+        fps: session.fps,
+    };
     let result = encode_gif_frames(&app, &frames).await;
     let _ = std::fs::remove_dir_all(&frames.dir);
     result
@@ -3764,9 +4151,13 @@ pub fn run() {
         .manage(TacVerificationConfig::default())
         .manage(FsWasMax::default());
     #[cfg(not(target_os = "android"))]
-    let builder = builder.manage(PipWindowState::default());
+    let builder = builder
+        .manage(PipWindowState::default())
+        .manage(DrmGifCapture::default());
     #[cfg(not(target_os = "android"))]
-    let builder = builder.manage(jvm_extensions::Runtime::default());
+    let builder = builder
+        .manage(jvm_extensions::Runtime::default())
+        .manage(extension_service::ExtensionServices::default());
     // Same per-frame delivery for the Disqus profile-redirect rewrite (see DISQUS_PROFILE_SCRIPT):
     // it must run inside the cross-origin disqus.com inner iframe, which only the
     // addDocumentStartJavaScript path reaches on Android. Windows injects it through WebView2.
@@ -3829,6 +4220,12 @@ pub fn run() {
                 let gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
                 WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("izumi")
+                    // Keep decoded video in the HTML compositor so GIF/screenshot can read
+                    // the <video> bitmap (mpv-style: OSD stays on screen, file is video only).
+                    // wry's default --disable-features must be restated when we set args.
+                    .additional_browser_args(
+                        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-direct-composition-video-overlays",
+                    )
                     .inner_size(1280.0, 800.0)
                     // This is only the unknown-position default. The window-state plugin restores
                     // a valid saved main-window position immediately after creation while hidden.
@@ -4105,7 +4502,7 @@ pub fn run() {
                     .build()?;
             }
 
-            // Keep mpv's embedded child sized to the window on every resize (mpv
+            // Keep mpv's embedded child sized to the window on every resize (mpv)
             // doesn't auto-track the parent under tao). Covers maximize/restore/drag;
             // fullscreen toggles refit directly.
             #[cfg(windows)]
@@ -4264,6 +4661,8 @@ pub fn run() {
             extension_package::extension_install_url,
             extension_package::extension_list,
             extension_package::extension_remove,
+            extension_service::extension_service_ensure,
+            extension_service::extension_service_stop,
             jvm_extensions::jvm_extension_set_debug,
             jvm_extensions::jvm_extension_sources,
             jvm_extensions::jvm_extension_call,
@@ -4288,6 +4687,14 @@ pub fn run() {
             player_toggle_pip,
             player_set_inset,
             player_screenshot,
+            save_player_png,
+            capture_webview_png,
+            capture_webview_jpeg,
+            capture_webview_jpeg_clip,
+            drm_gif_start,
+            drm_gif_frame,
+            drm_gif_stop,
+            drm_gif_abort,
             player_gif_start,
             player_gif_stop,
             player_gif_abort,
