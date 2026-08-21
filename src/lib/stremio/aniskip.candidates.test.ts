@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { resolveCandidates, type SkipCandidate } from './aniskip'
+import { resolveCandidates, SKIP_RETRY_MS, type SkipCandidate } from './aniskip'
 
 const cand = (start: number, end: number, type: 'op' | 'ed' | 'recap', mixed = false): SkipCandidate =>
   ({ start, end, type, label: type, mixed })
+
+describe('skip-time retries', () => {
+  it('retries after broadcast so a new episode can pick up crowd timings', () => {
+    expect(SKIP_RETRY_MS[0]).toBe(0)
+    expect(SKIP_RETRY_MS[1]).toBeGreaterThan(5_000)
+  })
+})
 
 describe('resolveCandidates', () => {
   it('unions a mixed annotation of the same theme', () => {
