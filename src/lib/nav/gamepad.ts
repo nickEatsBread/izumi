@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
-import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { playerCommand } from '$lib/player/native'
 import { RepeatTimer } from '$lib/player/repeat'
 import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen } from '$lib/player/session'
 import { seekDuration } from '$lib/settings/ui'
@@ -23,7 +23,7 @@ function keydown(key: string) {
   window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
 }
 function playerCmd(name: string, args: string[] = []) {
-  invoke('player_command', { name, args }).catch(() => {})
+  playerCommand(name, args).catch(() => {})
 }
 
 /// Start the translator. Returns a stop function. Runs for the whole app while in Game mode.

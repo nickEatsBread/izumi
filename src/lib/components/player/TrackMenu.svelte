@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
+  import { playerTracks } from '$lib/player/native'
   import { listenSafe } from '$lib/util/listen'
   import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, bingeSource } from '$lib/player/session'
   import { get } from 'svelte/store'
@@ -28,6 +29,7 @@
   let tracks = $state<Track[]>([])
   const audios = $derived(tracks.filter((t) => t.type === 'audio'))
   const subs = $derived(tracks.filter((t) => t.type === 'sub'))
+  const captions = $derived(tracks.filter((t) => t.type === 'caption'))
 
   // Online subtitle candidates (searched on play) + the titles of the currently-selected sub
   // tracks, so a candidate shows its Check once its downloaded track is live and selected.
@@ -43,7 +45,7 @@
   // A leaf is either an mpv track (audio/sub), an online-subtitle candidate to download, or the
   // "Search again" action. Distinguished by `kind` so `apply` knows what to do on A/click.
   type Leaf =
-    | { kind: 'aid' | 'sid'; id: number; label: string; selected: boolean }
+    | { kind: 'aid' | 'sid' | 'ccid'; id: number; label: string; selected: boolean }
     | { kind: 'online'; label: string; selected: boolean; candidate: SubtitleCandidate }
     | { kind: 'search'; label: string; selected: false }
     | { kind: 'style-default'; label: string; selected: boolean }
@@ -53,6 +55,7 @@
   const roots = $derived([
     ...(audios.length ? [{ key: 'audio' as const, label: 'Audio' }] : []),
     ...(subs.length ? [{ key: 'subs' as const, label: 'Subtitles' }] : []),
+    ...(captions.length ? [{ key: 'captions' as const, label: 'Closed captions' }] : []),
     ...(onlineItems.length ? [{ key: 'online' as const, label: 'Online subtitles' }] : []),
     { key: 'style' as const, label: 'Subtitle style' },
   ])
@@ -63,6 +66,10 @@
     if (key === 'subs') return [
       { kind: 'sid' as const, id: -1, label: 'Off', selected: !subs.some((s) => s.selected) },
       ...subs.map((t) => ({ kind: 'sid' as const, id: t.id, label: label(t, subs), selected: !!t.selected })),
+    ]
+    if (key === 'captions') return [
+      { kind: 'ccid' as const, id: -1, label: 'Off', selected: !captions.some((s) => s.selected) },
+      ...captions.map((t) => ({ kind: 'ccid' as const, id: t.id, label: label(t, captions), selected: !!t.selected })),
     ]
     if (key === 'online') return [
       ...onlineItems.map((c) => ({ kind: 'online' as const, label: onlineLeafLabel(c), selected: isCandidateLoaded(c, loadedSubTitles), candidate: c })),
@@ -83,7 +90,7 @@
   // Stable {#each} key across the union (online/search leaves have no track id).
   const leafKey = (it: Leaf) => it.kind === 'online' ? candidateKey(it.candidate)
     : it.kind === 'style-preset' ? `style-${it.preset.id}`
-      : it.kind === 'aid' || it.kind === 'sid' ? `${it.kind}${it.id}` : it.kind
+      : it.kind === 'aid' || it.kind === 'sid' || it.kind === 'ccid' ? `${it.kind}${it.id}` : it.kind
 
   let open = $state(false)
   let level = $state(0) // 0 = category column, 1 = track column
@@ -106,7 +113,7 @@
   })
 
   async function openMenu() {
-    try { tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[] }
+    try { tracks = JSON.parse(await playerTracks()) as Track[] }
     catch { tracks = [] }
     level = 0; rootIdx = 0; subIdx = 0
     open = true; trackMenuOpen.set(true)
@@ -142,7 +149,7 @@
         apiKey: candidateApiKey(c.provider),
         token: get(openSubtitlesToken),
       })
-      tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]
+      tracks = JSON.parse(await playerTracks()) as Track[]
       subtitleNotice.set('')
     }
     catch (e) {
@@ -184,8 +191,14 @@
     }
     cmd('set', [leaf.kind, leaf.id === -1 ? 'no' : String(leaf.id)])
     // Reflect the new selection locally so the check mark is instant.
-    const type = leaf.kind === 'aid' ? 'audio' : 'sub'
-    tracks = tracks.map((t) => (t.type === type ? { ...t, selected: leaf.id !== -1 && t.id === leaf.id } : t))
+    const type = leaf.kind === 'aid' ? 'audio' : leaf.kind === 'ccid' ? 'caption' : 'sub'
+    tracks = tracks.map((t) => {
+      if (t.type === type) return { ...t, selected: leaf.id !== -1 && t.id === leaf.id }
+      if ((leaf.kind === 'sid' || leaf.kind === 'ccid') && (t.type === 'sub' || t.type === 'caption')) {
+        return { ...t, selected: false }
+      }
+      return t
+    })
     closeMenu()
   }
   function activate() { if (level === 0) descend(); else { const it = subItems[subIdx]; if (it) void apply(it) } }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api/core'
+  import { playerCommand, playerGetProperty, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import { listen } from '@tauri-apps/api/event'
   import { onMount } from 'svelte'
   import type { Segment } from '$lib/stremio/aniskip'
@@ -26,7 +27,7 @@
   import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery } from '$lib/player/session'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
@@ -133,6 +134,41 @@
   let speed = $state(1)
   const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2]
   function setSpeed(v: number) { speed = v; cmd('set', ['speed', String(v)]) }
+  type QualityInfo = { mode: 'auto' | number; activeHeight: number; heights: number[] }
+  let qualityInfo = $state<QualityInfo>({ mode: 'auto', activeHeight: 0, heights: [] })
+  function applyQualityInfo(value: unknown) {
+    if (!value || typeof value !== 'object') return
+    const raw = value as Partial<QualityInfo>
+    const heights = Array.isArray(raw.heights)
+      ? raw.heights.map(Number).filter((height) => Number.isFinite(height) && height > 0).sort((a, b) => b - a)
+      : []
+    if (!heights.length) return
+    const selected = raw.mode === 'auto' ? 'auto' : Number(raw.mode)
+    qualityInfo = {
+      mode: selected === 'auto' || heights.includes(selected) ? selected : 'auto',
+      activeHeight: Number(raw.activeHeight) || 0,
+      heights,
+    }
+  }
+  async function readVideoQualities() {
+    try { applyQualityInfo(JSON.parse(await playerGetProperty('video-quality-options'))) }
+    catch { qualityInfo = { mode: 'auto', activeHeight: 0, heights: [] } }
+  }
+  function toggleOptions() {
+    showOptions = !showOptions
+    showTracks = false
+    showServers = false
+    if (showOptions) {
+      readDelays()
+      void readVideoQualities()
+    }
+  }
+  async function setVideoQuality(mode: 'auto' | number) {
+    qualityInfo = { ...qualityInfo, mode }
+    await playerCommand('set', ['video-quality', String(mode)]).catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await readVideoQualities()
+  }
   // Subtitle/audio delay + subtitle scale, adjusted from the options popover. mpv holds the real
   // values; we read them so the menu shows a live number — otherwise a press looks like a no-op.
   // After a press we await the `add`, then re-read, so the number reflects what mpv actually applied
@@ -140,17 +176,17 @@
   let delays = $state<Record<string, number>>({ 'sub-delay': 0, 'audio-delay': 0, 'sub-scale': 1 })
   async function readProp(prop: string) {
     try {
-      const v = parseFloat(await invoke<string>('player_get_property', { name: prop }))
+      const v = parseFloat(await playerGetProperty(prop))
       if (!Number.isNaN(v)) delays[prop] = v
     } catch { /* no player / not loaded — keep the last value */ }
   }
   const readDelays = () => { for (const p of ['sub-delay', 'audio-delay', 'sub-scale']) readProp(p) }
   async function adjust(prop: string, delta: number) {
-    await invoke('player_command', { name: 'add', args: [prop, String(delta)] }).catch(() => {})
+    await playerCommand('add', [prop, String(delta)]).catch(() => {})
     await readProp(prop)
   }
   async function resetProp(prop: string) {
-    await invoke('player_command', { name: 'set', args: [prop, prop === 'sub-scale' ? '1' : '0'] }).catch(() => {})
+    await playerCommand('set', [prop, prop === 'sub-scale' ? '1' : '0']).catch(() => {})
     await readProp(prop)
   }
   // sub-delay/audio-delay show as signed seconds (+0.3s / 0.0s); sub-scale as a multiplier (1.20×).
@@ -216,14 +252,14 @@
 
   // Screenshot the current frame (with subtitles) → app Pictures/izumi folder.
   async function screenshot() {
-    try { await invoke('player_screenshot'); playerNotice.set('Screenshot saved to Pictures/izumi') }
+    try { await playerScreenshot(); playerNotice.set('Screenshot saved to Pictures/izumi') }
     catch { playerNotice.set('Screenshot failed') }
   }
 
   async function navigateSubtitleLine(skip: -1 | 0 | 1) {
-    const before = parseFloat(await invoke<string>('player_get_property', { name: 'time-pos' }).catch(() => ''))
+    const before = parseFloat(await playerGetProperty('time-pos').catch(() => ''))
     try {
-      await invoke('player_command', { name: 'sub-seek', args: [String(skip)] })
+      await playerCommand('sub-seek', [String(skip)])
     } catch {
       playerNotice.set('Subtitle navigation is unavailable for this track')
       return
@@ -234,7 +270,7 @@
     // Surface that boundary instead of leaving a click looking broken.
     if (skip !== 0 && Number.isFinite(before)) {
       await new Promise((resolve) => setTimeout(resolve, 200))
-      const after = parseFloat(await invoke<string>('player_get_property', { name: 'time-pos' }).catch(() => ''))
+      const after = parseFloat(await playerGetProperty('time-pos').catch(() => ''))
       if (Number.isFinite(after) && Math.abs(after - before) < 0.05) {
         playerNotice.set(skip > 0
           ? 'No next subtitle line is available in the loaded range'
@@ -276,9 +312,9 @@
     if ($gifRecordingStart == null) {
       captureBusy = true
       try {
-        await invoke('player_gif_start', { includeSubtitles: $gifIncludeSubtitles })
+        await playerGifStart($gifIncludeSubtitles)
         gifRecordingStart.set(pos)
-        playerNotice.set('GIF recording started')
+        playerNotice.set('GIF recording started · press O to stop')
       } catch {
         playerNotice.set('GIF recording failed to start')
       } finally { captureBusy = false }
@@ -288,10 +324,16 @@
     captureBusy = true
     playerNotice.set('Encoding GIF…')
     try {
-      await invoke('player_gif_stop')
+      await playerGifStop()
       playerNotice.set('GIF saved to Pictures/izumi')
     } catch (error) {
-      playerNotice.set(String(error).includes('ffmpeg-unavailable') ? 'GIF recording needs ffmpeg installed' : 'GIF recording failed')
+      playerNotice.set(
+        String(error).includes('ffmpeg-unavailable')
+          ? 'GIF recording needs ffmpeg installed'
+          : String(error).includes('gif-no-frames')
+            ? 'GIF was too short — hold O a bit longer'
+            : 'GIF recording failed',
+      )
     } finally { captureBusy = false }
   }
   async function saveRecentClip() {
@@ -344,6 +386,8 @@
     const unlistenMuted = listen<boolean>('player-muted', (event) => {
       muted = event.payload
     })
+    const onQuality = (event: Event) => applyQualityInfo((event as CustomEvent<QualityInfo>).detail)
+    window.addEventListener('izumi-drm-quality', onQuality)
     void (async () => {
       try {
         const sp = parseFloat(await invoke<string>('player_get_property', { name: 'speed' }))
@@ -357,7 +401,10 @@
         muted = (await invoke<string>('player_get_property', { name: 'mute' })) === 'yes'
       } catch { /* no player yet — keep default */ }
     })()
-    return () => { void unlistenMuted.then((unlisten) => unlisten()) }
+    return () => {
+      window.removeEventListener('izumi-drm-quality', onQuality)
+      void unlistenMuted.then((unlisten) => unlisten())
+    }
   })
 
   // Track menu (subtitle/audio) — populated lazily from mpv's track-list.
@@ -373,7 +420,7 @@
   // category's list) with a Miller-column slide. `menuLevel`/`detailCat` drive the slide;
   // `rootH`/`detailH` are the measured column heights so the panel morphs to fit.
   let menuLevel = $state<'root' | 'detail'>('root')
-  let detailCat = $state<'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters'>('audio')
+  let detailCat = $state<'audio' | 'subs' | 'captions' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters'>('audio')
 
   // Subtitle style presets: capture the active ASS track's fonting (mpv sub-ass-extradata) and
   // save it under the release group's name; picking a saved preset overrides styling for THIS
@@ -426,9 +473,9 @@
   let rootH = $state(0), detailH = $state(0)
   async function refreshTracks() {
     try {
-      const raw = await invoke<string>('player_tracks')
+      const raw = await playerTracks()
       tracks = JSON.parse(raw) as Track[]
-      secondaryId = await invoke<string>('player_get_property', { name: 'secondary-sid' }).catch(() => 'no')
+      secondaryId = await playerGetProperty('secondary-sid').catch(() => 'no')
     }
     catch (e) {
       console.warn('track-list unavailable', e)
@@ -449,6 +496,7 @@
     if (showTracks && revision > 0) void refreshTracks()
   })
   const subs = $derived(tracks.filter((t) => t.type === 'sub'))
+  const captions = $derived(tracks.filter((t) => t.type === 'caption'))
   const audios = $derived(tracks.filter((t) => t.type === 'audio'))
 
   // Language-forward, deduped track labels — shared with the Game-mode picker so the two
@@ -456,19 +504,25 @@
   // are only told apart by language, not their identical "Full Subtitles"/codec title). See
   // track-label.ts.
   const label = trackLabel
-  function pick(kind: 'sid' | 'aid' | 'secondary-sid', id: number) {
+  function pick(kind: 'sid' | 'aid' | 'secondary-sid' | 'ccid', id: number) {
     cmd('set', [kind, String(id)])
     if (kind === 'secondary-sid') { secondaryId = String(id); return }
-    const type = kind === 'sid' ? 'sub' : 'audio'
-    tracks = tracks.map((t) => (t.type === type ? { ...t, selected: t.id === id } : t))
+    const type = kind === 'sid' ? 'sub' : kind === 'ccid' ? 'caption' : 'audio'
+    tracks = tracks.map((t) => {
+      if (t.type === type) return { ...t, selected: t.id === id }
+      if ((kind === 'sid' || kind === 'ccid') && (t.type === 'sub' || t.type === 'caption')) {
+        return { ...t, selected: false }
+      }
+      return t
+    })
     if (kind === 'sid' && $subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
   }
 
   // Desktop drill-down helpers. `detailItems` is the chosen category's track list;
   // `curLabel` is what shows on the collapsed root row for each category (the active
   // track, or "Off"). `pickLeaf` sets the track then slides back to the root.
-  const detailItems = $derived(detailCat === 'audio' ? audios : subs)
-  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : detailCat === 'chapters' ? 'Chapters' : 'Subtitles')
+  const detailItems = $derived(detailCat === 'audio' ? audios : detailCat === 'captions' ? captions : subs)
+  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'captions' ? 'Closed captions' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : detailCat === 'chapters' ? 'Chapters' : 'Subtitles')
   // Controls unmounts entirely when the bar is hidden (PlayerOverlay only mounts it while its
   // `controlsVisible` is true), so this only runs while the bar is actually on screen — one lookup
   // shared by the track-menu highlight below and the overlay label further down.
@@ -483,7 +537,9 @@
     if (!c || isGenericChapterTitle(c.title ?? '')) return ''
     return c.title.trim()
   })
-  const leafKind = $derived<'aid' | 'sid' | 'secondary-sid'>(detailCat === 'audio' ? 'aid' : detailCat === 'secondary' ? 'secondary-sid' : 'sid')
+  const leafKind = $derived<'aid' | 'sid' | 'secondary-sid' | 'ccid'>(
+    detailCat === 'audio' ? 'aid' : detailCat === 'secondary' ? 'secondary-sid' : detailCat === 'captions' ? 'ccid' : 'sid',
+  )
   const detailOff = $derived(detailCat === 'secondary' ? secondaryId === 'no' : !detailItems.some((t) => t.selected)) // nothing selected ⇒ "Off" is active
   const curLabel = (group: Track[]) => {
     const on = group.find((t) => t.selected)
@@ -495,18 +551,19 @@
       ? 'Loading…'
       : curLabel(subs),
   )
+  const curCaptionLabel = $derived(curLabel(captions))
   const curSecondaryLabel = $derived.by(() => {
     const track = subs.find((item) => String(item.id) === secondaryId)
     return track ? label(track, subs) : 'Off'
   })
-  function openDetail(cat: 'audio' | 'subs' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters') {
+  function openDetail(cat: 'audio' | 'subs' | 'captions' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters') {
     detailCat = cat
     menuLevel = 'detail'
   }
   // Disable the category (mpv uses aid/sid = "no"; 0 isn't a valid track id).
   function pickOff() {
     if (detailCat === 'secondary') { cmd('set', ['secondary-sid', 'no']); secondaryId = 'no'; return }
-    const type = detailCat === 'audio' ? 'audio' : 'sub'
+    const type = detailCat === 'audio' ? 'audio' : detailCat === 'captions' ? 'caption' : 'sub'
     cmd('set', [leafKind, 'no'])
     tracks = tracks.map((t) => (t.type === type ? { ...t, selected: false } : t))
   }
@@ -540,7 +597,7 @@
         apiKey: candidateApiKey(c.provider),
         token: get(openSubtitlesToken),
       })
-      tracks = JSON.parse(await invoke<string>('player_tracks')) as Track[]
+      tracks = JSON.parse(await playerTracks()) as Track[]
       subtitleNotice.set('')
       if ($subtitleAutoSync) void autoSyncSelectedSubtitle(tracks, dur, true)
     }
@@ -684,7 +741,7 @@
         <!-- Playback options: speed, audio/subtitle delay, subtitle size. In Game mode it sits to
              the RIGHT of the Subtitles button (Crunchy-Deck order) via order-last. -->
         <div class="relative {gm ? 'order-last' : ''}">
-          <button data-focusable class={iconBtn} onclick={() => { showOptions = !showOptions; showTracks = false; showServers = false; if (showOptions) readDelays() }} aria-label="Playback options"><Settings size={icSize} /></button>
+          <button data-focusable class={iconBtn} onclick={toggleOptions} aria-label="Playback options"><Settings size={icSize} /></button>
           {#if showOptions}
             <!-- NO backdrop-blur (video is a separate surface the webview can't sample → blurs
                  black). Desktop promotes to its own compositing layer (translateZ/will-change) so
@@ -702,6 +759,25 @@
                   <button data-focusable onclick={() => setSpeed(s)} class="rounded py-1 text-center text-xs tabular-nums transition {speed === s ? 'bg-primary text-primary-foreground' : 'hover:bg-white/15'}">{s}×</button>
                 {/each}
               </div>
+              {#if qualityInfo.heights.length}
+                <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Quality</p>
+                <div class="mb-3 flex flex-wrap gap-1">
+                  <button
+                    data-focusable
+                    aria-label="Video quality Auto"
+                    onclick={() => setVideoQuality('auto')}
+                    class="rounded px-2 py-1 text-xs transition {qualityInfo.mode === 'auto' ? 'bg-primary text-primary-foreground' : 'bg-white/10 hover:bg-white/15'}"
+                  >Auto{#if qualityInfo.mode === 'auto' && qualityInfo.activeHeight} · {qualityInfo.activeHeight}p{/if}</button>
+                  {#each qualityInfo.heights as height}
+                    <button
+                      data-focusable
+                      aria-label="Video quality {height}p"
+                      onclick={() => setVideoQuality(height)}
+                      class="rounded px-2 py-1 text-xs transition {qualityInfo.mode === height ? 'bg-primary text-primary-foreground' : 'bg-white/10 hover:bg-white/15'}"
+                    >{height}p</button>
+                  {/each}
+                </div>
+              {/if}
               <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Video fit</p>
               <div class="mb-3 flex gap-1">
                 {#each [['best', 'Best fit'], ['fill', 'Fill']] as [v, l]}
@@ -722,9 +798,11 @@
                 <button data-focusable onclick={markLoopB} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">Set loop B{#if $playerAbLoop.b != null} ✓{/if}</button>
                 {#if $playerAbLoop.a != null}<button data-focusable onclick={clearLoop} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">Clear loop</button>{/if}
                 <button data-focusable disabled={captureBusy} onclick={toggleGifRecording} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20 disabled:opacity-40">{$gifRecordingStart == null ? 'Record GIF' : 'Stop GIF'}</button>
-                <button data-focusable disabled={captureBusy} onclick={saveRecentClip} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20 disabled:opacity-40">Save last 30s</button>
+                {#if !$nowPlayingStream.drm}
+                  <button data-focusable disabled={captureBusy} onclick={saveRecentClip} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20 disabled:opacity-40">Save last 30s</button>
+                {/if}
               </div>
-              {#each [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']] as [label, prop]}
+              {#each ($nowPlayingStream.drm ? [['Subtitle size', 'sub-scale']] : [['Subtitle delay', 'sub-delay'], ['Audio delay', 'audio-delay'], ['Subtitle size', 'sub-scale']]) as [label, prop]}
                 <div class="flex items-center justify-between gap-2 py-0.5">
                   <span>{label}</span>
                   <span class="flex items-center gap-1">
@@ -808,6 +886,15 @@
                     {t.selected ? '✓ ' : ''}{label(t, subs)}
                   </button>
                 {/each}
+                {#if captions.length}
+                  <p class="mt-1 px-2 py-1 text-xs uppercase tracking-wide text-white/50">Closed captions</p>
+                  <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={() => { cmd('set', ['ccid', 'no']); tracks = tracks.map((t) => (t.type === 'caption' ? { ...t, selected: false } : t)) }}>None</button>
+                  {#each captions as t (t.id)}
+                    <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15" onclick={() => pick('ccid', t.id)}>
+                      {t.selected ? '✓ ' : ''}{label(t, captions)}
+                    </button>
+                  {/each}
+                {/if}
                 <p class="mt-1 px-2 py-1 text-xs uppercase tracking-wide text-white/50">Subtitle style</p>
                 <button data-focusable class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15"
                         onclick={() => { sessionSubtitleStyle.set(null); playerNotice.set('Using default subtitle style'); showTracks = false }}>
@@ -847,6 +934,15 @@
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
+                      {#if captions.length}
+                        <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('captions')}>
+                          <span class="min-w-0">
+                            <span class="block text-xs uppercase tracking-wide text-white/45">Closed captions</span>
+                            <span class="block truncate">{curCaptionLabel}</span>
+                          </span>
+                          <ChevronRight size={18} class="shrink-0 text-white/40" />
+                        </button>
+                      {/if}
                       <!-- Hidden entirely (not just empty) when the file has no chapters: most anime
                            web releases ship none, and an empty category is worse than no category. -->
                       {#if $chapterStore.length}
@@ -1000,11 +1096,14 @@
                               </button>
                             {/each}
                           {:else}
-                            <!-- "Off" leaf (disable this category) -->
-                            <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={pickOff}>
-                              <span class="truncate text-white/70">Off</span>
-                              {#if detailOff}<Check size={18} class="shrink-0 text-primary" />{/if}
-                            </button>
+                            <!-- Subs/CC can be disabled. Audio cannot — turning the soundtrack
+                                 "off" would keep playing it with no way to get it back. -->
+                            {#if detailCat !== 'audio'}
+                              <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={pickOff}>
+                                <span class="truncate text-white/70">Off</span>
+                                {#if detailOff}<Check size={18} class="shrink-0 text-primary" />{/if}
+                              </button>
+                            {/if}
                             {#if detailItems.length}
                               {#each detailItems as t (t.id)}
                                 <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10" onclick={() => pick(leafKind, t.id)}>
