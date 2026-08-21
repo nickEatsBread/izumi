@@ -388,10 +388,14 @@ export async function runningExtensionCount(): Promise<number> {
   return (await ensureRunning()).length
 }
 
-/** Pre-boot the extension runtime (manifest + modules + workers) off the click-to-play path.
- *  Called once at app start; the first picker open then only pays the actual search. */
+/** Pre-boot both extension runtimes off the click-to-play path. On a clean macOS install, Java
+ *  discovery plus the private JRE download/extract can take most of the resolver's startup budget;
+ *  leaving JVM packages out of this warm made the first Play look as if no source were installed. */
 export async function warmExtensions(): Promise<void> {
-  await ensureRunning().then(() => {}, () => {})
+  await Promise.all([
+    ensureRunning().then(() => {}, () => {}),
+    runningJvmExtensions().then(() => {}, () => {}),
+  ])
 }
 
 function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<TorrentResult[]> {
@@ -676,6 +680,7 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
 // minutes when the runtime APK needs re-downloading). The source list only changes when a package
 // is (un)installed, which is exactly what `installedRevision` counts.
 let jvmSourcesCache: { revision: number; sources: JvmSource[] } | null = null
+let jvmSourcesPending: { revision: number; value: Promise<JvmSource[]> } | null = null
 
 /** Installed Aniyomi extension icons, keyed by ANDROID PACKAGE NAME — which is exactly the `id` a
  *  catalog entry carries for an aniyomi-jvm package, so the settings list can match them directly.
@@ -699,15 +704,35 @@ export async function jvmExtensionIcons(): Promise<Map<string, string>> {
 /** The enumeration itself, memoized per install revision (see jvmSourcesCache). */
 async function jvmSources(): Promise<JvmSource[]> {
   if (jvmSourcesCache?.revision === installedRevision) return jvmSourcesCache.sources
+  const revision = installedRevision
+  if (jvmSourcesPending?.revision !== revision) {
+    const entry = {
+      revision,
+      value: invoke<JvmSource[]>('jvm_extension_sources'),
+    }
+    // Keep the native initialization alive after a caller's UI deadline. Its eventual result warms
+    // the next resolve instead of being discarded and followed by another full JVM enumeration.
+    entry.value = entry.value.then(
+      (sources) => {
+        if (installedRevision === revision) jvmSourcesCache = { revision, sources }
+        if (jvmSourcesPending === entry) jvmSourcesPending = null
+        return sources
+      },
+      (error) => {
+        if (jvmSourcesPending === entry) jvmSourcesPending = null
+        throw error
+      },
+    )
+    jvmSourcesPending = entry
+  }
   // The last uncapped jvm* await the UI sat behind: the Rust side legally takes ~190s worst case
-  // (runtime download + bridge budget), and this call gates EVERY source resolve. The resolve must
-  // fail fast instead — a slow first enumeration retries on the next resolve.
+  // (runtime download + bridge budget), and this call gates EVERY source resolve. Stop this caller
+  // waiting at 15s, while the shared initialization above keeps warming in the background.
   const sources = await Promise.race([
-    invoke<JvmSource[]>('jvm_extension_sources'),
+    jvmSourcesPending.value,
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('The extension runtime did not answer in time.')), 15_000)),
   ])
-  jvmSourcesCache = { revision: installedRevision, sources }
   return sources
 }
 
