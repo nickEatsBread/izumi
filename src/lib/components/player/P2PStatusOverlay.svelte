@@ -8,12 +8,13 @@
   let { buffering, firstFrameSeen }: { buffering: boolean; firstFrameSeen: boolean } = $props()
 
   const directP2P = $derived(isDirectP2PStream($nowPlayingStream))
+  const torrentReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const visible = $derived(shouldShowP2PStatus(
     $p2pStatusVisibility,
     directP2P,
     buffering,
     firstFrameSeen,
-  ))
+  ) && torrentReady)
   const stats = $derived($directTorrentStats)
   const progress = $derived(stats && stats.selectedSize > 0
     ? Math.min(100, stats.downloadedBytes / stats.selectedSize * 100)
@@ -53,8 +54,8 @@
     <div class="mb-1.5 text-center text-[10px] font-black uppercase tracking-[0.18em] text-white/60">P2P activity</div>
     {#if stats}
       <div class="flex items-center justify-center gap-4 font-mono text-sm font-bold tabular-nums">
-        <span><span class="text-emerald-400">↓</span> {stats.downloadMbps.toFixed(1)} Mb/s</span>
-        <span><span class="text-sky-400">↑</span> {stats.uploadMbps.toFixed(1)} Mb/s</span>
+        <span><span class="text-emerald-400">↓</span> {(Number.isFinite(stats.downloadMbps) ? stats.downloadMbps : 0).toFixed(1)} Mb/s</span>
+        <span><span class="text-sky-400">↑</span> {(Number.isFinite(stats.uploadMbps) ? stats.uploadMbps : 0).toFixed(1)} Mb/s</span>
       </div>
       <div class="mt-1 text-center text-[11px] text-white/65">
         {stats.livePeers} {stats.livePeers === 1 ? 'peer' : 'peers'}

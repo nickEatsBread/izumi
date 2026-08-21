@@ -17,6 +17,15 @@ describe('shared P2P status overlay', () => {
     }
   })
 
+  it('waits for a live torrent before showing Connecting… and hides once a frame is up', () => {
+    const overlay = read('./P2PStatusOverlay.svelte')
+    expect(overlay).toContain('currentDirectTorrentPlaybackId()')
+    const player = read('./PlayerOverlay.svelte')
+    expect(player).toContain('pos > 0.05 || !coreIdle')
+    expect(player).toContain('mergeSkipSegments(segs, [])')
+    expect(player).toContain('SKIP_RETRY_MS')
+  })
+
   it('does not let an inherited pre-frame pause disable Deck recovery', () => {
     const player = read('./PlayerOverlay.svelte')
     expect(player).toContain('paused: paused && firstFrame')
