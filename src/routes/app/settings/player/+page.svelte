@@ -3,7 +3,7 @@
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
-    videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifFps, gifScale, gifMaxSeconds, androidAutoPip,
+    videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
     p2pStatusVisibility,
     continueSourcePreference,
@@ -206,22 +206,9 @@
     <div class="rounded-md border border-border p-3 space-y-3" data-setting-key="gif-recorder">
       <div>
         <div class="font-bold">GIF recorder</div>
-        <p class="mt-1 text-xs text-muted-foreground">Unencrypted playback cuts the moment from the file and samples it evenly. Encrypted playback grabs every compositor frame it can for as long as you hold record.</p>
+        <p class="mt-1 text-xs text-muted-foreground">Unencrypted playback cuts the moment from the file. Encrypted playback grabs every compositor frame it can for as long as you hold record.</p>
       </div>
       <Toggle label="Include subtitles" desc="Burn the currently displayed subtitle track into the GIF." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
-      <label class="flex items-center justify-between gap-4">
-        <span class="min-w-0">
-          <span class="block font-bold">Clip sampling</span>
-          <span class="mt-1 block text-xs text-muted-foreground">How densely to sample an unencrypted clip. Encrypted streams ignore this and capture at compositor speed.</span>
-        </span>
-        <SelectMenu className="w-28 shrink-0" value={String($gifFps)} onChange={(value) => { $gifFps = Number(value) }} ariaLabel="GIF frame rate" options={[
-          { value: '10', label: '10 fps' },
-          { value: '12', label: '12 fps' },
-          { value: '15', label: '15 fps' },
-          { value: '20', label: '20 fps' },
-          { value: '24', label: '24 fps' },
-        ]} />
-      </label>
       <label class="flex items-center justify-between gap-4">
         <span class="min-w-0">
           <span class="block font-bold">Width</span>

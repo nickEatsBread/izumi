@@ -26,7 +26,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Skip filler episodes', category: 'Player', href: '/app/settings/player', anchored: true, desktopOnly: true },
   { title: 'Scrub preview thumbnails', category: 'Player', href: '/app/settings/player', keywords: 'seek frame preview', anchored: true, desktopOnly: true },
   { title: 'Subtitle line navigation', category: 'Player', href: '/app/settings/player', keywords: 'captions previous replay next cue language learning', anchored: true, desktopOnly: true },
-  { title: 'GIF recorder', category: 'Player', href: '/app/settings/player', keywords: 'gif capture record fps frame rate width quality anime screenshot', anchored: true, desktopOnly: true },
+  { title: 'GIF recorder', category: 'Player', href: '/app/settings/player', keywords: 'gif capture record width quality anime screenshot', anchored: true, desktopOnly: true },
   { title: 'Include subtitles in GIFs', category: 'Player', href: '/app/settings/player', keywords: 'gif capture record captions burn in', anchored: true },
   { title: 'Player cache size', category: 'Player', href: '/app/settings/player', keywords: 'buffer ram memory', desktopOnly: true },
   { title: 'Seek duration', category: 'Player', href: '/app/settings/player', keywords: 'skip seconds arrows', desktopOnly: true },

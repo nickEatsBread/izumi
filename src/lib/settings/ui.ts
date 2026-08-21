@@ -135,8 +135,6 @@ export const subtitleLineNavigation = persisted<boolean>('player-subtitle-line-n
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
 /** Burn the currently displayed subtitle track into frames captured for GIF recordings. */
 export const gifIncludeSubtitles = persisted<boolean>('player-gif-include-subtitles', false)
-/** Frames per second. 15 matches typical anime GIFs; 10 is the floor that still reads as motion. */
-export const gifFps = persisted<number>('player-gif-fps', 15)
 /** Output width in CSS pixels; height follows the video aspect. 720px fits most upload caps. */
 export const gifScale = persisted<number>('player-gif-scale', 720)
 /** Stop recording after this many seconds. 10s is the sharing sweet spot; 30s is the ceiling. */

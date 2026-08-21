@@ -18,6 +18,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
 # Size-optimized release build (shrinks the shipped native lib — the debug .so is ~163 MB of
 # symbols/unoptimized code that never ships). strip drops symbols (big win, no runtime cost),
 # lto + one codegen unit shrink and often speed up the output. Applies to desktop + android release.
@@ -36,7 +39,7 @@ devtools = ["tauri/devtools"]
 android-mpv = ["dep:tauri-plugin-mpv"]
 
 [dependencies]
-tauri = { version = "2" }
+tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 # Platform/OS detection (used to branch behavior on Android vs desktop). Registered
 # for all platforms.
@@ -154,6 +157,8 @@ windows = { version = "0.61", features = [
   "Win32_Graphics_Gdi",
   # SetThreadExecutionState — keep the display + system awake while a video plays.
   "Win32_System_Power",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
   "Win32_UI_WindowsAndMessaging",
 ] }
 webview2-com = "0.38"

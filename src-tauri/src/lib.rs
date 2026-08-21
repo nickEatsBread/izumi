@@ -28,6 +28,8 @@ mod watch_room;
 #[cfg(not(target_os = "android"))]
 mod desktop_presence;
 #[cfg(not(target_os = "android"))]
+mod gif_capture;
+#[cfg(not(target_os = "android"))]
 mod gif_playback;
 #[cfg(not(target_os = "android"))]
 mod player;
@@ -62,14 +64,16 @@ struct PipWindowState(std::sync::Mutex<Option<PipSnapshot>>);
 struct DrmGifSession {
     dir: std::path::PathBuf,
     started: std::time::Instant,
-    frames: u32,
+    frames: std::sync::Arc<std::sync::atomic::AtomicU32>,
     width: u32,
     max_frames: u32,
     fps: f64,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    join: Option<tauri::async_runtime::JoinHandle<()>>,
 }
 
-/// Frame sink for WebView2/Shaka GIF capture. Widevine frames cannot be read through canvas, so
-/// the frontend crops compositor screenshots and streams small JPEGs here as they are produced.
+/// Encrypted GIF capture. The compositor loop lives in Rust so each frame is one
+/// CDP round-trip + a JPEG crop, not a JS ImageBitmap/getImageData/toBlob hop.
 #[cfg(not(target_os = "android"))]
 #[derive(Default)]
 struct DrmGifCapture(std::sync::Mutex<Option<DrmGifSession>>);
@@ -2512,6 +2516,13 @@ fn drm_gif_start(
     width: Option<u32>,
     max_frames: Option<u32>,
     fps: Option<f64>,
+    view_width: Option<f64>,
+    view_height: Option<f64>,
+    crop_x: Option<f64>,
+    crop_y: Option<f64>,
+    crop_w: Option<f64>,
+    crop_h: Option<f64>,
+    max_seconds: Option<u32>,
 ) -> Result<(), String> {
     let mut slot = capture.0.lock().map_err(|e| e.to_string())?;
     if slot.is_some() {
@@ -2529,13 +2540,48 @@ fn drm_gif_start(
         .as_millis();
     let dir = root.join(format!("{}-{stamp}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let width = width.unwrap_or(720).clamp(160, 1920);
+    let max_frames = max_frames.unwrap_or(308).clamp(8, 1200);
+    let fps = fps.unwrap_or(24.0).clamp(8.0, 24.0);
+    let crop = gif_capture::ViewCrop::from_parts(
+        view_width.unwrap_or(0.0),
+        view_height.unwrap_or(0.0),
+        crop_x.unwrap_or(0.0),
+        crop_y.unwrap_or(0.0),
+        crop_w.unwrap_or(0.0),
+        crop_h.unwrap_or(0.0),
+    );
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let frames = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let max_seconds = max_seconds.unwrap_or(10).clamp(2, 30);
+    let join = {
+        let app = app.clone();
+        let dir = dir.clone();
+        let stop = stop.clone();
+        let frames = frames.clone();
+        Some(tauri::async_runtime::spawn(async move {
+            drm_gif_capture_loop(
+                app,
+                dir,
+                crop,
+                width,
+                max_frames,
+                max_seconds,
+                stop,
+                frames,
+            )
+            .await;
+        }))
+    };
     *slot = Some(DrmGifSession {
         dir,
         started: std::time::Instant::now(),
-        frames: 0,
-        width: width.unwrap_or(720).clamp(160, 1920),
-        max_frames: max_frames.unwrap_or(154).clamp(8, 800),
-        fps: fps.unwrap_or(15.0).clamp(8.0, 24.0),
+        frames,
+        width,
+        max_frames,
+        fps,
+        stop,
+        join,
     });
     Ok(())
 }
@@ -2549,16 +2595,18 @@ fn drm_gif_frame(capture: tauri::State<'_, DrmGifCapture>, jpeg: Vec<u8>) -> Res
     if raster_is_solid_black(&jpeg) {
         return Err("black-gif-frame".into());
     }
-    let mut slot = capture.0.lock().map_err(|e| e.to_string())?;
-    let session = slot.as_mut().ok_or("gif-not-recording")?;
-    if session.frames >= session.max_frames
+    let slot = capture.0.lock().map_err(|e| e.to_string())?;
+    let session = slot.as_ref().ok_or("gif-not-recording")?;
+    if session.frames.load(std::sync::atomic::Ordering::Relaxed) >= session.max_frames
         || session.started.elapsed() > std::time::Duration::from_secs(31)
     {
         return Err("gif-capture-limit".into());
     }
-    let path = session.dir.join(format!("f{:05}.jpg", session.frames));
+    let n = session
+        .frames
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = session.dir.join(format!("f{n:05}.jpg"));
     std::fs::write(path, jpeg).map_err(|e| e.to_string())?;
-    session.frames += 1;
     Ok(())
 }
 
@@ -2566,10 +2614,349 @@ fn drm_gif_frame(capture: tauri::State<'_, DrmGifCapture>, jpeg: Vec<u8>) -> Res
 #[tauri::command]
 fn drm_gif_abort(capture: tauri::State<'_, DrmGifCapture>) -> Result<(), String> {
     let session = capture.0.lock().map_err(|e| e.to_string())?.take();
-    if let Some(session) = session {
-        let _ = std::fs::remove_dir_all(session.dir);
+    if let Some(mut session) = session {
+        session
+            .stop
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let join = session.join.take();
+        let dir = session.dir.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Some(join) = join {
+                let _ = join.await;
+            }
+            let _ = std::fs::remove_dir_all(dir);
+        });
     }
     Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+async fn drm_gif_capture_loop(
+    app: AppHandle,
+    dir: std::path::PathBuf,
+    crop: Option<gif_capture::ViewCrop>,
+    width: u32,
+    max_frames: u32,
+    max_seconds: u32,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    frames: std::sync::Arc<std::sync::atomic::AtomicU32>,
+) {
+    let started = std::time::Instant::now();
+    let limit = std::time::Duration::from_secs(max_seconds as u64 + 1);
+    // Encrypted video is black in DevTools screencast. Burst compositor JPEGs and crop
+    // off-thread, then take one more shot after stop so the GIF includes the O/R4 press.
+    let params = r#"{"format":"jpeg","quality":80,"fromSurface":true,"captureBeyondViewport":false}"#;
+    let mut jobs = tokio::task::JoinSet::new();
+    let use_preview = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let grab = async |jobs: &mut tokio::task::JoinSet<()>| {
+        #[cfg(windows)]
+        {
+            let Ok(webview) = main_video_webview(&app) else {
+                return;
+            };
+            let jpeg = if use_preview.load(std::sync::atomic::Ordering::Relaxed) {
+                match capture_webview_preview(&webview).await {
+                    Ok(jpeg) if !raster_is_solid_black(&jpeg) => jpeg,
+                    _ => {
+                        use_preview.store(false, std::sync::atomic::Ordering::Relaxed);
+                        match capture_webview_cdp(&webview, params.into()).await {
+                            Ok(jpeg) => jpeg,
+                            Err(_) => return,
+                        }
+                    }
+                }
+            } else {
+                match capture_webview_cdp(&webview, params.into()).await {
+                    Ok(jpeg) => jpeg,
+                    Err(_) => return,
+                }
+            };
+            if jpeg.len() < 16 || !jpeg.starts_with(&[0xff, 0xd8, 0xff]) {
+                return;
+            }
+            let dir = dir.clone();
+            let frames = frames.clone();
+            jobs.spawn_blocking(move || {
+                let Ok(cropped) =
+                    gif_capture::crop_compositor_jpeg(&jpeg, crop.as_ref(), width)
+                else {
+                    return;
+                };
+                let n = frames.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if std::fs::write(dir.join(format!("f{n:05}.jpg")), cropped).is_err() {
+                    frames.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            });
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (&app, &dir, crop, width, &params, &mut *jobs, &use_preview);
+        }
+    };
+    while !stop.load(std::sync::atomic::Ordering::Relaxed)
+        && frames.load(std::sync::atomic::Ordering::Relaxed) < max_frames
+        && started.elapsed() < limit
+    {
+        grab(&mut jobs).await;
+    }
+    if frames.load(std::sync::atomic::Ordering::Relaxed) < max_frames {
+        grab(&mut jobs).await;
+    }
+    while jobs.join_next().await.is_some() {}
+}
+
+#[cfg(windows)]
+#[allow(dead_code)]
+struct DrmGifScreencastHold {
+    core: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+    receiver: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2DevToolsProtocolEventReceiver,
+    token: i64,
+    _handler: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2DevToolsProtocolEventReceivedEventHandler,
+}
+
+// Touched only inside `with_webview` (the WebView2 UI thread).
+#[cfg(windows)]
+unsafe impl Send for DrmGifScreencastHold {}
+#[cfg(windows)]
+unsafe impl Sync for DrmGifScreencastHold {}
+
+/// Stream compositor frames with `Page.startScreencast`. `captureScreenshot` is
+/// ~1 fps in this WebView2 (full-window JSON round-trip); screencast is how
+/// DevTools itself previews the page at a usable rate.
+#[cfg(windows)]
+#[allow(dead_code)]
+async fn drm_gif_screencast(
+    app: &AppHandle,
+    dir: &std::path::Path,
+    crop: Option<gif_capture::ViewCrop>,
+    width: u32,
+    max_frames: u32,
+    stop: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+    frames: &std::sync::Arc<std::sync::atomic::AtomicU32>,
+    limit: std::time::Duration,
+) -> Result<u32, String> {
+    use webview2_com::{
+        take_pwstr, CallDevToolsProtocolMethodCompletedHandler,
+        DevToolsProtocolEventReceivedEventHandler,
+    };
+    use windows::core::{HSTRING, PCWSTR, PWSTR};
+
+    let webview = main_video_webview(app)?;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    let hold = std::sync::Arc::new(std::sync::Mutex::new(None::<DrmGifScreencastHold>));
+    let max_w = width.clamp(480, 1280);
+    let max_h = ((max_w as f64 * 9.0) / 16.0).round().max(270.0) as u32;
+
+    webview
+        .with_webview({
+            let tx = tx.clone();
+            let hold = hold.clone();
+            move |pw| unsafe {
+                let core = match pw.controller().CoreWebView2() {
+                    Ok(core) => core,
+                    Err(_) => return,
+                };
+                let name = HSTRING::from("Page.screencastFrame");
+                let Ok(receiver) = core.GetDevToolsProtocolEventReceiver(PCWSTR(name.as_ptr()))
+                else {
+                    return;
+                };
+                let core_ack = core.clone();
+                let handler = DevToolsProtocolEventReceivedEventHandler::create(Box::new(
+                    move |_, args| {
+                        let Some(args) = args else {
+                            return Ok(());
+                        };
+                        let mut json = PWSTR::null();
+                        args.ParameterObjectAsJson(&mut json)?;
+                        let text = take_pwstr(json);
+                        let parsed: serde_json::Value =
+                            serde_json::from_str(&text).unwrap_or(serde_json::Value::Null);
+                        let session_id = parsed
+                            .get("sessionId")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0);
+                        if let Some(data) = parsed.get("data").and_then(|v| v.as_str()) {
+                            if let Ok(bytes) = data_encoding::BASE64.decode(data.as_bytes()) {
+                                let _ = tx.send(bytes);
+                            }
+                        }
+                        let ack = HSTRING::from("Page.screencastFrameAck");
+                        let params = HSTRING::from(format!(r#"{{"sessionId":{session_id}}}"#));
+                        let completed = CallDevToolsProtocolMethodCompletedHandler::create(
+                            Box::new(|_, _| Ok(())),
+                        );
+                        let _ = core_ack.CallDevToolsProtocolMethod(
+                            PCWSTR(ack.as_ptr()),
+                            PCWSTR(params.as_ptr()),
+                            &completed,
+                        );
+                        Ok(())
+                    },
+                ));
+                let mut token = 0_i64;
+                if receiver
+                    .add_DevToolsProtocolEventReceived(&handler, &mut token)
+                    .is_err()
+                {
+                    return;
+                }
+                let start = HSTRING::from("Page.startScreencast");
+                let params = HSTRING::from(format!(
+                    r#"{{"format":"jpeg","quality":85,"everyNthFrame":1,"maxWidth":{max_w},"maxHeight":{max_h}}}"#
+                ));
+                let completed =
+                    CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(())));
+                let _ = core.CallDevToolsProtocolMethod(
+                    PCWSTR(start.as_ptr()),
+                    PCWSTR(params.as_ptr()),
+                    &completed,
+                );
+                *hold.lock().unwrap() = Some(DrmGifScreencastHold {
+                    core,
+                    receiver,
+                    token,
+                    _handler: handler,
+                });
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+    let started = std::time::Instant::now();
+    while !stop.load(std::sync::atomic::Ordering::Relaxed)
+        && frames.load(std::sync::atomic::Ordering::Relaxed) < max_frames
+        && started.elapsed() < limit
+    {
+        match tokio::time::timeout(std::time::Duration::from_millis(250), rx.recv()).await {
+            Ok(Some(jpeg)) => {
+                if jpeg.len() < 16 || !jpeg.starts_with(&[0xff, 0xd8, 0xff]) {
+                    continue;
+                }
+                let Ok(cropped) = gif_capture::crop_compositor_jpeg(&jpeg, crop.as_ref(), width)
+                else {
+                    continue;
+                };
+                let n = frames.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let path = dir.join(format!("f{n:05}.jpg"));
+                if std::fs::write(&path, cropped).is_err() {
+                    frames.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                    break;
+                }
+            }
+            Ok(None) => break,
+            Err(_) => {}
+        }
+    }
+
+    let _ = webview.with_webview({
+        let hold = hold.clone();
+        move |_| unsafe {
+            if let Some(session) = hold.lock().unwrap().take() {
+                let stop_m = HSTRING::from("Page.stopScreencast");
+                let params = HSTRING::from("{}");
+                let completed =
+                    CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(())));
+                let _ = session.core.CallDevToolsProtocolMethod(
+                    PCWSTR(stop_m.as_ptr()),
+                    PCWSTR(params.as_ptr()),
+                    &completed,
+                );
+                let _ = session
+                    .receiver
+                    .remove_DevToolsProtocolEventReceived(session.token);
+            }
+        }
+    });
+    Ok(frames.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// Binary JPEG of the live webview. Faster than CDP `Page.captureScreenshot` because it
+/// skips the DevTools JSON/base64 round-trip. Encrypted video is sometimes black here;
+/// callers fall back to `fromSurface` CDP when that happens.
+#[cfg(windows)]
+async fn capture_webview_preview(webview: &tauri::Webview) -> Result<Vec<u8>, String> {
+    use webview2_com::CapturePreviewCompletedHandler;
+    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG;
+    use windows::Win32::Foundation::HGLOBAL;
+    use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>, String>>();
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    webview
+        .with_webview({
+            let slot = slot.clone();
+            move |pw| unsafe {
+                let fail = |msg: String| {
+                    if let Some(t) = slot.lock().unwrap().take() {
+                        let _ = t.send(Err(msg));
+                    }
+                };
+                let core = match pw.controller().CoreWebView2() {
+                    Ok(c) => c,
+                    Err(e) => return fail(e.to_string()),
+                };
+                let stream = match CreateStreamOnHGlobal(HGLOBAL::default(), true) {
+                    Ok(s) => s,
+                    Err(e) => return fail(e.to_string()),
+                };
+                let reader = stream.clone();
+                let slot_ok = slot.clone();
+                let handler = CapturePreviewCompletedHandler::create(Box::new(move |hr| {
+                    let send = |v: Result<Vec<u8>, String>| {
+                        if let Some(t) = slot_ok.lock().unwrap().take() {
+                            let _ = t.send(v);
+                        }
+                    };
+                    if let Err(e) = hr {
+                        send(Err(format!("preview failed: {e}")));
+                        return Ok(());
+                    }
+                    send(read_istream(&reader));
+                    Ok(())
+                }));
+                if core
+                    .CapturePreview(
+                        COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG,
+                        &stream,
+                        &handler,
+                    )
+                    .is_err()
+                {
+                    fail("CapturePreview failed".into());
+                }
+            }
+        })
+        .map_err(|e| e.to_string())?;
+    tokio::time::timeout(std::time::Duration::from_secs(4), rx)
+        .await
+        .map_err(|_| "preview timed out".to_string())?
+        .map_err(|_| "preview cancelled".to_string())?
+}
+
+#[cfg(windows)]
+fn read_istream(stream: &windows::Win32::System::Com::IStream) -> Result<Vec<u8>, String> {
+    unsafe {
+        use windows::Win32::System::Com::STREAM_SEEK_SET;
+        stream
+            .Seek(0, STREAM_SEEK_SET, None)
+            .map_err(|e| e.to_string())?;
+        let mut buf = Vec::new();
+        let mut chunk = [0u8; 65_536];
+        loop {
+            let mut n = 0u32;
+            stream
+                .Read(chunk.as_mut_ptr().cast(), chunk.len() as u32, Some(&mut n))
+                .ok()
+                .map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n as usize]);
+        }
+        if buf.len() < 16 || !buf.starts_with(&[0xff, 0xd8, 0xff]) {
+            return Err("empty preview".into());
+        }
+        Ok(buf)
+    }
 }
 
 #[cfg(windows)]
@@ -2842,15 +3229,24 @@ async fn drm_gif_stop(
     app: AppHandle,
     capture: tauri::State<'_, DrmGifCapture>,
 ) -> Result<String, String> {
-    let session = capture
+    let mut session = capture
         .0
         .lock()
         .map_err(|e| e.to_string())?
         .take()
         .ok_or("gif-not-recording")?;
+    session
+        .stop
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    if let Some(join) = session.join.take() {
+        let _ = join.await;
+    }
+    let captured_ms = session.started.elapsed().as_millis() as u64;
+    let captured = session.frames.load(std::sync::atomic::Ordering::Relaxed);
+    eprintln!("[gif] compositor frames={captured} in {captured_ms}ms");
     let frames = player::GifFrames {
         dir: session.dir,
-        captured_ms: session.started.elapsed().as_millis() as u64,
+        captured_ms,
         width: session.width,
         fps: session.fps,
     };
@@ -3003,7 +3399,11 @@ async fn player_capture_segment(
         "izumi-{kind}-{stamp}.{}",
         if kind == "gif" { "gif" } else { "mp4" }
     ));
-    let sample_fps = fps.unwrap_or(12.0);
+    let sample_fps = if kind == "gif" {
+        fps.unwrap_or_else(|| gif_capture::gif_file_sample_fps(duration))
+    } else {
+        fps.unwrap_or(12.0)
+    };
     let sample_width = width.unwrap_or(720);
 
     let mut primary = capture_ffmpeg_command(

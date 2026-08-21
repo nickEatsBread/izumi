@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import {
     preferredAudioLang, preferredSubLang, videoFit,
-    gifFps, gifScale, gifMaxSeconds,
+    gifScale, gifMaxSeconds,
     subtitleStyleEnabled, subtitleFont as savedSubtitleFont, subtitleFontSize as savedSubtitleFontSize,
     subtitleTextColor, subtitleBorderColor as savedSubtitleBorderColor,
     subtitleBorderSize as savedSubtitleBorderSize, subtitleShadow as savedSubtitleShadow,
@@ -106,7 +106,6 @@
   const released = new Set<string>()
   const releaseJobs = new Map<string, Promise<void>>()
   let gifActive = false
-  let gifLoop: Promise<void> | null = null
   let gifSubtitlesHidden = false
   let abrWarmTimer: ReturnType<typeof setTimeout> | undefined
   let qualityMode: 'auto' | number = 'auto'
@@ -831,26 +830,7 @@
     document.documentElement.classList.remove(PLAYER_CAPTURE_CLASS)
   }
 
-  let gifSource: 'decoded' | 'compositor' = 'decoded'
   let gifBoot: Promise<void> | null = null
-
-  async function grabGifFrame(
-    video: HTMLVideoElement,
-    maxWidth: number,
-  ): Promise<Uint8Array> {
-    const overlay = (!gifSubtitlesHidden && (selectedSid >= 0 || selectedCcid >= 0)) ? textEl : null
-    if (gifSource === 'decoded') {
-      try {
-        return await encodeVideoFrame(video, 'image/jpeg', maxWidth, overlay)
-      } catch {
-        gifSource = 'compositor'
-        await concealCaptureChrome()
-      }
-    }
-    const jpeg = await captureCropped(video, 'image/jpeg', maxWidth)
-    if (!jpeg) throw new Error('empty WebView capture')
-    return jpeg
-  }
 
   async function screenshot() {
     const video = videoEl
@@ -872,55 +852,47 @@
 
   function finishGifUi() {
     void restoreCaptureChrome()
-    gifSource = 'decoded'
     if (gifSubtitlesHidden) {
       try { player?.setTextTrackVisibility?.(selectedSid >= 0 || selectedCcid >= 0) } catch { /* keep going */ }
     }
     gifSubtitlesHidden = false
   }
 
-  async function recordGifFrames() {
-    const plan = gifCapturePlan(get(gifFps), get(gifScale), get(gifMaxSeconds))
-    const deadline = performance.now() + plan.maxSeconds * 1000
-    let consecutiveFailures = 0
-    let captured = 0
-    // Burst: grab every compositor frame we can. Spacing grabs like seekbar
-    // tiles (sleep + interval) is what made GIFs look like a skim.
-    while (gifActive && performance.now() < deadline && captured < plan.maxFrames) {
-      try {
-        const video = videoEl
-        if (!video || !firstFrame) throw new Error('video frame unavailable')
-        const jpeg = await grabGifFrame(video, plan.width)
-        await invoke('drm_gif_frame', { jpeg })
-        captured++
-        consecutiveFailures = 0
-      } catch (captureError) {
-        consecutiveFailures++
-        console.warn('[drm] GIF frame skipped', captureError)
-      }
-      await new Promise<void>((resolve) => {
-        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve())
-        else setTimeout(resolve, 0)
-      })
-      if (consecutiveFailures >= 5) break
+  function gifVideoCrop(video: HTMLVideoElement) {
+    const fit = getComputedStyle(video).objectFit || 'contain'
+    const box = videoShotRect(video, fit)
+    return {
+      viewWidth: window.innerWidth,
+      viewHeight: window.innerHeight,
+      cropX: box.x,
+      cropY: box.y,
+      cropW: box.width,
+      cropH: box.height,
     }
   }
 
   async function gifStart(includeSubtitles: boolean) {
     if (gifActive || gifBoot) throw new Error('GIF is already recording')
     if (!videoEl || !firstFrame || videoEl.videoWidth <= 0) throw new Error('Video is not ready for GIF capture')
-    const plan = gifCapturePlan(get(gifFps), get(gifScale), get(gifMaxSeconds))
+    const plan = gifCapturePlan(get(gifScale), get(gifMaxSeconds))
     const boot = (async () => {
-      await invoke('drm_gif_start', { width: plan.width, maxFrames: plan.maxFrames, fps: plan.fps })
-      gifActive = true
-      gifSource = 'decoded'
       if (!includeSubtitles && (selectedSid >= 0 || selectedCcid >= 0)) {
         try {
           player?.setTextTrackVisibility?.(false)
           gifSubtitlesHidden = true
         } catch { /* burned-in subtitles cannot be hidden */ }
       }
-      gifLoop = recordGifFrames()
+      await concealCaptureChrome()
+      const video = videoEl
+      if (!video) throw new Error('Video is not ready for GIF capture')
+      await invoke('drm_gif_start', {
+        width: plan.width,
+        maxFrames: plan.maxFrames,
+        fps: plan.fps,
+        maxSeconds: plan.maxSeconds,
+        ...gifVideoCrop(video),
+      })
+      gifActive = true
     })()
     gifBoot = boot
     try {
@@ -932,23 +904,20 @@
 
   async function gifStop() {
     if (gifBoot) await gifBoot.catch(() => {})
-    if (!gifActive && gifLoop == null) throw new Error('GIF is not recording')
+    if (!gifActive) throw new Error('GIF is not recording')
     gifActive = false
-    finishGifUi()
-    const pending = gifLoop
-    gifLoop = null
-    await pending
-    await invoke('drm_gif_stop')
+    try {
+      await invoke('drm_gif_stop')
+    } finally {
+      finishGifUi()
+    }
   }
 
   async function gifAbort() {
     if (gifBoot) await gifBoot.catch(() => {})
-    const wasActive = gifActive || gifLoop != null
+    const wasActive = gifActive
     gifActive = false
     finishGifUi()
-    const pending = gifLoop
-    gifLoop = null
-    await pending
     if (wasActive) await invoke('drm_gif_abort').catch(() => {})
   }
 
@@ -1219,7 +1188,7 @@
   }
 
   async function teardown(clearEngine = true) {
-    if (gifActive || gifLoop) await gifAbort()
+    if (gifActive) await gifAbort()
     const current = player
     player = null
     if (clearEngine && getDrmRef() === engine) setDrmEngine(null)
