@@ -3,7 +3,9 @@ runtime: org.gnome.Platform
 runtime-version: '49'
 sdk: org.gnome.Sdk
 sdk-extensions:
-  - org.freedesktop.Sdk.Extension.rust-stable
+  # rustc comes from rustup inside the izumi module (scripts/ci/ensure-flatpak-rust.sh).
+  # Flathub's org.freedesktop.Sdk.Extension.rust-stable 404s for hours whenever it is
+  # republished (2026-08-21: runtime/.../rust-stable/x86_64/25.08 → HTTP 404, Deck job abort).
   - org.freedesktop.Sdk.Extension.node22
 command: izumi
 
@@ -43,7 +45,7 @@ finish-args:
 # 25.08-extra) provide the codecs, so we do NOT build or bundle ffmpeg.
 
 build-options:
-  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin
+  append-path: /usr/lib/sdk/node22/bin
   # The freedesktop 25.08 SDK defaults meson's libdir to lib64, but flatpak's pkg-config
   # and linker only search /app/lib — so libplacebo/mpv would install their .pc + .so where
   # nothing finds them. Force every module to /app/lib.
@@ -113,6 +115,7 @@ modules:
   - name: izumi
     buildsystem: simple
     build-options:
+      append-path: /run/build/izumi/cargo/bin:/usr/lib/sdk/node22/bin
       build-args:
         - --share=network
       # flatpak-builder deliberately strips the host environment. This public build-time key is
@@ -121,6 +124,7 @@ modules:
         - PUBLIC_DISCUSS_ANIME_API_KEY
       env:
         CARGO_HOME: /run/build/izumi/cargo
+        RUSTUP_HOME: /run/build/izumi/rustup
         # libmpv2-sys emits `-lmpv` but not a search path; our mpv module installed
         # libmpv.so.2 to /app/lib, which isn't on cc's default link path. (Runtime is
         # fine — flatpak has /app/lib on its ld path.)
@@ -130,6 +134,7 @@ modules:
         # RUSTFLAGS too so rustc always emits `-L /app/lib` to the linker, deterministically.
         RUSTFLAGS: -L/app/lib
     build-commands:
+      - bash scripts/ci/ensure-flatpak-rust.sh
       - npm ci
       # Prod builds NEVER include the webview inspector. For a debug build with devtools,
       # use flatpak/dev-build.sh (it injects --features devtools) — do not add it here.

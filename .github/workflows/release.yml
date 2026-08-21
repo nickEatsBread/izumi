@@ -303,8 +303,9 @@ jobs:
       - name: Build the Steam Deck Flatpak bundle
         run: |
           # dbus-run-session: flatpak's --user ops need a session bus (absent on bare runners).
-          # --install-deps-from=flathub pulls the GNOME 49 runtime/SDK + rust/node SDK extensions the
-          # manifest pins (no hardcoded branch here). --disable-rofiles-fuse avoids fuse-in-CI issues.
+          # SDK/runtime/node are installed with retries first (scripts/ci/flatpak-install-sdk-deps.sh)
+          # because --install-deps-from=flathub is a single shot that 404s while Flathub republishes
+          # an extension. --disable-rofiles-fuse avoids fuse-in-CI issues.
           # Import the signing key + export a BINARY public key FIRST, so build-bundle can bake an
           # update ORIGIN into the .flatpak itself (--repo-url) plus the key that verifies it
           # (--gpg-keys). That's what lets a DIRECT `.flatpak` install (not just the .flatpakref)
@@ -313,8 +314,11 @@ jobs:
           gpg --export ${{ secrets.FLATPAK_GPG_KEY_ID }} > flatpak/izumi-key.gpg
           dbus-run-session -- bash -euxo pipefail -c '
             flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+            bash scripts/ci/flatpak-install-sdk-deps.sh
             cd flatpak
-            flatpak-builder --user --install-deps-from=flathub --force-clean --disable-rofiles-fuse \
+            # Deps are installed above with retries. Do not use --install-deps-from=flathub: a
+            # 404 on a republishing SDK extension aborts the whole Deck job.
+            flatpak-builder --user --force-clean --disable-rofiles-fuse \
               --repo=_repo _build com.nicho.izumi.yml
             flatpak build-bundle _repo \
               "../izumi-${{ steps.meta.outputs.tag }}-steamdeck.flatpak" \
