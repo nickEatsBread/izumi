@@ -68,9 +68,14 @@ body { overflow-x: clip; }
    WebKit's crisp contents-scale path (bug 27684) and drop to grayscale AA, so promoted text/images
    render chunky/aliased while base-layer content stays sharp. `will-change` only ever exists here
    as a hover/animation perf hint, and there is no hover under controller nav, so it never helps in
-   Game mode and always risks the pixelation. Neutralize it globally. (The player controls are
-   handled separately by forcing WebKit's non-accelerated crisp path while the player is up.) */
+   Game mode and always risks the pixelation. Neutralize it globally. Hardware compositing stays
+   ON; menus stay crisp by remaining on the base layer (opaque, no will-change). */
 .gamemode *, .gamemode *::before, .gamemode *::after { will-change: auto !important; }
+/* backdrop-filter forces a full-viewport filtered stacking context every gamescope frame. */
+html.gamemode, html.gamemode * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 /* YouTube-style double-tap seek: the side arc flashes then fades (base opacity-0 keeps it hidden
    at rest; re-keyed per accumulated tap so it re-pulses). */

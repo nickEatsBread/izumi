@@ -33,7 +33,7 @@
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     subtitleAutoSync, gifIncludeSubtitles,
-    hotkeyBindings, systemMediaControls, discordRichPresence,
+    hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility,
     preferredAudioLang, preferredSubLang,
   } from '$lib/settings/ui'
   import { get } from 'svelte/store'
@@ -42,7 +42,7 @@
   import { discussionExpanded } from '$lib/comments'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { reportWatchPlayback } from '$lib/watch-together/client'
-  import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
+  import { currentDirectTorrentPlaybackId, directTorrentHealth, reportDirectTorrentBuffer, reportDirectTorrentFirstFrame, stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { autoSyncSelectedSubtitle, resetSubtitleSync, type SyncableTrack } from '$lib/player/subtitle-sync'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
   import type { Track } from '$lib/player/track-label'
@@ -50,10 +50,11 @@
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
+  import { gameModeBitmapOverlayActive, gameModeP2pLine, gameModeSnapshotCrop, presenceAllowed } from '$lib/player/gm-overlay'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
-  import { isDirectP2PStream, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
+  import { isDirectP2PStream, shouldShowP2PStatus, shouldUseGameModeDynamicOverlay } from '$lib/player/p2p-status'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import X from '@lucide/svelte/icons/x'
   import PlayIcon from '@lucide/svelte/icons/play'
@@ -208,6 +209,7 @@
       firstFrame = true
       loadedUrl = $nowPlayingStream.url
       markAlive({ url: loadedUrl })
+      reportDirectTorrentFirstFrame()
     }
     if (snapshot.error && snapshot.error !== lastDrmError) {
       lastDrmError = snapshot.error
@@ -360,9 +362,11 @@
     const media = $nowPlayingMedia?.media
     // Parking on the last frame with auto-play off used to leave a stale "now playing" on the bus
     // for as long as the player stayed open — nothing else on this path retracts it.
-    if (eof) {
-      presenceThrottle = null
-      void invoke('desktop_presence_clear').catch(() => {})
+    if (eof || !presenceAllowed(gmMode)) {
+      if (presenceThrottle !== null || eof) {
+        presenceThrottle = null
+        void invoke('desktop_presence_clear').catch(() => {})
+      }
       return
     }
     const payload: PresencePayload = {
@@ -527,11 +531,24 @@
   }))
   // …and while the track menu is open, so its (webview-rendered) columns get snapshotted onto
   // the video — otherwise the menu would be invisible behind the opaque mpv surface.
-  const overlayActive = $derived(gmMode && $playing && !gmDynamicActive && (controlsVisible || showSkip || !!$playerNotice || $trackMenuOpen || $playerMenuOpen || $commentsOpen))
+  const overlayFast = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen)
+  const overlayActive = $derived(gameModeBitmapOverlayActive({
+    gameMode: gmMode,
+    playing: $playing,
+    dynamicOverlay: gmDynamicActive,
+    controlsVisible,
+    trackMenuOpen: $trackMenuOpen,
+    playerMenuOpen: $playerMenuOpen,
+    commentsOpen: $commentsOpen,
+  }))
+  const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
+  const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   $effect(() => {
     // Faster snapshot cadence while ANY menu/popover is open so the highlight tracks d-pad moves
-    // (the track menu OR the Controls playback-options / track popovers).
-    invoke('player_gm_overlay', { visible: overlayActive, fast: $trackMenuOpen || $playerMenuOpen || $commentsOpen }).catch(() => {})
+    // (the track menu OR the Controls playback-options / track popovers). Idle controls are a
+    // single cropped snapshot of the bottom strip — skip/P2P/toasts are native ASS.
+    const crop = gameModeSnapshotCrop(window.innerWidth || 0, window.innerHeight || 0, overlayFast)
+    invoke('player_gm_overlay', { visible: overlayActive, fast: overlayFast, crop }).catch(() => {})
   })
 
   let gmDynRaf = 0
@@ -597,6 +614,9 @@
     barY: 0,
     barW: 0,
     barH: 0,
+    skipText: '',
+    noticeText: '',
+    p2pText: '',
   })
 
   function measureSeekBar() {
@@ -606,7 +626,10 @@
 
   function currentGmDynamicState() {
     const s = get(scrub)
-    const visible = gmMode && get(playing) && (loading || s.active)
+    const skipText = gmMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
+    const noticeText = gmMode && $playerNotice ? $playerNotice : ''
+    const p2pText = gmMode && p2pVisible ? gameModeP2pLine($directTorrentStats) : ''
+    const visible = gmMode && get(playing) && (loading || s.active || !!skipText || !!noticeText || !!p2pText)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -637,12 +660,15 @@
       barY: lastBar.y,
       barW: lastBar.w,
       barH: 10,
+      skipText,
+      noticeText,
+      p2pText,
     }
   }
 
   function scheduleGmDynamicOverlay() {
     if (typeof window === 'undefined' || gmDynDisposed || gmDynRaf) return
-    if (!(gmMode && get(playing) && (loading || get(scrub).active)) && !gmDynLastVisible) return
+    if (!(gmMode && get(playing) && (loading || get(scrub).active || showSkip || !!get(playerNotice) || p2pVisible)) && !gmDynLastVisible) return
     gmDynRaf = requestAnimationFrame(() => {
       gmDynRaf = 0
       if (gmDynInFlight) {
@@ -667,7 +693,7 @@
   }
 
   $effect(() => {
-    gmMode; $playing; loading; firstFrame; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source
+    gmMode; $playing; loading; firstFrame; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; $playerNotice; p2pVisible; $directTorrentStats; overlayActive
     scheduleGmDynamicOverlay()
   })
 
@@ -839,6 +865,7 @@
           if (becameReady && loadedUrl && loadedUrl === $nowPlayingStream.url) {
             markAlive({ infoHash: $nowPlayingStream.infoHash ?? undefined, url: loadedUrl })
           }
+          if (becameReady) reportDirectTorrentFirstFrame()
         }
         // No MAL id gate: AniSkip/AnimeThemes bail out on their own, and chapter-derived skip
         // segments (plus the seekbar's chapter ticks) work on any file that carries chapters.
@@ -1078,11 +1105,13 @@
     </div>
   {/if}
 
-  <div class="izumi-hud"><P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} /></div>
+  {#if !gmMode}
+    <div class="izumi-hud"><P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} /></div>
+  {/if}
 
-  <!-- Transient toast (next-episode loading / errors). -->
-  {#if $playerNotice}
-    <div transition:fade={{ duration: 150 }} class="izumi-hud pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur">{$playerNotice}</div>
+  <!-- Transient toast (next-episode loading / errors). Game mode draws this as native ASS. -->
+  {#if $playerNotice && !gmMode}
+    <div transition:fade={{ duration: 150 }} class="izumi-hud pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-lg">{$playerNotice}</div>
   {/if}
 
   {#if $playerStatsOpen}<div class="izumi-hud"><StatsOverlay /></div>{/if}
@@ -1095,8 +1124,9 @@
     <button
       data-focusable
       transition:fade={{ duration: 150 }}
-      class="izumi-hud absolute z-10 border border-white/20 bg-black/70 font-bold text-white backdrop-blur transition hover:bg-black/90
+      class="izumi-hud absolute z-10 border border-white/20 bg-black/70 font-bold text-white transition hover:bg-black/90
         {gmMode ? 'bottom-32 right-10 rounded-2xl px-9 py-5 text-2xl' : 'bottom-28 right-8 rounded-lg px-5 py-2.5 text-sm'}"
+      class:opacity-0={gmMode && !overlayActive}
       onclick={(e) => { e.stopPropagation(); seekTo(currentSeg.end + 0.5) }}
     >
       Skip {currentSeg.label}

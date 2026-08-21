@@ -20,5 +20,6 @@ describe('Game-mode touch watchdog', () => {
     expect(src).toContain("window.addEventListener('gm-touch-reset', reset)")
     expect(src).toContain("invoke('native_touch_hold', { held: false })")
     expect(src).toContain("invoke('restore_native_touch')")
+    expect(src).not.toContain('requestAnimationFrame(restore)')
   })
 })

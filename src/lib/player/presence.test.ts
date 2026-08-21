@@ -5,6 +5,7 @@ import {
   presenceSignature,
   type PresencePayload,
 } from './presence'
+import { presenceAllowed } from './gm-overlay'
 
 const payload = (over: Partial<PresencePayload> = {}): PresencePayload => ({
   title: 'The Beach Episode',
@@ -80,5 +81,12 @@ describe('presenceDecision', () => {
   it('recovers from a clock that jumped backwards', () => {
     const state = presenceDecision(null, payload({ position: 5 }), 10_000).state
     expect(presenceDecision(state, payload({ position: 6 }), 4_000).send).toBe(true)
+  })
+})
+
+describe('presenceAllowed', () => {
+  it('is off in Game mode so Discord/SMTC do not run on the Deck', () => {
+    expect(presenceAllowed(true)).toBe(false)
+    expect(presenceAllowed(false)).toBe(true)
   })
 })

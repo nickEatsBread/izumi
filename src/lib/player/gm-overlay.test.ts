@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   gameModeBitmapOverlayActive,
@@ -48,5 +50,23 @@ describe('gameMode chrome + presence', () => {
   it('does not publish desktop presence in Game mode', () => {
     expect(presenceAllowed(true)).toBe(false)
     expect(presenceAllowed(false)).toBe(true)
+  })
+
+  it('kills backdrop-filter for the whole Game-mode document', () => {
+    const css = readFileSync(fileURLToPath(new URL('../../app.css', import.meta.url)), 'utf8')
+    expect(css).toContain('html.gamemode, html.gamemode *')
+    expect(css).toContain('backdrop-filter: none !important')
+  })
+})
+
+describe('PlayerOverlay Game-mode wiring', () => {
+  const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
+
+  it('uses the bitmap overlay helper and does not snapshot skip/toasts alone', () => {
+    expect(overlay).toContain('gameModeBitmapOverlayActive')
+    expect(overlay).not.toContain('controlsVisible || showSkip')
+    expect(overlay).toContain('gameModeSnapshotCrop')
+    expect(overlay).toContain('reportDirectTorrentFirstFrame')
+    expect(overlay).toContain('presenceAllowed(gmMode)')
   })
 })

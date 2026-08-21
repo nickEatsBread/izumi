@@ -20,6 +20,7 @@ import {
   directTorrentPlayerAttached,
   prepareDirectTorrentNext,
   reportDirectTorrentBuffer,
+  reportDirectTorrentFirstFrame,
 } from './direct-torrent'
 
 describe('direct torrent buffer governor', () => {
@@ -58,6 +59,15 @@ describe('direct torrent buffer governor', () => {
     expect(mocks.invoke).toHaveBeenCalledWith('torrent_playback_player_attached', {
       playbackId: 101,
     })
+  })
+
+  it('tells the engine to ease hashing after the first decoded frame, once', async () => {
+    reportDirectTorrentFirstFrame()
+    reportDirectTorrentFirstFrame()
+    await Promise.resolve()
+
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === 'torrent_playback_first_frame'))
+      .toHaveLength(1)
   })
 
   it('prepares the next file inside the active season pack', async () => {
