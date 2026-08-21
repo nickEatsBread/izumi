@@ -12,7 +12,7 @@
   import { playerCommand, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
-  import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
+  import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
   import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady } from '$lib/player/session'
@@ -401,24 +401,40 @@
     // drop the result if the reset effect has moved on, otherwise a slow AniSkip response lands on
     // the next episode and auto-skip jumps mid-scene to a timestamp from the previous file.
     const key = loadedKey
+    const malId = np.malId
+    const episode = np.episode
+    const length = dur
     // AniSkip and AnimeThemes run in parallel, and the debut guard is assigned BEFORE the segments
     // it guards: the auto-skip effect fires the instant `segments` lands, so assigning firstOcc
     // second leaves a window in which a debut opening gets skipped anyway.
+    // Do not wait on mpv chapters before painting AniSkip — on Deck a slow/empty chapter
+    // probe for a still-buffering torrent left the skip button missing even when AniSkip
+    // already had the opening.
     const [segs, occ] = await Promise.all([
-      getSkipSegments(np.malId, np.episode, dur),
-      firstOccurrences(np.id, np.episode),
+      getSkipSegments(malId, episode, length),
+      firstOccurrences(np.id, episode),
     ])
     if (key !== loadedKey) return
     firstOcc = occ
-    let ch: { time: number; title: string }[] = []
-    try { ch = JSON.parse(await invoke<string>('player_chapters')) as { time: number; title: string }[] }
-    catch { ch = [] }
-    if (key !== loadedKey) return
-    chapters = sortChapters(ch)
-    chapterStore.set(chapters)
-    // AniSkip coverage is thin outside popular titles; well-tagged releases name their own chapters.
-    // Chapter-derived segments carry the same op/ed type, so the debut guard covers them too.
-    segments = mergeSkipSegments(segs, segmentsFromChapters(ch, dur))
+    segments = mergeSkipSegments(segs, [])
+    void invoke<string>('player_chapters')
+      .then((raw) => JSON.parse(raw) as { time: number; title: string }[])
+      .catch(() => [] as { time: number; title: string }[])
+      .then((ch) => {
+        if (key !== loadedKey) return
+        chapters = sortChapters(ch)
+        chapterStore.set(chapters)
+        segments = mergeSkipSegments(segs, segmentsFromChapters(ch, length))
+      })
+    if (segs.length === 0 && malId && episode) {
+      window.setTimeout(() => {
+        if (key !== loadedKey) return
+        void getSkipSegments(malId, episode, length).then((retry) => {
+          if (key !== loadedKey || !retry.length) return
+          segments = mergeSkipSegments(retry, segmentsFromChapters(chapters, length))
+        })
+      }, SKIP_RETRY_MS[1])
+    }
   }
 
   // Reset per-episode state whenever the now-playing target changes (new episode
@@ -714,6 +730,8 @@
   let padEpArm = 0
   let padEpDir: 1 | -1 = 1
   const deckViewPress = new ButtonPressLatch()
+  const deckL4Press = new ButtonPressLatch()
+  const deckR4Press = new ButtonPressLatch()
   function padEpisode(dir: 1 | -1) {
     const now = performance.now()
     if (padEpArm && padEpDir === dir && now - padEpArm < 1400) {
@@ -730,6 +748,20 @@
     if (!gmMode || !$playing) return
     return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (get(deckKeyboardWarning)) return
+      if (e.payload.name === 'l4') {
+        if (!deckL4Press.update(e.payload.pressed, performance.now())) return
+        if (get(commentsOpen)) return
+        playerScreenshot()
+          .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))
+          .catch(() => playerNotice.set('Screenshot failed'))
+        return
+      }
+      if (e.payload.name === 'r4') {
+        if (!deckR4Press.update(e.payload.pressed, performance.now())) return
+        if (get(commentsOpen)) return
+        void capture('gif')
+        return
+      }
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
       if (get(trackMenuOpen)) return
       // Steam may expose View through duplicate virtual-pad edges. Treat one physical cycle as
@@ -796,7 +828,10 @@
         reportDirectTorrentBuffer(pos, buffer)
         reportWatchPlayback(pos, dur, paused, buffering)
         // First real frame shown → stop treating core-idle as "still loading".
-        if (dur > 0 && !coreIdle) {
+        // `core-idle` can miss a false edge (FileLoaded vs overlay reset). On Deck
+        // that left the P2P panel up after mpv was already painting. A moving
+        // time-pos with a known duration is enough proof the picture is up.
+        if (dur > 0 && (pos > 0.05 || !coreIdle)) {
           const becameReady = !firstFrame
           firstFrame = true
           // FileLoaded identifies the URL this progress belongs to. The equality check prevents a
