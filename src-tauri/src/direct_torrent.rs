@@ -169,6 +169,9 @@ struct ActivePlayback {
     uploaded_at_start: u64,
     upload_bps: NonZeroU32,
     upload_reduced: bool,
+    download_bps: Option<NonZeroU32>,
+    download_reduced: bool,
+    first_frame: bool,
     /// Holds a zero-position FileStream open from before the torrent is unpaused until mpv has
     /// accepted the URL. librqbit schedules active stream ranges before ordinary selected-file
     /// pieces, so the first peer requests warm the media header instead of arbitrary payload.
@@ -643,6 +646,8 @@ impl DirectTorrentState {
                     } else {
                         None
                     };
+                let game_mode = cfg!(target_os = "linux")
+                    && std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
                 let session = Session::new_with_opts(
                     folder,
                     SessionOptions {
@@ -664,6 +669,10 @@ impl DirectTorrentState {
                         // unusable. Keep proxy/VPN-bound sessions closed until native device
                         // binding is supported consistently across desktop and Android.
                         listen,
+                        peer_limit: crate::gm_perf::torrent_peer_limit(game_mode),
+                        runtime_worker_threads: crate::gm_perf::torrent_runtime_threads(
+                            game_mode,
+                        ),
                         // Do not silently create a home-router mapping on Android: it can bypass a
                         // system VPN's tunnel and cellular CGNAT cannot benefit. The TCP listener
                         // still works with VPN/manual port forwarding. Desktop retains its existing
@@ -1241,11 +1250,9 @@ pub async fn torrent_playback_url(
         .collect::<HashSet<_>>();
 
     let upload_bps = upload_limit(upstream_capacity_mbps);
+    let download_bps = download_limit_mbps.and_then(mbps_to_bps);
     engine.session.ratelimits.set_upload_bps(Some(upload_bps));
-    engine
-        .session
-        .ratelimits
-        .set_download_bps(download_limit_mbps.and_then(mbps_to_bps));
+    engine.session.ratelimits.set_download_bps(download_bps);
 
     // Claim a background-prepared single-episode torrent before replacing the current one. A
     // stale slot is deleted here so a manual source/title change cannot leave it downloading.
@@ -1463,6 +1470,9 @@ pub async fn torrent_playback_url(
         uploaded_at_start,
         upload_bps,
         upload_reduced: false,
+        download_bps,
+        download_reduced: false,
+        first_frame: false,
         startup_stream_release: Some(startup_stream_release),
         next_episode_preload: None,
         cleanup_task: None,
@@ -1949,7 +1959,47 @@ pub async fn torrent_playback_buffer(
         engine.session.ratelimits.set_upload_bps(Some(limit));
         current.upload_reduced = should_reduce;
     }
+    apply_playback_download_limit(&engine.session, current, should_reduce);
     Ok(())
+}
+
+/// First decoded frame is up: hashing/IO can yield to the GPU once the playback buffer is healthy.
+#[tauri::command]
+pub async fn torrent_playback_first_frame(
+    state: tauri::State<'_, DirectTorrentState>,
+    playback_id: u64,
+) -> Result<(), String> {
+    let Some(engine) = state.engine.get() else {
+        return Ok(());
+    };
+    let mut active = state.active.lock().await;
+    let Some(current) = active.as_mut() else {
+        return Ok(());
+    };
+    if current.playback_id != playback_id || current.cleanup_task.is_some() {
+        return Ok(());
+    }
+    current.first_frame = true;
+    apply_playback_download_limit(&engine.session, current, current.upload_reduced);
+    Ok(())
+}
+
+fn apply_playback_download_limit(
+    session: &Session,
+    current: &mut ActivePlayback,
+    buffer_low: bool,
+) {
+    let next = crate::gm_perf::playback_download_bps(
+        current.download_bps,
+        current.first_frame,
+        buffer_low,
+    );
+    let reduced = next != current.download_bps;
+    if reduced == current.download_reduced {
+        return;
+    }
+    session.ratelimits.set_download_bps(next);
+    current.download_reduced = reduced;
 }
 
 /// End playback. Desktop normally enters a bounded seeding window. Android passes false unless

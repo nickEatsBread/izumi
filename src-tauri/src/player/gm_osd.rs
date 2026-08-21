@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use gtk::glib;
 use tauri::{AppHandle, Manager};
 
+use crate::gm_perf::{chrome_ass, OSD_FPS};
 use crate::{player::PlayerHandle, GmDynamicOverlay};
 
 // Separate osd-overlay ids so the STATIC parts of the scrub bar (dim gradient, empty track,
@@ -25,7 +26,8 @@ use crate::{player::PlayerHandle, GmDynamicOverlay};
 const OSD_SCRUB_DYN_ID: i64 = 2; // played fill + knob + time text (per frame while animating)
 const OSD_SCRUB_STATIC_ID: i64 = 3; // dim gradient + empty track + buffered range (on change)
 const OSD_LOADING_ID: i64 = 4; // pre-first-frame black + buffering spinner (per frame)
-const OSD_FPS: u64 = 60;
+const OSD_CHROME_ID: i64 = 5; // skip / P2P / toast (on change)
+static LITE: AtomicBool = AtomicBool::new(false);
 // Tween time-constants (seconds) for the native scrub bar, chosen per input source. A trigger
 // (pad) steps in 5s jumps and is indirect, so a longer tween smooths the steps; a finger is
 // direct manipulation and must feel attached, so it gets ~1 frame of catch-up. Tune on-device.
@@ -36,6 +38,7 @@ const SCRUB_EPSILON: f64 = 0.02;
 // on top. overlay-add bitmaps (the snapshot chrome, id 1) always sit above ALL of these.
 const Z_SCRUB_STATIC: i64 = 48;
 const Z_SCRUB_DYN: i64 = 50;
+const Z_CHROME: i64 = 55;
 const Z_LOADING: i64 = 60;
 
 static RUNTIME: OnceLock<Mutex<Runtime>> = OnceLock::new();
@@ -59,6 +62,8 @@ struct Shown {
     scrub: bool,
     /// The loading layer (dim/spinner) is currently up.
     loading: bool,
+    /// Last skip/P2P/toast ASS; `None` when that layer is not shown.
+    chrome: Option<String>,
 }
 
 pub fn update(app: AppHandle, state: GmDynamicOverlay) {
@@ -118,7 +123,9 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
         let mut draw_state = state.clone();
         let scrub_animating = prepare_scrub_display(&mut draw_state, &mut shown_scrub_time, dt);
 
-        // Loading animates at 60fps inside mpv. Touch scrub redraws only when input changes.
+        hold_lite(&app, draw_state.scrubbing);
+
+        // Loading animates at OSD_FPS inside mpv. Touch scrub redraws only when input changes.
         // Pad-trigger scrub gets a native visual tween between stepped repeat targets.
         if !draw_state.loading
             && (!draw_state.scrubbing || !scrub_animating)
@@ -244,6 +251,24 @@ fn draw(app: &AppHandle, state: &GmDynamicOverlay, phase: u32, shown: &mut Shown
         shown.scrub = false;
     }
 
+    let chrome = chrome_ass(
+        &state.skip_text,
+        &state.notice_text,
+        &state.p2p_text,
+        wf,
+        hf,
+        state.loading,
+    );
+    if chrome.is_empty() {
+        if shown.chrome.is_some() {
+            let _ = player.osd_overlay_remove(OSD_CHROME_ID);
+            shown.chrome = None;
+        }
+    } else if shown.chrome.as_deref() != Some(chrome.as_str()) {
+        let _ = player.osd_overlay_ass(OSD_CHROME_ID, &chrome, w, h, Z_CHROME);
+        shown.chrome = Some(chrome);
+    }
+
     // --- Loading: pre-first-frame black backdrop + buffering spinner (animates every frame).
     if state.loading {
         let ass = loading_ass(state, phase, wf, hf);
@@ -263,15 +288,26 @@ fn draw(app: &AppHandle, state: &GmDynamicOverlay, phase: u32, shown: &mut Shown
 }
 
 fn remove(app: &AppHandle) {
+    hold_lite(app, false);
     if let Some(player) = app.try_state::<PlayerHandle>() {
         let _ = player.osd_overlay_remove(OSD_SCRUB_DYN_ID);
         let _ = player.osd_overlay_remove(OSD_SCRUB_STATIC_ID);
         let _ = player.osd_overlay_remove(OSD_LOADING_ID);
+        let _ = player.osd_overlay_remove(OSD_CHROME_ID);
+    }
+}
+
+fn hold_lite(app: &AppHandle, on: bool) {
+    if LITE.swap(on, Ordering::SeqCst) == on {
+        return;
+    }
+    if let Some(player) = app.try_state::<PlayerHandle>() {
+        player.set_ui_render_lite(on);
     }
 }
 
 fn spinner_phase(t0: Instant) -> u32 {
-    ((t0.elapsed().as_secs_f64() * OSD_FPS as f64) as u32) % 60
+    ((t0.elapsed().as_secs_f64() * OSD_FPS as f64) as u32) % OSD_FPS as u32
 }
 
 /// The scrub bar's on-screen geometry: (x, y-centre, width, height). Prefers the HTML seek bar's
@@ -389,7 +425,7 @@ fn loading_overlay(phase: u32, w: f64, h: f64, lines: &mut Vec<String>) {
     let cx = w / 2.0;
     let cy = h / 2.0;
     let segments = 24usize;
-    let head = ((phase % 60) as f64 / 60.0) * PI * 2.0 - PI / 2.0;
+    let head = ((phase % OSD_FPS as u32) as f64 / OSD_FPS as f64) * PI * 2.0 - PI / 2.0;
     let alphas = [
         "00", "0C", "1A", "2A", "40", "58", "74", "92", "B0", "C8", "D8",
     ];

@@ -66,6 +66,8 @@ pub mod gamepad_linux;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "linux")]
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 
 use libmpv2::{
@@ -455,6 +457,8 @@ impl PlayerHandle {
             let _ = mpv.command("quit", &[]);
         }
         *guard = None;
+        #[cfg(target_os = "linux")]
+        UI_LITE_HOLDERS.store(0, AtomicOrdering::SeqCst);
         // Drop the current url and tear down the headless thumbnail decoder.
         *self.current_url.lock().map_err(|e| e.to_string())? = None;
         *self
@@ -790,7 +794,15 @@ impl PlayerHandle {
         let mut failed = Vec::new();
         if let Ok(guard) = self.mpv.lock() {
             if let Some(mpv) = guard.as_ref() {
-                for (k, v) in &opts {
+                #[cfg(target_os = "linux")]
+                let live = if UI_LITE_HOLDERS.load(AtomicOrdering::SeqCst) > 0 {
+                    crate::gm_perf::ui_lite_render_opts()
+                } else {
+                    opts.clone()
+                };
+                #[cfg(not(target_os = "linux"))]
+                let live = opts.clone();
+                for (k, v) in &live {
                     if mpv.set_property(k.as_str(), v.as_str()).is_err() {
                         failed.push(k.clone());
                     }
@@ -798,6 +810,53 @@ impl PlayerHandle {
             }
         }
         failed
+    }
+
+    /// While Game-mode chrome is on screen, swap in bilinear / no-deband / no-shaders so the iGPU
+    /// is not running the user quality chain AND compositing UI. Nested acquire/release is counted
+    /// so a still-visible overlay does not restore ewa the moment scrubbing ends.
+    #[cfg(target_os = "linux")]
+    pub fn set_ui_render_lite(&self, on: bool) {
+        let holders = if on {
+            UI_LITE_HOLDERS.fetch_add(1, AtomicOrdering::SeqCst) + 1
+        } else {
+            loop {
+                let cur = UI_LITE_HOLDERS.load(AtomicOrdering::SeqCst);
+                if cur == 0 {
+                    break 0;
+                }
+                if UI_LITE_HOLDERS
+                    .compare_exchange(
+                        cur,
+                        cur - 1,
+                        AtomicOrdering::SeqCst,
+                        AtomicOrdering::SeqCst,
+                    )
+                    .is_ok()
+                {
+                    break cur - 1;
+                }
+            }
+        };
+        let apply_lite = on && holders == 1;
+        let apply_user = !on && holders == 0;
+        if !apply_lite && !apply_user {
+            return;
+        }
+        let opts = if apply_lite {
+            crate::gm_perf::ui_lite_render_opts()
+        } else if let Ok(stored) = RENDER_OPTS.lock() {
+            stored.clone()
+        } else {
+            return;
+        };
+        if let Ok(guard) = self.mpv.lock() {
+            if let Some(mpv) = guard.as_ref() {
+                for (k, v) in &opts {
+                    let _ = mpv.set_property(k.as_str(), v.as_str());
+                }
+            }
+        }
     }
 
     /// Store the frontend's playback-enhancement options (`af`, `vf`, `sub-filter-*`) and, if a
@@ -1116,6 +1175,11 @@ pub(crate) static PLAYER_CACHE_BYTES: std::sync::atomic::AtomicU64 =
 /// is the single source of truth for the values (the preset table lives in TS), so Rust stays dumb.
 pub(crate) static RENDER_OPTS: std::sync::Mutex<Vec<(String, String)>> =
     std::sync::Mutex::new(Vec::new());
+
+/// How many Game-mode UI surfaces currently want the cheap scaler chain. Overlay snapshots and
+/// the native scrub bar each hold one; the user preset is restored when the last holder drops.
+#[cfg(target_os = "linux")]
+static UI_LITE_HOLDERS: AtomicU32 = AtomicU32::new(0);
 
 /// User-selected playback enhancements: audio normalisation (`af`), the driver-upscaling filter
 /// (`vf`) and the subtitle `sub-filter-*` options. Same contract as [`RENDER_OPTS`] — the FRONTEND
