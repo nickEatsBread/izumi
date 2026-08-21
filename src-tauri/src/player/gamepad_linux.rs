@@ -140,6 +140,24 @@ fn btn_name(b: Button) -> Option<&'static str> {
     })
 }
 
+/// Steam Deck rear grips. hid-steam has used both BTN_TRIGGER_HAPPY* and BTN_GRIP*
+/// depending on kernel; gilrs reports them as `Button::Unknown` plus the evdev code.
+fn grip_btn_name(code: gilrs::ev::Code) -> Option<&'static str> {
+    let packed = code.into_u32();
+    let kind = (packed >> 16) as u16;
+    let key = (packed & 0xffff) as u16;
+    if kind != 1 {
+        return None;
+    }
+    Some(match key {
+        0x2c0 | 0x139 => "l4", // BTN_TRIGGER_HAPPY1 / BTN_GRIPL
+        0x2c1 | 0x13a => "r4", // BTN_TRIGGER_HAPPY2 / BTN_GRIPR
+        0x2c2 | 0x13b => "l5",
+        0x2c3 | 0x13c => "r5",
+        _ => return None,
+    })
+}
+
 /// Start reading the gamepad on a background thread, emitting `gamepad-input` on every change.
 /// Idempotent — a second call while running is a no-op.
 pub fn start(app: AppHandle) {
@@ -244,8 +262,8 @@ pub fn start(app: AppHandle) {
                                 );
                             }
                         }
-                        EventType::ButtonPressed(b, _) => {
-                            if let Some(n) = btn_name(b) {
+                        EventType::ButtonPressed(b, code) => {
+                            if let Some(n) = btn_name(b).or_else(|| grip_btn_name(code)) {
                                 emit(
                                     &app,
                                     &Input {
@@ -255,8 +273,8 @@ pub fn start(app: AppHandle) {
                                 );
                             }
                         }
-                        EventType::ButtonReleased(b, _) => {
-                            if let Some(n) = btn_name(b) {
+                        EventType::ButtonReleased(b, code) => {
+                            if let Some(n) = btn_name(b).or_else(|| grip_btn_name(code)) {
                                 emit(
                                     &app,
                                     &Input {
