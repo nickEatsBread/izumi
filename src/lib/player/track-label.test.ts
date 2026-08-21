@@ -11,6 +11,12 @@ describe('langName', () => {
     expect(langName('eng')).toBe('English')
     expect(langName('fre')).toBe('French')
     expect(langName('ja')).toBe('Japanese')
+    expect(langName('en-US')).toBe('English')
+    expect(langName('ja-JP')).toBe('Japanese')
+    expect(langName('es-419')).toBe('Spanish (Latin America)')
+    expect(langName('es-ES')).toBe('Spanish (Spain)')
+    expect(langName('pt-BR')).toBe('Portuguese (Brazil)')
+    expect(langName('zh-HK')).toBe('Chinese (Hong Kong)')
   })
   it('returns undefined for missing/undetermined languages', () => {
     expect(langName(undefined)).toBeUndefined()
@@ -105,6 +111,23 @@ describe('trackLabel — audio', () => {
   it('does not add a codec when a single track already reads uniquely', () => {
     const t = aud({ id: 1, lang: 'jpn', channels: 2, codec: 'aac' })
     expect(trackLabel(t, [t])).toBe('Japanese · 2.0')
+  })
+
+  it('keeps Spanish and Portuguese regions distinct instead of numbering them', () => {
+    const g = [
+      aud({ id: 1, lang: 'ja-JP' }),
+      aud({ id: 2, lang: 'en-US' }),
+      aud({ id: 3, lang: 'es-419' }),
+      aud({ id: 4, lang: 'es-ES' }),
+      aud({ id: 5, lang: 'pt-BR' }),
+    ]
+    expect(labels(g)).toEqual([
+      'Japanese',
+      'English',
+      'Spanish (Latin America)',
+      'Spanish (Spain)',
+      'Portuguese (Brazil)',
+    ])
   })
 })
 

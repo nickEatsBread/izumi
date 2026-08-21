@@ -1,4 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
+import { playerCommand } from '$lib/player/native'
+import { DRM_ENDED_EVENT, DRM_PROGRESS_EVENT } from '$lib/player/drm'
+import { downloadAudioLang, preferredDrmPresentation, refreshDrmSource } from '$lib/player/preferred-drm'
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
 import { addonUrls, enabledAddonUrls } from './sources'
@@ -449,8 +452,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
   let lastSave = 0
   let warmed = false
   let wrongDurationHandled = false
-  pushListen<[number, number]>('player-progress', (e) => {
-    const [pos, dur] = e.payload
+  const onProgress = (pos: number, dur: number) => {
     if (!wrongDurationHandled && implausiblyShortEpisode(media.duration, dur)) {
       wrongDurationHandled = true
       clearPosition(media.id, episode)
@@ -480,7 +482,16 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
         invoke('player_prefetch', { url: prefetched.stream.url }).catch(() => {})
       }
     }
-  })
+  }
+  pushListen<[number, number]>('player-progress', (e) => onProgress(e.payload[0], e.payload[1]))
+  const onDrmProgress = (event: Event) => {
+    const detail = (event as CustomEvent<{ pos?: number; dur?: number }>).detail
+    const pos = Number(detail?.pos)
+    const dur = Number(detail?.dur)
+    if (Number.isFinite(pos) && Number.isFinite(dur)) onProgress(pos, dur)
+  }
+  window.addEventListener(DRM_PROGRESS_EVENT, onDrmProgress)
+  stop.push(() => window.removeEventListener(DRM_PROGRESS_EVENT, onDrmProgress))
   // Finalize on close: the position write is throttled to 5s and the watch-mark only fires on a
   // live progress event ≥ threshold — so skimming to the end and immediately backing out could
   // save neither. The player dispatches `player-finalize` with its last pos/dur on close; persist
@@ -507,7 +518,10 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
   }
   window.addEventListener('player-finalize', onFinalize)
   stop.push(() => window.removeEventListener('player-finalize', onFinalize))
-  pushListen('player-ended', async () => {
+  let endHandled = false
+  const onEnded = async () => {
+    if (endHandled) return
+    endHandled = true
     // Finished: forget the resume point, then auto-advance if there's a next episode (bounded by
     // the known total). Fires when EITHER "Auto-play next" OR "Binge (preload)" is on — preload
     // warms the next episode near the end precisely so it continues automatically, so having it on
@@ -535,7 +549,11 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
     // episode) — otherwise two overlapping plays both advance and skip an episode.
     if (gen !== playGen) return
     if (next <= airedTotal) resolveAndPlayBest(media, next, onState, true)
-  })
+  }
+  pushListen('player-ended', () => { void onEnded() })
+  const onDrmEnded = () => { void onEnded() }
+  window.addEventListener(DRM_ENDED_EVENT, onDrmEnded)
+  stop.push(() => window.removeEventListener(DRM_ENDED_EVENT, onDrmEnded))
 }
 
 // Android embedded-player tracking: mirrors attach() but driven by the mpv plugin's observed-
@@ -1404,12 +1422,33 @@ export async function playEpisode(
   // Offline first: a completed local download plays instantly — no resolve, no
   // picker. libmpv opens an absolute local path exactly like a remote URL.
   const local = episode != null ? downloadOf(media.id, episode) : undefined
-  if (local?.status === 'done' && local.path) {
+  if (local?.status === 'done' && (local.path || local.offlineUri)) {
     traceResolve(trace, 'completed download hit; skipping source discovery')
+    let offlineDrm: Stream['__drm'] = local.offlineUri
+      ? { keySystem: local.drmKeySystem || 'com.widevine.alpha' }
+      : undefined
+    if (local.offlineUri && local.requiresOnlineLicense) {
+      onState({ status: 'resolving' })
+      const fresh = await resolveDownloadUrl(media.id, episode!, {
+        ...local.preferences,
+        sourceOriginId: local.sourceOriginId,
+      })
+      if (fresh.kind !== 'shaka') throw new Error('The source no longer provides a DRM license for this download.')
+      const manifest = await fetch(fresh.url)
+      if (!manifest.ok) throw new Error(`Could not refresh the download license (HTTP ${manifest.status}).`)
+      offlineDrm = fresh.drm
+    }
+    const stream = local.offlineUri
+      ? {
+          url: local.offlineUri,
+          name: '📥 Downloaded',
+          __drm: offlineDrm,
+        } as Stream
+      : { url: local.path!, name: '📥 Downloaded' } as Stream
     return await playStream(
       media,
       episode,
-      { url: local.path, name: '📥 Downloaded' } as Stream,
+      stream,
       onState,
       { autoplay },
     )
@@ -2613,6 +2652,45 @@ export async function playStream(
       nextEpisodeReady.set(null)
     }
 
+    // Encrypted DASH (Widevine etc.) cannot go through mpv — it would paint CENC as rainbow
+    // scramble. Play in the webview CDM instead. This also wins over Android mpv and the
+    // external-player setting: those backends cannot decrypt either.
+    if (stream.__drm) {
+      if (await abandonIfStale()) return
+      nowPlayingStream.set({
+        url: stream.url,
+        headers: stream.__headers ?? {},
+        infoHash: stream.infoHash ?? null,
+        drm: stream.__drm,
+        startSeconds,
+        audioLang: stream.__audioLang,
+        audioTracks: (stream.__audioTracks ?? [])
+          .filter((track) => track.switchUrl)
+          .map((track) => ({
+            lang: track.lang,
+            title: track.title,
+            switchUrl: track.switchUrl,
+          })),
+        subtitles: (stream.__subtitles ?? []).map((s) => ({
+          url: s.url,
+          lang: s.lang,
+          title: s.title,
+          isDefault: s.isDefault,
+          kind: s.kind,
+          switchUrl: s.switchUrl,
+        })),
+        previewUrl: stream.__previewUrl,
+      })
+      spriteKey.set(stream.infoHash ?? `${media.id}-${episode ?? 0}`)
+      recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
+      rememberSuccess()
+      playing.set(true)
+      onState({ status: 'playing' })
+      void invoke('close_player').catch(() => {})
+      if (episode != null) attach(media, episode, onState)
+      return
+    }
+
     // Android full: play through embedded mpv. Android lite falls back to an external player. This
     // returns before the desktop embed below, so nothing libmpv-related runs and `playing` stays
     // false (browse UI stays up, no overlay). The episode is marked watched when the user returns.
@@ -3136,7 +3214,7 @@ export async function recoverPlaybackSource(
     }
     if (played) {
       if (subDelay) {
-        await invoke('player_command', { name: 'set', args: ['sub-delay', subDelay] }).catch(() => {})
+        await playerCommand('set', ['sub-delay', subDelay]).catch(() => {})
       }
       playbackRecovery.update((current) => current ? { ...current, recovering: false } : current)
       playerNotice.set('Switched to a working source')
@@ -3241,7 +3319,19 @@ export interface ResolvedTorrentDownload extends ResolvedDownloadBase {
   absoluteEpisode?: number
   season?: number
 }
-export type ResolvedDownload = ResolvedHttpDownload | ResolvedTorrentDownload
+/** An adaptive encrypted manifest stored through Shaka's offline engine. This remains a generic
+ *  stream contract: any extension can supply DASH + DRM metadata. */
+export interface ResolvedShakaDownload extends ResolvedDownloadBase {
+  kind: 'shaka'
+  url: string
+  drm: NonNullable<Stream['__drm']>
+  subtitles?: Stream['__subtitles']
+  audioLang?: string
+  preferredHeight?: number
+  preferredSubLang?: import('$lib/settings/ui').SubLang
+  sourceOriginId?: string
+}
+export type ResolvedDownload = ResolvedHttpDownload | ResolvedTorrentDownload | ResolvedShakaDownload
 
 // Resolve a single episode to something downloadable — no player, no mpv. Reuses the same
 // resolveStreams+pickBest path as playback, and honours the SAME torrent-source preference:
@@ -3278,12 +3368,21 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   // playlist text, not the video. Torrent rows (no url) pass through untouched.
   let eligible = all.filter((s) => !/\.m3u8(?:$|\?)/i.test(s.url ?? ''))
   if (!eligible.length) eligible = all
+  if (preferences?.sourceOriginId) {
+    const sameSource = eligible.filter((stream) => stream.__origin?.id === preferences.sourceOriginId)
+    if (sameSource.length) eligible = sameSource
+  }
   if (preferences?.cachedOnly) eligible = eligible.filter((stream) => !isUncached(stream))
   const raw = (stream: Stream) => `${stream.name ?? ''} ${stream.title ?? ''} ${stream.behaviorHints?.filename ?? ''}`.toLowerCase()
   if (preferences?.audio && preferences.audio !== 'any') {
-    const preferred = eligible.filter((stream) => preferences.audio === 'dub'
-      ? /\b(?:dub|dual[ ._-]?audio|english[ ._-]?audio)\b/i.test(raw(stream))
-      : !/\b(?:dub|english[ ._-]?audio)\b/i.test(raw(stream)))
+    const wantDub = preferences.audio === 'dub'
+    const preferred = eligible.filter((stream) => {
+      if (stream.__audio) return wantDub ? stream.__audio === 'dub' : stream.__audio === 'sub'
+      if (stream.__audioTracks?.some((track) => track.switchUrl)) return true
+      return wantDub
+        ? /\b(?:dub|dual[ ._-]?audio|english[ ._-]?audio)\b/i.test(raw(stream))
+        : !/\b(?:dub|english[ ._-]?audio)\b/i.test(raw(stream))
+    })
     if (preferred.length) eligible = preferred
   }
   if (preferences?.codec && preferences.codec !== 'any') {
@@ -3308,6 +3407,33 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   const common = { quality: info.quality ? `${info.quality}p` : undefined, infoHash: best.infoHash }
 
   if (best.url) {
+    if (best.__drm && /(?:\.mpd(?:$|\?)|\/manifest\.mpd(?:$|\?))/i.test(best.url)) {
+      const wantedHeight = preferences?.quality && preferences.quality !== 'any'
+        ? Number(preferences.quality)
+        : undefined
+      const refreshed = await refreshDrmSource(best.__drm, best.url)
+      const presentation = preferredDrmPresentation({
+        url: best.url,
+        audioLang: refreshed.audioLang ?? best.__audioLang,
+        subtitles: refreshed.subtitles ?? best.__subtitles,
+        audioTracks: refreshed.audioTracks ?? best.__audioTracks,
+        preferredAudio: downloadAudioLang(preferences?.audio, get(preferredAudioLang)),
+        preferredSub: get(preferredSubLang),
+      })
+      return {
+        kind: 'shaka',
+        url: presentation.url,
+        drm: best.__drm,
+        subtitles: presentation.subtitles,
+        audioLang: presentation.audioLang,
+        preferredHeight: Number.isFinite(wantedHeight) ? wantedHeight : undefined,
+        preferredSubLang: get(preferredSubLang),
+        sourceOriginId: best.__origin?.id,
+        filename: named(best.url),
+        provider: info.provider,
+        ...common,
+      }
+    }
     return { kind: 'http', url: best.url, headers: best.__headers, filename: named(best.url), provider: info.provider, ...common }
   }
   if (best.infoHash) {

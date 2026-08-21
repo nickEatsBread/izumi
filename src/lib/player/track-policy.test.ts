@@ -29,4 +29,11 @@ describe('pickSubtitleTrackId', () => {
       sub({ id: 2, lang: 'eng', title: 'Full Subtitles' }),
     ], 'eng', 'eng')).toBe('no')
   })
+
+  it('matches BCP-47 locales like en-US', () => {
+    expect(pickSubtitleTrackId([
+      sub({ id: 10_000, lang: 'en-US', title: 'English' }),
+      sub({ id: 10_001, lang: 'de-DE', title: 'German' }),
+    ], 'jpn', 'eng')).toBe(10_000)
+  })
 })

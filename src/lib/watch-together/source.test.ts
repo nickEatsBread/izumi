@@ -71,6 +71,34 @@ describe('Watch Together source sharing', () => {
     })
   })
 
+  it('uses a provider LAN source and preserves its DRM playback contract', () => {
+    const stream = {
+      url: 'http://127.0.0.1:17871/v/local/manifest.mpd',
+      __drm: { keySystem: 'com.widevine.alpha', licenseUrl: 'http://127.0.0.1/license' },
+      __party: {
+        url: 'http://192.168.1.8:17871/share/cap/v/remote/manifest.mpd',
+        __drm: {
+          keySystem: 'com.widevine.alpha',
+          licenseUrl: 'http://192.168.1.8:17871/share/cap/v/remote/license',
+          releaseUrl: 'http://192.168.1.8:17871/share/cap/v/remote/session',
+        },
+        __subtitles: [{ url: 'http://192.168.1.8:17871/share/cap/v/remote/asset?u=sub', lang: 'eng' }],
+      },
+    }
+    const source = shareableSource(stream).source!
+    expect(source).toMatchObject({
+      kind: 'http',
+      url: stream.__party.url,
+      drm: { licenseUrl: stream.__party.__drm.licenseUrl },
+    })
+    expect(streamFromSharedSource(source)).toMatchObject({
+      url: stream.__party.url,
+      __drm: { releaseUrl: stream.__party.__drm.releaseUrl },
+      __subtitles: [{ lang: 'eng' }],
+    })
+    expect(parseSharedSource(source)).toMatchObject({ drm: { keySystem: 'com.widevine.alpha' } })
+  })
+
   it.each([
     { stream: { url: 'file:///home/user/video.mkv' }, why: 'non-http scheme' },
     { stream: { url: 'not a url' }, why: 'unparseable' },
