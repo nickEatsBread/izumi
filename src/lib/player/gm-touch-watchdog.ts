@@ -23,12 +23,14 @@ type Tracked = { downAt: number; lastAt: number; captured: Element | null }
 /** Clear any gesture WebKit lost while a player/comments surface was being hidden, then reassert
  * Gamescope passthrough after the replacement surface has painted. Cross-origin iframes can own
  * the release event, so the parent watchdog cannot rely on seeing pointerup in this transition. */
+/** One delayed restore after a screen change. The native side also coalesces writes, so a second
+ *  rAF/timeout pair was just extra XWayland round-trips. */
+export const GM_TOUCH_RESTORE_DELAY_MS = 120
+
 export function restoreGmTouchAfterTransition(): void {
   window.dispatchEvent(new Event('gm-touch-reset'))
   void invoke('native_touch_hold', { held: false }).catch(() => {})
-  const restore = () => void invoke('restore_native_touch').catch(() => {})
-  requestAnimationFrame(restore)
-  window.setTimeout(restore, 240)
+  window.setTimeout(() => void invoke('restore_native_touch').catch(() => {}), GM_TOUCH_RESTORE_DELAY_MS)
 }
 
 /** Start the watchdog; returns the teardown. Call only in Game mode. */
@@ -106,9 +108,7 @@ export function initGmTouchWatchdog(): () => void {
   const returned = () => {
     reset()
     void invoke('gm_touch_unstick').catch(() => {})
-    const restore = () => void invoke('restore_native_touch').catch(() => {})
-    requestAnimationFrame(restore)
-    window.setTimeout(restore, 240)
+    window.setTimeout(() => void invoke('restore_native_touch').catch(() => {}), GM_TOUCH_RESTORE_DELAY_MS)
   }
   const onVisibility = () => (document.visibilityState === 'visible' ? returned() : reset())
   window.addEventListener('pointerdown', down, true)

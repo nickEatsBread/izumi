@@ -109,6 +109,7 @@ export type DirectTorrentNextPreload = {
 
 let activePlaybackId: number | null = null
 let lastBufferLow: boolean | null = null
+let lastFirstFrameId: number | null = null
 let startupSequence = 0
 let lastHealthTraceAt = 0
 
@@ -123,6 +124,7 @@ export function nextDirectTorrentStartupId(): number {
 export function activateDirectTorrentPlayback(playbackId: number) {
   activePlaybackId = playbackId
   lastBufferLow = null
+  lastFirstFrameId = null
   lastHealthTraceAt = 0
 }
 
@@ -174,6 +176,16 @@ export async function prepareDirectTorrentNext(input: {
  * the normal handoff; calling this when player_embed merely accepts a URL is too early. */
 export async function directTorrentPlayerAttached(playbackId: number) {
   await invoke('torrent_playback_player_attached', { playbackId }).catch(() => {})
+}
+
+/** After the first decoded frame, the native engine may cap hashing/IO so it does not fight the GPU. */
+export function reportDirectTorrentFirstFrame() {
+  const playbackId = activePlaybackId
+  if (playbackId == null || lastFirstFrameId === playbackId) return
+  lastFirstFrameId = playbackId
+  invoke('torrent_playback_first_frame', { playbackId }).catch(() => {
+    if (activePlaybackId === playbackId && lastFirstFrameId === playbackId) lastFirstFrameId = null
+  })
 }
 
 /** Cancel metadata/initialization work that has not produced a playback id yet. Starting another
@@ -254,6 +266,7 @@ export async function stopDirectTorrentPlayback(playbackId: number | null = acti
   if (activePlaybackId === playbackId) {
     activePlaybackId = null
     lastBufferLow = null
+    lastFirstFrameId = null
   }
   const allowPostPlaybackSeed = get(isAndroid)
     ? await androidAllowsPostPlaybackSeed()
@@ -267,6 +280,7 @@ export async function discardDirectTorrentPlayback(playbackId: number) {
   if (activePlaybackId === playbackId) {
     activePlaybackId = null
     lastBufferLow = null
+    lastFirstFrameId = null
   }
   await invoke('torrent_playback_stop', { playbackId, allowPostPlaybackSeed: false }).catch(() => {})
 }
