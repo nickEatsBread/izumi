@@ -135,6 +135,12 @@ export const subtitleLineNavigation = persisted<boolean>('player-subtitle-line-n
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
 /** Burn the currently displayed subtitle track into frames captured for GIF recordings. */
 export const gifIncludeSubtitles = persisted<boolean>('player-gif-include-subtitles', false)
+/** Frames per second. 15 matches typical anime GIFs; 10 is the floor that still reads as motion. */
+export const gifFps = persisted<number>('player-gif-fps', 15)
+/** Output width in CSS pixels; height follows the video aspect. 720px fits most upload caps. */
+export const gifScale = persisted<number>('player-gif-scale', 720)
+/** Stop recording after this many seconds. 10s is the sharing sweet spot; 30s is the ceiling. */
+export const gifMaxSeconds = persisted<number>('player-gif-max-seconds', 10)
 /** Android: leaving the app (home / recents) while a video is playing shrinks it into the
  *  miniplayer instead of stopping, the way every mobile video app behaves. Default on; turn it off
  *  to keep the episode on the watch page and just leave. */

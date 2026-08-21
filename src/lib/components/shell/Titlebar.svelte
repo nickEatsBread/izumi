@@ -5,7 +5,8 @@
   import Square from '@lucide/svelte/icons/square'
   import Copy from '@lucide/svelte/icons/copy'
   import X from '@lucide/svelte/icons/x'
-  import { commentsOpen } from '$lib/player/session'
+  import { commentsOpen, gifRecordingStart, playerNotice } from '$lib/player/session'
+  import { playerGifStop } from '$lib/player/native'
 
   const win = getCurrentWindow()
   // Track the real window state so the button shows maximize vs restore correctly —
@@ -22,6 +23,24 @@
   const minimize = () => win.minimize()
   const toggle = async () => { await win.toggleMaximize().catch(() => {}); sync() }
   const close = () => win.close()
+
+  async function stopGif(event: MouseEvent) {
+    event.stopPropagation()
+    if ($gifRecordingStart == null) return
+    gifRecordingStart.set(null)
+    try {
+      await playerGifStop()
+      playerNotice.set('GIF saved to Pictures/izumi')
+    } catch (error) {
+      playerNotice.set(
+        String(error).includes('ffmpeg-unavailable')
+          ? 'GIF recording needs ffmpeg installed'
+          : String(error).includes('gif-no-frames')
+            ? 'GIF was too short — hold O a bit longer'
+            : 'GIF recording failed',
+      )
+    }
+  }
 </script>
 
 <!--
@@ -36,9 +55,23 @@
 -->
 <div
   data-tauri-drag-region
-  class="fixed inset-x-0 top-0 z-50 flex h-8 items-center justify-end"
+  class="fixed inset-x-0 top-0 z-50 flex h-8 items-center justify-between"
   class:invisible={$commentsOpen}
 >
+  <!-- Centered on the sidebar/logo column (`w-14`). contain:paint keeps the pill
+       from painting onto the video at the left-14 seam. -->
+  <div class="flex h-8 w-14 shrink-0 items-center justify-center overflow-hidden [contain:paint]">
+    {#if $gifRecordingStart != null}
+      <button
+        class="flex h-5 max-w-[48px] items-center gap-0.5 rounded-full bg-red-600 px-1.5 text-[9px] font-semibold leading-none text-white outline-none hover:bg-red-500 focus:outline-none focus-visible:outline-none"
+        onclick={stopGif}
+      >
+        <span class="size-1.5 shrink-0 animate-pulse rounded-full bg-white"></span>
+        GIF
+      </button>
+    {/if}
+  </div>
+  <div class="flex items-center">
   <button
     onclick={minimize}
     aria-label="Minimize"
@@ -60,4 +93,5 @@
   >
     <X size={16} />
   </button>
+  </div>
 </div>

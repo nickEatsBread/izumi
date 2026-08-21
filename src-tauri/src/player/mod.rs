@@ -147,11 +147,15 @@ struct GifSession {
     stop: Arc<std::sync::atomic::AtomicBool>,
     handle: std::thread::JoinHandle<()>,
     captured_ms: Arc<std::sync::atomic::AtomicU64>,
+    width: u32,
+    fps: f64,
 }
 
 pub struct GifFrames {
     pub dir: PathBuf,
     pub captured_ms: u64,
+    pub width: u32,
+    pub fps: f64,
 }
 
 /// Reply to `player_thumb_tile`. `status` = `ready|pending|failed|none`; when `ready`,
@@ -654,7 +658,14 @@ impl PlayerHandle {
     /// `self.mpv`'s mutex between frames. Signed, custom-protocol, and otherwise
     /// ffmpeg-incompatible streams are therefore captured exactly as mpv renders
     /// them instead of being opened a second time.
-    pub fn gif_start(&self, dir: PathBuf, include_subtitles: bool) -> Result<(), String> {
+    pub fn gif_start(
+        &self,
+        dir: PathBuf,
+        include_subtitles: bool,
+        fps: Option<f64>,
+        width: Option<u32>,
+        max_seconds: Option<u32>,
+    ) -> Result<(), String> {
         let mut slot = self.gif_session.lock().map_err(|e| e.to_string())?;
         if slot.is_some() {
             return Err("gif-already-recording".into());
@@ -679,13 +690,17 @@ impl PlayerHandle {
         };
         let captured_ms = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let worker_captured_ms = captured_ms.clone();
+        let fps = fps.unwrap_or(15.0).clamp(8.0, 24.0);
         let handle = std::thread::spawn(move || {
             use std::sync::atomic::Ordering;
             use std::time::{Duration, Instant};
 
-            const FRAME_INTERVAL: Duration = Duration::from_millis(50);
-            const MAX_DURATION: Duration = Duration::from_secs(30);
-            const MAX_FRAMES: u32 = 600;
+            let max_seconds = max_seconds.unwrap_or(10).clamp(2, 30);
+            let frame_interval = Duration::from_millis((1000.0 / fps).round() as u64);
+            let max_duration = Duration::from_secs(u64::from(max_seconds));
+            let max_frames = ((fps * f64::from(max_seconds)).ceil() as u32)
+                .saturating_add(4)
+                .min(800);
 
             let _ = client.set_property("screenshot-format", "jpg");
             let _ = client.set_property("screenshot-jpeg-quality", 92_i64);
@@ -693,8 +708,8 @@ impl PlayerHandle {
             let started = Instant::now();
             let mut frame = 0_u32;
             while !worker_stop.load(Ordering::Relaxed)
-                && frame < MAX_FRAMES
-                && started.elapsed() < MAX_DURATION
+                && frame < max_frames
+                && started.elapsed() < max_duration
             {
                 let path = worker_dir.join(format!("f{frame:05}.jpg"));
                 let path = path.to_string_lossy().into_owned();
@@ -706,7 +721,7 @@ impl PlayerHandle {
                     worker_captured_ms
                         .store(started.elapsed().as_millis() as u64, Ordering::Relaxed);
                 }
-                std::thread::sleep(FRAME_INTERVAL);
+                std::thread::sleep(frame_interval);
             }
         });
 
@@ -715,6 +730,8 @@ impl PlayerHandle {
             stop,
             handle,
             captured_ms,
+            width: width.unwrap_or(720).clamp(160, 1920),
+            fps,
         });
         Ok(())
     }
@@ -736,6 +753,8 @@ impl PlayerHandle {
             captured_ms: session
                 .captured_ms
                 .load(std::sync::atomic::Ordering::Relaxed),
+            width: session.width,
+            fps: session.fps,
         })
     }
 

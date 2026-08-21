@@ -53,4 +53,11 @@ describe('settings search', () => {
   it('uses the same stable keys as Toggle rows', () => {
     expect(settingKey('Auto-skip openings & endings')).toBe('auto-skip-openings-endings')
   })
+
+  it('finds the GIF recorder from the words people actually type', () => {
+    expect(searchSettings('gif')[0]?.title).toBe('GIF recorder')
+    expect(searchSettings('gif recorder')[0]?.title).toBe('GIF recorder')
+    expect(searchSettings('record gif')[0]?.title).toBe('GIF recorder')
+    expect(settingKey('GIF recorder')).toBe('gif-recorder')
+  })
 })
