@@ -99,6 +99,23 @@ export const nowPlayingStream = writable<{
   url: string
   headers: Record<string, string>
   infoHash: string | null
+  drm?: import('./drm').StreamDrm | null
+  startSeconds?: number
+  audioLang?: string
+  audioTracks?: {
+    lang?: string
+    title?: string
+    switchUrl?: string
+  }[]
+  subtitles?: {
+    url: string
+    lang?: string
+    title?: string
+    isDefault?: boolean
+    kind?: 'subtitles' | 'captions'
+    switchUrl?: string
+  }[]
+  previewUrl?: string
 }>({ url: '', headers: {}, infoHash: null })
 
 /** Source candidates retained after the picker closes. The playback watchdog uses this exact

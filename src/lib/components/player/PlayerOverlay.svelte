@@ -8,10 +8,14 @@
   import Controls from './Controls.svelte'
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
+  import DrmSurface from './DrmSurface.svelte'
+  import { playerCommand, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
+  import type { DrmSnapshot } from '$lib/player/drm'
+  import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -145,8 +149,12 @@
   function endPipDrag() { pipDragOrigin = null }
 
   // ONE loading boolean, never sticky: true while bringing up the first frame, on
-  // a cache stall, or mid-seek — but never while the user paused or at real EOF.
-  const loading = $derived(!eof && !paused && (buffering || seeking || (coreIdle && (!firstFrame || pos > 0))))
+  // a cache stall, or mid-seek — but never while the user paused after a frame, or at EOF.
+  // DRM opens this overlay before Shaka has attached; the <video> is paused until play(),
+  // which used to hide the spinner and look like a dead player for a second or more.
+  const loading = $derived(overlayIsLoading({
+    eof, paused, buffering, seeking, coreIdle, firstFrame, pos,
+  }))
   // Keep the controls in the DOM while scrubbing (even if the 3s auto-hide fired during a long
   // trigger hold) so the seek bar element stays measurable — otherwise the native scrub bar
   // loses its geometry and jumps to the fallback position lower on screen.
@@ -182,9 +190,40 @@
     clearTimeout(hideT)
     hideT = setTimeout(() => (visible = false), 3000)
   }
+  const drmActive = $derived(!!$nowPlayingStream.drm)
+  let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
+  let lastDrmError = ''
   function cmd(name: string, args: string[] = []) {
-    invoke('player_command', { name, args }).catch((e) => console.warn('player_command', name, args, e))
+    void playerCommand(name, args).catch((e) => console.warn('player_command', name, args, e))
   }
+  function onDrmUpdate(snapshot: DrmSnapshot) {
+    pos = snapshot.pos
+    dur = snapshot.dur
+    paused = snapshot.paused
+    buffering = snapshot.buffering
+    eof = snapshot.ended
+    buffer = snapshot.buffer
+    coreIdle = !snapshot.firstFrame
+    if (snapshot.firstFrame && !firstFrame) {
+      firstFrame = true
+      loadedUrl = $nowPlayingStream.url
+      markAlive({ url: loadedUrl })
+    }
+    if (snapshot.error && snapshot.error !== lastDrmError) {
+      lastDrmError = snapshot.error
+      playerNotice.set(snapshot.error)
+    }
+    reportWatchPlayback(pos, dur, paused, buffering)
+  }
+
+  $effect(() => {
+    if (!$playing || !overlayRoot) return
+    const active = document.activeElement
+    if (active instanceof HTMLElement && (overlayRoot.contains(active) || active.closest('[data-comments-panel]'))) return
+    if (active instanceof HTMLElement) active.blur()
+    overlayRoot.focus({ preventScroll: true })
+  })
+
   function setLoopPoint(point: 'a' | 'b') {
     const loop = get(playerAbLoop)
     if (point === 'a') {
@@ -203,19 +242,29 @@
   async function capture(kind: 'gif' | 'clip') {
     if (kind === 'gif') {
       if (get(gifRecordingStart) == null) {
+        gifRecordingStart.set(pos)
+        playerNotice.set('GIF recording started · press O to stop')
         try {
-          await invoke('player_gif_start', { includeSubtitles: $gifIncludeSubtitles })
-          gifRecordingStart.set(pos)
-          playerNotice.set('GIF recording started')
-        } catch { playerNotice.set('GIF recording failed to start') }
+          await playerGifStart($gifIncludeSubtitles)
+        } catch {
+          gifRecordingStart.set(null)
+          playerNotice.set('GIF recording failed to start')
+        }
         return
       }
       gifRecordingStart.set(null)
+      playerNotice.set('Saving GIF…')
       try {
-        await invoke('player_gif_stop')
+        await playerGifStop()
         playerNotice.set('GIF saved to Pictures/izumi')
       } catch (error) {
-        playerNotice.set(String(error).includes('ffmpeg-unavailable') ? 'GIF recording needs ffmpeg installed' : 'GIF recording failed')
+        playerNotice.set(
+          String(error).includes('ffmpeg-unavailable')
+            ? 'GIF recording needs ffmpeg installed'
+            : String(error).includes('gif-no-frames')
+              ? 'GIF was too short — hold O a bit longer'
+              : 'GIF recording failed',
+        )
       }
     } else {
       try {
@@ -284,7 +333,7 @@
     await exitPictureInPicture()
     playerSleep.set({ deadline: null, atEpisodeEnd: false })
     playerAbLoop.set({ a: null, b: null })
-    if (get(gifRecordingStart) != null) await invoke('player_gif_abort').catch(() => {})
+    if (get(gifRecordingStart) != null) await playerGifAbort().catch(() => {})
     gifRecordingStart.set(null)
     playerStatsOpen.set(false)
     playing.set(false)
@@ -390,7 +439,7 @@
     autoSkipped = new Set()
     firstOcc = { op: false, ed: false }
     playerAbLoop.set({ a: null, b: null })
-    if (get(gifRecordingStart) != null) void invoke('player_gif_abort').catch(() => {})
+    if (get(gifRecordingStart) != null) void playerGifAbort().catch(() => {})
     gifRecordingStart.set(null)
     subtitleSyncKey = ''
     resetSubtitleSync()
@@ -402,7 +451,7 @@
     const key = loadedKey
     if (!$subtitleAutoSync || dur < 60 || !key || subtitleSyncKey === key) return
     subtitleSyncKey = key
-    void invoke<string>('player_tracks')
+    void playerTracks()
       .then((raw) => autoSyncSelectedSubtitle(JSON.parse(raw) as SyncableTrack[], dur))
       .catch(() => {})
   })
@@ -426,9 +475,9 @@
   let subtitlePolicyKey = ''
   $effect(() => {
     const key = loadedKey
-    if (!firstFrame || !key || subtitlePolicyKey === key) return
+    if (drmActive || !firstFrame || !key || subtitlePolicyKey === key) return
     subtitlePolicyKey = key
-    void invoke<string>('player_tracks')
+    void playerTracks()
       .then((raw) => {
         if (key !== loadedKey) return
         const id = pickSubtitleTrackId(JSON.parse(raw) as Track[], get(preferredAudioLang), get(preferredSubLang))
@@ -842,7 +891,7 @@
       else if (action === 'playerNextEpisode') playNext(undefined, !paused)
       else if (action === 'playerPreviousEpisode') playPrev(undefined, !paused)
       else if (action === 'playerFullscreen') toggleFullscreen()
-      else if (action === 'playerScreenshot') invoke('player_screenshot')
+      else if (action === 'playerScreenshot') playerScreenshot()
         .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))
         .catch(() => playerNotice.set('Screenshot failed'))
       else if (action === 'playerStats') playerStatsOpen.update((value) => !value)
@@ -885,6 +934,7 @@
           })
           .finally(() => { directTorrentHealthBusy = false })
       }
+      if (drmActive) return
       const decision = recoveryWatchDecision(recoveryWatch, {
         now: Date.now(),
         position: pos,
@@ -943,7 +993,9 @@
      video (and always in game mode). cursor-pointer/none are mutually exclusive so neither
      conflicting utility wins by stylesheet order. -->
 <div
-  class="fixed inset-y-0 right-0 z-20 overscroll-none select-none"
+  bind:this={overlayRoot}
+  tabindex="-1"
+  class="izumi-player-root fixed inset-y-0 right-0 z-20 overscroll-none select-none outline-none focus:outline-none focus-visible:outline-none"
   class:touch-none={!$commentsOpen}
   class:touch-auto={$commentsOpen}
   class:cursor-pointer={!gmMode && controlsVisible}
@@ -957,36 +1009,48 @@
   onpointercancel={endPipDrag}
   role="presentation"
 >
+  {#if drmActive && $nowPlayingStream.drm}
+    <DrmSurface
+      url={$nowPlayingStream.url}
+      drm={$nowPlayingStream.drm}
+      startSeconds={$nowPlayingStream.startSeconds ?? 0}
+      subtitles={$nowPlayingStream.subtitles}
+      audioLang={$nowPlayingStream.audioLang ?? ''}
+      audioChoices={$nowPlayingStream.audioTracks}
+      previewUrl={$nowPlayingStream.previewUrl ?? ''}
+      onupdate={onDrmUpdate}
+    />
+  {/if}
+
   <!-- Loading/buffering. Black backdrop ONLY before the first frame (covers the
        white webview + the transparent hole). Mid-playback stalls show just the
-       spinner over the frozen frame, with a 500ms fade-in so quick seeks don't
-       flash a spinner (an anti-flash trick). -->
+       spinner over the frozen frame. Stall-show is debounced in DrmSurface
+       (~150ms); do not add a second fade delay here or unbuffered seeks feel idle. -->
   {#if loading && !gmMode}
     <div
-      transition:fade={{ duration: 150 }}
-      class="pointer-events-none absolute inset-0 flex items-center justify-center"
+      transition:fade={{ duration: 120 }}
+      class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center"
       class:bg-black={!firstFrame}
     >
       <!-- Game mode: stepped spin (8 frames/s) — a continuously-animating spinner makes every
            overlay snapshot differ, so the unchanged-frame skip never fires exactly when the
            device is busiest (buffering). Desktop keeps the smooth spin. -->
       <div
-        in:fade={{ duration: 200, delay: firstFrame ? 500 : 0 }}
         class="size-12 animate-spin rounded-full border-4 border-white/25 border-t-white"
         style={gmMode ? 'animation-timing-function: steps(8)' : ''}
       ></div>
     </div>
   {/if}
 
-  <P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} />
+  <div class="izumi-hud"><P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} /></div>
 
   <!-- Transient toast (next-episode loading / errors). -->
   {#if $playerNotice}
-    <div transition:fade={{ duration: 150 }} class="pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur">{$playerNotice}</div>
+    <div transition:fade={{ duration: 150 }} class="izumi-hud pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-lg backdrop-blur">{$playerNotice}</div>
   {/if}
 
-  {#if $playerStatsOpen}<StatsOverlay />{/if}
-  {#if !$pictureInPicture}<PartyPresence floating />{/if}
+  {#if $playerStatsOpen}<div class="izumi-hud"><StatsOverlay /></div>{/if}
+  {#if !$pictureInPicture}<div class="izumi-hud"><PartyPresence floating /></div>{/if}
 
   <!-- Manual Skip button — shown when the current segment won't auto-skip (auto-skip
        off, or an OP/ED debut we intentionally don't auto-skip). Auto-hides after ~5s
@@ -995,7 +1059,7 @@
     <button
       data-focusable
       transition:fade={{ duration: 150 }}
-      class="absolute z-10 border border-white/20 bg-black/70 font-bold text-white backdrop-blur transition hover:bg-black/90
+      class="izumi-hud absolute z-10 border border-white/20 bg-black/70 font-bold text-white backdrop-blur transition hover:bg-black/90
         {gmMode ? 'bottom-32 right-10 rounded-2xl px-9 py-5 text-2xl' : 'bottom-28 right-8 rounded-lg px-5 py-2.5 text-sm'}"
       onclick={(e) => { e.stopPropagation(); seekTo(currentSeg.end + 0.5) }}
     >
@@ -1031,7 +1095,7 @@
       </div>
     </div>
   {:else if controlsVisible}
-    <div class:opacity-0={gmDynamicActive}>
+    <div class="izumi-hud" class:opacity-0={gmDynamicActive}>
       <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} />
     </div>
   {/if}
@@ -1043,5 +1107,5 @@
   {/if}
 
   <!-- Discussion panel: self-gates on `commentsOpen`. Keyed on the playing episode. -->
-  {#if !$pictureInPicture}<CommentsPanel />{/if}
+  {#if !$pictureInPicture}<div class="izumi-hud"><CommentsPanel /></div>{/if}
 </div>

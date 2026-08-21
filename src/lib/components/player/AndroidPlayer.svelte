@@ -82,6 +82,7 @@
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
+  import { BUFFER_SPINNER_DELAY_MS } from '$lib/player/overlay-loading'
   import { mediaHref } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
@@ -171,7 +172,7 @@
   // Anti-flash: a seek that lands inside the cache resolves in a few frames, and blinking a spinner
   // for it looks broken. Pre-first-frame (no duration yet) there is nothing to flash over, so that
   // case shows immediately.
-  const SPINNER_DELAY_MS = 280
+  const SPINNER_DELAY_MS = BUFFER_SPINNER_DELAY_MS
   // Automatic recovery counts as loading: a dead source's END_FILE clears `stalled` (eof), which
   // used to drop BOTH spinners while recoverPlaybackSource spent up to ~25s re-resolving — black
   // screen, no indicator, no message, then a different source appears. The notice toast below

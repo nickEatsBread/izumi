@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { join, tempDir } from '@tauri-apps/api/path'
 import { get } from 'svelte/store'
 import { phttp } from '$lib/net/http'
+import { playerCommand } from '$lib/player/native'
 import { nowPlayingStream, playerNotice } from '$lib/player/session'
 
 export type SubtitleCue = { start: number; end: number; text: string }
@@ -139,10 +140,12 @@ export async function autoSyncSelectedSubtitle(tracks: SyncableTrack[], duration
     }
     const path = await join(await tempDir(), `izumi-synced-${Date.now()}.srt`)
     await invoke('write_text_file', { path, contents: correctedSrt(cues, result) })
-    await invoke('player_command', {
-      name: 'sub-add',
-      args: [path, 'select', `Auto-synced ${track.title ?? track.lang ?? 'subtitle'}`, track.lang ?? 'und'],
-    })
+    await playerCommand('sub-add', [
+      path,
+      'select',
+      `Auto-synced ${track.title ?? track.lang ?? 'subtitle'}`,
+      track.lang ?? 'und',
+    ])
     playerNotice.set(`Subtitles synchronized (${result.offsetSec >= 0 ? '+' : ''}${result.offsetSec.toFixed(1)}s)`)
     return true
   } catch (error) {

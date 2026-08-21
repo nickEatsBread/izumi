@@ -2,9 +2,10 @@
   import { invoke } from '@tauri-apps/api/core'
   import { get } from 'svelte/store'
   import { onDestroy } from 'svelte'
-  import { spriteKey } from '$lib/player/session'
+  import { nowPlayingStream, spriteKey } from '$lib/player/session'
   import { scrub, beginScrub, moveScrub, endScrub } from '$lib/player/scrub'
   import { scrubThumbnails } from '$lib/settings/ui'
+  import { getDrmEngine } from '$lib/player/drm'
   import type { Segment } from '$lib/stremio/aniskip'
 
   // Seekbar for the libmpv player. Renders stacked layers (buffered,
@@ -68,6 +69,7 @@
   $effect(() => {
     const key = $spriteKey
     const d = dur
+    const drmThumbs = !!$nowPlayingStream.drm
     if (!thumbsEnabled) {
       stopThumbs()
       tileCache.clear()
@@ -85,6 +87,11 @@
       interval = 0
       started = false
       activeKey = key
+    }
+    if (drmThumbs) {
+      interval = 2
+      started = true
+      return
     }
     if (!key || d <= 1 || started) return
     started = true
@@ -141,6 +148,20 @@
     thumbApprox = !!near
     const run = async () => {
       if (my !== reqSeq) return
+      const drm = getDrmEngine()
+      if (drm?.thumbnail) {
+        try {
+          const url = await drm.thumbnail(t)
+          if (my !== reqSeq) return
+          if (url) {
+            const idx = interval > 0 ? Math.round(t / interval) : 0
+            tileCache.set(idx, url)
+            thumbSrc = url
+            thumbApprox = false
+          }
+        } catch { /* leave shimmer */ }
+        return
+      }
       const key = get(spriteKey)
       if (!key) return
       try {
