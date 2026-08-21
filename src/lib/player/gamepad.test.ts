@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { ButtonPressLatch, TriggerScrubber, SEEK } from './gamepad'
 
 function deps(pos = 100, dur = 1000) {
@@ -75,5 +77,18 @@ describe('ButtonPressLatch', () => {
     expect(latch.update(true, 1020)).toBe(false)
     latch.update(false, 1030)
     expect(latch.update(true, 1400)).toBe(true)
+  })
+})
+
+describe('Steam Deck rear grips', () => {
+  it('maps L4 to screenshot and R4 to GIF in Game mode', () => {
+    const native = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/gamepad_linux.rs', import.meta.url)), 'utf8')
+    const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
+    expect(native).toContain('"l4"')
+    expect(native).toContain('"r4"')
+    expect(overlay).toContain("e.payload.name === 'l4'")
+    expect(overlay).toContain("e.payload.name === 'r4'")
+    expect(overlay).toContain('playerScreenshot()')
+    expect(overlay).toContain("void capture('gif')")
   })
 })

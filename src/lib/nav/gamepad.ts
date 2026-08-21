@@ -12,8 +12,8 @@ import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
 // keyboard nav. Directions repeat (accelerating) while held; in the player they seek. The
-// player itself owns A/B/L1/R1 (context-aware skip/pause/back — see PlayerOverlay) and L2/R2
-// (the seek scrub — see player/gamepad.ts), so we only act on those when the player is closed.
+// player itself owns A/B/L1/R1 (skip/pause/back), L2/R2 (seek), and L4/R4 (screenshot / GIF).
+// Browse only acts on those when the player is closed.
 
 type Dir = 'up' | 'down' | 'left' | 'right'
 const DIRS: Dir[] = ['up', 'down', 'left', 'right']
