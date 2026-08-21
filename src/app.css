@@ -16,6 +16,20 @@
 }
 * { border-color: hsl(var(--border)); }
 html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: 'Nunito Variable', sans-serif; scroll-behavior: smooth; }
+/* Compositor screenshots hide in-webview OSD so the file is video + subs, not controls. */
+html.izumi-capturing .izumi-hud { visibility: hidden !important; }
+/* Keyboard `O` focuses the overlay; *:focus-visible would draw a rounded ring at the
+   video's top-left. Capture mode also drops any focus chrome so it cannot enter the file. */
+.izumi-player-root:focus,
+.izumi-player-root:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+html.izumi-capturing *:focus,
+html.izumi-capturing *:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
 /* Clip horizontal overflow at the page level so the full-bleed Hero banner
    (w-screen) can bleed under the sidebar without a horizontal scrollbar — the
    clip is here, NOT on <main>, so it doesn't crop the bleed. */

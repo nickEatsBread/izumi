@@ -3,7 +3,7 @@
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
     scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
-    videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, androidAutoPip,
+    videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifFps, gifScale, gifMaxSeconds, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
     p2pStatusVisibility,
     continueSourcePreference,
@@ -203,7 +203,49 @@
     <Toggle label="Skip filler episodes" desc="Auto next-episode jumps past filler (AnimeFillerList). Filler is always marked in the episode list." value={$skipFiller} onToggle={() => ($skipFiller = !$skipFiller)} />
     <Toggle label="Scrub preview thumbnails" desc="Show a frame preview while skimming the seek bar. Off shows just the time and chapter (and skips the frame grab — lighter on the Deck)." value={$scrubThumbnails} onToggle={() => ($scrubThumbnails = !$scrubThumbnails)} />
     <Toggle label="Subtitle line navigation" desc="Show Previous, Replay, and Next subtitle-cue controls in the player. Useful for language learning; off by default." value={$subtitleLineNavigation} onToggle={() => ($subtitleLineNavigation = !$subtitleLineNavigation)} />
-    <Toggle label="Include subtitles in GIFs" desc="Burn the currently displayed subtitle track into GIF recordings." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
+    <div class="rounded-md border border-border p-3 space-y-3" data-setting-key="gif-recorder">
+      <div>
+        <div class="font-bold">GIF recorder</div>
+        <p class="mt-1 text-xs text-muted-foreground">Anime is 24 fps; 15 fps at 720px for ~10 seconds is the usual high-quality share. Raising fps, width, or length grows the file quickly.</p>
+      </div>
+      <Toggle label="Include subtitles" desc="Burn the currently displayed subtitle track into the GIF." value={$gifIncludeSubtitles} onToggle={() => ($gifIncludeSubtitles = !$gifIncludeSubtitles)} />
+      <label class="flex items-center justify-between gap-4">
+        <span class="min-w-0">
+          <span class="block font-bold">Frame rate</span>
+          <span class="mt-1 block text-xs text-muted-foreground">15 fps is the usual anime-GIF rate. 20–24 is smoother and much larger.</span>
+        </span>
+        <SelectMenu className="w-28 shrink-0" value={String($gifFps)} onChange={(value) => { $gifFps = Number(value) }} ariaLabel="GIF frame rate" options={[
+          { value: '10', label: '10 fps' },
+          { value: '12', label: '12 fps' },
+          { value: '15', label: '15 fps' },
+          { value: '20', label: '20 fps' },
+          { value: '24', label: '24 fps' },
+        ]} />
+      </label>
+      <label class="flex items-center justify-between gap-4">
+        <span class="min-w-0">
+          <span class="block font-bold">Width</span>
+          <span class="mt-1 block text-xs text-muted-foreground">Height follows the video. 480px is mobile-safe; 720px is the usual desktop share size.</span>
+        </span>
+        <SelectMenu className="w-28 shrink-0" value={String($gifScale)} onChange={(value) => { $gifScale = Number(value) }} ariaLabel="GIF width" options={[
+          { value: '480', label: '480px' },
+          { value: '720', label: '720px' },
+          { value: '960', label: '960px' },
+        ]} />
+      </label>
+      <label class="flex items-center justify-between gap-4">
+        <span class="min-w-0">
+          <span class="block font-bold">Max length</span>
+          <span class="mt-1 block text-xs text-muted-foreground">Recording stops automatically. 5–10 seconds is what most chats actually play.</span>
+        </span>
+        <SelectMenu className="w-28 shrink-0" value={String($gifMaxSeconds)} onChange={(value) => { $gifMaxSeconds = Number(value) }} ariaLabel="GIF max length" options={[
+          { value: '5', label: '5 sec' },
+          { value: '10', label: '10 sec' },
+          { value: '15', label: '15 sec' },
+          { value: '30', label: '30 sec' },
+        ]} />
+      </label>
+    </div>
 
     <!-- Player cache size: the main tunable RAM cost. Presets + Custom. -->
     <div class="rounded-md border border-border p-3">
