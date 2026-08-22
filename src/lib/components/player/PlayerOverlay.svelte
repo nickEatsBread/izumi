@@ -50,7 +50,7 @@
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeSnapshotCrop, presenceAllowed } from '$lib/player/gm-overlay'
+  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSnapshotCrop, presenceAllowed } from '$lib/player/gm-overlay'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
@@ -535,17 +535,7 @@
   }))
   // …and while the track menu is open, so its (webview-rendered) columns get snapshotted onto
   // the video — otherwise the menu would be invisible behind the opaque mpv surface.
-  let chromeReveal = $state(false)
-  $effect(() => {
-    if (!gmMode || !controlsVisible || gmDynamicActive) {
-      chromeReveal = false
-      return
-    }
-    chromeReveal = true
-    const t = setTimeout(() => { chromeReveal = false }, 240)
-    return () => clearTimeout(t)
-  })
-  const overlayFast = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen || chromeReveal)
+  const overlayFast = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen)
   const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   const noticeVisible = $derived(!!$playerNotice)
@@ -562,12 +552,28 @@
   }))
   const overlayFull = $derived(overlayFast || p2pVisible || noticeVisible)
   $effect(() => {
-    // Menus re-snapshot at 60fps so the highlight tracks d-pad. P2P/toasts need the full
-    // viewport (they sit in the middle/top). Idle controls are a cropped bottom strip.
-    // Re-run when paused seek updates `pos` or P2P stats change so the snapshot is not stale.
+    if (!gmMode) return
+    if (!$playing) {
+      invoke('player_gm_dock', { bottom: 0, right: 0, top: 0, hide: false }).catch(() => {})
+      invoke('player_gm_overlay', { visible: false, fast: false, crop: null }).catch(() => {})
+      return
+    }
+    const dock = gameModeDock({
+      loading,
+      controlsVisible,
+      playerMenuOpen: $playerMenuOpen,
+      trackMenuOpen: $trackMenuOpen,
+      commentsOpen: $commentsOpen,
+      noticeVisible,
+    })
+    invoke('player_gm_dock', dock).catch(() => {})
+    // Live docked HTML animates at compositor speed. Snapshot only the pre-first-frame
+    // P2P card, when the video child still covers the full window.
+    if (gameModeDockIsLive(dock)) {
+      invoke('player_gm_overlay', { visible: false, fast: false, crop: null }).catch(() => {})
+      return
+    }
     const crop = gameModeSnapshotCrop(window.innerWidth || 0, window.innerHeight || 0, overlayFull)
-    if (overlayActive && paused) void pos
-    void $directTorrentStats
     invoke('player_gm_overlay', { visible: overlayActive, fast: overlayFast, crop }).catch(() => {})
   })
 
@@ -741,6 +747,7 @@
   })
 
   onDestroy(() => {
+    invoke('player_gm_dock', { bottom: 0, right: 0, top: 0, hide: false }).catch(() => {})
     // Close the discussion panel on every player-close path (← button, B, navigate-away) so the
     // desktop titlebar — which hides itself while commentsOpen — reappears once the player is gone.
     commentsOpen.set(false)
@@ -830,6 +837,10 @@
           else cmd('cycle', ['pause'])
           break
         case 'b':
+          if (get(playerMenuOpen)) {
+            window.dispatchEvent(new Event('player-menu-close'))
+            break
+          }
           // Reveals the page underneath (the series page you launched from), NOT home —
           // the overlay never changed route, so closing is enough.
           close()

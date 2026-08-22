@@ -72,6 +72,8 @@ describe('Continue Watching dismissal input wiring', () => {
     const nativePad = readFileSync(fileURLToPath(new URL('../../../../src-tauri/src/player/gamepad_linux.rs', import.meta.url)), 'utf8')
 
     expect(row).toContain('use:longPressDismiss')
+    expect(row).toContain('data-cw-id')
+    expect(row).toContain('el?.focus()')
     expect(row).not.toContain('title="Remove from Continue Watching"')
     expect(nav).toContain("case 'x': keydown('d')")
     expect(nativePad).toContain('Button::West => "x"')

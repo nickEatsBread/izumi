@@ -9,7 +9,7 @@
 //! Controls-and-video-at-once is achieved by DOCKING, not swapping: [`dock_video`] SHRINKS
 //! the container to leave a strip at the bottom of the screen uncovered, so the webview's
 //! (opaque) HTML control bar shows in that strip while the video keeps playing in the region
-//! above. `frac`=0 restores the container to fullscreen (controls hidden → edge-to-edge video).
+//! above. Zero insets restore the container to fullscreen (controls hidden → edge-to-edge video).
 //! No map/unmap, no black swap — both are visible simultaneously.
 //!
 //! All X calls run on the GTK main thread. The container calls below share GTK's Xlib connection
@@ -47,6 +47,7 @@ extern "C" {
     ) -> u64;
     fn XDestroyWindow(dpy: *mut c_void, w: u64) -> i32;
     fn XMapWindow(dpy: *mut c_void, w: u64) -> i32;
+    fn XUnmapWindow(dpy: *mut c_void, w: u64) -> i32;
     fn XMoveResizeWindow(dpy: *mut c_void, w: u64, x: i32, y: i32, width: u32, height: u32) -> i32;
     fn XRaiseWindow(dpy: *mut c_void, w: u64) -> i32;
     fn XFlush(dpy: *mut c_void) -> i32;
@@ -127,21 +128,28 @@ const SHAPE_SET: i32 = 0;
 struct X11 {
     dpy: *mut c_void,
     container: u64,
-    // Full window size (physical px) and the current dock fraction (0 = fullscreen video,
-    // >0 = leave the bottom `frac` of the height uncovered for the HTML control bar).
+    // Full window size (physical px). Insets leave those edges of the webview uncovered
+    // so HTML chrome is live (not snapshotted). hidden unmaps the child for full-screen menus.
     w: u32,
     h: u32,
-    frac: f64,
+    bottom: f64,
+    right: f64,
+    top: f64,
+    hidden: bool,
 }
 // SAFETY: the display pointer is GTK's X connection; all uses are dispatched to the GTK
 // main thread (GTK calls XInitThreads, and we serialize via run_on_glib_main).
 unsafe impl Send for X11 {}
 
 impl X11 {
-    /// Container height for the current dock fraction (>=1).
-    fn video_h(&self) -> u32 {
-        let bar = (self.h as f64 * self.frac).round() as u32;
-        self.h.saturating_sub(bar).max(1)
+    /// Video child geometry for the current dock insets.
+    fn layout(&self) -> (i32, i32, u32, u32) {
+        let top = (self.h as f64 * self.top).round() as i32;
+        let bottom = (self.h as f64 * self.bottom).round() as u32;
+        let right = (self.w as f64 * self.right).round() as u32;
+        let vh = self.h.saturating_sub(bottom).saturating_sub(top as u32).max(1);
+        let vw = self.w.saturating_sub(right).max(1);
+        (0, top, vw, vh)
     }
 }
 
@@ -522,28 +530,39 @@ pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result
             container,
             w,
             h,
-            frac: 0.0,
+            bottom: 0.0,
+            right: 0.0,
+            top: 0.0,
+            hidden: false,
         });
         crate::player::linux_embed::elog(&format!("x11: container {container} created {w}x{h}"));
         Ok(container as i64)
     })
 }
 
-/// Dock the video: shrink the container to leave the bottom `frac` of the screen height
-/// uncovered so the webview's HTML control bar shows there, with video still playing above.
-/// `frac`=0 restores fullscreen video (controls hidden). Superseded by the layer-shell overlay
-/// (linux_embed); kept only for the degraded XWayland fallback path.
-#[allow(dead_code)]
-pub fn dock_video(frac: f64) {
-    let frac = frac.clamp(0.0, 0.9);
+/// Dock the video child so the webview is live in the uncovered strips. That is how Game-mode
+/// chrome animates at compositor speed: WebKit paints the controls directly instead of a
+/// 20ms-per-frame overlay-add snapshot. `hide` unmaps the child for opaque full-screen menus.
+pub fn dock_video(bottom: f64, right: f64, top: f64, hide: bool) {
+    let bottom = bottom.clamp(0.0, 0.9);
+    let right = right.clamp(0.0, 0.9);
+    let top = top.clamp(0.0, 0.9);
     crate::player::linux_embed::run_on_glib_main(move || {
         if let Ok(mut g) = STATE.lock() {
             if let Some(st) = g.as_mut() {
-                st.frac = frac;
-                let vh = st.video_h();
+                st.bottom = bottom;
+                st.right = right;
+                st.top = top;
+                st.hidden = hide;
                 unsafe {
-                    XMoveResizeWindow(st.dpy, st.container, 0, 0, st.w.max(1), vh);
-                    XRaiseWindow(st.dpy, st.container);
+                    if hide {
+                        XUnmapWindow(st.dpy, st.container);
+                    } else {
+                        let (x, y, vw, vh) = st.layout();
+                        XMapWindow(st.dpy, st.container);
+                        XMoveResizeWindow(st.dpy, st.container, x, y, vw, vh);
+                        XRaiseWindow(st.dpy, st.container);
+                    }
                     XFlush(st.dpy);
                 }
             }
@@ -560,11 +579,13 @@ pub fn resize_container(w: u32, h: u32) {
             if let Some(st) = g.as_mut() {
                 st.w = w.max(1);
                 st.h = h.max(1);
-                let vh = st.video_h();
-                unsafe {
-                    XMoveResizeWindow(st.dpy, st.container, 0, 0, st.w, vh);
-                    XRaiseWindow(st.dpy, st.container);
-                    XFlush(st.dpy);
+                if !st.hidden {
+                    let (x, y, vw, vh) = st.layout();
+                    unsafe {
+                        XMoveResizeWindow(st.dpy, st.container, x, y, vw, vh);
+                        XRaiseWindow(st.dpy, st.container);
+                        XFlush(st.dpy);
+                    }
                 }
             }
         }

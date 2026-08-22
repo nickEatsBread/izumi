@@ -156,14 +156,22 @@
     try { applyQualityInfo(JSON.parse(await playerGetProperty('video-quality-options'))) }
     catch { qualityInfo = { mode: 'auto', activeHeight: 0, heights: [] } }
   }
+  let gmSettingsPage = $state<'root' | 'speed' | 'quality' | 'fit' | 'tools'>('root')
   function toggleOptions() {
     showOptions = !showOptions
     showTracks = false
     showServers = false
+    gmSettingsPage = 'root'
     if (showOptions) {
       readDelays()
       void readVideoQualities()
     }
+  }
+  function closePlayerMenus() {
+    showOptions = false
+    showTracks = false
+    showServers = false
+    gmSettingsPage = 'root'
   }
   async function setVideoQuality(mode: 'auto' | number) {
     qualityInfo = { ...qualityInfo, mode }
@@ -382,6 +390,7 @@
     })
     const onQuality = (event: Event) => applyQualityInfo((event as CustomEvent<QualityInfo>).detail)
     window.addEventListener('izumi-drm-quality', onQuality)
+    window.addEventListener('player-menu-close', closePlayerMenus)
     void (async () => {
       try {
         const sp = parseFloat(await invoke<string>('player_get_property', { name: 'speed' }))
@@ -397,6 +406,7 @@
     })()
     return () => {
       window.removeEventListener('izumi-drm-quality', onQuality)
+      window.removeEventListener('player-menu-close', closePlayerMenus)
       void unlistenMuted.then((unlisten) => unlisten())
     }
   })
@@ -736,16 +746,8 @@
              the RIGHT of the Subtitles button (Crunchy-Deck order) via order-last. -->
         <div class="relative {gm ? 'order-last' : ''}">
           <button data-focusable class={iconBtn} onclick={toggleOptions} aria-label="Playback options"><Settings size={icSize} /></button>
-          {#if showOptions}
-            <!-- NO backdrop-blur (video is a separate surface the webview can't sample → blurs
-                 black). Desktop promotes to its own compositing layer (translateZ/will-change) so
-                 show/hide is a clean recomposite. Game mode must NOT promote: the controls are
-                 snapshotted into mpv and a promoted layer captures as PIXELATED text (WebKit
-                 composites it separately, grayscale-AA + resample); an OPAQUE background keeps it
-                 on the crisp base layer, and the {#if} unmount handles the trail there. -->
-            <div class="{gm
-              ? 'gm-sheet gm-sheet-in fixed right-5 top-[12%] z-30 w-[22rem] max-h-[72vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl'
-              : 'absolute bottom-full right-0 mb-2 w-64 rounded-lg bg-neutral-900 p-3 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]'}">
+          {#if showOptions && !gm}
+            <div class="absolute bottom-full right-0 mb-2 w-64 rounded-lg bg-neutral-900 p-3 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]">
               <button data-focusable onclick={changeSource} class="mb-3 w-full rounded bg-white/10 px-2.5 py-2 text-left text-sm font-bold transition hover:bg-white/20">Change source…</button>
               <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Speed</p>
               <!-- Fixed 6-col grid so all speeds sit on ONE even row (flex-wrap dropped "2×"
@@ -1153,4 +1155,45 @@
       </div>
     </div>
   </div>
+
+  {#if gm && showOptions}
+    <div class="gm-sheet gm-sheet-in pointer-events-auto fixed inset-y-8 right-6 z-40 flex w-[22rem] flex-col rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl">
+      {#if gmSettingsPage === 'root'}
+        <p class="px-3 py-2 text-2xl font-bold">Settings</p>
+        <button data-focusable class="gm-set-row" onclick={changeSource}><span>Change source</span><span class="text-white/40">›</span></button>
+        <button data-focusable class="gm-set-row" onclick={() => (gmSettingsPage = 'speed')}><span>Speed</span><span class="text-white/50">{speed}× ›</span></button>
+        {#if qualityInfo.heights.length}
+          <button data-focusable class="gm-set-row" onclick={() => (gmSettingsPage = 'quality')}>
+            <span>Quality</span>
+            <span class="text-white/50">{qualityInfo.mode === 'auto' ? `Auto${qualityInfo.activeHeight ? ` (${qualityInfo.activeHeight}p)` : ''}` : `${qualityInfo.mode}p`} ›</span>
+          </button>
+        {/if}
+        <button data-focusable class="gm-set-row" onclick={() => (gmSettingsPage = 'fit')}><span>Video fit</span><span class="text-white/50">{$videoFit === 'fill' ? 'Fill' : 'Best fit'} ›</span></button>
+        <button data-focusable class="gm-set-row" onclick={() => (gmSettingsPage = 'tools')}><span>Tools</span><span class="text-white/40">›</span></button>
+      {:else}
+        <button data-focusable class="gm-set-row mb-1 font-bold" onclick={() => (gmSettingsPage = 'root')}>
+          <span>‹ {gmSettingsPage === 'speed' ? 'Speed' : gmSettingsPage === 'quality' ? 'Quality' : gmSettingsPage === 'fit' ? 'Video fit' : 'Tools'}</span>
+        </button>
+        {#if gmSettingsPage === 'speed'}
+          {#each speeds as s}
+            <button data-focusable class="gm-set-row" class:bg-white={speed === s} class:text-black={speed === s} onclick={() => setSpeed(s)}>{s}×</button>
+          {/each}
+        {:else if gmSettingsPage === 'quality'}
+          <button data-focusable class="gm-set-row" class:bg-white={qualityInfo.mode === 'auto'} class:text-black={qualityInfo.mode === 'auto'} onclick={() => setVideoQuality('auto')}>Auto</button>
+          {#each qualityInfo.heights as height}
+            <button data-focusable class="gm-set-row" class:bg-white={qualityInfo.mode === height} class:text-black={qualityInfo.mode === height} onclick={() => setVideoQuality(height)}>{height}p</button>
+          {/each}
+        {:else if gmSettingsPage === 'fit'}
+          <button data-focusable class="gm-set-row" class:bg-white={$videoFit === 'best'} class:text-black={$videoFit === 'best'} onclick={() => setFit('best')}>Best fit</button>
+          <button data-focusable class="gm-set-row" class:bg-white={$videoFit === 'fill'} class:text-black={$videoFit === 'fill'} onclick={() => setFit('fill')}>Fill</button>
+        {:else}
+          <button data-focusable class="gm-set-row" onclick={() => playerStatsOpen.update((value) => !value)}>{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</button>
+          <button data-focusable class="gm-set-row" onclick={() => setSleep('off')}>Sleep: off</button>
+          <button data-focusable class="gm-set-row" onclick={() => setSleep('15')}>Sleep: 15 min</button>
+          <button data-focusable class="gm-set-row" onclick={() => setSleep('30')}>Sleep: 30 min</button>
+          <button data-focusable class="gm-set-row" onclick={() => setSleep('end')}>Sleep: episode end</button>
+        {/if}
+      {/if}
+    </div>
+  {/if}
 </div>

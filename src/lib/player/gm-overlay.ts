@@ -53,3 +53,28 @@ export function gameModeP2pLine(stats: {
 export function presenceAllowed(gameMode: boolean): boolean {
   return !gameMode
 }
+
+/** Live webview insets (0..1 of the viewport) so Game-mode chrome is not snapshotted. */
+export function gameModeDock(input: {
+  loading: boolean
+  controlsVisible: boolean
+  playerMenuOpen: boolean
+  trackMenuOpen: boolean
+  commentsOpen: boolean
+  noticeVisible: boolean
+}): { bottom: number; right: number; top: number; hide: boolean } {
+  if (input.trackMenuOpen || input.commentsOpen) {
+    return { bottom: 0, right: 0, top: 0, hide: true }
+  }
+  if (input.loading) {
+    return { bottom: 0, right: 0, top: 0, hide: false }
+  }
+  const bottom = input.controlsVisible || input.playerMenuOpen || input.noticeVisible ? 0.40 : 0
+  const right = input.playerMenuOpen ? 0.32 : 0
+  const top = input.noticeVisible ? 0.14 : 0
+  return { bottom, right, top, hide: false }
+}
+
+export function gameModeDockIsLive(dock: { bottom: number; right: number; top: number; hide: boolean }): boolean {
+  return dock.hide || dock.bottom > 0 || dock.right > 0 || dock.top > 0
+}

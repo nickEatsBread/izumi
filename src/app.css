@@ -273,6 +273,18 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 .gamemode .gm-chrome-in { animation: gm-chrome-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .gamemode .gm-sheet-in { animation: gm-sheet-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 .gamemode .gm-menu-col-in { animation: gm-menu-col-in 150ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.gamemode .gm-set-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: 0.85rem;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
 /* Buttons whose fill already matches the ring colour (the solid-white play/pause circle) would
    look like they ENLARGE when the outer white ring merges with the fill. Ring them on the INSIDE
    instead unless `.gm-play` (YouTube-style grow) applies. */

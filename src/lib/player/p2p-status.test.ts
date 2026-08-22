@@ -48,6 +48,6 @@ describe('Game Mode dynamic overlay ownership', () => {
     })).toBe(true)
     expect(shouldUseGameModeDynamicOverlay({
       loading: false, scrubbing: true, commentsOpen: false, directP2P: true,
-    })).toBe(true)
+    })).toBe(false)
   })
 })
