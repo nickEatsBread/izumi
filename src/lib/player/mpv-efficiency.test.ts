@@ -16,4 +16,8 @@ describe('embedded mpv efficiency configuration', () => {
     expect(desktopPlayer).toContain('set_ui_render_lite')
     expect(desktopPlayer).toContain('UI_LITE_HOLDERS')
   })
+
+  it('shows the landed frame while paused so Game-mode skim is not a frozen picture', () => {
+    expect(desktopPlayer).toContain('hr-seek')
+  })
 })

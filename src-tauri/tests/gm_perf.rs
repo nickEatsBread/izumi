@@ -11,7 +11,7 @@ use std::num::NonZeroU32;
 fn game_mode_keeps_hardware_webkit() {
     assert!(game_mode_uses_hardware_webkit());
     let lib = include_str!("../src/lib.rs");
-    assert!(lib.contains("HardwareAccelerationPolicy::Always"));
+    assert!(lib.contains("HardwareAccelerationPolicy::OnDemand"));
     assert!(lib.contains("game_mode_uses_hardware_webkit"));
 }
 

@@ -50,7 +50,7 @@
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeP2pLine, gameModeSnapshotCrop, presenceAllowed } from '$lib/player/gm-overlay'
+  import { gameModeBitmapOverlayActive, gameModeSnapshotCrop, presenceAllowed } from '$lib/player/gm-overlay'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
@@ -310,7 +310,11 @@
   })
   // Exact absolute seek so auto-skip/skip land past the segment (a keyframe seek could
   // snap back into it and re-skip forever).
-  const seekTo = (t: number) => cmd('seek', [Math.max(0, t).toFixed(3), 'absolute+exact'])
+  const seekTo = (t: number) => {
+    const next = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t)
+    pos = next
+    cmd('seek', [next.toFixed(3), 'absolute+exact'])
+  }
 
   // The shared scrub store commits through the same absolute seek as touch/skip.
   initScrub((t) => seekTo(t))
@@ -327,6 +331,7 @@
       moveScrub: (t) => moveScrub(t),
       endScrub: () => endScrub(),
       onActivity: () => poke(),
+      blocked: () => get(commentsOpen) || get(trackMenuOpen),
     })
     return stop
   })
@@ -518,10 +523,9 @@
     cmd('set', ['cursor-autohide', gmMode ? 'always' : controlsVisible ? 'no' : 'always'])
   })
 
-  // Game mode (gamescope): static HTML controls are snapshotted into mpv, but the moving
-  // states that made the Deck hitch (loading + active scrub) are native mpv ASS overlays.
-  // Bitmap overlays always sit above ASS in mpv, so the snapshot path is disabled while the
-  // native dynamic overlay is active.
+  // Game mode (gamescope): static HTML chrome is snapshotted into mpv. Loading + active
+  // scrub stay native ASS (they move every frame). P2P / toasts / menus stay real HTML
+  // and are snapshotted on top of that ASS.
   const directP2pOverlay = $derived(isDirectP2PStream($nowPlayingStream))
   const gmDynamicActive = $derived(gmMode && $playing && shouldUseGameModeDynamicOverlay({
     loading,
@@ -532,6 +536,9 @@
   // …and while the track menu is open, so its (webview-rendered) columns get snapshotted onto
   // the video — otherwise the menu would be invisible behind the opaque mpv surface.
   const overlayFast = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen)
+  const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
+  const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
+  const noticeVisible = $derived(!!$playerNotice)
   const overlayActive = $derived(gameModeBitmapOverlayActive({
     gameMode: gmMode,
     playing: $playing,
@@ -540,14 +547,17 @@
     trackMenuOpen: $trackMenuOpen,
     playerMenuOpen: $playerMenuOpen,
     commentsOpen: $commentsOpen,
+    p2pVisible,
+    noticeVisible,
   }))
-  const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
-  const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
+  const overlayFull = $derived(overlayFast || p2pVisible || noticeVisible)
   $effect(() => {
-    // Faster snapshot cadence while ANY menu/popover is open so the highlight tracks d-pad moves
-    // (the track menu OR the Controls playback-options / track popovers). Idle controls are a
-    // single cropped snapshot of the bottom strip — skip/P2P/toasts are native ASS.
-    const crop = gameModeSnapshotCrop(window.innerWidth || 0, window.innerHeight || 0, overlayFast)
+    // Menus re-snapshot at 60fps so the highlight tracks d-pad. P2P/toasts need the full
+    // viewport (they sit in the middle/top). Idle controls are a cropped bottom strip.
+    // Re-run when paused seek updates `pos` or P2P stats change so the snapshot is not stale.
+    const crop = gameModeSnapshotCrop(window.innerWidth || 0, window.innerHeight || 0, overlayFull)
+    if (overlayActive && paused) void pos
+    void $directTorrentStats
     invoke('player_gm_overlay', { visible: overlayActive, fast: overlayFast, crop }).catch(() => {})
   })
 
@@ -627,9 +637,7 @@
   function currentGmDynamicState() {
     const s = get(scrub)
     const skipText = gmMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
-    const noticeText = gmMode && $playerNotice ? $playerNotice : ''
-    const p2pText = gmMode && p2pVisible ? gameModeP2pLine($directTorrentStats) : ''
-    const visible = gmMode && get(playing) && (loading || s.active || !!skipText || !!noticeText || !!p2pText)
+    const visible = gmMode && get(playing) && (loading || s.active || !!skipText)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -661,14 +669,14 @@
       barW: lastBar.w,
       barH: 10,
       skipText,
-      noticeText,
-      p2pText,
+      noticeText: '',
+      p2pText: '',
     }
   }
 
   function scheduleGmDynamicOverlay() {
     if (typeof window === 'undefined' || gmDynDisposed || gmDynRaf) return
-    if (!(gmMode && get(playing) && (loading || get(scrub).active || showSkip || !!get(playerNotice) || p2pVisible)) && !gmDynLastVisible) return
+    if (!(gmMode && get(playing) && (loading || get(scrub).active || showSkip)) && !gmDynLastVisible) return
     gmDynRaf = requestAnimationFrame(() => {
       gmDynRaf = 0
       if (gmDynInFlight) {
@@ -693,7 +701,7 @@
   }
 
   $effect(() => {
-    gmMode; $playing; loading; firstFrame; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; $playerNotice; p2pVisible; $directTorrentStats; overlayActive
+    gmMode; $playing; loading; firstFrame; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive
     scheduleGmDynamicOverlay()
   })
 
@@ -931,8 +939,8 @@
       poke()
       if (action === 'playerClose') { if (get(fullscreen)) exitFullscreen() }
       else if (action === 'playerPlayPause') cmd('cycle', ['pause'])
-      else if (action === 'playerSeekBack') cmd('seek', [String(-get(seekDuration)), 'relative+exact'])
-      else if (action === 'playerSeekForward') cmd('seek', [String(get(seekDuration)), 'relative+exact'])
+      else if (action === 'playerSeekBack') seekTo(pos - get(seekDuration))
+      else if (action === 'playerSeekForward') seekTo(pos + get(seekDuration))
       else if (action === 'playerPreviousChapter') {
         // No chapters means no-op, deliberately: a key that silently turns into a plain seek is
         // worse than one that does nothing, because you cannot tell which happened.
@@ -1105,13 +1113,15 @@
     </div>
   {/if}
 
-  {#if !gmMode}
-    <div class="izumi-hud"><P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} /></div>
-  {/if}
+  <div class="izumi-hud"><P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} /></div>
 
-  <!-- Transient toast (next-episode loading / errors). Game mode draws this as native ASS. -->
-  {#if $playerNotice && !gmMode}
-    <div transition:fade={{ duration: 150 }} class="izumi-hud pointer-events-none absolute left-1/2 top-6 z-30 -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2 text-sm font-medium text-white shadow-lg">{$playerNotice}</div>
+  <!-- Transient toast (next-episode loading / errors). Snapshotted onto the video in Game mode. -->
+  {#if $playerNotice}
+    <div
+      transition:fade={{ duration: 150 }}
+      class="izumi-hud pointer-events-none absolute left-1/2 z-30 -translate-x-1/2 border border-white/15 bg-black/80 font-medium text-white shadow-lg
+        {gmMode ? 'top-8 rounded-2xl px-6 py-3 text-lg' : 'top-6 rounded-lg px-4 py-2 text-sm'}"
+    >{$playerNotice}</div>
   {/if}
 
   {#if $playerStatsOpen}<div class="izumi-hud"><StatsOverlay /></div>{/if}

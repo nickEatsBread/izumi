@@ -1,5 +1,5 @@
-/** Game-mode overlay policy: when the HTML chrome is snapshotted into mpv, and when
- * skip / P2P / toasts are drawn as native ASS instead. */
+/** Game-mode overlay policy: when the HTML chrome is snapshotted into mpv. Loading and
+ * scrubbing stay native ASS; P2P / toasts / menus are real HTML snapshotted onto the video. */
 
 export function gameModeBitmapOverlayActive(input: {
   gameMode: boolean
@@ -9,19 +9,22 @@ export function gameModeBitmapOverlayActive(input: {
   trackMenuOpen: boolean
   playerMenuOpen: boolean
   commentsOpen: boolean
+  p2pVisible?: boolean
+  noticeVisible?: boolean
 }): boolean {
-  return input.gameMode && input.playing && !input.dynamicOverlay && (
-    input.controlsVisible || input.trackMenuOpen || input.playerMenuOpen || input.commentsOpen
-  )
+  if (!input.gameMode || !input.playing) return false
+  if (input.p2pVisible || input.noticeVisible) return true
+  if (input.dynamicOverlay) return false
+  return input.controlsVisible || input.trackMenuOpen || input.playerMenuOpen || input.commentsOpen
 }
 
-/** Bottom control-strip crop in CSS pixels. Menus need the full viewport. */
+/** Bottom control-strip crop in CSS pixels. Menus, P2P, and toasts need the full viewport. */
 export function gameModeSnapshotCrop(
   width: number,
   height: number,
-  fast: boolean,
+  full: boolean,
 ): { x: number; y: number; w: number; h: number } | null {
-  if (fast || width <= 0 || height <= 0) return null
+  if (full || width <= 0 || height <= 0) return null
   const h = Math.max(1, Math.round(height * 0.36))
   return { x: 0, y: Math.max(0, height - h), w: width, h }
 }

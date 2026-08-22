@@ -1,9 +1,7 @@
 import { get } from 'svelte/store'
 import { listen } from '@tauri-apps/api/event'
-import { playerCommand } from '$lib/player/native'
 import { RepeatTimer } from '$lib/player/repeat'
 import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen } from '$lib/player/session'
-import { seekDuration } from '$lib/settings/ui'
 import { inputType } from './input'
 import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
@@ -11,8 +9,8 @@ import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 
 // App-wide controller translator (Steam Deck Game mode). The Rust backend reads the pad and
 // emits `gamepad-input` = { name, pressed }; here we route each button to izumi's existing
-// keyboard nav. Directions repeat (accelerating) while held; in the player they seek. The
-// player itself owns A/B/L1/R1 (skip/pause/back), L2/R2 (seek), and L4/R4 (screenshot / GIF).
+// keyboard nav. Directions repeat (accelerating) while held. The player owns A/B/L1/R1
+// (skip/pause/back), L2/R2 and d-pad left/right (skim), and L4/R4 (screenshot / GIF).
 // Browse only acts on those when the player is closed.
 
 type Dir = 'up' | 'down' | 'left' | 'right'
@@ -21,9 +19,6 @@ const ARROW: Record<Dir, string> = { up: 'ArrowUp', down: 'ArrowDown', left: 'Ar
 
 function keydown(key: string) {
   window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
-}
-function playerCmd(name: string, args: string[] = []) {
-  playerCommand(name, args).catch(() => {})
 }
 
 /// Start the translator. Returns a stop function. Runs for the whole app while in Game mode.
@@ -54,8 +49,9 @@ export function startGamepadNav(): () => void {
     wasPlaying = p
   })
 
-  // A direction fires once on press, then repeats while held. In the player, left/right seek
-  // (up/down are unused); everywhere else it drives focus nav via izumi's window keydown handler.
+  // A direction fires once on press, then repeats while held. In the player, left/right are
+  // owned by the overlay's TriggerScrubber (same skim path as L2/R2) so a paused seek still
+  // moves the bar and the frame; up/down are unused. Everywhere else this drives focus nav.
   function fireDir(dir: Dir) {
     if (get(deckKeyboardWarning)) return // the keyboard shortcut warning owns the pad
     if (get(trackMenuOpen)) return // the track menu owns the pad while open
@@ -65,13 +61,10 @@ export function startGamepadNav(): () => void {
         // Route held/repeating d-pad + stick directions into the discussion panel. This keeps
         // player seeking disabled while allowing controller scrolling and source selection.
         window.dispatchEvent(new CustomEvent('comments-nav', { detail: dir }))
-        return
       }
-      if (dir === 'left') playerCmd('seek', [String(-get(seekDuration)), 'relative+exact'])
-      else if (dir === 'right') playerCmd('seek', [String(get(seekDuration)), 'relative+exact'])
-    } else {
-      keydown(ARROW[dir])
+      return
     }
+    keydown(ARROW[dir])
   }
 
   function onPress(name: string) {
@@ -95,6 +88,9 @@ export function startGamepadNav(): () => void {
     }
     if (DIRS.includes(name as Dir)) {
       const dir = name as Dir
+      // Player overlay owns left/right skim (paused-frame + native bar). Do not also
+      // relative-seek here — that left the HTML snapshot and time-pos stuck while paused.
+      if (inPlayer() && !get(commentsOpen) && (dir === 'left' || dir === 'right')) return
       held[dir] = true
       timers[dir].press(performance.now())
       fireDir(dir)

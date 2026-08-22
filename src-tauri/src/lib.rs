@@ -663,11 +663,10 @@ fn set_tac_verification_config(
     Ok(())
 }
 
-/// Toggle the WebView's hardware-acceleration policy (Linux). Game mode keeps GPU compositing
-/// (`Always`) even while the player is up: software raster aliases curves and the browse UI is
-/// still live behind the overlay. Ghost trails are handled by `disable_webkit_damage`, not by
-/// forcing `Never`. `enabled=false` is a no-op on gamescope so a stale caller cannot drop the
-/// Deck back onto the software path. Desktop may still request OnDemand vs Never. No-op off-Linux.
+/// Toggle the WebView's hardware-acceleration policy (Linux). Game mode uses OnDemand:
+/// Always made the browse page flash on scroll, Never aliases curves. Ghost trails are
+/// handled by `disable_webkit_damage`, not by forcing `Never`. Desktop may still request
+/// OnDemand vs Never. No-op off-Linux.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn set_webview_accel(app: AppHandle, enabled: bool) {
@@ -677,9 +676,7 @@ fn set_webview_accel(app: AppHandle, enabled: bool) {
             use webkit2gtk::{HardwareAccelerationPolicy, SettingsExt, WebViewExt};
             if let Some(settings) = pw.inner().settings() {
                 let gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
-                settings.set_hardware_acceleration_policy(if gamescope {
-                    HardwareAccelerationPolicy::Always
-                } else if enabled {
+                settings.set_hardware_acceleration_policy(if gamescope || enabled {
                     HardwareAccelerationPolicy::OnDemand
                 } else {
                     HardwareAccelerationPolicy::Never
@@ -4979,7 +4976,7 @@ pub fn run() {
                         {
                             use webkit2gtk::HardwareAccelerationPolicy;
                             settings.set_hardware_acceleration_policy(
-                                HardwareAccelerationPolicy::Always,
+                                HardwareAccelerationPolicy::OnDemand,
                             );
                         }
                         let sptr = settings.as_ptr() as *mut std::ffi::c_void;

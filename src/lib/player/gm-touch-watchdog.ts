@@ -58,7 +58,12 @@ export function initGmTouchWatchdog(): () => void {
   }
   const clear = (e: PointerEvent) => {
     active.delete(e.pointerId)
-    if (!active.size) setHold(false)
+    if (!active.size) {
+      setHold(false)
+      // Gamescope's synthesized mouse stays at the last touch with button 1 often still
+      // logically down. Browse hover then lights play buttons as rows slide under that point.
+      void invoke('gm_touch_unstick').catch(() => {})
+    }
   }
   const got = (e: Event) => {
     const pe = e as PointerEvent

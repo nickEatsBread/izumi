@@ -80,6 +80,15 @@ describe('ButtonPressLatch', () => {
   })
 })
 
+describe('native Game-mode seek', () => {
+  it('skims with d-pad left/right as well as the triggers', () => {
+    const src = readFileSync(fileURLToPath(new URL('./gamepad.ts', import.meta.url)), 'utf8')
+    expect(src).toContain("e.payload.name === 'left'")
+    expect(src).toContain("e.payload.name === 'right'")
+    expect(src).toContain('blocked')
+  })
+})
+
 describe('Steam Deck rear grips', () => {
   it('maps L4 to screenshot and R4 to GIF in Game mode', () => {
     const native = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/gamepad_linux.rs', import.meta.url)), 'utf8')
