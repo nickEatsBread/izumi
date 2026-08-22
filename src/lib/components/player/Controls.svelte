@@ -94,7 +94,9 @@
 
   // Game mode (Deck) scales the controls up for a touchscreen at arm's length: bigger
   // secondary icon buttons + icons, and the title can move to the top of the player.
-  const iconBtn = $derived(`grid place-items-center rounded-full transition hover:bg-white/15 ${gm ? 'size-12' : 'size-10'}`)
+  const iconBtn = $derived(gm
+    ? 'grid size-12 place-items-center rounded-full bg-white/10 transition-[transform,background-color] duration-150 ease-out hover:bg-white/20'
+    : 'grid size-10 place-items-center rounded-full transition hover:bg-white/15')
   const icSize = $derived(gm ? 24 : 20)
   const titleTop = $derived(gm && $playerTitleTop)
 
@@ -655,7 +657,7 @@
        Only the rows that actually ARE controls opt back in below; the gradient, the padding and the
        title now fall through to the overlay's click-to-pause. The Seekbar keeps its own `py-3` grab
        padding, so there is still a forgiving band that seeks rather than pausing. -->
-  <div class="pointer-events-none absolute inset-x-0 bottom-0 px-6 pb-5 {gm ? 'bg-gradient-to-t from-black/55 to-transparent pt-8' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent pt-20'}">
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'gm-chrome-in bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
     <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
          in Game mode to match the enlarged controls. -->
     {#if !titleTop}
@@ -681,7 +683,7 @@
       <!-- Play/pause: Game mode gets a filled white circle (no outline) — the primary,
            thumb-sized touch target; Desktop keeps the subtle hover-only button. -->
       <button data-focusable onclick={togglePlay} aria-label={paused ? 'Play' : 'Pause'}
-              class="grid place-items-center rounded-full focus-ring-inset {gm ? 'size-16 bg-white text-black' : 'size-10 transition hover:bg-white/15'}">
+              class="grid place-items-center rounded-full focus-ring-inset {gm ? 'gm-play size-16 bg-white text-black shadow-lg' : 'size-10 transition hover:bg-white/15'}">
         {#if paused}<Play size={gm ? 30 : 22} fill="currentColor" />{:else}<Pause size={gm ? 30 : 22} fill="currentColor" />{/if}
       </button>
       {#if hasNext}
@@ -741,7 +743,9 @@
                  snapshotted into mpv and a promoted layer captures as PIXELATED text (WebKit
                  composites it separately, grayscale-AA + resample); an OPAQUE background keeps it
                  on the crisp base layer, and the {#if} unmount handles the trail there. -->
-            <div class="absolute bottom-full right-0 mb-2 w-64 rounded-lg bg-neutral-900 p-3 text-sm text-white shadow-xl {gm ? '' : '[transform:translateZ(0)] [will-change:transform]'}">
+            <div class="{gm
+              ? 'gm-sheet gm-sheet-in fixed right-5 top-[12%] z-30 w-[22rem] max-h-[72vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl'
+              : 'absolute bottom-full right-0 mb-2 w-64 rounded-lg bg-neutral-900 p-3 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]'}">
               <button data-focusable onclick={changeSource} class="mb-3 w-full rounded bg-white/10 px-2.5 py-2 text-left text-sm font-bold transition hover:bg-white/20">Change source…</button>
               <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Speed</p>
               <!-- Fixed 6-col grid so all speeds sit on ONE even row (flex-wrap dropped "2×"
@@ -821,7 +825,9 @@
             {#if showServers}
               <!-- Same popover rules as the options menu: no backdrop-blur; Desktop promotes its
                    own layer, Game mode must stay on the base layer to snapshot crisply. -->
-              <div class="absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900 p-2 text-sm text-white shadow-xl {gm ? '' : '[transform:translateZ(0)] [will-change:transform]'}">
+              <div class="{gm
+                ? 'gm-sheet gm-sheet-in fixed right-5 top-[18%] z-30 w-[22rem] max-h-[70vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl'
+                : 'absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900 p-2 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]'}">
                 <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Servers</p>
                 {#each altServers as alt, i (alt.url)}
                   <button data-focusable disabled={swapping} class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15 disabled:opacity-40" onclick={() => swapTo(alt)}>
@@ -840,7 +846,7 @@
             {#if gm}
               <!-- Game mode keeps the flat, tap-friendly list (the ☰ TrackMenu is the primary
                    Deck path; this popover is the fallback and stays snapshot-crisp with no promoted layer). -->
-              <div class="absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900 p-2 text-sm text-white shadow-xl">
+              <div class="gm-sheet gm-sheet-in fixed right-5 top-[14%] z-30 max-h-[72vh] w-[22rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl">
                 <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Audio</p>
                 {#if audios.length}
                   {#each audios as t (t.id)}

@@ -249,23 +249,15 @@
 </script>
 
 {#if open}
-  <!-- Full-screen capture layer. Backdrop tap closes; z above the controls. NO fade/opacity
-       transition: the Game-mode player renders the webview via a software SNAPSHOT (accel off,
-       to avoid gamescope pixelation), so any per-frame opacity animation re-snapshots the whole
-       view each frame → the menu crawled in. Instant show/hide instead. -->
+  <!-- Backdrop + sheet. Overlay snapshots at 60fps while this menu is open, so a 160ms
+       Leanback pop is a handful of frames — not the crawl we got from a 12fps idle loop. -->
   <div
     class="fixed inset-0 z-40 flex items-center justify-center bg-black/50"
     onclick={closeMenu}
     role="presentation"
   >
-    <!-- The column strip. Two panels fit centered on the Deck screen; the category column dims
-         while a track column is open (parent-dims-child cascade). stopPropagation so clicks
-         inside don't hit the backdrop. Sized big for the Deck's handheld screen. -->
     <div class="flex items-start gap-4" onclick={(e) => e.stopPropagation()} role="presentation">
-      <!-- Category column. OPAQUE bg + NO opacity animation: the menu is snapshotted into mpv, and
-           a translucent/opacity-animated element gets promoted to its own compositing layer, which
-           WebKit captures as pixelated text. The active column reads from the highlight, not a dim. -->
-      <div class="w-[26rem] rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
+      <div class="gm-sheet gm-sheet-in w-[26rem] rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
         {#each roots as r, i (r.key)}
           <button
             data-focusable
@@ -283,7 +275,7 @@
 
       <!-- Track column (appears when descended). -->
       {#if level === 1}
-        <div bind:this={trackColEl} class="max-h-[85vh] w-[26rem] overflow-y-auto rounded-2xl border border-white/10 bg-black p-2 shadow-2xl">
+        <div bind:this={trackColEl} class="gm-sheet gm-menu-col-in max-h-[85vh] w-[26rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
           <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
           {#each subItems as it, i (leafKey(it))}
             <button

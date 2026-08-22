@@ -78,5 +78,21 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('presenceAllowed(gmMode)')
     expect(overlay).toContain('<P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} />')
     expect(overlay).not.toContain('$playerNotice && !gmMode')
+    expect(overlay).toContain('chromeReveal')
+  })
+})
+
+describe('Game-mode Leanback motion', () => {
+  it('keeps snappy chrome/sheet enter animations and a growing play highlight', () => {
+    const css = readFileSync(fileURLToPath(new URL('../../app.css', import.meta.url)), 'utf8')
+    expect(css).toContain('gm-chrome-in')
+    expect(css).toContain('gm-sheet-in')
+    expect(css).toContain('.gm-play.focus-ring-inset:focus')
+    const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
+    expect(controls).toContain('gm-play')
+    expect(controls).toContain('gm-sheet-in')
+    const menu = readFileSync(fileURLToPath(new URL('../components/player/TrackMenu.svelte', import.meta.url)), 'utf8')
+    expect(menu).toContain('gm-sheet-in')
+    expect(menu).toContain('gm-menu-col-in')
   })
 })
