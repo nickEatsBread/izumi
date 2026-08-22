@@ -33,7 +33,7 @@ describe('gameModeBitmapOverlayActive', () => {
 
 describe('gameModeSnapshotCrop', () => {
   it('crops idle snapshots to the bottom control strip', () => {
-    expect(gameModeSnapshotCrop(1280, 800, false)).toEqual({ x: 0, y: 576, w: 1280, h: 224 })
+    expect(gameModeSnapshotCrop(1280, 800, false)).toEqual({ x: 0, y: 512, w: 1280, h: 288 })
     expect(gameModeSnapshotCrop(1280, 800, true)).toBeNull()
   })
 })
@@ -42,9 +42,9 @@ describe('gameMode chrome + presence', () => {
   it('treats skip/notice/p2p as native chrome', () => {
     expect(gameModeChromeActive({ skip: true, notice: false, p2p: false })).toBe(true)
     expect(gameModeChromeActive({ skip: false, notice: false, p2p: false })).toBe(false)
-    expect(gameModeP2pLine(null)).toBe('Connecting to peers…')
+    expect(gameModeP2pLine(null)).toBe('P2P  Connecting to peers…')
     expect(gameModeP2pLine({ downloadMbps: 8.25, uploadMbps: 0.4, livePeers: 12 }))
-      .toBe('↓ 8.3  ↑ 0.4  12 peers')
+      .toBe('P2P  ↓ 8.3  ↑ 0.4  12 peers')
   })
 
   it('does not publish desktop presence in Game mode', () => {

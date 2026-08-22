@@ -29,19 +29,26 @@ fn idle_overlay_does_not_raster_unless_forced() {
 #[test]
 fn idle_snapshots_clip_to_the_control_strip() {
     let strip = control_strip_crop(1280, 800, false).expect("idle crop");
-    assert_eq!(strip, (0, 576, 1280, 224));
+    assert_eq!(strip, (0, 512, 1280, 288));
     assert!(control_strip_crop(1280, 800, true).is_none());
 
     let full = (0, 0, 1280, 800);
-    assert_eq!(clip_to_strip(full, Some(strip)), Some((0, 576, 1280, 224)));
+    assert_eq!(clip_to_strip(full, Some(strip)), Some((0, 512, 1280, 288)));
     assert_eq!(clip_to_strip((40, 600, 200, 80), Some(strip)), Some((40, 600, 200, 80)));
     assert!(clip_to_strip((10, 10, 40, 40), Some(strip)).is_none());
     assert_eq!(clip_to_strip(full, None), Some(full));
 }
 
 #[test]
-fn osd_cadence_is_thirty() {
-    assert_eq!(OSD_FPS, 30);
+fn osd_cadence_tracks_a_finger_skim() {
+    assert_eq!(OSD_FPS, 60);
+}
+
+#[test]
+fn p2p_chrome_sits_above_the_loading_backdrop() {
+    let osd = include_str!("../src/player/gm_osd.rs");
+    assert!(osd.contains("const Z_LOADING: i64 = 60"));
+    assert!(osd.contains("const Z_CHROME: i64 = 70"));
 }
 
 #[test]

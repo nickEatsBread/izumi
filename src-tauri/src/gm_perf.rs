@@ -7,16 +7,17 @@
 
 use std::num::NonZeroU32;
 
-/// Native ASS overlay cadence. Loading/scrub visuals are drawn inside mpv; 30fps is enough
-/// for a spinner and a tweened scrub knob without occupying the Deck iGPU at 60.
-pub const OSD_FPS: u64 = 30;
+/// Native ASS overlay cadence. The Deck's touch skim has to track the finger; 30fps
+/// made the native bar feel sticky. Loading spinner phase also uses this clock.
+pub const OSD_FPS: u64 = 60;
 /// Snapshot the HTML chrome only when it changes (show/hide or a menu). Idle 12fps rasters
 /// were the dominant Game-mode cost while the control bar sat still.
 pub const OVERLAY_IDLE_FPS: u64 = 0;
 /// Menu highlight / d-pad navigation still needs a high snapshot cadence.
 pub const OVERLAY_SCRUB_FPS: u64 = 60;
 /// Bottom fraction of the viewport that holds the control strip (idle snapshots only).
-pub const CONTROL_STRIP_FRACTION: f64 = 0.28;
+/// 0.28 sliced the Game-mode title/episode line (64px play + seek + two text rows).
+pub const CONTROL_STRIP_FRACTION: f64 = 0.36;
 /// Ignore Gamescope touch-restore wakes closer together than this.
 pub const TOUCH_RESTORE_MIN_INTERVAL_MS: u64 = 400;
 /// After the first frame, cap torrent download so piece hashing/IO does not fight the GPU.
@@ -204,12 +205,14 @@ pub fn chrome_ass(
 
     let p2p = p2p_text.trim();
     if !p2p.is_empty() {
-        let tw = (p2p.len() as f64 * 13.0 + 48.0).clamp(220.0, w - 32.0);
-        let th = 56.0;
+        let tw = (p2p.len() as f64 * 15.0 + 56.0).clamp(280.0, w - 32.0);
+        let th = 64.0;
         let x = (w - tw) / 2.0;
-        let y = if loading { h * 0.5 + 68.0 } else { 24.0 };
-        lines.push(ass_rect(x, y, tw, th, "000000", "40"));
-        lines.push(ass_text(w / 2.0, y + th / 2.0, 20.0, p2p));
+        // Below the spinner while loading. This layer is drawn ABOVE the loading backdrop
+        // (see gm_osd Z_CHROME > Z_LOADING); otherwise the opaque black spinner cover hides it.
+        let y = if loading { h * 0.5 + 72.0 } else { 24.0 };
+        lines.push(ass_rect(x, y, tw, th, "000000", "2A"));
+        lines.push(ass_text(w / 2.0, y + th / 2.0, 24.0, p2p));
     }
 
     let skip = skip_text.trim();

@@ -22,7 +22,7 @@ export function gameModeSnapshotCrop(
   fast: boolean,
 ): { x: number; y: number; w: number; h: number } | null {
   if (fast || width <= 0 || height <= 0) return null
-  const h = Math.max(1, Math.round(height * 0.28))
+  const h = Math.max(1, Math.round(height * 0.36))
   return { x: 0, y: Math.max(0, height - h), w: width, h }
 }
 
@@ -39,11 +39,11 @@ export function gameModeP2pLine(stats: {
   uploadMbps: number
   livePeers: number
 } | null): string {
-  if (!stats) return 'Connecting to peers…'
+  if (!stats) return 'P2P  Connecting to peers…'
   const down = Number.isFinite(stats.downloadMbps) ? stats.downloadMbps : 0
   const up = Number.isFinite(stats.uploadMbps) ? stats.uploadMbps : 0
   const peers = stats.livePeers === 1 ? '1 peer' : `${stats.livePeers} peers`
-  return `↓ ${down.toFixed(1)}  ↑ ${up.toFixed(1)}  ${peers}`
+  return `P2P  ↓ ${down.toFixed(1)}  ↑ ${up.toFixed(1)}  ${peers}`
 }
 
 /** Discord / SMTC / MPRIS do not reach the Deck session and steal wakeups. */

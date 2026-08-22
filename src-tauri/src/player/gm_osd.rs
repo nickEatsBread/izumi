@@ -35,11 +35,12 @@ const PAD_SCRUB_TAU: f64 = 0.045;
 const TOUCH_SCRUB_TAU: f64 = 0.025;
 const SCRUB_EPSILON: f64 = 0.02;
 // osd-overlay z (higher = nearer the viewer): gradient/track behind, played/knob above, spinner
-// on top. overlay-add bitmaps (the snapshot chrome, id 1) always sit above ALL of these.
+// next, then skip/P2P/toasts so the P2P popup is not buried under the loading backdrop.
+// overlay-add bitmaps (the snapshot chrome, id 1) always sit above ALL of these.
 const Z_SCRUB_STATIC: i64 = 48;
 const Z_SCRUB_DYN: i64 = 50;
-const Z_CHROME: i64 = 55;
 const Z_LOADING: i64 = 60;
+const Z_CHROME: i64 = 70;
 
 static RUNTIME: OnceLock<Mutex<Runtime>> = OnceLock::new();
 static RUNNING: AtomicBool = AtomicBool::new(false);
@@ -123,7 +124,7 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
         let mut draw_state = state.clone();
         let scrub_animating = prepare_scrub_display(&mut draw_state, &mut shown_scrub_time, dt);
 
-        hold_lite(&app, draw_state.scrubbing);
+        hold_lite(&app, draw_state.scrubbing || draw_state.loading);
 
         // Loading animates at OSD_FPS inside mpv. Touch scrub redraws only when input changes.
         // Pad-trigger scrub gets a native visual tween between stepped repeat targets.
@@ -328,14 +329,13 @@ fn scrub_geometry(state: &GmDynamicOverlay, w: f64, h: f64) -> (f64, f64, f64, f
     }
 }
 
-/// STATIC scrub layer: the legibility gradient, the empty track, and the buffered range. None of
-/// these move while a finger drags, so the string is byte-stable across a gesture and pushed only
-/// once (the loop content-gates it). Byte-stability matters: jittering coordinates would miss
-/// libass's bitmap cache and re-tessellate the 24 gradient bands every frame.
+/// STATIC scrub layer: a short fade above the track, the empty track, and the buffered range.
+/// None of these move while a finger drags, so the string is byte-stable across a gesture and
+/// pushed only once (the loop content-gates it).
 fn scrub_static_ass(
     state: &GmDynamicOverlay,
     w: f64,
-    h: f64,
+    _h: f64,
     x: f64,
     y: f64,
     bw: f64,
@@ -343,22 +343,18 @@ fn scrub_static_ass(
 ) -> String {
     let mut lines = Vec::new();
 
-    // Soft bottom gradient for legibility over bright frames (matches the HTML controls'
-    // from-black → transparent gradient). Stacked black bands with an eased alpha, each BLURRED so
-    // the per-band alpha steps blend into a continuous fade — plain \p1 rects show their alpha
-    // steps as hard horizontal LINES on the Deck panel (the reported "weird black lines"). This is
-    // the push-once static layer, so the blur is paid once per scrub, never per frame. ASS alpha:
-    // 00 = opaque, FF = transparent.
-    let grad_top = (y - h * 0.18).max(0.0);
-    let span = (h - grad_top).max(1.0);
-    let bands = 20usize;
-    let band_h = span / bands as f64;
+    let top = y - bh / 2.0;
+    // Short fade immediately above the track so the bar stays readable. A full-height
+    // 20-band wash to the bottom of the screen read as a shadow under the controls.
+    let fade_h = 40.0;
+    let fade_top = (top - fade_h).max(0.0);
+    let bands = 6usize;
+    let band_h = fade_h / bands as f64;
     for i in 0..bands {
-        let f = (i as f64 + 0.5) / bands as f64; // 0 (top) → 1 (bottom)
-        let opacity = 0.72 * f * f; // eased: barely-there at the top, ~0.72 at the bottom
+        let f = (i as f64 + 0.5) / bands as f64;
+        let opacity = 0.28 * f;
         let a = ((1.0 - opacity) * 255.0).round().clamp(0.0, 255.0) as i64;
-        let by = grad_top + span * (i as f64 / bands as f64);
-        // Blur ≈ band height so adjacent bands overlap-blend into a smooth ramp (kills the steps).
+        let by = fade_top + band_h * i as f64;
         push(
             &mut lines,
             rect_blur(
@@ -372,8 +368,6 @@ fn scrub_static_ass(
             ),
         );
     }
-
-    let top = y - bh / 2.0;
     // Track (white/25) · buffered (white/40) — the same fills the HTML seek bar uses.
     push(&mut lines, rect(x, top, bw, bh, "FFFFFF", "BF"));
     let buffer_pct = pct(state.buffer, state.dur);
