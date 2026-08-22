@@ -174,6 +174,12 @@ export const trackMenuOpen = writable(false)
 // Game-mode snapshot overlay to its FAST (60fps) cadence so navigating those menus isn't laggy.
 export const playerMenuOpen = writable(false)
 
+/** Bump so Game-mode overlay-add re-snapshots after a d-pad move (no 60fps crawl). */
+export const playerOverlayRev = writable(0)
+export function bumpPlayerOverlay() {
+  playerOverlayRev.update((n) => n + 1)
+}
+
 // In-player discussion/comments panel (comment button → side panel). Keyed on nowPlaying.{id,malId,
 // episode}. Desktop-first; Game-mode (mpv-snapshot) rendering of a scrollable panel is a later phase.
 export const commentsOpen = writable(false)

@@ -81,6 +81,7 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('<P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} />')
     expect(overlay).not.toContain('$playerNotice && !gmMode')
     expect(overlay).toContain('player_gm_dock')
+    expect(overlay).toContain('playerOverlayRev')
   })
 
   it('re-focuses the overlay after fullscreen so player hotkeys keep working', () => {
@@ -102,25 +103,25 @@ describe('gameModeDock', () => {
     noticeVisible: false,
   }
 
-  it('leaves video fullscreen while loading and docks live chrome afterwards', () => {
+  it('keeps video fullscreen under chrome and only hides mpv for comments', () => {
     expect(gameModeDock({ ...base, loading: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
-    expect(gameModeDockIsLive(gameModeDock({ ...base, controlsVisible: true }))).toBe(true)
-    expect(gameModeDock({ ...base, playerMenuOpen: true }).right).toBeGreaterThan(0)
-    expect(gameModeDock({ ...base, trackMenuOpen: true }).hide).toBe(true)
+    expect(gameModeDockIsLive(gameModeDock({ ...base, controlsVisible: true }))).toBe(false)
+    expect(gameModeDock({ ...base, playerMenuOpen: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
+    expect(gameModeDock({ ...base, trackMenuOpen: true }).hide).toBe(false)
+    expect(gameModeDock({ ...base, commentsOpen: true }).hide).toBe(true)
   })
 })
 
 describe('Game-mode Leanback motion', () => {
-  it('keeps snappy chrome/sheet enter animations and a growing play highlight', () => {
+  it('keeps a growing play highlight and D-pad settings overlay on top of video', () => {
     const css = readFileSync(fileURLToPath(new URL('../../app.css', import.meta.url)), 'utf8')
-    expect(css).toContain('gm-chrome-in')
-    expect(css).toContain('gm-sheet-in')
     expect(css).toContain('.gm-play.focus-ring-inset:focus')
     const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
     expect(controls).toContain('gm-play')
-    expect(controls).toContain('gm-sheet-in')
+    expect(controls).toContain('gmActivate')
+    expect(controls).toContain('gm-open-tracks')
     const menu = readFileSync(fileURLToPath(new URL('../components/player/TrackMenu.svelte', import.meta.url)), 'utf8')
-    expect(menu).toContain('gm-sheet-in')
-    expect(menu).toContain('gm-menu-col-in')
+    expect(menu).toContain('gm-open-tracks')
+    expect(menu).toContain('bumpPlayerOverlay')
   })
 })

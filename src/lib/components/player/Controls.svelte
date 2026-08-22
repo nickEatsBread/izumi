@@ -27,7 +27,9 @@
   import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay } from '$lib/player/session'
+  import { listenSafe } from '$lib/util/listen'
+  import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { copyToClipboard } from '$lib/util/clipboard'
   import Wrench from '@lucide/svelte/icons/wrench'
   import { discussionExpanded } from '$lib/comments'
@@ -157,14 +159,17 @@
     catch { qualityInfo = { mode: 'auto', activeHeight: 0, heights: [] } }
   }
   let gmSettingsPage = $state<'root' | 'speed' | 'quality' | 'fit' | 'tools'>('root')
+  let gmSetIdx = $state(0)
   function toggleOptions() {
     showOptions = !showOptions
     showTracks = false
     showServers = false
     gmSettingsPage = 'root'
+    gmSetIdx = 0
     if (showOptions) {
       readDelays()
       void readVideoQualities()
+      bumpPlayerOverlay()
     }
   }
   function closePlayerMenus() {
@@ -172,6 +177,60 @@
     showTracks = false
     showServers = false
     gmSettingsPage = 'root'
+    gmSetIdx = 0
+  }
+  const gmRootKeys = $derived(['source', 'speed', ...(qualityInfo.heights.length ? ['quality'] : []), 'fit', 'tools'] as string[])
+  function gmRowCount() {
+    if (gmSettingsPage === 'root') return gmRootKeys.length
+    if (gmSettingsPage === 'speed') return 1 + speeds.length
+    if (gmSettingsPage === 'quality') return 2 + qualityInfo.heights.length
+    if (gmSettingsPage === 'fit') return 3
+    return 6
+  }
+  function gmMove(delta: number) {
+    const n = gmRowCount()
+    if (!n) return
+    gmSetIdx = (gmSetIdx + delta + n) % n
+    bumpPlayerOverlay()
+  }
+  function gmOpenPage(page: typeof gmSettingsPage) {
+    gmSettingsPage = page
+    gmSetIdx = 0
+    bumpPlayerOverlay()
+  }
+  function gmBack() {
+    if (gmSettingsPage !== 'root') {
+      gmOpenPage('root')
+      return
+    }
+    closePlayerMenus()
+    bumpPlayerOverlay()
+  }
+  function gmActivate() {
+    if (gmSettingsPage === 'root') {
+      const key = gmRootKeys[gmSetIdx]
+      if (key === 'source') changeSource()
+      else if (key === 'speed') gmOpenPage('speed')
+      else if (key === 'quality') gmOpenPage('quality')
+      else if (key === 'fit') gmOpenPage('fit')
+      else if (key === 'tools') gmOpenPage('tools')
+      return
+    }
+    if (gmSetIdx === 0) { gmBack(); return }
+    const i = gmSetIdx - 1
+    if (gmSettingsPage === 'speed') setSpeed(speeds[i] ?? 1)
+    else if (gmSettingsPage === 'quality') {
+      if (i === 0) void setVideoQuality('auto')
+      else void setVideoQuality(qualityInfo.heights[i - 1] ?? 'auto')
+    } else if (gmSettingsPage === 'fit') setFit(i === 0 ? 'best' : 'fill')
+    else if (gmSettingsPage === 'tools') {
+      if (i === 0) playerStatsOpen.update((value) => !value)
+      else if (i === 1) setSleep('off')
+      else if (i === 2) setSleep('15')
+      else if (i === 3) setSleep('30')
+      else setSleep('end')
+    }
+    bumpPlayerOverlay()
   }
   async function setVideoQuality(mode: 'auto' | number) {
     qualityInfo = { ...qualityInfo, mode }
@@ -391,6 +450,17 @@
     const onQuality = (event: Event) => applyQualityInfo((event as CustomEvent<QualityInfo>).detail)
     window.addEventListener('izumi-drm-quality', onQuality)
     window.addEventListener('player-menu-close', closePlayerMenus)
+    const unPad = listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
+      if (!gm || !showOptions || !e.payload.pressed || get(deckKeyboardWarning)) return
+      switch (e.payload.name) {
+        case 'up': gmMove(-1); break
+        case 'down': gmMove(1); break
+        case 'a':
+        case 'right': gmActivate(); break
+        case 'b':
+        case 'left': gmBack(); break
+      }
+    })
     void (async () => {
       try {
         const sp = parseFloat(await invoke<string>('player_get_property', { name: 'speed' }))
@@ -405,6 +475,7 @@
       } catch { /* no player yet — keep default */ }
     })()
     return () => {
+      unPad()
       window.removeEventListener('izumi-drm-quality', onQuality)
       window.removeEventListener('player-menu-close', closePlayerMenus)
       void unlistenMuted.then((unlisten) => unlisten())
@@ -487,8 +558,12 @@
     }
   }
   async function loadTracks() {
-    showOptions = false // only one popover open at a time
+    showOptions = false
     showServers = false
+    if (gm) {
+      window.dispatchEvent(new Event('gm-open-tracks'))
+      return
+    }
     showTracks = !showTracks
     menuLevel = 'root'
     if (showTracks) await refreshTracks()
@@ -667,7 +742,7 @@
        Only the rows that actually ARE controls opt back in below; the gradient, the padding and the
        title now fall through to the overlay's click-to-pause. The Seekbar keeps its own `py-3` grab
        padding, so there is still a forgiving band that seeks rather than pausing. -->
-  <div class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'gm-chrome-in bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 {gm ? 'bg-gradient-to-t from-black/80 via-black/40 to-transparent px-8 pb-6 pt-14' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20'}">
     <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
          in Game mode to match the enlarged controls. -->
     {#if !titleTop}
@@ -1157,41 +1232,41 @@
   </div>
 
   {#if gm && showOptions}
-    <div class="gm-sheet gm-sheet-in pointer-events-auto fixed inset-y-8 right-6 z-40 flex w-[22rem] flex-col rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl">
+    <div class="gm-sheet pointer-events-auto fixed top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl">
       {#if gmSettingsPage === 'root'}
         <p class="px-3 py-2 text-2xl font-bold">Settings</p>
-        <button data-focusable class="gm-set-row" onclick={changeSource}><span>Change source</span><span class="text-white/40">›</span></button>
-        <button data-focusable class="gm-set-row" onclick={() => (gmSettingsPage = 'speed')}><span>Speed</span><span class="text-white/50">{speed}× ›</span></button>
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={changeSource}><span>Change source</span><span class="opacity-50">›</span></button>
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => gmOpenPage('speed')}><span>Speed</span><span class="opacity-50">{speed}× ›</span></button>
         {#if qualityInfo.heights.length}
-          <button data-focusable class="gm-set-row" onclick={() => (gmSettingsPage = 'quality')}>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 2} class:text-black={gmSetIdx === 2} onclick={() => gmOpenPage('quality')}>
             <span>Quality</span>
-            <span class="text-white/50">{qualityInfo.mode === 'auto' ? `Auto${qualityInfo.activeHeight ? ` (${qualityInfo.activeHeight}p)` : ''}` : `${qualityInfo.mode}p`} ›</span>
+            <span class="opacity-50">{qualityInfo.mode === 'auto' ? `Auto${qualityInfo.activeHeight ? ` (${qualityInfo.activeHeight}p)` : ''}` : `${qualityInfo.mode}p`} ›</span>
           </button>
         {/if}
-        <button data-focusable class="gm-set-row" onclick={() => (gmSettingsPage = 'fit')}><span>Video fit</span><span class="text-white/50">{$videoFit === 'fill' ? 'Fill' : 'Best fit'} ›</span></button>
-        <button data-focusable class="gm-set-row" onclick={() => (gmSettingsPage = 'tools')}><span>Tools</span><span class="text-white/40">›</span></button>
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('fit')} class:text-black={gmSetIdx === gmRootKeys.indexOf('fit')} onclick={() => gmOpenPage('fit')}><span>Video fit</span><span class="opacity-50">{$videoFit === 'fill' ? 'Fill' : 'Best fit'} ›</span></button>
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('tools')} class:text-black={gmSetIdx === gmRootKeys.indexOf('tools')} onclick={() => gmOpenPage('tools')}><span>Tools</span><span class="opacity-50">›</span></button>
       {:else}
-        <button data-focusable class="gm-set-row mb-1 font-bold" onclick={() => (gmSettingsPage = 'root')}>
+        <button data-focusable class="gm-set-row mb-1 font-bold" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={gmBack}>
           <span>‹ {gmSettingsPage === 'speed' ? 'Speed' : gmSettingsPage === 'quality' ? 'Quality' : gmSettingsPage === 'fit' ? 'Video fit' : 'Tools'}</span>
         </button>
         {#if gmSettingsPage === 'speed'}
-          {#each speeds as s}
-            <button data-focusable class="gm-set-row" class:bg-white={speed === s} class:text-black={speed === s} onclick={() => setSpeed(s)}>{s}×</button>
+          {#each speeds as s, i}
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 1} class:text-black={gmSetIdx === i + 1} onclick={() => setSpeed(s)}>{s}×</button>
           {/each}
         {:else if gmSettingsPage === 'quality'}
-          <button data-focusable class="gm-set-row" class:bg-white={qualityInfo.mode === 'auto'} class:text-black={qualityInfo.mode === 'auto'} onclick={() => setVideoQuality('auto')}>Auto</button>
-          {#each qualityInfo.heights as height}
-            <button data-focusable class="gm-set-row" class:bg-white={qualityInfo.mode === height} class:text-black={qualityInfo.mode === height} onclick={() => setVideoQuality(height)}>{height}p</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => setVideoQuality('auto')}>Auto</button>
+          {#each qualityInfo.heights as height, i}
+            <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === i + 2} class:text-black={gmSetIdx === i + 2} onclick={() => setVideoQuality(height)}>{height}p</button>
           {/each}
         {:else if gmSettingsPage === 'fit'}
-          <button data-focusable class="gm-set-row" class:bg-white={$videoFit === 'best'} class:text-black={$videoFit === 'best'} onclick={() => setFit('best')}>Best fit</button>
-          <button data-focusable class="gm-set-row" class:bg-white={$videoFit === 'fill'} class:text-black={$videoFit === 'fill'} onclick={() => setFit('fill')}>Fill</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => setFit('best')}>Best fit</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 2} class:text-black={gmSetIdx === 2} onclick={() => setFit('fill')}>Fill</button>
         {:else}
-          <button data-focusable class="gm-set-row" onclick={() => playerStatsOpen.update((value) => !value)}>{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</button>
-          <button data-focusable class="gm-set-row" onclick={() => setSleep('off')}>Sleep: off</button>
-          <button data-focusable class="gm-set-row" onclick={() => setSleep('15')}>Sleep: 15 min</button>
-          <button data-focusable class="gm-set-row" onclick={() => setSleep('30')}>Sleep: 30 min</button>
-          <button data-focusable class="gm-set-row" onclick={() => setSleep('end')}>Sleep: episode end</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 1} class:text-black={gmSetIdx === 1} onclick={() => playerStatsOpen.update((value) => !value)}>{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 2} class:text-black={gmSetIdx === 2} onclick={() => setSleep('off')}>Sleep: off</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 3} class:text-black={gmSetIdx === 3} onclick={() => setSleep('15')}>Sleep: 15 min</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 4} class:text-black={gmSetIdx === 4} onclick={() => setSleep('30')}>Sleep: 30 min</button>
+          <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 5} class:text-black={gmSetIdx === 5} onclick={() => setSleep('end')}>Sleep: episode end</button>
         {/if}
       {/if}
     </div>
