@@ -15,9 +15,12 @@ pub const OSD_FPS: u64 = 60;
 pub const OVERLAY_IDLE_FPS: u64 = 0;
 /// Menu highlight / d-pad navigation still needs a high snapshot cadence.
 pub const OVERLAY_SCRUB_FPS: u64 = 60;
-/// CPU-only fade of an already-snapshotted overlay (mpv rereads the BGRA buffer each
-/// frame). 180ms matches the Leanback chrome pop without a 60fps WebKit raster.
+/// Native fade of an already-snapshotted overlay. Each short animation tick reissues
+/// `overlay-add` because mpv copies BGRA input when the command runs; WebKit is not rastered
+/// again. 180ms matches the Leanback chrome pop.
 pub const OVERLAY_FADE_MS: u64 = 180;
+/// Upward travel paired with the control fade, matching the old CSS Leanback motion.
+pub const OVERLAY_MOTION_PX: i64 = 16;
 /// Premultiply scale uses 0..=1000 so a fade tick can be integer math.
 pub const OVERLAY_FADE_FULL: u32 = 1000;
 /// Bottom fraction of the viewport that holds the control strip (idle snapshots only).

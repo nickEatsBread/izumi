@@ -15,7 +15,7 @@
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, connecting } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -50,7 +50,7 @@
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay } from '$lib/player/gm-overlay'
+  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeP2pLine, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay } from '$lib/player/gm-overlay'
   import { holdDeckBrowseZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -322,7 +322,9 @@
     const next = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t)
     pos = next
     cmd('seek', [next.toFixed(3), 'absolute+exact'])
-    if (gmMode) bumpPlayerOverlay()
+    // One snapshot per tap-seek so the HTML bar moves. Hold-skim uses the native ASS bar
+    // (a snapshot per pad step was the crawl).
+    if (gmMode && !get(scrub).active) bumpPlayerOverlay()
   }
 
   // The shared scrub store commits through the same absolute seek as touch/skip.
@@ -337,10 +339,7 @@
       getDur: () => dur,
       seek: (t) => seekTo(t),
       beginScrub: (t) => beginScrub(t, 'pad'),
-      moveScrub: (t) => {
-        moveScrub(t)
-        bumpPlayerOverlay()
-      },
+      moveScrub: (t) => moveScrub(t),
       endScrub: () => endScrub(),
       onActivity: () => poke(),
       blocked: () => get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
@@ -542,8 +541,7 @@
   const directP2pOverlay = $derived(isDirectP2PStream($nowPlayingStream))
   const gmDynamicActive = $derived(gmMode && $playing && shouldUseGameModeDynamicOverlay({
     loading,
-    // Pad skims keep the HTML seek bar; ASS is for finger drags and the spinner.
-    scrubbing: $scrubActive && $scrub.source !== 'pad',
+    scrubbing: $scrubActive,
     commentsOpen: $commentsOpen,
     directP2P: directP2pOverlay,
   }))
@@ -580,6 +578,7 @@
       trackMenuOpen: $trackMenuOpen,
       commentsOpen: $commentsOpen,
       noticeVisible,
+      streamPickerOpen: (!!$streamPicker && !$streamPicker.hidden) || !!$connecting,
     })
     invoke('player_gm_dock', dock).catch(() => {})
     if (gameModeDockIsLive(dock)) {
@@ -593,9 +592,18 @@
       invoke('player_gm_overlay', { visible: false, fast: false, crop: null }).catch(() => {})
       return
     }
+    // Snapshot now (so tap/pause is not stuck behind a cancellable timer) and once more
+    // after paint so Controls/toasts are in the tree.
+    invoke('player_gm_overlay', { visible: true, fast: false, crop }).catch(() => {})
     return scheduleGameModeOverlay(() => {
       invoke('player_gm_overlay', { visible: true, fast: false, crop }).catch(() => {})
     })
+  })
+
+  $effect(() => {
+    if (!gmMode || gmDynamicActive || !p2pVisible) return
+    void $directTorrentStats
+    bumpPlayerOverlay()
   })
 
   let gmDynRaf = 0
@@ -674,7 +682,8 @@
   function currentGmDynamicState() {
     const s = get(scrub)
     const skipText = gmMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
-    const visible = gmMode && get(playing) && (loading || s.active || !!skipText)
+    const p2pText = gmMode && p2pVisible && loading ? gameModeP2pLine(get(directTorrentStats)) : ''
+    const visible = gmMode && get(playing) && (loading || s.active || !!skipText || !!p2pText)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -707,13 +716,13 @@
       barH: 10,
       skipText,
       noticeText: '',
-      p2pText: '',
+      p2pText,
     }
   }
 
   function scheduleGmDynamicOverlay() {
     if (typeof window === 'undefined' || gmDynDisposed || gmDynRaf) return
-    if (!(gmMode && get(playing) && (loading || get(scrub).active || showSkip)) && !gmDynLastVisible) return
+    if (!(gmMode && get(playing) && (loading || get(scrub).active || showSkip || p2pVisible)) && !gmDynLastVisible) return
     gmDynRaf = requestAnimationFrame(() => {
       gmDynRaf = 0
       if (gmDynInFlight) {
@@ -738,7 +747,7 @@
   }
 
   $effect(() => {
-    gmMode; $playing; loading; firstFrame; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive
+    gmMode; $playing; loading; firstFrame; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; p2pVisible; $directTorrentStats
     scheduleGmDynamicOverlay()
   })
 
@@ -1215,6 +1224,8 @@
       </div>
     </div>
   {:else if controlsVisible}
+    <!-- In Game mode Rust animates one settled bitmap in mpv. A CSS entrance here would make
+         WebKit snapshot an intermediate/transparent frame and reintroduce the old crawl. -->
     <div class="izumi-hud" class:opacity-0={gmDynamicActive}>
       <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} />
     </div>

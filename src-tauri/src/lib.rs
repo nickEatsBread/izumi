@@ -346,8 +346,9 @@ fn player_gm_overlay(
     }
 }
 
-/// Game mode: shrink or hide the mpv X11 child so the webview is live in the uncovered
-/// region. HTML chrome then animates at compositor speed instead of a WebKit snapshot.
+/// Game mode: hide the mpv X11 child for opaque, live-HTML surfaces such as settings/comments.
+/// Fractional insets remain available at the native layer, but ordinary controls deliberately
+/// pass zero: docking them is the rejected tiny-video workaround.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn player_gm_dock(bottom: f64, right: f64, top: f64, hide: bool) {

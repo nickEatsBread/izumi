@@ -14,11 +14,13 @@ export function gameModeBitmapOverlayActive(input: {
   skipVisible?: boolean
 }): boolean {
   if (!input.gameMode || !input.playing) return false
-  if (input.p2pVisible || input.noticeVisible || input.skipVisible) return true
-  // Native ASS owns the spinner and finger-scrub. Pad skims keep `dynamicOverlay` false
-  // so the HTML seek bar stays snapshotted.
+  // Menus/comments unmap mpv and paint as live HTML. Fullscreen chrome uses one settled
+  // WebKit snapshot; Rust animates that bitmap inside mpv without re-rastering WebKit.
+  if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen) return false
+  if (input.noticeVisible || input.skipVisible) return true
+  if (input.p2pVisible && !input.dynamicOverlay) return true
   if (input.dynamicOverlay) return false
-  return input.controlsVisible || input.trackMenuOpen || input.playerMenuOpen || input.commentsOpen
+  return input.controlsVisible
 }
 
 /** Wait one paint + a short macrotask so WebKit has laid out menus/toasts before we snapshot. */
@@ -73,8 +75,8 @@ export function presenceAllowed(gameMode: boolean): boolean {
   return !gameMode
 }
 
-/** Live webview insets. Chrome and settings sit on top of fullscreen video via overlay-add
- * (docking made the picture tiny). Only comments hide the mpv child so the iframe is live. */
+/** Live webview: unmap mpv for opaque full-screen HTML (comments, settings, ☰, source picker).
+ * Control chrome remains over a fullscreen mpv child and is animated as a native bitmap. */
 export function gameModeDock(input: {
   loading: boolean
   controlsVisible: boolean
@@ -82,15 +84,19 @@ export function gameModeDock(input: {
   trackMenuOpen: boolean
   commentsOpen: boolean
   noticeVisible: boolean
+  streamPickerOpen?: boolean
 }): { bottom: number; right: number; top: number; hide: boolean } {
-  void input.loading
-  void input.controlsVisible
-  void input.playerMenuOpen
-  void input.trackMenuOpen
   void input.noticeVisible
-  if (input.commentsOpen) {
+  if (
+    input.commentsOpen
+    || input.playerMenuOpen
+    || input.trackMenuOpen
+    || input.streamPickerOpen
+  ) {
     return { bottom: 0, right: 0, top: 0, hide: true }
   }
+  void input.loading
+  void input.controlsVisible
   return { bottom: 0, right: 0, top: 0, hide: false }
 }
 

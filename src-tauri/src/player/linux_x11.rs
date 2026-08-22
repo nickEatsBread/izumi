@@ -6,11 +6,11 @@
 //! "container") that WE own, RAISED above the webview and INPUT-TRANSPARENT (empty X shape
 //! input region) so touch/pointer events fall through to the webview beneath it.
 //!
-//! Controls-and-video-at-once is achieved by DOCKING, not swapping: [`dock_video`] SHRINKS
-//! the container to leave a strip at the bottom of the screen uncovered, so the webview's
-//! (opaque) HTML control bar shows in that strip while the video keeps playing in the region
-//! above. Zero insets restore the container to fullscreen (controls hidden → edge-to-edge video).
-//! No map/unmap, no black swap — both are visible simultaneously.
+//! Do NOT dock the control bar: shrinking this child is the rejected "tiny video" experiment.
+//! Current chrome stays over a fullscreen container through `linux_overlay` (one settled WebKit
+//! snapshot followed by native mpv bitmap motion). Opaque full-screen HTML surfaces such as
+//! settings/comments temporarily unmap the child. [`dock_video`] retains fractional insets only
+//! as a low-level fallback; the frontend policy must send zero insets for ordinary controls.
 //!
 //! All X calls run on the GTK main thread. The container calls below share GTK's Xlib connection
 //! (fetched per-call from the window handle); the STEAM_TOUCH_CLICK_MODE writes use their OWN
@@ -540,9 +540,9 @@ pub fn ensure_container(window: &tauri::WebviewWindow, w: u32, h: u32) -> Result
     })
 }
 
-/// Dock the video child so the webview is live in the uncovered strips. That is how Game-mode
-/// chrome animates at compositor speed: WebKit paints the controls directly instead of a
-/// 20ms-per-frame overlay-add snapshot. `hide` unmaps the child for opaque full-screen menus.
+/// Apply low-level video-child insets or hide it for an opaque full-screen HTML surface.
+/// Ordinary Game-mode controls intentionally use zero insets and `linux_overlay`; nonzero control
+/// docking shrinks the picture and must not be reintroduced as an animation workaround.
 pub fn dock_video(bottom: f64, right: f64, top: f64, hide: bool) {
     let bottom = bottom.clamp(0.0, 0.9);
     let right = right.clamp(0.0, 0.9);

@@ -37,6 +37,13 @@ fn overlay_cpu_fade_scales_premultiplied_bgra() {
     assert!(overlay.contains("kick_fade"));
     assert!(overlay.contains("scale_premult_bgra"));
     assert!(overlay.contains("BASE"));
+    assert!(overlay.contains("empty snapshot"));
+    assert!(overlay.contains("SHOWN.store(true"));
+    // mpv copies raw-address overlay pixels during overlay-add. A buffer mutation without
+    // another command is invisible, which was the frozen/no-animation regression.
+    assert!(overlay.contains("present(&app, y_offset)"));
+    assert!(!overlay.contains("present(&app, false)"));
+    assert!(overlay.contains("saturating_add(y_offset)"));
 }
 
 #[test]

@@ -929,9 +929,9 @@ impl PlayerHandle {
     }
 
     /// Add/replace a raw-memory OSD overlay on the video (Game-mode controls). `addr` is the
-    /// address of a premultiplied-BGRA buffer of `w`×`h` (bytes = `stride`×`h`) that MUST stay
-    /// valid + at a stable address until [`overlay_remove`] or the next `overlay_add` for `id`
-    /// (mpv reads it each frame, it does not copy). See `overlay-add` in the mpv manual.
+    /// address of a premultiplied-BGRA buffer of `w`×`h` (bytes = `stride`×`h`). mpv copies the
+    /// pixels synchronously while `overlay-add` runs, so animation frames must reissue this
+    /// command; mutating the source buffer alone cannot update the displayed overlay.
     #[cfg(target_os = "linux")]
     pub fn overlay_add(
         &self,

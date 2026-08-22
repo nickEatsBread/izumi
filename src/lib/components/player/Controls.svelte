@@ -453,6 +453,15 @@
     const onQuality = (event: Event) => applyQualityInfo((event as CustomEvent<QualityInfo>).detail)
     window.addEventListener('izumi-drm-quality', onQuality)
     window.addEventListener('player-menu-close', closePlayerMenus)
+    const onMenuNav = (event: Event) => {
+      if (!gm || !showOptions || get(deckKeyboardWarning)) return
+      const dir = (event as CustomEvent<'up' | 'down' | 'left' | 'right'>).detail
+      if (dir === 'up') gmMove(-1)
+      else if (dir === 'down') gmMove(1)
+      else if (dir === 'right') gmActivate()
+      else if (dir === 'left') gmBack()
+    }
+    window.addEventListener('player-menu-nav', onMenuNav)
     const unPad = listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!gm || !showOptions || !e.payload.pressed || get(deckKeyboardWarning)) return
       switch (e.payload.name) {
@@ -481,6 +490,7 @@
       unPad()
       window.removeEventListener('izumi-drm-quality', onQuality)
       window.removeEventListener('player-menu-close', closePlayerMenus)
+      window.removeEventListener('player-menu-nav', onMenuNav)
       void unlistenMuted.then((unlisten) => unlisten())
       playerMenuOpen.set(false)
     }
@@ -1236,7 +1246,7 @@
 
   {#if gm && showOptions}
     <div class="pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
-    <div class="gm-sheet absolute top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div class="gm-sheet gm-sheet-in absolute top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
       {#if gmSettingsPage === 'root'}
         <p class="px-3 py-2 text-2xl font-bold">Settings</p>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={changeSource}><span>Change source</span><span class="opacity-50">›</span></button>

@@ -11,8 +11,9 @@
 //!
 //! Snapshotting runs only while controls or menus are visible. Idle chrome is a single cropped
 //! snapshot of the bottom control strip; menus re-snapshot when the frontend bumps overlay rev
-//! (not a 60fps WebKit loop). Show/hide animates by scaling the already-uploaded BGRA buffer
-//! on the CPU — mpv rereads that memory every frame, so the fade costs no extra raster.
+//! (not a 60fps WebKit loop). Show/hide scales that settled BGRA snapshot and reissues
+//! `overlay-add` for the short motion. mpv copies raw-memory input when the command runs; it
+//! does not observe later writes to the source pointer. This costs no extra WebKit raster.
 
 #![cfg(target_os = "linux")]
 
@@ -27,7 +28,7 @@ use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
 use crate::gm_perf::{
     clip_to_strip, overlay_fade_step, overlay_loop_fps, overlay_should_snapshot,
-    scale_premult_bgra, OVERLAY_FADE_FULL, OVERLAY_FADE_MS, OVERLAY_SCRUB_FPS,
+    scale_premult_bgra, OVERLAY_FADE_FULL, OVERLAY_FADE_MS, OVERLAY_MOTION_PX, OVERLAY_SCRUB_FPS,
 };
 use crate::player::PlayerHandle;
 
@@ -53,6 +54,7 @@ static GEOM: Mutex<Option<(i64, i64, i64, i64, i64)>> = Mutex::new(None);
 /// Idle snapshots clip to this CSS-pixel control strip so we do not upload a full viewport.
 static STRIP: Mutex<Option<(i64, i64, i64, i64)>> = Mutex::new(None);
 static LITE: AtomicBool = AtomicBool::new(false);
+static EMPTY_TRIES: AtomicU64 = AtomicU64::new(0);
 
 /// Begin snapshotting the webview controls into an mpv overlay. Safe to call again while
 /// running; each call supersedes the previous timer loop. Idle (`fast=false`) takes one
@@ -64,18 +66,20 @@ pub fn start(
     fast: bool,
     crop: Option<(i64, i64, i64, i64)>,
 ) {
-    let fade_in = !SHOWN.swap(true, Ordering::SeqCst);
+    // Only treat this as a fade-in if nothing is on screen yet. Setting SHOWN before the
+    // first pixels landed left tap/pause at alpha 0 forever (empty snapshot → hide).
+    let fade_in = !SHOWN.load(Ordering::SeqCst);
     let my_gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
     FAST.store(fast, Ordering::SeqCst);
     FORCE.store(true, Ordering::SeqCst);
+    EMPTY_TRIES.store(0, Ordering::SeqCst);
     if let Ok(mut strip) = STRIP.lock() {
         *strip = if fast { None } else { crop };
     }
     hold_lite(&app, true);
-    if fade_in {
-        FADE_GEN.fetch_add(1, Ordering::SeqCst);
-    } else {
-        ALPHA.store(OVERLAY_FADE_FULL, Ordering::SeqCst);
+    // A second settled snapshot can arrive while the first snapshot's native fade is running.
+    // Preserve that fade instead of snapping to full opacity and cancelling it.
+    if !fade_in && ALPHA.load(Ordering::SeqCst) >= OVERLAY_FADE_FULL {
         FADE_GEN.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -161,7 +165,10 @@ fn hide_now(app: &AppHandle) {
 
 fn kick_fade(app: AppHandle, fade_in: bool) {
     let gen = FADE_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    let started = Instant::now();
     let mut last = Instant::now();
+    let mut frames = 0u32;
+    let mut max_upload = Duration::ZERO;
     glib::timeout_add_local(Duration::from_millis(16), move || {
         if FADE_GEN.load(Ordering::SeqCst) != gen {
             return glib::ControlFlow::Break;
@@ -182,11 +189,28 @@ fn kick_fade(app: AppHandle, fade_in: bool) {
             OVERLAY_FADE_MS,
         );
         ALPHA.store(next, Ordering::Relaxed);
-        present(&app, false);
+        let hidden = OVERLAY_FADE_FULL.saturating_sub(next) as i64;
+        let y_offset = hidden.saturating_mul(OVERLAY_MOTION_PX) / OVERLAY_FADE_FULL as i64;
+        let upload_started = Instant::now();
+        present(&app, y_offset);
+        max_upload = max_upload.max(upload_started.elapsed());
+        frames += 1;
         if fade_in && next >= OVERLAY_FADE_FULL {
+            crate::player::linux_embed::elog(&format!(
+                "overlay-motion: in frames={} elapsed={}ms max-upload={}ms",
+                frames,
+                started.elapsed().as_millis(),
+                max_upload.as_millis(),
+            ));
             return glib::ControlFlow::Break;
         }
         if !fade_in && next == 0 {
+            crate::player::linux_embed::elog(&format!(
+                "overlay-motion: out frames={} elapsed={}ms max-upload={}ms",
+                frames,
+                started.elapsed().as_millis(),
+                max_upload.as_millis(),
+            ));
             if !SHOWN.load(Ordering::SeqCst) {
                 hide_now(&app);
             }
@@ -196,7 +220,10 @@ fn kick_fade(app: AppHandle, fade_in: bool) {
     });
 }
 
-fn present(app: &AppHandle, add: bool) {
+/// Upload one native animation frame. mpv's raw-address form is an input convenience, not
+/// shared memory: `cmd_overlay_add` copies the pixels before returning. Reissuing the command
+/// here is the critical difference between a visible 60fps fade and a frozen first frame.
+fn present(app: &AppHandle, y_offset: i64) {
     let Some(geom) = GEOM.lock().ok().and_then(|g| *g) else {
         return;
     };
@@ -208,18 +235,23 @@ fn present(app: &AppHandle, add: bool) {
         let Ok(mut buf) = BUF.lock() else {
             return;
         };
-        // Never realloc here: mpv is already reading BUF. Size changes go through snapshot_once.
+        // Avoid reallocating while composing a frame; size changes go through snapshot_once.
         if buf.len() != base.len() {
             return;
         }
         scale_premult_bgra(&base, &mut buf, alpha);
         buf.as_ptr() as usize
     };
-    if !add {
-        return;
-    }
     if let Some(ph) = app.try_state::<PlayerHandle>() {
-        let _ = ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);
+        let _ = ph.overlay_add(
+            OVERLAY_ID,
+            geom.0,
+            geom.1.saturating_add(y_offset),
+            addr,
+            geom.2,
+            geom.3,
+            geom.4,
+        );
     }
 }
 
@@ -262,6 +294,7 @@ fn alpha_bounds(
 /// Take one WebKit snapshot and push the non-transparent crop to mpv as an overlay.
 fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in: bool) {
     let app = app.clone();
+    let wv_retry = wv.clone();
     let t_req = Instant::now();
     wv.snapshot(
         SnapshotRegion::Visible,
@@ -294,9 +327,23 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                     let strip = STRIP.lock().ok().and_then(|g| *g);
                     clip_to_strip(bounds, strip)
                 }) else {
-                    let force = FORCE.swap(false, Ordering::SeqCst);
-                    let had_overlay = GEOM.lock().ok().and_then(|mut geom| geom.take()).is_some();
-                    if (force || had_overlay) && !fade_in {
+                    let tries = EMPTY_TRIES.fetch_add(1, Ordering::SeqCst);
+                    if GEN.load(Ordering::SeqCst) == my_gen && tries < 4 {
+                        let app_retry = app.clone();
+                        glib::timeout_add_local_once(Duration::from_millis(40), move || {
+                            if GEN.load(Ordering::SeqCst) == my_gen {
+                                snapshot_once(&wv_retry, &app_retry, my_gen, fade_in);
+                            }
+                        });
+                        return Some(());
+                    }
+                    crate::player::linux_embed::elog(&format!(
+                        "overlay: empty snapshot after {} tries fade_in={}",
+                        tries + 1,
+                        fade_in
+                    ));
+                    // Never hide an already-visible overlay because a later frame was empty.
+                    if !SHOWN.load(Ordering::SeqCst) {
                         hide_now(&app);
                     }
                     return Some(());
@@ -307,9 +354,9 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                 let geom = (x as i64, y as i64, cw as i64, ch as i64, row_bytes as i64);
                 let geom_changed = GEOM.lock().ok().map(|g| *g != Some(geom)).unwrap_or(true);
 
-                // mpv's render thread reads BUF by address until the next overlay-add. Resizing
-                // in place could realloc mid-read, so size changes install a fresh allocation
-                // and keep the old one alive in `retired` until after overlay_add.
+                // Keep replacement allocations alive until the synchronous overlay-add below has
+                // copied the frame. This also makes the ownership contract explicit if mpv changes
+                // how it handles raw-address input in a future build.
                 let mut retired_buf: Option<Vec<u8>> = None;
                 let mut retired_base: Option<Vec<u8>> = None;
                 let addr = {
@@ -329,10 +376,11 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                         let dst_end = dst_start + row_bytes;
                         base[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
                     }
-                    if fade_in && ALPHA.load(Ordering::Relaxed) == 0 {
-                        // First pixel of a show: keep BUF empty until the fade tick writes it,
-                        // but register the address with mpv now.
-                    } else if !fade_in {
+                    if fade_in && ALPHA.load(Ordering::Relaxed) == 0 && raster.as_millis() < 80 {
+                        // Fresh show: register the address at alpha 0, then CPU-fade.
+                    } else if fade_in {
+                        // If the first WebKit raster itself was slow, show the controls at once.
+                        // A late fade is worse than an immediate, responsive result.
                         ALPHA.store(OVERLAY_FADE_FULL, Ordering::Relaxed);
                     }
                     scale_premult_bgra(&base, &mut buf, ALPHA.load(Ordering::Relaxed));
@@ -342,6 +390,7 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                 if let Ok(mut g) = GEOM.lock() {
                     *g = Some(geom);
                 }
+                SHOWN.store(true, Ordering::SeqCst);
 
                 let force = FORCE.swap(false, Ordering::SeqCst);
                 if geom_changed || force || fade_in {
@@ -349,7 +398,7 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                     let _ =
                         ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);
                 }
-                if fade_in {
+                if fade_in && ALPHA.load(Ordering::Relaxed) < OVERLAY_FADE_FULL {
                     kick_fade(app.clone(), true);
                 }
                 drop(retired_buf);

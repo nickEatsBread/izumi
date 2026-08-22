@@ -268,7 +268,7 @@
     role="presentation"
   >
     <div class="flex items-start gap-4" onclick={(e) => e.stopPropagation()} role="presentation">
-      <div class="gm-sheet w-[26rem] rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
+      <div class="gm-sheet gm-sheet-in w-[26rem] rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
         {#each roots as r, i (r.key)}
           <button
             data-focusable
@@ -286,7 +286,7 @@
 
       <!-- Track column (appears when descended). -->
       {#if level === 1}
-        <div bind:this={trackColEl} class="gm-sheet max-h-[85vh] w-[26rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
+        <div bind:this={trackColEl} class="gm-sheet gm-menu-col-in max-h-[85vh] w-[26rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
           <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
           {#each subItems as it, i (leafKey(it))}
             <button

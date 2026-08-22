@@ -463,7 +463,7 @@
   <!-- No backdrop-filter: the video behind is a separate native surface the webview compositor
        can't sample, so the blur only ever blurred transparent pixels — while forcing an expensive
        render surface that janked scrolling in the embed. The dim alone reads identically. -->
-  <button type="button" data-comments-panel aria-label="Close discussion" transition:fade={{ duration: 150 }}
+  <button type="button" data-comments-panel aria-label="Close discussion" transition:fade={{ duration: $gameMode ? 0 : 150 }}
           onclick={() => commentsOpen.set(false)}
           class="absolute inset-0 z-40 bg-black/60"></button>
 {/if}
@@ -483,7 +483,7 @@
        {$discussionExpanded
          ? `inset-0 m-auto h-[85vh] w-[94vw] max-w-[920px] rounded-2xl border ${embedActive ? '' : 'overflow-hidden'}`
          : 'inset-y-0 right-0 w-full max-w-md border-l'}
-       {$commentsOpen ? '' : $discussionExpanded ? 'dq-closed-pop' : 'dq-closed-slide'}">
+       {$commentsOpen ? '' : $gameMode ? 'dq-gm-hide' : $discussionExpanded ? 'dq-closed-pop' : 'dq-closed-slide'}">
   {@render panelBody()}
 </div>
 
@@ -500,4 +500,12 @@
   .dq-panel { transition: transform 200ms ease, opacity 160ms ease, visibility 0s 0s; }
   .dq-closed-slide { visibility: hidden; transform: translateX(105%); transition: transform 200ms ease, opacity 160ms ease, visibility 0s 200ms; }
   .dq-closed-pop { visibility: hidden; opacity: 0; transform: scale(0.96); transition: transform 160ms ease, opacity 160ms ease, visibility 0s 160ms; }
+  /* Game mode snapshots the webview the instant comments close. A 200ms outro leaves
+     the panel in the bitmap so it lingers on the video after mpv remaps. */
+  .dq-gm-hide {
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: none !important;
+  }
 </style>

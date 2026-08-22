@@ -254,6 +254,11 @@ html.gamemode .group:hover .group-hover\:scale-105 {
   transform: scale(1.12);
   box-shadow: 0 0 0 3px #fff, 0 10px 28px rgba(0, 0, 0, 0.4);
 }
+.gamemode .izumi-player-root .gm-sheet [data-focusable] {
+  /* Row highlight must swap instantly. A 120ms background fade leaves the previous
+     row half-grey while the new one is half-white — the "lingering grey button". */
+  transition: none;
+}
 .gamemode .izumi-player-root .gm-sheet [data-focusable]:focus {
   transform: none;
   background: #fff;

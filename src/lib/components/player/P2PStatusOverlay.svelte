@@ -47,7 +47,7 @@
 
 {#if visible}
   <aside
-    transition:fade={{ duration: 150 }}
+    transition:fade={{ duration: gm ? 0 : 150 }}
     class="pointer-events-none absolute left-1/2 z-20 min-w-64 max-w-[calc(100%_-_2rem)] -translate-x-1/2 border border-white/15 bg-black/80 text-white shadow-2xl
       {gm ? 'rounded-2xl px-5 py-4' : 'rounded-xl px-4 py-3 backdrop-blur-md'}"
     style:top={buffering ? 'calc(50% + 4.25rem)' : 'max(1rem, var(--player-safe-top, 0px))'}

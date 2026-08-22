@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen } from '$lib/player/session'
+import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen, playerMenuOpen } from '$lib/player/session'
 import { inputType } from './input'
 import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
@@ -61,6 +61,8 @@ export function startGamepadNav(): () => void {
         // Route held/repeating d-pad + stick directions into the discussion panel. This keeps
         // player seeking disabled while allowing controller scrolling and source selection.
         window.dispatchEvent(new CustomEvent('comments-nav', { detail: dir }))
+      } else if (get(playerMenuOpen)) {
+        window.dispatchEvent(new CustomEvent('player-menu-nav', { detail: dir }))
       }
       return
     }
@@ -90,7 +92,7 @@ export function startGamepadNav(): () => void {
       const dir = name as Dir
       // Player overlay owns left/right skim (paused-frame + native bar). Do not also
       // relative-seek here — that left the HTML snapshot and time-pos stuck while paused.
-      if (inPlayer() && !get(commentsOpen) && (dir === 'left' || dir === 'right')) return
+      if (inPlayer() && !get(commentsOpen) && !get(playerMenuOpen) && (dir === 'left' || dir === 'right')) return
       held[dir] = true
       timers[dir].press(performance.now())
       fireDir(dir)
