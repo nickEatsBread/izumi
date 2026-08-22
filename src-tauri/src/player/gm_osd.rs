@@ -1,8 +1,8 @@
 //! Native mpv OSD for fast-moving Game mode player UI.
 //!
-//! The HTML controls still handle input, but loading and active scrub visuals must not be
-//! driven by repeated WebKit snapshots on the Deck. Those states are drawn here as ASS vector
-//! events inside mpv's renderer, so gamescope receives one already-composited video surface.
+//! The HTML controls still handle input, but loading, live progress and active scrub visuals must
+//! not be driven by repeated WebKit snapshots on the Deck. Those states are drawn here as ASS
+//! vector events inside mpv's renderer, so gamescope receives one composited video surface.
 
 #![cfg(target_os = "linux")]
 
@@ -31,11 +31,14 @@ static LITE: AtomicBool = AtomicBool::new(false);
 // Tween time-constants (seconds) for the native scrub bar, chosen per input source. A trigger
 // (pad) steps in 5s jumps and is indirect, so a longer tween smooths the steps; a finger is
 // direct manipulation and must feel attached, so it gets ~1 frame of catch-up. Tune on-device.
-const PAD_SCRUB_TAU: f64 = 0.045;
+const PAD_SCRUB_TAU: f64 = 0.012;
 const TOUCH_SCRUB_TAU: f64 = 0.025;
 const SCRUB_EPSILON: f64 = 0.02;
+/// Normal playback progress needs to feel live, but a few vector shapes do not need a 60fps ASS
+/// reparse. Ten updates per second is smooth at seekbar scale and keeps ample video-render headroom.
+const PROGRESS_FRAME_MS: u64 = 100;
 // osd-overlay z (higher = nearer the viewer): gradient/track behind, played/knob above, spinner
-// next, then skip/P2P/toasts so the P2P popup is not buried under the loading backdrop.
+// next, then skip/toasts. The P2P status is the HTML bitmap card, never an ASS fallback.
 // overlay-add bitmaps (the snapshot chrome, id 1) always sit above ALL of these.
 const Z_SCRUB_STATIC: i64 = 48;
 const Z_SCRUB_DYN: i64 = 50;
@@ -99,6 +102,11 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
     let mut last_tick = t0;
     let mut last_drawn_version = u64::MAX;
     let mut shown_scrub_time: Option<f64> = None;
+    let mut progress_anchor_pos = 0.0;
+    let mut progress_anchor_at = t0;
+    let mut last_progress_draw = t0
+        .checked_sub(Duration::from_millis(PROGRESS_FRAME_MS))
+        .unwrap_or(t0);
     let mut shown = Shown::default();
 
     glib::timeout_add_local(Duration::from_millis(1000 / OSD_FPS), move || {
@@ -122,20 +130,40 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
         }
 
         let mut draw_state = state.clone();
+        if version != last_drawn_version {
+            progress_anchor_pos = state.pos;
+            progress_anchor_at = now;
+        }
         let scrub_animating = prepare_scrub_display(&mut draw_state, &mut shown_scrub_time, dt);
+        if draw_state.controls && !draw_state.paused && !draw_state.scrubbing && !draw_state.loading
+        {
+            draw_state.pos = (progress_anchor_pos
+                + now.duration_since(progress_anchor_at).as_secs_f64())
+            .clamp(0.0, draw_state.dur.max(0.0));
+        }
 
         hold_lite(&app, draw_state.scrubbing || draw_state.loading);
 
         // Loading animates at OSD_FPS inside mpv. Touch scrub redraws only when input changes.
-        // Pad-trigger scrub gets a native visual tween between stepped repeat targets.
+        // Pad-trigger scrub gets a native visual tween between stepped repeat targets. Ordinary
+        // playback extrapolates between frontend samples and redraws at a lightweight 10fps.
+        let progress_due = draw_state.controls
+            && (version != last_drawn_version
+                || (!draw_state.paused
+                    && now.duration_since(last_progress_draw)
+                        >= Duration::from_millis(PROGRESS_FRAME_MS)));
         if !draw_state.loading
             && (!draw_state.scrubbing || !scrub_animating)
+            && !progress_due
             && version == last_drawn_version
         {
             return glib::ControlFlow::Continue;
         }
 
         draw(&app, &draw_state, spinner_phase(t0), &mut shown);
+        if draw_state.controls {
+            last_progress_draw = now;
+        }
         last_drawn_version = version;
         glib::ControlFlow::Continue
     });
@@ -233,16 +261,20 @@ fn draw(app: &AppHandle, state: &GmDynamicOverlay, phase: u32, shown: &mut Shown
         return;
     };
 
-    // --- Scrub bar: static layer (gradient/track/buffer) pushed only when its content changes;
-    // dynamic layer (played/knob/time) re-pushed each animating frame.
-    if state.scrubbing && state.dur > 0.0 {
+    // --- Progress/scrub bar: static layer (gradient/track/buffer) is content-gated; the dynamic
+    // layer is normal played-fill + flanking times, or the active scrub knob + floating time.
+    if (state.scrubbing || state.controls) && state.dur > 0.0 {
         let (bx, by, bw, bh) = scrub_geometry(state, wf, hf);
         let static_ass = scrub_static_ass(state, wf, hf, bx, by, bw, bh);
         if shown.static_ass.as_deref() != Some(static_ass.as_str()) {
             let _ = player.osd_overlay_ass(OSD_SCRUB_STATIC_ID, &static_ass, w, h, Z_SCRUB_STATIC);
             shown.static_ass = Some(static_ass);
         }
-        let dyn_ass = scrub_dynamic_ass(state, wf, bx, by, bw, bh);
+        let dyn_ass = if state.scrubbing {
+            scrub_dynamic_ass(state, wf, bx, by, bw, bh)
+        } else {
+            progress_dynamic_ass(state, bx, by, bw, bh)
+        };
         let _ = player.osd_overlay_ass(OSD_SCRUB_DYN_ID, &dyn_ass, w, h, Z_SCRUB_DYN);
         shown.scrub = true;
     } else if shown.scrub {
@@ -252,14 +284,7 @@ fn draw(app: &AppHandle, state: &GmDynamicOverlay, phase: u32, shown: &mut Shown
         shown.scrub = false;
     }
 
-    let chrome = chrome_ass(
-        &state.skip_text,
-        &state.notice_text,
-        &state.p2p_text,
-        wf,
-        hf,
-        state.loading,
-    );
+    let chrome = chrome_ass(&state.skip_text, &state.notice_text, wf, hf);
     if chrome.is_empty() {
         if shown.chrome.is_some() {
             let _ = player.osd_overlay_remove(OSD_CHROME_ID);
@@ -397,6 +422,23 @@ fn scrub_dynamic_ass(state: &GmDynamicOverlay, w: f64, x: f64, y: f64, bw: f64, 
     push(
         &mut lines,
         text(knob_x.clamp(60.0, w - 60.0), y - 42.0, 32.0, &time),
+    );
+    lines.join("\n")
+}
+
+/// Normal visible controls: live played fill plus current/total times in the transparent HTML
+/// placeholders that flank the seekbar. The HTML elements remain present for layout and touch.
+fn progress_dynamic_ass(state: &GmDynamicOverlay, x: f64, y: f64, bw: f64, bh: f64) -> String {
+    let mut lines = Vec::new();
+    let top = y - bh / 2.0;
+    push(
+        &mut lines,
+        rect(x, top, bw * pct(state.pos, state.dur), bh, "FFFFFF", "00"),
+    );
+    push(&mut lines, text(x - 44.0, y, 20.0, &fmt_time(state.pos)));
+    push(
+        &mut lines,
+        text(x + bw + 44.0, y, 20.0, &fmt_time(state.dur)),
     );
     lines.join("\n")
 }

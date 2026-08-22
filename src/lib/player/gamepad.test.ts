@@ -23,6 +23,7 @@ describe('TriggerScrubber', () => {
     s.update(false, 100)
     expect(d.seek).toHaveBeenCalledWith(110)
     expect(d.beginScrub).not.toHaveBeenCalled()
+    expect(d.onActivity).toHaveBeenCalledTimes(1)
   })
 
   it('a quick tap backward is clamped at 0', () => {
@@ -59,6 +60,15 @@ describe('TriggerScrubber', () => {
     s.update(true, 0)
     s.update(false, 100)
     expect(d.seek).toHaveBeenCalledWith(110)
+  })
+
+  it('updates a digital d-pad tap on press instead of waiting for release', () => {
+    const d = deps(100, 1000)
+    const s = new TriggerScrubber(+1, d, true)
+    s.update(true, 0)
+    expect(d.seek).toHaveBeenCalledWith(110)
+    s.update(false, 80)
+    expect(d.seek).toHaveBeenCalledTimes(1)
   })
 })
 

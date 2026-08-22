@@ -39,9 +39,9 @@
   let commentsWereOpen = false
   $effect(() => {
     const open = $commentsOpen
-    if ($gameMode && commentsWereOpen && !open) {
+    if ($gameMode && open !== commentsWereOpen) {
       const focused = document.activeElement as HTMLElement | null
-      if (focused?.closest?.('[data-comments-panel]')) focused.blur()
+      if (!open && focused?.closest?.('[data-comments-panel]')) focused.blur()
       restoreGmTouchAfterTransition()
     }
     commentsWereOpen = open
@@ -498,6 +498,9 @@
   /* Open/close animates via classes (not {#if} transitions) so the panel — and the embed iframe in
      it — stays in the DOM. Visibility flips only after the exit transform/fade finishes. */
   .dq-panel { transition: transform 200ms ease, opacity 160ms ease, visibility 0s 0s; }
+  /* A Game-mode panel is captured into mpv immediately. An entrance transition makes that first
+     bitmap half-transparent and keeps the hidden WebView busy while it should accept touch. */
+  :global(.gamemode) .dq-panel { transition: none; }
   .dq-closed-slide { visibility: hidden; transform: translateX(105%); transition: transform 200ms ease, opacity 160ms ease, visibility 0s 200ms; }
   .dq-closed-pop { visibility: hidden; opacity: 0; transform: scale(0.96); transition: transform 160ms ease, opacity 160ms ease, visibility 0s 160ms; }
   /* Game mode snapshots the webview the instant comments close. A 200ms outro leaves

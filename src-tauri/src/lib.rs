@@ -2,8 +2,6 @@
 #[cfg(target_os = "android")]
 mod android_tls;
 mod cache_gc;
-mod gm_perf;
-mod text_file;
 mod direct_torrent;
 mod direct_torrent_range;
 mod direct_torrent_select;
@@ -13,6 +11,7 @@ mod download;
 mod extension_package;
 #[cfg(not(target_os = "android"))]
 mod extension_service;
+mod gm_perf;
 #[cfg(not(target_os = "android"))]
 mod hls_proxy;
 mod http_lifecycle;
@@ -23,6 +22,7 @@ mod jvm_extensions;
 mod jvm_extensions;
 mod net_interfaces;
 mod sync;
+mod text_file;
 mod torrent_download;
 mod watch_room;
 // The native libmpv player is desktop-only; Android delegates playback to an external app.
@@ -99,6 +99,10 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) visible: bool,
     pub(crate) loading: bool,
     pub(crate) first_frame: bool,
+    #[serde(default)]
+    pub(crate) controls: bool,
+    #[serde(default)]
+    pub(crate) paused: bool,
     pub(crate) scrubbing: bool,
     pub(crate) pos: f64,
     pub(crate) dur: f64,
@@ -121,8 +125,6 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) skip_text: String,
     #[serde(default)]
     pub(crate) notice_text: String,
-    #[serde(default)]
-    pub(crate) p2p_text: String,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]
@@ -327,6 +329,7 @@ fn player_gm_overlay(
     app: AppHandle,
     visible: bool,
     fast: Option<bool>,
+    animate: Option<bool>,
     crop: Option<OverlayCrop>,
 ) {
     #[cfg(target_os = "linux")]
@@ -334,15 +337,21 @@ fn player_gm_overlay(
         if let Some(win) = app.get_webview_window("main") {
             if visible {
                 let crop = crop.map(|c| (c.x, c.y, c.w, c.h));
-                player::linux_overlay::start(app.clone(), win, fast.unwrap_or(false), crop);
+                player::linux_overlay::start(
+                    app.clone(),
+                    win,
+                    fast.unwrap_or(false),
+                    animate.unwrap_or(true),
+                    crop,
+                );
             } else {
-                player::linux_overlay::stop(app.clone());
+                player::linux_overlay::stop(app.clone(), animate.unwrap_or(true));
             }
         }
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, visible, fast, crop);
+        let _ = (app, visible, fast, animate, crop);
     }
 }
 
@@ -2587,17 +2596,8 @@ fn drm_gif_start(
         let stop = stop.clone();
         let frames = frames.clone();
         Some(tauri::async_runtime::spawn(async move {
-            drm_gif_capture_loop(
-                app,
-                dir,
-                crop,
-                width,
-                max_frames,
-                max_seconds,
-                stop,
-                frames,
-            )
-            .await;
+            drm_gif_capture_loop(app, dir, crop, width, max_frames, max_seconds, stop, frames)
+                .await;
         }))
     };
     *slot = Some(DrmGifSession {
@@ -2672,7 +2672,8 @@ async fn drm_gif_capture_loop(
     let limit = std::time::Duration::from_secs(max_seconds as u64 + 1);
     // Encrypted video is black in DevTools screencast. Burst compositor JPEGs and crop
     // off-thread, then take one more shot after stop so the GIF includes the O/R4 press.
-    let params = r#"{"format":"jpeg","quality":80,"fromSurface":true,"captureBeyondViewport":false}"#;
+    let params =
+        r#"{"format":"jpeg","quality":80,"fromSurface":true,"captureBeyondViewport":false}"#;
     let mut jobs = tokio::task::JoinSet::new();
     let use_preview = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     let grab = async |jobs: &mut tokio::task::JoinSet<()>| {
@@ -2704,8 +2705,7 @@ async fn drm_gif_capture_loop(
             let dir = dir.clone();
             let frames = frames.clone();
             jobs.spawn_blocking(move || {
-                let Ok(cropped) =
-                    gif_capture::crop_compositor_jpeg(&jpeg, crop.as_ref(), width)
+                let Ok(cropped) = gif_capture::crop_compositor_jpeg(&jpeg, crop.as_ref(), width)
                 else {
                     return;
                 };
@@ -2987,10 +2987,7 @@ fn read_istream(stream: &windows::Win32::System::Com::IStream) -> Result<Vec<u8>
 }
 
 #[cfg(windows)]
-async fn capture_webview_cdp(
-    webview: &tauri::Webview,
-    params: String,
-) -> Result<Vec<u8>, String> {
+async fn capture_webview_cdp(webview: &tauri::Webview, params: String) -> Result<Vec<u8>, String> {
     use webview2_com::CallDevToolsProtocolMethodCompletedHandler;
     use windows::core::{HSTRING, PCWSTR};
     let (tx, rx) = tokio::sync::oneshot::channel::<Result<String, String>>();
@@ -3010,8 +3007,8 @@ async fn capture_webview_cdp(
             let method = HSTRING::from("Page.captureScreenshot");
             let params_h = HSTRING::from(params.as_str());
             let slot_ok = slot.clone();
-            let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
-                move |hr, json| {
+            let handler =
+                CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |hr, json| {
                     let send = |v: Result<String, String>| {
                         if let Some(t) = slot_ok.lock().unwrap().take() {
                             let _ = t.send(v);
@@ -3023,8 +3020,7 @@ async fn capture_webview_cdp(
                     }
                     send(Ok(json));
                     Ok(())
-                },
-            ));
+                }));
             if core
                 .CallDevToolsProtocolMethod(
                     PCWSTR(method.as_ptr()),
@@ -3042,8 +3038,7 @@ async fn capture_webview_cdp(
         .await
         .map_err(|_| "screenshot timed out".to_string())?
         .map_err(|_| "screenshot cancelled".to_string())??;
-    let parsed: serde_json::Value =
-        serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let parsed: serde_json::Value = serde_json::from_str(&json).map_err(|e| e.to_string())?;
     let b64 = parsed
         .get("data")
         .and_then(|v| v.as_str())
@@ -3124,9 +3119,7 @@ fn gif_frames_ffmpeg(
             .arg("-i")
             .arg(palette)
             .arg("-lavfi")
-            .arg(format!(
-                "{scale}[x];[x][1:v]paletteuse=dither=sierra2_4a"
-            ))
+            .arg(format!("{scale}[x];[x][1:v]paletteuse=dither=sierra2_4a"))
             .arg("-loop")
             .arg("0")
             .arg(output);
@@ -3171,11 +3164,10 @@ async fn encode_gif_frames(app: &AppHandle, frames: &player::GifFrames) -> Resul
             .file_stem()
             .and_then(|stem| stem.to_str())
             .unwrap_or("f00000");
-        let index = name
-            .trim_start_matches('f')
-            .parse::<u32>()
-            .unwrap_or(0);
-        let duplicate = frames.dir.join(format!("f{:05}.jpg", index.saturating_add(1)));
+        let index = name.trim_start_matches('f').parse::<u32>().unwrap_or(0);
+        let duplicate = frames
+            .dir
+            .join(format!("f{:05}.jpg", index.saturating_add(1)));
         std::fs::copy(&files[0], &duplicate).map_err(|e| e.to_string())?;
         files.push(duplicate);
     }

@@ -6,7 +6,6 @@ import {
   gameModeChromeActive,
   gameModeDock,
   gameModeDockIsLive,
-  gameModeP2pLine,
   gameModeSnapshotCrop,
   presenceAllowed,
   scheduleGameModeOverlay,
@@ -32,16 +31,17 @@ describe('gameModeBitmapOverlayActive', () => {
     expect(gameModeBitmapOverlayActive({ ...base, controlsVisible: true })).toBe(true)
   })
 
-  it('keeps toasts on the bitmap overlay during load, and leaves loading P2P to native ASS', () => {
-    expect(gameModeBitmapOverlayActive({ ...base, dynamicOverlay: true, p2pVisible: true })).toBe(false)
+  it('keeps toasts and the proper P2P card on the bitmap overlay during load', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, dynamicOverlay: true, p2pVisible: true })).toBe(true)
     expect(gameModeBitmapOverlayActive({ ...base, dynamicOverlay: true, noticeVisible: true })).toBe(true)
     expect(gameModeBitmapOverlayActive({ ...base, p2pVisible: true })).toBe(true)
   })
 
-  it('does not snapshot menus — those unmap mpv and paint live', () => {
-    expect(gameModeBitmapOverlayActive({ ...base, trackMenuOpen: true })).toBe(false)
-    expect(gameModeBitmapOverlayActive({ ...base, playerMenuOpen: true })).toBe(false)
-    expect(gameModeBitmapOverlayActive({ ...base, commentsOpen: true })).toBe(false)
+  it('snapshots menus/comments so opening them does not blank fullscreen mpv', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, trackMenuOpen: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, playerMenuOpen: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, commentsOpen: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, statsOpen: true })).toBe(true)
   })
 
   it('yields idle controls to the native loading/scrub overlay', () => {
@@ -62,12 +62,9 @@ describe('gameModeSnapshotCrop', () => {
 })
 
 describe('gameMode chrome + presence', () => {
-  it('treats skip/notice/p2p as native chrome', () => {
+  it('treats skip/notice as native chrome', () => {
     expect(gameModeChromeActive({ skip: true, notice: false, p2p: false })).toBe(true)
     expect(gameModeChromeActive({ skip: false, notice: false, p2p: false })).toBe(false)
-    expect(gameModeP2pLine(null)).toBe('P2P  Connecting to peers…')
-    expect(gameModeP2pLine({ downloadMbps: 8.25, uploadMbps: 0.4, livePeers: 12 }))
-      .toBe('P2P  ↓ 8.3  ↑ 0.4  12 peers')
   })
 
   it('does not publish desktop presence in Game mode', () => {
@@ -92,7 +89,7 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('gameModeBitmapOverlayActive')
     expect(overlay).toContain('p2pVisible')
     expect(overlay).toContain('noticeVisible')
-    expect(overlay).not.toContain('controlsVisible || showSkip')
+    expect(overlay).not.toContain('dynamicOverlay: controlsVisible')
     expect(overlay).toContain('skipVisible: showSkip')
     expect(overlay).toContain('scheduleGameModeOverlay')
     expect(overlay).toContain('gameModeSnapshotCrop')
@@ -104,7 +101,15 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('playerOverlayRev')
     expect(overlay).toContain("void paused")
     expect(overlay).toContain('streamPickerOpen')
-    expect(overlay).toContain('gameModeP2pLine')
+    expect(overlay).not.toContain('gameModeP2pLine')
+    expect(overlay).not.toContain('p2pText')
+    expect(overlay).toContain('gmDynamicOwnsChrome')
+    expect(overlay).toContain('fast: overlayFast')
+    expect(overlay).toContain('if (!gmMode || !p2pVisible) return')
+    expect(overlay).toContain('ontoggleplay={togglePlayback}')
+    expect(overlay).toContain("if (action !== 'playerClose') poke()")
+    expect(overlay).toContain('controls: visible && liveControls')
+    expect(overlay).toContain('loading || get(scrub).active || controlsVisible || showSkip')
     expect(overlay).not.toContain('class:gm-chrome-in')
   })
 
@@ -132,9 +137,9 @@ describe('gameModeDock', () => {
     expect(gameModeDock({ ...base, loading: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
     expect(gameModeDock({ ...base, controlsVisible: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
     expect(gameModeDockIsLive(gameModeDock({ ...base, controlsVisible: true }))).toBe(false)
-    expect(gameModeDock({ ...base, playerMenuOpen: true }).hide).toBe(true)
-    expect(gameModeDock({ ...base, trackMenuOpen: true }).hide).toBe(true)
-    expect(gameModeDock({ ...base, commentsOpen: true }).hide).toBe(true)
+    expect(gameModeDock({ ...base, playerMenuOpen: true }).hide).toBe(false)
+    expect(gameModeDock({ ...base, trackMenuOpen: true }).hide).toBe(false)
+    expect(gameModeDock({ ...base, commentsOpen: true }).hide).toBe(false)
     expect(gameModeDock({ ...base, streamPickerOpen: true }).hide).toBe(true)
   })
 })
@@ -148,8 +153,11 @@ describe('Game-mode Leanback motion', () => {
     expect(controls).toContain('gmActivate')
     expect(controls).toContain('gm-open-tracks')
     expect(controls).toContain('player-menu-nav')
+    expect(controls).not.toContain("case 'down': gmMove(1)")
     const comments = readFileSync(fileURLToPath(new URL('../components/player/CommentsPanel.svelte', import.meta.url)), 'utf8')
     expect(comments).toContain('dq-gm-hide')
+    const seekbar = readFileSync(fileURLToPath(new URL('../components/player/Seekbar.svelte', import.meta.url)), 'utf8')
+    expect(seekbar).toContain('class:opacity-0={gm}')
     const menu = readFileSync(fileURLToPath(new URL('../components/player/TrackMenu.svelte', import.meta.url)), 'utf8')
     expect(menu).toContain('gm-open-tracks')
     expect(menu).toContain('bumpPlayerOverlay')

@@ -262,6 +262,34 @@ pub fn start(app: AppHandle) {
                                 );
                             }
                         }
+                        // Some Steam Input layouts expose L2/R2 as their Z axes instead of
+                        // ButtonChanged. Accept both representations behind the same edge latch;
+                        // values are normalised to -1..1 (signed) or 0..1 (SDL-style), and these
+                        // thresholds work for either resting convention.
+                        EventType::AxisChanged(axis, v, _)
+                            if matches!(axis, Axis::LeftZ | Axis::RightZ) =>
+                        {
+                            let state = if matches!(axis, Axis::LeftZ) {
+                                &mut l2_on
+                            } else {
+                                &mut r2_on
+                            };
+                            let now = if *state { v > 0.25 } else { v > 0.55 };
+                            if now != *state {
+                                *state = now;
+                                emit(
+                                    &app,
+                                    &Input {
+                                        name: if matches!(axis, Axis::LeftZ) {
+                                            "l2"
+                                        } else {
+                                            "r2"
+                                        },
+                                        pressed: now,
+                                    },
+                                );
+                            }
+                        }
                         EventType::ButtonPressed(b, code) => {
                             if let Some(n) = btn_name(b).or_else(|| grip_btn_name(code)) {
                                 emit(

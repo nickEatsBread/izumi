@@ -1,5 +1,5 @@
-/** Game-mode overlay policy: when the HTML chrome is snapshotted into mpv. Loading and
- * scrubbing stay native ASS; P2P / toasts / menus are real HTML snapshotted onto the video. */
+/** Game-mode overlay policy: when HTML chrome is snapshotted into mpv. Loading and the moving
+ * scrub indicator stay native ASS; controls, menus, comments, P2P and toasts are bitmap chrome. */
 
 export function gameModeBitmapOverlayActive(input: {
   gameMode: boolean
@@ -9,16 +9,20 @@ export function gameModeBitmapOverlayActive(input: {
   trackMenuOpen: boolean
   playerMenuOpen: boolean
   commentsOpen: boolean
+  statsOpen?: boolean
   p2pVisible?: boolean
   noticeVisible?: boolean
   skipVisible?: boolean
 }): boolean {
   if (!input.gameMode || !input.playing) return false
-  // Menus/comments unmap mpv and paint as live HTML. Fullscreen chrome uses one settled
-  // WebKit snapshot; Rust animates that bitmap inside mpv without re-rastering WebKit.
-  if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen) return false
+  // Menus/comments are also painted into mpv: leaving them as live HTML requires unmapping the
+  // opaque Gamescope video window, which made the output go black. Discrete menus re-snapshot on
+  // focus changes; comments use the native self-paced refresh loop while scrolling.
+  if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen || input.statsOpen) return true
   if (input.noticeVisible || input.skipVisible) return true
-  if (input.p2pVisible && !input.dynamicOverlay) return true
+  // P2P always uses its proper HTML card, including before the first frame. The old native ASS
+  // text line was a visibly different fallback and could replace the card during loading.
+  if (input.p2pVisible) return true
   if (input.dynamicOverlay) return false
   return input.controlsVisible
 }
@@ -58,25 +62,13 @@ export function gameModeChromeActive(input: {
   return input.skip || input.notice || input.p2p
 }
 
-export function gameModeP2pLine(stats: {
-  downloadMbps: number
-  uploadMbps: number
-  livePeers: number
-} | null): string {
-  if (!stats) return 'P2P  Connecting to peers…'
-  const down = Number.isFinite(stats.downloadMbps) ? stats.downloadMbps : 0
-  const up = Number.isFinite(stats.uploadMbps) ? stats.uploadMbps : 0
-  const peers = stats.livePeers === 1 ? '1 peer' : `${stats.livePeers} peers`
-  return `P2P  ↓ ${down.toFixed(1)}  ↑ ${up.toFixed(1)}  ${peers}`
-}
-
 /** Discord / SMTC / MPRIS do not reach the Deck session and steal wakeups. */
 export function presenceAllowed(gameMode: boolean): boolean {
   return !gameMode
 }
 
-/** Live webview: unmap mpv for opaque full-screen HTML (comments, settings, ☰, source picker).
- * Control chrome remains over a fullscreen mpv child and is animated as a native bitmap. */
+/** Only source-resolution surfaces unmap mpv. Player chrome, settings, tracks and comments remain
+ * bitmap overlays over the fullscreen child so opening them never blanks the video. */
 export function gameModeDock(input: {
   loading: boolean
   controlsVisible: boolean
@@ -88,10 +80,7 @@ export function gameModeDock(input: {
 }): { bottom: number; right: number; top: number; hide: boolean } {
   void input.noticeVisible
   if (
-    input.commentsOpen
-    || input.playerMenuOpen
-    || input.trackMenuOpen
-    || input.streamPickerOpen
+    input.streamPickerOpen
   ) {
     return { bottom: 0, right: 0, top: 0, hide: true }
   }

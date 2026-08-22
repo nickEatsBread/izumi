@@ -464,13 +464,12 @@
     window.addEventListener('player-menu-nav', onMenuNav)
     const unPad = listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (!gm || !showOptions || !e.payload.pressed || get(deckKeyboardWarning)) return
+      // Directions are owned by the app-wide repeat translator, which dispatches
+      // `player-menu-nav`. Handling the same raw edge here moved two rows per press.
       switch (e.payload.name) {
-        case 'up': gmMove(-1); break
-        case 'down': gmMove(1); break
         case 'a':
-        case 'right': gmActivate(); break
-        case 'b':
-        case 'left': gmBack(); break
+          gmActivate(); break
+        case 'b': gmBack(); break
       }
     })
     void (async () => {
@@ -766,9 +765,11 @@
          is narrower; Desktop keeps the full-width bar with the time in the button row. -->
     {#if gm}
       <div class="pointer-events-auto flex items-center gap-3">
-        <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums text-white/85">{fmt(pos)}</span>
+        <!-- Game mode's visible time/bar pixels come from mpv's live OSD. These transparent HTML
+             elements retain the exact layout and touch hitbox used to measure/operate that OSD. -->
+        <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums opacity-0">{fmt(pos)}</span>
         <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
-        <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums text-white/60">{fmt(dur)}</span>
+        <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums opacity-0">{fmt(dur)}</span>
       </div>
     {:else}
       <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>

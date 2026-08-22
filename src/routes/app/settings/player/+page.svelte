@@ -2,7 +2,7 @@
   import {
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
-    scrubThumbnails, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
+    scrubThumbnails, playerProgressAnimations, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
     p2pStatusVisibility,
@@ -209,6 +209,7 @@
     <Toggle label="Auto-skip openings & endings" desc="Skip OP/ED/recap segments automatically (AniSkip). Off shows a manual Skip button." value={$autoSkip} onToggle={() => ($autoSkip = !$autoSkip)} />
     <Toggle label="Skip filler episodes" desc="Auto next-episode jumps past filler (AnimeFillerList). Filler is always marked in the episode list." value={$skipFiller} onToggle={() => ($skipFiller = !$skipFiller)} />
     <Toggle label="Scrub preview thumbnails" desc="Show a frame preview while skimming the seek bar. Off shows just the time and chapter (and skips the frame grab — lighter on the Deck)." value={$scrubThumbnails} onToggle={() => ($scrubThumbnails = !$scrubThumbnails)} />
+    <Toggle label="Animate player progress controls" desc="Animate the Game-mode progress bar and controls as they appear and disappear. Turn off for instant controls." value={$playerProgressAnimations} onToggle={() => ($playerProgressAnimations = !$playerProgressAnimations)} />
     <Toggle label="Subtitle line navigation" desc="Show Previous, Replay, and Next subtitle-cue controls in the player. Useful for language learning; off by default." value={$subtitleLineNavigation} onToggle={() => ($subtitleLineNavigation = !$subtitleLineNavigation)} />
     <div class="rounded-md border border-border p-3 space-y-3" data-setting-key="gif-recorder">
       <div>

@@ -17,12 +17,13 @@ fn game_mode_keeps_hardware_webkit() {
 
 #[test]
 fn overlay_cpu_fade_scales_premultiplied_bgra() {
-    assert_eq!(OVERLAY_FADE_MS, 180);
-    assert_eq!(overlay_fade_step(0, true, 180, 180), OVERLAY_FADE_FULL);
-    assert_eq!(overlay_fade_step(OVERLAY_FADE_FULL, false, 180, 180), 0);
-    assert_eq!(overlay_fade_step(500, true, 90, 180), 1000);
-    assert!(overlay_fade_step(0, true, 16, 180) > 0);
-    assert!(overlay_fade_step(0, true, 16, 180) < OVERLAY_FADE_FULL);
+    assert_eq!(OVERLAY_FADE_MS, 150);
+    assert_eq!(OVERLAY_FADE_FRAME_MS, 25);
+    assert_eq!(overlay_fade_step(0, true, 150, 150), OVERLAY_FADE_FULL);
+    assert_eq!(overlay_fade_step(OVERLAY_FADE_FULL, false, 150, 150), 0);
+    assert_eq!(overlay_fade_step(500, true, 75, 150), 1000);
+    assert!(overlay_fade_step(0, true, 16, 150) > 0);
+    assert!(overlay_fade_step(0, true, 16, 150) < OVERLAY_FADE_FULL);
 
     let src = vec![10u8, 20, 30, 40, 200, 200, 200, 200];
     let mut dst = vec![255u8; 8];
@@ -42,6 +43,7 @@ fn overlay_cpu_fade_scales_premultiplied_bgra() {
     // mpv copies raw-address overlay pixels during overlay-add. A buffer mutation without
     // another command is invisible, which was the frozen/no-animation regression.
     assert!(overlay.contains("present(&app, y_offset)"));
+    assert!(overlay.contains("fade_in || FAST.load(Ordering::Relaxed)"));
     assert!(!overlay.contains("present(&app, false)"));
     assert!(overlay.contains("saturating_add(y_offset)"));
 }
@@ -54,7 +56,7 @@ fn idle_overlay_does_not_raster_unless_forced() {
     assert!(overlay_should_snapshot(true, false, false));
     assert!(!overlay_should_snapshot(true, true, true));
     assert_eq!(overlay_loop_fps(false), 0);
-    assert_eq!(overlay_loop_fps(true), 60);
+    assert_eq!(overlay_loop_fps(true), 30);
 }
 
 #[test]
@@ -65,7 +67,10 @@ fn idle_snapshots_clip_to_the_control_strip() {
 
     let full = (0, 0, 1280, 800);
     assert_eq!(clip_to_strip(full, Some(strip)), Some((0, 512, 1280, 288)));
-    assert_eq!(clip_to_strip((40, 600, 200, 80), Some(strip)), Some((40, 600, 200, 80)));
+    assert_eq!(
+        clip_to_strip((40, 600, 200, 80), Some(strip)),
+        Some((40, 600, 200, 80))
+    );
     assert!(clip_to_strip((10, 10, 40, 40), Some(strip)).is_none());
     assert_eq!(clip_to_strip(full, None), Some(full));
 }
@@ -73,13 +78,24 @@ fn idle_snapshots_clip_to_the_control_strip() {
 #[test]
 fn osd_cadence_tracks_a_finger_skim() {
     assert_eq!(OSD_FPS, 60);
+    let osd = include_str!("../src/player/gm_osd.rs");
+    assert!(osd.contains("const PROGRESS_FRAME_MS: u64 = 100"));
+    assert!(osd.contains("state.scrubbing || state.controls"));
+    assert!(osd.contains("progress_dynamic_ass"));
 }
 
 #[test]
-fn p2p_chrome_sits_above_the_loading_backdrop() {
+fn transient_chrome_sits_above_the_loading_backdrop() {
     let osd = include_str!("../src/player/gm_osd.rs");
     assert!(osd.contains("const Z_LOADING: i64 = 60"));
     assert!(osd.contains("const Z_CHROME: i64 = 70"));
+}
+
+#[test]
+fn p2p_text_fallback_is_removed() {
+    assert!(!include_str!("../src/lib.rs").contains("p2p_text"));
+    assert!(!include_str!("../../src/lib/components/player/PlayerOverlay.svelte")
+        .contains("p2pText"));
 }
 
 #[test]
@@ -118,11 +134,9 @@ fn touch_restore_coalesces_and_ignores_player_grips() {
 
 #[test]
 fn chrome_ass_omits_empty_layers_and_escapes_text() {
-    assert!(chrome_ass("", "", "", 1280.0, 800.0, false).is_empty());
-    let skip = chrome_ass("Skip Opening", "", "", 1280.0, 800.0, false);
+    assert!(chrome_ass("", "", 1280.0, 800.0).is_empty());
+    let skip = chrome_ass("Skip Opening", "", 1280.0, 800.0);
     assert!(skip.contains("Skip Opening"));
-    let notice = chrome_ass("", "Next episode {loading}", "", 1280.0, 800.0, false);
+    let notice = chrome_ass("", "Next episode {loading}", 1280.0, 800.0);
     assert!(notice.contains("Next episode \\{loading\\}"));
-    let p2p = chrome_ass("", "", "12 peers", 1280.0, 800.0, true);
-    assert!(p2p.contains("12 peers"));
 }

@@ -17,8 +17,8 @@ type Dir = 'up' | 'down' | 'left' | 'right'
 const DIRS: Dir[] = ['up', 'down', 'left', 'right']
 const ARROW: Record<Dir, string> = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }
 
-function keydown(key: string) {
-  window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+function keydown(key: string, repeat = false) {
+  window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, repeat }))
 }
 
 /// Start the translator. Returns a stop function. Runs for the whole app while in Game mode.
@@ -32,7 +32,7 @@ export function startGamepadNav(): () => void {
 
   const repeatLoop = new ActiveFrameLoop(() => {
     const now = performance.now()
-    for (const dir of DIRS) if (held[dir] && timers[dir].tick(now)) fireDir(dir)
+    for (const dir of DIRS) if (held[dir] && timers[dir].tick(now)) fireDir(dir, true)
     return DIRS.some((dir) => held[dir])
   })
 
@@ -52,10 +52,18 @@ export function startGamepadNav(): () => void {
   // A direction fires once on press, then repeats while held. In the player, left/right are
   // owned by the overlay's TriggerScrubber (same skim path as L2/R2) so a paused seek still
   // moves the bar and the frame; up/down are unused. Everywhere else this drives focus nav.
-  function fireDir(dir: Dir) {
+  function fireDir(dir: Dir, repeat = false) {
     if (get(deckKeyboardWarning)) return // the keyboard shortcut warning owns the pad
     if (get(trackMenuOpen)) return // the track menu owns the pad while open
     if (get(debridCaching)) return // the caching screen owns the pad
+    // Change source can open the app-wide picker while `playing` remains true. Its data-nav-trap
+    // owns directions; otherwise the blanket player branch below swallows them and focus remains
+    // on the settings button behind the picker.
+    const picker = get(streamPicker)
+    if (picker && !picker.hidden) {
+      keydown(ARROW[dir], repeat)
+      return
+    }
     if (inPlayer()) {
       if (get(commentsOpen)) {
         // Route held/repeating d-pad + stick directions into the discussion panel. This keeps
@@ -66,7 +74,7 @@ export function startGamepadNav(): () => void {
       }
       return
     }
-    keydown(ARROW[dir])
+    keydown(ARROW[dir], repeat)
   }
 
   function onPress(name: string) {

@@ -14,11 +14,17 @@ pub const OSD_FPS: u64 = 60;
 /// were the dominant Game-mode cost while the control bar sat still.
 pub const OVERLAY_IDLE_FPS: u64 = 0;
 /// Menu highlight / d-pad navigation still needs a high snapshot cadence.
-pub const OVERLAY_SCRUB_FPS: u64 = 60;
+pub const OVERLAY_SCRUB_FPS: u64 = 30;
 /// Native fade of an already-snapshotted overlay. Each short animation tick reissues
 /// `overlay-add` because mpv copies BGRA input when the command runs; WebKit is not rastered
-/// again. 180ms matches the Leanback chrome pop.
-pub const OVERLAY_FADE_MS: u64 = 180;
+/// again. Kept short enough to feel like Leanback chrome rather than a modal transition.
+// Timer cadence quantises the visible duration upward by roughly one frame. 150 ms keeps the
+// motion in the snappier Leanback/VacuumTube range rather than the old ~195 ms.
+pub const OVERLAY_FADE_MS: u64 = 150;
+/// Re-uploading a premultiplied control bitmap can take 8–18ms on Deck. Driving that work every
+/// 16ms monopolises mpv's render thread and makes the playing video hitch during the outro. Six
+/// evenly-spaced frames retain the short Leanback-style motion while leaving a decode/present gap.
+pub const OVERLAY_FADE_FRAME_MS: u64 = 25;
 /// Upward travel paired with the control fade, matching the old CSS Leanback motion.
 pub const OVERLAY_MOTION_PX: i64 = 16;
 /// Premultiply scale uses 0..=1000 so a fade tick can be integer math.
@@ -111,11 +117,7 @@ pub fn clip_to_strip(
 }
 
 /// Bottom control-strip crop in CSS pixels. `None` while a menu needs the full overlay.
-pub fn control_strip_crop(
-    width: i64,
-    height: i64,
-    fast: bool,
-) -> Option<(i64, i64, i64, i64)> {
+pub fn control_strip_crop(width: i64, height: i64, fast: bool) -> Option<(i64, i64, i64, i64)> {
     if fast || width <= 0 || height <= 0 {
         return None;
     }
@@ -215,15 +217,8 @@ fn ass_text(x: f64, y: f64, size: f64, body: &str) -> String {
     )
 }
 
-/// Skip / toast / P2P chrome as ASS events. Empty when every string is empty.
-pub fn chrome_ass(
-    skip_text: &str,
-    notice_text: &str,
-    p2p_text: &str,
-    width: f64,
-    height: f64,
-    loading: bool,
-) -> String {
+/// Skip / toast chrome as ASS events. P2P is always the proper HTML status card.
+pub fn chrome_ass(skip_text: &str, notice_text: &str, width: f64, height: f64) -> String {
     let w = width.max(1.0);
     let h = height.max(1.0);
     let mut lines = Vec::new();
@@ -238,18 +233,6 @@ pub fn chrome_ass(
         lines.push(ass_text(w / 2.0, y + th / 2.0, 22.0, notice));
     }
 
-    let p2p = p2p_text.trim();
-    if !p2p.is_empty() {
-        let tw = (p2p.len() as f64 * 15.0 + 56.0).clamp(280.0, w - 32.0);
-        let th = 64.0;
-        let x = (w - tw) / 2.0;
-        // Below the spinner while loading. This layer is drawn ABOVE the loading backdrop
-        // (see gm_osd Z_CHROME > Z_LOADING); otherwise the opaque black spinner cover hides it.
-        let y = if loading { h * 0.5 + 72.0 } else { 24.0 };
-        lines.push(ass_rect(x, y, tw, th, "000000", "2A"));
-        lines.push(ass_text(w / 2.0, y + th / 2.0, 24.0, p2p));
-    }
-
     let skip = skip_text.trim();
     if !skip.is_empty() {
         let tw = (skip.len() as f64 * 16.0 + 56.0).clamp(160.0, 360.0);
@@ -260,5 +243,9 @@ pub fn chrome_ass(
         lines.push(ass_text(x + tw / 2.0, y + th / 2.0, 28.0, skip));
     }
 
-    lines.into_iter().filter(|line| !line.is_empty()).collect::<Vec<_>>().join("\n")
+    lines
+        .into_iter()
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }

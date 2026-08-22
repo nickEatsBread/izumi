@@ -329,6 +329,7 @@
   onpointerleave={() => (hovering = false)}
   onpointercancel={onup}
   onlostpointercapture={onup}
+  class:opacity-0={gm}
 >
   <!-- Per-chapter segments. Each is its % of the duration with a small gap;
        the hovered chapter's fill bars grow (h-0.5 → h-1) — the popout. Fills are

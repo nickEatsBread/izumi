@@ -28,7 +28,8 @@ use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
 use crate::gm_perf::{
     clip_to_strip, overlay_fade_step, overlay_loop_fps, overlay_should_snapshot,
-    scale_premult_bgra, OVERLAY_FADE_FULL, OVERLAY_FADE_MS, OVERLAY_MOTION_PX, OVERLAY_SCRUB_FPS,
+    scale_premult_bgra, OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL, OVERLAY_FADE_MS,
+    OVERLAY_MOTION_PX, OVERLAY_SCRUB_FPS,
 };
 use crate::player::PlayerHandle;
 
@@ -53,7 +54,6 @@ static BASE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 static GEOM: Mutex<Option<(i64, i64, i64, i64, i64)>> = Mutex::new(None);
 /// Idle snapshots clip to this CSS-pixel control strip so we do not upload a full viewport.
 static STRIP: Mutex<Option<(i64, i64, i64, i64)>> = Mutex::new(None);
-static LITE: AtomicBool = AtomicBool::new(false);
 static EMPTY_TRIES: AtomicU64 = AtomicU64::new(0);
 
 /// Begin snapshotting the webview controls into an mpv overlay. Safe to call again while
@@ -64,11 +64,12 @@ pub fn start(
     app: AppHandle,
     window: tauri::WebviewWindow,
     fast: bool,
+    animate: bool,
     crop: Option<(i64, i64, i64, i64)>,
 ) {
     // Only treat this as a fade-in if nothing is on screen yet. Setting SHOWN before the
     // first pixels landed left tap/pause at alpha 0 forever (empty snapshot → hide).
-    let fade_in = !SHOWN.load(Ordering::SeqCst);
+    let fade_in = animate && !SHOWN.load(Ordering::SeqCst);
     let my_gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
     FAST.store(fast, Ordering::SeqCst);
     FORCE.store(true, Ordering::SeqCst);
@@ -76,7 +77,10 @@ pub fn start(
     if let Ok(mut strip) = STRIP.lock() {
         *strip = if fast { None } else { crop };
     }
-    hold_lite(&app, true);
+    if !animate {
+        FADE_GEN.fetch_add(1, Ordering::SeqCst);
+        ALPHA.store(OVERLAY_FADE_FULL, Ordering::SeqCst);
+    }
     // A second settled snapshot can arrive while the first snapshot's native fade is running.
     // Preserve that fade instead of snapping to full opacity and cancelling it.
     if !fade_in && ALPHA.load(Ordering::SeqCst) >= OVERLAY_FADE_FULL {
@@ -123,29 +127,20 @@ pub fn start(
 }
 
 /// Stop the overlay loop and fade the controls off the video.
-pub fn stop(app: AppHandle) {
+pub fn stop(app: AppHandle, animate: bool) {
     GEN.fetch_add(1, Ordering::SeqCst);
     FAST.store(false, Ordering::SeqCst);
     SHOWN.store(false, Ordering::SeqCst);
     if let Ok(mut strip) = STRIP.lock() {
         *strip = None;
     }
-    let has_pixels = GEOM.lock().ok().and_then(|g| *g).is_some()
-        && ALPHA.load(Ordering::SeqCst) > 0;
-    if !has_pixels {
+    let has_pixels =
+        GEOM.lock().ok().and_then(|g| *g).is_some() && ALPHA.load(Ordering::SeqCst) > 0;
+    if !animate || !has_pixels {
         hide_now(&app);
         return;
     }
     kick_fade(app, false);
-}
-
-fn hold_lite(app: &AppHandle, on: bool) {
-    if LITE.swap(on, Ordering::SeqCst) == on {
-        return;
-    }
-    if let Some(ph) = app.try_state::<PlayerHandle>() {
-        ph.set_ui_render_lite(on);
-    }
 }
 
 fn hide_now(app: &AppHandle) {
@@ -157,7 +152,6 @@ fn hide_now(app: &AppHandle) {
     if let Ok(mut base) = BASE.lock() {
         base.clear();
     }
-    hold_lite(app, false);
     if let Some(ph) = app.try_state::<PlayerHandle>() {
         let _ = ph.overlay_remove(OVERLAY_ID);
     }
@@ -169,7 +163,7 @@ fn kick_fade(app: AppHandle, fade_in: bool) {
     let mut last = Instant::now();
     let mut frames = 0u32;
     let mut max_upload = Duration::ZERO;
-    glib::timeout_add_local(Duration::from_millis(16), move || {
+    glib::timeout_add_local(Duration::from_millis(OVERLAY_FADE_FRAME_MS), move || {
         if FADE_GEN.load(Ordering::SeqCst) != gen {
             return glib::ControlFlow::Break;
         }
@@ -317,16 +311,14 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
 
                 let need = (stride * h) as usize;
                 let data = img.data().ok()?;
-                let Some((x, y, cw, ch)) = alpha_bounds(
-                    &data[..need],
-                    w as usize,
-                    h as usize,
-                    stride as usize,
-                )
-                .and_then(|bounds| {
-                    let strip = STRIP.lock().ok().and_then(|g| *g);
-                    clip_to_strip(bounds, strip)
-                }) else {
+                let Some((x, y, cw, ch)) =
+                    alpha_bounds(&data[..need], w as usize, h as usize, stride as usize).and_then(
+                        |bounds| {
+                            let strip = STRIP.lock().ok().and_then(|g| *g);
+                            clip_to_strip(bounds, strip)
+                        },
+                    )
+                else {
                     let tries = EMPTY_TRIES.fetch_add(1, Ordering::SeqCst);
                     if GEN.load(Ordering::SeqCst) == my_gen && tries < 4 {
                         let app_retry = app.clone();
@@ -393,7 +385,10 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                 SHOWN.store(true, Ordering::SeqCst);
 
                 let force = FORCE.swap(false, Ordering::SeqCst);
-                if geom_changed || force || fade_in {
+                // A scrolling comments snapshot has the same alpha bounds on every frame. The old
+                // geometry-only gate copied each new raster into BASE but never sent it to mpv, so
+                // the visible panel stayed frozen until close/reopen forced a replacement.
+                if geom_changed || force || fade_in || FAST.load(Ordering::Relaxed) {
                     let ph = app.try_state::<PlayerHandle>()?;
                     let _ =
                         ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);

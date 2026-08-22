@@ -55,4 +55,11 @@ describe('mobile source picker layout', () => {
     expect(source).toContain('onpointerenter={() => targetSource(info)}')
     expect(source).toContain('onfocus={() => targetSource(info)}')
   })
+
+  it('focuses a playable source on every Game-mode picker opening', () => {
+    expect(source).toContain('let pickerFocusReady = false')
+    expect(source).toContain("document.querySelector<HTMLElement>('[data-source-row]')")
+    expect(source).toContain('data-source-row')
+    expect(source).not.toContain('let focusedBest = false')
+  })
 })

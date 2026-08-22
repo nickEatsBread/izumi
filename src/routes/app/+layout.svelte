@@ -63,7 +63,7 @@
   import { initDeveloperLogging } from '$lib/debug/native-logging'
   import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
   import { initGmTouchWatchdog, restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
-  import { deckWebviewZoom, releaseDeckBrowseZoom } from '$lib/deck/webview-zoom'
+  import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   let { children } = $props()
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
   // re-sizes it per file by bitrate in play.ts). Handles the Uncapped sentinel. Picked up next file.
@@ -183,7 +183,6 @@
         .then(() => invoke('set_webview_zoom', { level: z }))
         .finally(() => requestAnimationFrame(() => requestAnimationFrame(() => {
           document.documentElement.classList.remove('deck-launch-pending')
-          releaseDeckBrowseZoom()
         })))
     } else {
       rootStyle.zoom = String(z)

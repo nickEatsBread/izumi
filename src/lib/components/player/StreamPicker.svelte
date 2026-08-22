@@ -291,7 +291,6 @@
   // Reset per EPISODE only — NOT on every progressive stream update (which would keep
   // wiping the filter / restarting the countdown). Keyed by media+episode.
   let lastKey = ''
-  let focusedBest = false
   $effect(() => {
     const k = pick ? `${pick.media.id}:${pick.episode}` : ''
     if (k !== lastKey) {
@@ -300,17 +299,26 @@
       expandedGroups = new Set()
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
       autoIdx = 0; failedKeys = []
-      focusedBest = false
     }
   })
 
-  // Game mode: once the recommended (Best) source appears, move controller focus onto it so the
-  // d-pad starts on the source you'll most likely pick and A selects it. Only once per open.
+  // Game mode: each new picker opening starts on a playable row. This must reset per OPEN, not per
+  // episode: Change source reopens the same episode, and the old episode-keyed latch left focus on
+  // the removed settings button. The next Down then landed on Close/Copy instead of a source.
+  let pickerFocusReady = false
   $effect(() => {
-    if (best && $gameMode && !focusedBest) {
-      focusedBest = true
-      requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-best-source]')?.focus({ preventScroll: true }))
+    const open = !!pick && !pick.hidden
+    if (!open) {
+      pickerFocusReady = false
+      return
     }
+    if (!$gameMode || pickerFocusReady || !rendered.length) return
+    pickerFocusReady = true
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>('[data-best-source]')
+        ?? document.querySelector<HTMLElement>('[data-source-row]')
+      target?.focus({ preventScroll: true })
+    })
   })
 
   // The countdown *wait* is the user's setting; the filling bar is motion, so it alone is dropped
@@ -554,6 +562,7 @@
   >
   <div
     data-focusable
+    data-source-row
     data-best-source={isBest ? '' : undefined}
     role="button"
     tabindex="0"

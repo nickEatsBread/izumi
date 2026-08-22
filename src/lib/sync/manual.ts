@@ -29,6 +29,7 @@ export const SYNCED_SETTING_KEYS = [
   "player-seek-seconds",
   "player-subtitle-line-navigation",
   "player-scrub-thumbnails",
+  "player-progress-animations",
   "player-cache-mb",
   "video-fit",
   "save-local-history",

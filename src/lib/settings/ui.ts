@@ -133,6 +133,8 @@ export const subtitleLineNavigation = persisted<boolean>('player-subtitle-line-n
 /** Show the frame-preview thumbnail while skimming the seek bar. Off = time/chapter only
  *  (also skips the on-demand frame grab — lighter on the Deck iGPU). */
 export const scrubThumbnails = persisted<boolean>('player-scrub-thumbnails', true)
+/** Animate Game-mode player chrome as the progress controls appear/disappear. Default on. */
+export const playerProgressAnimations = persisted<boolean>('player-progress-animations', true)
 /** Burn the currently displayed subtitle track into frames captured for GIF recordings. */
 export const gifIncludeSubtitles = persisted<boolean>('player-gif-include-subtitles', false)
 /** Output width in CSS pixels; height follows the video aspect. 720px fits most upload caps. */

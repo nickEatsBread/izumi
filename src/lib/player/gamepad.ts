@@ -8,8 +8,8 @@ import { ActiveFrameLoop } from '$lib/util/active-frame-loop'
 export const SEEK = {
   tap: 10,
   step: 5,
-  initialDelay: 250,
-  startInterval: 250,
+  initialDelay: 200,
+  startInterval: 200,
   minInterval: 60,
   ramp: 1600,
 } as const
@@ -62,13 +62,24 @@ export class TriggerScrubber {
   private wasPressed = false
   private scrubbing = false
   private preview = 0
+  private tapFired = false
 
-  constructor(private dir: 1 | -1, private d: SeekDeps) {}
+  constructor(private dir: 1 | -1, private d: SeekDeps, private immediateTap = false) {}
 
   update(pressed: boolean, now: number): void {
     if (pressed && !this.wasPressed) {
       this.timer.press(now)
       this.scrubbing = false
+      this.tapFired = false
+      // Reveal the controls on the physical down edge. Previously a held trigger appeared dead
+      // until the repeat delay elapsed, which made the hold-to-skim feature look broken.
+      this.d.onActivity()
+      // D-pad seeking is digital and should update on press, like Leanback. Triggers retain the
+      // release-to-tap distinction so a trigger hold can become a scrub without a surprise jump.
+      if (this.immediateTap) {
+        this.d.seek(clamp(this.d.getPos() + SEEK.tap * this.dir, this.d.getDur()))
+        this.tapFired = true
+      }
     } else if (pressed && this.wasPressed) {
       if (this.timer.tick(now)) {
         if (!this.scrubbing) {
@@ -83,11 +94,11 @@ export class TriggerScrubber {
     } else if (!pressed && this.wasPressed) {
       if (this.scrubbing) {
         this.d.endScrub()
-      } else {
-        this.d.onActivity()
+      } else if (!this.tapFired) {
         this.d.seek(clamp(this.d.getPos() + SEEK.tap * this.dir, this.d.getDur()))
       }
       this.scrubbing = false
+      this.tapFired = false
       this.timer.release()
     }
     this.wasPressed = pressed
@@ -134,8 +145,8 @@ export function startGamepadSeek(d: SeekDeps, debug = false): () => void {
 export function startNativeGamepadSeek(d: SeekDeps): () => void {
   const l2 = new TriggerScrubber(-1, d)
   const r2 = new TriggerScrubber(+1, d)
-  const dpadLeft = new TriggerScrubber(-1, d)
-  const dpadRight = new TriggerScrubber(+1, d)
+  const dpadLeft = new TriggerScrubber(-1, d, true)
+  const dpadRight = new TriggerScrubber(+1, d, true)
   const held = { L: false, R: false, left: false, right: false }
   let unlisten: (() => void) | null = null
   let disposed = false

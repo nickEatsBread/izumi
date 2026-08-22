@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import { fade } from 'svelte/transition'
   import { listen } from '@tauri-apps/api/event'
   import { listenSafe } from '$lib/util/listen'
@@ -33,7 +33,7 @@
     subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     subtitleAutoSync, gifIncludeSubtitles,
-    hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility,
+    hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
     preferredAudioLang, preferredSubLang,
   } from '$lib/settings/ui'
   import { get } from 'svelte/store'
@@ -50,8 +50,8 @@
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeP2pLine, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay } from '$lib/player/gm-overlay'
-  import { holdDeckBrowseZoom } from '$lib/deck/webview-zoom'
+  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay } from '$lib/player/gm-overlay'
+  import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
@@ -198,7 +198,27 @@
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   let lastDrmError = ''
   function cmd(name: string, args: string[] = []) {
-    void playerCommand(name, args).catch((e) => console.warn('player_command', name, args, e))
+    // Reflect pause intent immediately. Waiting exclusively for mpv's property-change event left
+    // the snapshotted Game-mode icon one state behind on a quick A/touch toggle. The native event
+    // remains authoritative and reconciles this optimistic value after the command lands.
+    const previousPaused = paused
+    let changedPause = false
+    if (args[0] === 'pause') {
+      if (name === 'cycle') paused = !paused
+      else if (name === 'set' && (args[1] === 'yes' || args[1] === 'no')) paused = args[1] === 'yes'
+      changedPause = paused !== previousPaused
+    }
+    void playerCommand(name, args).catch((e) => {
+      if (changedPause) paused = previousPaused
+      console.warn('player_command', name, args, e)
+    })
+  }
+  function togglePlayback() {
+    // Resuming after a long pause used to make `paused` stop pinning the controls in the same tick,
+    // so the outgoing bitmap still contained Play. Keep the freshly-updated Pause icon visible for
+    // the normal idle interval before the controls fade away.
+    poke()
+    cmd('cycle', ['pause'])
   }
   function onDrmUpdate(snapshot: DrmSnapshot) {
     pos = snapshot.pos
@@ -347,8 +367,10 @@
     return stop
   })
 
+  let closing = false
   async function close() {
-    if (gmMode) holdDeckBrowseZoom()
+    if (closing) return
+    closing = true
     await exitFullscreen()
     await exitPictureInPicture()
     playerSleep.set({ deadline: null, atEpisodeEnd: false })
@@ -356,9 +378,20 @@
     if (get(gifRecordingStart) != null) await playerGifAbort().catch(() => {})
     gifRecordingStart.set(null)
     playerStatsOpen.set(false)
+    // Prepare the enlarged browse page while the final video frame still covers the WebView.
+    // The old deck-zoom-hold hid <body>, producing a black flash on every player exit.
+    if (gmMode) {
+      await invoke('set_webview_zoom', { level: deckWebviewZoom(get(uiScale), false) }).catch(() => {})
+    }
     playing.set(false)
     spriteKey.set(null)
     bingeSource.set(null)
+    // Let Svelte mount/paint the browse surface before destroying mpv's opaque Game-mode child.
+    // Until then the existing video frame is a clean transition cover rather than a black gap.
+    if (gmMode) {
+      await tick()
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    }
     invoke('close_player').catch(() => {})
     invoke('desktop_presence_clear').catch(() => {})
   }
@@ -535,9 +568,8 @@
     cmd('set', ['cursor-autohide', gmMode ? 'always' : controlsVisible ? 'no' : 'always'])
   })
 
-  // Game mode (gamescope): static HTML chrome is snapshotted into mpv. Loading + active
-  // scrub stay native ASS (they move every frame). P2P / toasts / menus stay real HTML
-  // and are snapshotted on top of that ASS.
+  // Game mode (gamescope): HTML chrome is snapshotted into mpv. Loading + the moving scrub
+  // indicator stay native ASS; visible controls remain as a stable bitmap underneath.
   const directP2pOverlay = $derived(isDirectP2PStream($nowPlayingStream))
   const gmDynamicActive = $derived(gmMode && $playing && shouldUseGameModeDynamicOverlay({
     loading,
@@ -545,30 +577,36 @@
     commentsOpen: $commentsOpen,
     directP2P: directP2pOverlay,
   }))
-  // …and while the track menu is open, so its (webview-rendered) columns get snapshotted onto
-  // the video — otherwise the menu would be invisible behind the opaque mpv surface.
-  const overlayFast = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen)
+  // A comments surface scrolls continuously, so refresh its bitmap at the self-paced native rate.
+  // Settings/track menus are discrete and explicitly bump playerOverlayRev after each move.
+  const overlayFast = $derived($commentsOpen)
   const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   const noticeVisible = $derived(!!$playerNotice)
+  // Once a real frame exists, seeking/buffering may add native ASS feedback but must not remove
+  // an already-visible controls bitmap. Removing it for mpv's brief `seeking` edge caused the
+  // whole strip to fade down/up (the visible "bop") and hid controls during d-pad skim.
+  const gmKeepControls = $derived(gmMode && firstFrame && controlsVisible)
+  const gmDynamicOwnsChrome = $derived(gmDynamicActive && !gmKeepControls)
   const overlayActive = $derived(gameModeBitmapOverlayActive({
     gameMode: gmMode,
     playing: $playing,
-    dynamicOverlay: gmDynamicActive,
+    dynamicOverlay: gmDynamicOwnsChrome,
     controlsVisible,
     trackMenuOpen: $trackMenuOpen,
     playerMenuOpen: $playerMenuOpen,
     commentsOpen: $commentsOpen,
+    statsOpen: $playerStatsOpen,
     p2pVisible,
     noticeVisible,
     skipVisible: showSkip,
   }))
-  const overlayFull = $derived(overlayFast || p2pVisible || noticeVisible)
+  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible)
   $effect(() => {
     if (!gmMode) return
     if (!$playing) {
       invoke('player_gm_dock', { bottom: 0, right: 0, top: 0, hide: false }).catch(() => {})
-      invoke('player_gm_overlay', { visible: false, fast: false, crop: null }).catch(() => {})
+      invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
       return
     }
     const dock = gameModeDock({
@@ -582,26 +620,26 @@
     })
     invoke('player_gm_dock', dock).catch(() => {})
     if (gameModeDockIsLive(dock)) {
-      invoke('player_gm_overlay', { visible: false, fast: false, crop: null }).catch(() => {})
+      invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
       return
     }
     void $playerOverlayRev
     void paused
     const crop = gameModeSnapshotCrop(window.innerWidth || 0, window.innerHeight || 0, overlayFull)
     if (!overlayActive) {
-      invoke('player_gm_overlay', { visible: false, fast: false, crop: null }).catch(() => {})
+      invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
       return
     }
     // Snapshot now (so tap/pause is not stuck behind a cancellable timer) and once more
     // after paint so Controls/toasts are in the tree.
-    invoke('player_gm_overlay', { visible: true, fast: false, crop }).catch(() => {})
+    invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop }).catch(() => {})
     return scheduleGameModeOverlay(() => {
-      invoke('player_gm_overlay', { visible: true, fast: false, crop }).catch(() => {})
+      invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop }).catch(() => {})
     })
   })
 
   $effect(() => {
-    if (!gmMode || gmDynamicActive || !p2pVisible) return
+    if (!gmMode || !p2pVisible) return
     void $directTorrentStats
     bumpPlayerOverlay()
   })
@@ -624,6 +662,10 @@
       gmScrubBasePos = pos
       gmScrubBaseBuffer = buffer
     }
+    // The settled bitmap normally contains the HTML progress line, and mpv bitmaps are above ASS.
+    // Re-snapshot at gesture edges after Seekbar hides/shows that line so the native moving bar is
+    // actually visible on top instead of appearing to skim underneath it.
+    if (gmMode && active !== gmScrubWasActive) bumpPlayerOverlay()
     gmScrubWasActive = active
   })
 
@@ -656,6 +698,8 @@
     visible: false,
     loading: false,
     firstFrame: false,
+    controls: false,
+    paused: false,
     scrubbing: false,
     pos: 0,
     dur: 0,
@@ -671,7 +715,6 @@
     barH: 0,
     skipText: '',
     noticeText: '',
-    p2pText: '',
   })
 
   function measureSeekBar() {
@@ -682,8 +725,8 @@
   function currentGmDynamicState() {
     const s = get(scrub)
     const skipText = gmMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
-    const p2pText = gmMode && p2pVisible && loading ? gameModeP2pLine(get(directTorrentStats)) : ''
-    const visible = gmMode && get(playing) && (loading || s.active || !!skipText || !!p2pText)
+    const liveControls = controlsVisible && firstFrame && dur > 0
+    const visible = gmMode && get(playing) && (loading || s.active || liveControls || !!skipText)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -696,6 +739,8 @@
       visible,
       loading: visible && loading,
       firstFrame,
+      controls: visible && liveControls,
+      paused,
       scrubbing: visible && s.active,
       pos: gmDynamicPos,
       dur,
@@ -716,13 +761,12 @@
       barH: 10,
       skipText,
       noticeText: '',
-      p2pText,
     }
   }
 
   function scheduleGmDynamicOverlay() {
     if (typeof window === 'undefined' || gmDynDisposed || gmDynRaf) return
-    if (!(gmMode && get(playing) && (loading || get(scrub).active || showSkip || p2pVisible)) && !gmDynLastVisible) return
+    if (!(gmMode && get(playing) && (loading || get(scrub).active || controlsVisible || showSkip)) && !gmDynLastVisible) return
     gmDynRaf = requestAnimationFrame(() => {
       gmDynRaf = 0
       if (gmDynInFlight) {
@@ -747,7 +791,7 @@
   }
 
   $effect(() => {
-    gmMode; $playing; loading; firstFrame; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; p2pVisible; $directTorrentStats
+    gmMode; $playing; loading; firstFrame; controlsVisible; paused; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive
     scheduleGmDynamicOverlay()
   })
 
@@ -777,7 +821,6 @@
   })
 
   onDestroy(() => {
-    if (gmMode) holdDeckBrowseZoom()
     invoke('player_gm_dock', { bottom: 0, right: 0, top: 0, hide: false }).catch(() => {})
     // Close the discussion panel on every player-close path (← button, B, navigate-away) so the
     // desktop titlebar — which hides itself while commentsOpen — reappears once the player is gone.
@@ -865,7 +908,7 @@
       switch (e.payload.name) {
         case 'a':
           if (showSkip && currentSeg) seekTo(currentSeg.end + 0.5)
-          else cmd('cycle', ['pause'])
+          else togglePlayback()
           break
         case 'b':
           if (get(playerMenuOpen)) {
@@ -988,9 +1031,14 @@
       if (!action) return
       if (get(deckKeyboardWarning)) return
       e.preventDefault(); e.stopImmediatePropagation()
-      poke()
-      if (action === 'playerClose') { if (get(fullscreen)) exitFullscreen() }
-      else if (action === 'playerPlayPause') cmd('cycle', ['pause'])
+      // Back/Escape is an exit command, not player activity. Revealing controls for the one frame
+      // before teardown made a hidden-controls B press visibly flash the chrome.
+      if (action !== 'playerClose') poke()
+      if (action === 'playerClose') {
+        if (gmMode) void close()
+        else if (get(fullscreen)) exitFullscreen()
+      }
+      else if (action === 'playerPlayPause') togglePlayback()
       else if (action === 'playerSeekBack') seekTo(pos - get(seekDuration))
       else if (action === 'playerSeekForward') seekTo(pos + get(seekDuration))
       else if (action === 'playerPreviousChapter') {
@@ -1226,8 +1274,8 @@
   {:else if controlsVisible}
     <!-- In Game mode Rust animates one settled bitmap in mpv. A CSS entrance here would make
          WebKit snapshot an intermediate/transparent frame and reintroduce the old crawl. -->
-    <div class="izumi-hud" class:opacity-0={gmDynamicActive}>
-      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} />
+    <div class="izumi-hud" class:opacity-0={gmDynamicOwnsChrome}>
+      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} />
     </div>
   {/if}
 

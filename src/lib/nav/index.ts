@@ -79,11 +79,14 @@ const fieldShape = (target: EventTarget | null): FieldShape | null => {
 
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
-function revealFocused(el: HTMLElement, vertical: boolean): void {
+function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
+  // Do not stack smooth-scroll animations while a direction is held. WebKit queues those and then
+  // repaints/decode-rushes several rows at once, which looked like a DOM freeze followed by flashes.
+  const behavior: ScrollBehavior = rapid ? 'auto' : 'smooth'
   const pane = el.closest<HTMLElement>('[data-nav-scroll-container]')
   if (!pane) {
     el.scrollIntoView({
-      behavior: 'smooth',
+      behavior,
       block: vertical ? 'center' : 'nearest',
       inline: vertical ? 'nearest' : 'center',
     })
@@ -93,7 +96,7 @@ function revealFocused(el: HTMLElement, vertical: boolean): void {
   const port = pane.getBoundingClientRect()
   const top = item.top < port.top ? item.top - port.top : item.bottom > port.bottom ? item.bottom - port.bottom : 0
   const left = item.left < port.left ? item.left - port.left : item.right > port.right ? item.right - port.right : 0
-  if (top || left) pane.scrollBy({ top, left, behavior: 'smooth' })
+  if (top || left) pane.scrollBy({ top, left, behavior })
 }
 
 export function initDpadNav() {
@@ -104,10 +107,14 @@ export function initDpadNav() {
     const dir = map[e.key]
     const field = dir ? fieldShape(e.target) : null
     if (field && fieldOwnsArrow(field, e.key as ArrowKey)) return
+    // Resolve the active modal before the blanket player gate. Change source is deliberately
+    // opened while playback continues, and its focus trap must still own the arrows.
+    const trap = document.querySelector('[aria-label="On-screen keyboard"][data-nav-trap]')
+      ?? document.querySelector('[data-nav-trap]')
     // During playback the player owns the arrow/Enter keys (seek/skip/pause). Spatial focus nav
     // must stay OUT of the way — otherwise a desktop arrow both seeks AND moves focus onto the
     // player controls / across to the sidebar (which then expands over the video).
-    if (get(playing)) {
+    if (get(playing) && !trap) {
       if (dir) e.preventDefault()
       return
     }
@@ -132,8 +139,6 @@ export function initDpadNav() {
     // navigation to its focusables so the d-pad/stick can't wander onto the browse behind it.
     // The built-in Deck keyboard can sit above another modal. Prefer its trap while it is
     // visible; otherwise arrow navigation would continue moving through the dialog underneath.
-    const trap = document.querySelector('[aria-label="On-screen keyboard"][data-nav-trap]')
-      ?? document.querySelector('[data-nav-trap]')
     const root: ParentNode = trap ?? document
     const els = [...root.querySelectorAll<HTMLElement>('[data-focusable]')]
       .filter(el => el.checkVisibility?.() ?? true)
@@ -147,14 +152,14 @@ export function initDpadNav() {
     // first content focusable — NOT spatial-search from <body>'s full-page rect, which measures
     // "down" from the whole viewport and flings focus deep into the grid (the "jumps to romance,
     // 3rd card" bug). Prefer the first non-sidebar focusable (the hero button) so the row is next.
-    if (!active?.closest?.('[data-focusable]')) {
+    if (!active?.closest?.('[data-focusable]') || (trap && !trap.contains(active))) {
       const content = els.filter(el => !el.closest('[data-nav-sidebar]'))
       // Prefer the first content focusable that ISN'T a text box (so entering Downloads/Search
       // doesn't auto-focus the filter/search field and trap the arrows in the on-screen keyboard).
       const first = content.find(el => !isTextInput(el)) ?? content[0] ?? els[0]
       if (first) {
         first.focus({ preventScroll: true })
-        revealFocused(first, vertical)
+        revealFocused(first, vertical, e.repeat)
         e.preventDefault()
       }
       return
@@ -188,7 +193,7 @@ export function initDpadNav() {
       // we moved: horizontal moves scroll the row horizontally (block:nearest avoids a vertical
       // re-center jitter on every left/right); vertical moves scroll the page vertically.
       pick.el.focus({ preventScroll: true })
-      revealFocused(pick.el, vertical)
+      revealFocused(pick.el, vertical, e.repeat)
       e.preventDefault()
     }
   })

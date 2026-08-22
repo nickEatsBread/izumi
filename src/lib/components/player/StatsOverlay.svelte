@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
-  import { directTorrentStats } from '$lib/player/session'
+  import { directTorrentStats, bumpPlayerOverlay, gameMode } from '$lib/player/session'
 
   let values = $state<Record<string, string>>({})
   const properties = [
@@ -21,6 +21,7 @@
       catch { return [label, '—'] as const }
     }))
     values = Object.fromEntries(entries)
+    if ($gameMode) bumpPlayerOverlay()
   }
 
   onMount(() => {
@@ -37,7 +38,7 @@
   const p2p = $derived($directTorrentStats)
 </script>
 
-<aside class="pointer-events-none absolute right-5 top-16 z-20 w-64 rounded-lg border border-white/15 bg-black/80 p-3 font-mono text-xs text-white shadow-2xl">
+<aside class="pointer-events-none absolute right-5 top-16 z-20 max-h-[calc(100vh-5rem)] w-72 overflow-hidden rounded-lg border border-white/15 bg-black/90 p-3 font-mono text-xs text-white shadow-2xl">
   <div class="mb-2 font-sans text-xs font-black uppercase tracking-widest text-white/60">Playback stats</div>
   {#each properties as [label]}
     <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">{label}</span><span class="truncate text-right">{values[label] ?? '—'}</span></div>
