@@ -19,6 +19,36 @@ describe('resolvePreset', () => {
     expect(opts.get('glsl-shaders')).toBe('')
   })
 
+  it('standard keeps stock mpv quality flags instead of turning them off', () => {
+    // Modern mpv defaults (builtin.conf) enable these. Standard used to emit
+    // `no` for each via MANAGED_DEFAULTS, which was a real quality regression
+    // versus launching mpv with no config.
+    const opts = new Map(resolvePreset('standard', ''))
+    expect(opts.get('sigmoid-upscaling')).toBe('yes')
+    expect(opts.get('correct-downscaling')).toBe('yes')
+    expect(opts.get('linear-downscaling')).toBe('yes')
+    expect(opts.get('dither')).toBe('fruit')
+  })
+
+  it('custom empty baseline is modern mpv defaults, not bilinear', () => {
+    const opts = new Map(resolvePreset('custom', ''))
+    expect(opts.get('scale')).toBe('lanczos')
+    expect(opts.get('cscale')).toBe('lanczos')
+    expect(opts.get('dscale')).toBe('hermite')
+    expect(opts.get('sigmoid-upscaling')).toBe('yes')
+  })
+
+  it('performance is the mpv fast profile, not leftover quality flags', () => {
+    const opts = new Map(resolvePreset('performance', ''))
+    expect(opts.get('scale')).toBe('bilinear')
+    expect(opts.get('dscale')).toBe('bilinear')
+    expect(opts.get('cscale')).toBe('bilinear')
+    expect(opts.get('sigmoid-upscaling')).toBe('no')
+    expect(opts.get('correct-downscaling')).toBe('no')
+    expect(opts.get('linear-downscaling')).toBe('no')
+    expect(opts.get('deband')).toBe('no')
+  })
+
   it('high quality enables ewa + deband + sigmoid', () => {
     const opts = new Map(resolvePreset('high', ''))
     expect(opts.get('scale')).toBe('ewa_lanczossharp')
@@ -30,7 +60,7 @@ describe('resolvePreset', () => {
     const opts = new Map(resolvePreset('custom', 'scale=ewa_lanczos\ndeband=yes'))
     expect(opts.get('scale')).toBe('ewa_lanczos')
     expect(opts.get('deband')).toBe('yes')
-    expect(opts.get('cscale')).toBe('bilinear')
+    expect(opts.get('cscale')).toBe('lanczos')
   })
 
   it('leaves the filter chains to the enhancement path', () => {

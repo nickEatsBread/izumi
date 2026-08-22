@@ -355,6 +355,13 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         m.setOptionString("gpu-context", "android")
         m.setOptionString("hwdec", "mediacodec-copy")
         m.setOptionString("force-window", "no")
+        // Same color/HDR defaults as the desktop cores (stock mpv, no izumi look).
+        m.setOptionString("keepaspect", "yes")
+        m.setOptionString("tone-mapping", "auto")
+        m.setOptionString("hdr-compute-peak", "auto")
+        m.setOptionString("gamut-mapping-mode", "auto")
+        m.setOptionString("dither-depth", "auto")
+        m.setOptionString("target-colorspace-hint", "auto")
         // MUST be "yes", not "once": the core is cached across episodes (see `ensure`), and with
         // "once" mpv shuts itself down the moment the first file reaches EOF. Auto-advance and
         // "Change source" then issued `loadfile` against a dead core — the command silently

@@ -13,17 +13,27 @@ export const MANAGED_KEYS = [
   'dither', 'sigmoid-upscaling', 'correct-downscaling', 'linear-downscaling', 'glsl-shaders',
 ] as const
 
-/** mpv default value for every managed key (what "off" means for each). */
+/** mpv default value for every managed key (what "off" means for each).
+ *  These match modern mpv builtin defaults (lanczos / mitchell / sigmoid on),
+ *  not the older bilinear-everything baseline. Standard used to inherit
+ *  `sigmoid/correct/linear=no` from that old table and looked worse than stock mpv. */
 const MANAGED_DEFAULTS: Record<string, string> = {
-  scale: 'bilinear', 'scale-antiring': '0', dscale: 'bilinear', 'dscale-antiring': '0',
-  cscale: 'bilinear', 'cscale-antiring': '0', deband: 'no', 'deband-iterations': '1',
+  scale: 'lanczos', 'scale-antiring': '0', dscale: 'hermite', 'dscale-antiring': '0',
+  cscale: 'lanczos', 'cscale-antiring': '0', deband: 'no', 'deband-iterations': '1',
   'deband-threshold': '32', 'deband-range': '16', 'deband-grain': '48', dither: 'fruit',
-  'sigmoid-upscaling': 'no', 'correct-downscaling': 'no', 'linear-downscaling': 'no', 'glsl-shaders': '',
+  'sigmoid-upscaling': 'yes', 'correct-downscaling': 'yes', 'linear-downscaling': 'yes', 'glsl-shaders': '',
 }
 
 /** The enhancing options each built-in preset sets ON TOP of MANAGED_DEFAULTS. */
 const PRESETS: Record<Exclude<QualityPreset, 'custom' | 'anime'>, Record<string, string>> = {
-  performance: { scale: 'bilinear', dscale: 'bilinear', cscale: 'bilinear', deband: 'no' },
+  // mpv [fast]: cheapest scalers, no sigmoid/correct/linear. Dither stays on so
+  // 10-bit anime does not band on an 8-bit panel.
+  performance: {
+    scale: 'bilinear', dscale: 'bilinear', cscale: 'bilinear', deband: 'no',
+    'sigmoid-upscaling': 'no', 'correct-downscaling': 'no', 'linear-downscaling': 'no',
+  },
+  // Slightly softer than stock lanczos (mpv.net-era spline36), with stock mpv's
+  // cheap quality flags kept ON so Standard is never a picture downgrade.
   standard: { scale: 'spline36', dscale: 'mitchell', cscale: 'spline36', deband: 'no' },
   high: {
     scale: 'ewa_lanczossharp', 'scale-antiring': '0.5', dscale: 'catmull_rom', 'dscale-antiring': '0.5',

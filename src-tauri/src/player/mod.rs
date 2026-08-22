@@ -23,9 +23,11 @@
 //! (`(pos, duration)`) and `player-ended` (on natural EOF only). See
 //! [`spawn_event_loop`].
 
+mod color_management;
 mod embed_contract;
 mod headless;
 mod subtitle_select;
+use color_management::COLOR_OPTS;
 pub use embed_contract::require_live_core;
 // On-demand anime-upscaler shader fetch (Anime video-quality preset). Pinned upstream release,
 // cached under the app config dir; never a user-supplied URL. See shaders.rs.
@@ -1729,9 +1731,11 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         let _ = init.set_option("keepaspect", "yes");
         let _ = init.set_option("video-zoom", "0");
         let _ = init.set_option("panscan", "0");
-        // HDR / tone-mapping (SDR panels) — same as the Windows path.
-        let _ = init.set_option("target-colorspace-hint", "auto");
-        let _ = init.set_option("tone-mapping", "bt.2390");
+        // Color / HDR: stock mpv behaviour (see color_management.rs). Do not
+        // hard-code bt.2390 — that skips gpu-next's spline tone-mapper.
+        for (k, v) in COLOR_OPTS {
+            let _ = init.set_option(*k, *v);
+        }
         // Picture quality is user-driven via the Video-quality preset system: apply the frontend's
         // stored render options. Best-effort (`let _`) so an unknown option never aborts core init.
         // Empty on a fresh launch before the frontend's startup push → mpv defaults (smooth).
@@ -1740,7 +1744,6 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
                 let _ = init.set_option(k.as_str(), v.as_str());
             }
         }
-        let _ = init.set_option("dither-depth", "auto");
         let _ = init.set_option("screenshot-format", "png");
         // Name saved screenshots "izumi-shot0001.png" etc. (mpv's default is "mpv-shot%n").
         let _ = init.set_option("screenshot-template", "izumi-shot%n");
@@ -1913,10 +1916,9 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         let _ = init.set_option("keepaspect", "yes");
         let _ = init.set_option("video-zoom", "0");
         let _ = init.set_option("panscan", "0");
-        // --- HDR / Dolby Vision (match stremio-shell-ng's mpv config) ---
-        // d3d11 output pipeline (Windows-only) drives HDR passthrough/tone-mapping;
-        // tone-mapping maps HDR/DV to SDR displays so premium 4K encodes don't look
-        // blown out. `target-colorspace-hint` lets mpv signal the display's csp.
+        // --- HDR / Dolby Vision ---
+        // d3d11 output-format/csp=auto lets Windows HDR passthrough work when the
+        // display is in HDR mode. Tone-mapping itself is COLOR_OPTS (stock mpv).
         #[cfg(windows)]
         {
             init.set_option("gpu-context", "d3d11")?;
@@ -1933,8 +1935,11 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
             // timing + audio resampling thrash). Left at mpv's default video-sync=audio. If
             // reintroduced, it must be an opt-in "motion smoothing" setting, off by default.
         }
-        let _ = init.set_option("target-colorspace-hint", "auto");
-        let _ = init.set_option("tone-mapping", "bt.2390");
+        // Color / HDR: stock mpv behaviour (see color_management.rs). `auto`
+        // tone-mapping is spline on gpu-next (Windows) and bt.2390 on vo=gpu.
+        for (k, v) in COLOR_OPTS {
+            let _ = init.set_option(*k, *v);
+        }
 
         // Picture quality is user-driven via the Video-quality preset system: apply the frontend's
         // stored render options. Best-effort (`let _`) so an unknown option never aborts core init.
@@ -1944,7 +1949,6 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
                 let _ = init.set_option(k.as_str(), v.as_str());
             }
         }
-        let _ = init.set_option("dither-depth", "auto");
         // Never let mpv hide the OS cursor. When embedded, the WebView2 overlay
         // sits above mpv and grabs mouse-move events, so mpv's autohide timer
         // expires and the cursor vanishes even while the user is moving it. `no`
