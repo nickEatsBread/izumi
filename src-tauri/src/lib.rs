@@ -262,17 +262,19 @@ async fn player_embed(
     }
     #[cfg(target_os = "macos")]
     {
+        // cocoa-cb `--wid` creates a *separate* mpv NSWindow and parents it
+        // ("launches MPV as a window"). Drive vo=libmpv into an NSOpenGLView
+        // we own, the same render-API shape as the Linux subsurface path.
         let _ = main.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
         player::macos_embed::make_webview_transparent(&main);
-        let wid = player::macos_embed::ensure_ready(&main)?;
-        player.play_embedded(
+        player.play_embedded_render(
             &url,
-            wid,
             app.clone(),
             start_seconds,
             autoplay,
             alang,
             slang,
+            &main,
             headers.clone(),
             subtitles.clone(),
             audio_tracks.clone(),
@@ -4900,10 +4902,10 @@ pub fn run() {
             }
             #[cfg(target_os = "macos")]
             if let Some(win) = app.get_webview_window("main") {
-                // Do not create the mpv NSView (or KVC the WKWebView) here. v0.1.40
-                // called prepare() from NSApplicationDidFinishLaunching; an uncaught
-                // NSException aborted the process ~250ms after launch (macOS 26 SIGABRT).
-                // The host view is created on first player_embed instead.
+                // Do not create the mpv NSOpenGLView (or KVC the WKWebView) here.
+                // v0.1.40 called prepare() from NSApplicationDidFinishLaunching; an
+                // uncaught NSException aborted the process ~250ms after launch
+                // (macOS 26 SIGABRT). The GL view is created on first player_embed.
                 let w = win.clone();
                 win.on_window_event(move |event| {
                     if matches!(event, tauri::WindowEvent::Resized(_)) {
