@@ -95,6 +95,10 @@
   let open = $state(false)
   let level = $state(0) // 0 = category column, 1 = track column
   let rootIdx = $state(0) // highlighted category (level 0)
+  // gamescope parks a hidden cursor on the first row. Ignore pointerenter for a beat after
+  // d-pad so "up from Subtitle style" cannot snap back to Audio.
+  let lastPadAt = 0
+  const pointerAllowed = () => performance.now() - lastPadAt > 400
   // Category whose track list is OPEN — LOCKED on descend. Separate from rootIdx so a stray
   // hover/tap on the (still-visible) category column can't switch the open list out from under
   // you (the "click Audio, it flips to Subtitles" bug).
@@ -126,6 +130,7 @@
     setTimeout(() => { if (!open) trackMenuOpen.set(false) }, 0)
   }
   function descend() {
+    lastPadAt = performance.now()
     bumpPlayerOverlay()
     if (level !== 0 || !roots.length) return
     openIdx = rootIdx // lock the category we're entering
@@ -137,6 +142,7 @@
   }
   function ascend() { if (level === 1) level = 0; else closeMenu() }
   function move(delta: number) {
+    lastPadAt = performance.now()
     if (level === 0) { if (roots.length) rootIdx = (rootIdx + delta + roots.length) % roots.length }
     else if (subItems.length) subIdx = (subIdx + delta + subItems.length) % subItems.length
     bumpPlayerOverlay()
@@ -255,8 +261,7 @@
 </script>
 
 {#if open}
-  <!-- Backdrop + sheet. Overlay snapshots at 60fps while this menu is open, so a 160ms
-       Leanback pop is a handful of frames — not the crawl we got from a 12fps idle loop. -->
+  <!-- Backdrop + sheet. One snapshot after paint, then CPU-fade; d-pad bumps re-snapshot. -->
   <div
     class="fixed inset-0 z-40 flex items-center justify-center bg-black/50"
     onclick={closeMenu}
@@ -270,7 +275,7 @@
             class="my-1 flex w-full select-none items-center rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none"
             class:bg-white={level === 0 && rootIdx === i}
             class:text-black={level === 0 && rootIdx === i}
-            onpointerenter={() => { if (level === 0) rootIdx = i }}
+            onpointerenter={() => { if (level === 0 && pointerAllowed()) rootIdx = i }}
             onclick={() => { if (level === 0) { rootIdx = i; descend() } }}
           >
             <span>{r.label}</span>
@@ -289,7 +294,7 @@
               class="my-1 flex w-full select-none items-center gap-3 rounded-lg py-5 pl-7 pr-5 text-left text-3xl font-bold outline-none"
               class:bg-white={subIdx === i}
               class:text-black={subIdx === i}
-              onpointerenter={() => (subIdx = i)}
+              onpointerenter={() => { if (pointerAllowed()) subIdx = i }}
               onclick={() => void apply(it)}
             >
               <span class="grid w-8 shrink-0 place-items-center">{#if it.selected}<Check size={32} />{/if}</span>

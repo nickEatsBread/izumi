@@ -11,11 +11,30 @@ export function gameModeBitmapOverlayActive(input: {
   commentsOpen: boolean
   p2pVisible?: boolean
   noticeVisible?: boolean
+  skipVisible?: boolean
 }): boolean {
   if (!input.gameMode || !input.playing) return false
-  if (input.p2pVisible || input.noticeVisible) return true
+  if (input.p2pVisible || input.noticeVisible || input.skipVisible) return true
+  // Native ASS owns the spinner and finger-scrub. Pad skims keep `dynamicOverlay` false
+  // so the HTML seek bar stays snapshotted.
   if (input.dynamicOverlay) return false
   return input.controlsVisible || input.trackMenuOpen || input.playerMenuOpen || input.commentsOpen
+}
+
+/** Wait one paint + a short macrotask so WebKit has laid out menus/toasts before we snapshot. */
+export function scheduleGameModeOverlay(run: () => void): () => void {
+  let cancelled = false
+  let timeout: ReturnType<typeof setTimeout> | 0 = 0
+  const later = () => { if (!cancelled) run() }
+  const outer = typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame(() => { timeout = setTimeout(later, 32) })
+    : 0
+  if (!outer) timeout = setTimeout(later, 32)
+  return () => {
+    cancelled = true
+    if (typeof cancelAnimationFrame === 'function' && outer) cancelAnimationFrame(outer)
+    if (timeout) clearTimeout(timeout)
+  }
 }
 
 /** Bottom control-strip crop in CSS pixels. Menus, P2P, and toasts need the full viewport. */

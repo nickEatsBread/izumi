@@ -114,7 +114,10 @@
   // Commit a single EXACT absolute seek — lands where the user clicked instead of
   // snapping back to the previous keyframe (the "seeks a bit backwards" bug). One
   // seek, not a stream, so mpv doesn't loop over the cached window.
-  const seekTo = (t: number) => cmd('seek', [t.toFixed(3), 'absolute+exact'])
+  const seekTo = (t: number) => {
+    cmd('seek', [t.toFixed(3), 'absolute+exact'])
+    if (gm) bumpPlayerOverlay()
+  }
 
   // Game mode: changing episode needs a DOUBLE press (touch double-tap, or two quick A presses on
   // the controller) so a stray tap can't jump episodes. The first press arms + shows a hint; a
@@ -166,10 +169,10 @@
     showServers = false
     gmSettingsPage = 'root'
     gmSetIdx = 0
+    bumpPlayerOverlay()
     if (showOptions) {
       readDelays()
       void readVideoQualities()
-      bumpPlayerOverlay()
     }
   }
   function closePlayerMenus() {
@@ -479,6 +482,7 @@
       window.removeEventListener('izumi-drm-quality', onQuality)
       window.removeEventListener('player-menu-close', closePlayerMenus)
       void unlistenMuted.then((unlisten) => unlisten())
+      playerMenuOpen.set(false)
     }
   })
 
@@ -687,11 +691,10 @@
     finally { downloadingKey = null }
   }
 
-  // Drive the Game-mode snapshot overlay to its fast (60fps) cadence while a popover is open so
-  // navigating it isn't laggy. The cleanup resets on unmount so the flag can't stick true.
+  // Keep Controls mounted (and the overlay full-viewport) while a popover is open. Reset on
+  // unmount so the flag cannot stick true after the player closes.
   $effect(() => {
     playerMenuOpen.set(showOptions || showTracks || showServers)
-    return () => playerMenuOpen.set(false)
   })
 </script>
 
@@ -1232,7 +1235,8 @@
   </div>
 
   {#if gm && showOptions}
-    <div class="gm-sheet pointer-events-auto fixed top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl">
+    <div class="pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
+    <div class="gm-sheet absolute top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
       {#if gmSettingsPage === 'root'}
         <p class="px-3 py-2 text-2xl font-bold">Settings</p>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={changeSource}><span>Change source</span><span class="opacity-50">›</span></button>
@@ -1269,6 +1273,7 @@
           <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 5} class:text-black={gmSetIdx === 5} onclick={() => setSleep('end')}>Sleep: episode end</button>
         {/if}
       {/if}
+    </div>
     </div>
   {/if}
 </div>
