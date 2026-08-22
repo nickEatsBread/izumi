@@ -61,9 +61,10 @@ fn torrent_eases_after_the_first_healthy_frame() {
         playback_download_bps(None, true, false).map(|v| v.get()),
         Some(POST_START_DOWNLOAD_BPS)
     );
-    assert_eq!(torrent_peer_limit(true), Some(GAME_MODE_PEER_LIMIT));
+    assert_eq!(torrent_peer_limit(true), None);
     assert_eq!(torrent_peer_limit(false), None);
-    assert_eq!(torrent_runtime_threads(true), Some(GAME_MODE_RUNTIME_THREADS));
+    assert_eq!(torrent_runtime_threads(true), None);
+    assert_eq!(torrent_runtime_threads(false), None);
 }
 
 #[test]

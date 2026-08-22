@@ -21,10 +21,6 @@ pub const CONTROL_STRIP_FRACTION: f64 = 0.28;
 pub const TOUCH_RESTORE_MIN_INTERVAL_MS: u64 = 400;
 /// After the first frame, cap torrent download so piece hashing/IO does not fight the GPU.
 pub const POST_START_DOWNLOAD_BPS: u32 = 4 * 1024 * 1024;
-/// Connected-peer ceiling while the session is a Game-mode handheld.
-pub const GAME_MODE_PEER_LIMIT: usize = 48;
-/// Tokio blocking-pool size for the torrent session on Game mode.
-pub const GAME_MODE_RUNTIME_THREADS: usize = 2;
 
 /// Game mode keeps WebKit's GPU compositor. Ghost trails are handled by turning off WebKitGTK
 /// 2.50 damage propagation, not by forcing the software rasterizer (which aliases curves).
@@ -105,12 +101,21 @@ pub fn ui_lite_render_opts() -> Vec<(String, String)> {
     ]
 }
 
-pub fn torrent_peer_limit(game_mode: bool) -> Option<usize> {
-    game_mode.then_some(GAME_MODE_PEER_LIMIT)
+/// Per-torrent peer ceiling. `None` uses librqbit's default (128). Game mode used to
+/// cut this to 48; that is not needed once download is capped after the first healthy
+/// frame, and it can starve a thin swarm of the peers that actually have the first pieces.
+pub fn torrent_peer_limit(_game_mode: bool) -> Option<usize> {
+    None
 }
 
-pub fn torrent_runtime_threads(game_mode: bool) -> Option<usize> {
-    game_mode.then_some(GAME_MODE_RUNTIME_THREADS)
+/// librqbit blocking-pool size. `None` uses the library default of 8.
+///
+/// Game mode used to pass 2. That deadlocked click-to-first-frame: mpv opens overlapping
+/// range readers (start + Cues), each `spawn_blocking` wait-for-piece occupies a slot,
+/// and with only two slots the incoming-piece hash/write work never runs. The HTTP
+/// connections then sit in CLOSE-WAIT under an ASS loading spinner forever.
+pub fn torrent_runtime_threads(_game_mode: bool) -> Option<usize> {
+    None
 }
 
 /// After the first frame, and only while the playback buffer is healthy, cap download so

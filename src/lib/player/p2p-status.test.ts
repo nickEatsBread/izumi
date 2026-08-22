@@ -36,10 +36,10 @@ describe('Game Mode dynamic overlay ownership', () => {
     })).toBe(false)
   })
 
-  it('keeps the web overlay visible for direct-P2P startup status', () => {
+  it('uses the native overlay for direct-P2P startup (HTML P2P chrome is desktop-only)', () => {
     expect(shouldUseGameModeDynamicOverlay({
       loading: true, scrubbing: false, commentsOpen: false, directP2P: true,
-    })).toBe(false)
+    })).toBe(true)
   })
 
   it('retains native loading and scrub overlays when no interactive web surface needs ownership', () => {
