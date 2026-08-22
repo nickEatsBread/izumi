@@ -210,10 +210,11 @@ describe('resolveDownloadUrl source preference', () => {
 
     expect(resolved).toMatchObject({
       kind: 'shaka',
-      url: 'http://127.0.0.1:17902/v/abc/manifest.mpd',
       preferredHeight: 480,
       sourceOriginId: 'source.izumi',
     })
+    expect(resolved.kind === 'shaka' && resolved.url).toContain('offline=1')
+    expect(resolved.kind === 'shaka' && resolved.url).toContain('height=480')
     expect(resolveHash).not.toHaveBeenCalled()
   })
 
@@ -277,9 +278,10 @@ describe('resolveDownloadUrl source preference', () => {
 
     expect(resolved).toMatchObject({
       kind: 'shaka',
-      url: 'http://127.0.0.1:17902/v/abc/manifest.mpd?audio=en-US',
       audioLang: 'en-US',
     })
+    expect(resolved.kind === 'shaka' && resolved.url).toContain('audio=en-US')
+    expect(resolved.kind === 'shaka' && resolved.url).toContain('offline=1')
   })
 })
 

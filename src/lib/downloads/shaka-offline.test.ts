@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shakaDrmConfig } from './shaka-offline'
+import { offlineRetryParameters, shakaDrmConfig } from './shaka-offline'
 
 const drm = {
   keySystem: 'com.widevine.alpha',
@@ -18,5 +18,13 @@ describe('shakaDrmConfig', () => {
 
   it('requires persistent CDM state only when this device can keep a stored license', () => {
     expect(shakaDrmConfig(drm, true).advanced['com.widevine.alpha']?.persistentStateRequired).toBe(true)
+  })
+})
+
+describe('offlineRetryParameters', () => {
+  it('does not abort in-flight fragments after 5s of slow proxy progress', () => {
+    expect(offlineRetryParameters.stallTimeout).toBe(0)
+    expect(offlineRetryParameters.maxAttempts).toBe(2)
+    expect(offlineRetryParameters.timeout).toBeGreaterThanOrEqual(60_000)
   })
 })

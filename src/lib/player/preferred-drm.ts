@@ -46,6 +46,14 @@ export function withManifestQuery(target: string, extra: Record<string, string |
   return next.toString()
 }
 
+/** Hint for a DASH source: this load is a full store, not ABR playback. */
+export function offlineManifestUrl(target: string, preferredHeight?: number): string {
+  return withManifestQuery(target, {
+    offline: '1',
+    height: preferredHeight && Number.isFinite(preferredHeight) ? String(preferredHeight) : undefined,
+  })
+}
+
 export function downloadAudioLang(
   downloadAudio: 'any' | 'sub' | 'dub' | undefined,
   preferredAudio: AudioLang,
