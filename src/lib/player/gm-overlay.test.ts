@@ -82,6 +82,14 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).not.toContain('$playerNotice && !gmMode')
     expect(overlay).toContain('player_gm_dock')
   })
+
+  it('re-focuses the overlay after fullscreen so player hotkeys keep working', () => {
+    // Native macOS fullscreen steals first responder from WKWebView. The capture-phase
+    // key listener is on `window`, but if the webview is not first responder the events
+    // never reach JS until the user clicks the overlay.
+    expect(overlay).toContain('void $fullscreen')
+    expect(overlay).toContain('overlayRoot.focus({ preventScroll: true })')
+  })
 })
 
 describe('gameModeDock', () => {

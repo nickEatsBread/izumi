@@ -221,9 +221,11 @@
 
   $effect(() => {
     if (!$playing || !overlayRoot) return
+    // Native macOS fullscreen (and exiting it) steals first responder from WKWebView.
+    // Re-run on that toggle even if a child already looks focused in the DOM.
+    void $fullscreen
     const active = document.activeElement
-    if (active instanceof HTMLElement && (overlayRoot.contains(active) || active.closest('[data-comments-panel]'))) return
-    if (active instanceof HTMLElement) active.blur()
+    if (active instanceof HTMLElement && active.closest('[data-comments-panel]')) return
     overlayRoot.focus({ preventScroll: true })
   })
 
