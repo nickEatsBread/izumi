@@ -5,9 +5,10 @@
   import type { MineKind } from '$lib/anilist/my-shows'
   import { delayLines, type ScheduleInfo } from '$lib/anime/animeschedule'
 
-  let { label, airings, today = false, big = false, badgeOf, infoOf }:
+  let { label, airings, today = false, big = false, badgeOf, infoOf, navFirst }:
     { label: string; airings: Airing[]; today?: boolean; big?: boolean
-      badgeOf?: (m: Media) => MineKind | null; infoOf?: (m: Media) => ScheduleInfo | null } = $props()
+      badgeOf?: (m: Media) => MineKind | null; infoOf?: (m: Media) => ScheduleInfo | null
+      navFirst?: string } = $props()
 
   // Only the leading delay line fits a schedule row; the detail page carries the full set.
   const delayOf = (m: Media) => delayLines(infoOf?.(m) ?? null)[0] ?? ''
@@ -19,11 +20,12 @@
   {/if}
   <div class={big ? 'grid grid-cols-1 gap-2 sm:grid-cols-2' : 'flex flex-col gap-2'}>
     {#if airings.length}
-      {#each airings as a (a.media.id + '-' + a.episode)}
+      {#each airings as a, i (a.media.id + '-' + a.episode)}
         {@const mine = badgeOf?.(a.media)}
         {@const delay = delayOf(a.media)}
           <a
             data-focusable
+            data-nav-id={i === 0 ? navFirst : undefined}
             href={`/app/anime/${a.media.id}`}
             class="flex min-w-0 items-center gap-3 rounded-xl bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-70' : ''} {mine ? 'border border-theme/60' : 'border border-transparent'}"
           >

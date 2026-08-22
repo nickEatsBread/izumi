@@ -568,8 +568,8 @@
     cmd('set', ['cursor-autohide', gmMode ? 'always' : controlsVisible ? 'no' : 'always'])
   })
 
-  // Game mode (gamescope): HTML chrome is snapshotted into mpv. Loading + the moving scrub
-  // indicator stay native ASS; visible controls remain as a stable bitmap underneath.
+  // Game mode (gamescope): normal controls, loading and moving scrub feedback are native ASS.
+  // Complex HTML panels are snapshotted into mpv only while those surfaces are actually open.
   const directP2pOverlay = $derived(isDirectP2PStream($nowPlayingStream))
   const gmDynamicActive = $derived(gmMode && $playing && shouldUseGameModeDynamicOverlay({
     loading,
@@ -583,11 +583,11 @@
   const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   const noticeVisible = $derived(!!$playerNotice)
-  // Once a real frame exists, seeking/buffering may add native ASS feedback but must not remove
-  // an already-visible controls bitmap. Removing it for mpv's brief `seeking` edge caused the
-  // whole strip to fade down/up (the visible "bop") and hid controls during d-pad skim.
-  const gmKeepControls = $derived(gmMode && firstFrame && controlsVisible)
-  const gmDynamicOwnsChrome = $derived(gmDynamicActive && !gmKeepControls)
+  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible)
+  // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
+  // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
+  const gmNativeControls = $derived(gmMode && firstFrame && controlsVisible && !overlayFull && !showSkip)
+  const gmDynamicOwnsChrome = $derived(gmNativeControls)
   const overlayActive = $derived(gameModeBitmapOverlayActive({
     gameMode: gmMode,
     playing: $playing,
@@ -601,7 +601,6 @@
     noticeVisible,
     skipVisible: showSkip,
   }))
-  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible)
   $effect(() => {
     if (!gmMode) return
     if (!$playing) {
@@ -649,6 +648,7 @@
   let gmDynDirty = false
   let gmDynDisposed = false
   let gmDynLastVisible = false
+  let gmFocusRev = $state(0)
   // Last known seek bar geometry (CSS px), so the native scrub bar keeps its place if the
   // element is momentarily unmeasurable.
   let lastBar = { x: 0, y: 0, w: 0 }
@@ -715,6 +715,14 @@
     barH: 0,
     skipText: '',
     noticeText: '',
+    animateControls: $playerProgressAnimations,
+    title: '',
+    titleX: 0,
+    titleY: 0,
+    episodeText: '',
+    episodeX: 0,
+    episodeY: 0,
+    controlItems: [],
   })
 
   function measureSeekBar() {
@@ -722,11 +730,55 @@
     if (rect && rect.width > 0) lastBar = { x: rect.left, y: rect.top + rect.height / 2, w: rect.width }
   }
 
+  function measureNativeChrome() {
+    const root = document.querySelector<HTMLElement>('[data-gm-control-root]')
+    const label = (selector: string) => {
+      const element = root?.querySelector<HTMLElement>(selector)
+      const rect = element?.getBoundingClientRect()
+      return element && rect && rect.width > 0 && rect.height > 0
+        ? { text: element.textContent?.trim() ?? '', x: rect.left, y: rect.top + rect.height / 2 }
+        : { text: '', x: 0, y: 0 }
+    }
+    const title = label('[data-gm-title]')
+    const episode = label('[data-gm-episode]')
+    const controlItems = root
+      ? [...root.querySelectorAll<HTMLButtonElement>('button[data-focusable]')]
+          .filter((button) => {
+            const rect = button.getBoundingClientRect()
+            const style = getComputedStyle(button)
+            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'
+          })
+          .slice(0, 24)
+          .map((button) => {
+            const rect = button.getBoundingClientRect()
+            return {
+              x: rect.left,
+              y: rect.top,
+              w: rect.width,
+              h: rect.height,
+              label: button.getAttribute('aria-label') ?? '',
+              focused: document.activeElement === button,
+              primary: button.classList.contains('gm-play'),
+            }
+          })
+      : []
+    return {
+      title: title.text,
+      titleX: title.x,
+      titleY: title.y,
+      episodeText: episode.text,
+      episodeX: episode.x,
+      episodeY: episode.y,
+      controlItems,
+    }
+  }
+
   function currentGmDynamicState() {
     const s = get(scrub)
     const skipText = gmMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
     const liveControls = controlsVisible && firstFrame && dur > 0
-    const visible = gmMode && get(playing) && (loading || s.active || liveControls || !!skipText)
+    const nativeControls = liveControls && gmNativeControls
+    const visible = gmMode && get(playing) && (loading || s.active || nativeControls || !!skipText)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -735,12 +787,16 @@
     // smooth. Non-scrub frames (hover/loading) keep lastBar fresh; a one-time fallback covers a
     // scrub that starts before any measurement exists (the "drifts down" bug).
     if (!s.active || lastBar.w <= 0) measureSeekBar()
+    const chrome = nativeControls ? measureNativeChrome() : {
+      title: '', titleX: 0, titleY: 0, episodeText: '', episodeX: 0, episodeY: 0, controlItems: [],
+    }
     return {
       visible,
       loading: visible && loading,
       firstFrame,
-      controls: visible && liveControls,
+      controls: visible && nativeControls,
       paused,
+      animateControls: $playerProgressAnimations,
       scrubbing: visible && s.active,
       pos: gmDynamicPos,
       dur,
@@ -761,6 +817,7 @@
       barH: 10,
       skipText,
       noticeText: '',
+      ...chrome,
     }
   }
 
@@ -791,7 +848,7 @@
   }
 
   $effect(() => {
-    gmMode; $playing; loading; firstFrame; controlsVisible; paused; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive
+    gmMode; $playing; loading; firstFrame; controlsVisible; paused; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations
     scheduleGmDynamicOverlay()
   })
 
@@ -1178,6 +1235,7 @@
   onpointermove={pipDragMove}
   onpointerup={endPipDrag}
   onpointercancel={endPipDrag}
+  onfocusin={() => { if (gmMode) gmFocusRev += 1 }}
   role="presentation"
 >
   {#if drmActive && $nowPlayingStream.drm}
@@ -1272,8 +1330,8 @@
       </div>
     </div>
   {:else if controlsVisible}
-    <!-- In Game mode Rust animates one settled bitmap in mpv. A CSS entrance here would make
-         WebKit snapshot an intermediate/transparent frame and reintroduce the old crawl. -->
+    <!-- In Game mode the normal bar is measured here but painted by Rust's native 60Hz OSD.
+         Complex panels switch this HTML back onto the settled bitmap overlay. -->
     <div class="izumi-hud" class:opacity-0={gmDynamicOwnsChrome}>
       <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} />
     </div>

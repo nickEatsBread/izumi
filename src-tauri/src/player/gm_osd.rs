@@ -1,8 +1,8 @@
 //! Native mpv OSD for fast-moving Game mode player UI.
 //!
-//! The HTML controls still handle input, but loading, live progress and active scrub visuals must
-//! not be driven by repeated WebKit snapshots on the Deck. Those states are drawn here as ASS
-//! vector events inside mpv's renderer, so gamescope receives one composited video surface.
+//! The HTML controls still handle input, but normal chrome, loading, live progress and active
+//! scrub visuals must not be driven by repeated WebKit snapshots on the Deck. Those states are
+//! drawn here as ASS vectors inside mpv, so gamescope receives one composited video surface.
 
 #![cfg(target_os = "linux")]
 
@@ -14,8 +14,11 @@ use std::time::{Duration, Instant};
 use gtk::glib;
 use tauri::{AppHandle, Manager};
 
-use crate::gm_perf::{chrome_ass, OSD_FPS};
-use crate::{player::PlayerHandle, GmDynamicOverlay};
+use crate::gm_perf::{
+    chrome_ass, css_ease, NATIVE_CONTROLS_CONTENT_MS, NATIVE_CONTROLS_FADE_MS,
+    NATIVE_CONTROLS_MOTION_PX, OSD_FPS,
+};
+use crate::{player::PlayerHandle, GmControlItem, GmDynamicOverlay};
 
 // Separate osd-overlay ids so the STATIC parts of the scrub bar (dim gradient, empty track,
 // buffered range) are pushed ONCE and only the MOVING parts (played fill, knob, time text) are
@@ -27,6 +30,8 @@ const OSD_SCRUB_DYN_ID: i64 = 2; // played fill + knob + time text (per frame wh
 const OSD_SCRUB_STATIC_ID: i64 = 3; // dim gradient + empty track + buffered range (on change)
 const OSD_LOADING_ID: i64 = 4; // pre-first-frame black + buffering spinner (per frame)
 const OSD_CHROME_ID: i64 = 5; // skip / P2P / toast (on change)
+const OSD_CONTROLS_BG_ID: i64 = 6; // native bottom wash (60Hz only during reveal/hide)
+const OSD_CONTROLS_CONTENT_ID: i64 = 7; // title + buttons/focus (60Hz during reveal/hide)
 static LITE: AtomicBool = AtomicBool::new(false);
 // Tween time-constants (seconds) for the native scrub bar, chosen per input source. A trigger
 // (pad) steps in 5s jumps and is indirect, so a longer tween smooths the steps; a finger is
@@ -42,6 +47,8 @@ const PROGRESS_FRAME_MS: u64 = 100;
 // overlay-add bitmaps (the snapshot chrome, id 1) always sit above ALL of these.
 const Z_SCRUB_STATIC: i64 = 48;
 const Z_SCRUB_DYN: i64 = 50;
+const Z_CONTROLS_BG: i64 = 46;
+const Z_CONTROLS_CONTENT: i64 = 55;
 const Z_LOADING: i64 = 60;
 const Z_CHROME: i64 = 70;
 
@@ -66,8 +73,68 @@ struct Shown {
     scrub: bool,
     /// The loading layer (dim/spinner) is currently up.
     loading: bool,
-    /// Last skip/P2P/toast ASS; `None` when that layer is not shown.
+    /// Last skip/toast ASS; `None` when that layer is not shown.
     chrome: Option<String>,
+    control_bg: Option<String>,
+    control_content: Option<String>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct ControlMotion {
+    main: f64,
+    content: f64,
+    y: f64,
+    animating: bool,
+}
+
+struct ControlTween {
+    target: bool,
+    main: f64,
+    content: f64,
+    start_main: f64,
+    start_content: f64,
+    started: Instant,
+}
+
+impl ControlTween {
+    fn new(now: Instant) -> Self {
+        Self {
+            target: false,
+            main: 0.0,
+            content: 0.0,
+            start_main: 0.0,
+            start_content: 0.0,
+            started: now,
+        }
+    }
+
+    fn step(&mut self, target: bool, animate: bool, now: Instant) -> ControlMotion {
+        if target != self.target {
+            self.target = target;
+            self.start_main = self.main;
+            self.start_content = self.content;
+            self.started = now;
+        }
+        let end = if target { 1.0 } else { 0.0 };
+        if !animate {
+            self.main = end;
+            self.content = end;
+        } else {
+            let elapsed = now.duration_since(self.started).as_secs_f64() * 1000.0;
+            let main_t = (elapsed / NATIVE_CONTROLS_FADE_MS as f64).clamp(0.0, 1.0);
+            let content_t = (elapsed / NATIVE_CONTROLS_CONTENT_MS as f64).clamp(0.0, 1.0);
+            self.main = self.start_main + (end - self.start_main) * css_ease(main_t);
+            self.content = self.start_content + (end - self.start_content) * css_ease(content_t);
+        }
+        let animating = (self.main - end).abs() > 0.0005 || (self.content - end).abs() > 0.0005;
+        ControlMotion {
+            main: self.main.clamp(0.0, 1.0),
+            // VacuumTube's 200ms content transition is nested inside the 500ms parent fade.
+            content: (self.main * self.content).clamp(0.0, 1.0),
+            y: (1.0 - self.content).clamp(0.0, 1.0) * NATIVE_CONTROLS_MOTION_PX,
+            animating,
+        }
+    }
 }
 
 pub fn update(app: AppHandle, state: GmDynamicOverlay) {
@@ -78,9 +145,7 @@ pub fn update(app: AppHandle, state: GmDynamicOverlay) {
         rt.version = rt.version.wrapping_add(1);
     }
 
-    if !visible {
-        GEN.fetch_add(1, Ordering::SeqCst);
-        RUNNING.store(false, Ordering::SeqCst);
+    if !visible && !RUNNING.load(Ordering::SeqCst) {
         remove(&app);
         return;
     }
@@ -108,6 +173,8 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
         .checked_sub(Duration::from_millis(PROGRESS_FRAME_MS))
         .unwrap_or(t0);
     let mut shown = Shown::default();
+    let mut control_tween = ControlTween::new(t0);
+    let mut last_control_state: Option<GmDynamicOverlay> = None;
 
     glib::timeout_add_local(Duration::from_millis(1000 / OSD_FPS), move || {
         let now = Instant::now();
@@ -123,14 +190,42 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
             RUNNING.store(false, Ordering::SeqCst);
             return glib::ControlFlow::Break;
         };
-        if !state.visible {
+        if state.controls {
+            last_control_state = Some(state.clone());
+        }
+        let motion = control_tween.step(state.controls, state.animate_controls, now);
+
+        let mut draw_state = state.clone();
+        // The frontend unmounts Controls as soon as auto-hide fires. Retain the last measured
+        // geometry/content until the native 500ms outro reaches zero instead of snapping away.
+        if !state.controls && motion.main > 0.0 {
+            if let Some(last) = &last_control_state {
+                draw_state.controls = true;
+                draw_state.paused = last.paused;
+                draw_state.pos = last.pos;
+                draw_state.dur = last.dur;
+                draw_state.buffer = last.buffer;
+                draw_state.width = last.width;
+                draw_state.height = last.height;
+                draw_state.bar_x = last.bar_x;
+                draw_state.bar_y = last.bar_y;
+                draw_state.bar_w = last.bar_w;
+                draw_state.bar_h = last.bar_h;
+                draw_state.title.clone_from(&last.title);
+                draw_state.title_x = last.title_x;
+                draw_state.title_y = last.title_y;
+                draw_state.episode_text.clone_from(&last.episode_text);
+                draw_state.episode_x = last.episode_x;
+                draw_state.episode_y = last.episode_y;
+                draw_state.control_items.clone_from(&last.control_items);
+            }
+        }
+        if !state.visible && motion.main <= 0.0 && !motion.animating {
             remove(&app);
             RUNNING.store(false, Ordering::SeqCst);
             return glib::ControlFlow::Break;
         }
-
-        let mut draw_state = state.clone();
-        if version != last_drawn_version {
+        if version != last_drawn_version && (state.controls || state.scrubbing || state.loading) {
             progress_anchor_pos = state.pos;
             progress_anchor_at = now;
         }
@@ -155,12 +250,13 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
         if !draw_state.loading
             && (!draw_state.scrubbing || !scrub_animating)
             && !progress_due
+            && !motion.animating
             && version == last_drawn_version
         {
             return glib::ControlFlow::Continue;
         }
 
-        draw(&app, &draw_state, spinner_phase(t0), &mut shown);
+        draw(&app, &draw_state, spinner_phase(t0), motion, &mut shown);
         if draw_state.controls {
             last_progress_draw = now;
         }
@@ -250,10 +346,44 @@ fn sanitize_state(mut state: GmDynamicOverlay) -> GmDynamicOverlay {
     if !state.scrub_time.is_finite() {
         state.scrub_time = state.pos;
     }
+    state.title = state.title.chars().take(180).collect();
+    state.episode_text = state.episode_text.chars().take(80).collect();
+    for value in [
+        &mut state.title_x,
+        &mut state.title_y,
+        &mut state.episode_x,
+        &mut state.episode_y,
+    ] {
+        if !value.is_finite() {
+            *value = 0.0;
+        }
+    }
+    state.control_items.truncate(24);
+    state.control_items.retain(|item| {
+        item.x.is_finite()
+            && item.y.is_finite()
+            && item.w.is_finite()
+            && item.h.is_finite()
+            && item.w > 0.0
+            && item.h > 0.0
+    });
+    for item in &mut state.control_items {
+        item.x = item.x.clamp(-256.0, state.width + 256.0);
+        item.y = item.y.clamp(-256.0, state.height + 256.0);
+        item.w = item.w.clamp(1.0, 256.0);
+        item.h = item.h.clamp(1.0, 256.0);
+        item.label = item.label.chars().take(80).collect();
+    }
     state
 }
 
-fn draw(app: &AppHandle, state: &GmDynamicOverlay, phase: u32, shown: &mut Shown) {
+fn draw(
+    app: &AppHandle,
+    state: &GmDynamicOverlay,
+    phase: u32,
+    motion: ControlMotion,
+    shown: &mut Shown,
+) {
     let w = state.width.round() as i64;
     let h = state.height.round() as i64;
     let (wf, hf) = (w as f64, h as f64);
@@ -261,19 +391,35 @@ fn draw(app: &AppHandle, state: &GmDynamicOverlay, phase: u32, shown: &mut Shown
         return;
     };
 
+    let control_bg = if state.controls && motion.main > 0.0005 {
+        controls_background_ass(wf, hf, motion.main)
+    } else {
+        String::new()
+    };
+    update_ass_layer(
+        player.inner(),
+        OSD_CONTROLS_BG_ID,
+        Z_CONTROLS_BG,
+        w,
+        h,
+        control_bg,
+        &mut shown.control_bg,
+    );
+
     // --- Progress/scrub bar: static layer (gradient/track/buffer) is content-gated; the dynamic
     // layer is normal played-fill + flanking times, or the active scrub knob + floating time.
     if (state.scrubbing || state.controls) && state.dur > 0.0 {
         let (bx, by, bw, bh) = scrub_geometry(state, wf, hf);
-        let static_ass = scrub_static_ass(state, wf, hf, bx, by, bw, bh);
+        let opacity = if state.scrubbing { 1.0 } else { motion.main };
+        let static_ass = scrub_static_ass(state, wf, hf, bx, by, bw, bh, opacity);
         if shown.static_ass.as_deref() != Some(static_ass.as_str()) {
             let _ = player.osd_overlay_ass(OSD_SCRUB_STATIC_ID, &static_ass, w, h, Z_SCRUB_STATIC);
             shown.static_ass = Some(static_ass);
         }
         let dyn_ass = if state.scrubbing {
-            scrub_dynamic_ass(state, wf, bx, by, bw, bh)
+            scrub_dynamic_ass(state, wf, bx, by, bw, bh, 1.0)
         } else {
-            progress_dynamic_ass(state, bx, by, bw, bh)
+            progress_dynamic_ass(state, bx, by, bw, bh, opacity)
         };
         let _ = player.osd_overlay_ass(OSD_SCRUB_DYN_ID, &dyn_ass, w, h, Z_SCRUB_DYN);
         shown.scrub = true;
@@ -283,6 +429,21 @@ fn draw(app: &AppHandle, state: &GmDynamicOverlay, phase: u32, shown: &mut Shown
         shown.static_ass = None;
         shown.scrub = false;
     }
+
+    let control_content = if state.controls && motion.content > 0.0005 {
+        controls_content_ass(state, motion.content, motion.y)
+    } else {
+        String::new()
+    };
+    update_ass_layer(
+        player.inner(),
+        OSD_CONTROLS_CONTENT_ID,
+        Z_CONTROLS_CONTENT,
+        w,
+        h,
+        control_content,
+        &mut shown.control_content,
+    );
 
     let chrome = chrome_ass(&state.skip_text, &state.notice_text, wf, hf);
     if chrome.is_empty() {
@@ -313,6 +474,25 @@ fn draw(app: &AppHandle, state: &GmDynamicOverlay, phase: u32, shown: &mut Shown
     }
 }
 
+fn update_ass_layer(
+    player: &PlayerHandle,
+    id: i64,
+    z: i64,
+    w: i64,
+    h: i64,
+    ass: String,
+    shown: &mut Option<String>,
+) {
+    if ass.is_empty() {
+        if shown.take().is_some() {
+            let _ = player.osd_overlay_remove(id);
+        }
+    } else if shown.as_deref() != Some(ass.as_str()) {
+        let _ = player.osd_overlay_ass(id, &ass, w, h, z);
+        *shown = Some(ass);
+    }
+}
+
 fn remove(app: &AppHandle) {
     hold_lite(app, false);
     if let Some(player) = app.try_state::<PlayerHandle>() {
@@ -320,6 +500,8 @@ fn remove(app: &AppHandle) {
         let _ = player.osd_overlay_remove(OSD_SCRUB_STATIC_ID);
         let _ = player.osd_overlay_remove(OSD_LOADING_ID);
         let _ = player.osd_overlay_remove(OSD_CHROME_ID);
+        let _ = player.osd_overlay_remove(OSD_CONTROLS_BG_ID);
+        let _ = player.osd_overlay_remove(OSD_CONTROLS_CONTENT_ID);
     }
 }
 
@@ -365,6 +547,7 @@ fn scrub_static_ass(
     y: f64,
     bw: f64,
     bh: f64,
+    master_opacity: f64,
 ) -> String {
     let mut lines = Vec::new();
 
@@ -377,8 +560,8 @@ fn scrub_static_ass(
     let band_h = fade_h / bands as f64;
     for i in 0..bands {
         let f = (i as f64 + 0.5) / bands as f64;
-        let opacity = 0.28 * f;
-        let a = ((1.0 - opacity) * 255.0).round().clamp(0.0, 255.0) as i64;
+        let opacity = 0.28 * f * master_opacity;
+        let a = alpha_hex(opacity);
         let by = fade_top + band_h * i as f64;
         push(
             &mut lines,
@@ -388,18 +571,28 @@ fn scrub_static_ass(
                 w,
                 band_h + 2.0,
                 "000000",
-                &format!("{a:02X}"),
+                &a,
                 band_h,
             ),
         );
     }
     // Track (white/25) · buffered (white/40) — the same fills the HTML seek bar uses.
-    push(&mut lines, rect(x, top, bw, bh, "FFFFFF", "BF"));
+    push(
+        &mut lines,
+        rect(x, top, bw, bh, "FFFFFF", &alpha_hex(0.25 * master_opacity)),
+    );
     let buffer_pct = pct(state.buffer, state.dur);
     if buffer_pct > 0.0 {
         push(
             &mut lines,
-            rect(x, top, bw * buffer_pct, bh, "FFFFFF", "99"),
+            rect(
+                x,
+                top,
+                bw * buffer_pct,
+                bh,
+                "FFFFFF",
+                &alpha_hex(0.4 * master_opacity),
+            ),
         );
     }
     lines.join("\n")
@@ -408,39 +601,364 @@ fn scrub_static_ass(
 /// DYNAMIC scrub layer: the played fill up to the (tweened) scrub point, the knob, and the
 /// scrubbed time floating above it. Re-pushed each animating frame; its own libass track, so it
 /// never re-parses the static gradient above it.
-fn scrub_dynamic_ass(state: &GmDynamicOverlay, w: f64, x: f64, y: f64, bw: f64, bh: f64) -> String {
+fn scrub_dynamic_ass(
+    state: &GmDynamicOverlay,
+    w: f64,
+    x: f64,
+    y: f64,
+    bw: f64,
+    bh: f64,
+    master_opacity: f64,
+) -> String {
     let mut lines = Vec::new();
     let top = y - bh / 2.0;
     let scrub_pct = pct(state.scrub_time, state.dur);
 
     // Played to the scrub point (opaque).
-    push(&mut lines, rect(x, top, bw * scrub_pct, bh, "FFFFFF", "00"));
+    let alpha = alpha_hex(master_opacity);
+    push(&mut lines, rect(x, top, bw * scrub_pct, bh, "FFFFFF", &alpha));
     // Handle (matches the HTML ~22px knob) + the scrubbed time floating just above it.
     let knob_x = x + bw * scrub_pct;
-    push(&mut lines, circle(knob_x, y, 11.0, "FFFFFF", "00"));
+    push(&mut lines, circle(knob_x, y, 11.0, "FFFFFF", &alpha));
     let time = fmt_time(state.scrub_time);
     push(
         &mut lines,
-        text(knob_x.clamp(60.0, w - 60.0), y - 42.0, 32.0, &time),
+        text_opacity(
+            knob_x.clamp(60.0, w - 60.0),
+            y - 42.0,
+            32.0,
+            &time,
+            master_opacity,
+            5,
+        ),
     );
     lines.join("\n")
 }
 
 /// Normal visible controls: live played fill plus current/total times in the transparent HTML
 /// placeholders that flank the seekbar. The HTML elements remain present for layout and touch.
-fn progress_dynamic_ass(state: &GmDynamicOverlay, x: f64, y: f64, bw: f64, bh: f64) -> String {
+fn progress_dynamic_ass(
+    state: &GmDynamicOverlay,
+    x: f64,
+    y: f64,
+    bw: f64,
+    bh: f64,
+    master_opacity: f64,
+) -> String {
     let mut lines = Vec::new();
     let top = y - bh / 2.0;
     push(
         &mut lines,
-        rect(x, top, bw * pct(state.pos, state.dur), bh, "FFFFFF", "00"),
+        rect(
+            x,
+            top,
+            bw * pct(state.pos, state.dur),
+            bh,
+            "FFFFFF",
+            &alpha_hex(master_opacity),
+        ),
     );
-    push(&mut lines, text(x - 44.0, y, 20.0, &fmt_time(state.pos)));
     push(
         &mut lines,
-        text(x + bw + 44.0, y, 20.0, &fmt_time(state.dur)),
+        text_opacity(x - 44.0, y, 20.0, &fmt_time(state.pos), master_opacity, 5),
+    );
+    push(
+        &mut lines,
+        text_opacity(
+            x + bw + 44.0,
+            y,
+            20.0,
+            &fmt_time(state.dur),
+            master_opacity,
+            5,
+        ),
     );
     lines.join("\n")
+}
+
+fn controls_background_ass(w: f64, h: f64, opacity: f64) -> String {
+    let mut lines = Vec::new();
+    let height = (h * 0.34).clamp(180.0, 300.0);
+    let top = h - height;
+    let bands = 14usize;
+    let band_h = height / bands as f64;
+    for i in 0..bands {
+        let f = (i as f64 + 0.5) / bands as f64;
+        let band_opacity = 0.82 * f.powf(1.45) * opacity;
+        push(
+            &mut lines,
+            rect_blur(
+                0.0,
+                top + i as f64 * band_h,
+                w,
+                band_h + 3.0,
+                "000000",
+                &alpha_hex(band_opacity),
+                7.0,
+            ),
+        );
+    }
+    lines.join("\n")
+}
+
+fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -> String {
+    let mut lines = Vec::new();
+    if !state.title.trim().is_empty() {
+        push(
+            &mut lines,
+            text_opacity(
+                state.title_x,
+                state.title_y + y_offset,
+                25.0,
+                state.title.trim(),
+                opacity,
+                4,
+            ),
+        );
+    }
+    if !state.episode_text.trim().is_empty() {
+        push(
+            &mut lines,
+            text_opacity(
+                state.episode_x,
+                state.episode_y + y_offset,
+                17.0,
+                state.episode_text.trim(),
+                opacity * 0.82,
+                4,
+            ),
+        );
+    }
+    for item in &state.control_items {
+        control_item_ass(item, opacity, y_offset, &mut lines);
+    }
+    lines.join("\n")
+}
+
+fn control_item_ass(item: &GmControlItem, opacity: f64, y_offset: f64, lines: &mut Vec<String>) {
+    let scale = if item.focused {
+        if item.primary { 1.12 } else { 1.08 }
+    } else {
+        1.0
+    };
+    let cx = item.x + item.w / 2.0;
+    let cy = item.y + item.h / 2.0 + y_offset;
+    let radius = item.w.min(item.h) * 0.5 * scale;
+    let focused_fill = item.focused && !item.primary;
+    let fill_opacity = if item.primary || focused_fill { 0.96 } else { 0.12 };
+    push(
+        lines,
+        circle(cx, cy, radius, "FFFFFF", &alpha_hex(fill_opacity * opacity)),
+    );
+    if item.focused && !focused_fill {
+        push(
+            lines,
+            circle_ring(
+                cx,
+                cy,
+                radius + 1.0,
+                radius + 4.0,
+                "FFFFFF",
+                &alpha_hex(opacity),
+            ),
+        );
+    }
+    let icon_color = if item.primary || focused_fill {
+        "000000"
+    } else {
+        "FFFFFF"
+    };
+    control_icon_ass(
+        &item.label.to_ascii_lowercase(),
+        cx,
+        cy,
+        item.w.min(item.h) * 0.42,
+        icon_color,
+        opacity,
+        lines,
+    );
+}
+
+fn control_icon_ass(
+    label: &str,
+    cx: f64,
+    cy: f64,
+    size: f64,
+    color: &str,
+    opacity: f64,
+    lines: &mut Vec<String>,
+) {
+    let a = alpha_hex(opacity);
+    if label == "play" {
+        push(lines, polygon(&[(cx - size * 0.28, cy - size * 0.48), (cx + size * 0.5, cy), (cx - size * 0.28, cy + size * 0.48)], color, &a));
+    } else if label == "pause" {
+        push(lines, rect(cx - size * 0.38, cy - size * 0.48, size * 0.25, size * 0.96, color, &a));
+        push(lines, rect(cx + size * 0.13, cy - size * 0.48, size * 0.25, size * 0.96, color, &a));
+    } else if label.starts_with("previous episode") {
+        push(lines, rect(cx - size * 0.5, cy - size * 0.48, size * 0.12, size * 0.96, color, &a));
+        push(lines, polygon(&[(cx + size * 0.45, cy - size * 0.5), (cx - size * 0.3, cy), (cx + size * 0.45, cy + size * 0.5)], color, &a));
+    } else if label.starts_with("next episode") {
+        push(lines, rect(cx + size * 0.38, cy - size * 0.48, size * 0.12, size * 0.96, color, &a));
+        push(lines, polygon(&[(cx - size * 0.45, cy - size * 0.5), (cx + size * 0.3, cy), (cx - size * 0.45, cy + size * 0.5)], color, &a));
+    } else if label == "playback options" {
+        for (index, knob) in [-0.22, 0.28, -0.05].iter().enumerate() {
+            let y = cy + (index as f64 - 1.0) * size * 0.36;
+            push(lines, line_shape(cx - size * 0.52, y, cx + size * 0.52, y, size * 0.1, color, &a));
+            push(lines, circle(cx + size * *knob, y, size * 0.16, color, &a));
+        }
+    } else if label == "discussion" {
+        let x0 = cx - size * 0.52;
+        let x1 = cx + size * 0.52;
+        let y0 = cy - size * 0.42;
+        let y1 = cy + size * 0.3;
+        let thick = size * 0.1;
+        push(lines, line_shape(x0, y0, x1, y0, thick, color, &a));
+        push(lines, line_shape(x0, y0, x0, y1, thick, color, &a));
+        push(lines, line_shape(x1, y0, x1, y1, thick, color, &a));
+        push(lines, line_shape(x0, y1, x1, y1, thick, color, &a));
+        push(lines, polygon(&[(cx - size * 0.12, y1), (cx - size * 0.28, cy + size * 0.55), (cx + size * 0.12, y1)], color, &a));
+    } else if label == "switch server" {
+        let thick = size * 0.1;
+        let y0 = cy - size * 0.24;
+        let y1 = cy + size * 0.24;
+        push(lines, line_shape(cx - size * 0.46, y0, cx + size * 0.42, y0, thick, color, &a));
+        push(lines, polygon(&[(cx + size * 0.5, y0), (cx + size * 0.22, y0 - size * 0.22), (cx + size * 0.22, y0 + size * 0.22)], color, &a));
+        push(lines, line_shape(cx + size * 0.46, y1, cx - size * 0.42, y1, thick, color, &a));
+        push(lines, polygon(&[(cx - size * 0.5, y1), (cx - size * 0.22, y1 - size * 0.22), (cx - size * 0.22, y1 + size * 0.22)], color, &a));
+    } else if label.contains("subtitle") || label.contains("track") {
+        let x0 = cx - size * 0.54;
+        let x1 = cx + size * 0.54;
+        let y0 = cy - size * 0.4;
+        let y1 = cy + size * 0.4;
+        let thick = size * 0.09;
+        push(lines, line_shape(x0, y0, x1, y0, thick, color, &a));
+        push(lines, line_shape(x0, y1, x1, y1, thick, color, &a));
+        push(lines, line_shape(x0, y0, x0, y1, thick, color, &a));
+        push(lines, line_shape(x1, y0, x1, y1, thick, color, &a));
+        push(lines, text_color_opacity(cx, cy, size * 0.48, "CC", color, opacity, 5));
+    } else {
+        let initials: String = label
+            .split_whitespace()
+            .filter_map(|part| part.chars().next())
+            .take(2)
+            .collect::<String>()
+            .to_uppercase();
+        push(lines, text_color_opacity(cx, cy, size * 0.62, &initials, color, opacity, 5));
+    }
+}
+
+fn alpha_hex(opacity: f64) -> String {
+    format!("{:02X}", ((1.0 - opacity.clamp(0.0, 1.0)) * 255.0).round() as u8)
+}
+
+fn text_opacity(
+    x: f64,
+    y: f64,
+    size: f64,
+    body: &str,
+    opacity: f64,
+    align: u8,
+) -> String {
+    text_color_opacity(x, y, size, body, "FFFFFF", opacity, align)
+}
+
+fn text_color_opacity(
+    x: f64,
+    y: f64,
+    size: f64,
+    body: &str,
+    color: &str,
+    opacity: f64,
+    align: u8,
+) -> String {
+    format!(
+        "{{\\an{}\\pos({},{})\\fs{}\\bord{}\\shad0\\1c&H{}&\\3c&H000000&\\1a&H{}&\\3a&H{}&}}{}",
+        align,
+        ir(x),
+        ir(y),
+        ir(size),
+        if color == "FFFFFF" { 2 } else { 0 },
+        color,
+        alpha_hex(opacity),
+        alpha_hex(opacity * 0.72),
+        ass_escape(body)
+    )
+}
+
+fn polygon(points: &[(f64, f64)], color: &str, alpha: &str) -> String {
+    let Some((first, rest)) = points.split_first() else {
+        return String::new();
+    };
+    if rest.len() < 2 {
+        return String::new();
+    }
+    let mut path = format!("m {} {}", ir(first.0), ir(first.1));
+    for point in rest {
+        path.push_str(&format!(" l {} {}", ir(point.0), ir(point.1)));
+    }
+    format!("{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p1}}{path}{{\\p0}}")
+}
+
+fn line_shape(
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    thickness: f64,
+    color: &str,
+    alpha: &str,
+) -> String {
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let len = (dx * dx + dy * dy).sqrt().max(0.001);
+    let px = -dy / len * thickness / 2.0;
+    let py = dx / len * thickness / 2.0;
+    polygon(
+        &[(x0 + px, y0 + py), (x1 + px, y1 + py), (x1 - px, y1 - py), (x0 - px, y0 - py)],
+        color,
+        alpha,
+    )
+}
+
+fn circle_ring(
+    cx: f64,
+    cy: f64,
+    inner: f64,
+    outer: f64,
+    color: &str,
+    alpha: &str,
+) -> String {
+    if inner <= 0.0 || outer <= inner {
+        return String::new();
+    }
+    let path = |r: f64, clockwise: bool| {
+        let k = r * 0.552_284_749_8;
+        let (cx, cy, r, k) = (ir(cx), ir(cy), ir(r), ir(k));
+        if clockwise {
+            format!(
+                "m {cx} {} b {} {} {} {} {} {cy} b {} {} {} {} {cx} {} b {} {} {} {} {} {cy} b {} {} {} {} {cx} {}",
+                cy - r,
+                cx + k, cy - r, cx + r, cy - k, cx + r,
+                cx + r, cy + k, cx + k, cy + r, cy + r,
+                cx - k, cy + r, cx - r, cy + k, cx - r,
+                cx - r, cy - k, cx - k, cy - r, cy - r,
+            )
+        } else {
+            format!(
+                "m {cx} {} b {} {} {} {} {} {cy} b {} {} {} {} {cx} {} b {} {} {} {} {} {cy} b {} {} {} {} {cx} {}",
+                cy - r,
+                cx - k, cy - r, cx - r, cy - k, cx - r,
+                cx - r, cy + k, cx - k, cy + r, cy + r,
+                cx + k, cy + r, cx + r, cy + k, cx + r,
+                cx + r, cy - k, cx + k, cy - r, cy - r,
+            )
+        }
+    };
+    format!(
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p1}}{} {}{{\\p0}}",
+        path(outer, true),
+        path(inner, false),
+    )
 }
 
 /// LOADING layer: an opaque black backdrop before the first frame (covers the white webview and
@@ -516,16 +1034,6 @@ fn fmt_time(seconds: f64) -> String {
     } else {
         format!("{m}:{s:02}")
     }
-}
-
-fn text(x: f64, y: f64, size: f64, body: &str) -> String {
-    format!(
-        "{{\\an5\\pos({},{})\\fs{}\\bord2\\shad0\\1c&HFFFFFF&\\3c&H000000&\\1a&H00&\\3a&H40&}}{}",
-        ir(x),
-        ir(y),
-        ir(size),
-        ass_escape(body)
-    )
 }
 
 fn rect(x: f64, y: f64, w: f64, h: f64, color: &str, alpha: &str) -> String {

@@ -27,8 +27,8 @@ describe('gameModeBitmapOverlayActive', () => {
     expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(true)
   })
 
-  it('snapshots controls once so Rust can animate them over fullscreen mpv', () => {
-    expect(gameModeBitmapOverlayActive({ ...base, controlsVisible: true })).toBe(true)
+  it('keeps ordinary controls off the bitmap path so native OSD can animate at 60Hz', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, controlsVisible: true })).toBe(false)
   })
 
   it('keeps toasts and the proper P2P card on the bitmap overlay during load', () => {
@@ -104,11 +104,14 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).not.toContain('gameModeP2pLine')
     expect(overlay).not.toContain('p2pText')
     expect(overlay).toContain('gmDynamicOwnsChrome')
+    expect(overlay).toContain('gmNativeControls')
+    expect(overlay).toContain('measureNativeChrome')
+    expect(overlay).toContain('controlItems')
     expect(overlay).toContain('fast: overlayFast')
     expect(overlay).toContain('if (!gmMode || !p2pVisible) return')
     expect(overlay).toContain('ontoggleplay={togglePlayback}')
     expect(overlay).toContain("if (action !== 'playerClose') poke()")
-    expect(overlay).toContain('controls: visible && liveControls')
+    expect(overlay).toContain('controls: visible && nativeControls')
     expect(overlay).toContain('loading || get(scrub).active || controlsVisible || showSkip')
     expect(overlay).not.toContain('class:gm-chrome-in')
   })
@@ -150,6 +153,8 @@ describe('Game-mode Leanback motion', () => {
     expect(css).toContain('.gm-play.focus-ring-inset:focus')
     const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
     expect(controls).toContain('gm-play')
+    expect(controls).toContain('data-gm-control-root')
+    expect(controls).toContain('data-gm-title')
     expect(controls).toContain('gmActivate')
     expect(controls).toContain('gm-open-tracks')
     expect(controls).toContain('player-menu-nav')

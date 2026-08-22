@@ -211,7 +211,7 @@
 {#snippet dayTabs(showHint: boolean)}
   <div bind:this={dayRow} class="-mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-1 [scrollbar-width:none] snap-x sm:mx-0 sm:overflow-visible sm:px-0">
     {#each SHORT as d, i (d)}
-      <button data-focusable onclick={() => { if (i !== selected) h.tap(); selected = i }}
+      <button data-focusable data-nav-down="schedule-first-airing" onclick={() => { if (i !== selected) h.tap(); selected = i }}
         class="relative h-[5.25rem] w-[7.75rem] shrink-0 snap-center rounded-2xl border text-center text-lg font-black transition-colors sm:h-auto sm:w-auto sm:flex-1 sm:shrink sm:rounded-lg sm:py-3 sm:text-sm
                {i === selected ? 'border-primary bg-primary text-primary-foreground shadow-sm' : 'border-border/70 bg-secondary hover:bg-accent'}">
         {d}
@@ -227,7 +227,7 @@
 {/snippet}
 
 {#snippet selectedDay()}
-  <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={shownDays[selected]} {badgeOf} {infoOf} big />
+  <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={shownDays[selected]} {badgeOf} {infoOf} big navFirst="schedule-first-airing" />
 {/snippet}
 
 {#snippet mineEmpty()}

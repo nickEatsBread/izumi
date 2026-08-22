@@ -1,5 +1,5 @@
-/** Game-mode overlay policy: when HTML chrome is snapshotted into mpv. Loading and the moving
- * scrub indicator stay native ASS; controls, menus, comments, P2P and toasts are bitmap chrome. */
+/** Game-mode overlay policy: ordinary controls/progress are native ASS so their reveal/hide can
+ * run at display cadence. Complex panels, comments, P2P and toasts remain bitmap chrome. */
 
 export function gameModeBitmapOverlayActive(input: {
   gameMode: boolean
@@ -23,8 +23,9 @@ export function gameModeBitmapOverlayActive(input: {
   // P2P always uses its proper HTML card, including before the first frame. The old native ASS
   // text line was a visibly different fallback and could replace the card during loading.
   if (input.p2pVisible) return true
-  if (input.dynamicOverlay) return false
-  return input.controlsVisible
+  void input.controlsVisible
+  void input.dynamicOverlay
+  return false
 }
 
 /** Wait one paint + a short macrotask so WebKit has laid out menus/toasts before we snapshot. */

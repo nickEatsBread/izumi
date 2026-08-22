@@ -37,6 +37,9 @@ function abortError() {
   return new DOMException('The request was aborted', 'AbortError')
 }
 
+export const isNativeTransportFailure = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)) === 'request failed'
+
 /** Invoke one bounded Rust HTTP command and propagate AbortSignal cancellation across IPC. */
 export async function invokeNativeHttp<T>(
   command: 'http_get' | 'http_post' | 'ext_fetch',
@@ -137,11 +140,18 @@ export async function phttp(
   url: string,
   init?: { headers?: Record<string, string> } & NativeHttpOptions,
 ): Promise<PooledResponse> {
-  const r = await invokeNativeHttp<{ status: number; body: string }>(
-    'http_get',
-    { url, headers: init?.headers },
-    init,
-  )
+  const request = () => invokeNativeHttp<{ status: number; body: string }>(
+    'http_get', { url, headers: init?.headers }, init)
+  let r: { status: number; body: string }
+  try {
+    r = await request()
+  } catch (error) {
+    // GET is safe to repeat. A short resolver/socket interruption used to become an empty addon
+    // response immediately because callers intentionally degrade source failures to []. Retry only
+    // the native transport failure—not cancellation, deadlines, HTTP statuses, or parse errors.
+    if (init?.signal?.aborted || !isNativeTransportFailure(error)) throw error
+    r = await request()
+  }
   return {
     ok: r.status >= 200 && r.status < 300,
     status: r.status,

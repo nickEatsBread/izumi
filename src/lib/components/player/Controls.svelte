@@ -711,16 +711,16 @@
 {#snippet titleBlock(big: boolean)}
   {#if np.animeTitle}
     <div class="flex min-w-0 flex-col gap-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.6)]">
-      <span class="line-clamp-1 font-semibold text-white {big ? 'text-2xl' : 'text-lg'}">{np.animeTitle}</span>
+      <span data-gm-title class="line-clamp-1 font-semibold text-white {big ? 'text-2xl' : 'text-lg'}">{np.animeTitle}</span>
       {#if np.episode != null}
-        <span class="font-light {big ? 'text-base text-white/85' : 'text-sm text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</span>
+        <span data-gm-episode class="font-light {big ? 'text-base text-white/85' : 'text-sm text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</span>
       {/if}
     </div>
   {/if}
 {/snippet}
 
 <!-- stopPropagation: control clicks must not bubble to the video click-to-pause. -->
-<div class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
+<div data-gm-control-root class="pointer-events-none absolute inset-0" onclick={(e) => e.stopPropagation()} role="presentation">
   <!-- Top bar: Back button (Desktop only — Game mode uses the B button to leave, so no
        redundant on-screen Back) and, when the Game-mode "title at top" option is on, the
        title. Rendered only when it has something to show. -->

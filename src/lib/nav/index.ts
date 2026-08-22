@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { playing } from '$lib/player/session'
+import { gameMode, playing } from '$lib/player/session'
 import { pickInDirection, type Dir } from './spatial'
 export * from './input'
 export * from './actions'
@@ -82,7 +82,10 @@ const fieldShape = (target: EventTarget | null): FieldShape | null => {
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
   // Do not stack smooth-scroll animations while a direction is held. WebKit queues those and then
   // repaints/decode-rushes several rows at once, which looked like a DOM freeze followed by flashes.
-  const behavior: ScrollBehavior = rapid ? 'auto' : 'smooth'
+  // A sequence of separate Deck presses is not marked `repeat`, though, and can arrive much faster
+  // than a smooth scroll settles. Game mode therefore always moves the viewport immediately; the
+  // focus ring supplies the movement cue without leaving a compositor animation queue behind it.
+  const behavior: ScrollBehavior = rapid || get(gameMode) ? 'auto' : 'smooth'
   const pane = el.closest<HTMLElement>('[data-nav-scroll-container]')
   if (!pane) {
     el.scrollIntoView({
@@ -162,6 +165,20 @@ export function initDpadNav() {
         revealFocused(first, vertical, e.repeat)
         e.preventDefault()
       }
+      return
+    }
+    // Some transitions have semantic row order that geometry cannot infer. The schedule weekday
+    // strip spans the whole screen; from a weekday near the right edge, a 45-degree cone rejects
+    // the first airing row and finds a farther card below it. A named override keeps ordinary
+    // spatial navigation everywhere else while letting that strip hand Down to the first airing.
+    const explicitName = active.getAttribute(`data-nav-${dir}`)
+    const explicit = explicitName
+      ? els.find((el) => el !== active && el.getAttribute('data-nav-id') === explicitName)
+      : undefined
+    if (explicit) {
+      explicit.focus({ preventScroll: true })
+      revealFocused(explicit, vertical, e.repeat)
+      e.preventDefault()
       return
     }
     const cur = active.getBoundingClientRect()

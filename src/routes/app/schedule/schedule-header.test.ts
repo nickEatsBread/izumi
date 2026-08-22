@@ -83,6 +83,11 @@ describe('schedule page header', () => {
     expect(page).toContain('($anilistDegraded ? 28 : 0)')
   })
 
+  it('hands weekday Down navigation to the first airing instead of a geometric lower row', () => {
+    expect(grid).toContain('data-nav-down="schedule-first-airing"')
+    expect(grid).toContain('navFirst="schedule-first-airing"')
+  })
+
   it('shows the backup failure instead of repeating the AniList error', () => {
     expect(grid).toContain('error = `Backup schedule unavailable: ${message}`')
     expect(grid).not.toContain('error = primaryError')

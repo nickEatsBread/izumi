@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }))
 
-import { invokeNativeHttp, phttp } from './http'
+import { invokeNativeHttp, isNativeTransportFailure, phttp } from './http'
 
 describe('native HTTP lifecycle bridge', () => {
   beforeEach(() => { mocks.invoke.mockReset() })
@@ -54,6 +54,32 @@ describe('native HTTP lifecycle bridge', () => {
       timeoutMs: 5,
     })).rejects.toThrow('request timed out')
     expect(mocks.invoke).toHaveBeenCalledWith('http_cancel', { requestId: 'timeout-1' })
+  })
+
+  it('retries one failed GET transport without retrying a deadline or HTTP response', async () => {
+    mocks.invoke
+      .mockRejectedValueOnce('request failed')
+      .mockResolvedValueOnce({ status: 200, body: '{"rows":1}' })
+
+    const response = await phttp('https://example.com/stream.json')
+
+    expect(mocks.invoke).toHaveBeenCalledTimes(2)
+    await expect(response.json()).resolves.toEqual({ rows: 1 })
+  })
+
+  it('recognises native transport failures returned as strings or Error objects', () => {
+    expect(isNativeTransportFailure('request failed')).toBe(true)
+    expect(isNativeTransportFailure(new Error('request failed'))).toBe(true)
+    expect(isNativeTransportFailure(new Error('request timed out'))).toBe(false)
+  })
+
+  it('does not retry an aborted GET', async () => {
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(phttp('https://example.com/stream.json', { signal: controller.signal }))
+      .rejects.toMatchObject({ name: 'AbortError' })
+    expect(mocks.invoke).not.toHaveBeenCalled()
   })
 })
 

@@ -29,6 +29,13 @@ pub const OVERLAY_FADE_FRAME_MS: u64 = 25;
 pub const OVERLAY_MOTION_PX: i64 = 16;
 /// Premultiply scale uses 0..=1000 so a fade tick can be integer math.
 pub const OVERLAY_FADE_FULL: u32 = 1000;
+/// VacuumTube/YouTube-TV uses a 500ms `ease` opacity transition for its progress/actions layers.
+/// Izumi drives the equivalent native ASS layer at 60Hz, avoiding bitmap uploads per frame.
+pub const NATIVE_CONTROLS_FADE_MS: u64 = 500;
+/// The focused control content has a separate 200ms fade/slide inside the parent opacity layer.
+pub const NATIVE_CONTROLS_CONTENT_MS: u64 = 200;
+/// On-screen travel measured from VacuumTube at the Deck-sized player viewport.
+pub const NATIVE_CONTROLS_MOTION_PX: f64 = 30.0;
 /// Bottom fraction of the viewport that holds the control strip (idle snapshots only).
 /// 0.28 sliced the Game-mode title/episode line (64px play + seek + two text rows).
 pub const CONTROL_STRIP_FRACTION: f64 = 0.36;
@@ -60,6 +67,36 @@ pub fn overlay_fade_step(current: u32, fade_in: bool, dt_ms: u64, duration_ms: u
     } else {
         current.saturating_sub(delta)
     }
+}
+
+/// CSS `ease` (`cubic-bezier(.25,.1,.25,1)`) evaluated by time rather than Bézier parameter.
+/// The native OSD uses the browser's actual curve so its 60Hz motion matches VacuumTube.
+pub fn css_ease(progress: f64) -> f64 {
+    let x = progress.clamp(0.0, 1.0);
+    if x <= 0.0 || x >= 1.0 {
+        return x;
+    }
+
+    fn sample(t: f64, p1: f64, p2: f64) -> f64 {
+        let inv = 1.0 - t;
+        3.0 * inv * inv * t * p1 + 3.0 * inv * t * t * p2 + t * t * t
+    }
+    fn slope(t: f64, p1: f64, p2: f64) -> f64 {
+        3.0 * (1.0 - t).powi(2) * p1
+            + 6.0 * (1.0 - t) * t * (p2 - p1)
+            + 3.0 * t * t * (1.0 - p2)
+    }
+
+    let mut t = x;
+    for _ in 0..6 {
+        let dx = sample(t, 0.25, 0.25) - x;
+        let d = slope(t, 0.25, 0.25);
+        if d.abs() < 1e-7 {
+            break;
+        }
+        t = (t - dx / d).clamp(0.0, 1.0);
+    }
+    sample(t, 0.1, 1.0).clamp(0.0, 1.0)
 }
 
 /// Scale premultiplied BGRA by `alpha_millis` (0..=1000) into `dst`.

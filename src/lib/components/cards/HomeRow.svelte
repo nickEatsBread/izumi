@@ -3,11 +3,13 @@
   // query store so Svelte auto-subscription (`$store`) works correctly — an
   // array of stores can't be `$`-subscribed by index from the page.
   import { onMount } from 'svelte'
+  import { get } from 'svelte/store'
   import { queryStore, getContextClient } from '@urql/svelte'
   import { pageQuery } from '$lib/anilist/queries'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
   import type { Media } from '$lib/anilist/types'
+  import { gameMode } from '$lib/player/session'
 
   let { title, vars }: { title: string; vars: Record<string, unknown> } = $props()
 
@@ -21,15 +23,20 @@
   // CSS `zoom` breaks IO's geometry (the same reason SearchResults uses a scroll listener).
   let visible = $state(false)
   let el = $state<HTMLElement>()
+  const active = $derived(visible || $gameMode)
 
   const store = $derived(queryStore<{ Page: { media: Media[] } }>({
     client,
     query: pageQuery(),
     variables: { perPage: 20, ...vars },
-    pause: !visible,
+    pause: !active,
   }))
 
   onMount(() => {
+    // A Deck has six modest catalogue queries and lazy-loaded cover images; starting all row data
+    // at page mount keeps network and DOM replacement away from controller scrolling. urql's warm
+    // graphcache prevents repeat traffic when returning Home. Desktop retains the viewport gate.
+    if (get(gameMode)) return
     const check = () => {
       // Reveal when the row's top is within ~1.5 viewports (prefetch a bit ahead). The CSS zoom can
       // skew rect-vs-innerHeight, but a scroll listener always fires (unlike IO) and the generous
@@ -70,11 +77,11 @@
 <div bind:this={el}>
   <!-- Keep the observer anchor, but do not leave a heading/View-more shell behind if every
        catalogue provider genuinely returned an empty page. -->
-  {#if !visible || $store.fetching || ($store.data?.Page.media.length ?? 0) > 0}
+  {#if !active || $store.fetching || ($store.data?.Page.media.length ?? 0) > 0}
     <Carousel {title} viewMoreHref={viewMoreHref(vars)}>
       <!-- Skeletons also stand in while NOT yet visible, so the row keeps its height and lower rows
            stay below the fold until scrolled to (otherwise every row reveals at once). -->
-      {#if !visible || $store.fetching}
+      {#if !active || $store.fetching}
         {#each Array.from({ length: 8 }) as _}
           <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
         {/each}

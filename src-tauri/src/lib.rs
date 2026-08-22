@@ -89,11 +89,24 @@ static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 #[derive(Default)]
 struct TacVerificationConfig(std::sync::Mutex<Option<serde_json::Value>>);
 
-#[derive(Clone, Default, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
 // The fields are consumed by the Game-mode OSD (player::gm_osd), which only compiles on Linux
 // (the Steam Deck). On other targets the struct is still deserialized from the frontend but its
 // fields go unread — expected, so silence dead_code off-Linux only.
+#[derive(Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) struct GmControlItem {
+    pub(crate) x: f64,
+    pub(crate) y: f64,
+    pub(crate) w: f64,
+    pub(crate) h: f64,
+    pub(crate) label: String,
+    pub(crate) focused: bool,
+    pub(crate) primary: bool,
+}
+
+#[derive(Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) struct GmDynamicOverlay {
     pub(crate) visible: bool,
@@ -103,6 +116,8 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) controls: bool,
     #[serde(default)]
     pub(crate) paused: bool,
+    #[serde(default)]
+    pub(crate) animate_controls: bool,
     pub(crate) scrubbing: bool,
     pub(crate) pos: f64,
     pub(crate) dur: f64,
@@ -125,6 +140,20 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) skip_text: String,
     #[serde(default)]
     pub(crate) notice_text: String,
+    #[serde(default)]
+    pub(crate) title: String,
+    #[serde(default)]
+    pub(crate) title_x: f64,
+    #[serde(default)]
+    pub(crate) title_y: f64,
+    #[serde(default)]
+    pub(crate) episode_text: String,
+    #[serde(default)]
+    pub(crate) episode_x: f64,
+    #[serde(default)]
+    pub(crate) episode_y: f64,
+    #[serde(default)]
+    pub(crate) control_items: Vec<GmControlItem>,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]

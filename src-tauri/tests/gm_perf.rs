@@ -49,6 +49,22 @@ fn overlay_cpu_fade_scales_premultiplied_bgra() {
 }
 
 #[test]
+fn native_controls_match_vacuumtube_motion_curve() {
+    assert_eq!(NATIVE_CONTROLS_FADE_MS, 500);
+    assert_eq!(NATIVE_CONTROLS_CONTENT_MS, 200);
+    assert_eq!(NATIVE_CONTROLS_MOTION_PX, 30.0);
+    assert_eq!(css_ease(0.0), 0.0);
+    assert_eq!(css_ease(1.0), 1.0);
+    assert!((css_ease(0.5) - 0.8024).abs() < 0.001);
+
+    let osd = include_str!("../src/player/gm_osd.rs");
+    assert!(osd.contains("ControlTween"));
+    assert!(osd.contains("controls_background_ass"));
+    assert!(osd.contains("controls_content_ass"));
+    assert!(osd.contains("1000 / OSD_FPS"));
+}
+
+#[test]
 fn idle_overlay_does_not_raster_unless_forced() {
     assert_eq!(OVERLAY_IDLE_FPS, 0);
     assert!(!overlay_should_snapshot(false, false, false));

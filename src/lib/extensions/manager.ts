@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { get } from 'svelte/store'
-import { invokeNativeHttp, phttp } from '$lib/net/http'
+import { invokeNativeHttp, isNativeTransportFailure, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
 import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages } from './catalog'
@@ -309,12 +309,24 @@ function spawn(cfg: ExtensionConfig, code: string): RunningExt {
       const tracked = trackFetch()
       try {
         const init = m.init ?? {}
-        const r = await invokeNativeHttp<{ status: number; url: string; headers: Record<string, string>; setCookie: string[]; body: string }>('ext_fetch', {
+        const args = {
           url: m.url,
           method: init.method,
           headers: init.headers,
           body: typeof init.body === 'string' ? init.body : undefined,
-        }, { signal: tracked.controller.signal })
+        }
+        const fetchOnce = () => invokeNativeHttp<{ status: number; url: string; headers: Record<string, string>; setCookie: string[]; body: string }>(
+          'ext_fetch', args, { signal: tracked.controller.signal })
+        let r: Awaited<ReturnType<typeof fetchOnce>>
+        try {
+          r = await fetchOnce()
+        } catch (error) {
+          const method = String(init.method ?? 'GET').toUpperCase()
+          // Source GETs are idempotent and frequently sit behind free indexer/CDN DNS. Give a
+          // transient native transport failure one fresh attempt. Never replay a POST or an abort.
+          if (tracked.controller.signal.aborted || !['GET', 'HEAD'].includes(method) || !isNativeTransportFailure(error)) throw error
+          r = await fetchOnce()
+        }
         worker.postMessage({ type: 'fetch-result', reqId: m.reqId, res: { ok: r.status >= 200 && r.status < 300, status: r.status, url: r.url, headers: r.headers, setCookie: r.setCookie, body: r.body } })
       } catch (err) {
         worker.postMessage({ type: 'fetch-result', reqId: m.reqId, error: String(err) })
