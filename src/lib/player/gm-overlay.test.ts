@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import {
   gameModeBitmapOverlayActive,
   gameModeChromeActive,
+  gameModeDock,
+  gameModeDockIsLive,
   gameModeP2pLine,
   gameModeSnapshotCrop,
   presenceAllowed,
@@ -78,7 +80,25 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('presenceAllowed(gmMode)')
     expect(overlay).toContain('<P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} />')
     expect(overlay).not.toContain('$playerNotice && !gmMode')
-    expect(overlay).toContain('chromeReveal')
+    expect(overlay).toContain('player_gm_dock')
+  })
+})
+
+describe('gameModeDock', () => {
+  const base = {
+    loading: false,
+    controlsVisible: false,
+    playerMenuOpen: false,
+    trackMenuOpen: false,
+    commentsOpen: false,
+    noticeVisible: false,
+  }
+
+  it('leaves video fullscreen while loading and docks live chrome afterwards', () => {
+    expect(gameModeDock({ ...base, loading: true })).toEqual({ bottom: 0, right: 0, top: 0, hide: false })
+    expect(gameModeDockIsLive(gameModeDock({ ...base, controlsVisible: true }))).toBe(true)
+    expect(gameModeDock({ ...base, playerMenuOpen: true }).right).toBeGreaterThan(0)
+    expect(gameModeDock({ ...base, trackMenuOpen: true }).hide).toBe(true)
   })
 })
 

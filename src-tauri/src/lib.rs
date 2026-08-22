@@ -346,6 +346,17 @@ fn player_gm_overlay(
     }
 }
 
+/// Game mode: shrink or hide the mpv X11 child so the webview is live in the uncovered
+/// region. HTML chrome then animates at compositor speed instead of a WebKit snapshot.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn player_gm_dock(bottom: f64, right: f64, top: f64, hide: bool) {
+    #[cfg(target_os = "linux")]
+    player::linux_x11::dock_video(bottom, right, top, hide);
+    #[cfg(not(target_os = "linux"))]
+    let _ = (bottom, right, top, hide);
+}
+
 /// Game mode dynamic overlay: loading and active scrub are rendered inside mpv as ASS OSD.
 /// This keeps the moving Deck UI off the expensive WebKit snapshot/readback path.
 #[cfg(not(target_os = "android"))]
@@ -5014,6 +5025,7 @@ pub fn run() {
             close_player,
             player_is_game_mode,
             player_gm_overlay,
+            player_gm_dock,
             player_gm_dynamic_overlay,
             gamepad_start,
             gamepad_stop,

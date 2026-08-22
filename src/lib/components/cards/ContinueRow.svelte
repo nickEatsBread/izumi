@@ -3,7 +3,7 @@
   // (the persisted `cwSnapshot` view cache ∪ local watch history), then AniList (CURRENT) + MyAnimeList
   // (watching) reconcile in the BACKGROUND — no skeleton wait on the network. De-duped by media id,
   // resume-aware, most-recent first. All merge/sync logic lives in $lib/player/continue-watching.
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { getContextClient } from '@urql/svelte'
   import { continueWatching, reconciling, reconciledOnce, reconcileContinueWatching, dismissContinueWatching } from '$lib/player/continue-watching'
   import { longPressDismiss } from './continue-dismiss'
@@ -19,10 +19,19 @@
   // D on a keyboard and X on a controller remove the active card. The controller translator maps
   // X to the same D event, keeping one dismissal path and the same tracker side effect.
   let activeId = $state<number | null>(null)
-  function dismiss(item: (typeof items)[number]) {
+  async function dismiss(item: (typeof items)[number]) {
+    const idx = items.findIndex((entry) => entry.media.id === item.media.id)
+    const next = items[idx + 1] ?? items[idx - 1]
     h.warn()
     dismissContinueWatching(item.media, item.progress)
-    activeId = null
+    await tick()
+    if (next) {
+      activeId = next.media.id
+      const el = document.querySelector(`[data-cw-id="${next.media.id}"] [data-focusable]`) as HTMLElement | null
+      el?.focus()
+    } else {
+      activeId = null
+    }
   }
   function onKey(e: KeyboardEvent) {
     if ((e.key !== 'd' && e.key !== 'D') || e.ctrlKey || e.metaKey || e.altKey) return
@@ -55,6 +64,7 @@
   <Carousel {title}>
     {#each items as item (item.media.id)}
       <div class="shrink-0 transition-[opacity,filter] duration-300 {provisional ? 'opacity-40 grayscale' : ''}"
+           data-cw-id={item.media.id}
            role="group"
            use:longPressDismiss={{ onLongPress: () => dismiss(item) }}
            onmouseenter={() => (activeId = item.media.id)}
