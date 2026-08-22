@@ -65,4 +65,14 @@ mod tests {
             assert_ne!(*k, "target-trc");
         }
     }
+
+    #[test]
+    fn does_not_force_fbo_format() {
+        // `--fbo-format=auto` already tries rgba16f/rgba16hf then rgba16 then
+        // rgb10_a2/rgba8. Forcing a 16-bit name disables that fallback and can
+        // dump GLES (Android) into dumb-mode. gpu-next ignores --fbo-format.
+        for (k, _) in COLOR_OPTS {
+            assert_ne!(*k, "fbo-format");
+        }
+    }
 }

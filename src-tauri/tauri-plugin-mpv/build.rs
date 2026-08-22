@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "mpv_command",
     "mpv_get",
     "mpv_set",
+    "mpv_set_render_opts",
     "mpv_stop",
     "mpv_pip",
     "mpv_auto_pip",

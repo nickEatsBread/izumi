@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-set-render-opts"
+description = "Enables the mpv_set_render_opts command without any pre-configured scope."
+commands.allow = ["mpv_set_render_opts"]
+
+[[permission]]
+identifier = "deny-mpv-set-render-opts"
+description = "Denies the mpv_set_render_opts command without any pre-configured scope."
+commands.deny = ["mpv_set_render_opts"]

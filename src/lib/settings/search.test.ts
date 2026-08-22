@@ -25,6 +25,10 @@ describe('settings search', () => {
     expect(searchSettings('title language', true)[0]?.title).toBe('Title language')
   })
 
+  it('finds video quality on Android now that embedded libmpv consumes the presets', () => {
+    expect(searchSettings('video quality', true)[0]?.title).toBe('Video quality')
+  })
+
   it('finds the desktop Discord toggle by RPC terminology', () => {
     expect(searchSettings('discord rpc')[0]?.title).toBe('Discord Rich Presence')
   })
