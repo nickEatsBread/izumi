@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { playerCommand } from '$lib/player/native'
 import { DRM_ENDED_EVENT, DRM_PROGRESS_EVENT } from '$lib/player/drm'
-import { downloadAudioLang, preferredDrmPresentation, refreshDrmSource } from '$lib/player/preferred-drm'
+import { downloadAudioLang, offlineManifestUrl, preferredDrmPresentation, refreshDrmSource } from '$lib/player/preferred-drm'
 import { listen, type EventCallback } from '@tauri-apps/api/event'
 import { get } from 'svelte/store'
 import { addonUrls, enabledAddonUrls } from './sources'
@@ -3422,7 +3422,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
       })
       return {
         kind: 'shaka',
-        url: presentation.url,
+        url: offlineManifestUrl(presentation.url, Number.isFinite(wantedHeight) ? wantedHeight : undefined),
         drm: best.__drm,
         subtitles: presentation.subtitles,
         audioLang: presentation.audioLang,

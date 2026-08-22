@@ -26,6 +26,19 @@ interface ActiveJob {
 const jobs = new Map<string, ActiveJob>()
 let serial = Promise.resolve()
 
+/** Playback customizes these; Storage used Shaka defaults (`stallTimeout: 5000`).
+ *  A 5s stall abort on a short DASH fragment retries the same URL while the
+ *  first GET is still running — slower than watching, and noisy. */
+export const offlineRetryParameters = {
+  timeout: 120_000,
+  stallTimeout: 0,
+  connectionTimeout: 20_000,
+  maxAttempts: 2,
+  baseDelay: 2_000,
+  backoffFactor: 2,
+  fuzzFactor: 0.5,
+}
+
 function shakaMessage(error: unknown): string {
   if (!error || typeof error !== 'object') return String(error)
   const value = error as { message?: string; code?: number; data?: unknown[] }
@@ -140,9 +153,16 @@ export async function storeShakaOffline(
     console.info('[offline] DRM', resolution.drm.keySystem, { persistentLicense })
     storage.configure({
       drm: shakaDrmConfig(resolution.drm, persistentLicense),
+      manifest: {
+        retryParameters: offlineRetryParameters,
+        dash: { initialSegmentLimit: 20_000 },
+      },
+      streaming: {
+        retryParameters: offlineRetryParameters,
+      },
       offline: {
         usePersistentLicense: persistentLicense,
-        numberOfParallelDownloads: 4,
+        numberOfParallelDownloads: 3,
         trackSelectionCallback: async (tracks: Array<Record<string, any>>) =>
           selectOfflineTracks(tracks, resolution),
         progressCallback: (content: { size?: number }, progress: number) => {

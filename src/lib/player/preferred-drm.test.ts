@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { downloadAudioLang, preferredDrmPresentation, selectOfflineTracks, shouldAutoReloadHardsub, waitForCatalog } from './preferred-drm'
+import { downloadAudioLang, offlineManifestUrl, preferredDrmPresentation, selectOfflineTracks, shouldAutoReloadHardsub, waitForCatalog } from './preferred-drm'
 
 const url = 'http://127.0.0.1/v/abc/manifest.mpd'
 const englishSidecar = {
@@ -18,6 +18,14 @@ const audioTracks = [
   { lang: 'ja-JP', switchUrl: 'http://127.0.0.1/v/abc/manifest.mpd?audio=ja-JP' },
   { lang: 'en-US', switchUrl: 'http://127.0.0.1/v/abc/manifest.mpd?audio=en-US' },
 ]
+
+describe('offlineManifestUrl', () => {
+  it('marks a DASH URL as a full store and optional height cap', () => {
+    expect(offlineManifestUrl('http://127.0.0.1/v/abc/manifest.mpd')).toContain('offline=1')
+    expect(offlineManifestUrl('http://127.0.0.1/v/abc/manifest.mpd', 480)).toContain('height=480')
+    expect(offlineManifestUrl('http://127.0.0.1/v/abc/manifest.mpd?audio=en-US', 720)).toContain('audio=en-US')
+  })
+})
 
 describe('downloadAudioLang', () => {
   it('maps the download dialog onto the player audio preference', () => {
