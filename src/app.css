@@ -37,6 +37,8 @@ body { overflow-x: clip; }
 /* Native Deck page zoom is applied just after document load. Hide that one first paint so launch
    appears at its final handheld scale instead of visibly growing from 1x. */
 .deck-launch-pending body { visibility: hidden; }
+/* Same hold when leaving the player: native zoom goes 1 → 1.25. Hide that jump. */
+.deck-zoom-hold body { visibility: hidden; }
 /* Mobile (Android edge-to-edge WebView): inset the page content below the status bar.
    Applied to <main> so every route clears the status bar; the bottom tab bar handles
    the gesture-area inset itself. Needs viewport-fit=cover (app.html) to resolve non-zero.

@@ -51,6 +51,7 @@
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
   import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSnapshotCrop, presenceAllowed } from '$lib/player/gm-overlay'
+  import { holdDeckBrowseZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
@@ -337,6 +338,7 @@
   })
 
   async function close() {
+    if (gmMode) holdDeckBrowseZoom()
     await exitFullscreen()
     await exitPictureInPicture()
     playerSleep.set({ deadline: null, atEpisodeEnd: false })
@@ -747,6 +749,7 @@
   })
 
   onDestroy(() => {
+    if (gmMode) holdDeckBrowseZoom()
     invoke('player_gm_dock', { bottom: 0, right: 0, top: 0, hide: false }).catch(() => {})
     // Close the discussion panel on every player-close path (← button, B, navigate-away) so the
     // desktop titlebar — which hides itself while commentsOpen — reappears once the player is gone.
