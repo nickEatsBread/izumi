@@ -17,6 +17,12 @@
 
   let pendingAnime = $state(false) // shows the one-time shader consent
 
+  // Neural upscale shaders are desktop-only. A persisted Anime value from another
+  // device would otherwise sit on a SelectMenu option that Android does not list.
+  $effect(() => {
+    if ($isAndroid && $videoQualityPreset === 'anime') $videoQualityPreset = 'high'
+  })
+
   // Player cache-size presets (MiB). "Custom" reveals a free-entry field; "Uncapped" removes the
   // ceiling. Every preset is a baseline that auto-scales up with the file's bitrate at play time.
   const cachePresets = [{ label: 'Low', mb: 32 }, { label: 'Balanced', mb: 128 }, { label: 'High', mb: 256 }]
@@ -76,10 +82,9 @@
       ]} />
     </label>
 
-    <!-- Video-quality / render-option controls drive the in-app mpv player, whose Rust commands
-         are #[cfg(not(target_os = "android"))]. On Android playback hands off to an external app,
-         so the whole block would be a dead setting there — hide it. -->
-    {#if !$isAndroid}
+    <!-- Video-quality presets drive desktop mpv and the embedded Android libmpv plugin.
+         Anime shaders need the desktop-only `ensure_upscale_shader` download, so that
+         option stays off Android. Windows VSR is d3d11-only. -->
     <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Video quality</span>
       <SelectMenu
@@ -94,11 +99,11 @@
           { value: 'performance', label: 'Performance' },
           { value: 'standard', label: 'Standard' },
           { value: 'high', label: 'High Quality' },
-          { value: 'anime', label: 'Anime (neural upscale)' },
+          ...($isAndroid ? [] : [{ value: 'anime', label: 'Anime (neural upscale)' }]),
           { value: 'custom', label: 'Custom…' },
         ]}
       />
-      <span class="text-xs text-muted-foreground">Standard keeps stock mpv quality flags (sigmoid / correct / linear scaling). High Quality adds ewa scaling and debanding. Performance is bilinear for weak GPUs.</span>
+      <span class="text-xs text-muted-foreground">Standard keeps stock mpv quality flags (sigmoid / correct / linear scaling). High Quality adds ewa scaling, debanding, and stock [high-quality] HDR peak handling. Performance is bilinear for weak GPUs.</span>
     </label>
 
     {#if pendingAnime}
@@ -131,6 +136,7 @@
       </label>
     {/if}
 
+    {#if !$isAndroid}
     <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Windows driver upscaling</span>
       <SelectMenu bind:value={$windowsVsr} ariaLabel="Windows driver upscaling" options={[

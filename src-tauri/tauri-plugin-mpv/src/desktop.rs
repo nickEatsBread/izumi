@@ -4,7 +4,8 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 use crate::models::{
     AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
     GifSaveRequest, GifStartRequest, HapticRequest, KeepScreenAwakeRequest, LoadRequest,
-    MediaSessionRequest, SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
+    MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest, TransformRequest,
+    ViewportRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -38,6 +39,10 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn set(&self, _payload: SetRequest) -> crate::Result<()> {
         Ok(())
+    }
+
+    pub fn set_render_opts(&self, _payload: RenderOptsRequest) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::json!({ "failed": [] }))
     }
 
     pub fn stop(&self) -> crate::Result<()> {

@@ -8,6 +8,7 @@ permissions = [
     "allow-mpv-command",
     "allow-mpv-get",
     "allow-mpv-set",
+    "allow-mpv-set-render-opts",
     "allow-mpv-stop",
     "allow-mpv-pip",
     "allow-mpv-auto-pip",

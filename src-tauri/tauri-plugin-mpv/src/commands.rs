@@ -4,7 +4,8 @@ use crate::{
     models::{
         AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
         GifSaveRequest, GifStartRequest, HapticRequest, KeepScreenAwakeRequest, LoadRequest,
-        MediaSessionRequest, SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
+        MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest, TransformRequest,
+        ViewportRequest,
     },
     MpvExt, Result,
 };
@@ -38,6 +39,14 @@ pub(crate) async fn mpv_get<R: Runtime>(
 #[command]
 pub(crate) async fn mpv_set<R: Runtime>(app: AppHandle<R>, payload: SetRequest) -> Result<()> {
     app.mpv().set(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_set_render_opts<R: Runtime>(
+    app: AppHandle<R>,
+    payload: RenderOptsRequest,
+) -> Result<serde_json::Value> {
+    app.mpv().set_render_opts(payload)
 }
 
 #[command]

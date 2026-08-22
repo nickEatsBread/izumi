@@ -28,6 +28,9 @@ describe('resolvePreset', () => {
     expect(opts.get('correct-downscaling')).toBe('yes')
     expect(opts.get('linear-downscaling')).toBe('yes')
     expect(opts.get('dither')).toBe('fruit')
+    expect(opts.get('hdr-peak-percentile')).toBe('100')
+    expect(opts.get('hdr-contrast-recovery')).toBe('0')
+    expect(opts.get('scale-antiring')).toBe('0')
   })
 
   it('custom empty baseline is modern mpv defaults, not bilinear', () => {
@@ -54,6 +57,19 @@ describe('resolvePreset', () => {
     expect(opts.get('scale')).toBe('ewa_lanczossharp')
     expect(opts.get('deband')).toBe('yes')
     expect(opts.get('sigmoid-upscaling')).toBe('yes')
+  })
+
+  it('high quality includes stock [high-quality] keys from builtin.conf', () => {
+    // etc/builtin.conf [high-quality] is ewa_lanczossharp + scale-antiring 0.6 +
+    // hdr-peak-percentile 99.995 + hdr-contrast-recovery 0.30. Deband stays an
+    // Izumi extra; leaving High must restore the stock HDR defaults.
+    const high = new Map(resolvePreset('high', ''))
+    expect(high.get('scale-antiring')).toBe('0.6')
+    expect(high.get('hdr-peak-percentile')).toBe('99.995')
+    expect(high.get('hdr-contrast-recovery')).toBe('0.30')
+    const standard = new Map(resolvePreset('standard', ''))
+    expect(standard.get('hdr-peak-percentile')).toBe('100')
+    expect(standard.get('hdr-contrast-recovery')).toBe('0')
   })
 
   it('custom = managed defaults + raw lines on top', () => {
@@ -154,6 +170,22 @@ describe('applyRenderOpts (anime preset)', () => {
     expect(opts.get('glsl-shaders')).toBe('')
     expect(opts.get('scale')).toBe('ewa_lanczossharp') // High Quality chain, minus the shaders
     expect(get(qualityNotice)).not.toBe('')
+  })
+
+  it('pushes through the Android plugin when the desktop command is missing', async () => {
+    invoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'player_set_render_opts') throw new Error('command not found')
+      if (cmd === 'plugin:mpv|mpv_set_render_opts') return { failed: [] }
+      return []
+    })
+    videoQualityPreset.set('standard')
+    await applyRenderOpts()
+    const plugin = invoke.mock.calls.find(([c]) => c === 'plugin:mpv|mpv_set_render_opts')
+    expect(plugin).toBeTruthy()
+    const payload = plugin![1] as { payload: { opts: { key: string; value: string }[] } }
+    const opts = new Map(payload.payload.opts.map((p) => [p.key, p.value]))
+    expect(opts.get('scale')).toBe('spline36')
+    expect(opts.get('deband')).toBe('no')
   })
 })
 

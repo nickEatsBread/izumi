@@ -31,6 +31,7 @@ import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
 import android.util.Rational
+import org.json.JSONArray
 import android.view.OrientationEventListener
 import android.view.PixelCopy
 import java.io.ByteArrayOutputStream
@@ -98,6 +99,17 @@ class GetArgs {
 class SetArgs {
     var property: String = ""
     var value: String = ""
+}
+
+@InvokeArg
+class RenderOpt {
+    var key: String = ""
+    var value: String = ""
+}
+
+@InvokeArg
+class RenderOptsArgs {
+    var opts: Array<RenderOpt> = arrayOf()
 }
 
 @InvokeArg
@@ -252,6 +264,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      *  owns a video that Android may shrink into PiP, so track FILE_LOADED separately from `mpv`. */
     private var mediaLoaded = false
     private var mediaReceiver: BroadcastReceiver? = null
+    /** Frontend quality-preset keys, replayed at the next `ensureCore` the same way
+     *  desktop `RENDER_OPTS` is. Replaced as a whole set so leaving High clears deband. */
+    private val storedRenderOpts = LinkedHashMap<String, String>()
 
     private fun stopLandscapeReleaseListener() {
         landscapeReleaseListener?.disable()
@@ -362,6 +377,11 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         m.setOptionString("gamut-mapping-mode", "auto")
         m.setOptionString("dither-depth", "auto")
         m.setOptionString("target-colorspace-hint", "auto")
+        // Picture quality is frontend-owned (Video quality preset). Apply before init so the
+        // first frame is not a stock-defaults flash; live changes go through setRenderOpts.
+        for ((k, v) in storedRenderOpts) {
+            m.setOptionString(k, v)
+        }
         // MUST be "yes", not "once": the core is cached across episodes (see `ensure`), and with
         // "once" mpv shuts itself down the moment the first file reaches EOF. Auto-advance and
         // "Change source" then issued `loadfile` against a dead core — the command silently
@@ -1045,6 +1065,30 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val a = invoke.parseArgs(SetArgs::class.java)
         mpv?.setPropertyString(a.property, a.value)
         invoke.resolve()
+    }
+
+    /** Store the complete quality-preset option set and live-apply it when a core exists. */
+    @Command
+    fun setRenderOpts(invoke: Invoke) {
+        val a = invoke.parseArgs(RenderOptsArgs::class.java)
+        activity.runOnUiThread {
+            storedRenderOpts.clear()
+            val failed = JSONArray()
+            val live = mpv
+            for (opt in a.opts) {
+                val key = opt.key.trim()
+                if (key.isEmpty()) continue
+                storedRenderOpts[key] = opt.value
+                if (live != null) {
+                    try {
+                        live.setPropertyString(key, opt.value)
+                    } catch (e: Exception) {
+                        failed.put(key)
+                    }
+                }
+            }
+            invoke.resolve(JSObject().put("failed", failed))
+        }
     }
 
     /**

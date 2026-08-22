@@ -52,6 +52,19 @@ pub struct SetRequest {
     pub value: String,
 }
 
+/// One mpv render option in a quality-preset push.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RenderOpt {
+    pub key: String,
+    pub value: String,
+}
+
+/// Replace the stored render-option set and live-apply it when a core exists.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RenderOptsRequest {
+    pub opts: Vec<RenderOpt>,
+}
+
 /// Set screen brightness (0.0..1.0), or -1.0 to restore system/auto brightness.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BrightnessRequest {
@@ -198,6 +211,15 @@ mod tests {
         let r: SetRequest = serde_json::from_str(r#"{"property":"pause","value":"yes"}"#).unwrap();
         assert_eq!(r.property, "pause");
         assert_eq!(r.value, "yes");
+    }
+
+    #[test]
+    fn render_opts_request_deserializes() {
+        let r: RenderOptsRequest =
+            serde_json::from_str(r#"{"opts":[{"key":"scale","value":"lanczos"}]}"#).unwrap();
+        assert_eq!(r.opts.len(), 1);
+        assert_eq!(r.opts[0].key, "scale");
+        assert_eq!(r.opts[0].value, "lanczos");
     }
 
     #[test]

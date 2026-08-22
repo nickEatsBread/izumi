@@ -7,7 +7,8 @@ use tauri::{
 use crate::models::{
     AutoPipRequest, BrightnessRequest, CommandRequest, FullscreenRequest, GetRequest,
     GifSaveRequest, GifStartRequest, HapticRequest, KeepScreenAwakeRequest, LoadRequest,
-    MediaSessionRequest, SetRequest, ThumbRequest, TransformRequest, ViewportRequest,
+    MediaSessionRequest, RenderOptsRequest, SetRequest, ThumbRequest, TransformRequest,
+    ViewportRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -49,6 +50,12 @@ impl<R: Runtime> Mpv<R> {
 
     pub fn set(&self, payload: SetRequest) -> crate::Result<()> {
         self.0.run_mobile_plugin("set", payload).map_err(Into::into)
+    }
+
+    pub fn set_render_opts(&self, payload: RenderOptsRequest) -> crate::Result<serde_json::Value> {
+        self.0
+            .run_mobile_plugin("setRenderOpts", payload)
+            .map_err(Into::into)
     }
 
     pub fn stop(&self) -> crate::Result<()> {

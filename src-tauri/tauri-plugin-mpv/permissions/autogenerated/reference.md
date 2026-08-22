@@ -9,6 +9,7 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-command`
 - `allow-mpv-get`
 - `allow-mpv-set`
+- `allow-mpv-set-render-opts`
 - `allow-mpv-stop`
 - `allow-mpv-pip`
 - `allow-mpv-auto-pip`
@@ -475,6 +476,32 @@ Enables the mpv_set command without any pre-configured scope.
 <td>
 
 Denies the mpv_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-set-render-opts`
+
+</td>
+<td>
+
+Enables the mpv_set_render_opts command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-set-render-opts`
+
+</td>
+<td>
+
+Denies the mpv_set_render_opts command without any pre-configured scope.
 
 </td>
 </tr>
