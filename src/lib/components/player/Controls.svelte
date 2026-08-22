@@ -614,7 +614,7 @@
     <div class="flex min-w-0 flex-col gap-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.6)]">
       <span class="line-clamp-1 font-semibold text-white {big ? 'text-2xl' : 'text-lg'}">{np.animeTitle}</span>
       {#if np.episode != null}
-        <span class="font-light text-white/60 {big ? 'text-base' : 'text-sm'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</span>
+        <span class="font-light {big ? 'text-base text-white/85' : 'text-sm text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</span>
       {/if}
     </div>
   {/if}
@@ -655,7 +655,7 @@
        Only the rows that actually ARE controls opt back in below; the gradient, the padding and the
        title now fall through to the overlay's click-to-pause. The Seekbar keeps its own `py-3` grab
        padding, so there is still a forgiving band that seeks rather than pausing. -->
-  <div class="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-6 pb-5 pt-20">
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 px-6 pb-5 {gm ? 'bg-gradient-to-t from-black/55 to-transparent pt-8' : 'bg-gradient-to-t from-black/85 via-black/45 to-transparent pt-20'}">
     <!-- Now-playing title above the seek bar (unless it's been moved to the top). Scales up
          in Game mode to match the enlarged controls. -->
     {#if !titleTop}
