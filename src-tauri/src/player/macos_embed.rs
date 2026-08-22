@@ -36,6 +36,7 @@ use tauri::{Manager, WebviewWindow};
 const NSOPENGLPFA_OPENGL_PROFILE: u32 = 99;
 const NSOPENGLPFA_DOUBLEBUFFER: u32 = 5;
 const NSOPENGLPFA_COLOR_SIZE: u32 = 8;
+const NSOPENGLPFA_COLOR_FLOAT: u32 = 58;
 const NSOPENGLPFA_DEPTH_SIZE: u32 = 12;
 const NSOPENGLPFA_ACCELERATED: u32 = 73;
 const NSOPENGLPFA_NO_RECOVERY: u32 = 72;
@@ -188,6 +189,50 @@ fn attach_on_main(mpv_usize: usize, window: &WebviewWindow) -> Result<(), String
     Ok(())
 }
 
+fn make_pixel_format(float: bool) -> Option<Retained<NSOpenGLPixelFormat>> {
+    let attrs: [u32; 16] = if float {
+        [
+            NSOPENGLPFA_OPENGL_PROFILE,
+            NSOPENGL_PROFILE_VERSION_3_2_CORE,
+            NSOPENGLPFA_DOUBLEBUFFER,
+            1,
+            NSOPENGLPFA_ACCELERATED,
+            1,
+            NSOPENGLPFA_NO_RECOVERY,
+            1,
+            NSOPENGLPFA_COLOR_FLOAT,
+            1,
+            NSOPENGLPFA_COLOR_SIZE,
+            64,
+            NSOPENGLPFA_DEPTH_SIZE,
+            16,
+            0,
+            0,
+        ]
+    } else {
+        [
+            NSOPENGLPFA_OPENGL_PROFILE,
+            NSOPENGL_PROFILE_VERSION_3_2_CORE,
+            NSOPENGLPFA_DOUBLEBUFFER,
+            1,
+            NSOPENGLPFA_ACCELERATED,
+            1,
+            NSOPENGLPFA_NO_RECOVERY,
+            1,
+            NSOPENGLPFA_COLOR_SIZE,
+            24,
+            NSOPENGLPFA_DEPTH_SIZE,
+            16,
+            0,
+            0,
+            0,
+            0,
+        ]
+    };
+    let pf_alloc = NSOpenGLPixelFormat::alloc();
+    unsafe { msg_send![pf_alloc, initWithAttributes: attrs.as_ptr()] }
+}
+
 fn create_gl_view(
     window: &WebviewWindow,
     mtm: MainThreadMarker,
@@ -199,25 +244,15 @@ fn create_gl_view(
     let bounds = content.bounds();
     let frame = view_frame(window, bounds.size.width, bounds.size.height);
 
-    let attrs: [u32; 13] = [
-        NSOPENGLPFA_OPENGL_PROFILE,
-        NSOPENGL_PROFILE_VERSION_3_2_CORE,
-        NSOPENGLPFA_DOUBLEBUFFER,
-        1,
-        NSOPENGLPFA_ACCELERATED,
-        1,
-        NSOPENGLPFA_NO_RECOVERY,
-        1,
-        NSOPENGLPFA_COLOR_SIZE,
-        24,
-        NSOPENGLPFA_DEPTH_SIZE,
-        16,
-        0,
-    ];
-    let pf_alloc = NSOpenGLPixelFormat::alloc();
-    let pf: Option<Retained<NSOpenGLPixelFormat>> =
-        unsafe { msg_send![pf_alloc, initWithAttributes: attrs.as_ptr()] };
-    let pf = pf.ok_or_else(|| "NSOpenGLPixelFormat init failed".to_string())?;
+    // Prefer a float/EDR pixel format so 10-bit HDR anime is not truncated to
+    // 8-bit before dither. Fall back to 24-bit SDR if the GPU refuses float.
+    let (pf, edr) = match make_pixel_format(true) {
+        Some(pf) => (pf, true),
+        None => (
+            make_pixel_format(false).ok_or_else(|| "NSOpenGLPixelFormat init failed".to_string())?,
+            false,
+        ),
+    };
 
     let view_alloc = NSOpenGLView::alloc(mtm);
     let view: Option<Retained<NSOpenGLView>> = unsafe {
@@ -230,6 +265,9 @@ fn create_gl_view(
     let view = view.ok_or_else(|| "NSOpenGLView init failed".to_string())?;
     let view_as_view: &NSView = view.as_super();
     let _: () = unsafe { msg_send![&*view, setWantsBestResolutionOpenGLSurface: true] };
+    if edr {
+        let _: () = unsafe { msg_send![&*view, setWantsExtendedDynamicRangeOpenGLSurface: true] };
+    }
     view_as_view.setWantsLayer(true);
     paint_black_layer(view_as_view);
     let mask: usize = 0;

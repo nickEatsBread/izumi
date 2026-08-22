@@ -98,6 +98,7 @@
           { value: 'custom', label: 'Custom…' },
         ]}
       />
+      <span class="text-xs text-muted-foreground">Standard keeps stock mpv quality flags (sigmoid / correct / linear scaling). High Quality adds ewa scaling and debanding. Performance is bilinear for weak GPUs.</span>
     </label>
 
     {#if pendingAnime}
