@@ -54,7 +54,8 @@ export function presenceAllowed(gameMode: boolean): boolean {
   return !gameMode
 }
 
-/** Live webview insets (0..1 of the viewport) so Game-mode chrome is not snapshotted. */
+/** Live webview insets. Chrome and settings sit on top of fullscreen video via overlay-add
+ * (docking made the picture tiny). Only comments hide the mpv child so the iframe is live. */
 export function gameModeDock(input: {
   loading: boolean
   controlsVisible: boolean
@@ -63,16 +64,15 @@ export function gameModeDock(input: {
   commentsOpen: boolean
   noticeVisible: boolean
 }): { bottom: number; right: number; top: number; hide: boolean } {
-  if (input.trackMenuOpen || input.commentsOpen) {
+  void input.loading
+  void input.controlsVisible
+  void input.playerMenuOpen
+  void input.trackMenuOpen
+  void input.noticeVisible
+  if (input.commentsOpen) {
     return { bottom: 0, right: 0, top: 0, hide: true }
   }
-  if (input.loading) {
-    return { bottom: 0, right: 0, top: 0, hide: false }
-  }
-  const bottom = input.controlsVisible || input.playerMenuOpen || input.noticeVisible ? 0.40 : 0
-  const right = input.playerMenuOpen ? 0.32 : 0
-  const top = input.noticeVisible ? 0.14 : 0
-  return { bottom, right, top, hide: false }
+  return { bottom: 0, right: 0, top: 0, hide: false }
 }
 
 export function gameModeDockIsLive(dock: { bottom: number; right: number; top: number; hide: boolean }): boolean {

@@ -15,7 +15,7 @@
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -334,7 +334,7 @@
       moveScrub: (t) => moveScrub(t),
       endScrub: () => endScrub(),
       onActivity: () => poke(),
-      blocked: () => get(commentsOpen) || get(trackMenuOpen),
+      blocked: () => get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
     })
     return stop
   })
@@ -571,14 +571,13 @@
       noticeVisible,
     })
     invoke('player_gm_dock', dock).catch(() => {})
-    // Live docked HTML animates at compositor speed. Snapshot only the pre-first-frame
-    // P2P card, when the video child still covers the full window.
     if (gameModeDockIsLive(dock)) {
       invoke('player_gm_overlay', { visible: false, fast: false, crop: null }).catch(() => {})
       return
     }
+    void $playerOverlayRev
     const crop = gameModeSnapshotCrop(window.innerWidth || 0, window.innerHeight || 0, overlayFull)
-    invoke('player_gm_overlay', { visible: overlayActive, fast: overlayFast, crop }).catch(() => {})
+    invoke('player_gm_overlay', { visible: overlayActive, fast: false, crop }).catch(() => {})
   })
 
   let gmDynRaf = 0
@@ -819,7 +818,7 @@
         return
       }
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
-      if (get(trackMenuOpen)) return
+      if (get(trackMenuOpen) || get(playerMenuOpen)) return
       // Steam may expose View through duplicate virtual-pad edges. Treat one physical cycle as
       // one logical toggle so a close cannot immediately turn into a reopen.
       if (e.payload.name === 'select') {

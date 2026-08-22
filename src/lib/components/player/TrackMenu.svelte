@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { playerTracks } from '$lib/player/native'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, bingeSource } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, bingeSource, bumpPlayerOverlay } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { searchOnlineSubtitles } from '$lib/stremio/play'
   import { openSubtitlesToken } from '$lib/settings/ui'
@@ -117,6 +117,7 @@
     catch { tracks = [] }
     level = 0; rootIdx = 0; subIdx = 0
     open = true; trackMenuOpen.set(true)
+    bumpPlayerOverlay()
   }
   function closeMenu() {
     open = false
@@ -125,6 +126,7 @@
     setTimeout(() => { if (!open) trackMenuOpen.set(false) }, 0)
   }
   function descend() {
+    bumpPlayerOverlay()
     if (level !== 0 || !roots.length) return
     openIdx = rootIdx // lock the category we're entering
     const items = itemsFor(roots[openIdx]?.key)
@@ -137,6 +139,7 @@
   function move(delta: number) {
     if (level === 0) { if (roots.length) rootIdx = (rootIdx + delta + roots.length) % roots.length }
     else if (subItems.length) subIdx = (subIdx + delta + subItems.length) % subItems.length
+    bumpPlayerOverlay()
   }
   async function addOnlineSub(c: SubtitleCandidate) {
     try {
@@ -239,9 +242,12 @@
       e.preventDefault(); e.stopPropagation()
     }
     window.addEventListener('keydown', onKey, true)
+    const openFromChrome = () => { void openMenu() }
+    window.addEventListener('gm-open-tracks', openFromChrome)
     return () => {
       unGamepad()
       window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('gm-open-tracks', openFromChrome)
       // Never leave the flag stuck true on unmount (player close) — else Back is gated next time.
       trackMenuOpen.set(false)
     }
@@ -257,7 +263,7 @@
     role="presentation"
   >
     <div class="flex items-start gap-4" onclick={(e) => e.stopPropagation()} role="presentation">
-      <div class="gm-sheet gm-sheet-in w-[26rem] rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
+      <div class="gm-sheet w-[26rem] rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
         {#each roots as r, i (r.key)}
           <button
             data-focusable
@@ -275,7 +281,7 @@
 
       <!-- Track column (appears when descended). -->
       {#if level === 1}
-        <div bind:this={trackColEl} class="gm-sheet gm-menu-col-in max-h-[85vh] w-[26rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
+        <div bind:this={trackColEl} class="gm-sheet max-h-[85vh] w-[26rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl">
           <p class="px-5 py-3 text-xl font-bold uppercase tracking-wide text-white/40">{roots[openIdx]?.label}</p>
           {#each subItems as it, i (leafKey(it))}
             <button

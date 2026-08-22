@@ -28,8 +28,5 @@ export function shouldUseGameModeDynamicOverlay(input: {
 }): boolean {
   if (input.commentsOpen) return false
   void input.directP2P
-  void input.scrubbing
-  // Scrub uses the live HTML seekbar once the video is docked. Only the pre-first-frame
-  // spinner still needs the native ASS layer on the fullscreen mpv child.
-  return input.loading
+  return input.scrubbing || input.loading
 }
