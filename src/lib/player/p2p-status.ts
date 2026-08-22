@@ -17,9 +17,9 @@ export function shouldShowP2PStatus(
   return buffering && !firstFrameSeen
 }
 
-/** Gamescope cannot blend the live webview over its mpv child, so ordinary loading and scrubbing
- * use a native ASS overlay. Interactive comments must keep the webview surface. Direct-P2P
- * startup chrome is also native (`gameModeP2pLine`) — the HTML transfer panel is desktop-only. */
+/** Gamescope cannot blend the live webview over its mpv child, so the spinner and scrub bar
+ * are native ASS. P2P / toasts stay HTML and are snapshotted onto the video. Comments keep
+ * the live webview surface. */
 export function shouldUseGameModeDynamicOverlay(input: {
   loading: boolean
   scrubbing: boolean

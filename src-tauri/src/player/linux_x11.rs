@@ -66,6 +66,17 @@ extern "C" {
     ) -> c_int;
     fn XSetIOErrorHandler(handler: Option<XIOErrorHandler>) -> Option<XIOErrorHandler>;
     fn XCloseDisplay(dpy: *mut c_void) -> c_int;
+    fn XWarpPointer(
+        dpy: *mut c_void,
+        src_w: u64,
+        dest_w: u64,
+        src_x: i32,
+        src_y: i32,
+        src_width: u32,
+        src_height: u32,
+        dest_x: i32,
+        dest_y: i32,
+    ) -> i32;
 }
 
 // libXtst (XTEST extension). Gamescope delivers Deck touch to this XWayland client as synthesized
@@ -189,6 +200,10 @@ pub fn unstick_pointer() {
         for button in 1..=3u32 {
             XTestFakeButtonEvent(dpy, button, 0, 0);
         }
+        // Park the synthesized cursor in the corner so browse :hover does not follow the
+        // last touch as rows scroll underneath it.
+        let root = XDefaultRootWindow(dpy);
+        XWarpPointer(dpy, 0, root, 0, 0, 0, 0, 0, 0);
         XFlush(dpy);
         XCloseDisplay(dpy);
     });

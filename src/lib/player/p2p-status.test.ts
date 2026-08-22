@@ -36,7 +36,7 @@ describe('Game Mode dynamic overlay ownership', () => {
     })).toBe(false)
   })
 
-  it('uses the native overlay for direct-P2P startup (HTML P2P chrome is desktop-only)', () => {
+  it('keeps the native spinner during direct-P2P startup (HTML P2P is snapshotted on top)', () => {
     expect(shouldUseGameModeDynamicOverlay({
       loading: true, scrubbing: false, commentsOpen: false, directP2P: true,
     })).toBe(true)

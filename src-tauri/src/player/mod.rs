@@ -1687,6 +1687,8 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // an unknown name — which, if propagated, aborts core creation and kills playback
         // for a mere tuning knob. So we never let a non-essential option fail the core.
         init.set_option("vo", "libmpv")?;
+        // Show the landed frame while paused — d-pad/L2 skim otherwise leaves a frozen picture.
+        let _ = init.set_option("hr-seek", "yes");
         // Decode on the GPU but copy frames to system memory for GL upload (auto-copy) —
         // avoids VAAPI GL interop that color-corrupts on some drivers.
         let _ = init.set_option("hwdec", "auto-copy");

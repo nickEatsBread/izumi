@@ -20,13 +20,18 @@ describe('gameModeBitmapOverlayActive', () => {
     commentsOpen: false,
   }
 
-  it('does not snapshot for skip, toast, or P2P alone', () => {
+  it('does not snapshot an idle video with no chrome', () => {
     expect(gameModeBitmapOverlayActive(base)).toBe(false)
     expect(gameModeBitmapOverlayActive({ ...base, controlsVisible: true })).toBe(true)
     expect(gameModeBitmapOverlayActive({ ...base, trackMenuOpen: true })).toBe(true)
   })
 
-  it('yields to the native loading/scrub overlay', () => {
+  it('snapshots the HTML P2P panel and toasts even while the native spinner is up', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, dynamicOverlay: true, p2pVisible: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, dynamicOverlay: true, noticeVisible: true })).toBe(true)
+  })
+
+  it('yields idle controls to the native loading/scrub overlay', () => {
     expect(gameModeBitmapOverlayActive({ ...base, controlsVisible: true, dynamicOverlay: true })).toBe(false)
   })
 })
@@ -56,17 +61,22 @@ describe('gameMode chrome + presence', () => {
     const css = readFileSync(fileURLToPath(new URL('../../app.css', import.meta.url)), 'utf8')
     expect(css).toContain('html.gamemode, html.gamemode *')
     expect(css).toContain('backdrop-filter: none !important')
+    expect(css).toContain('html.gamemode .group:hover .sm\\:group-hover\\:opacity-100')
   })
 })
 
 describe('PlayerOverlay Game-mode wiring', () => {
   const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
 
-  it('uses the bitmap overlay helper and does not snapshot skip/toasts alone', () => {
+  it('uses the bitmap overlay helper and snapshots HTML P2P/toasts', () => {
     expect(overlay).toContain('gameModeBitmapOverlayActive')
+    expect(overlay).toContain('p2pVisible')
+    expect(overlay).toContain('noticeVisible')
     expect(overlay).not.toContain('controlsVisible || showSkip')
     expect(overlay).toContain('gameModeSnapshotCrop')
     expect(overlay).toContain('reportDirectTorrentFirstFrame')
     expect(overlay).toContain('presenceAllowed(gmMode)')
+    expect(overlay).toContain('<P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} />')
+    expect(overlay).not.toContain('$playerNotice && !gmMode')
   })
 })

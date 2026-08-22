@@ -16,6 +16,11 @@ describe('Game-mode touch watchdog', () => {
     expect(src).toContain("window.addEventListener('focus', returned)")
   })
 
+  it('unsticks the synthesized pointer when the last finger lifts', () => {
+    expect(src).toContain('if (!active.size)')
+    expect(src).toContain("invoke('gm_touch_unstick')")
+  })
+
   it('provides a transition reset for releases swallowed by comments iframes', () => {
     expect(src).toContain("window.addEventListener('gm-touch-reset', reset)")
     expect(src).toContain("invoke('native_touch_hold', { held: false })")

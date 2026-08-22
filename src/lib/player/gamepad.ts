@@ -42,6 +42,8 @@ export interface SeekDeps {
   moveScrub: (t: number) => void
   endScrub: () => void
   onActivity: () => void
+  /** When true, left/right (and the triggers) are ignored — comments/menus own the pad. */
+  blocked?: () => boolean
 }
 
 const clamp = (t: number, dur: number) =>
@@ -132,26 +134,40 @@ export function startGamepadSeek(d: SeekDeps, debug = false): () => void {
 export function startNativeGamepadSeek(d: SeekDeps): () => void {
   const l2 = new TriggerScrubber(-1, d)
   const r2 = new TriggerScrubber(+1, d)
-  const held = { L: false, R: false }
+  const dpadLeft = new TriggerScrubber(-1, d)
+  const dpadRight = new TriggerScrubber(+1, d)
+  const held = { L: false, R: false, left: false, right: false }
   let unlisten: (() => void) | null = null
   let disposed = false
 
   invoke('gamepad_start').catch(() => {})
 
+  const anyHeld = () => held.L || held.R || held.left || held.right
   const tick = () => {
     const now = performance.now()
+    if (d.blocked?.()) {
+      l2.update(false, now)
+      r2.update(false, now)
+      dpadLeft.update(false, now)
+      dpadRight.update(false, now)
+      return false
+    }
     l2.update(held.L, now)
     r2.update(held.R, now)
-    return held.L || held.R
+    dpadLeft.update(held.left, now)
+    dpadRight.update(held.right, now)
+    return anyHeld()
   }
   const repeatLoop = new ActiveFrameLoop(tick)
 
   listen<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
     if (e.payload.name === 'l2') held.L = e.payload.pressed
     else if (e.payload.name === 'r2') held.R = e.payload.pressed
+    else if (e.payload.name === 'left') held.left = e.payload.pressed
+    else if (e.payload.name === 'right') held.right = e.payload.pressed
     else return
     tick()
-    if (held.L || held.R) repeatLoop.start()
+    if (anyHeld()) repeatLoop.start()
     else repeatLoop.stop()
   }).then(async (u) => {
     if (disposed) { u(); return }

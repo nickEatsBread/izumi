@@ -76,6 +76,21 @@ html.gamemode, html.gamemode * {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
+/* Gamescope parks a virtual mouse at the last touch. Hover chrome (play overlays,
+   carousel chevrons, cover zoom) must not follow it while you scroll. Focus-within
+   still shows the controller highlight. */
+html.gamemode .group:hover .sm\:group-hover\:opacity-100,
+html.gamemode .group:hover .group-hover\:opacity-100,
+html.gamemode .group\/carousel:hover .group-hover\/carousel\:opacity-100 {
+  opacity: 0 !important;
+}
+html.gamemode .group:focus-within .sm\:group-hover\:opacity-100,
+html.gamemode .group:focus-within .group-hover\:opacity-100 {
+  opacity: 1 !important;
+}
+html.gamemode .group:hover .group-hover\:scale-105 {
+  transform: none !important;
+}
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 /* YouTube-style double-tap seek: the side arc flashes then fades (base opacity-0 keeps it hidden
    at rest; re-keyed per accumulated tap so it re-pulses). */
