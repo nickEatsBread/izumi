@@ -54,6 +54,19 @@ fn macos_play_embedded_render_must_compile_on_macos() {
 }
 
 #[test]
+fn macos_wkwebview_uses_method_not_kvc_to_clear_background() {
+    let src = include_str!("../src/player/macos_embed.rs");
+    assert!(
+        !src.contains("\"drawsBackground\""),
+        "KVC drawsBackground aborted izumi on macOS 26"
+    );
+    assert!(
+        src.contains("_setDrawsBackground:"),
+        "macOS 26 WKWebView only clears via _setDrawsBackground: (setDrawsBackground: is gone)"
+    );
+}
+
+#[test]
 fn macos_gl_view_must_not_be_layer_backed() {
     // Layer-backed NSOpenGLView + an opaque black CALayer is a known blank-surface
     // failure: mpv still decodes and plays audio, but AppKit composites the layer
@@ -84,6 +97,28 @@ fn macos_fullscreen_must_refit_and_refocus() {
     assert!(
         embed.contains("makeFirstResponder"),
         "refocus must hand key events back to WKWebView, not the NSOpenGLView"
+    );
+    assert!(
+        embed.contains("is_wk_webview"),
+        "wry's class is WryWebView0.xx, not WKWebView; refocus must match that name"
+    );
+}
+
+#[test]
+fn macos_transparency_must_not_punch_opengl_surface() {
+    let src = include_str!("../src/player/macos_embed.rs");
+    assert!(
+        src.contains("NSOpenGL"),
+        "apply_clear_background must skip NSOpenGLView so the CGL layer stays opaque"
+    );
+    let apply = src
+        .split("fn apply_clear_background")
+        .nth(1)
+        .expect("apply_clear_background");
+    let body = apply.split("fn call_bool_setter").next().expect("body");
+    assert!(
+        body.contains("NSOpenGL") && body.contains("return"),
+        "clearing NSOpenGLView's layer hides mpv's framebuffer"
     );
 }
 
