@@ -171,6 +171,8 @@ objc2-app-kit = { version = "0.3.2", features = [
   "NSWindow",
   "NSResponder",
   "NSGraphics",
+  "NSOpenGL",
+  "NSOpenGLView",
 ] }
 
 # Linux: embed mpv via its OpenGL render API into a wl_subsurface placed below the

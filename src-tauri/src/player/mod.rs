@@ -35,7 +35,8 @@ pub mod shaders;
 mod macos_geometry;
 #[cfg(not(target_os = "android"))]
 pub mod wakelock;
-// macOS embedded player: an NSView behind the transparent WKWebView, passed as `--wid`.
+// macOS embedded player: an NSOpenGLView behind the transparent WKWebView, driven
+// by vo=libmpv (cocoa-cb --wid opens a separate mpv window).
 #[cfg(target_os = "macos")]
 pub mod macos_embed;
 // Linux embedded player: a wl_subsurface placed below the (transparent) webview,
@@ -370,15 +371,20 @@ impl PlayerHandle {
         matches!(self.mpv.lock(), Ok(g) if g.is_some())
     }
 
-    /// Linux embedded playback: create (or reuse) an mpv core with `vo=libmpv`
-    /// and render it into a `wl_subsurface` placed below the transparent webview
-    /// (see [`linux_embed`]). The core lives here — so `command`/`get_property`/
-    /// `tracks`/… and the progress event loop all work exactly as on Windows.
+    /// Linux/macOS embedded playback: create (or reuse) an mpv core with `vo=libmpv`
+    /// and render it into a native surface below the transparent webview (a
+    /// `wl_subsurface` on Linux, an `NSOpenGLView` on macOS). The core lives here —
+    /// so `command`/`get_property`/`tracks`/… and the progress event loop all work
+    /// exactly as on Windows.
     ///
-    /// First call: build the core, spawn the event loop, [`attach`](linux_embed::attach)
-    /// the subsurface/render context bound to it, then `loadfile`. Later calls
-    /// (next-episode auto-advance) reuse the core and just `loadfile`.
-    #[cfg(target_os = "linux")]
+    /// First call: build the core, spawn the event loop, attach the render context,
+    /// then `loadfile`. Later calls (next-episode auto-advance) reuse the core and
+    /// just `loadfile`.
+    ///
+    /// Do not hold `self.mpv` across attach: on macOS attach hops to the AppKit
+    /// main thread, and a sync `player_command` on main that locks the same mutex
+    /// would deadlock.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     pub fn play_embedded_render(
         &self,
         url: &str,
@@ -396,20 +402,22 @@ impl PlayerHandle {
 
         let subs = subtitles.unwrap_or_default();
         let audio = audio_tracks.unwrap_or_default();
-        let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
-        if let Some(mpv) = guard.as_ref() {
-            set_langs(mpv, &alang, &slang);
-            load_file(
-                mpv,
-                url,
-                start_seconds,
-                autoplay,
-                &headers,
-                &subs,
-                &audio,
-                &self.pending_external_tracks,
-            )?;
-            return Ok(());
+        {
+            let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+            if let Some(mpv) = guard.as_ref() {
+                set_langs(mpv, &alang, &slang);
+                load_file(
+                    mpv,
+                    url,
+                    start_seconds,
+                    autoplay,
+                    &headers,
+                    &subs,
+                    &audio,
+                    &self.pending_external_tracks,
+                )?;
+                return Ok(());
+            }
         }
 
         let mpv = new_mpv_libmpv().map_err(|e| e.to_string())?;
@@ -418,7 +426,10 @@ impl PlayerHandle {
         set_langs(&mpv, &alang, &slang);
         // Bind the render context to this core BEFORE it moves into the mutex.
         // `attach` borrows `&mpv` only for the (blocking) duration of the call.
+        #[cfg(target_os = "linux")]
         linux_embed::attach(&mpv, window)?;
+        #[cfg(target_os = "macos")]
+        macos_embed::attach(&mpv, window)?;
         load_file(
             &mpv,
             url,
@@ -430,7 +441,7 @@ impl PlayerHandle {
             &self.pending_external_tracks,
         )?;
 
-        *guard = Some(mpv);
+        *self.mpv.lock().map_err(|e| e.to_string())? = Some(mpv);
         Ok(())
     }
 
@@ -448,9 +459,12 @@ impl PlayerHandle {
 
         // Free the render context (which references the core) BEFORE the core is
         // quit/dropped — required for the `'static` lifetime extension in
-        // `linux_embed::attach` to stay sound. No-op if nothing is embedded.
+        // `linux_embed::attach` / `macos_embed::attach` to stay sound. No-op if
+        // nothing is embedded.
         #[cfg(target_os = "linux")]
         linux_embed::detach();
+        #[cfg(target_os = "macos")]
+        macos_embed::detach();
 
         let mut guard = self.mpv.lock().map_err(|e| e.to_string())?;
         if let Some(mpv) = guard.as_ref() {
@@ -1661,14 +1675,14 @@ fn create_mpv_for_embed(wid: Option<i64>, app: &AppHandle) -> Result<Mpv, String
     }
 }
 
-/// Build an mpv core for the Linux embedded player: `vo=libmpv` (required by the
-/// OpenGL render API — [`linux_embed`] renders it into a `wl_subsurface`) with no
-/// window of its own. mpv handles NO input (the HTML overlay owns the controls);
-/// streaming/quality options mirror the embedded Windows path.
-#[cfg(target_os = "linux")]
+/// Build an mpv core for the Linux/macOS embedded player: `vo=libmpv` (required
+/// by the OpenGL render API) with no window of its own. cocoa-cb `--wid` is not
+/// used: on macOS it creates a separate NSWindow. mpv handles NO input (the HTML
+/// overlay owns the controls); streaming/quality options mirror the Windows path.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
-    // mpv_create() returns NULL unless LC_NUMERIC == "C"; GTK sets the process
-    // locale from the environment, so force it back before creating the core.
+    // mpv_create() returns NULL unless LC_NUMERIC == "C". GTK (Linux) overwrites
+    // the process locale from the environment; macOS may too via AppKit.
     unsafe {
         extern "C" {
             fn setlocale(
@@ -1676,8 +1690,12 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
                 locale: *const std::os::raw::c_char,
             ) -> *mut std::os::raw::c_char;
         }
-        // glibc: LC_NUMERIC == 1.
-        setlocale(1, c"C".as_ptr());
+        // glibc LC_NUMERIC == 1; Darwin locale.h LC_NUMERIC == 4.
+        #[cfg(target_os = "linux")]
+        const LC_NUMERIC: std::os::raw::c_int = 1;
+        #[cfg(target_os = "macos")]
+        const LC_NUMERIC: std::os::raw::c_int = 4;
+        setlocale(LC_NUMERIC, c"C".as_ptr());
     }
     let mpv = Mpv::with_initializer(|init| {
         // vo=libmpv is the ONLY MANDATORY option — the render API can't work without
@@ -1687,6 +1705,12 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         // an unknown name — which, if propagated, aborts core creation and kills playback
         // for a mere tuning knob. So we never let a non-essential option fail the core.
         init.set_option("vo", "libmpv")?;
+        // Never let libmpv create its own window. On macOS cocoa-cb `--wid` +
+        // force-window is exactly the "mpv opens as a separate window" bug.
+        let _ = init.set_option("force-window", "no");
+        // Render API runs on the UI thread. mpv's default timing offset sleeps
+        // inside render() until presentation time and would stall the overlay.
+        let _ = init.set_option("video-timing-offset", "0");
         // Show the landed frame while paused — d-pad/L2 skim otherwise leaves a frozen picture.
         let _ = init.set_option("hr-seek", "yes");
         // Decode on the GPU but copy frames to system memory for GL upload (auto-copy) —

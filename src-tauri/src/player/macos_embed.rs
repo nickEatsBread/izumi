@@ -1,34 +1,97 @@
-//! macOS mpv embed: an NSView behind the transparent WKWebView, passed as `--wid`.
+//! macOS mpv embed: an NSOpenGLView behind the transparent WKWebView, driven by
+//! `vo=libmpv` and the OpenGL render API.
 //!
-//! Windows uses a child HWND; Linux uses a wl_subsurface. macOS `player_embed` used to
-//! return Ok without creating a core, so `player_command` immediately failed with
-//! "no player" and the overlay spun at 0:00/0:00.
+//! Windows uses a child HWND + `--wid`. cocoa-cb `--wid` does **not** do that:
+//! mpv creates its own NSWindow and parents it, so playback "launches MPV as a
+//! window" beside Izumi. Harbor and IINA use this render-API shape instead.
 //!
-//! cocoa-cb must be initialized on the AppKit main thread. `player_embed` is an async
-//! Tauri command (worker pool), so [`on_main`] hops `mpv_initialize` there.
+//! AppKit + the GL context live on the main thread. `player_embed` is an async
+//! Tauri command (worker pool), so [`on_main`] / [`run_on_appkit`] hop there.
+//! Do not call [`attach`] while holding `PlayerHandle`'s mpv mutex.
+//!
+//! NSOpenGLView is deprecated in favor of Metal; izumi's bundled libmpv has no
+//! MoltenVK, so the OpenGL render API is the working embed path.
+
+#![allow(deprecated)]
 
 use super::macos_geometry::player_area_points;
+use libmpv2::{
+    render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType},
+    Mpv,
+};
 use objc2::exception::catch as catch_objc;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject};
-use objc2::{msg_send, ClassType, MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::{NSView, NSWindow, NSWindowOrderingMode};
+use objc2::{msg_send, AnyThread, ClassType, MainThreadMarker, MainThreadOnly};
+use objc2_app_kit::{
+    NSOpenGLPixelFormat, NSOpenGLView, NSView, NSWindow, NSWindowOrderingMode,
+};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
+use std::ffi::{c_char, c_void, CString};
 use std::panic::AssertUnwindSafe;
-use std::sync::atomic::{AtomicI32, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+use std::sync::Mutex;
 use tauri::{Manager, WebviewWindow};
 
-static MPV_VIEW: AtomicIsize = AtomicIsize::new(0);
+const NSOPENGLPFA_OPENGL_PROFILE: u32 = 99;
+const NSOPENGLPFA_DOUBLEBUFFER: u32 = 5;
+const NSOPENGLPFA_COLOR_SIZE: u32 = 8;
+const NSOPENGLPFA_DEPTH_SIZE: u32 = 12;
+const NSOPENGLPFA_ACCELERATED: u32 = 73;
+const NSOPENGLPFA_NO_RECOVERY: u32 = 72;
+const NSOPENGL_PROFILE_VERSION_3_2_CORE: u32 = 0x3200;
+const NSOPENGL_CONTEXT_PARAM_SURFACE_OPACITY: i32 = 236;
+
+extern "C" {
+    fn dlsym(handle: *mut c_void, name: *const c_char) -> *mut c_void;
+    fn dispatch_async_f(queue: *mut c_void, ctx: *mut c_void, work: extern "C" fn(*mut c_void));
+    fn dispatch_sync_f(queue: *mut c_void, ctx: *mut c_void, work: extern "C" fn(*mut c_void));
+    static _dispatch_main_q: c_void;
+}
+
+const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
+
+fn main_queue() -> *mut c_void {
+    unsafe { (&_dispatch_main_q as *const c_void) as *mut c_void }
+}
+
 static INSET_LEFT: AtomicI32 = AtomicI32::new(0);
 static INSET_TOP: AtomicI32 = AtomicI32::new(0);
+static REDRAW_PENDING: AtomicBool = AtomicBool::new(false);
 
-pub fn wid() -> Result<i64, String> {
-    let ptr = MPV_VIEW.load(Ordering::Relaxed);
-    if ptr == 0 {
-        Err("macOS mpv view is not ready".into())
-    } else {
-        Ok(ptr as i64)
+struct Embed {
+    view: Retained<NSOpenGLView>,
+    render: RenderContext<'static>,
+}
+
+// SAFETY: every path that touches AppKit or the GL context first hops to the
+// main thread. The mutex serializes access to the process-global slot.
+unsafe impl Send for Embed {}
+
+static EMBED: Mutex<Option<Embed>> = Mutex::new(None);
+
+type AppKitJob = Box<dyn FnOnce() + Send>;
+
+fn run_on_appkit<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    if MainThreadMarker::new().is_some() {
+        return Ok(f());
     }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let job: Box<AppKitJob> = Box::new(Box::new(move || {
+        let _ = tx.send(f());
+    }));
+    extern "C" fn trampoline(ctx: *mut c_void) {
+        let job = unsafe { Box::from_raw(ctx as *mut AppKitJob) };
+        (*job)();
+    }
+    unsafe {
+        dispatch_sync_f(main_queue(), Box::into_raw(job) as *mut c_void, trampoline);
+    }
+    rx.recv().map_err(|e| e.to_string())
 }
 
 /// Run `f` on the AppKit main thread. No-ops the hop when already there.
@@ -51,63 +114,150 @@ where
     rx.recv().map_err(|e| e.to_string())
 }
 
-/// Create the host view if needed. Safe on the main thread; from a worker it
-/// hops to the main thread and waits (must not be called while already hopping).
-pub fn ensure_ready(window: &WebviewWindow) -> Result<i64, String> {
-    if let Ok(wid) = wid() {
-        return Ok(wid);
-    }
-    on_main(window, {
-        let win = window.clone();
-        move || prepare(&win).and_then(|_| wid())
-    })?
-}
-
 pub fn set_inset(left: i32, top: i32) {
     INSET_LEFT.store(left.max(0), Ordering::Relaxed);
     INSET_TOP.store(top.max(0), Ordering::Relaxed);
 }
 
-pub fn prepare(window: &WebviewWindow) -> Result<(), String> {
-    let mtm = MainThreadMarker::new().ok_or("AppKit must run on the main thread")?;
-    make_webview_transparent(window);
-    if MPV_VIEW.load(Ordering::Relaxed) != 0 {
-        resize(window);
+/// Bind `mpv`'s render context to an NSOpenGLView below the webview.
+/// `mpv` is borrowed only for this blocking call; the caller then stores it.
+pub fn attach(mpv: &Mpv, window: &WebviewWindow) -> Result<(), String> {
+    if EMBED.lock().ok().is_some_and(|g| g.is_some()) {
         return Ok(());
     }
-    // AppKit throws NSException (not a Rust Result). Uncaught, that is SIGABRT.
-    // v0.1.40 aborted at launch because prepare ran from DidFinishLaunching.
+    make_webview_transparent(window);
+    let mpv_usize = (mpv as *const Mpv) as usize;
+    let hop = window.clone();
     let win = window.clone();
-    match unsafe { catch_objc(AssertUnwindSafe(|| insert_host_view(&win, mtm))) } {
-        Ok(inner) => inner,
-        Err(ex) => Err(format!(
-            "AppKit exception while creating the video view: {ex:?}"
-        )),
-    }
+    on_main(&hop, move || attach_on_main(mpv_usize, &win))?
 }
 
-fn insert_host_view(window: &WebviewWindow, mtm: MainThreadMarker) -> Result<(), String> {
+fn attach_on_main(mpv_usize: usize, window: &WebviewWindow) -> Result<(), String> {
+    if EMBED.lock().ok().is_some_and(|g| g.is_some()) {
+        return Ok(());
+    }
+    let mtm = MainThreadMarker::new().ok_or("AppKit must run on the main thread")?;
+    // SAFETY: caller’s `&Mpv` outlives this blocking hop.
+    let mpv: &Mpv = unsafe { &*(mpv_usize as *const Mpv) };
+
+    let view = match catch_objc(AssertUnwindSafe(|| create_gl_view(window, mtm))) {
+        Ok(inner) => inner?,
+        Err(ex) => {
+            return Err(format!(
+                "AppKit exception while creating the video view: {ex:?}"
+            ))
+        }
+    };
+
+    let gl_ctx = view
+        .openGLContext()
+        .ok_or_else(|| "NSOpenGLView has no OpenGL context".to_string())?;
+    gl_ctx.makeCurrentContext();
+    let opaque_value: i32 = 1;
+    let _: () = unsafe {
+        msg_send![
+            &*gl_ctx,
+            setValues: &opaque_value,
+            forParameter: NSOPENGL_CONTEXT_PARAM_SURFACE_OPACITY
+        ]
+    };
+
+    let render_ctx = mpv
+        .create_render_context::<*mut c_void>(vec![
+            RenderParam::ApiType(RenderParamApiType::OpenGl),
+            RenderParam::InitParams(OpenGLInitParams {
+                get_proc_address,
+                ctx: std::ptr::null_mut::<c_void>(),
+            }),
+        ])
+        .map_err(|e| format!("mpv_render_context_create: {e}"))?;
+    // SAFETY: PlayerHandle owns the core and `stop()` calls `detach` (which
+    // drops this context) before quitting/dropping the core.
+    let mut render_ctx: RenderContext<'static> = unsafe { std::mem::transmute(render_ctx) };
+    render_ctx.set_update_callback(|| {
+        schedule_redraw();
+    });
+
+    *EMBED
+        .lock()
+        .map_err(|e| e.to_string())? = Some(Embed {
+        view,
+        render: render_ctx,
+    });
+    schedule_redraw();
+    Ok(())
+}
+
+fn create_gl_view(
+    window: &WebviewWindow,
+    mtm: MainThreadMarker,
+) -> Result<Retained<NSOpenGLView>, String> {
     let ns_window = retain_window(window)?;
     let content = ns_window
         .contentView()
         .ok_or("NSWindow has no contentView")?;
     let bounds = content.bounds();
     let frame = view_frame(window, bounds.size.width, bounds.size.height);
-    let view = NSView::initWithFrame(NSView::alloc(mtm), frame);
-    view.setWantsLayer(true);
-    paint_black_layer(&view);
+
+    let attrs: [u32; 13] = [
+        NSOPENGLPFA_OPENGL_PROFILE,
+        NSOPENGL_PROFILE_VERSION_3_2_CORE,
+        NSOPENGLPFA_DOUBLEBUFFER,
+        1,
+        NSOPENGLPFA_ACCELERATED,
+        1,
+        NSOPENGLPFA_NO_RECOVERY,
+        1,
+        NSOPENGLPFA_COLOR_SIZE,
+        24,
+        NSOPENGLPFA_DEPTH_SIZE,
+        16,
+        0,
+    ];
+    let pf_alloc = NSOpenGLPixelFormat::alloc();
+    let pf: Option<Retained<NSOpenGLPixelFormat>> =
+        unsafe { msg_send![pf_alloc, initWithAttributes: attrs.as_ptr()] };
+    let pf = pf.ok_or_else(|| "NSOpenGLPixelFormat init failed".to_string())?;
+
+    let view_alloc = NSOpenGLView::alloc(mtm);
+    let view: Option<Retained<NSOpenGLView>> = unsafe {
+        msg_send![
+            view_alloc,
+            initWithFrame: frame,
+            pixelFormat: &*pf
+        ]
+    };
+    let view = view.ok_or_else(|| "NSOpenGLView init failed".to_string())?;
+    let view_as_view: &NSView = view.as_super();
+    let _: () = unsafe { msg_send![&*view, setWantsBestResolutionOpenGLSurface: true] };
+    view_as_view.setWantsLayer(true);
+    paint_black_layer(view_as_view);
+    let mask: usize = 0;
+    let _: () = unsafe { msg_send![view_as_view, setAutoresizingMask: mask] };
+
     let (parent, relative) = host_parent(window, &content);
     parent.addSubview_positioned_relativeTo(
-        &view,
+        view_as_view,
         NSWindowOrderingMode::Below,
         relative.as_deref(),
     );
-    // Keep our own retain so the view outlives this stack frame even if AppKit
-    // drops it from the hierarchy during a reparent. Process lifetime is fine.
-    let ptr = Retained::as_ptr(&view) as isize;
-    std::mem::forget(view);
-    MPV_VIEW.store(ptr, Ordering::Relaxed);
-    Ok(())
+    Ok(view)
+}
+
+/// Tear down the GL view + render context on the AppKit thread. MUST run
+/// before the mpv core is quit/dropped.
+pub fn detach() {
+    let _ = run_on_appkit(|| {
+        let embed = EMBED.lock().ok().and_then(|mut g| g.take());
+        if let Some(embed) = embed {
+            teardown_embed(embed);
+        }
+    });
+}
+
+fn teardown_embed(embed: Embed) {
+    let view_as_view: &NSView = embed.view.as_super();
+    view_as_view.removeFromSuperview();
 }
 
 pub fn resize(window: &WebviewWindow) {
@@ -116,10 +266,12 @@ pub fn resize(window: &WebviewWindow) {
         let _ = window.run_on_main_thread(move || resize(&w));
         return;
     }
-    let ptr = MPV_VIEW.load(Ordering::Relaxed);
-    if ptr == 0 {
+    let Ok(guard) = EMBED.lock() else {
         return;
-    }
+    };
+    let Some(embed) = guard.as_ref() else {
+        return;
+    };
     let Ok(ns_window) = retain_window(window) else {
         return;
     };
@@ -128,12 +280,13 @@ pub fn resize(window: &WebviewWindow) {
     };
     let bounds = content.bounds();
     let frame = view_frame(window, bounds.size.width, bounds.size.height);
-    let view = ptr as *mut NSView;
-    if !view.is_null() {
-        unsafe {
-            (*view).setFrame(frame);
-        }
+    let view_as_view: &NSView = embed.view.as_super();
+    view_as_view.setFrame(frame);
+    if let Some(gl_ctx) = embed.view.openGLContext() {
+        let _: () = unsafe { msg_send![&*gl_ctx, update] };
     }
+    drop(guard);
+    schedule_redraw();
 }
 
 pub fn make_webview_transparent(window: &WebviewWindow) {
@@ -242,4 +395,64 @@ pub fn resize_from_app(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         resize(&window);
     }
+}
+
+fn get_proc_address(_ctx: &*mut c_void, name: &str) -> *mut c_void {
+    let cstr = match CString::new(name) {
+        Ok(s) => s,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    unsafe { dlsym(RTLD_DEFAULT, cstr.as_ptr()) }
+}
+
+fn schedule_redraw() {
+    if REDRAW_PENDING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    extern "C" fn redraw_cb(_ctx: *mut c_void) {
+        REDRAW_PENDING.store(false, Ordering::Release);
+        let _ = render_now();
+    }
+    unsafe {
+        dispatch_async_f(main_queue(), std::ptr::null_mut(), redraw_cb);
+    }
+}
+
+fn render_now() -> Result<(), String> {
+    if MainThreadMarker::new().is_none() {
+        return Ok(());
+    }
+    let guard = EMBED.lock().map_err(|e| e.to_string())?;
+    let Some(embed) = guard.as_ref() else {
+        return Ok(());
+    };
+    let gl_ctx = embed
+        .view
+        .openGLContext()
+        .ok_or_else(|| "openGLContext nil".to_string())?;
+    gl_ctx.makeCurrentContext();
+    let view_as_view: &NSView = embed.view.as_super();
+    let bounds = view_as_view.bounds();
+    let backing: NSRect = unsafe { msg_send![view_as_view, convertRectToBacking: bounds] };
+    let mut w = backing.size.width as i32;
+    let mut h = backing.size.height as i32;
+    if w <= 0 || h <= 0 {
+        let scale = view_as_view
+            .window()
+            .map(|win| win.backingScaleFactor())
+            .filter(|s| *s > 0.0)
+            .unwrap_or(2.0);
+        w = (bounds.size.width * scale) as i32;
+        h = (bounds.size.height * scale) as i32;
+    }
+    if w <= 0 || h <= 0 {
+        return Ok(());
+    }
+    embed
+        .render
+        .render::<*mut c_void>(0, w, h, true)
+        .map_err(|e| format!("render: {e:?}"))?;
+    gl_ctx.flushBuffer();
+    embed.render.report_swap();
+    Ok(())
 }
