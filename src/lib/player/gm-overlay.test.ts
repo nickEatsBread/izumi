@@ -9,6 +9,7 @@ import {
   gameModeP2pLine,
   gameModeSnapshotCrop,
   presenceAllowed,
+  scheduleGameModeOverlay,
 } from './gm-overlay'
 
 describe('gameModeBitmapOverlayActive', () => {
@@ -35,6 +36,11 @@ describe('gameModeBitmapOverlayActive', () => {
 
   it('yields idle controls to the native loading/scrub overlay', () => {
     expect(gameModeBitmapOverlayActive({ ...base, controlsVisible: true, dynamicOverlay: true })).toBe(false)
+    expect(gameModeBitmapOverlayActive({ ...base, dynamicOverlay: true })).toBe(false)
+  })
+
+  it('snapshots the Skip chip as HTML instead of ASS', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(true)
   })
 })
 
@@ -75,6 +81,8 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('p2pVisible')
     expect(overlay).toContain('noticeVisible')
     expect(overlay).not.toContain('controlsVisible || showSkip')
+    expect(overlay).toContain('skipVisible: showSkip')
+    expect(overlay).toContain('scheduleGameModeOverlay')
     expect(overlay).toContain('gameModeSnapshotCrop')
     expect(overlay).toContain('reportDirectTorrentFirstFrame')
     expect(overlay).toContain('presenceAllowed(gmMode)')
@@ -82,6 +90,8 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).not.toContain('$playerNotice && !gmMode')
     expect(overlay).toContain('player_gm_dock')
     expect(overlay).toContain('playerOverlayRev')
+    expect(overlay).toContain("void paused")
+    expect(overlay).toContain("$scrub.source !== 'pad'")
   })
 
   it('re-focuses the overlay after fullscreen so player hotkeys keep working', () => {
@@ -123,5 +133,27 @@ describe('Game-mode Leanback motion', () => {
     const menu = readFileSync(fileURLToPath(new URL('../components/player/TrackMenu.svelte', import.meta.url)), 'utf8')
     expect(menu).toContain('gm-open-tracks')
     expect(menu).toContain('bumpPlayerOverlay')
+    expect(menu).toContain('pointerAllowed')
+  })
+})
+
+describe('scheduleGameModeOverlay', () => {
+  it('does not run after cancel', async () => {
+    let ran = false
+    const cancel = scheduleGameModeOverlay(() => { ran = true })
+    cancel()
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    expect(ran).toBe(false)
+  })
+})
+
+describe('Game-mode skip chip + settings sheet', () => {
+  it('uses a white pill Skip button and a dimmed right settings sheet', () => {
+    const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
+    expect(overlay).toContain('rounded-full bg-white')
+    expect(overlay).toContain("Skip {currentSeg.label}")
+    expect(overlay).not.toContain('class:opacity-0={gmMode && !overlayActive}')
+    const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
+    expect(controls).toContain('fixed inset-0 z-40 bg-black/50')
   })
 })

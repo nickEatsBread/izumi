@@ -15,6 +15,11 @@ pub const OSD_FPS: u64 = 60;
 pub const OVERLAY_IDLE_FPS: u64 = 0;
 /// Menu highlight / d-pad navigation still needs a high snapshot cadence.
 pub const OVERLAY_SCRUB_FPS: u64 = 60;
+/// CPU-only fade of an already-snapshotted overlay (mpv rereads the BGRA buffer each
+/// frame). 180ms matches the Leanback chrome pop without a 60fps WebKit raster.
+pub const OVERLAY_FADE_MS: u64 = 180;
+/// Premultiply scale uses 0..=1000 so a fade tick can be integer math.
+pub const OVERLAY_FADE_FULL: u32 = 1000;
 /// Bottom fraction of the viewport that holds the control strip (idle snapshots only).
 /// 0.28 sliced the Game-mode title/episode line (64px play + seek + two text rows).
 pub const CONTROL_STRIP_FRACTION: f64 = 0.36;
@@ -35,6 +40,33 @@ pub fn overlay_should_snapshot(fast: bool, force: bool, busy: bool) -> bool {
         return false;
     }
     fast || force
+}
+
+/// Advance a 0..=1000 overlay alpha. `fade_in` climbs toward full; otherwise it falls to 0.
+pub fn overlay_fade_step(current: u32, fade_in: bool, dt_ms: u64, duration_ms: u64) -> u32 {
+    let duration_ms = duration_ms.max(1);
+    let delta = ((dt_ms.saturating_mul(OVERLAY_FADE_FULL as u64)) / duration_ms) as u32;
+    if fade_in {
+        current.saturating_add(delta).min(OVERLAY_FADE_FULL)
+    } else {
+        current.saturating_sub(delta)
+    }
+}
+
+/// Scale premultiplied BGRA by `alpha_millis` (0..=1000) into `dst`.
+pub fn scale_premult_bgra(src: &[u8], dst: &mut [u8], alpha_millis: u32) {
+    let n = src.len().min(dst.len());
+    if alpha_millis == 0 {
+        dst[..n].fill(0);
+        return;
+    }
+    if alpha_millis >= OVERLAY_FADE_FULL {
+        dst[..n].copy_from_slice(&src[..n]);
+        return;
+    }
+    for i in 0..n {
+        dst[i] = ((src[i] as u32 * alpha_millis) / OVERLAY_FADE_FULL) as u8;
+    }
 }
 
 /// Idle overlay loops must not raster. Fast (menu) loops run at [`OVERLAY_SCRUB_FPS`].

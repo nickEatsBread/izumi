@@ -170,8 +170,8 @@ export const chapters = writable<Chapter[]>([])
 // handlers early-return so d-pad/A/B drive the menu instead of seeking/pausing/focus-nav.
 export const trackMenuOpen = writable(false)
 
-// True while any player popover (playback options / track list in Controls) is open. Drives the
-// Game-mode snapshot overlay to its FAST (60fps) cadence so navigating those menus isn't laggy.
+// True while any player popover (playback options / track list in Controls) is open. Drives a
+// full-viewport Game-mode snapshot (and keeps Controls mounted so the sheet can paint).
 export const playerMenuOpen = writable(false)
 
 /** Bump so Game-mode overlay-add re-snapshots after a d-pad move (no 60fps crawl). */

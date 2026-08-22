@@ -16,6 +16,30 @@ fn game_mode_keeps_hardware_webkit() {
 }
 
 #[test]
+fn overlay_cpu_fade_scales_premultiplied_bgra() {
+    assert_eq!(OVERLAY_FADE_MS, 180);
+    assert_eq!(overlay_fade_step(0, true, 180, 180), OVERLAY_FADE_FULL);
+    assert_eq!(overlay_fade_step(OVERLAY_FADE_FULL, false, 180, 180), 0);
+    assert_eq!(overlay_fade_step(500, true, 90, 180), 1000);
+    assert!(overlay_fade_step(0, true, 16, 180) > 0);
+    assert!(overlay_fade_step(0, true, 16, 180) < OVERLAY_FADE_FULL);
+
+    let src = vec![10u8, 20, 30, 40, 200, 200, 200, 200];
+    let mut dst = vec![255u8; 8];
+    scale_premult_bgra(&src, &mut dst, 0);
+    assert_eq!(dst, vec![0, 0, 0, 0, 0, 0, 0, 0]);
+    scale_premult_bgra(&src, &mut dst, OVERLAY_FADE_FULL);
+    assert_eq!(dst, src);
+    scale_premult_bgra(&src, &mut dst, 500);
+    assert_eq!(dst, vec![5, 10, 15, 20, 100, 100, 100, 100]);
+
+    let overlay = include_str!("../src/player/linux_overlay.rs");
+    assert!(overlay.contains("kick_fade"));
+    assert!(overlay.contains("scale_premult_bgra"));
+    assert!(overlay.contains("BASE"));
+}
+
+#[test]
 fn idle_overlay_does_not_raster_unless_forced() {
     assert_eq!(OVERLAY_IDLE_FPS, 0);
     assert!(!overlay_should_snapshot(false, false, false));

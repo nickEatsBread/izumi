@@ -15,7 +15,7 @@
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -50,7 +50,7 @@
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSnapshotCrop, presenceAllowed } from '$lib/player/gm-overlay'
+  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay } from '$lib/player/gm-overlay'
   import { holdDeckBrowseZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -160,7 +160,9 @@
   // Keep the controls in the DOM while scrubbing (even if the 3s auto-hide fired during a long
   // trigger hold) so the seek bar element stays measurable — otherwise the native scrub bar
   // loses its geometry and jumps to the fallback position lower on screen.
-  const controlsVisible = $derived(visible || paused || loading || $scrubActive)
+  const controlsVisible = $derived(
+    visible || paused || loading || $scrubActive || $playerMenuOpen || $trackMenuOpen,
+  )
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
   // A segment auto-skips only when the setting is on AND it's not the FIRST debut
   // of that OP/ED (per AnimeThemes). Recap always skips. When it WON'T auto-skip,
@@ -317,6 +319,7 @@
     const next = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t)
     pos = next
     cmd('seek', [next.toFixed(3), 'absolute+exact'])
+    if (gmMode) bumpPlayerOverlay()
   }
 
   // The shared scrub store commits through the same absolute seek as touch/skip.
@@ -331,7 +334,10 @@
       getDur: () => dur,
       seek: (t) => seekTo(t),
       beginScrub: (t) => beginScrub(t, 'pad'),
-      moveScrub: (t) => moveScrub(t),
+      moveScrub: (t) => {
+        moveScrub(t)
+        bumpPlayerOverlay()
+      },
       endScrub: () => endScrub(),
       onActivity: () => poke(),
       blocked: () => get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
@@ -533,7 +539,8 @@
   const directP2pOverlay = $derived(isDirectP2PStream($nowPlayingStream))
   const gmDynamicActive = $derived(gmMode && $playing && shouldUseGameModeDynamicOverlay({
     loading,
-    scrubbing: $scrubActive,
+    // Pad skims keep the HTML seek bar; ASS is for finger drags and the spinner.
+    scrubbing: $scrubActive && $scrub.source !== 'pad',
     commentsOpen: $commentsOpen,
     directP2P: directP2pOverlay,
   }))
@@ -553,6 +560,7 @@
     commentsOpen: $commentsOpen,
     p2pVisible,
     noticeVisible,
+    skipVisible: showSkip,
   }))
   const overlayFull = $derived(overlayFast || p2pVisible || noticeVisible)
   $effect(() => {
@@ -576,8 +584,15 @@
       return
     }
     void $playerOverlayRev
+    void paused
     const crop = gameModeSnapshotCrop(window.innerWidth || 0, window.innerHeight || 0, overlayFull)
-    invoke('player_gm_overlay', { visible: overlayActive, fast: false, crop }).catch(() => {})
+    if (!overlayActive) {
+      invoke('player_gm_overlay', { visible: false, fast: false, crop: null }).catch(() => {})
+      return
+    }
+    return scheduleGameModeOverlay(() => {
+      invoke('player_gm_overlay', { visible: true, fast: false, crop }).catch(() => {})
+    })
   })
 
   let gmDynRaf = 0
@@ -1143,7 +1158,7 @@
   <!-- Transient toast (next-episode loading / errors). Snapshotted onto the video in Game mode. -->
   {#if $playerNotice}
     <div
-      transition:fade={{ duration: 150 }}
+      transition:fade={{ duration: gmMode ? 0 : 150 }}
       class="izumi-hud pointer-events-none absolute left-1/2 z-30 -translate-x-1/2 border border-white/15 bg-black/80 font-medium text-white shadow-lg
         {gmMode ? 'top-8 rounded-2xl px-6 py-3 text-lg' : 'top-6 rounded-lg px-4 py-2 text-sm'}"
     >{$playerNotice}</div>
@@ -1158,10 +1173,11 @@
   {#if showSkip && currentSeg}
     <button
       data-focusable
-      transition:fade={{ duration: 150 }}
-      class="izumi-hud absolute z-10 border border-white/20 bg-black/70 font-bold text-white transition hover:bg-black/90
-        {gmMode ? 'bottom-32 right-10 rounded-2xl px-9 py-5 text-2xl' : 'bottom-28 right-8 rounded-lg px-5 py-2.5 text-sm'}"
-      class:opacity-0={gmMode && !overlayActive}
+      transition:fade={{ duration: gmMode ? 0 : 150 }}
+      class="izumi-hud absolute z-10 font-bold
+        {gmMode
+          ? 'bottom-36 right-10 rounded-full bg-white px-8 py-3.5 text-2xl tracking-wide text-black shadow-[0_10px_32px_rgba(0,0,0,.45)]'
+          : 'bottom-28 right-8 rounded-lg border border-white/20 bg-black/70 px-5 py-2.5 text-sm text-white transition hover:bg-black/90'}"
       onclick={(e) => { e.stopPropagation(); seekTo(currentSeg.end + 0.5) }}
     >
       Skip {currentSeg.label}
