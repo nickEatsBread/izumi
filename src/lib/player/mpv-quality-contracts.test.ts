@@ -31,6 +31,7 @@ describe('mpv quality architecture contracts', () => {
     expect(embed).not.toContain('view_as_view.setWantsLayer(true)')
     expect(embed).not.toContain('paint_black_layer')
     expect(embed).toContain('makeFirstResponder')
+    expect(embed).toContain('sync_after_chrome_change')
     expect(embed).toContain('_setDrawsBackground:')
     expect(embed).not.toContain('"drawsBackground"')
   })

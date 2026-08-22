@@ -86,12 +86,12 @@ fn macos_gl_view_must_not_be_layer_backed() {
 fn macos_fullscreen_must_refit_and_refocus() {
     let lib = include_str!("../src/lib.rs");
     assert!(
-        lib.contains("macos_embed::resize"),
-        "native fullscreen changes the content view; the GL view must be refit"
+        lib.contains("macos_embed::set_layout_fullscreen"),
+        "sidebar inset must drop before the fullscreen animation or the GL view letterboxes"
     );
     assert!(
-        lib.contains("macos_embed::refocus_webview"),
-        "fullscreen steals first responder; restore it so player hotkeys keep working"
+        lib.contains("macos_embed::sync_after_chrome_change"),
+        "native fullscreen finishes after the command returns; refit and refocus then"
     );
     let embed = include_str!("../src/player/macos_embed.rs");
     assert!(
@@ -99,8 +99,16 @@ fn macos_fullscreen_must_refit_and_refocus() {
         "refocus must hand key events back to WKWebView, not the NSOpenGLView"
     );
     assert!(
+        embed.contains("makeKeyWindow"),
+        "fullscreen can leave a non-key window; keys would never reach WKWebView"
+    );
+    assert!(
         embed.contains("is_wk_webview"),
         "wry's class is WryWebView0.xx, not WKWebView; refocus must match that name"
+    );
+    assert!(
+        embed.contains("dispatch_after_f"),
+        "AppKit steals first responder at animation end; retry refocus after F"
     );
 }
 

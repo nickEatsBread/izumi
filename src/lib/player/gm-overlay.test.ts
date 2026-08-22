@@ -99,7 +99,8 @@ describe('PlayerOverlay Game-mode wiring', () => {
     // key listener is on `window`, but if the webview is not first responder the events
     // never reach JS until the user clicks the overlay.
     expect(overlay).toContain('void $fullscreen')
-    expect(overlay).toContain('overlayRoot.focus({ preventScroll: true })')
+    expect(overlay).toContain('overlayRoot?.focus({ preventScroll: true })')
+    expect(overlay).toContain('[50, 200, 450]')
   })
 })
 

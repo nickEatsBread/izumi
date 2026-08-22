@@ -48,10 +48,20 @@ extern "C" {
     fn dlsym(handle: *mut c_void, name: *const c_char) -> *mut c_void;
     fn dispatch_async_f(queue: *mut c_void, ctx: *mut c_void, work: extern "C" fn(*mut c_void));
     fn dispatch_sync_f(queue: *mut c_void, ctx: *mut c_void, work: extern "C" fn(*mut c_void));
+    fn dispatch_after_f(
+        when: u64,
+        queue: *mut c_void,
+        ctx: *mut c_void,
+        work: extern "C" fn(*mut c_void),
+    );
+    fn dispatch_time(when: u64, delta: i64) -> u64;
     static _dispatch_main_q: c_void;
 }
 
 const RTLD_DEFAULT: *mut c_void = -2isize as *mut c_void;
+const DISPATCH_TIME_NOW: u64 = 0;
+const NS_VIEW_WIDTH_SIZABLE: usize = 2;
+const NS_VIEW_HEIGHT_SIZABLE: usize = 16;
 
 fn main_queue() -> *mut c_void {
     unsafe { (&_dispatch_main_q as *const c_void) as *mut c_void }
@@ -60,6 +70,9 @@ fn main_queue() -> *mut c_void {
 static INSET_LEFT: AtomicI32 = AtomicI32::new(0);
 static INSET_TOP: AtomicI32 = AtomicI32::new(0);
 static REDRAW_PENDING: AtomicBool = AtomicBool::new(false);
+/// Target native-fullscreen layout. `set_fullscreen` animates, so `is_fullscreen()`
+/// and the frontend inset `$effect` lag the GL view by hundreds of ms.
+static FULLSCREEN_LAYOUT: AtomicBool = AtomicBool::new(false);
 
 struct Embed {
     view: Retained<NSOpenGLView>,
@@ -119,6 +132,46 @@ where
 pub fn set_inset(left: i32, top: i32) {
     INSET_LEFT.store(left.max(0), Ordering::Relaxed);
     INSET_TOP.store(top.max(0), Ordering::Relaxed);
+}
+
+/// Call before `NSWindow.set_fullscreen` so in-flight Resized events drop the
+/// sidebar inset (enter) or restore it (exit) instead of painting a letterbox.
+pub fn set_layout_fullscreen(on: bool) {
+    FULLSCREEN_LAYOUT.store(on, Ordering::Relaxed);
+}
+
+/// Refit the GL view and hand key events back to WKWebView. Native fullscreen
+/// finishes *after* the Tauri command returns and steals first responder at
+/// the end of the animation, so we retry across that window.
+pub fn sync_after_chrome_change(window: &WebviewWindow) {
+    let _ = window.set_focus();
+    resize(window);
+    refocus_webview(window);
+    for delay_ms in [16_u64, 80, 200, 450, 700] {
+        let w = window.clone();
+        schedule_after(delay_ms, move || {
+            let _ = w.set_focus();
+            resize(&w);
+            refocus_webview(&w);
+        });
+    }
+}
+
+fn schedule_after(delay_ms: u64, f: impl FnOnce() + Send + 'static) {
+    let job: Box<AppKitJob> = Box::new(Box::new(f));
+    extern "C" fn trampoline(ctx: *mut c_void) {
+        let job = unsafe { Box::from_raw(ctx as *mut AppKitJob) };
+        (*job)();
+    }
+    let when = unsafe { dispatch_time(DISPATCH_TIME_NOW, (delay_ms as i64) * 1_000_000) };
+    unsafe {
+        dispatch_after_f(
+            when,
+            main_queue(),
+            Box::into_raw(job) as *mut c_void,
+            trampoline,
+        );
+    }
 }
 
 /// Bind `mpv`'s render context to an NSOpenGLView below the webview.
@@ -275,7 +328,9 @@ fn create_gl_view(
     // appears — audio plays, the surface stays black. macOS 26 still
     // force-layers NSOpenGLView (`_NSOpenGLViewBackingLayer`); that layer
     // *is* the CGL surface and must stay opaque.
-    let mask: usize = 0;
+    // Width/height-sizable so the surface tracks native fullscreen animation
+    // even when a Resized event is late or missing.
+    let mask: usize = NS_VIEW_WIDTH_SIZABLE | NS_VIEW_HEIGHT_SIZABLE;
     let _: () = unsafe { msg_send![view_as_view, setAutoresizingMask: mask] };
     unsafe {
         let layer: *mut AnyObject = msg_send![view_as_view, layer];
@@ -305,6 +360,7 @@ fn create_gl_view(
 /// Tear down the GL view + render context on the AppKit thread. MUST run
 /// before the mpv core is quit/dropped.
 pub fn detach() {
+    FULLSCREEN_LAYOUT.store(false, Ordering::Relaxed);
     let _ = run_on_appkit(|| {
         let embed = EMBED.lock().ok().and_then(|mut g| g.take());
         if let Some(embed) = embed {
@@ -336,10 +392,18 @@ pub fn resize(window: &WebviewWindow) {
     let Some(content) = ns_window.contentView() else {
         return;
     };
-    let bounds = content.bounds();
-    let frame = view_frame(window, bounds.size.width, bounds.size.height);
     let view_as_view: &NSView = embed.view.as_super();
+    // Prefer the window that actually hosts the GL view — native fullscreen can
+    // present a different NSWindow than Tauri's handle during the transition.
+    let bounds = view_as_view
+        .window()
+        .and_then(|w| w.contentView())
+        .map(|cv| cv.bounds())
+        .unwrap_or(content.bounds());
+    let frame = view_frame(window, bounds.size.width, bounds.size.height);
     view_as_view.setFrame(frame);
+    let mask: usize = NS_VIEW_WIDTH_SIZABLE | NS_VIEW_HEIGHT_SIZABLE;
+    let _: () = unsafe { msg_send![view_as_view, setAutoresizingMask: mask] };
     if let Some(gl_ctx) = embed.view.openGLContext() {
         let _: () = unsafe { msg_send![&*gl_ctx, update] };
     }
@@ -405,6 +469,7 @@ pub fn refocus_webview(window: &WebviewWindow) {
     });
     let _ = unsafe {
         catch_objc(AssertUnwindSafe(|| {
+            let _: () = msg_send![&*ns_window, makeKeyWindow];
             let _: bool = msg_send![&*ns_window, makeFirstResponder: &*target];
         }))
     };
@@ -571,13 +636,15 @@ fn retain_window(window: &WebviewWindow) -> Result<Retained<NSWindow>, String> {
 
 fn view_frame(window: &WebviewWindow, content_w: f64, content_h: f64) -> NSRect {
     let scale = window.scale_factor().unwrap_or(1.0);
-    let (x, y, w, h) = player_area_points(
-        content_w,
-        content_h,
-        INSET_LEFT.load(Ordering::Relaxed),
-        INSET_TOP.load(Ordering::Relaxed),
-        scale,
-    );
+    let (left, top) = if FULLSCREEN_LAYOUT.load(Ordering::Relaxed) {
+        (0, 0)
+    } else {
+        (
+            INSET_LEFT.load(Ordering::Relaxed),
+            INSET_TOP.load(Ordering::Relaxed),
+        )
+    };
+    let (x, y, w, h) = player_area_points(content_w, content_h, left, top, scale);
     NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
 }
 

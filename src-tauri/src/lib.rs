@@ -3499,6 +3499,8 @@ fn player_toggle_fullscreen(
 ) -> Result<bool, String> {
     let w = app.get_webview_window("main").ok_or("no main window")?;
     let target = !w.is_fullscreen().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    player::macos_embed::set_layout_fullscreen(target);
     if target {
         let maxed = w.is_maximized().unwrap_or(false);
         *wasmax.0.lock().map_err(|e| e.to_string())? = maxed;
@@ -3516,10 +3518,7 @@ fn player_toggle_fullscreen(
     #[cfg(windows)]
     resize_mpv_child(w.hwnd().map_err(|e| e.to_string())?.0 as isize);
     #[cfg(target_os = "macos")]
-    {
-        player::macos_embed::resize(&w);
-        player::macos_embed::refocus_webview(&w);
-    }
+    player::macos_embed::sync_after_chrome_change(&w);
     Ok(target)
 }
 
@@ -3534,6 +3533,8 @@ fn player_exit_fullscreen(
 ) -> Result<(), String> {
     let w = app.get_webview_window("main").ok_or("no main window")?;
     if w.is_fullscreen().map_err(|e| e.to_string())? {
+        #[cfg(target_os = "macos")]
+        player::macos_embed::set_layout_fullscreen(false);
         w.set_fullscreen(false).map_err(|e| e.to_string())?;
         if *wasmax.0.lock().map_err(|e| e.to_string())? {
             let _ = w.maximize();
@@ -3541,10 +3542,7 @@ fn player_exit_fullscreen(
         #[cfg(windows)]
         resize_mpv_child(w.hwnd().map_err(|e| e.to_string())?.0 as isize);
         #[cfg(target_os = "macos")]
-        {
-            player::macos_embed::resize(&w);
-            player::macos_embed::refocus_webview(&w);
-        }
+        player::macos_embed::sync_after_chrome_change(&w);
     }
     Ok(())
 }

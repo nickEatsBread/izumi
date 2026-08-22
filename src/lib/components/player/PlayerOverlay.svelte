@@ -223,12 +223,15 @@
 
   $effect(() => {
     if (!$playing || !overlayRoot) return
-    // Native macOS fullscreen (and exiting it) steals first responder from WKWebView.
-    // Re-run on that toggle even if a child already looks focused in the DOM.
+    // Native macOS fullscreen (and exiting it) steals first responder from WKWebView
+    // at the end of the AppKit animation — a single focus() on toggle is too early.
     void $fullscreen
     const active = document.activeElement
     if (active instanceof HTMLElement && active.closest('[data-comments-panel]')) return
-    overlayRoot.focus({ preventScroll: true })
+    const focus = () => overlayRoot?.focus({ preventScroll: true })
+    focus()
+    const ids = [50, 200, 450].map((ms) => setTimeout(focus, ms))
+    return () => ids.forEach((id) => clearTimeout(id))
   })
 
   function setLoopPoint(point: 'a' | 'b') {
