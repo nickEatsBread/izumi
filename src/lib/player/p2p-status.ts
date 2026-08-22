@@ -18,8 +18,8 @@ export function shouldShowP2PStatus(
 }
 
 /** Gamescope cannot blend the live webview over its mpv child, so ordinary loading and scrubbing
- * use a native ASS overlay. Interactive comments must keep the webview surface, and direct-P2P
- * startup must keep it long enough to show the richer transfer/peer panel. */
+ * use a native ASS overlay. Interactive comments must keep the webview surface. Direct-P2P
+ * startup chrome is also native (`gameModeP2pLine`) — the HTML transfer panel is desktop-only. */
 export function shouldUseGameModeDynamicOverlay(input: {
   loading: boolean
   scrubbing: boolean
@@ -27,5 +27,6 @@ export function shouldUseGameModeDynamicOverlay(input: {
   directP2P: boolean
 }): boolean {
   if (input.commentsOpen) return false
-  return input.scrubbing || (input.loading && !input.directP2P)
+  void input.directP2P
+  return input.scrubbing || input.loading
 }
