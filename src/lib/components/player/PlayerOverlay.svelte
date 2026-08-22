@@ -535,7 +535,17 @@
   }))
   // …and while the track menu is open, so its (webview-rendered) columns get snapshotted onto
   // the video — otherwise the menu would be invisible behind the opaque mpv surface.
-  const overlayFast = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen)
+  let chromeReveal = $state(false)
+  $effect(() => {
+    if (!gmMode || !controlsVisible || gmDynamicActive) {
+      chromeReveal = false
+      return
+    }
+    chromeReveal = true
+    const t = setTimeout(() => { chromeReveal = false }, 240)
+    return () => clearTimeout(t)
+  })
+  const overlayFast = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen || chromeReveal)
   const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   const noticeVisible = $derived(!!$playerNotice)

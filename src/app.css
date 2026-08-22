@@ -239,10 +239,43 @@ html.gamemode .group:hover .group-hover\:scale-105 {
    OWN border-radius (no override here) so a round button (play/pause) keeps a round ring
    instead of a squared-off rounded-rect. */
 .gamemode [data-focusable]:focus { outline: none; box-shadow: 0 0 0 3px #fff; }
+/* Player chrome (YouTube Leanback / VacuumTube): snappy 120ms pop between focused
+   controls. Secondary buttons scale; the play circle grows a little and keeps a
+   round white ring so it reads as the primary action. */
+.gamemode .izumi-player-root button[data-focusable] {
+  transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+.gamemode .izumi-player-root button[data-focusable]:focus {
+  transform: scale(1.08);
+}
+.gamemode .izumi-player-root .gm-play.focus-ring-inset:focus {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 3px #fff, 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+.gamemode .izumi-player-root .gm-sheet [data-focusable]:focus {
+  transform: none;
+  background: #fff;
+  color: #111;
+  box-shadow: none;
+}
+@keyframes gm-chrome-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes gm-sheet-in {
+  from { opacity: 0; transform: translateX(24px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes gm-menu-col-in {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: none; }
+}
+.gamemode .gm-chrome-in { animation: gm-chrome-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.gamemode .gm-sheet-in { animation: gm-sheet-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.gamemode .gm-menu-col-in { animation: gm-menu-col-in 150ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 /* Buttons whose fill already matches the ring colour (the solid-white play/pause circle) would
    look like they ENLARGE when the outer white ring merges with the fill. Ring them on the INSIDE
-   instead — a dark inset ring shows focus without changing the button's apparent size (CrunchyDeck
-   keeps the button size fixed). Higher specificity (extra class) beats the default rule above. */
+   instead unless `.gm-play` (YouTube-style grow) applies. */
 .gamemode [data-focusable].focus-ring-inset:focus { box-shadow: inset 0 0 0 3px rgba(0, 0, 0, 0.4); }
 /* Cards mark their cover art with .focus-cover: ring + pop the COVER only, not the whole
    card (title/metadata stay put) — the mobile/TV tile-highlight the VacuumTube/CrunchyDeck
