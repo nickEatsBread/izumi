@@ -25,4 +25,11 @@ describe('mpv quality architecture contracts', () => {
     expect(player).toContain('gpu-next wants macvk/MoltenVK')
     expect(embed).toContain('OpenGL render API is the working embed path')
   })
+
+  it('does not layer-back the macOS OpenGL view (that hides the framebuffer)', () => {
+    const embed = read('../../../src-tauri/src/player/macos_embed.rs')
+    expect(embed).not.toContain('view_as_view.setWantsLayer(true)')
+    expect(embed).not.toContain('paint_black_layer')
+    expect(embed).toContain('makeFirstResponder')
+  })
 })

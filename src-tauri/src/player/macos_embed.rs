@@ -185,6 +185,7 @@ fn attach_on_main(mpv_usize: usize, window: &WebviewWindow) -> Result<(), String
         view,
         render: render_ctx,
     });
+    refocus_webview(window);
     schedule_redraw();
     Ok(())
 }
@@ -268,8 +269,9 @@ fn create_gl_view(
     if edr {
         let _: () = unsafe { msg_send![&*view, setWantsExtendedDynamicRangeOpenGLSurface: true] };
     }
-    view_as_view.setWantsLayer(true);
-    paint_black_layer(view_as_view);
+    // Do NOT layer-back NSOpenGLView. A CALayer (especially an opaque black one) is
+    // what AppKit composites, so mpv's framebuffer never appears — audio plays,
+    // the surface stays black. Keep a plain OpenGL surface below the webview.
     let mask: usize = 0;
     let _: () = unsafe { msg_send![view_as_view, setAutoresizingMask: mask] };
 
@@ -334,33 +336,139 @@ pub fn make_webview_transparent(window: &WebviewWindow) {
         return;
     }
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
+    if let Ok(ns_window) = retain_window(window) {
+        let _ = unsafe {
+            catch_objc(AssertUnwindSafe(|| {
+                if let Some(nscolor) = AnyClass::get(c"NSColor") {
+                    let black: *mut AnyObject = msg_send![nscolor, blackColor];
+                    if !black.is_null() {
+                        let _: () = msg_send![&*ns_window, setBackgroundColor: &*black];
+                    }
+                }
+            }))
+        };
+    }
     let Ok(ns_view) = window.ns_view() else {
         return;
     };
     if ns_view.is_null() {
         return;
     }
-    let view = ns_view as *mut AnyObject;
-    // Public APIs only. Private WKWebView KVC for the draws-background flag
-    // raised NSUnknownKeyException on macOS 26 and aborted the process.
+    // Public APIs only. Private WKWebView KVC for drawsBackground raised
+    // NSUnknownKeyException on macOS 26 and aborted the process. Walk the
+    // webview subtree so a wrapper NSView does not hide the real WKWebView.
     let _ = unsafe {
         catch_objc(AssertUnwindSafe(|| {
-            let layer: *mut AnyObject = msg_send![&*view, layer];
-            if !layer.is_null() {
-                let _: () = msg_send![&*layer, setOpaque: false];
-            }
-            let sel = objc2::sel!(setUnderPageBackgroundColor:);
-            let responds: bool = msg_send![&*view, respondsToSelector: sel];
-            if responds {
-                if let Some(nscolor) = AnyClass::get(c"NSColor") {
-                    let clear: *mut AnyObject = msg_send![nscolor, clearColor];
-                    if !clear.is_null() {
-                        let _: () = msg_send![&*view, setUnderPageBackgroundColor: &*clear];
-                    }
-                }
-            }
+            visit_nsview(ns_view as *mut AnyObject, 6, &mut apply_clear_background);
         }))
     };
+}
+
+/// Restore WKWebView as first responder so player hotkeys reach JS.
+/// Native fullscreen (and the NSOpenGLView) otherwise steal the key window.
+pub fn refocus_webview(window: &WebviewWindow) {
+    if MainThreadMarker::new().is_none() {
+        let w = window.clone();
+        let _ = window.run_on_main_thread(move || refocus_webview(&w));
+        return;
+    }
+    let Ok(ns_window) = retain_window(window) else {
+        return;
+    };
+    let Ok(raw) = window.ns_view() else {
+        return;
+    };
+    if raw.is_null() {
+        return;
+    }
+    let mut target = raw as *mut AnyObject;
+    visit_nsview(raw as *mut AnyObject, 6, &mut |view| {
+        if class_name_contains(view, "WKWebView") {
+            target = view;
+        }
+    });
+    let _ = unsafe {
+        catch_objc(AssertUnwindSafe(|| {
+            let _: bool = msg_send![&*ns_window, makeFirstResponder: &*target];
+        }))
+    };
+}
+
+fn apply_clear_background(view: *mut AnyObject) {
+    if view.is_null() {
+        return;
+    }
+    unsafe {
+        let layer: *mut AnyObject = msg_send![&*view, layer];
+        if !layer.is_null() {
+            let _: () = msg_send![&*layer, setOpaque: false];
+            if let Some(nscolor) = AnyClass::get(c"NSColor") {
+                let clear: *mut AnyObject = msg_send![nscolor, clearColor];
+                if !clear.is_null() {
+                    let cg: *const c_void = msg_send![&*clear, CGColor];
+                    let _: () = msg_send![&*layer, setBackgroundColor: cg];
+                }
+            }
+        }
+        let sel_under = objc2::sel!(setUnderPageBackgroundColor:);
+        let responds: bool = msg_send![&*view, respondsToSelector: sel_under];
+        if responds {
+            if let Some(nscolor) = AnyClass::get(c"NSColor") {
+                let clear: *mut AnyObject = msg_send![nscolor, clearColor];
+                if !clear.is_null() {
+                    let _: () = msg_send![&*view, setUnderPageBackgroundColor: &*clear];
+                }
+            }
+        }
+        // Method form, not setValue:forKey:. Absent selector is skipped.
+        let sel_draws = objc2::sel!(setDrawsBackground:);
+        if msg_send![&*view, respondsToSelector: sel_draws] {
+            let _: () = msg_send![&*view, setDrawsBackground: false];
+        }
+    }
+}
+
+fn class_name_contains(view: *mut AnyObject, needle: &str) -> bool {
+    if view.is_null() {
+        return false;
+    }
+    unsafe {
+        let name: *mut AnyObject = msg_send![&*view, className];
+        if name.is_null() {
+            return false;
+        }
+        let utf8: *const c_char = msg_send![&*name, UTF8String];
+        if utf8.is_null() {
+            return false;
+        }
+        std::ffi::CStr::from_ptr(utf8)
+            .to_str()
+            .map(|s| s.contains(needle))
+            .unwrap_or(false)
+    }
+}
+
+fn visit_nsview(view: *mut AnyObject, depth: u8, f: &mut impl FnMut(*mut AnyObject)) {
+    if view.is_null() || depth == 0 {
+        return;
+    }
+    f(view);
+    unsafe {
+        let sel = objc2::sel!(subviews);
+        let responds: bool = msg_send![&*view, respondsToSelector: sel];
+        if !responds {
+            return;
+        }
+        let subviews: *mut AnyObject = msg_send![&*view, subviews];
+        if subviews.is_null() {
+            return;
+        }
+        let count: usize = msg_send![&*subviews, count];
+        for i in 0..count.min(16) {
+            let child: *mut AnyObject = msg_send![&*subviews, objectAtIndex: i];
+            visit_nsview(child, depth - 1, f);
+        }
+    }
 }
 
 fn host_parent(
@@ -391,25 +499,6 @@ fn host_parent(
         }
     };
     (parent, Some(wv))
-}
-
-fn paint_black_layer(view: &NSView) {
-    unsafe {
-        let layer: *mut AnyObject = msg_send![view, layer];
-        if layer.is_null() {
-            return;
-        }
-        let Some(nscolor) = AnyClass::get(c"NSColor") else {
-            return;
-        };
-        let black: *mut AnyObject = msg_send![nscolor, blackColor];
-        if black.is_null() {
-            return;
-        }
-        let cg: *const std::ffi::c_void = msg_send![&*black, CGColor];
-        let _: () = msg_send![&*layer, setBackgroundColor: cg];
-        let _: () = msg_send![&*layer, setOpaque: true];
-    }
 }
 
 fn retain_window(window: &WebviewWindow) -> Result<Retained<NSWindow>, String> {

@@ -54,6 +54,40 @@ fn macos_play_embedded_render_must_compile_on_macos() {
 }
 
 #[test]
+fn macos_gl_view_must_not_be_layer_backed() {
+    // Layer-backed NSOpenGLView + an opaque black CALayer is a known blank-surface
+    // failure: mpv still decodes and plays audio, but AppKit composites the layer
+    // instead of the GL framebuffer. Harbor-style wantsLayer is wrong on macOS 26.
+    let src = include_str!("../src/player/macos_embed.rs");
+    assert!(
+        !src.contains("view_as_view.setWantsLayer(true)"),
+        "NSOpenGLView must not be layer-backed or the video surface stays black"
+    );
+    assert!(
+        !src.contains("paint_black_layer"),
+        "an opaque black CALayer on the GL view hides mpv's framebuffer"
+    );
+}
+
+#[test]
+fn macos_fullscreen_must_refit_and_refocus() {
+    let lib = include_str!("../src/lib.rs");
+    assert!(
+        lib.contains("macos_embed::resize"),
+        "native fullscreen changes the content view; the GL view must be refit"
+    );
+    assert!(
+        lib.contains("macos_embed::refocus_webview"),
+        "fullscreen steals first responder; restore it so player hotkeys keep working"
+    );
+    let embed = include_str!("../src/player/macos_embed.rs");
+    assert!(
+        embed.contains("makeFirstResponder"),
+        "refocus must hand key events back to WKWebView, not the NSOpenGLView"
+    );
+}
+
+#[test]
 fn macos_embed_attaches_owned_opengl_surface() {
     let embed = include_str!("../src/player/macos_embed.rs");
     let player = include_str!("../src/player/mod.rs");

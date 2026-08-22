@@ -3515,6 +3515,11 @@ fn player_toggle_fullscreen(
     // mpv's child doesn't auto-track the resize under tao — refit it.
     #[cfg(windows)]
     resize_mpv_child(w.hwnd().map_err(|e| e.to_string())?.0 as isize);
+    #[cfg(target_os = "macos")]
+    {
+        player::macos_embed::resize(&w);
+        player::macos_embed::refocus_webview(&w);
+    }
     Ok(target)
 }
 
@@ -3535,6 +3540,11 @@ fn player_exit_fullscreen(
         }
         #[cfg(windows)]
         resize_mpv_child(w.hwnd().map_err(|e| e.to_string())?.0 as isize);
+        #[cfg(target_os = "macos")]
+        {
+            player::macos_embed::resize(&w);
+            player::macos_embed::refocus_webview(&w);
+        }
     }
     Ok(())
 }
