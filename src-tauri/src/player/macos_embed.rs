@@ -21,13 +21,14 @@ use libmpv2::{
 };
 use objc2::exception::catch as catch_objc;
 use objc2::rc::Retained;
-use objc2::runtime::{AnyClass, AnyObject};
+use objc2::runtime::{AnyClass, AnyObject, Sel};
 use objc2::{msg_send, AnyThread, ClassType, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
     NSOpenGLPixelFormat, NSOpenGLView, NSView, NSWindow, NSWindowOrderingMode,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 use std::ffi::{c_char, c_void, CString};
+use std::io::Write;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Mutex;
@@ -269,18 +270,35 @@ fn create_gl_view(
     if edr {
         let _: () = unsafe { msg_send![&*view, setWantsExtendedDynamicRangeOpenGLSurface: true] };
     }
-    // Do NOT layer-back NSOpenGLView. A CALayer (especially an opaque black one) is
-    // what AppKit composites, so mpv's framebuffer never appears — audio plays,
-    // the surface stays black. Keep a plain OpenGL surface below the webview.
+    // Do NOT call setWantsLayer(true) or attach an extra CALayer. A painted
+    // black layer is what AppKit composites, so mpv's framebuffer never
+    // appears — audio plays, the surface stays black. macOS 26 still
+    // force-layers NSOpenGLView (`_NSOpenGLViewBackingLayer`); that layer
+    // *is* the CGL surface and must stay opaque.
     let mask: usize = 0;
     let _: () = unsafe { msg_send![view_as_view, setAutoresizingMask: mask] };
+    unsafe {
+        let layer: *mut AnyObject = msg_send![view_as_view, layer];
+        if !layer.is_null() {
+            let _: () = msg_send![&*layer, setOpaque: true];
+        }
+    }
 
-    let (parent, relative) = host_parent(window, &content);
+    let (parent, relative) = host_parent(&content);
     parent.addSubview_positioned_relativeTo(
         view_as_view,
         NSWindowOrderingMode::Below,
         relative.as_deref(),
     );
+    elog(&format!(
+        "attach gl={} parent={} relative={}",
+        class_name(view_as_view as *const NSView as *mut AnyObject),
+        class_name(Retained::as_ptr(&parent) as *mut AnyObject),
+        relative
+            .as_ref()
+            .map(|v| class_name(Retained::as_ptr(v) as *mut AnyObject))
+            .unwrap_or_else(|| "nil".into()),
+    ));
     Ok(view)
 }
 
@@ -326,6 +344,7 @@ pub fn resize(window: &WebviewWindow) {
         let _: () = unsafe { msg_send![&*gl_ctx, update] };
     }
     drop(guard);
+    make_webview_transparent(window);
     schedule_redraw();
 }
 
@@ -336,30 +355,29 @@ pub fn make_webview_transparent(window: &WebviewWindow) {
         return;
     }
     let _ = window.set_background_color(Some(tauri::webview::Color(0, 0, 0, 0)));
-    if let Ok(ns_window) = retain_window(window) {
-        let _ = unsafe {
-            catch_objc(AssertUnwindSafe(|| {
-                if let Some(nscolor) = AnyClass::get(c"NSColor") {
-                    let black: *mut AnyObject = msg_send![nscolor, blackColor];
-                    if !black.is_null() {
-                        let _: () = msg_send![&*ns_window, setBackgroundColor: &*black];
-                    }
-                }
-            }))
-        };
-    }
-    let Ok(ns_view) = window.ns_view() else {
+    let Ok(ns_window) = retain_window(window) else {
         return;
     };
-    if ns_view.is_null() {
-        return;
-    }
-    // Public APIs only. Private WKWebView KVC for drawsBackground raised
-    // NSUnknownKeyException on macOS 26 and aborted the process. Walk the
-    // webview subtree so a wrapper NSView does not hide the real WKWebView.
     let _ = unsafe {
         catch_objc(AssertUnwindSafe(|| {
-            visit_nsview(ns_view as *mut AnyObject, 6, &mut apply_clear_background);
+            if let Some(nscolor) = AnyClass::get(c"NSColor") {
+                let black: *mut AnyObject = msg_send![nscolor, blackColor];
+                if !black.is_null() {
+                    let _: () = msg_send![&*ns_window, setBackgroundColor: &*black];
+                }
+            }
+        }))
+    };
+    // Walk the content view (WryWebViewParent) so we punch WryWebView even
+    // when ns_view() is the parent wrapper. apply_clear_background skips
+    // NSOpenGLView so we do not make the CGL surface transparent.
+    let Some(content) = ns_window.contentView() else {
+        return;
+    };
+    let content_ptr = Retained::as_ptr(&content) as *mut AnyObject;
+    let _ = unsafe {
+        catch_objc(AssertUnwindSafe(|| {
+            visit_nsview(content_ptr, 8, &mut apply_clear_background);
         }))
     };
 }
@@ -375,15 +393,13 @@ pub fn refocus_webview(window: &WebviewWindow) {
     let Ok(ns_window) = retain_window(window) else {
         return;
     };
-    let Ok(raw) = window.ns_view() else {
+    let Some(content) = ns_window.contentView() else {
         return;
     };
-    if raw.is_null() {
-        return;
-    }
-    let mut target = raw as *mut AnyObject;
-    visit_nsview(raw as *mut AnyObject, 6, &mut |view| {
-        if class_name_contains(view, "WKWebView") {
+    let content_ptr = Retained::as_ptr(&content) as *mut AnyObject;
+    let mut target = content_ptr;
+    visit_nsview(content_ptr, 8, &mut |view| {
+        if is_wk_webview(view) {
             target = view;
         }
     });
@@ -395,7 +411,13 @@ pub fn refocus_webview(window: &WebviewWindow) {
 }
 
 fn apply_clear_background(view: *mut AnyObject) {
-    if view.is_null() {
+    if view.is_null() || class_name_contains(view, "NSOpenGL") {
+        return;
+    }
+    // Only the webview subtree. Clearing NSOpenGLView's forced backing layer
+    // hides mpv's framebuffer (audio plays, picture stays black).
+    let punch = is_wk_webview(view) || class_name_contains(view, "WK");
+    if !punch {
         return;
     }
     unsafe {
@@ -420,31 +442,72 @@ fn apply_clear_background(view: *mut AnyObject) {
                 }
             }
         }
-        // Method form, not setValue:forKey:. Absent selector is skipped.
-        let sel_draws = objc2::sel!(setDrawsBackground:);
-        if msg_send![&*view, respondsToSelector: sel_draws] {
-            let _: () = msg_send![&*view, setDrawsBackground: false];
-        }
+        // macOS 26: `setDrawsBackground:` is gone and KVC of that name aborts.
+        // `_setDrawsBackground:` still exists (probed on 26.5.1) and is what
+        // actually makes WKWebView isOpaque=false so the NSOpenGLView shows.
+        call_bool_setter(view, objc2::sel!(_setDrawsBackground:), false);
+        call_bool_setter(view, objc2::sel!(setOpaque:), false);
     }
 }
 
-fn class_name_contains(view: *mut AnyObject, needle: &str) -> bool {
+fn call_bool_setter(view: *mut AnyObject, sel: Sel, value: bool) {
     if view.is_null() {
-        return false;
+        return;
+    }
+    unsafe {
+        let responds: bool = msg_send![&*view, respondsToSelector: sel];
+        if !responds {
+            return;
+        }
+        let imp: *mut c_void = msg_send![&*view, methodForSelector: sel];
+        if imp.is_null() {
+            return;
+        }
+        let f: unsafe extern "C" fn(*mut AnyObject, Sel, bool) = std::mem::transmute(imp);
+        f(view, sel, value);
+    }
+}
+
+fn class_name(view: *mut AnyObject) -> String {
+    if view.is_null() {
+        return "null".into();
     }
     unsafe {
         let name: *mut AnyObject = msg_send![&*view, className];
         if name.is_null() {
-            return false;
+            return "null".into();
         }
         let utf8: *const c_char = msg_send![&*name, UTF8String];
         if utf8.is_null() {
-            return false;
+            return "null".into();
         }
         std::ffi::CStr::from_ptr(utf8)
             .to_str()
-            .map(|s| s.contains(needle))
-            .unwrap_or(false)
+            .unwrap_or("invalid")
+            .to_string()
+    }
+}
+
+fn class_name_contains(view: *mut AnyObject, needle: &str) -> bool {
+    class_name(view).contains(needle)
+}
+
+/// wry's WKWebView subclass is `WryWebView0.xx`, not `WKWebView`.
+fn is_wk_webview(view: *mut AnyObject) -> bool {
+    if class_name_contains(view, "Parent") {
+        return false;
+    }
+    class_name_contains(view, "WKWebView") || class_name_contains(view, "WryWebView")
+}
+
+fn elog(msg: &str) {
+    eprintln!("[izumi-macos] {msg}");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/izumi-embed.log")
+    {
+        let _ = writeln!(f, "{msg}");
     }
 }
 
@@ -471,18 +534,18 @@ fn visit_nsview(view: *mut AnyObject, depth: u8, f: &mut impl FnMut(*mut AnyObje
     }
 }
 
-fn host_parent(
-    window: &WebviewWindow,
-    content: &Retained<NSView>,
-) -> (Retained<NSView>, Option<Retained<NSView>>) {
-    let Ok(raw) = window.ns_view() else {
-        return (content.clone(), None);
-    };
-    let webview = raw as *mut NSView;
-    if webview.is_null() {
+fn host_parent(content: &Retained<NSView>) -> (Retained<NSView>, Option<Retained<NSView>>) {
+    let content_ptr = Retained::as_ptr(content) as *mut AnyObject;
+    let mut found = std::ptr::null_mut::<AnyObject>();
+    visit_nsview(content_ptr, 8, &mut |view| {
+        if is_wk_webview(view) {
+            found = view;
+        }
+    });
+    if found.is_null() {
         return (content.clone(), None);
     }
-    let Some(wv) = (unsafe { Retained::retain(webview) }) else {
+    let Some(wv) = (unsafe { Retained::retain(found as *mut NSView) }) else {
         return (content.clone(), None);
     };
     if Retained::as_ptr(&wv) == Retained::as_ptr(content) {
