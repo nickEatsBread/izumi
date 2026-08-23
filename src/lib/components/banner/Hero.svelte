@@ -301,6 +301,7 @@
     class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {showOverlay ? 'sm:h-[50vh]' : $gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
     class:cursor-grab={$dragCarousels && medias.length > 1}
     class:cursor-grabbing={heroDragging}
+    class:game-home-hero={$gameMode && showOverlay}
     style="--accent:{accent}"
     role="group"
     aria-label="Featured"
@@ -444,6 +445,9 @@
   }
   .hero-slide-in { animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
   .hero-copy { animation: hero-copy-in 360ms cubic-bezier(.22, 1, .36, 1) both; }
+  @media (min-width: 640px) {
+    .game-home-hero { height: 52vh; }
+  }
   :global(html[data-motion='reduced']) .hero-slide-in,
   :global(html[data-motion='reduced']) .hero-copy { animation-duration: 1ms; }
 </style>
