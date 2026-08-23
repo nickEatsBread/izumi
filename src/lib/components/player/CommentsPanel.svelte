@@ -14,6 +14,7 @@
   import ArrowBigUp from '@lucide/svelte/icons/arrow-big-up'
   import { nowPlayingMedia, commentsOpen, gameMode } from '$lib/player/session'
   import { fetchDiscussion, defaultDiscussionPlatform, discussionExpanded, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
+  import { loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
   import { warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
   import { restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
 
@@ -144,6 +145,7 @@
   const embedActive = $derived(!loading && !!embedSrc && filter !== 'All' && embedThread?.source === filter)
   const embedMounted = $derived(!!embedSrc && (!embedThread?.scriptEmbed || embedEverShown))
   $effect(() => { if (embedActive) embedEverShown = true })
+  $effect(() => { if (archiveEmbed && embedMounted) void loadDiscussAnimeEmbedTheme() })
   // Reaction bridge: the Disqus loader page (same-origin) can't post reactions itself (CORS blocks
   // POST + it has no forum session), so it postMessages a request here. We post it through the native
   // `da_react` command — which reads the httpOnly `da_session` cookie from WebView2 + bypasses CORS —

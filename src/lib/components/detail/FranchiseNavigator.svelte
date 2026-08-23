@@ -49,7 +49,7 @@
           class="flex w-48 shrink-0 snap-start items-center gap-2.5 rounded-lg border p-2 transition-colors
             {item.id === media.id ? 'border-theme bg-theme/10' : 'border-border bg-background/50 hover:bg-accent'}"
         >
-          <img use:reliableImage={cover(item)} alt="" class="h-16 w-11 shrink-0 rounded object-cover" />
+          <img use:reliableImage={cover(item)} alt="" loading="lazy" decoding="async" class="h-16 w-11 shrink-0 rounded object-cover" />
           <span class="min-w-0">
             <span class="line-clamp-2 text-xs font-black leading-tight">{title(item)}</span>
             <span class="mt-1 block text-[0.65rem] text-muted-foreground">{label(item)}</span>

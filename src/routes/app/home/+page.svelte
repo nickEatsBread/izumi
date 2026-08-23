@@ -19,6 +19,7 @@
   import type { Media } from '$lib/anilist/types'
   import { anilistDegraded } from '$lib/anilist/degraded'
   import { DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, type HomeRowId } from '$lib/settings/ui'
+  import { markClientPerformance } from '$lib/performance/client'
 
   const client = getContextClient()
   const sections = homeSections(new Date())
@@ -78,6 +79,16 @@
       .slice(0, 7)
   })
   const homeNeedsAlertInset = $derived(!!$anilistDegraded && heroMedias.length === 0)
+  let homePaintMarked = false
+  $effect(() => {
+    const contentReady = $offlineMode || !hero.fetching || catalogUnavailable
+    if (!contentReady || homePaintMarked) return
+    homePaintMarked = true
+    requestAnimationFrame(() => requestAnimationFrame(() => markClientPerformance(
+      'izumi:home-content-painted',
+      { offline: $offlineMode, heroItems: heroMedias.length },
+    )))
+  })
 
 </script>
 

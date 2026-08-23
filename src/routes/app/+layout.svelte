@@ -8,8 +8,6 @@
   import AniListDegradedBanner from '$lib/components/shell/AniListDegradedBanner.svelte'
   import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
-  import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
-  import TrailerDialog from '$lib/components/cards/TrailerDialog.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
   // until playback/resolve starts. Loading them on demand
   // keeps first home paint off that code entirely. See Lazy.svelte.
@@ -24,6 +22,8 @@
   const loadDebridCaching = () => import('$lib/components/player/DebridCaching.svelte')
   const loadSourceConnecting = () => import('$lib/components/player/SourceConnecting.svelte')
   const loadExitPrompt = () => import('$lib/components/shell/ExitPrompt.svelte')
+  const loadGlobalSearch = () => import('$lib/components/search/GlobalSearch.svelte')
+  const loadTrailerDialog = () => import('$lib/components/cards/TrailerDialog.svelte')
   // NOT lazy: its onMount registers the `deck-keyboard-warning` listener that ANSWERS the native
   // side, and the native login popup stays hidden until that answer arrives. Mounting it only once
   // `$deckKeyboardWarning` is set would be circular — the listener is what leads to the store being
@@ -33,18 +33,13 @@
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
   import { streamPicker, connecting, exitPrompt } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
-  import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes } from '$lib/settings/ui'
+  import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
-  import { fetchManifest } from '$lib/stremio/manifest'
-  import { enabledAddonUrls } from '$lib/stremio/sources'
-  import { warmExtensions } from '$lib/extensions/manager'
-  import { refreshAniListAvatar } from '$lib/trackers/anilist-auth'
-  import { refreshMalViewer } from '$lib/trackers/mal-auth'
   import { isAndroid, isMobile, initPlatform } from '$lib/platform'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
@@ -65,7 +60,34 @@
   import { rememberScroll, restoreScroll } from '$lib/navigation/scroll-restoration'
   import { initGmTouchWatchdog, restoreGmTouchAfterTransition } from '$lib/player/gm-touch-watchdog'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
+  import { globalSearchOpen, closeGlobalSearch, openGlobalSearch } from '$lib/search/global-search'
+  import { trailerPopup } from '$lib/stores/trailer'
+  import { findHotkey, isTypingTarget } from '$lib/hotkeys'
+  import { markClientPerformance } from '$lib/performance/client'
   let { children } = $props()
+  let globalSearchMounted = $state(false)
+  let trailerDialogMounted = $state(false)
+  $effect(() => {
+    if ($globalSearchOpen) globalSearchMounted = true
+    if ($trailerPopup) trailerDialogMounted = true
+  })
+
+  function handleShellKeydown(event: KeyboardEvent) {
+    if (event.defaultPrevented) return
+    if (!$globalSearchOpen && !$playing && !document.querySelector('[data-nav-trap]')
+        && !isTypingTarget(event.target)
+        && findHotkey(event, $hotkeyBindings, 'Global') === 'globalSearch') {
+      event.preventDefault()
+      openGlobalSearch()
+    } else if ($globalSearchOpen && event.key === 'Escape') {
+      event.preventDefault()
+      closeGlobalSearch()
+    }
+  }
+  const skipSpeculativeNetwork = () => {
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+    return !navigator.onLine || connection?.saveData === true
+  }
   // Push a BASELINE player cache to the backend on load + whenever the setting changes (playback
   // re-sizes it per file by bitrate in play.ts). Handles the Uncapped sentinel. Picked up next file.
   $effect(() => { invoke('set_player_cache', { bytes: playerCacheBytes(Number($playerCacheMb)) }).catch(() => {}) })
@@ -89,6 +111,7 @@
   })
   $effect(() => {
     initCrashReporting()
+    markClientPerformance('izumi:app-layout-mounted')
     initPlatform() // resolve isAndroid/isMobile FIRST — playback + nav branch on it
     const stopDeveloperLogging = get(isAndroid) ? () => {} : initDeveloperLogging()
     initOffline() // latch offline mode from launch connectivity + the persisted force toggle
@@ -116,19 +139,15 @@
     const stopVpnToasts = initTorrentVpnToasts()
     let stopDeepLinks: () => void = () => {}
     initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
-    // Warm each addon's connection on the shared pooled HTTP client (and cache its
-    // manifest) so the FIRST play skips the ~200ms TLS handshake and the picker has
-    // logos ready. Only effective now that http_get pools connections.
-    for (const base of get(enabledAddonUrls)) fetchManifest(base).catch(() => {})
-    // Same idea for source extensions: pre-boot the whole runtime (manifest + esm.sh modules +
-    // workers) now, off the click-to-play path — the reference client does this at startup too,
-    // which is why its first picker open is instant while ours paid the full build.
-    //
-    // Also deferred: each configured extension spins up its own module Worker, and that worker
-    // bundle carries cheerio + crypto-js + sucrase and cannot be code-split. Starting N of those
-    // while the shell is still painting is the single most contended moment on the Deck. Idle is
-    // still far earlier than any realistic first Play click, so the warm contract is unchanged.
-    void scheduleBootWork('extensions', warmExtensions, 1800)
+    // Import the manifest/source graph only after first paint. Warm connections sequentially so a
+    // large source list does not contend with the hero request or open many TLS handshakes at once.
+    void scheduleBootWork('addon-manifests', async () => {
+      if (skipSpeculativeNetwork()) return
+      const [{ fetchManifest }, { enabledAddonUrls }] = await Promise.all([
+        import('$lib/stremio/manifest'), import('$lib/stremio/sources'),
+      ])
+      for (const base of get(enabledAddonUrls)) await fetchManifest(base).catch(() => undefined)
+    }, 1800)
     // Warm the lazily-split player chunk once boot is quiet, so the FIRST Play / source pick pays
     // no module-load delay — the bytes are just off the first-paint critical path, not off the
     // device. Browser-cached, so these resolve instantly when the real mount happens.
@@ -138,11 +157,22 @@
         get(isAndroid) ? loadAndroidPlayer() : loadPlayerOverlay(),
       ])
     }, 2500)
-    // Refresh the signed-in profile (name + avatar) for an already-connected session,
-    // so the sidebar shows the real picture without needing a re-login. No-op if not
-    // connected. Fire-and-forget.
-    refreshAniListAvatar().catch(() => {})
-    refreshMalViewer().catch(() => {})
+    // Profile refreshes are useful but never launch-critical. Their modules and network requests
+    // stay out of the shell path and yield to any interaction through BootWorkQueue.
+    void scheduleBootWork('profiles', async () => {
+      if (skipSpeculativeNetwork()) return
+      const [{ refreshAniListAvatar }, { refreshMalViewer }] = await Promise.all([
+        import('$lib/trackers/anilist-auth'), import('$lib/trackers/mal-auth'),
+      ])
+      await Promise.allSettled([refreshAniListAvatar(), refreshMalViewer()])
+    }, 4500)
+    // Worker creation and a possible JVM/JRE setup are the heaviest speculative jobs. The manager
+    // itself is dynamically imported and its JS/JVM warmers run sequentially.
+    void scheduleBootWork('extensions', async () => {
+      if (skipSpeculativeNetwork()) return
+      const { warmExtensions } = await import('$lib/extensions/manager')
+      await warmExtensions()
+    }, 6500)
     return () => { stopDeveloperLogging(); stopUpdates?.(); stopExtensionUpdates?.(); stopAutoDownloads(); stopWatchTogether(); stopAiringNotifications(); stopVpnToasts(); stopDeepLinks() }
   })
 
@@ -249,8 +279,14 @@
   afterNavigate(({ to }) => {
     if (to?.url && !$playing) restoreScroll(to.url)
     if (get(gameMode)) invoke('restore_native_touch').catch(() => {})
+    requestAnimationFrame(() => requestAnimationFrame(() => markClientPerformance(
+      'izumi:route-painted',
+      { path: to?.url.pathname ?? location.pathname },
+    )))
   })
 </script>
+
+<svelte:window onkeydown={handleShellKeydown} />
 
 <!-- Solid app floor; hidden while playing so mpv (behind the webview) shows. -->
 {#if !$playing && (!$androidMpvActive || $androidMiniPlayer)}<Background />{/if}
@@ -323,8 +359,8 @@
 {/if}
 {#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}
 {#if $exitPrompt}<Lazy load={loadExitPrompt} />{/if}
-<GlobalSearch />
-<TrailerDialog />
+{#if globalSearchMounted}<Lazy load={loadGlobalSearch} />{/if}
+{#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}
 <OnScreenKeyboard />
 <DeckKeyboardWarning />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->

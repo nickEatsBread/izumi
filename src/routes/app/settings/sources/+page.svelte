@@ -141,7 +141,7 @@
             <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
           {:then m}
             {#if m?.logo}
-              <img src={m.logo} alt="" class="size-10 shrink-0 rounded-md bg-neutral-900 object-contain" />
+              <img src={m.logo} alt="" loading="lazy" decoding="async" class="size-10 shrink-0 rounded-md bg-neutral-900 object-contain" />
             {:else}
               <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Globe size={18} /></div>
             {/if}

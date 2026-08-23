@@ -11,6 +11,7 @@
   import { fetchMediaById } from '$lib/anilist/fetch-media'
   import { fetchDiscussion } from '$lib/comments'
   import { embedResizeHeight, preferredMobileDiscussion } from '$lib/comments/mobile'
+  import { isDiscussAnimeEmbed, loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
   import { getMalProgress } from '$lib/trackers'
@@ -122,6 +123,11 @@
     fetchDiscussion(media, ep, applyThreads).then(applyThreads)
   })
   const discussion = $derived(preferredMobileDiscussion(threads))
+  $effect(() => {
+    if (discussion?.kind === 'disqus' && isDiscussAnimeEmbed(discussion.embedSrc)) {
+      void loadDiscussAnimeEmbedTheme()
+    }
+  })
   const tabs = $derived<Tab[]>(
     commentsLoading || discussion ? ['comments', 'episodes', 'related'] : ['episodes', 'comments', 'related'],
   )

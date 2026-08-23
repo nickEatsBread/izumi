@@ -5,10 +5,13 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 
 describe('DiscussAnime embed theming', () => {
-  it('loads the official host-side theme bridge once at the app root', () => {
+  it('loads the official host-side theme bridge on demand instead of at app startup', () => {
     const layout = read('../../routes/+layout.svelte')
-    expect(layout.match(/https:\/\/discussanime\.moe\/embed\.js/g)).toHaveLength(1)
-    expect(layout).toContain('type="module"')
+    const loader = read('./embed-theme.ts')
+    expect(layout).not.toContain('https://discussanime.moe/embed.js')
+    expect(loader.match(/https:\/\/discussanime\.moe\/embed\.js/g)).toHaveLength(1)
+    expect(loader).toContain("script.type = 'module'")
+    expect(loader).toContain("document.getElementById(SCRIPT_ID)")
   })
 
   it('does not force dark mode through URLs or iframe styles', () => {

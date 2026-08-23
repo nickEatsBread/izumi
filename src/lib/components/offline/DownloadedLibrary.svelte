@@ -15,7 +15,7 @@
         <a href="/app/anime/{s.mediaId}" data-focusable onclick={() => h.tap()}
            class="group block {$isAndroid ? 'android-card-press' : ''}">
           <div class="focus-cover relative aspect-[2/3] overflow-hidden rounded-lg bg-muted">
-            {#if s.poster}<img src={s.poster} alt="" class="h-full w-full object-cover" />{/if}
+            {#if s.poster}<img src={s.poster} alt="" loading="lazy" decoding="async" class="h-full w-full object-cover" />{/if}
             <span
               class="absolute bottom-1 right-1 rounded bg-black/70 px-1.5 py-0.5 text-[0.65rem] font-black text-white"
             >{s.episodeCount} ep{s.episodeCount > 1 ? 's' : ''}</span>

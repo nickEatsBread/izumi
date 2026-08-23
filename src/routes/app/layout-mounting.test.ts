@@ -16,6 +16,22 @@ const deckWarning = readFileSync(
   fileURLToPath(new URL('../../lib/components/shell/DeckKeyboardWarning.svelte', import.meta.url)),
   'utf8',
 )
+const continueCard = readFileSync(
+  fileURLToPath(new URL('../../lib/components/cards/ContinueCard.svelte', import.meta.url)),
+  'utf8',
+)
+const downloadStore = readFileSync(
+  fileURLToPath(new URL('../../lib/downloads/store.ts', import.meta.url)),
+  'utf8',
+)
+const watchTogether = readFileSync(
+  fileURLToPath(new URL('../../lib/watch-together/client.ts', import.meta.url)),
+  'utf8',
+)
+const extensionUpdates = readFileSync(
+  fileURLToPath(new URL('../../lib/extensions/auto-update.ts', import.meta.url)),
+  'utf8',
+)
 
 describe('app layout mounting', () => {
   it('mounts DeckKeyboardWarning eagerly, never behind its own store', () => {
@@ -37,6 +53,20 @@ describe('app layout mounting', () => {
     for (const loader of ['loadPlayerOverlay', 'loadAndroidPlayer', 'loadStreamPicker']) {
       expect(layout).toContain(`Lazy load={${loader}}`)
     }
+  })
+
+  it('keeps playback, extension workers and global overlays out of browse startup', () => {
+    for (const source of [continueCard, downloadStore, watchTogether]) {
+      expect(source).not.toMatch(/^import(?! type).*['"]\$lib\/stremio\/play['"]/m)
+      expect(source).toContain("import('$lib/stremio/play')")
+    }
+    expect(layout).not.toContain("import { warmExtensions } from '$lib/extensions/manager'")
+    expect(layout).toContain("import('$lib/extensions/manager')")
+    expect(extensionUpdates).not.toMatch(/^import(?! type).*['"]\.\/manager['"]/m)
+    expect(extensionUpdates).toContain("import('./manager')")
+    expect(layout).toContain("const loadGlobalSearch = () => import('$lib/components/search/GlobalSearch.svelte')")
+    expect(layout).not.toContain("import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'")
+    expect(layout).not.toContain('<GlobalSearch />')
   })
 
   it('never initializes the Android mpv core during deferred boot or source resolution', () => {

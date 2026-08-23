@@ -117,7 +117,7 @@
         <div class="mt-3 space-y-2">
           {#each $autoDownloadRules as rule (rule.id)}
             <div class="flex flex-wrap items-center gap-3 rounded-md bg-secondary/50 p-2.5">
-              {#if rule.poster}<img src={rule.poster} alt="" class="h-12 w-9 rounded object-cover" />{/if}
+              {#if rule.poster}<img src={rule.poster} alt="" loading="lazy" decoding="async" class="h-12 w-9 rounded object-cover" />{/if}
               <div class="min-w-0 flex-1"><div class="truncate text-sm font-bold">{rule.title}</div><div class="text-xs text-muted-foreground">Waiting for episode {rule.nextEpisode}{rule.lastError ? ` · ${rule.lastError}` : ''}</div></div>
               <label class="text-xs font-bold"><input data-focusable type="checkbox" checked={rule.enabled} onchange={(e) => updateAutoDownloadRule(rule.id, { enabled: e.currentTarget.checked })} /> Enabled</label>
               <button data-focusable aria-label={`Remove ${rule.title}`} onclick={() => removeAutoDownloadRule(rule.id)} class="grid size-9 place-items-center rounded-md text-destructive hover:bg-accent"><Trash2 size={16} /></button>

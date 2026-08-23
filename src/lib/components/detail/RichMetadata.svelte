@@ -19,13 +19,13 @@
           {#each media.characters.edges as character (character.node.id)}
             {@const actor = character.voiceActors?.[0]}
             <div class="flex min-w-0 overflow-hidden rounded-lg border border-border bg-secondary/30">
-              <img src={character.node.image?.large} alt="" loading="lazy" class="aspect-[2/3] w-20 shrink-0 object-cover" />
+              <img src={character.node.image?.large} alt="" loading="lazy" decoding="async" class="aspect-[2/3] w-20 shrink-0 object-cover" />
               <div class="min-w-0 flex-1 p-3">
                 <div class="truncate font-black">{character.node.name.full}</div>
                 <div class="text-xs text-muted-foreground">{character.role.toLowerCase()}</div>
                 {#if actor}
                   <a href={`/app/search?staff=${actor.id}&name=${encodeURIComponent(actor.name.full ?? '')}`} data-focusable class="mt-3 flex items-center gap-2 rounded-md hover:bg-accent/50">
-                    <img src={actor.image?.large} alt="" loading="lazy" class="size-9 rounded-full object-cover" />
+                    <img src={actor.image?.large} alt="" loading="lazy" decoding="async" class="size-9 rounded-full object-cover" />
                     <div class="min-w-0">
                       <div class="truncate text-sm font-bold">{actor.name.full}</div>
                       <div class="text-[0.65rem] uppercase tracking-wide text-muted-foreground">Japanese voice</div>
@@ -45,7 +45,7 @@
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {#each media.staff.edges as credit (`${credit.node.id}-${credit.role}`)}
             <a href={`/app/search?staff=${credit.node.id}&name=${encodeURIComponent(credit.node.name.full ?? '')}`} data-focusable class="flex items-center gap-3 rounded-lg border border-border bg-secondary/30 p-2 hover:bg-accent/40">
-              <img src={credit.node.image?.large} alt="" loading="lazy" class="size-14 rounded-md object-cover" />
+              <img src={credit.node.image?.large} alt="" loading="lazy" decoding="async" class="size-14 rounded-md object-cover" />
               <div class="min-w-0">
                 <div class="truncate font-bold">{credit.node.name.full}</div>
                 <div class="line-clamp-2 text-xs text-muted-foreground">{credit.role}</div>

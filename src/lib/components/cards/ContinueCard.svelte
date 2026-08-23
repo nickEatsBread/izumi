@@ -11,7 +11,7 @@
   import { getEpisodeMeta } from '$lib/anizip'
   import { positionPercent, positions, progressKey } from '$lib/player/progress'
   import { hideSpoilers } from '$lib/settings/ui'
-  import { resumeEpisode, type PlayState } from '$lib/stremio/play'
+  import type { PlayState } from '$lib/stremio/play'
   import type { Media } from '$lib/anilist/types'
   import type { EpMeta } from '$lib/anizip/types'
   import Play from '@lucide/svelte/icons/play'
@@ -51,7 +51,17 @@
   let resolving = $state(false)
   // Prefer the last successful origin/release; if it is missing or fails, resumeEpisode opens the
   // complete source picker. Playback resumes from this episode's saved position either way.
-  function play() { h.tap(); resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' }) }
+  const loadPlayback = () => import('$lib/stremio/play')
+  async function play() {
+    h.tap()
+    resolving = true
+    try {
+      const { resumeEpisode } = await loadPlayback()
+      await resumeEpisode(media, ep, (s: PlayState) => { resolving = s.status === 'resolving' })
+    } catch {
+      resolving = false
+    }
+  }
 </script>
 
 <!-- ONE focusable (the card) = play. The cover is marked `.focus-cover` so controller/keyboard
@@ -63,6 +73,7 @@
   role="button"
   tabindex="0"
   onclick={play}
+  onpointerdown={() => void loadPlayback()}
   onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play() } }}
   title={`Resume — ${name} · Episode ${ep}`}
   class="group flex w-[72vw] shrink-0 cursor-pointer flex-col text-left sm:w-[264px] {$isAndroid ? 'android-card-press' : ''}"
@@ -71,7 +82,7 @@
     {#if !imgReady}<div class="absolute inset-0 skeloader"></div>{/if}
     {#if thumb}
       <img src={thumb} alt="" loading="lazy" decoding="async" onload={() => (imgReady = true)}
-           class="h-full w-full transform-gpu object-cover transition-[opacity,transform] duration-500 group-hover:scale-105 {imgReady ? 'opacity-100' : 'opacity-0'}" />
+           class="h-full w-full object-cover transition-[opacity,transform] duration-500 group-hover:scale-105 {imgReady ? 'opacity-100' : 'opacity-0'}" />
     {/if}
     <div class="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
 

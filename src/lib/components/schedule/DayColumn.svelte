@@ -29,7 +29,7 @@
             href={`/app/anime/${a.media.id}`}
             class="flex min-w-0 items-center gap-3 rounded-xl bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-70' : ''} {mine ? 'border border-theme/60' : 'border border-transparent'}"
           >
-            <img src={cover(a.media)} alt="" loading="lazy"
+            <img src={cover(a.media)} alt="" loading="lazy" decoding="async"
                  class="{big ? 'h-20 w-14' : 'h-14 w-10'} shrink-0 rounded-lg object-cover" />
             <div class="min-w-0 flex-1">
               <p class="line-clamp-2 {big ? 'text-sm' : 'text-xs'} font-bold leading-tight">{title(a.media)}</p>

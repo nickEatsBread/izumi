@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 
 describe('app-level trailer dialog', () => {
-  it('is mounted outside hover cards and reused by series-page trailer actions', () => {
-    expect(read('../../../routes/app/+layout.svelte')).toContain('<TrailerDialog />')
+  it('is app-owned, lazily mounted after first use, and reused by series-page trailer actions', () => {
+    const layout = read('../../../routes/app/+layout.svelte')
+    expect(layout).toContain("const loadTrailerDialog = () => import('$lib/components/cards/TrailerDialog.svelte')")
+    expect(layout).toContain('{#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}')
     expect(read('../detail/AnimeDetail.svelte')).toContain('openTrailerPopup(m.trailer!.id, title(m))')
   })
 

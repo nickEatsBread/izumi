@@ -108,7 +108,7 @@
           {#each entries as e (e.media.id)}
             <li class="flex items-center gap-3 rounded-lg border border-border p-2.5">
               {#if e.media.coverImage?.medium}
-                <img src={e.media.coverImage.medium} alt="" class="h-12 w-9 shrink-0 rounded object-cover" />
+                <img src={e.media.coverImage.medium} alt="" loading="lazy" decoding="async" class="h-12 w-9 shrink-0 rounded object-cover" />
               {/if}
               <div class="min-w-0 flex-1">
                 <a href={`/app/anime/${e.media.id}`} data-focusable class="block truncate text-sm font-bold hover:text-theme">{mediaTitle(e.media)}</a>

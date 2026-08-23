@@ -10,11 +10,34 @@ type BootTask = {
 
 /** One-at-a-time post-boot work. Delays are minimums; promotion makes user-needed work next. */
 export class BootWorkQueue {
+  private static readonly ACTIVITY_GRACE_MS = 900
   private readonly startedAt = Date.now()
   private tasks: BootTask[] = []
   private running = false
+  private lastActivityAt = Number.NEGATIVE_INFINITY
+  private lastActivityArmAt = Number.NEGATIVE_INFINITY
   private timer: ReturnType<typeof setTimeout> | undefined
   private idleHandle: { cancel: () => void } | undefined
+
+  constructor() {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
+    const noteActivity = () => {
+      const now = Date.now()
+      this.lastActivityAt = now
+      // Scroll/wheel can arrive at display refresh rate. Updating the grace timestamp is cheap;
+      // timer cancellation/recreation only needs to happen a few times a second.
+      if (now - this.lastActivityArmAt < 120) return
+      this.lastActivityArmAt = now
+      // Re-arm so a fallback timer on WebKitGTK cannot fire in the middle of active scrolling.
+      this.arm(true)
+    }
+    for (const event of ['pointerdown', 'touchstart', 'wheel', 'keydown', 'scroll']) {
+      window.addEventListener(event, noteActivity, { capture: true, passive: true })
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => this.arm(true))
+    }
+  }
 
   schedule(key: string, run: () => void | Promise<void>, delayMs: number): Promise<void> {
     const existing = this.tasks.find((task) => task.key === key)
@@ -64,6 +87,18 @@ export class BootWorkQueue {
     if (this.running) return
     const task = this.next()
     if (!task || task.readyAt > Date.now()) { this.arm(); return }
+    if (!task.promoted) {
+      const now = Date.now()
+      const recentlyActive = now - this.lastActivityAt < BootWorkQueue.ACTIVITY_GRACE_MS
+      const hidden = typeof document !== 'undefined' && document.hidden
+      if (hidden || recentlyActive) {
+        task.readyAt = hidden
+          ? now + 5000
+          : Math.max(task.readyAt, this.lastActivityAt + BootWorkQueue.ACTIVITY_GRACE_MS)
+        this.arm()
+        return
+      }
+    }
     this.tasks = this.tasks.filter((candidate) => candidate !== task)
     this.running = true
     try { await task.run() } catch { /* warm work is best-effort */ }

@@ -430,10 +430,10 @@ export async function runningExtensionCount(): Promise<number> {
  *  discovery plus the private JRE download/extract can take most of the resolver's startup budget;
  *  leaving JVM packages out of this warm made the first Play look as if no source were installed. */
 export async function warmExtensions(): Promise<void> {
-  await Promise.all([
-    ensureRunning().then(() => {}, () => {}),
-    runningJvmExtensions().then(() => {}, () => {}),
-  ])
+  // Do not make the WebView parse JS workers while a clean-install JVM runtime is also being
+  // discovered/downloaded/extracted. Foreground resolvers still share either in-flight promise.
+  await ensureRunning().then(() => {}, () => {})
+  await runningJvmExtensions().then(() => {}, () => {})
 }
 
 function call(ext: RunningExt, method: string, query: TorrentQuery): Promise<TorrentResult[]> {

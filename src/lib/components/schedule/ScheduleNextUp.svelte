@@ -35,7 +35,7 @@
            class="group relative w-40 shrink-0 overflow-hidden rounded-lg bg-secondary transition-colors hover:bg-accent
                   {kind ? 'border border-theme/60' : 'border border-transparent'}">
           <div class="relative h-24 w-full overflow-hidden">
-            <img src={cover(a.media)} alt="" loading="lazy" class="h-full w-full object-cover transition-transform group-hover:scale-105" />
+            <img src={cover(a.media)} alt="" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform group-hover:scale-105" />
             <span class="absolute left-1.5 top-1.5 rounded px-1.5 py-0.5 text-[0.65rem] font-black
                          {soon ? 'bg-emerald-500/90 text-white' : 'bg-sky-500/90 text-white'}">
               {soon ? until(a.airingAt, now) : 'just aired'}

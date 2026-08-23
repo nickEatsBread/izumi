@@ -242,7 +242,7 @@
       ontouchend={onTouchEnd}
     >
       {#key current.id}
-        <img src={cover(current)} alt="" draggable="false"
+        <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
              class="hero-slide-in absolute inset-0 h-full w-full object-cover"
              style="--hero-enter-x:{navDirection * 3}%" />
       {/key}
@@ -319,7 +319,7 @@
          otherwise leave a black band on the right. Keyed for a crossfade. -->
     <div class="pointer-events-none absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
       {#key current.id}
-        <img src={banner(current)} alt="" draggable="false"
+        <img src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
              class="hero-slide-in absolute inset-0 h-full w-full object-cover opacity-70"
              style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:.7;object-position:center 20%" />
       {/key}

@@ -12,6 +12,7 @@ describe('Android release hardening', () => {
   const verifyNative = read('../../../scripts/ci/verify-android-native.sh')
   const libmpvBuild = read('../../../scripts/ci/libmpv-android.sh')
   const mpvGradle = read('../../../src-tauri/tauri-plugin-mpv/android/build.gradle.kts')
+  const extPlayerGradle = read('../../../src-tauri/tauri-plugin-extplayer/android/build.gradle.kts')
 
   it('builds every Android path with NDK r28 or newer', () => {
     for (const workflow of [ci, preview, release]) {
@@ -24,6 +25,11 @@ describe('Android release hardening', () => {
     expect(scaffold).toContain("s/compileSdk = [0-9]+/compileSdk = 36/")
     expect(scaffold).toContain("s/targetSdk = [0-9]+/targetSdk = 36/")
     expect(scaffold).toContain('enableEdgeToEdge()')
+  })
+
+  it('ships the current AndroidX WebKit runtime through generated and plugin builds', () => {
+    expect(scaffold).toContain('androidx.webkit:webkit:1.17.0')
+    expect(extPlayerGradle).toContain('androidx.webkit:webkit:1.17.0')
   })
 
   it('aligns APK entries to 16 KiB and verifies every ELF LOAD segment', () => {

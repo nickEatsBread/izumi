@@ -2,7 +2,6 @@ import { get } from 'svelte/store'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow, ProgressBarStatus } from '@tauri-apps/api/window'
-import { resolveDownloadUrl } from '$lib/stremio/play'
 import { torrentEngineNetworkOptions } from '$lib/player/direct-torrent'
 import { downloadDir, downloadConcurrency } from '$lib/settings/ui'
 import { downloads, speeds, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem, type DownloadPreferences } from './state'
@@ -92,6 +91,9 @@ async function runJob(item: DownloadItem) {
   running.add(item.id)
   try {
     const dir = await ensureDir()
+    // Playback resolution is substantial and downloads are the only boot-mounted consumer. Load
+    // it when a queued job actually runs, not whenever the app shell attaches download listeners.
+    const { resolveDownloadUrl } = await import('$lib/stremio/play')
     const r = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences)
     setItem(item.id, {
       kind: r.kind, url: r.kind === 'http' ? r.url : undefined,

@@ -3,7 +3,6 @@ import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
 import { playerCommand } from '$lib/player/native'
 import { nowPlayingMedia, nowPlayingPartySource, playing } from '$lib/player/session'
-import { playStream } from '$lib/stremio/play'
 import { isAndroid } from '$lib/platform'
 import { androidMpvActive, seekAbsolute, setPaused } from '$lib/player/android-mpv'
 import type { Media } from '$lib/anilist/types'
@@ -248,6 +247,7 @@ async function applyHostPlayback(playback: PartyPlayback) {
     localReadiness = 'loading'
     try {
       let playbackError = ''
+      const { playStream } = await import('$lib/stremio/play')
       await playStream(playback.media, playback.episode, streamFromSharedSource(playback.source), (state) => {
         if (state.status === 'error') {
           playbackError = state.message || 'The host source could not be opened.'

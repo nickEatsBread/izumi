@@ -2,12 +2,7 @@ import { get, writable } from 'svelte/store'
 import { enabledExtensionUrls } from '$lib/settings/ui'
 import { playing } from '$lib/player/session'
 import type { ExtensionCatalogPackage } from './catalog'
-import {
-  fetchExtensionInfo,
-  installCatalogPackage,
-  installedExtensionPackages,
-  type InstalledExtensionPackage,
-} from './manager'
+import type { InstalledExtensionPackage } from './manager'
 
 // Background auto-update for installed .izumi-ext packages. The manual path (the Update button in
 // settings → sources) already trusts the catalog's sha-pinned payloads; this runs the same install
@@ -54,6 +49,9 @@ const attempted = new Set<string>()
  *  and the JVM runtime, which would kill an in-flight resolve. */
 export async function checkExtensionUpdates(): Promise<void> {
   if (get(playing)) return
+  // The first check is delayed by 15 seconds; keep the extension manager and worker graph out of
+  // the app-layout startup chunk until the check actually runs.
+  const { fetchExtensionInfo, installCatalogPackage, installedExtensionPackages } = await import('./manager')
   const installed = await installedExtensionPackages()
   if (!installed.length) return
   const specs = get(enabledExtensionUrls)

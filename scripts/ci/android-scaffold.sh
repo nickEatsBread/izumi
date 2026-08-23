@@ -21,10 +21,13 @@ npx tauri android init
 # values instead of relying on whichever defaults happen to ship in the installed Tauri CLI.
 sed -i -E 's/compileSdk = [0-9]+/compileSdk = 36/' src-tauri/gen/android/app/build.gradle.kts
 sed -i -E 's/targetSdk = [0-9]+/targetSdk = 36/' src-tauri/gen/android/app/build.gradle.kts
+sed -i -E 's#androidx\.webkit:webkit:[0-9.]+#androidx.webkit:webkit:1.17.0#' src-tauri/gen/android/app/build.gradle.kts
 grep -q 'compileSdk = 36' src-tauri/gen/android/app/build.gradle.kts \
   || { echo "compileSdk 36 patch missed — scaffold shape changed"; exit 1; }
 grep -q 'targetSdk = 36' src-tauri/gen/android/app/build.gradle.kts \
   || { echo "targetSdk 36 patch missed — scaffold shape changed"; exit 1; }
+grep -q 'androidx.webkit:webkit:1.17.0' src-tauri/gen/android/app/build.gradle.kts \
+  || { echo "AndroidX WebKit 1.17 patch missed — scaffold shape changed"; exit 1; }
 
 # NOTE on back navigation: an earlier revision patched the generated WryActivity's back-press
 # fall-through here. That was doubly wrong. (1) WryActivity.kt is written by wry's BUILD SCRIPT

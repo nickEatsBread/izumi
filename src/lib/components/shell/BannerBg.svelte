@@ -13,6 +13,9 @@
       <img
         src={src}
         alt=""
+        loading="lazy"
+        decoding="async"
+        fetchpriority="low"
         class="absolute inset-0 h-full w-full animate-[fade_0.6s_ease] object-cover opacity-35"
         style="object-position:center 20%"
       />

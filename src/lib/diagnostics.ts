@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { clearResolveDiagnostics, recentResolveDiagnostics } from '$lib/debug/resolve-trace'
+import { clientPerformanceSnapshot } from '$lib/performance/client'
 
 export type DiagnosticEvent = {
   at: string
@@ -66,6 +67,7 @@ export function diagnosticsSnapshot(extra: Record<string, unknown> = {}) {
       width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio,
     },
     events: get(diagnosticEvents),
+    performance: clientPerformanceSnapshot(),
     resolveTraces: recentResolveDiagnostics(),
     settings,
     ...extra,

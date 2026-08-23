@@ -15,7 +15,7 @@
   --radius: 0.5rem;
 }
 * { border-color: hsl(var(--border)); }
-html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: 'Nunito Variable', sans-serif; scroll-behavior: smooth; }
+html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: 'Nunito Variable', sans-serif; scroll-behavior: auto; }
 /* Compositor screenshots hide in-webview OSD so the file is video + subs, not controls. */
 html.izumi-capturing .izumi-hud { visibility: hidden !important; }
 /* Keyboard `O` focuses the overlay; *:focus-visible would draw a rounded ring at the
@@ -107,6 +107,8 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 @keyframes skeleton-swipe { 100% { transform: translateX(100%); } }
 .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); }
 .skeloader::before { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent); animation: skeleton-swipe 1.5s infinite; }
+/* Static placeholders avoid a screenful of perpetual compositor work on the Deck. */
+.gamemode .skeloader::before { display: none; animation: none; }
 /* Indeterminate progress bar (update download with no Content-Length): a short segment sweeps
    the track. Transform-only so WebKitGTK/gamescope composite it without repainting the track. */
 @keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(400%); } }

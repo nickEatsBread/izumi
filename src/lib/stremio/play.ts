@@ -55,6 +55,7 @@ import type { SubtitleCandidate } from './subtitles/types'
 import { normalizeLang } from './sublang'
 import { hasConfiguredExtensions, queryExtensions } from '$lib/extensions/manager'
 import { promoteBootWork } from '$lib/util/boot-work'
+import { markClientPerformance } from '$lib/performance/client'
 import { cancelExtensionFetches } from '$lib/extensions/fetch-registry'
 import { queryTorrentProviders, toProviderMedia } from '$lib/extensions/torrentProvider'
 import { torrentQueryIdFields, type TorrentResult } from '$lib/extensions/types'
@@ -1386,10 +1387,16 @@ export async function playEpisode(
   onState: (s: PlayState) => void,
   options: PlayEpisodeOptions = {},
 ) {
+  markClientPerformance('izumi:play-requested', {
+    mediaId: media.id,
+    episode: episode ?? 0,
+    autoplay: options.autoplay ?? true,
+  })
   // A play click promotes the expensive boot warmers ahead of purely speculative background work.
   // Their underlying loaders are promise-cached, so foreground consumers share rather than repeat.
   promoteBootWork('extensions')
   promoteBootWork('player')
+  promoteBootWork('torrent')
   const trace = beginResolveTrace({
     mediaId: media.id,
     episode,
@@ -1472,6 +1479,7 @@ export async function playEpisode(
     manualOnly: options.forceManual,
     autoplay,
   })
+  markClientPerformance('izumi:source-picker-state-ready', { mediaId: media.id, episode: episode ?? 0 })
   // The picker is the UI from here — unless it is hidden (binge continuation), in which case the
   // connecting screen stays up as the only thing holding the user.
   if (!hideForContinuation) connecting.set(null)

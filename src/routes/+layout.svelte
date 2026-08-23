@@ -10,6 +10,8 @@
   import { startQualitySync } from '$lib/player/quality'
   import { startEnhancementSync } from '$lib/player/enhancements'
   import { startThemeSync } from '$lib/theme'
+  import { scheduleBootWork } from '$lib/util/boot-work'
+  import { initClientPerformance } from '$lib/performance/client'
   import { getLocale, getTextDirection } from '$lib/paraglide/runtime.js'
   import {
     debridKey, torrentBindInterface, torrentPlaybackMode, torrentProxyEnabled, torrentProxyUrl,
@@ -18,23 +20,23 @@
   setContextClient(anilist)
   let { children } = $props()
   onMount(() => {
+    const stopPerformance = initClientPerformance()
     document.documentElement.lang = getLocale()
     document.documentElement.dir = getTextDirection()
     startQualitySync()
     startEnhancementSync()
-    // Session creation + a cold DHT bootstrap used to happen inside the first Play click. Start it
-    // quietly at app mount instead; no magnet is added and no episode data is downloaded.
-    if (get(torrentPlaybackMode) === 'direct' || !get(debridKey)) {
+    // Keep the DHT bootstrap away from the first paint. A Play action promotes this task, so a fast
+    // user never waits for the speculative delay; ordinary launches get a quiet shell first.
+    void scheduleBootWork('torrent', async () => {
+      if (get(torrentPlaybackMode) !== 'direct' && get(debridKey)) return
       try {
         const socksProxyUrl = torrentProxyEndpoint(get(torrentProxyEnabled), get(torrentProxyUrl))
         const bindInterface = get(torrentBindInterface).trim() || null
-        void invoke('torrent_engine_warmup', { socksProxyUrl, bindInterface }).catch(() => {})
+        await invoke('torrent_engine_warmup', { socksProxyUrl, bindInterface })
       } catch { /* invalid proxy is shown in Settings and playback fails closed */ }
-    }
-    return startThemeSync()
+    }, 4500)
+    const stopTheme = startThemeSync()
+    return () => { stopPerformance(); stopTheme() }
   })
 </script>
-<svelte:head>
-  <script type="module" src="https://discussanime.moe/embed.js"></script>
-</svelte:head>
 {@render children()}

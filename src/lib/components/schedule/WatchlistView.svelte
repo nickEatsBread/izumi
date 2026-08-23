@@ -95,7 +95,7 @@
       <a data-focusable href={mediaHref(it.media)}
         class="flex items-center gap-3 rounded-lg border border-border bg-card p-2.5 transition-colors hover:bg-secondary
           {it.behind === 0 ? 'opacity-70' : ''}">
-        <img src={cover(it.media)} alt="" loading="lazy" class="h-16 w-11 shrink-0 rounded bg-muted object-cover" />
+        <img src={cover(it.media)} alt="" loading="lazy" decoding="async" class="h-16 w-11 shrink-0 rounded bg-muted object-cover" />
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-bold">{mediaTitle(it.media)}</p>
           <p class="mt-0.5 text-xs text-muted-foreground">{it.progress}/{totalEpisodes(it.media) || '?'}</p>

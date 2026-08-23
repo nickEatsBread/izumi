@@ -51,7 +51,7 @@
 
 {#snippet row(d: DownloadItem)}
   <div class="flex items-center gap-3 rounded-lg border border-border bg-secondary/40 p-3">
-    {#if d.poster}<img src={d.poster} alt="" class="h-14 w-10 shrink-0 rounded object-cover" />{:else}<div class="h-14 w-10 shrink-0 rounded bg-muted"></div>{/if}
+    {#if d.poster}<img src={d.poster} alt="" loading="lazy" decoding="async" class="h-14 w-10 shrink-0 rounded object-cover" />{:else}<div class="h-14 w-10 shrink-0 rounded bg-muted"></div>{/if}
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
         <span class="truncate text-sm font-bold">{d.title}</span>
