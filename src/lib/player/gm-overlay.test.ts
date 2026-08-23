@@ -203,7 +203,11 @@ describe('Game-mode Leanback motion', () => {
     expect(nativeHud).toContain('if title_at_top { 32.0 } else { 28.0 }')
     expect(nativeHud).toContain('if title_at_top { 20.0 } else { 18.0 }')
     expect(nativeHud).toContain('item.w.min(item.h) * 0.42')
-    expect(nativeHud).toContain('Lucide MessageSquare')
+    expect(controls).toContain('MessageCircleMore')
+    expect(controls).toContain('aria-label="Subtitle and audio tracks"><Languages')
+    expect(nativeHud).toContain('Lucide MessageCircleMore')
+    expect(nativeHud).toContain('Lucide Languages')
+    expect(nativeHud).not.toContain('rounded_rect_ring(')
   })
 
   it('clips a right-side sheet instead of snapshotting the full player', () => {

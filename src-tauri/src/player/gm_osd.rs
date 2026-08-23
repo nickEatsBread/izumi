@@ -917,35 +917,24 @@ fn control_icon_ass(
         push(lines, circle_ring(cx - 5.0 * u, cy - 5.0 * u, 2.0 * u, 4.0 * u, color, &a));
         push(lines, circle_ring(cx + 5.0 * u, cy + 5.0 * u, 2.0 * u, 4.0 * u, color, &a));
     } else if label == "discussion" {
-        // Lucide MessageSquare: rounded 20x16 body plus the lower-left reply tail. Keeping this
-        // stroke-only avoids the boxy filled speech bubble used by the old ASS approximation.
+        // Lucide MessageCircleMore. Build the outline from real strokes instead of a compound ASS
+        // fill: libass did not consistently honour the inner winding of the old ring, turning the
+        // comments glyph into a bold filled blob on the Deck.
         let u = size / 24.0;
         let stroke = 2.0 * u;
-        push(
-            lines,
-            rounded_rect_ring(
-                cx - 10.0 * u,
-                cy - 9.0 * u,
-                20.0 * u,
-                16.0 * u,
-                2.0 * u,
-                stroke,
-                color,
-                &a,
-            ),
-        );
-        push(
-            lines,
-            round_line(
-                cx - 4.5 * u,
-                cy + 7.0 * u,
-                cx - 8.0 * u,
-                cy + 10.0 * u,
-                stroke,
-                color,
-                &a,
-            ),
-        );
+        let point = |x: f64, y: f64| (cx + (x - 12.0) * u, cy + (y - 12.0) * u);
+        let outline = [
+            point(3.0, 16.0), point(2.0, 21.0), point(7.0, 19.0), point(9.0, 21.0),
+            point(12.0, 22.0), point(16.0, 21.0), point(19.0, 19.0), point(21.0, 16.0),
+            point(22.0, 12.0), point(21.0, 8.0), point(19.0, 5.0), point(16.0, 3.0),
+            point(12.0, 2.0), point(8.0, 3.0), point(5.0, 5.0), point(3.0, 8.0),
+            point(2.0, 12.0), point(3.0, 16.0),
+        ];
+        push(lines, stroke_polyline(&outline, stroke, color, &a));
+        for x in [8.0, 12.0, 16.0] {
+            let (x, y) = point(x, 12.0);
+            push(lines, circle(x, y, stroke * 0.62, color, &a));
+        }
     } else if label == "switch server" {
         let u = size / 24.0;
         let stroke = 2.0 * u;
@@ -955,12 +944,34 @@ fn control_icon_ass(
         push(lines, round_line(cx - 8.0 * u, cy + 5.0 * u, cx + 8.0 * u, cy + 5.0 * u, stroke, color, &a));
         push(lines, round_line(cx - 4.0 * u, cy + 1.0 * u, cx - 8.0 * u, cy + 5.0 * u, stroke, color, &a));
         push(lines, round_line(cx - 8.0 * u, cy + 5.0 * u, cx - 4.0 * u, cy + 9.0 * u, stroke, color, &a));
-    } else if label.contains("subtitle") || label.contains("track") {
-        // Lucide Captions: a rounded 18x14 frame and its four short caption strokes. The old "CC"
-        // lettering was visually heavier and did not match the icon the HTML controls use.
+    } else if label == "subtitle and audio tracks" {
+        // Lucide Languages: this communicates the combined audio/subtitle picker without the
+        // anonymous empty rectangle users mistook for a broken subtitle icon.
         let u = size / 24.0;
         let stroke = 2.0 * u;
-        push(lines, rounded_rect_ring(cx - 9.0 * u, cy - 7.0 * u, 18.0 * u, 14.0 * u, 2.0 * u, stroke, color, &a));
+        let point = |x: f64, y: f64| (cx + (x - 12.0) * u, cy + (y - 12.0) * u);
+        for (x0, y0, x1, y1) in [
+            (5.0, 8.0, 11.0, 14.0), (4.0, 14.0, 10.0, 8.0), (10.0, 8.0, 12.0, 5.0),
+            (2.0, 5.0, 14.0, 5.0), (7.0, 2.0, 8.0, 2.0), (22.0, 22.0, 17.0, 12.0),
+            (17.0, 12.0, 12.0, 22.0), (14.0, 18.0, 20.0, 18.0),
+        ] {
+            let (x0, y0) = point(x0, y0);
+            let (x1, y1) = point(x1, y1);
+            push(lines, round_line(x0, y0, x1, y1, stroke, color, &a));
+        }
+    } else if label.contains("subtitle") || label.contains("track") {
+        // Lucide Captions for the optional previous/replay/next subtitle-line controls. Use a
+        // stroke polyline so libass cannot collapse its hollow frame into a filled rectangle.
+        let u = size / 24.0;
+        let stroke = 2.0 * u;
+        let outline = [
+            (cx - 7.0 * u, cy - 7.0 * u), (cx + 7.0 * u, cy - 7.0 * u),
+            (cx + 9.0 * u, cy - 5.0 * u), (cx + 9.0 * u, cy + 5.0 * u),
+            (cx + 7.0 * u, cy + 7.0 * u), (cx - 7.0 * u, cy + 7.0 * u),
+            (cx - 9.0 * u, cy + 5.0 * u), (cx - 9.0 * u, cy - 5.0 * u),
+            (cx - 7.0 * u, cy - 7.0 * u),
+        ];
+        push(lines, stroke_polyline(&outline, stroke, color, &a));
         for (x0, x1, y) in [(-5.0, -1.0, 3.0), (3.0, 5.0, 3.0), (-5.0, -3.0, -1.0), (1.0, 5.0, -1.0)] {
             push(lines, round_line(cx + x0 * u, cy + y * u, cx + x1 * u, cy + y * u, stroke, color, &a));
         }
@@ -1114,51 +1125,17 @@ fn round_line(
     .join("\n")
 }
 
-fn rounded_rect_ring(
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-    radius: f64,
+fn stroke_polyline(
+    points: &[(f64, f64)],
     thickness: f64,
     color: &str,
     alpha: &str,
 ) -> String {
-    if w <= 0.0 || h <= 0.0 || thickness <= 0.0 {
-        return String::new();
-    }
-    let r = radius.clamp(0.0, w.min(h) / 2.0);
-    let t = thickness.min(w.min(h) / 2.0);
-    let path = |x: f64, y: f64, w: f64, h: f64, r: f64, clockwise: bool| {
-        let x0 = ir(x);
-        let y0 = ir(y);
-        let x1 = ir(x + w);
-        let y1 = ir(y + h);
-        let r = ir(r).max(0);
-        let k = ir(r as f64 * 0.552_284_749_8).max(0);
-        if clockwise {
-            format!(
-                "m {} {y0} l {} {y0} b {} {y0} {x1} {} {x1} {} l {x1} {} b {x1} {} {} {y1} {} {y1} l {} {y1} b {} {y1} {x0} {} {x0} {} l {x0} {} b {x0} {} {} {y0} {} {y0}",
-                x0 + r, x1 - r, x1 - r + k, y0 + r - k, y0 + r, y1 - r,
-                y1 - r + k, x1 - r + k, x1 - r, x0 + r, x0 + r - k,
-                y1 - r + k, y1 - r, y0 + r, y0 + r - k, x0 + r - k, x0 + r,
-            )
-        } else {
-            format!(
-                "m {} {y0} l {x0} {} b {x0} {} {} {y0} {} {y0} l {} {y0} b {} {y0} {x1} {} {x1} {} l {x1} {} b {x1} {} {} {y1} {} {y1} l {} {y1} b {} {y1} {x0} {} {x0} {}",
-                x0 + r, y0 + r, y0 + r - k, x0 + r - k, x0 + r, x1 - r,
-                x1 - r + k, y0 + r - k, y0 + r, y1 - r, y1 - r + k,
-                x1 - r + k, x1 - r, x0 + r, x0 + r - k, y1 - r + k, y1 - r,
-            )
-        }
-    };
-    let inner_w = w - t * 2.0;
-    let inner_h = h - t * 2.0;
-    let outer = path(x, y, w, h, r, true);
-    let inner = path(x + t, y + t, inner_w, inner_h, (r - t).max(0.0), false);
-    format!(
-        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p1}}{outer} {inner}{{\\p0}}"
-    )
+    points
+        .windows(2)
+        .map(|pair| round_line(pair[0].0, pair[0].1, pair[1].0, pair[1].1, thickness, color, alpha))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn circle_ring(

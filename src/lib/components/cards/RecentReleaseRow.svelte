@@ -3,7 +3,6 @@
   import { queryStore, getContextClient } from '@urql/svelte'
   import { RECENT_RELEASES_QUERY } from '$lib/anilist/queries'
   import type { Media } from '$lib/anilist/types'
-  import { gameMode } from '$lib/player/session'
   import { dismissedRecentReleaseIds, showAdult } from '$lib/settings/ui'
   import { releasedAgo } from '$lib/anime/airing-labels'
   import * as h from '$lib/haptics'
@@ -20,7 +19,7 @@
   const reveal = () => { visible = true }
   let now = $state(Date.now())
   let activeId = $state<number | null>(null)
-  const active = $derived(visible || $gameMode)
+  const active = $derived(visible)
   const store = $derived(queryStore<{ Page: { airingSchedules: Release[] } }>({
     client,
     query: RECENT_RELEASES_QUERY,
@@ -73,12 +72,12 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div use:nearViewport={{ onEnter: reveal }}>
+<div class:deferred-skeleton={!active} use:nearViewport={{ onEnter: reveal }}>
   {#if !active || $store.fetching || releases.length > 0}
     <Carousel title="Recently Released" viewMoreHref="/app/schedule">
       {#if !active || $store.fetching}
         {#each Array.from({ length: 8 }) as _}
-          <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
+          <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
         {/each}
       {:else}
         {#each releases as release (`${release.media.id}-${release.episode}-${release.airingAt}`)}

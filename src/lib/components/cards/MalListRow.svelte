@@ -24,7 +24,7 @@
   let medias = $state<Media[]>([])
   let loading = $state(true)
   let error = $state('')
-  let requested = false
+  let requested = $state(false)
   const shown = $derived(medias.slice(0, 30))
 
   function reveal() {
@@ -60,11 +60,11 @@
   }
 </script>
 
-<div use:nearViewport={{ onEnter: reveal }}>
+<div class:deferred-skeleton={!requested} use:nearViewport={{ onEnter: reveal }}>
   {#if loading}
     <Carousel {title}>
       {#each Array.from({ length: 6 }) as _}
-        <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
+        <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
       {/each}
     </Carousel>
   {:else if error}

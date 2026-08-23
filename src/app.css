@@ -15,7 +15,7 @@
   --radius: 0.5rem;
 }
 * { border-color: hsl(var(--border)); }
-html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: 'Nunito Variable', sans-serif; scroll-behavior: auto; }
+html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: 'Nunito Variable', sans-serif; scroll-behavior: smooth; }
 /* Compositor screenshots hide in-webview OSD so the file is video + subs, not controls. */
 html.izumi-capturing .izumi-hud { visibility: hidden !important; }
 /* Keyboard `O` focuses the overlay; *:focus-visible would draw a rounded ring at the
@@ -60,6 +60,9 @@ body { overflow-x: clip; }
 .bg-striped-muted { background: repeating-linear-gradient(-45deg, #1e1e1e 0 6px, #161616 6px 12px); }
 @keyframes load-in { from { transform: translate3d(0,1.2rem,0) scale(0.95); opacity: 0; } to { transform: none; opacity: 1; } }
 .load-in { animation: load-in 0.3s ease both; }
+@keyframes schedule-in { from { transform: translate3d(0,0.65rem,0); opacity: 0; } to { transform: none; opacity: 1; } }
+.schedule-panel-in { animation: schedule-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+.schedule-day-in { animation: schedule-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 /* Game mode (Deck): no card entrance animation — its fade/slide flashes as controller focus
    moves into a row. Keep the browse calm and instant. */
 .gamemode .load-in { animation: none; }
@@ -107,8 +110,9 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 @keyframes skeleton-swipe { 100% { transform: translateX(100%); } }
 .skeloader { position: relative; overflow: hidden; background: hsl(var(--muted)); }
 .skeloader::before { content: ''; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent); animation: skeleton-swipe 1.5s infinite; }
-/* Static placeholders avoid a screenful of perpetual compositor work on the Deck. */
-.gamemode .skeloader::before { display: none; animation: none; }
+/* Rows held below the near-viewport fetch gate keep their layout placeholder, but do not spend a
+   compositor animation on skeletons the user cannot see yet. The class is removed before fetch. */
+.deferred-skeleton .skeloader::before { animation-play-state: paused; }
 /* Indeterminate progress bar (update download with no Content-Length): a short segment sweeps
    the track. Transform-only so WebKitGTK/gamescope composite it without repainting the track. */
 @keyframes indeterminate { from { transform: translateX(-100%); } to { transform: translateX(400%); } }

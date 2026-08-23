@@ -24,14 +24,16 @@ export class BootWorkQueue {
     const noteActivity = () => {
       const now = Date.now()
       this.lastActivityAt = now
-      // Scroll/wheel can arrive at display refresh rate. Updating the grace timestamp is cheap;
-      // timer cancellation/recreation only needs to happen a few times a second.
+      // Wheel can arrive at display refresh rate. Updating the grace timestamp is cheap; timer
+      // cancellation/recreation only needs to happen a few times a second.
       if (now - this.lastActivityArmAt < 120) return
       this.lastActivityArmAt = now
       // Re-arm so a fallback timer on WebKitGTK cannot fire in the middle of active scrolling.
       this.arm(true)
     }
-    for (const event of ['pointerdown', 'touchstart', 'wheel', 'keydown', 'scroll']) {
+    // Input already tells us the user is active. Listening to programmatic `scroll` as well made
+    // every controller reveal re-arm timers during the animation and added work to each frame.
+    for (const event of ['pointerdown', 'touchstart', 'wheel', 'keydown']) {
       window.addEventListener(event, noteActivity, { capture: true, passive: true })
     }
     if (typeof document !== 'undefined') {

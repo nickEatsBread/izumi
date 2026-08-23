@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fieldOwnsArrow, isEnterInertInput, type ArrowKey, type FieldShape } from './index'
+import { fieldOwnsArrow, isEnterInertInput, revealAxisDelta, type ArrowKey, type FieldShape } from './index'
 
 const input = (type: string): FieldShape => ({ tag: 'INPUT', type })
 const KEYS: ArrowKey[] = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
@@ -58,5 +58,28 @@ describe('isEnterInertInput', () => {
     expect(isEnterInertInput({ tag: 'BUTTON' })).toBe(false)
     expect(isEnterInertInput({ tag: 'DIV', role: 'button' })).toBe(false)
     expect(isEnterInertInput({ tag: 'SELECT' })).toBe(false)
+  })
+})
+
+describe('revealAxisDelta', () => {
+  const base = { portStart: 0, portEnd: 800, startMargin: 80, endMargin: 140 }
+
+  it('keeps an already-safe card still', () => {
+    expect(revealAxisDelta({ ...base, itemStart: 260, itemEnd: 500 })).toBe(0)
+  })
+
+  it('moves before focus reaches the bottom edge', () => {
+    expect(revealAxisDelta({ ...base, itemStart: 600, itemEnd: 750 })).toBe(90)
+  })
+
+  it('restores room above a card when moving back', () => {
+    expect(revealAxisDelta({ ...base, itemStart: 30, itemEnd: 180 })).toBe(-50)
+  })
+
+  it('clamps margins when the focused item nearly fills its viewport', () => {
+    expect(revealAxisDelta({
+      itemStart: -20, itemEnd: 760, portStart: 0, portEnd: 800,
+      startMargin: 100, endMargin: 160,
+    })).toBe(-30)
   })
 })

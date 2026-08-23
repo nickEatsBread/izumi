@@ -77,7 +77,7 @@
 {#if loading}
   <div class="space-y-2">
     {#each Array.from({ length: 8 }) as _}
-      <div class="h-[84px] animate-pulse rounded-lg bg-muted"></div>
+      <div class="skeloader h-[84px] rounded-lg"></div>
     {/each}
   </div>
 {:else if !listUser && !malActive}

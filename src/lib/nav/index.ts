@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { gameMode, playing } from '$lib/player/session'
+import { playing } from '$lib/player/session'
 import { pickInDirection, type Dir } from './spatial'
 export * from './input'
 export * from './actions'
@@ -77,13 +77,38 @@ const fieldShape = (target: EventTarget | null): FieldShape | null => {
   }
 }
 
+export interface RevealAxisInput {
+  itemStart: number
+  itemEnd: number
+  portStart: number
+  portEnd: number
+  startMargin: number
+  endMargin: number
+}
+
+/** Keep focus inside a comfortable viewport band instead of waiting until it is already clipped.
+ * Margins are clamped for oversized items, so this also behaves sensibly in compact modals. */
+export function revealAxisDelta(input: RevealAxisInput): number {
+  const itemSize = Math.max(0, input.itemEnd - input.itemStart)
+  const portSize = Math.max(0, input.portEnd - input.portStart)
+  const maxMargin = Math.max(0, (portSize - itemSize) / 2)
+  const start = input.portStart + Math.min(Math.max(0, input.startMargin), maxMargin)
+  const end = input.portEnd - Math.min(Math.max(0, input.endMargin), maxMargin)
+  if (input.itemStart < start) return input.itemStart - start
+  if (input.itemEnd > end) return input.itemEnd - end
+  return 0
+}
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
-  // Do not stack smooth-scroll animations in Game mode or while a direction is held. WebKitGTK
-  // queues those and then repaints/decode-rushes several rows at once, which looks like a DOM
-  // freeze followed by black flashes. Desktop keyboard navigation keeps its gentle reveal.
-  const behavior: ScrollBehavior = get(gameMode) || rapid ? 'auto' : 'smooth'
+  // A single D-pad press should visibly carry the selected card with it. Held-key repeats switch
+  // to instant movement so WebKitGTK never queues several smooth animations behind the thumb.
+  const reduced = document.documentElement.dataset.motion === 'reduced'
+    || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
   // Horizontal carousel navigation owns only that row. Vertical navigation still reveals the
   // destination on the page, rather than trying to scroll the destination row inside itself.
   const pane = vertical
@@ -96,10 +121,26 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
     bottom: window.innerHeight,
     right: window.innerWidth,
   }
-  // A focus move wholly inside the viewport needs no scrolling at all. The old unconditional
-  // scrollIntoView(center) repainted the page on every Deck press and queued long smooth motions.
-  const top = item.top < port.top ? item.top - port.top : item.bottom > port.bottom ? item.bottom - port.bottom : 0
-  const left = item.left < port.left ? item.left - port.left : item.right > port.right ? item.right - port.right : 0
+  const portHeight = Math.max(0, port.bottom - port.top)
+  const portWidth = Math.max(0, port.right - port.left)
+  // Keep extra space in the direction of travel. This makes the NEXT row/card visible and prevents
+  // controller focus from slowly riding the bottom/right edge until it disappears from view.
+  const top = revealAxisDelta({
+    itemStart: item.top,
+    itemEnd: item.bottom,
+    portStart: port.top,
+    portEnd: port.bottom,
+    startMargin: clamp(portHeight * 0.12, 40, 96),
+    endMargin: clamp(portHeight * 0.2, 64, 144),
+  })
+  const left = revealAxisDelta({
+    itemStart: item.left,
+    itemEnd: item.right,
+    portStart: port.left,
+    portEnd: port.right,
+    startMargin: clamp(portWidth * 0.08, 24, 96),
+    endMargin: clamp(portWidth * 0.18, 48, 176),
+  })
   if (!top && !left) return
   if (pane) pane.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
   else window.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })

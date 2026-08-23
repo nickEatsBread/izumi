@@ -34,6 +34,7 @@
   } = $props()
 
   let i = $state(0)
+  let loadedArtworkId = $state<number | null>(null)
   let cycle = $state(0)
   let scrolled = $state(false)
   let navDirection = $state<1 | -1>(1)
@@ -209,6 +210,8 @@
   })
 
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
+  const artworkReady = $derived(loadedArtworkId === current?.id)
+  const artworkSettled = () => (loadedArtworkId = current.id)
   // Accent: tint everything off the cover's dominant color; theme fallback.
   const accent = $derived(current?.coverImage?.color || 'hsl(346.6 79.12% 51.18%)')
   const nextAiring = $derived(current?.nextAiringEpisode)
@@ -242,9 +245,12 @@
       ontouchend={onTouchEnd}
     >
       {#key current.id}
-        <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
-             class="hero-slide-in absolute inset-0 h-full w-full object-cover"
-             style="--hero-enter-x:{navDirection * 3}%" />
+        <div class="hero-slide-in absolute inset-0" style="--hero-enter-x:{navDirection * 3}%">
+          {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
+          <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
+               onload={artworkSettled} onerror={artworkSettled}
+               class="relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
+        </div>
       {/key}
       <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
       {#if $isAndroid && oninfo}
@@ -319,9 +325,13 @@
          otherwise leave a black band on the right. Keyed for a crossfade. -->
     <div class="pointer-events-none absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
       {#key current.id}
-        <img src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
-             class="hero-slide-in absolute inset-0 h-full w-full object-cover opacity-70"
-             style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:.7;object-position:center 20%" />
+        <div class="hero-slide-in absolute inset-0" style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:.7">
+          {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
+          <img src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
+               onload={artworkSettled} onerror={artworkSettled}
+               class="relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}"
+               style="object-position:center 20%" />
+        </div>
       {/key}
       <!-- Dual linear scrims: bright top-right, dark bottom-left. -->
       <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>

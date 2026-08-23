@@ -4,9 +4,12 @@
   import type { Media } from '$lib/anilist/types'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
+  import { nearViewport } from '$lib/util/near-viewport'
 
   let { userName }: { userName: string } = $props()
   const client = getContextClient()
+  let visible = $state(false)
+  const reveal = () => { visible = true }
   const store = $derived(queryStore<{
     Page: {
       mediaList: {
@@ -19,7 +22,7 @@
     client,
     query: PERSONAL_RECOMMENDATIONS_QUERY,
     variables: { userName },
-    pause: !userName,
+    pause: !userName || !visible,
   }))
 
   const recommendations = $derived.by(() => {
@@ -31,16 +34,18 @@
   })
 </script>
 
-{#if $store.fetching}
-  <Carousel title="Recommended for You">
-    {#each Array.from({ length: 8 }) as _}
-      <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
-    {/each}
-  </Carousel>
-{:else if recommendations.length}
-  <Carousel title="Recommended for You">
-    {#each recommendations as media (media.id)}
-      <div class="load-in shrink-0"><SmallCard {media} /></div>
-    {/each}
-  </Carousel>
-{/if}
+<div class:deferred-skeleton={!visible} use:nearViewport={{ onEnter: reveal }}>
+  {#if !visible || $store.fetching}
+    <Carousel title="Recommended for You">
+      {#each Array.from({ length: 8 }) as _}
+        <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
+      {/each}
+    </Carousel>
+  {:else if recommendations.length}
+    <Carousel title="Recommended for You">
+      {#each recommendations as media (media.id)}
+        <div class="load-in shrink-0"><SmallCard {media} /></div>
+      {/each}
+    </Carousel>
+  {/if}
+</div>

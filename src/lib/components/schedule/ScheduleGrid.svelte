@@ -203,7 +203,11 @@
 {/snippet}
 
 {#snippet selectedDay()}
-  <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={shownDays[selected]} {badgeOf} {infoOf} big navFirst="schedule-first-airing" />
+  {#key selected}
+    <div class="schedule-day-in">
+      <DayColumn label={`${FULL[selected]} · ${dayDate(selected)}`} airings={shownDays[selected]} {badgeOf} {infoOf} big navFirst="schedule-first-airing" />
+    </div>
+  {/key}
 {/snippet}
 
 {#snippet mineEmpty()}
@@ -234,18 +238,20 @@
 {:else if error}
   <p class="text-muted-foreground">Failed to load schedule: {error}</p>
 {:else}
-  {#if view === 'mine' && mineCount === 0}
-    {@render dayTabs(false)}
-    {@render mineEmpty()}
-  {:else if gm}
-    {@render dayTabs(true)}
-    {@render selectedDay()}
-  {:else if layout === 'days' || $isMobile}
-    {@render dayTabs(false)}
-    {#if isCurrentWeek && $scheduleShowNextUp}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
-    {@render selectedDay()}
-  {:else}
-    {#if isCurrentWeek && $scheduleShowNextUp}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
-    <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} {infoOf} {headerOffset} />
-  {/if}
+  <div class="schedule-panel-in">
+    {#if view === 'mine' && mineCount === 0}
+      {@render dayTabs(false)}
+      {@render mineEmpty()}
+    {:else if gm}
+      {@render dayTabs(true)}
+      {@render selectedDay()}
+    {:else if layout === 'days' || $isMobile}
+      {@render dayTabs(false)}
+      {#if isCurrentWeek && $scheduleShowNextUp}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
+      {@render selectedDay()}
+    {:else}
+      {#if isCurrentWeek && $scheduleShowNextUp}<ScheduleNextUp airings={shownDays.flat()} {sets} {now} />{/if}
+      <AgendaWeek days={shownDays} {start} {todayIdx} {badgeOf} {infoOf} {headerOffset} />
+    {/if}
+  </div>
 {/if}

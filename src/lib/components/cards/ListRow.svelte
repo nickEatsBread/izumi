@@ -36,11 +36,11 @@
   )
   const shown = $derived(entries.slice(0, RENDER_CAP))
 </script>
-<div use:nearViewport={{ onEnter: reveal }}>
+<div class:deferred-skeleton={!visible} use:nearViewport={{ onEnter: reveal }}>
   {#if !visible || $store.fetching}
     <Carousel {title}>
       {#each Array.from({ length: 6 }) as _}
-        <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
+        <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
       {/each}
     </Carousel>
   {:else if shown.length}

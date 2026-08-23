@@ -24,6 +24,12 @@ describe('featured carousel UX', () => {
     expect(hero).toContain('--hero-enter-x:{navDirection * 3}%')
   })
 
+  it('keeps a skeleton visible until the active artwork has loaded', () => {
+    expect(hero).toContain('const artworkReady = $derived(loadedArtworkId === current?.id)')
+    expect(hero.match(/\{#if !artworkReady\}<div class="absolute inset-0 skeloader"><\/div>\{\/if\}/g)?.length).toBe(2)
+    expect(hero.match(/onload=\{artworkSettled\} onerror=\{artworkSettled\}/g)?.length).toBe(2)
+  })
+
   it('keeps pointer arrows out of Steam Deck spatial navigation', () => {
     expect(hero.match(/data-focusable=\{\$gameMode \? undefined : ''\}/g)?.length).toBe(2)
     expect(hero.match(/tabindex=\{\$gameMode \? -1 : undefined\}/g)?.length).toBe(2)

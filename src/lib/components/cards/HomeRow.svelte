@@ -7,7 +7,6 @@
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
   import type { Media } from '$lib/anilist/types'
-  import { gameMode } from '$lib/player/session'
   import { nearViewport } from '$lib/util/near-viewport'
 
   let { title, vars }: { title: string; vars: Record<string, unknown> } = $props()
@@ -21,7 +20,7 @@
   // resolves as you scroll to it (the per-row stagger). NOT IntersectionObserver: the app's <html>
   // CSS `zoom` breaks IO's geometry (the same reason SearchResults uses a scroll listener).
   let visible = $state(false)
-  const active = $derived(visible || $gameMode)
+  const active = $derived(visible)
   const reveal = () => { visible = true }
 
   const store = $derived(queryStore<{ Page: { media: Media[] } }>({
@@ -45,7 +44,7 @@
   }
 </script>
 
-<div use:nearViewport={{ onEnter: reveal }}>
+<div class:deferred-skeleton={!active} use:nearViewport={{ onEnter: reveal }}>
   <!-- Keep the observer anchor, but do not leave a heading/View-more shell behind if every
        catalogue provider genuinely returned an empty page. -->
   {#if !active || $store.fetching || ($store.data?.Page.media.length ?? 0) > 0}
@@ -54,7 +53,7 @@
            stay below the fold until scrolled to (otherwise every row reveals at once). -->
       {#if !active || $store.fetching}
         {#each Array.from({ length: 8 }) as _}
-          <div class="aspect-[2/3] w-36 shrink-0 animate-pulse rounded-md bg-muted sm:w-[152px]"></div>
+          <div class="skeloader aspect-[2/3] w-36 shrink-0 rounded-md sm:w-[152px]"></div>
         {/each}
       {:else if $store.data}
         {#each $store.data.Page.media as media (media.id)}
