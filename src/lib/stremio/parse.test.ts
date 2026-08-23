@@ -67,6 +67,22 @@ suite('describe() memoisation', () => {
   })
 })
 
+suite('describe() release author', () => {
+  it('reads a scene release group before the media extension', () => {
+    expect(describe({ behaviorHints: { filename: 'Show.S01E03.1080p.WEB-DL-WAKANIM.mkv' } }).group)
+      .toBe('WAKANIM')
+  })
+
+  it('keeps the anime-standard leading group as the author', () => {
+    expect(describe({ behaviorHints: { filename: '[SubsPlease] Show - 03 (1080p) [A1B2C3D4].mkv' } }).group)
+      .toBe('SubsPlease')
+  })
+
+  it('does not mistake a source tag for an author', () => {
+    expect(describe({ behaviorHints: { filename: 'Show.S01E03-WEB-DL.mkv' } }).group).toBeUndefined()
+  })
+})
+
 suite('describe() cache classification', () => {
   it('treats a bare infoHash with no url and no marker as unknown', () => {
     expect(describe({ infoHash: 'abc123', title: '[Group] Show - 01 (1080p)' }).cached).toBe('unknown')

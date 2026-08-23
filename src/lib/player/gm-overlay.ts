@@ -19,7 +19,11 @@ export function gameModeBitmapOverlayActive(input: {
   // opaque Gamescope video window, which made the output go black. Discrete menus re-snapshot on
   // focus changes; comments use the native self-paced refresh loop while scrolling.
   if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen || input.statsOpen) return true
-  if (input.noticeVisible || input.skipVisible) return true
+  // Skip is lightweight native OSD chrome. Keeping it off the bitmap path matters because a
+  // snapshot sits above the native progress layers and used to make the seekbar disappear for
+  // the whole OP/ED window. Toasts still need their full HTML treatment.
+  if (input.noticeVisible) return true
+  void input.skipVisible
   // P2P always uses its proper HTML card, including before the first frame. The old native ASS
   // text line was a visibly different fallback and could replace the card during loading.
   if (input.p2pVisible) return true

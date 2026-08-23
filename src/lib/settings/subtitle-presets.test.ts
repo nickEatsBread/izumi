@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { get } from 'svelte/store'
 import {
   savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, deleteSubtitlePreset,
-  applyPresetGlobally, effectiveSubtitleStyle, type SubtitleStylePreset,
+  applyPresetGlobally, effectiveSubtitleStyle, subtitlePresetSourceName, type SubtitleStylePreset,
 } from './subtitle-presets'
 import {
   subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
@@ -39,6 +39,16 @@ describe('saveSubtitlePreset', () => {
     expect(list[0].id).toBe(first.id)
     expect(list[0].name).toBe('subsplease')
     expect(list[0].style.fontSize).toBe(60)
+  })
+})
+
+describe('subtitlePresetSourceName', () => {
+  it('prefers the release author over the anime title', () => {
+    expect(subtitlePresetSourceName({ group: ' WAKANIM ', title: 'Anime Name' })).toBe('WAKANIM')
+  })
+
+  it('uses the anime name only when the release has no author', () => {
+    expect(subtitlePresetSourceName({ title: 'Anime Name' })).toBe('Anime Name')
   })
 })
 

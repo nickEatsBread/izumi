@@ -108,6 +108,15 @@ pub(crate) struct GmControlItem {
 #[derive(Clone, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) struct GmTimelineSegment {
+    pub(crate) start: f64,
+    pub(crate) end: f64,
+    pub(crate) kind: String,
+}
+
+#[derive(Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) struct GmDynamicOverlay {
     pub(crate) visible: bool,
     pub(crate) loading: bool,
@@ -154,6 +163,10 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) episode_y: f64,
     #[serde(default)]
     pub(crate) control_items: Vec<GmControlItem>,
+    #[serde(default)]
+    pub(crate) timeline_segments: Vec<GmTimelineSegment>,
+    #[serde(default)]
+    pub(crate) chapter_marks: Vec<f64>,
 }
 
 #[derive(Clone, Default, serde::Deserialize)]

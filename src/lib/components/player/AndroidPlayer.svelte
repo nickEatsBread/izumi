@@ -71,7 +71,7 @@
   } from '$lib/settings/ui'
   import { subtitleStyleProps } from '$lib/player/subtitle-style'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
@@ -990,7 +990,10 @@
     if (settingsPage !== 'subtitles') return
     void mpvGet('sub-ass-extradata').then((extradata) => {
       capturedStyle = captureFromExtradata(extradata)
-      styleSaveName = get(bingeSource)?.group ?? np.animeTitle ?? np.title ?? ''
+      styleSaveName = subtitlePresetSourceName({
+        group: get(bingeSource)?.group,
+        title: np.animeTitle ?? np.title,
+      })
     })
   })
   function saveCapturedStyle() {

@@ -306,18 +306,31 @@
   // episode: Change source reopens the same episode, and the old episode-keyed latch left focus on
   // the removed settings button. The next Down then landed on Close/Copy instead of a source.
   let pickerFocusReady = false
+  let pickerTrap = $state<HTMLElement | null>(null)
   $effect(() => {
     const open = !!pick && !pick.hidden
     if (!open) {
       pickerFocusReady = false
       return
     }
-    if (!$gameMode || pickerFocusReady || !rendered.length) return
+    const trap = pickerTrap
+    if (!$gameMode || pickerFocusReady || !rendered.length || !trap) return
     pickerFocusReady = true
+    // The first playable row is the predictable controller landing target. Do not prefer the
+    // asynchronously-ranked "Best" row: it can move while providers are still arriving, and a
+    // document-wide query can accidentally see an unrelated/stale source surface. Two paints let
+    // Svelte mount the keyed/transitioned row before focus, then a short reinforcement covers the
+    // WebKitGTK paint in which gamescope first exposes the dialog.
+    const focusFirst = () => {
+      if (!trap.isConnected) return
+      const target = trap.querySelector<HTMLElement>('[data-source-row]')
+      if (!target) return
+      target.focus({ preventScroll: true })
+      target.closest<HTMLElement>('.sp-list')?.scrollTo({ top: 0, behavior: 'auto' })
+    }
     requestAnimationFrame(() => {
-      const target = document.querySelector<HTMLElement>('[data-best-source]')
-        ?? document.querySelector<HTMLElement>('[data-source-row]')
-      target?.focus({ preventScroll: true })
+      requestAnimationFrame(focusFirst)
+      setTimeout(focusFirst, 80)
     })
   })
 
@@ -667,7 +680,7 @@
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
   >
-    <div data-nav-trap class="flex flex-col overflow-hidden bg-card shadow-2xl {$isMobile ? 'sp-mobile h-full w-full' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border'}" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div bind:this={pickerTrap} data-nav-trap class="flex flex-col overflow-hidden bg-card shadow-2xl {$isMobile ? 'sp-mobile h-full w-full' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border'}" onclick={(e) => e.stopPropagation()} role="presentation">
       <!-- Banner-headed title (shrink-0 so a tall list never squeezes it) -->
       <div class="relative shrink-0 overflow-hidden border-b border-border">
         {#if banner(pick.media)}

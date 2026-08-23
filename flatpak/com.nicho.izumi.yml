@@ -140,6 +140,9 @@ modules:
       # use flatpak/dev-build.sh (it injects --features devtools) — do not add it here.
       - npm run tauri build -- --no-bundle
       - install -Dm755 src-tauri/target/release/izumi /app/bin/izumi
+      # Native Game-mode OSD uses the same Nunito family as the WebKit interface. libass/fontconfig
+      # cannot read the frontend's WOFF2, so install the already-bundled Android TTF for desktop.
+      - install -Dm644 src-tauri/tauri-plugin-mpv/android/src/main/assets/fonts/Nunito.ttf /app/share/fonts/truetype/izumi/Nunito.ttf
       - install -Dm644 flatpak/com.nicho.izumi.desktop /app/share/applications/com.nicho.izumi.desktop
       # Sync the metainfo <release> version to the app version at build time. The file's
       # static version drifts otherwise (it lagged at 0.1.0 while the app moved on), which

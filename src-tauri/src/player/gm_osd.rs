@@ -32,6 +32,7 @@ const OSD_LOADING_ID: i64 = 4; // pre-first-frame black + buffering spinner (per
 const OSD_CHROME_ID: i64 = 5; // skip / P2P / toast (on change)
 const OSD_CONTROLS_BG_ID: i64 = 6; // native bottom wash (60Hz only during reveal/hide)
 const OSD_CONTROLS_CONTENT_ID: i64 = 7; // title + buttons/focus (60Hz during reveal/hide)
+const OSD_TIMELINE_MARKS_ID: i64 = 8; // OP/ED/recap + chapter cuts (content-gated)
 static LITE: AtomicBool = AtomicBool::new(false);
 // Tween time-constants (seconds) for the native scrub bar, chosen per input source. A trigger
 // (pad) steps in 5s jumps and is indirect, so a longer tween smooths the steps; a finger is
@@ -47,6 +48,7 @@ const PROGRESS_FRAME_MS: u64 = 100;
 // overlay-add bitmaps (the snapshot chrome, id 1) always sit above ALL of these.
 const Z_SCRUB_STATIC: i64 = 48;
 const Z_SCRUB_DYN: i64 = 50;
+const Z_TIMELINE_MARKS: i64 = 51;
 const Z_CONTROLS_BG: i64 = 46;
 const Z_CONTROLS_CONTENT: i64 = 55;
 const Z_LOADING: i64 = 60;
@@ -71,6 +73,8 @@ struct Shown {
     static_ass: Option<String>,
     /// The dynamic scrub layer (played/knob/time) is currently up.
     scrub: bool,
+    /// Last timeline annotations pushed above the played fill; unchanged during a scrub gesture.
+    marks_ass: Option<String>,
     /// The loading layer (dim/spinner) is currently up.
     loading: bool,
     /// Last skip/toast ASS; `None` when that layer is not shown.
@@ -218,6 +222,8 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
                 draw_state.episode_x = last.episode_x;
                 draw_state.episode_y = last.episode_y;
                 draw_state.control_items.clone_from(&last.control_items);
+                draw_state.timeline_segments.clone_from(&last.timeline_segments);
+                draw_state.chapter_marks.clone_from(&last.chapter_marks);
             }
         }
         if !state.visible && motion.main <= 0.0 && !motion.animating {
@@ -374,6 +380,20 @@ fn sanitize_state(mut state: GmDynamicOverlay) -> GmDynamicOverlay {
         item.h = item.h.clamp(1.0, 256.0);
         item.label = item.label.chars().take(80).collect();
     }
+    state.timeline_segments.truncate(64);
+    state.timeline_segments.retain(|segment| {
+        segment.start.is_finite()
+            && segment.end.is_finite()
+            && segment.end > segment.start
+            && matches!(segment.kind.as_str(), "op" | "ed" | "recap")
+    });
+    for segment in &mut state.timeline_segments {
+        segment.start = segment.start.clamp(0.0, state.dur.max(0.0));
+        segment.end = segment.end.clamp(0.0, state.dur.max(0.0));
+    }
+    state.timeline_segments.retain(|segment| segment.end > segment.start);
+    state.chapter_marks.truncate(256);
+    state.chapter_marks.retain(|time| time.is_finite() && *time > 0.0 && *time < state.dur);
     state
 }
 
@@ -416,6 +436,16 @@ fn draw(
             let _ = player.osd_overlay_ass(OSD_SCRUB_STATIC_ID, &static_ass, w, h, Z_SCRUB_STATIC);
             shown.static_ass = Some(static_ass);
         }
+        let marks_ass = timeline_marks_ass(state, bx, by - bh / 2.0, bw, bh, opacity);
+        update_ass_layer(
+            player.inner(),
+            OSD_TIMELINE_MARKS_ID,
+            Z_TIMELINE_MARKS,
+            w,
+            h,
+            marks_ass,
+            &mut shown.marks_ass,
+        );
         let dyn_ass = if state.scrubbing {
             scrub_dynamic_ass(state, wf, bx, by, bw, bh, 1.0)
         } else {
@@ -426,7 +456,9 @@ fn draw(
     } else if shown.scrub {
         let _ = player.osd_overlay_remove(OSD_SCRUB_DYN_ID);
         let _ = player.osd_overlay_remove(OSD_SCRUB_STATIC_ID);
+        let _ = player.osd_overlay_remove(OSD_TIMELINE_MARKS_ID);
         shown.static_ass = None;
+        shown.marks_ass = None;
         shown.scrub = false;
     }
 
@@ -502,6 +534,7 @@ fn remove(app: &AppHandle) {
         let _ = player.osd_overlay_remove(OSD_CHROME_ID);
         let _ = player.osd_overlay_remove(OSD_CONTROLS_BG_ID);
         let _ = player.osd_overlay_remove(OSD_CONTROLS_CONTENT_ID);
+        let _ = player.osd_overlay_remove(OSD_TIMELINE_MARKS_ID);
     }
 }
 
@@ -676,6 +709,60 @@ fn progress_dynamic_ass(
     lines.join("\n")
 }
 
+/// OP/ED/recap ranges and chapter cuts live above both the buffered and played fills. This keeps
+/// their meaning visible on the native Game-mode seekbar without changing chapter seek behaviour.
+fn timeline_marks_ass(
+    state: &GmDynamicOverlay,
+    x: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+    master_opacity: f64,
+) -> String {
+    if state.dur <= 0.0 || width <= 0.0 {
+        return String::new();
+    }
+    let mut lines = Vec::new();
+    for segment in &state.timeline_segments {
+        let start = pct(segment.start, state.dur);
+        let end = pct(segment.end, state.dur);
+        let color = match segment.kind.as_str() {
+            // ASS colours are BGR: Tailwind sky-400 / amber-400 match the HTML bar.
+            "op" => "F8BD38",
+            "ed" => "24BFFB",
+            _ => "FFFFFF",
+        };
+        push(
+            &mut lines,
+            rect(
+                x + width * start,
+                top,
+                width * (end - start).max(0.0),
+                height,
+                color,
+                &alpha_hex(0.58 * master_opacity),
+            ),
+        );
+    }
+    // Mirror the HTML chapter segmentation with a narrow dark cut. A cut, instead of another
+    // coloured marker, remains legible inside both played white and coloured skip ranges.
+    for time in &state.chapter_marks {
+        let mark_x = x + width * pct(*time, state.dur);
+        push(
+            &mut lines,
+            rect(
+                mark_x - 1.0,
+                top,
+                2.0,
+                height,
+                "000000",
+                &alpha_hex(0.76 * master_opacity),
+            ),
+        );
+    }
+    lines.join("\n")
+}
+
 fn controls_background_ass(w: f64, h: f64, opacity: f64) -> String {
     let mut lines = Vec::new();
     let height = (h * 0.34).clamp(180.0, 300.0);
@@ -698,6 +785,20 @@ fn controls_background_ass(w: f64, h: f64, opacity: f64) -> String {
             ),
         );
     }
+    // Extend the darkest foot past PlayResY. Rounding between the CSS viewport, mpv's OSD space,
+    // and the physical 800-line panel otherwise leaves a one-pixel bright seam under the wash.
+    // libass clips this at the framebuffer edge, so the overdraw cannot change layout.
+    push(
+        &mut lines,
+        rect(
+            0.0,
+            h - 12.0,
+            w,
+            28.0,
+            "000000",
+            &alpha_hex(0.82 * opacity),
+        ),
+    );
     lines.join("\n")
 }
 
@@ -706,26 +807,28 @@ fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -
     if !state.title.trim().is_empty() {
         push(
             &mut lines,
-            text_opacity(
+            text_weight_opacity(
                 state.title_x,
                 state.title_y + y_offset,
-                25.0,
+                26.0,
                 state.title.trim(),
                 opacity,
                 4,
+                700,
             ),
         );
     }
     if !state.episode_text.trim().is_empty() {
         push(
             &mut lines,
-            text_opacity(
+            text_weight_opacity(
                 state.episode_x,
                 state.episode_y + y_offset,
-                17.0,
+                18.0,
                 state.episode_text.trim(),
                 opacity * 0.82,
                 4,
+                500,
             ),
         );
     }
@@ -801,11 +904,14 @@ fn control_icon_ass(
         push(lines, rect(cx + size * 0.38, cy - size * 0.48, size * 0.12, size * 0.96, color, &a));
         push(lines, polygon(&[(cx - size * 0.45, cy - size * 0.5), (cx + size * 0.3, cy), (cx - size * 0.45, cy + size * 0.5)], color, &a));
     } else if label == "playback options" {
-        for (index, knob) in [-0.22, 0.28, -0.05].iter().enumerate() {
-            let y = cy + (index as f64 - 1.0) * size * 0.36;
-            push(lines, line_shape(cx - size * 0.52, y, cx + size * 0.52, y, size * 0.1, color, &a));
-            push(lines, circle(cx + size * *knob, y, size * 0.16, color, &a));
-        }
+        // Exact settings-2 geometry used by the HTML Lucide icon (24x24 viewBox), translated to
+        // the ASS canvas. The previous three filled sliders were a different icon altogether.
+        let u = size / 24.0;
+        let stroke = 2.0 * u;
+        push(lines, round_line(cx - 2.0 * u, cy - 5.0 * u, cx + 7.0 * u, cy - 5.0 * u, stroke, color, &a));
+        push(lines, round_line(cx - 7.0 * u, cy + 5.0 * u, cx + 2.0 * u, cy + 5.0 * u, stroke, color, &a));
+        push(lines, circle_ring(cx - 5.0 * u, cy - 5.0 * u, 2.0 * u, 4.0 * u, color, &a));
+        push(lines, circle_ring(cx + 5.0 * u, cy + 5.0 * u, 2.0 * u, 4.0 * u, color, &a));
     } else if label == "discussion" {
         let x0 = cx - size * 0.52;
         let x1 = cx + size * 0.52;
@@ -818,24 +924,23 @@ fn control_icon_ass(
         push(lines, line_shape(x0, y1, x1, y1, thick, color, &a));
         push(lines, polygon(&[(cx - size * 0.12, y1), (cx - size * 0.28, cy + size * 0.55), (cx + size * 0.12, y1)], color, &a));
     } else if label == "switch server" {
-        let thick = size * 0.1;
-        let y0 = cy - size * 0.24;
-        let y1 = cy + size * 0.24;
-        push(lines, line_shape(cx - size * 0.46, y0, cx + size * 0.42, y0, thick, color, &a));
-        push(lines, polygon(&[(cx + size * 0.5, y0), (cx + size * 0.22, y0 - size * 0.22), (cx + size * 0.22, y0 + size * 0.22)], color, &a));
-        push(lines, line_shape(cx + size * 0.46, y1, cx - size * 0.42, y1, thick, color, &a));
-        push(lines, polygon(&[(cx - size * 0.5, y1), (cx - size * 0.22, y1 - size * 0.22), (cx - size * 0.22, y1 + size * 0.22)], color, &a));
+        let u = size / 24.0;
+        let stroke = 2.0 * u;
+        push(lines, round_line(cx - 8.0 * u, cy - 5.0 * u, cx + 8.0 * u, cy - 5.0 * u, stroke, color, &a));
+        push(lines, round_line(cx + 4.0 * u, cy - 9.0 * u, cx + 8.0 * u, cy - 5.0 * u, stroke, color, &a));
+        push(lines, round_line(cx + 8.0 * u, cy - 5.0 * u, cx + 4.0 * u, cy - 1.0 * u, stroke, color, &a));
+        push(lines, round_line(cx - 8.0 * u, cy + 5.0 * u, cx + 8.0 * u, cy + 5.0 * u, stroke, color, &a));
+        push(lines, round_line(cx - 4.0 * u, cy + 1.0 * u, cx - 8.0 * u, cy + 5.0 * u, stroke, color, &a));
+        push(lines, round_line(cx - 8.0 * u, cy + 5.0 * u, cx - 4.0 * u, cy + 9.0 * u, stroke, color, &a));
     } else if label.contains("subtitle") || label.contains("track") {
-        let x0 = cx - size * 0.54;
-        let x1 = cx + size * 0.54;
-        let y0 = cy - size * 0.4;
-        let y1 = cy + size * 0.4;
-        let thick = size * 0.09;
-        push(lines, line_shape(x0, y0, x1, y0, thick, color, &a));
-        push(lines, line_shape(x0, y1, x1, y1, thick, color, &a));
-        push(lines, line_shape(x0, y0, x0, y1, thick, color, &a));
-        push(lines, line_shape(x1, y0, x1, y1, thick, color, &a));
-        push(lines, text_color_opacity(cx, cy, size * 0.48, "CC", color, opacity, 5));
+        // Lucide Captions: a rounded 18x14 frame and its four short caption strokes. The old "CC"
+        // lettering was visually heavier and did not match the icon the HTML controls use.
+        let u = size / 24.0;
+        let stroke = 2.0 * u;
+        push(lines, rounded_rect_ring(cx - 9.0 * u, cy - 7.0 * u, 18.0 * u, 14.0 * u, 2.0 * u, stroke, color, &a));
+        for (x0, x1, y) in [(-5.0, -1.0, 3.0), (3.0, 5.0, 3.0), (-5.0, -3.0, -1.0), (1.0, 5.0, -1.0)] {
+            push(lines, round_line(cx + x0 * u, cy + y * u, cx + x1 * u, cy + y * u, stroke, color, &a));
+        }
     } else {
         let initials: String = label
             .split_whitespace()
@@ -859,7 +964,19 @@ fn text_opacity(
     opacity: f64,
     align: u8,
 ) -> String {
-    text_color_opacity(x, y, size, body, "FFFFFF", opacity, align)
+    text_weight_opacity(x, y, size, body, opacity, align, 400)
+}
+
+fn text_weight_opacity(
+    x: f64,
+    y: f64,
+    size: f64,
+    body: &str,
+    opacity: f64,
+    align: u8,
+    weight: u16,
+) -> String {
+    text_color_weight_opacity(x, y, size, body, "FFFFFF", opacity, align, weight)
 }
 
 fn text_color_opacity(
@@ -871,11 +988,25 @@ fn text_color_opacity(
     opacity: f64,
     align: u8,
 ) -> String {
+    text_color_weight_opacity(x, y, size, body, color, opacity, align, 400)
+}
+
+fn text_color_weight_opacity(
+    x: f64,
+    y: f64,
+    size: f64,
+    body: &str,
+    color: &str,
+    opacity: f64,
+    align: u8,
+    weight: u16,
+) -> String {
     format!(
-        "{{\\an{}\\pos({},{})\\fs{}\\bord{}\\shad0\\1c&H{}&\\3c&H000000&\\1a&H{}&\\3a&H{}&}}{}",
+        "{{\\an{}\\pos({},{})\\fnNunito\\b{}\\fs{}\\bord{}\\shad0\\1c&H{}&\\3c&H000000&\\1a&H{}&\\3a&H{}&}}{}",
         align,
         ir(x),
         ir(y),
+        weight,
         ir(size),
         if color == "FFFFFF" { 2 } else { 0 },
         color,
@@ -917,6 +1048,70 @@ fn line_shape(
         &[(x0 + px, y0 + py), (x1 + px, y1 + py), (x1 - px, y1 - py), (x0 - px, y0 - py)],
         color,
         alpha,
+    )
+}
+
+fn round_line(
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+    thickness: f64,
+    color: &str,
+    alpha: &str,
+) -> String {
+    [
+        line_shape(x0, y0, x1, y1, thickness, color, alpha),
+        circle(x0, y0, thickness / 2.0, color, alpha),
+        circle(x1, y1, thickness / 2.0, color, alpha),
+    ]
+    .join("\n")
+}
+
+fn rounded_rect_ring(
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    radius: f64,
+    thickness: f64,
+    color: &str,
+    alpha: &str,
+) -> String {
+    if w <= 0.0 || h <= 0.0 || thickness <= 0.0 {
+        return String::new();
+    }
+    let r = radius.clamp(0.0, w.min(h) / 2.0);
+    let t = thickness.min(w.min(h) / 2.0);
+    let path = |x: f64, y: f64, w: f64, h: f64, r: f64, clockwise: bool| {
+        let x0 = ir(x);
+        let y0 = ir(y);
+        let x1 = ir(x + w);
+        let y1 = ir(y + h);
+        let r = ir(r).max(0);
+        let k = ir(r as f64 * 0.552_284_749_8).max(0);
+        if clockwise {
+            format!(
+                "m {} {y0} l {} {y0} b {} {y0} {x1} {} {x1} {} l {x1} {} b {x1} {} {} {y1} {} {y1} l {} {y1} b {} {y1} {x0} {} {x0} {} l {x0} {} b {x0} {} {} {y0} {} {y0}",
+                x0 + r, x1 - r, x1 - r + k, y0 + r - k, y0 + r, y1 - r,
+                y1 - r + k, x1 - r + k, x1 - r, x0 + r, x0 + r - k,
+                y1 - r + k, y1 - r, y0 + r, y0 + r - k, x0 + r - k, x0 + r,
+            )
+        } else {
+            format!(
+                "m {} {y0} l {x0} {} b {x0} {} {} {y0} {} {y0} l {} {y0} b {} {y0} {x1} {} {x1} {} l {x1} {} b {x1} {} {} {y1} {} {y1} l {} {y1} b {} {y1} {x0} {} {x0} {}",
+                x0 + r, y0 + r, y0 + r - k, x0 + r - k, x0 + r, x1 - r,
+                x1 - r + k, y0 + r - k, y0 + r, y1 - r, y1 - r + k,
+                x1 - r + k, x1 - r, x0 + r, x0 + r - k, y1 - r + k, y1 - r,
+            )
+        }
+    };
+    let inner_w = w - t * 2.0;
+    let inner_h = h - t * 2.0;
+    let outer = path(x, y, w, h, r, true);
+    let inner = path(x + t, y + t, inner_w, inner_h, (r - t).max(0.0), false);
+    format!(
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p1}}{outer} {inner}{{\\p0}}"
     )
 }
 

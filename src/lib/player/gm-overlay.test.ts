@@ -24,7 +24,7 @@ describe('gameModeBitmapOverlayActive', () => {
 
   it('does not snapshot an idle video with no chrome', () => {
     expect(gameModeBitmapOverlayActive(base)).toBe(false)
-    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(false)
   })
 
   it('keeps ordinary controls off the bitmap path so native OSD can animate at 60Hz', () => {
@@ -49,8 +49,8 @@ describe('gameModeBitmapOverlayActive', () => {
     expect(gameModeBitmapOverlayActive({ ...base, dynamicOverlay: true })).toBe(false)
   })
 
-  it('snapshots the Skip chip as HTML instead of ASS', () => {
-    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(true)
+  it('keeps the Skip chip native so it cannot cover or disable the progress bar', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(false)
   })
 })
 
@@ -107,12 +107,15 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('gmNativeControls')
     expect(overlay).toContain('measureNativeChrome')
     expect(overlay).toContain('controlItems')
+    expect(overlay).toContain('timelineSegments: segments.map')
+    expect(overlay).toContain('chapterMarks: chapters.map')
     expect(overlay).toContain('fast: overlayFast')
     expect(overlay).toContain('if (!gmMode || !p2pVisible) return')
     expect(overlay).toContain('ontoggleplay={togglePlayback}')
     expect(overlay).toContain("if (action !== 'playerClose') poke()")
     expect(overlay).toContain('controls: visible && nativeControls')
     expect(overlay).toContain('loading || get(scrub).active || controlsVisible || showSkip')
+    expect(overlay).toContain('if (picker && !picker.hidden) return')
     expect(overlay).not.toContain('class:gm-chrome-in')
   })
 
@@ -167,6 +170,10 @@ describe('Game-mode Leanback motion', () => {
     expect(menu).toContain('gm-open-tracks')
     expect(menu).toContain('bumpPlayerOverlay')
     expect(menu).toContain('pointerAllowed')
+    const picker = readFileSync(fileURLToPath(new URL('../components/player/StreamPicker.svelte', import.meta.url)), 'utf8')
+    expect(picker).toContain("trap.querySelector<HTMLElement>('[data-source-row]')")
+    expect(picker).toContain('bind:this={pickerTrap}')
+    expect(picker).not.toContain("document.querySelector<HTMLElement>('[data-best-source]')")
   })
 })
 

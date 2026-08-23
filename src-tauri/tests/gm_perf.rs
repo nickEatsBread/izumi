@@ -62,6 +62,14 @@ fn native_controls_match_vacuumtube_motion_curve() {
     assert!(osd.contains("controls_background_ass"));
     assert!(osd.contains("controls_content_ass"));
     assert!(osd.contains("1000 / OSD_FPS"));
+    assert!(osd.contains("\\fnNunito"));
+    assert!(osd.contains("rounded_rect_ring"));
+    assert!(osd.contains("h - 12.0"));
+    assert!(osd.contains("timeline_marks_ass"));
+    assert!(osd.contains("timeline_segments"));
+    assert!(osd.contains("chapter_marks"));
+    assert!(osd.contains("OSD_TIMELINE_MARKS_ID"));
+    assert!(osd.contains("&mut shown.marks_ass"));
 }
 
 #[test]

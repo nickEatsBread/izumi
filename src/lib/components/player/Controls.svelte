@@ -42,7 +42,7 @@
   import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { autoSyncSelectedSubtitle } from '$lib/player/subtitle-sync'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
   import Brush from '@lucide/svelte/icons/brush'
   import { chapters as chapterStore } from '$lib/player/session'
@@ -522,7 +522,10 @@
       capturedStyle = captureFromExtradata(await invoke<string>('player_get_property', { name: 'sub-ass-extradata' }))
     }
     catch { capturedStyle = null }
-    styleSaveName = get(bingeSource)?.group ?? get(nowPlayingMedia)?.media.title?.userPreferred ?? ''
+    styleSaveName = subtitlePresetSourceName({
+      group: get(bingeSource)?.group,
+      title: get(nowPlayingMedia)?.media.title?.userPreferred,
+    })
   }
   function saveCapturedStyle() {
     if (!capturedStyle) return
@@ -538,7 +541,10 @@
     capturedStyle = captureFromExtradata(
       await invoke<string>('player_get_property', { name: 'sub-ass-extradata' }).catch(() => ''),
     )
-    styleSaveName = get(bingeSource)?.group ?? get(nowPlayingMedia)?.media.title?.userPreferred ?? ''
+    styleSaveName = subtitlePresetSourceName({
+      group: get(bingeSource)?.group,
+      title: get(nowPlayingMedia)?.media.title?.userPreferred,
+    })
     if (!capturedStyle) {
       playerNotice.set('Current subtitle track has no ASS style to save')
       return

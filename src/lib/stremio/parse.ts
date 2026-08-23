@@ -387,7 +387,13 @@ function parseStream(s: Stream): StreamInfo {
   const fn = s.behaviorHints?.filename
   const NOISE = /^(?:\d{3,4}p?|x?\.?26[45]|h\.?26[45]|hevc|avc|av1|hi10p?|\d{1,2}\s?-?bit|[0-9a-f]{8}|web|web-?dl|dl|blu-?ray|ray|bd(?:rip|mux)?|hdtv|dvd(?:rip)?|remux|rip|dual\s?audio|multi(?:-?sub|-?audio)?|batch|complete|uncensored|uhd|hd|4k|sd|hdr(?:10\+?)?|dv|flac|aac|opus|ac-?3|e?-?ac-?3|ddp?\+?|atmos|truehd|dts(?:-hd)?)$/i
   const lead = fn?.match(/^\s*\[([^\]]+)\]/)?.[1]?.trim()
-  const tail = fn?.match(/-([A-Za-z][A-Za-z0-9]*)$/)?.[1]
+  // Scene-style groups appear before the media extension (and often an optional CRC tag), not
+  // literally at the end of the full filename. The old end anchor therefore missed e.g.
+  // `Show.S01E01.1080p-WAKANIM.mkv`, causing subtitle-style saves to fall back to the anime title.
+  const releaseStem = fn
+    ?.replace(/\.(?:mkv|mp4|m4v|avi|webm|ts)$/i, '')
+    .replace(/\s*\[[0-9A-F]{8}\]\s*$/i, '')
+  const tail = releaseStem?.match(/-([A-Za-z][A-Za-z0-9._]{0,31})$/)?.[1]
   const group = (lead && !NOISE.test(lead) ? lead : undefined)
     || (tail && !NOISE.test(tail) ? tail : undefined)
     || s.description?.match(/🏷️\s*([^\n|]+)/)?.[1]?.trim()

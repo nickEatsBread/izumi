@@ -28,6 +28,12 @@ export const sessionSubtitleStyle = writable<SubtitleStylePreset | null>(null)
 const newId = () =>
   (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`)
 
+/** Name a captured style after its release/fansub author; the anime title is deliberately only a
+ * fallback for streams whose torrent/release metadata carries no identifiable author. */
+export function subtitlePresetSourceName(source?: SubtitleStylePreset['source']): string {
+  return source?.group?.trim() || source?.title?.trim() || 'Saved style'
+}
+
 /** Save (or overwrite — names are unique, trimmed and case-insensitive) a preset. */
 export function saveSubtitlePreset(
   name: string,

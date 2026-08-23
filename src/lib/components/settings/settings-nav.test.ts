@@ -43,6 +43,7 @@ describe('SettingsNav', () => {
     expect(src).toContain('data-nav-scroll-container')
     expect(src).toContain('overflow-y-auto overscroll-contain')
     expect(dpad).toContain("closest<HTMLElement>('[data-nav-scroll-container]')")
-    expect(dpad).toContain("pane.scrollBy({ top, left, behavior: 'smooth' })")
+    expect(dpad).toContain("const behavior: ScrollBehavior = rapid || get(gameMode) ? 'auto' : 'smooth'")
+    expect(dpad).toContain('pane.scrollBy({ top, left, behavior })')
   })
 })

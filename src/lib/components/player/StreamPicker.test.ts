@@ -58,7 +58,9 @@ describe('mobile source picker layout', () => {
 
   it('focuses a playable source on every Game-mode picker opening', () => {
     expect(source).toContain('let pickerFocusReady = false')
-    expect(source).toContain("document.querySelector<HTMLElement>('[data-source-row]')")
+    expect(source).toContain("trap.querySelector<HTMLElement>('[data-source-row]')")
+    expect(source).toContain('bind:this={pickerTrap}')
+    expect(source).toContain('setTimeout(focusFirst, 80)')
     expect(source).toContain('data-source-row')
     expect(source).not.toContain('let focusedBest = false')
   })

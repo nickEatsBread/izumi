@@ -586,7 +586,7 @@
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
-  const gmNativeControls = $derived(gmMode && firstFrame && controlsVisible && !overlayFull && !showSkip)
+  const gmNativeControls = $derived(gmMode && firstFrame && controlsVisible && !overlayFull)
   const gmDynamicOwnsChrome = $derived(gmNativeControls)
   const overlayActive = $derived(gameModeBitmapOverlayActive({
     gameMode: gmMode,
@@ -723,6 +723,8 @@
     episodeX: 0,
     episodeY: 0,
     controlItems: [],
+    timelineSegments: [],
+    chapterMarks: [],
   })
 
   function measureSeekBar() {
@@ -775,7 +777,7 @@
 
   function currentGmDynamicState() {
     const s = get(scrub)
-    const skipText = gmMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
+    const skipText = gmMode && showSkip && currentSeg ? `Skip ${currentSeg.label}` : ''
     const liveControls = controlsVisible && firstFrame && dur > 0
     const nativeControls = liveControls && gmNativeControls
     const visible = gmMode && get(playing) && (loading || s.active || nativeControls || !!skipText)
@@ -817,6 +819,12 @@
       barH: 10,
       skipText,
       noticeText: '',
+      timelineSegments: segments.map((segment) => ({
+        start: segment.start,
+        end: segment.end,
+        kind: segment.type,
+      })),
+      chapterMarks: chapters.map((chapter) => chapter.time),
       ...chrome,
     }
   }
@@ -848,7 +856,7 @@
   }
 
   $effect(() => {
-    gmMode; $playing; loading; firstFrame; controlsVisible; paused; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations
+    gmMode; $playing; loading; firstFrame; controlsVisible; paused; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters
     scheduleGmDynamicOverlay()
   })
 
@@ -944,6 +952,13 @@
         void capture('gif')
         return
       }
+      // Change Source is an app-level modal mounted beside this overlay. The app-wide gamepad
+      // router owns all of its A/B/d-pad input; if this player listener also handles the same raw
+      // B edge, it closes the player immediately after the router closes the picker and reveals
+      // the series page underneath. A hidden binge-continuation picker is not a visible modal and
+      // deliberately does not take ownership.
+      const picker = get(streamPicker)
+      if (picker && !picker.hidden) return
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
       if (get(trackMenuOpen) || get(playerMenuOpen)) return
       // Steam may expose View through duplicate virtual-pad edges. Treat one physical cycle as

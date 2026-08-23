@@ -14,7 +14,7 @@
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import Check from '@lucide/svelte/icons/check'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
-  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
+  import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
 
   // Game-mode (Deck) audio/subtitle picker: a controller-navigable CASCADING column menu.
   // Opens on the ☰ (start) button; d-pad up/down moves within a column, →/A descends into the
@@ -175,7 +175,7 @@
     }
     const group = get(bingeSource)?.group
     const title = get(nowPlayingMedia)?.media.title?.userPreferred
-    const preset = saveSubtitlePreset(group ?? title ?? 'Saved style', style, { group, title })
+    const preset = saveSubtitlePreset(subtitlePresetSourceName({ group, title }), style, { group, title })
     sessionSubtitleStyle.set(preset)
     playerNotice.set(`Saved and applied subtitle style “${preset.name}”`)
     closeMenu()

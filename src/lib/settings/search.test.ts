@@ -33,6 +33,12 @@ describe('settings search', () => {
     expect(searchSettings('discord rpc')[0]?.title).toBe('Discord Rich Presence')
   })
 
+  it('finds the Game-mode player animation toggle by progress and motion terms', () => {
+    expect(searchSettings('animate player progress')[0]?.title).toBe('Animate player progress controls')
+    expect(searchSettings('vacuumtube')[0]?.title).toBe('Animate player progress controls')
+    expect(searchSettings('progress animation', true)).toHaveLength(0)
+  })
+
   it('finds the production inspector on desktop only', () => {
     expect(searchSettings('inspect element')[0]?.title).toBe('Developer tools')
     expect(searchSettings('inspect element', true)).toHaveLength(0)
