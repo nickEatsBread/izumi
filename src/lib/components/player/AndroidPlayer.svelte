@@ -26,6 +26,7 @@
     seekRelative,
     haptic,
     grabThumb,
+    grabCurrentFrame,
     androidPipActive,
     androidGifStart,
     androidGifStop,
@@ -112,6 +113,7 @@
   import AndroidWatchDetails from './AndroidWatchDetails.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
   import BufferSpinner from './BufferSpinner.svelte'
+  import SubtitleEditor from './SubtitleEditor.svelte'
 
   let controlsShown = $state(true)
   let scrubbing = $state(false)
@@ -1070,6 +1072,8 @@
   type Sheet = null | 'settings'
   type SettingsPage = 'main' | 'speed' | 'display' | 'subtitles' | 'audio' | 'capture' | 'servers' | 'chapters'
   let sheet = $state<Sheet>(null)
+  let subtitleEditorOpen = $state(false)
+  let subtitleEditorFrame = $state({ top: 0, height: 0 })
   let settingsPage = $state<SettingsPage>('main')
   let tracks = $state<MpvTrack[]>([])
   const audioTracks = $derived(tracks.filter((t) => t.type === 'audio'))
@@ -1119,6 +1123,16 @@
   }
   async function pickAudio(id: number) { await setAudioTrack(id); tracks = await getTracks() }
   async function pickSub(id: number | 'no') { await setSubTrack(id); tracks = await getTracks() }
+  function openSubtitleEditor() {
+    clearTimeout(sheetCloseTimer)
+    cancelAnimationFrame(sheetOpenFrame)
+    sheet = null
+    resetSheetState()
+    subtitleEditorFrame = landscape
+      ? { top: 0, height: window.innerHeight }
+      : { top: safeTop, height: portraitVideoHeight ?? window.innerWidth * 9 / 16 }
+    subtitleEditorOpen = true
+  }
   async function castToDevice() {
     const url = get(nowPlayingStream)?.url
     if (!url || url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost')) {
@@ -1864,6 +1878,9 @@
             {/each}
           </div>
         {:else if settingsPage === 'subtitles'}
+          <button onclick={openSubtitleEditor} class="mb-3 flex w-full items-center gap-3 rounded-2xl bg-theme/20 px-4 py-3.5 text-left text-theme">
+            <Captions size={20} /><span class="min-w-0 flex-1"><span class="block font-bold">Edit position &amp; size</span><span class="block text-xs opacity-70">Pause on this frame and drag a subtitle preview into place.</span></span><ChevronRight size={18} />
+          </button>
           <button onclick={() => pickSub('no')} class="settings-choice {subOff ? 'settings-choice-selected' : ''}"><span>Off</span>{#if subOff}<Check size={18} />{/if}</button>
           {#each subTracks as track (track.id)}
             <button onclick={() => pickSub(track.id)} class="settings-choice {track.selected ? 'settings-choice-selected' : ''}"><span>{trackLabel(track)}</span>{#if track.selected}<Check size={18} />{/if}</button>
@@ -1915,6 +1932,17 @@
         {/if}
       </div>
     </div>
+  {/if}
+
+  {#if subtitleEditorOpen}
+    <SubtitleEditor
+      {paused}
+      command={(name, args = []) => mpvCommand([name, ...args])}
+      capture={grabCurrentFrame}
+      frameTop={subtitleEditorFrame.top}
+      frameHeight={subtitleEditorFrame.height}
+      onclose={() => { subtitleEditorOpen = false; showControls() }}
+    />
   {/if}
 </div>
 

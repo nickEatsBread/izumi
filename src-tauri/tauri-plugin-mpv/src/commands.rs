@@ -139,6 +139,11 @@ pub(crate) async fn mpv_thumb<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn mpv_snapshot<R: Runtime>(app: AppHandle<R>) -> Result<serde_json::Value> {
+    app.mpv().snapshot()
+}
+
+#[command]
 pub(crate) async fn mpv_gif_start<R: Runtime>(
     app: AppHandle<R>,
     payload: GifStartRequest,

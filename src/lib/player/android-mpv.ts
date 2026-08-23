@@ -609,3 +609,13 @@ export async function grabThumb(timeSec: number, width = 320): Promise<string | 
     return null
   }
 }
+
+/** Capture the exact frame currently displayed by the live Android libmpv core. */
+export async function grabCurrentFrame(): Promise<string | null> {
+  try {
+    const r = (await invoke('plugin:mpv|mpv_snapshot')) as { value?: string | null }
+    return r?.value ?? null
+  } catch {
+    return null
+  }
+}

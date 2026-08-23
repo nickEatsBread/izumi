@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-snapshot"
+description = "Enables the mpv_snapshot command without any pre-configured scope."
+commands.allow = ["mpv_snapshot"]
+
+[[permission]]
+identifier = "deny-mpv-snapshot"
+description = "Denies the mpv_snapshot command without any pre-configured scope."
+commands.deny = ["mpv_snapshot"]

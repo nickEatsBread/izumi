@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     "mpv_brightness",
     "mpv_haptic",
     "mpv_thumb",
+    "mpv_snapshot",
     "mpv_gif_start",
     "mpv_gif_stop",
     "mpv_gif_abort",

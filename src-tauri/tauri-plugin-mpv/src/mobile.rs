@@ -129,6 +129,10 @@ impl<R: Runtime> Mpv<R> {
             .map_err(Into::into)
     }
 
+    pub fn snapshot(&self) -> crate::Result<serde_json::Value> {
+        self.0.run_mobile_plugin("snapshot", ()).map_err(Into::into)
+    }
+
     pub fn gif_start(&self, payload: GifStartRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("gifStart", payload)

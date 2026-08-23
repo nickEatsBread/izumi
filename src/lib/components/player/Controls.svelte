@@ -68,6 +68,7 @@
     onclose,
     gm = false,
     ontoggleplay,
+    oneditsubtitles,
   }: {
     pos: number
     dur: number
@@ -81,6 +82,7 @@
     // screen). `ontoggleplay` overrides the default cycle-pause when provided.
     gm?: boolean
     ontoggleplay?: () => void
+    oneditsubtitles?: () => void
   } = $props()
   const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
   function toggleComments() {
@@ -182,7 +184,11 @@
     gmSettingsPage = 'root'
     gmSetIdx = 0
   }
-  const gmRootKeys = $derived(['source', 'speed', ...(qualityInfo.heights.length ? ['quality'] : []), 'fit', 'tools'] as string[])
+  function openSubtitleEditor() {
+    closePlayerMenus()
+    oneditsubtitles?.()
+  }
+  const gmRootKeys = $derived(['source', 'speed', ...(qualityInfo.heights.length ? ['quality'] : []), 'fit', 'subtitles', 'tools'] as string[])
   function gmRowCount() {
     if (gmSettingsPage === 'root') return gmRootKeys.length
     if (gmSettingsPage === 'speed') return 1 + speeds.length
@@ -216,6 +222,7 @@
       else if (key === 'speed') gmOpenPage('speed')
       else if (key === 'quality') gmOpenPage('quality')
       else if (key === 'fit') gmOpenPage('fit')
+      else if (key === 'subtitles') openSubtitleEditor()
       else if (key === 'tools') gmOpenPage('tools')
       return
     }
@@ -879,6 +886,7 @@
                   <button data-focusable onclick={() => setFit(v as 'best' | 'fill')} class="flex-1 rounded px-2 py-1 text-xs transition {$videoFit === v ? 'bg-primary text-primary-foreground' : 'hover:bg-white/15'}">{l}</button>
                 {/each}
               </div>
+              <button data-focusable onclick={openSubtitleEditor} class="mb-3 w-full rounded bg-white/10 px-2.5 py-2 text-left text-sm font-bold transition hover:bg-white/20">Edit subtitle position &amp; size…</button>
               <p class="mb-1 text-xs uppercase tracking-wide text-white/50">Tools</p>
               <div class="mb-3 grid grid-cols-2 gap-1">
                 <button data-focusable onclick={() => playerStatsOpen.update((value) => !value)} class="rounded bg-white/10 px-2 py-1.5 text-xs hover:bg-white/20">{$playerStatsOpen ? 'Hide stats' : 'Show stats'}</button>
@@ -1267,6 +1275,7 @@
           </button>
         {/if}
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('fit')} class:text-black={gmSetIdx === gmRootKeys.indexOf('fit')} onclick={() => gmOpenPage('fit')}><span>Video fit</span><span class="opacity-50">{$videoFit === 'fill' ? 'Fill' : 'Best fit'} ›</span></button>
+        <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('subtitles')} class:text-black={gmSetIdx === gmRootKeys.indexOf('subtitles')} onclick={openSubtitleEditor}><span>Edit subtitles</span><span class="opacity-50">Position &amp; size ›</span></button>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === gmRootKeys.indexOf('tools')} class:text-black={gmSetIdx === gmRootKeys.indexOf('tools')} onclick={() => gmOpenPage('tools')}><span>Tools</span><span class="opacity-50">›</span></button>
       {:else}
         <button data-focusable class="gm-set-row mb-1 font-bold" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={gmBack}>

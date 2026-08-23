@@ -45,6 +45,28 @@ export async function playerScreenshot(): Promise<void> {
   await invoke('player_screenshot')
 }
 
+function jpegBytesToDataUrl(value: unknown): string | null {
+  const bytes = value instanceof Uint8Array
+    ? value
+    : Array.isArray(value) ? Uint8Array.from(value as number[]) : null
+  if (!bytes?.length) return null
+  // Avoid spreading a full HD JPEG into one function call (and its argument limit).
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000))
+  }
+  return `data:image/jpeg;base64,${btoa(binary)}`
+}
+
+/** Exact current frame used as the non-destructive background of the subtitle editor. */
+export async function playerEditorSnapshot(time: number): Promise<string | null> {
+  const drm = getDrmEngine()
+  if (drm?.thumbnail) return drm.thumbnail(time)
+  if (drmStream()) return null
+  try { return jpegBytesToDataUrl(await invoke('player_editor_snapshot')) }
+  catch { return null }
+}
+
 export async function playerGifStart(includeSubtitles: boolean): Promise<void> {
   const drm = getDrmEngine()
   if (drm?.gifStart) {

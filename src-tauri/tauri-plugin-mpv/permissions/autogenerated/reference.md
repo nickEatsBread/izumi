@@ -22,6 +22,7 @@ Allow controlling the embedded libmpv player.
 - `allow-mpv-brightness`
 - `allow-mpv-haptic`
 - `allow-mpv-thumb`
+- `allow-mpv-snapshot`
 - `allow-mpv-gif-start`
 - `allow-mpv-gif-stop`
 - `allow-mpv-gif-abort`
@@ -528,6 +529,32 @@ Enables the mpv_stop command without any pre-configured scope.
 <td>
 
 Denies the mpv_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:allow-mpv-snapshot`
+
+</td>
+<td>
+
+Enables the mpv_snapshot command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mpv:deny-mpv-snapshot`
+
+</td>
+<td>
+
+Denies the mpv_snapshot command without any pre-configured scope.
 
 </td>
 </tr>

@@ -1086,6 +1086,19 @@ impl PlayerHandle {
             .map_err(|e| e.to_string())
     }
 
+    /// Queue a one-off JPEG of the current decoded video frame for an in-player editing surface.
+    /// Unlike the user-facing screenshot command this deliberately excludes subtitles: the editor
+    /// draws one movable preview line over the still and would otherwise show two copies.
+    pub fn editor_snapshot_to_file(&self, path: &str) -> Result<(), String> {
+        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
+        let mpv = guard.as_ref().ok_or("no player")?;
+        let _ = mpv.set_property("screenshot-format", "jpg");
+        let _ = mpv.set_property("screenshot-jpeg-quality", 90_i64);
+        let _ = mpv.set_property("screenshot-sw", "yes");
+        mpv.command("screenshot-to-file", &[path, "video"])
+            .map_err(|e| e.to_string())
+    }
+
     /// Return the current track list as a JSON array (`[{id,type,title,lang,
     /// selected}, ...]`) for the audio/subtitle pickers.
     ///

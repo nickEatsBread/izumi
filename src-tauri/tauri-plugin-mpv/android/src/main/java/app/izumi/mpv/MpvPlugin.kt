@@ -1315,6 +1315,47 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }.start()
     }
 
+    /** Capture the frame that is on the live player without publishing it to the gallery. The
+     * subtitle editor uses this still as its background after pausing playback. Asking mpv for
+     * `video` excludes the old subtitle line; PixelCopy remains a fallback for hardware surfaces
+     * that cannot be read through mpv's software screenshot path. */
+    @Command
+    fun snapshot(invoke: Invoke) {
+        val m = mpv
+        if (m == null) {
+            invoke.resolve(JSObject().apply { put("value", null as String?) })
+            return
+        }
+        Thread {
+            val ret = JSObject()
+            val file = File(activity.cacheDir, "subtitle-editor-${System.currentTimeMillis()}.jpg")
+            try {
+                m.setPropertyString("screenshot-format", "jpg")
+                m.setPropertyString("screenshot-jpeg-quality", "90")
+                m.setPropertyString("screenshot-sw", "yes")
+                m.command(arrayOf("screenshot-to-file", file.absolutePath, "video"))
+                val deadline = System.currentTimeMillis() + 1_500L
+                while (System.currentTimeMillis() < deadline && (!file.isFile || file.length() == 0L)) {
+                    Thread.sleep(15L)
+                }
+                if ((!file.isFile || file.length() == 0L) && !copyVisibleFrame(file)) {
+                    ret.put("value", null as String?)
+                } else {
+                    ret.put(
+                        "value",
+                        "data:image/jpeg;base64," + Base64.encodeToString(file.readBytes(), Base64.NO_WRAP),
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w("MpvPlugin", "subtitle editor snapshot failed: ${e.message}")
+                ret.put("value", null as String?)
+            } finally {
+                file.delete()
+            }
+            invoke.resolve(ret)
+        }.start()
+    }
+
     // --- GIF recording ------------------------------------------------------------------------
     //
     // Same shape as the desktop recorder: bounded JPEG frames are pulled straight out of the LIVE

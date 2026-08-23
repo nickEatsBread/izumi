@@ -93,6 +93,10 @@ impl<R: Runtime> Mpv<R> {
         Ok(serde_json::Value::Null)
     }
 
+    pub fn snapshot(&self) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::Value::Null)
+    }
+
     pub fn gif_start(&self, _payload: GifStartRequest) -> crate::Result<()> {
         Ok(())
     }

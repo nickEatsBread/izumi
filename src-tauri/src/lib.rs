@@ -506,6 +506,42 @@ fn player_get_property(
     player.get_property(&name)
 }
 
+/// Capture the exact paused player frame for the subtitle placement editor. The file only exists
+/// in the app cache while mpv's asynchronous JPEG writer finishes; bytes cross IPC and the scratch
+/// file is removed immediately, so opening the editor never adds a picture to the user's gallery.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn player_editor_snapshot(
+    app: AppHandle,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Result<Vec<u8>, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let path = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?
+        .join(format!("subtitle-editor-{stamp}.jpg"));
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let path_text = path.to_string_lossy().into_owned();
+    player.editor_snapshot_to_file(&path_text)?;
+    for _ in 0..100 {
+        if std::fs::metadata(&path).is_ok_and(|metadata| metadata.len() > 0) {
+            let bytes = std::fs::read(&path).map_err(|error| error.to_string());
+            let _ = std::fs::remove_file(&path);
+            return bytes;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+    }
+    let _ = std::fs::remove_file(&path);
+    Err("subtitle editor screenshot timed out".into())
+}
+
 /// Register a scrub-preview thumbnail job for the current stream. `key` is the infoHash
 /// (or media-episode) cache key; `duration` comes from mpv so we don't re-probe. Tiles
 /// are then rendered on demand by the headless libmpv decoder. Cached under
@@ -5135,6 +5171,7 @@ pub fn run() {
             gamepad_trigger_state,
             spawn_external_player,
             player_get_property,
+            player_editor_snapshot,
             player_sprite_start,
             player_thumb_tile,
             player_thumb_info,

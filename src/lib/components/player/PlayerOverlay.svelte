@@ -6,10 +6,11 @@
   import { invoke } from '@tauri-apps/api/core'
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import Controls from './Controls.svelte'
+  import SubtitleEditor from './SubtitleEditor.svelte'
   import TrackMenu from './TrackMenu.svelte'
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
-  import { playerCommand, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
+  import { playerCommand, playerEditorSnapshot, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
@@ -73,6 +74,7 @@
   let dur = $state(0)
   let buffer = $state(0)
   let paused = $state(false)
+  let subtitleEditorOpen = $state(false)
   let buffering = $state(false)
   // Loading/stall composition (a readyState<3 analog). `coreIdle` starts
   // true so the black backdrop covers the white webview before the first frame.
@@ -161,7 +163,7 @@
   // trigger hold) so the seek bar element stays measurable — otherwise the native scrub bar
   // loses its geometry and jumps to the fallback position lower on screen.
   const controlsVisible = $derived(
-    visible || paused || loading || $scrubActive || $playerMenuOpen || $trackMenuOpen,
+    visible || paused || loading || $scrubActive || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
   )
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
   // A segment auto-skips only when the setting is on AND it's not the FIRST debut
@@ -197,7 +199,7 @@
   const drmActive = $derived(!!$nowPlayingStream.drm)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
   let lastDrmError = ''
-  function cmd(name: string, args: string[] = []) {
+  function cmd(name: string, args: string[] = []): Promise<void> {
     // Reflect pause intent immediately. Waiting exclusively for mpv's property-change event left
     // the snapshotted Game-mode icon one state behind on a quick A/touch toggle. The native event
     // remains authoritative and reconciles this optimistic value after the command lands.
@@ -208,7 +210,7 @@
       else if (name === 'set' && (args[1] === 'yes' || args[1] === 'no')) paused = args[1] === 'yes'
       changedPause = paused !== previousPaused
     }
-    void playerCommand(name, args).catch((e) => {
+    return playerCommand(name, args).catch((e) => {
       if (changedPause) paused = previousPaused
       console.warn('player_command', name, args, e)
     })
@@ -365,7 +367,7 @@
       moveScrub: (t) => moveScrub(t),
       endScrub: () => endScrub(),
       onActivity: () => poke(),
-      blocked: () => get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
+      blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
     })
     return stop
   })
@@ -586,7 +588,7 @@
   const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   const noticeVisible = $derived(!!$playerNotice)
-  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible)
+  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
   const gmNativeControls = $derived(gmMode && firstFrame && controlsVisible && (!overlayFull || $playerSideSheetOpen))
@@ -980,6 +982,10 @@
       // deliberately does not take ownership.
       const picker = get(streamPicker)
       if (picker && !picker.hidden) return
+      if (subtitleEditorOpen) {
+        if (e.payload.pressed && e.payload.name === 'b') subtitleEditorOpen = false
+        return
+      }
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
       if (get(trackMenuOpen) || get(playerMenuOpen)) return
       // Steam may expose View through duplicate virtual-pad edges. Treat one physical cycle as
@@ -1369,7 +1375,7 @@
     <!-- In Game mode the normal bar is measured here but painted by Rust's native 60Hz OSD.
          Complex panels switch this HTML back onto the settled bitmap overlay. -->
     <div class="izumi-hud" class:opacity-0={gmDynamicOwnsChrome && !$playerSideSheetOpen}>
-      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} />
+      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} />
     </div>
   {/if}
 
@@ -1381,4 +1387,13 @@
 
   <!-- Discussion panel: self-gates on `commentsOpen`. Keyed on the playing episode. -->
   {#if !$pictureInPicture}<div class="izumi-hud"><CommentsPanel /></div>{/if}
+
+  {#if subtitleEditorOpen}
+    <SubtitleEditor
+      {paused}
+      command={cmd}
+      capture={() => playerEditorSnapshot(pos)}
+      onclose={() => { subtitleEditorOpen = false; poke() }}
+    />
+  {/if}
 </div>
