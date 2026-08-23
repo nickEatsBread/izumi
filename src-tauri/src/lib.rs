@@ -4579,17 +4579,24 @@ pub fn run() {
     // is solved a different way (self-composite), not by routing through gamescope's compositor.
     let builder = tauri::Builder::default();
     #[cfg(not(target_os = "android"))]
+    let window_state_flags = tauri_plugin_window_state::StateFlags::POSITION
+        | tauri_plugin_window_state::StateFlags::SIZE
+        | tauri_plugin_window_state::StateFlags::MAXIMIZED;
+    #[cfg(target_os = "macos")]
+    let window_state_flags = tauri_plugin_window_state::StateFlags::POSITION;
+    #[cfg(not(target_os = "android"))]
     let builder = builder
         // A fresh desktop window starts centered. Once the user moves or resizes it, restore that
         // preference on later launches instead. Track only the main window and omit transient
         // visibility/decorations/fullscreen state used by the player and discussion popups.
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_state_flags(
-                    tauri_plugin_window_state::StateFlags::POSITION
-                        | tauri_plugin_window_state::StateFlags::SIZE
-                        | tauri_plugin_window_state::StateFlags::MAXIMIZED,
-                )
+                // The plugin intentionally cannot distinguish maximized resize events for an
+                // undecorated macOS window (its own source special-cases that state). It therefore
+                // saved transient, sometimes extremely narrow dimensions on alternating exits.
+                // macOS now starts at a safe 1280×800 and only remembers the screen position;
+                // Windows/Linux keep their established size + maximized restoration.
+                .with_state_flags(window_state_flags)
                 .with_filter(|label| label == "main")
                 .build(),
         )
@@ -4690,7 +4697,7 @@ pub fn run() {
                 let external_opener = app.handle().clone();
                 let popup_app = app.handle().clone();
                 let gamescope = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
-                WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                let main_window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("izumi")
                     // Keep decoded video in the HTML compositor so GIF/screenshot can read
                     // the <video> bitmap (mpv-style: OSD stays on screen, file is video only).
@@ -4699,10 +4706,22 @@ pub fn run() {
                         "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-direct-composition-video-overlays",
                     )
                     .inner_size(1280.0, 800.0)
+                    .min_inner_size(900.0, 560.0)
                     // This is only the unknown-position default. The window-state plugin restores
                     // a valid saved main-window position immediately after creation while hidden.
-                    .center()
-                    .decorations(false)
+                    .center();
+                #[cfg(target_os = "macos")]
+                let main_window = main_window
+                    // Preserve Apple's actual close/minimize/zoom traffic lights and their native
+                    // hover, inactive-window and Option-click semantics while letting Izumi art
+                    // continue underneath the transparent titlebar.
+                    .decorations(true)
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .hidden_title(true)
+                    .traffic_light_position(tauri::LogicalPosition::new(12.0, 10.0));
+                #[cfg(not(target_os = "macos"))]
+                let main_window = main_window.decorations(false);
+                main_window
                     .background_color(tauri::window::Color(10, 10, 11, 255))
                     // A native webview begins with an opaque white surface. Keep the window hidden
                     // until the app document finishes its first load so that surface can never be

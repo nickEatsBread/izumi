@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -52,7 +52,7 @@
     { value: 'system', label: 'System', background: '#f4f4f5', surface: '#18181b', foreground: '#ffffff', accent: '#e93b69' },
   ]
   const rowLabels: Record<string, string> = {
-    continue: 'Continue Watching', list: 'Your List', recommendations: 'Recommended for You',
+    continue: 'Continue Watching', recent: 'Recently Released', list: 'Your List', recommendations: 'Recommended for You',
     season: 'Popular This Season', trending: 'Trending Now', popular: 'All Time Popular',
     romance: 'Romance', action: 'Action', fantasy: 'Fantasy',
   }
@@ -271,7 +271,8 @@
       <Toggle label={m.settings_hide_spoilers()} desc={m.settings_hide_spoilers_hint()} value={$hideSpoilers} onToggle={() => ($hideSpoilers = !$hideSpoilers)} />
       <Toggle label={m.settings_show_adult()} desc={m.settings_show_adult_hint()} value={$showAdult} onToggle={() => ($showAdult = !$showAdult)} />
       <Toggle label={m.settings_auto_incognito()} desc={m.settings_auto_incognito_hint()} value={$autoIncognitoAdult} onToggle={() => ($autoIncognitoAdult = !$autoIncognitoAdult)} />
-      <Toggle label="Wheel-scroll carousels" desc="Let the mouse wheel scroll home rows sideways. Off = use the row's ‹ › arrows." value={$wheelScrollAcross} onToggle={() => ($wheelScrollAcross = !$wheelScrollAcross)} />
+      <Toggle label="Wheel-scroll carousels" desc="Let horizontal wheel and trackpad gestures scroll home rows. Vertical scrolling always moves the page. Off = use the row's ‹ › arrows." value={$wheelScrollAcross} onToggle={() => ($wheelScrollAcross = !$wheelScrollAcross)} />
+      <Toggle label="Mouse-drag carousels" desc="Drag home rows sideways and swipe the featured banner to its previous or next title with the mouse." value={$dragCarousels} onToggle={() => ($dragCarousels = !$dragCarousels)} />
     </div>
   </div>
 </div>

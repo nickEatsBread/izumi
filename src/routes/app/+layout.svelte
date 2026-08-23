@@ -9,6 +9,7 @@
   import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
+  import TrailerDialog from '$lib/components/cards/TrailerDialog.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
   // until playback/resolve starts. Loading them on demand
   // keeps first home paint off that code entirely. See Lazy.svelte.
@@ -323,6 +324,7 @@
 {#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}
 {#if $exitPrompt}<Lazy load={loadExitPrompt} />{/if}
 <GlobalSearch />
+<TrailerDialog />
 <OnScreenKeyboard />
 <DeckKeyboardWarning />
 <!-- Android external-play "marked watched" toast (the in-player overlay isn't mounted on mobile). -->

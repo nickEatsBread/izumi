@@ -35,7 +35,7 @@
   <div class="relative h-40 overflow-hidden bg-muted">
     <img src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
     {#if trailerId}
-      <YoutubeTrailer id={trailerId} />
+      <YoutubeTrailer id={trailerId} title={title(media)} />
     {/if}
     <div class="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent"></div>
   </div>

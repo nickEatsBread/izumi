@@ -227,9 +227,13 @@ export const hideSpoilers = persisted<boolean>('hide-spoilers', false)
  *  two differ. Display only — every other part of the app keeps using the per-season number. Off by
  *  default: the numbering choice used to sit on the series page itself, where it was just clutter. */
 export const absoluteEpisodeNumbers = persisted<boolean>('absolute-episode-numbers', false)
-/** Let the mouse wheel scroll carousel rows horizontally (vertical wheel → sideways).
- *  Off by default: use the row's ‹ › arrow buttons instead. */
+/** Let horizontal mouse-wheel/trackpad gestures scroll carousel rows. Vertical input always
+ *  remains page scrolling. Off by default: use the row's ‹ › arrow buttons instead. */
 export const wheelScrollAcross = persisted<boolean>('carousel-wheel-scroll', false)
+/** Allow a held primary mouse button to drag carousel rows and step the featured banner.
+ *  Kept on by default because row dragging was the established desktop behaviour before this
+ *  became configurable. Touch swipes remain available independently on mobile. */
+export const dragCarousels = persisted<boolean>('carousel-mouse-drag', true)
 /** WebView zoom factor for the whole UI (0.5–2.0). */
 export const uiScale = persisted<number>('ui-scale', 1)
 /** Include 18+ / adult titles in browse + search (AniList isAdult filter). */
@@ -246,12 +250,21 @@ export const developerLogging = persisted<boolean>('developer-logging', false)
 /** User overrides for keyboard shortcuts. Missing actions fall back to their shipped defaults. */
 export const hotkeyBindings = persisted<Record<string, string>>('hotkey-bindings', {})
 export const DEFAULT_HOME_ROWS = [
-  'continue', 'list', 'recommendations', 'season', 'trending', 'popular', 'romance', 'action', 'fantasy',
+  'continue', 'recent', 'list', 'recommendations', 'season', 'trending', 'popular', 'romance', 'action', 'fantasy',
 ] as const
 export type HomeRowId = (typeof DEFAULT_HOME_ROWS)[number]
 /** Home carousel order and visibility. Unknown/new rows are appended by the normalizer on render. */
 export const homeRowOrder = persisted<string[]>('home-row-order', [...DEFAULT_HOME_ROWS])
 export const hiddenHomeRows = persisted<string[]>('home-row-hidden', [])
+/** AniList media IDs explicitly hidden from Recently Released with the desktop D shortcut. */
+export const dismissedRecentReleaseIds = persisted<number[]>('home-recent-dismissed', [])
+// Recently Released is useful but network-backed and intentionally opt-in. A one-time migration is
+// required as well as the empty-store default: otherwise every existing install would see a newly
+// appended row merely because the normalizer learned its id.
+if (typeof localStorage !== 'undefined' && localStorage.getItem('home-recent-row-default-v1') == null) {
+  hiddenHomeRows.update((rows) => rows.includes('recent') ? rows : [...rows, 'recent'])
+  localStorage.setItem('home-recent-row-default-v1', 'hidden')
+}
 
 /** Browse/search result layout: 'grid' (cover-art tiles, default) or 'list' (a vertical list of
  *  compact rows — small cover + title + meta, denser and text-forward). */

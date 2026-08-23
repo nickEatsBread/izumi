@@ -25,6 +25,7 @@
     autoDownloadRules, removeAutoDownloadForMedia, subscribeAutoDownloads,
   } from '$lib/downloads/rules'
   import EpisodeCard from './EpisodeCard.svelte'
+  import AiringStatus from './AiringStatus.svelte'
   import { episodeTileState } from './episode-tile'
   import Download from '@lucide/svelte/icons/download'
   import Loader from '@lucide/svelte/icons/loader-circle'
@@ -107,6 +108,16 @@
   // still pages ascending (startIdx/PER above are unchanged) — see the note near the toggle.
   let sortDir = $state<SortDir>('asc')
   const rows = $derived(orderEpisodes(eps, sortDir))
+  // The controller fast lane targets the episode the hero CTA would use. `autoPage` already keeps
+  // that episode on-screen for long-runners; the fallback covers unusual offline/schedule data.
+  // This target is semantic rather than geometric, so a single Down never detours through search,
+  // sort, tabs, or release metadata merely because those controls happen to sit between the rows.
+  const quickEpisode = $derived.by(() => {
+    const preferred = offline
+      ? (offlineEps.find((episode) => episode > watchedThrough) ?? offlineEps[0])
+      : Math.max(1, Math.min(watchedThrough + 1, aired || 1))
+    return rows.includes(preferred) ? preferred : (rows.find((episode) => episode <= aired) ?? rows[0])
+  })
   function toggleSort(dir: SortDir) { if (dir !== sortDir) { h.select(); sortDir = dir } }
 
   // The switch is binary but the preference is ternary: `compact` is only reachable from Settings.
@@ -244,6 +255,14 @@
   {#if aired > 0}
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !$isMobile}
+      {#if !selecting}
+        <div class="flex rounded-lg bg-secondary p-0.5 text-sm font-bold">
+          <button data-focusable onclick={() => toggleSort('asc')}
+                  class="rounded-md px-3 py-1.5 transition-colors {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
+          <button data-focusable onclick={() => toggleSort('desc')}
+                  class="rounded-md px-3 py-1.5 transition-colors {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
+        </div>
+      {/if}
       <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -266,6 +285,14 @@
                 class="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
           <Shuffle size={15} /> Random
         </button>
+        {#if !selecting}
+          {#if !offline}
+            <button data-focusable onclick={startSelect}
+                    class="flex items-center justify-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
+              <Download size={15} /> Download…
+            </button>
+          {/if}
+        {/if}
       {/if}
       {#if $isMobile}
         <!-- Layout switch: mobile-only. Rendering it unconditionally added two data-focusable
@@ -288,6 +315,13 @@
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {searchOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <Search size={17} />
           </button>
+        </div>
+      {/if}
+      {#if !$isMobile && !selecting}
+        <!-- Release timing belongs to episode controls, not series navigation. `ml-auto` keeps it
+             at the opposite edge from the actions; if the toolbar wraps, it remains right-aligned. -->
+        <div class="col-span-2 ml-auto flex shrink-0 items-center">
+          <AiringStatus {media} compact quiet toolbar />
         </div>
       {/if}
     </div>
@@ -329,24 +363,24 @@
         <div class="mt-2 flex flex-wrap items-center gap-2 px-1">
           <select data-focusable bind:value={batchQuality}
                   aria-label="Batch quality"
-                  class="min-w-[6rem] flex-1 rounded-lg bg-secondary px-2 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-accent">
+                  class="h-9 min-w-[6rem] flex-1 rounded-lg bg-secondary px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-accent">
             <option value="any">Any quality</option>
             <option value="2160">2160p</option>
             <option value="1080">1080p</option>
             <option value="720">720p</option>
             <option value="480">480p</option>
           </select>
-          <div class="flex shrink-0 rounded-lg bg-secondary p-0.5 text-xs font-bold">
+          <div class="flex h-9 shrink-0 items-stretch rounded-lg bg-secondary p-0.5 text-xs font-bold">
             <button type="button" data-focusable onclick={() => (batchAudio = 'any')}
-                    class="rounded-md px-2 py-1.5 leading-none transition-colors {batchAudio === 'any' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Any</button>
+                    class="h-full rounded-md px-2 leading-none transition-colors {batchAudio === 'any' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Any</button>
             <button type="button" data-focusable onclick={() => (batchAudio = 'sub')}
-                    class="rounded-md px-2 py-1.5 leading-none transition-colors {batchAudio === 'sub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Sub</button>
+                    class="h-full rounded-md px-2 leading-none transition-colors {batchAudio === 'sub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Sub</button>
             <button type="button" data-focusable onclick={() => (batchAudio = 'dub')}
-                    class="rounded-md px-2 py-1.5 leading-none transition-colors {batchAudio === 'dub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Dub</button>
+                    class="h-full rounded-md px-2 leading-none transition-colors {batchAudio === 'dub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Dub</button>
           </div>
           <select data-focusable bind:value={batchCodec}
                   aria-label="Batch codec"
-                  class="min-w-[6rem] flex-1 rounded-lg bg-secondary px-2 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-accent">
+                  class="h-9 min-w-[6rem] flex-1 rounded-lg bg-secondary px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-accent">
             <option value="any">Any codec</option>
             <option value="h264">H264</option>
             <option value="h265">H265</option>
@@ -355,23 +389,13 @@
           <a data-focusable href="/app/settings/downloads" title={matchSummary} class="shrink-0 rounded px-1 py-1 text-xs font-bold text-theme">Defaults</a>
         </div>
       </div>
-    {:else}
+    {:else if selecting || ($isMobile && !offline)}
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
       {#if !selecting}
-        {#if !$isMobile}
-          <div class="flex w-full rounded-xl bg-secondary p-1 text-sm font-bold sm:w-auto sm:rounded-lg sm:p-0.5">
-            <button data-focusable onclick={() => toggleSort('asc')}
-                    class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'asc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Oldest</button>
-            <button data-focusable onclick={() => toggleSort('desc')}
-                    class="flex-1 rounded-lg px-3 py-2 transition-colors sm:rounded-md sm:py-1 {sortDir === 'desc' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Newest</button>
-          </div>
-        {/if}
-        {#if !offline}
-          <button data-focusable onclick={startSelect}
-                  class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold transition-colors hover:bg-accent sm:h-auto sm:rounded-md sm:py-1.5">
-            <Download size={15} /> Download…
-          </button>
-        {/if}
+        <button data-focusable onclick={startSelect}
+                class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold transition-colors hover:bg-accent">
+          <Download size={15} /> Download…
+        </button>
       {:else}
         <span class="mr-1 text-sm font-bold text-muted-foreground">
           {selected.size ? `${selected.size} selected` : 'Select episodes'}
@@ -386,24 +410,24 @@
         </label>
         <select data-focusable bind:value={batchQuality}
                 aria-label="Batch quality"
-                class="rounded-md bg-secondary px-2 py-1.5 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
+                class="h-9 rounded-md bg-secondary px-2 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
           <option value="any">Any quality</option>
           <option value="2160">2160p</option>
           <option value="1080">1080p</option>
           <option value="720">720p</option>
           <option value="480">480p</option>
         </select>
-        <div class="flex rounded-md bg-secondary p-0.5 text-sm font-bold">
+        <div class="flex h-9 items-stretch rounded-md bg-secondary p-0.5 text-sm font-bold">
           <button type="button" data-focusable onclick={() => (batchAudio = 'any')}
-                  class="rounded px-2 py-1 leading-none transition-colors {batchAudio === 'any' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Any</button>
+                  class="h-full rounded px-2 leading-none transition-colors {batchAudio === 'any' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Any</button>
           <button type="button" data-focusable onclick={() => (batchAudio = 'sub')}
-                  class="rounded px-2 py-1 leading-none transition-colors {batchAudio === 'sub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Sub</button>
+                  class="h-full rounded px-2 leading-none transition-colors {batchAudio === 'sub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Sub</button>
           <button type="button" data-focusable onclick={() => (batchAudio = 'dub')}
-                  class="rounded px-2 py-1 leading-none transition-colors {batchAudio === 'dub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Dub</button>
+                  class="h-full rounded px-2 leading-none transition-colors {batchAudio === 'dub' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">Dub</button>
         </div>
         <select data-focusable bind:value={batchCodec}
                 aria-label="Batch codec"
-                class="rounded-md bg-secondary px-2 py-1.5 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
+                class="h-9 rounded-md bg-secondary px-2 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
           <option value="any">Any codec</option>
           <option value="h264">H264</option>
           <option value="h265">H265</option>
@@ -433,25 +457,40 @@
     {#if $episodeLayout === 'cards'}
       <div class="grid grid-cols-1 gap-3 min-[500px]:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">
         {#each eps as ep (ep)}
-          <div class="grid grid-cols-[42%_1fr] overflow-hidden rounded-xl bg-secondary sm:block sm:rounded-lg">
+          <button data-focusable={ep === quickEpisode ? '' : undefined}
+                  data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
+                  data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
+                  tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
+                  onclick={() => tap(ep)} aria-label={`Play episode ${numberLabel(ep)}`}
+                  class="grid grid-cols-[42%_1fr] overflow-hidden rounded-xl bg-secondary text-left sm:block sm:rounded-lg disabled:opacity-100">
             <div class="aspect-video h-full w-full skeloader"></div>
             <div class="flex items-center p-3 sm:block sm:p-2"><div class="skeloader h-3.5 w-2/3 rounded"></div></div>
-          </div>
+          </button>
         {/each}
       </div>
     {:else if $episodeLayout === 'grid'}
       <div class="grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-2">
         {#each eps as ep (ep)}
-          <div class="skeloader h-11 rounded-lg"></div>
+          <button data-focusable={ep === quickEpisode ? '' : undefined}
+                  data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
+                  data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
+                  tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
+                  onclick={() => tap(ep)} aria-label={`Play episode ${numberLabel(ep)}`}
+                  class="skeloader h-11 rounded-lg disabled:opacity-100"></button>
         {/each}
       </div>
     {:else}
       <div class="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-2">
         {#each eps as ep (ep)}
-          <div class="flex items-center gap-3 rounded-md bg-secondary px-3 py-2">
+          <button data-focusable={ep === quickEpisode ? '' : undefined}
+                  data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
+                  data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
+                  tabindex={ep === quickEpisode ? 0 : -1} disabled={ep !== quickEpisode}
+                  onclick={() => tap(ep)} aria-label={`Play episode ${numberLabel(ep)}`}
+                  class="flex items-center gap-3 rounded-md bg-secondary px-3 py-2 text-left disabled:opacity-100">
             <div class="skeloader size-8 shrink-0 rounded"></div>
             <div class="skeloader h-3.5 flex-1 rounded"></div>
-          </div>
+          </button>
         {/each}
       </div>
     {/if}
@@ -466,7 +505,9 @@
           aired,
           percent: episodeBarPercent($positions[progressKey(media.id, ep)], false, ep <= aired),
         })}
-        <button data-focusable disabled={!tile.playable} onclick={() => { h.tap(); tap(ep) }}
+        <button data-focusable data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
+                data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
+                disabled={!tile.playable} onclick={() => { h.tap(); tap(ep) }}
                 aria-label={`Episode ${numberLabel(ep)}`}
                 class="relative grid h-11 place-items-center overflow-hidden rounded-lg text-sm font-bold transition-colors
                   {tile.kind === 'watched' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}
@@ -497,6 +538,8 @@
           {selecting}
           selectedEp={selected.has(ep)}
           numberLabel={numberLabel(ep)}
+          navId={ep === quickEpisode ? 'series-quick-episode' : undefined}
+          navUp={ep === quickEpisode ? 'series-primary-action' : undefined}
           onplay={tap}
         />
       {/each}
@@ -517,6 +560,8 @@
         {@const pct = episodeBarPercent($positions[progressKey(media.id, ep)], done, released)}
         <div
           data-focusable
+          data-nav-id={ep === quickEpisode ? 'series-quick-episode' : undefined}
+          data-nav-up={ep === quickEpisode ? 'series-primary-action' : undefined}
           role="button"
           tabindex="0"
           aria-disabled={!released || resolving}

@@ -7,6 +7,7 @@
   import X from '@lucide/svelte/icons/x'
   import { commentsOpen, gifRecordingStart, playerNotice } from '$lib/player/session'
   import { playerGifStop } from '$lib/player/native'
+  import { isMacOS } from '$lib/platform'
 
   const win = getCurrentWindow()
   // Track the real window state so the button shows maximize vs restore correctly —
@@ -59,9 +60,9 @@
   class="fixed inset-x-0 top-0 z-50 flex h-8 items-center justify-between"
   class:invisible={$commentsOpen}
 >
-  <!-- Centered on the sidebar/logo column (`w-14`). contain:paint keeps the pill
-       from painting onto the video at the left-14 seam. -->
-  <div class="flex h-8 w-14 shrink-0 items-center justify-center overflow-hidden [contain:paint]">
+  <!-- macOS keeps its real native traffic lights at the leading edge. Reserve their hit area and
+       place the GIF indicator after them; Windows/Linux retain the sidebar-width indicator slot. -->
+  <div class="flex h-8 shrink-0 items-center overflow-hidden [contain:paint] {$isMacOS ? 'w-28 justify-end pr-2' : 'w-14 justify-center'}">
     {#if $gifRecordingStart != null}
       <button
         class="flex h-5 max-w-[48px] items-center gap-0.5 rounded-full bg-red-600 px-1.5 text-[9px] font-semibold leading-none text-white outline-none hover:bg-red-500 focus:outline-none focus-visible:outline-none"
@@ -72,6 +73,7 @@
       </button>
     {/if}
   </div>
+  {#if !$isMacOS}
   <div class="flex items-center">
   <button
     onclick={minimize}
@@ -95,4 +97,5 @@
     <X size={16} />
   </button>
   </div>
+  {/if}
 </div>

@@ -28,7 +28,7 @@ export interface Media {
   coverImage?: { extraLarge?: string; large?: string; medium?: string; color?: string }
   bannerImage?: string
   trailer?: { id?: string; site?: string } | null
-  nextAiringEpisode?: { episode: number; timeUntilAiring: number } | null
+  nextAiringEpisode?: { episode: number; airingAt?: number; timeUntilAiring: number } | null
   // Per-episode air schedule. AniList populates this on many OVAs/ONAs and adult titles
   // that never get a scalar `episodes` count, so it's our fallback source for the episode
   // total + aired count (see media.ts). airingAt is a unix timestamp in SECONDS.

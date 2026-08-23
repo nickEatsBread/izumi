@@ -64,6 +64,20 @@ const HERO_QUERY_ALL = gql`
 
 export const heroQuery = () => (get(showAdult) ? HERO_QUERY_ALL : HERO_QUERY)
 
+/** Latest episode releases, ordered by the schedule event rather than Media.updatedAt (which also
+ * changes for harmless metadata edits). The row filters adult media after the response because
+ * AniList's Page.airingSchedules field does not expose an isAdult argument. */
+export const RECENT_RELEASES_QUERY = gql`
+  query RecentReleases($page: Int = 1, $perPage: Int = 50, $after: Int!, $before: Int!) {
+    Page(page: $page, perPage: $perPage) {
+      airingSchedules(airingAt_greater: $after, airingAt_lesser: $before, sort: TIME_DESC) {
+        episode airingAt
+        media { ...MediaFields }
+      }
+    }
+  }
+  ${MEDIA_FIELDS}`
+
 /** Variables for the hero pool: this season's highest-scored, already-airing titles. */
 export function heroVars(now: Date) {
   const { season, seasonYear } = currentSeason(now)

@@ -1,3 +1,10 @@
+<script module lang="ts">
+  // Fade-out and fade-in can briefly leave two preview components mounted. Only the most recently
+  // mounted trailer owns the global M shortcut so one keypress can never toggle the shared state
+  // twice and appear to do nothing.
+  const activeKeyboardTrailers: symbol[] = []
+</script>
+
 <script lang="ts">
   // Muted autoplay YouTube trailer for the hover preview. Uses the youtube-nocookie
   // embed + the JS-API postMessage handshake: poll "listening" until the player
@@ -8,13 +15,14 @@
   import { onMount } from 'svelte'
   import VolumeX from '@lucide/svelte/icons/volume-x'
   import Volume2 from '@lucide/svelte/icons/volume-2'
-  import { trailerMuted } from '$lib/stores/trailer'
-  let { id }: { id: string } = $props()
+  import { trailerMuted, openTrailerPopup } from '$lib/stores/trailer'
+  let { id, title = 'Trailer' }: { id: string; title?: string } = $props()
 
   let frame = $state<HTMLIFrameElement>()
   let playing = $state(false)
   let dead = $state(false)
   let poll: ReturnType<typeof setInterval> | undefined
+  const keyboardOwner = Symbol('hover-trailer')
 
   // Apply the session-wide mute state to THIS trailer whenever it (or the shared
   // state) changes — so unmuting one card carries to every trailer you hover next.
@@ -31,6 +39,31 @@
   function send(func: string, args: unknown[] = []) {
     frame?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), '*')
   }
+  function toggleMute() {
+    $trailerMuted = !$trailerMuted
+    // Keep the command inside the click/keypress user gesture. This matters to autoplay policies
+    // that reject an asynchronous attempt to add audio to an already-autoplaying video.
+    if (playing) send($trailerMuted ? 'mute' : 'unMute')
+  }
+  function onKey(e: KeyboardEvent) {
+    if (activeKeyboardTrailers[activeKeyboardTrailers.length - 1] !== keyboardOwner) return
+    const key = e.key.toLowerCase()
+    if (e.repeat || e.ctrlKey || e.altKey || e.metaKey || (key !== 'm' && key !== 't')) return
+    // T is specifically a playing-preview affordance; while the iframe is still loading there is
+    // no active trailer for the user to promote into the full dialog.
+    if (key === 't' && !playing) return
+    const target = e.target
+    if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    if (key === 'm') toggleMute()
+    else {
+      // Avoid a brief double-audio overlap while pointerleave fades this preview out underneath
+      // the newly mounted full dialog.
+      send('mute')
+      openTrailerPopup(id, title)
+    }
+  }
   function onMessage(e: MessageEvent) {
     if (typeof e.data !== 'string' || !e.origin.includes('youtube')) return
     let json: { event?: string; info?: { playerState?: number; videoData?: { isPlayable?: boolean } } }
@@ -45,8 +78,16 @@
     frame?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*')
   }
   onMount(() => {
+    activeKeyboardTrailers.push(keyboardOwner)
     window.addEventListener('message', onMessage)
-    return () => { window.removeEventListener('message', onMessage); clearInterval(poll) }
+    window.addEventListener('keydown', onKey, true)
+    return () => {
+      window.removeEventListener('message', onMessage)
+      window.removeEventListener('keydown', onKey, true)
+      const at = activeKeyboardTrailers.indexOf(keyboardOwner)
+      if (at >= 0) activeKeyboardTrailers.splice(at, 1)
+      clearInterval(poll)
+    }
   })
 </script>
 
@@ -62,7 +103,7 @@
   ></iframe>
   {#if playing}
     <button
-      onclick={(e) => { e.stopPropagation(); $trailerMuted = !$trailerMuted }}
+      onclick={(e) => { e.stopPropagation(); toggleMute() }}
       class="pointer-events-auto absolute right-1 top-1 z-10 rounded-md bg-black/50 p-1 text-white"
       aria-label={$trailerMuted ? 'Unmute' : 'Mute'}
     >

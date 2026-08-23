@@ -1,5 +1,6 @@
 import { get } from 'svelte/store'
 import { gameMode, playing } from '$lib/player/session'
+import { dragCarousels } from '$lib/settings/ui'
 
 export function dragScroll(node: HTMLElement) {
   let down = false, moved = false, startX = 0, startLeft = 0
@@ -8,7 +9,7 @@ export function dragScroll(node: HTMLElement) {
   // many carousels doesn't pile up global pointermove handlers, which made scrolling lag more
   // and more the further you'd navigated (the accumulating-lag bug).
   const onDown = (e: PointerEvent) => {
-    if (get(gameMode) || get(playing) || e.button !== 0) return
+    if (!get(dragCarousels) || get(gameMode) || get(playing) || e.button !== 0) return
     down = true; moved = false; startX = e.clientX; startLeft = node.scrollLeft
   }
   const onMove = (e: PointerEvent) => {
@@ -20,6 +21,9 @@ export function dragScroll(node: HTMLElement) {
     // silently swallows card navigation — you couldn't open a title or reach the player.
     if (!moved && Math.abs(dx) > 5) {
       moved = true
+      // Close and latch any portalled hover trailer before the row starts moving. It must stay
+      // closed while cards slide beneath a stationary pointer and only rearm on a later real move.
+      window.dispatchEvent(new Event('carousel-nav'))
       try { node.setPointerCapture(e.pointerId) } catch { /* capture unsupported — fine while over the node */ }
     }
     if (moved) node.scrollLeft = startLeft - dx

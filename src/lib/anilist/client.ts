@@ -87,7 +87,7 @@ export function anilistRequestPriority(body: BodyInit | null | undefined): numbe
     if (/^(MediaById|ReadingMediaById|Schedule|Search|SearchAll|SearchCount|SearchCountAll)$/.test(operation)) return 1
     if (/^Hero/.test(operation)) return 2
     if (/^(Lists|ReadingLists|ListIds|MediaByIds|MediaByMal|ReadingMediaByMal)$/.test(operation)) return 4
-    if (/^(Page|PageAll|PersonalRecommendations)$/.test(operation)) return 7
+    if (/^(Page|PageAll|PersonalRecommendations|RecentReleases)$/.test(operation)) return 7
     return 3
   } catch {
     return 3

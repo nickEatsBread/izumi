@@ -29,7 +29,7 @@ export const CONTINUE_MEDIA_FIELDS = gql`
     coverImage { medium large extraLarge }
     bannerImage
     status format episodes
-    nextAiringEpisode { episode timeUntilAiring }
+    nextAiringEpisode { episode airingAt timeUntilAiring }
     airingSchedule(perPage: 26) { nodes { episode airingAt } }
   }`
 
@@ -45,7 +45,7 @@ export const MEDIA_FIELDS = gql`
     coverImage { extraLarge large medium color }
     bannerImage
     trailer { id site }
-    nextAiringEpisode { episode timeUntilAiring }
+    nextAiringEpisode { episode airingAt timeUntilAiring }
     airingSchedule(perPage: 100) { nodes { episode airingAt } }
   }`
 

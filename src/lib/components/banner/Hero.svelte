@@ -5,16 +5,20 @@
   import Play from '@lucide/svelte/icons/play'
   import Info from '@lucide/svelte/icons/info'
   import Heart from '@lucide/svelte/icons/heart'
+  import Clock3 from '@lucide/svelte/icons/clock-3'
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left'
+  import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import * as h from '$lib/haptics'
   import { isAndroid, isMobile } from '$lib/platform'
   import { get } from 'svelte/store'
-  import { playing } from '$lib/player/session'
+  import { gameMode, playing } from '$lib/player/session'
   import { androidMpvActive } from '$lib/player/android-mpv'
+  import { airingCountdown } from '$lib/anime/airing-labels'
+  import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
 
-  // Bottom-left content column + clean linear scrims, polished with:
-  // coverImage.color accent, rating-tinted score, blur-in image, rich badge row,
-  // genre pills, and a Watch/Details/Favorite trio. Detail pages pass one media
-  // with showOverlay=false (backdrop only).
+  // Bottom-left content column + clean linear scrims. Discovery facts stay deliberately compact:
+  // format/runtime/production/score, then one context line for next-airing + genres. Detail pages
+  // pass one media with showOverlay=false (backdrop only).
   let {
     medias,
     onplay,
@@ -32,9 +36,22 @@
   let i = $state(0)
   let cycle = $state(0)
   let scrolled = $state(false)
+  let navDirection = $state<1 | -1>(1)
+  let clock = $state(Date.now())
+  let countdownOrigin = $state(Date.now())
   const DURATION = 15000 // a 15s cadence
 
-  function go(n: number) { i = n; cycle += 1 }
+  function go(n: number, direction?: 1 | -1) {
+    if (n === i) return
+    navDirection = direction ?? (n > i ? 1 : -1)
+    i = n
+    cycle += 1
+  }
+
+  function step(direction: 1 | -1) {
+    const n = medias.length
+    if (n > 1) go((i + direction + n) % n, direction)
+  }
 
   // Swipe left/right to change the featured slide (only when there's more than one). `touch-pan-y`
   // on the container lets the browser own vertical scroll while horizontal swipes reach here.
@@ -56,7 +73,78 @@
     // leaving a boolean armed until the next real tap made the newly-arrived slide feel disabled.
     swipeResetFrame = requestAnimationFrame(() => (swiped = false))
     h.tap()
-    go((i + (dx < 0 ? 1 : -1) + n) % n)
+    step(dx < 0 ? 1 : -1)
+  }
+
+  // Desktop counterpart to touch swiping. It is intentionally release-to-step rather than a
+  // continuously moving DOM tree: the banner, scrims and controls remain compositor-stable while
+  // held, then the existing directional entrance animation performs the previous/next transition.
+  let heroPointer: number | null = null
+  let heroDragX = 0
+  let heroDragging = $state(false)
+  function onHeroPointerDown(e: PointerEvent) {
+    if (!$dragCarousels || e.pointerType !== 'mouse' || e.button !== 0 || medias.length < 2) return
+    if ((e.target as HTMLElement | null)?.closest('button, a, input, select, textarea')) return
+    heroPointer = e.pointerId
+    heroDragX = e.clientX
+    heroDragging = false
+  }
+  function onHeroPointerMove(e: PointerEvent) {
+    if (heroPointer !== e.pointerId) return
+    if (Math.abs(e.clientX - heroDragX) <= 5) return
+    heroDragging = true
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* optional */ }
+    e.preventDefault()
+  }
+  function endHeroPointer(e: PointerEvent, navigate: boolean) {
+    if (heroPointer !== e.pointerId) return
+    const dx = e.clientX - heroDragX
+    heroPointer = null
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId) } catch { /* optional */ }
+    const didDrag = heroDragging
+    heroDragging = false
+    if (navigate && didDrag && Math.abs(dx) >= 48) {
+      h.tap()
+      step(dx < 0 ? 1 : -1)
+    }
+  }
+
+  // A trackpad emits a burst of wheel events plus momentum for one two-finger swipe. Accumulate the
+  // small opening deltas and step once. A fresh swipe can begin before macOS momentum has gone fully
+  // quiet, so also re-arm when its new acceleration is clearly larger than the decaying tail.
+  let heroWheelTotal = 0
+  let heroWheelStepped = false
+  let heroWheelSteppedAt = 0
+  let heroWheelLastMagnitude = 0
+  let heroWheelReset: ReturnType<typeof setTimeout> | undefined
+  function onHeroWheel(e: WheelEvent) {
+    if (!$wheelScrollAcross || medias.length < 2 || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
+    e.preventDefault()
+    const now = performance.now()
+    const magnitude = Math.abs(e.deltaX)
+    clearTimeout(heroWheelReset)
+    heroWheelReset = setTimeout(() => {
+      heroWheelTotal = 0
+      heroWheelStepped = false
+      heroWheelSteppedAt = 0
+      heroWheelLastMagnitude = 0
+    }, 180)
+    if (heroWheelStepped) {
+      const freshGesture = now - heroWheelSteppedAt > 160
+        && magnitude >= Math.max(10, heroWheelLastMagnitude * 1.8)
+      heroWheelLastMagnitude = magnitude
+      if (!freshGesture) return
+      heroWheelTotal = 0
+      heroWheelStepped = false
+    } else {
+      heroWheelLastMagnitude = magnitude
+    }
+    heroWheelTotal += e.deltaX
+    if (Math.abs(heroWheelTotal) < 24) return
+    heroWheelStepped = true
+    heroWheelSteppedAt = now
+    h.tap()
+    step(heroWheelTotal < 0 ? -1 : 1)
   }
 
   function openCurrent() {
@@ -83,7 +171,7 @@
     const arm = () => {
       if (timer) clearTimeout(timer)
       timer = undefined
-      if (!stalled()) timer = setTimeout(() => go((i + 1) % n), DURATION)
+      if (!stalled()) timer = setTimeout(() => step(1), DURATION)
     }
     arm()
     const onWake = () => arm()
@@ -94,11 +182,12 @@
     window.addEventListener('scroll', onScroll)
     // Steam Deck: L1/R1 step through the featured banners (dispatched by the gamepad translator
     // while on the home screen). detail = -1 (prev) / +1 (next); wraps.
-    const onHeroNav = (e: Event) => go((i + (e as CustomEvent<number>).detail + n) % n)
+    const onHeroNav = (e: Event) => step((e as CustomEvent<number>).detail < 0 ? -1 : 1)
     window.addEventListener('hero-nav', onHeroNav)
     return () => {
       if (timer) clearTimeout(timer)
       cancelAnimationFrame(swipeResetFrame)
+      clearTimeout(heroWheelReset)
       document.removeEventListener('visibilitychange', onWake)
       stopPlaying()
       stopAndroidMpv()
@@ -107,9 +196,31 @@
     }
   })
 
+  // Countdown targets are absolute in current AniList responses. Keep a response-time fallback for
+  // an older cached object that only has timeUntilAiring, and update the compact badge once a second.
+  $effect(() => {
+    void medias
+    countdownOrigin = Date.now()
+  })
+  $effect(() => {
+    if (!showOverlay) return
+    const timer = setInterval(() => (clock = Date.now()), 1_000)
+    return () => clearInterval(timer)
+  })
+
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
   // Accent: tint everything off the cover's dominant color; theme fallback.
   const accent = $derived(current?.coverImage?.color || 'hsl(346.6 79.12% 51.18%)')
+  const nextAiring = $derived(current?.nextAiringEpisode)
+  const nextAiringAt = $derived(
+    nextAiring?.airingAt ?? (nextAiring ? countdownOrigin / 1000 + nextAiring.timeUntilAiring : 0),
+  )
+  const nextAiringLabel = $derived(
+    nextAiring?.episode && nextAiringAt
+      ? `Episode ${nextAiring.episode} in ${airingCountdown(nextAiringAt, clock)}`
+      : '',
+  )
+  const productionLabel = $derived(current?.studios?.nodes?.[0]?.name || season(current))
   const scoreColor = (s?: number) =>
     s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
   const cleanDesc = (d?: string) => (d ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
@@ -132,7 +243,8 @@
     >
       {#key current.id}
         <img src={cover(current)} alt="" draggable="false"
-             class="absolute inset-0 h-full w-full animate-[fade_0.4s_ease] object-cover" />
+             class="hero-slide-in absolute inset-0 h-full w-full object-cover"
+             style="--hero-enter-x:{navDirection * 3}%" />
       {/key}
       <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/25 to-transparent"></div>
       {#if $isAndroid && oninfo}
@@ -146,14 +258,20 @@
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-white/90
                     [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
           {#if format(current)}<span>{format(current)}</span>{/if}
-          {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} Eps</span>{/if}
-          {#if status(current)}<span>{status(current)}</span>{/if}
-          {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}%</span>{/if}
+          {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} eps</span>{/if}
+          {#if current.duration}<span>{current.duration} min</span>{/if}
+          {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}% score</span>{/if}
+          {#if !nextAiringLabel && status(current)}<span>{status(current)}</span>{/if}
         </div>
-        {#if current.genres?.length}
-          <div class="flex flex-wrap gap-1.5">
-            {#each current.genres.slice(0, 3) as g (g)}
-              <span class="rounded-full bg-white/15 px-2.5 py-0.5 text-[0.7rem] font-bold" style="color:var(--accent)">{g}</span>
+        {#if nextAiringLabel || current.genres?.length}
+          <div class="flex flex-wrap items-center gap-1.5">
+            {#if nextAiringLabel}
+              <span class="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/55 px-2.5 py-1 text-[0.7rem] font-black text-white shadow-lg backdrop-blur">
+                <Clock3 size={12} />{nextAiringLabel}
+              </span>
+            {/if}
+            {#each current.genres?.slice(0, 3) ?? [] as g (g)}
+              <span class="rounded-full border border-white/10 bg-white/15 px-2.5 py-0.5 text-[0.7rem] font-bold text-white/90">{g}</span>
             {/each}
           </div>
         {/if}
@@ -180,12 +298,19 @@
     </div>
   {:else}
   <div
-    class="relative mb-6 h-[40vh] touch-pan-y transition-opacity duration-500 sm:h-[55vh] {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {showOverlay ? 'sm:h-[50vh]' : $gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
+    class:cursor-grab={$dragCarousels && medias.length > 1}
+    class:cursor-grabbing={heroDragging}
     style="--accent:{accent}"
     role="group"
     aria-label="Featured"
     ontouchstart={onTouchStart}
     ontouchend={onTouchEnd}
+    onpointerdown={onHeroPointerDown}
+    onpointermove={onHeroPointerMove}
+    onpointerup={(e) => endHeroPointer(e, true)}
+    onpointercancel={(e) => endHeroPointer(e, false)}
+    onwheel={onHeroWheel}
   >
     <!-- Full-bleed banner: on desktop it breaks out of main's left margin (behind the
          sidebar) and up under the frameless titlebar. On mobile there's no sidebar/titlebar,
@@ -194,39 +319,63 @@
     <div class="pointer-events-none absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
       {#key current.id}
         <img src={banner(current)} alt="" draggable="false"
-             class="absolute inset-0 h-full w-full animate-[heroIn_0.6s_ease] object-cover opacity-70"
-             style="object-position:center 20%" />
+             class="hero-slide-in absolute inset-0 h-full w-full object-cover opacity-70"
+             style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:.7;object-position:center 20%" />
       {/key}
       <!-- Dual linear scrims: bright top-right, dark bottom-left. -->
       <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
       <div class="absolute inset-y-0 left-0 w-[45%] bg-gradient-to-r from-background/85 via-background/40 to-transparent"></div>
     </div>
 
+    {#if showOverlay && medias.length > 1}
+      <!-- Miruro-style edge navigation: entering an edge reveals the control, while an explicit
+           click changes the slide. Hover alone never replaces what the viewer was reading. -->
+      <button type="button" data-focusable aria-label="Previous featured anime" onclick={() => step(-1)}
+              class="hero-edge group absolute left-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
+        <span class="grid size-10 -translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
+          <ChevronLeft size={23} />
+        </span>
+      </button>
+      <button type="button" data-focusable aria-label="Next featured anime" onclick={() => step(1)}
+              class="hero-edge group absolute right-0 top-1/2 z-20 hidden h-28 w-16 -translate-y-1/2 place-items-center sm:grid">
+        <span class="grid size-10 translate-x-2 place-items-center rounded-full border border-white/15 bg-black/65 text-white opacity-0 shadow-xl backdrop-blur transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100">
+          <ChevronRight size={23} />
+        </span>
+      </button>
+    {/if}
+
     {#if showOverlay}
       <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-6 sm:px-8 sm:pb-8">
-        <div class="max-w-2xl">
+        {#key current.id}
+        <div class="hero-copy max-w-2xl" style="--hero-enter-x:{navDirection * 1.5}%">
           <h1 class="truncate text-2xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)] sm:text-4xl">{title(current)}</h1>
 
-          <!-- Metadata row: bullet-separators + format/status/season/score -->
+          <!-- High-signal discovery facts only. Airing context and genres share the next line. -->
           <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90
                       [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
             {#if format(current)}<span>{format(current)}</span>{/if}
-            {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} Episodes</span>{/if}
-            {#if status(current)}<span>{status(current)}</span>{/if}
-            {#if season(current)}<span>{season(current)}</span>{/if}
-            {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}%</span>{/if}
+            {#if totalEpisodes(current) > 1}<span>{totalEpisodes(current)} episodes</span>{/if}
+            {#if current.duration}<span>{current.duration} min</span>{/if}
+            {#if productionLabel}<span>{productionLabel}</span>{/if}
+            {#if current.averageScore}<span class={scoreColor(current.averageScore)}>{current.averageScore}% score</span>{/if}
+            {#if !nextAiringLabel && status(current)}<span>{status(current)}</span>{/if}
           </div>
+
+          {#if nextAiringLabel || current.genres?.length}
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              {#if nextAiringLabel}
+                <span class="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/50 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur">
+                  <Clock3 size={14} />{nextAiringLabel}
+                </span>
+              {/if}
+              {#each current.genres?.slice(0, 3) ?? [] as g}
+                <span class="rounded-full border border-white/10 bg-white/15 px-3 py-1 text-xs font-bold text-white/90 shadow-sm">{g}</span>
+              {/each}
+            </div>
+          {/if}
 
           {#if current.description}
             <p class="mt-3 line-clamp-2 max-w-xl text-sm text-white/70 drop-shadow sm:line-clamp-3">{cleanDesc(current.description)}</p>
-          {/if}
-
-          {#if current.genres?.length}
-            <div class="mt-3 flex flex-wrap gap-2">
-              {#each current.genres.slice(0, 4) as g}
-                <span class="rounded-full bg-white/10 px-3 py-0.5 text-xs font-bold" style="color:var(--accent)">{g}</span>
-              {/each}
-            </div>
           {/if}
 
           <div class="mt-4 flex items-center gap-2">
@@ -248,6 +397,7 @@
             {/if}
           </div>
         </div>
+        {/key}
 
         {#if medias.length > 1}
           <!-- Slide pips: hover/click targets are a desktop affordance; on mobile the row
@@ -284,4 +434,16 @@
     transform-origin: left;
     animation: hero-progress-fill 15s linear forwards;
   }
+  @keyframes hero-slide-in {
+    from { opacity: 0; transform: translate3d(var(--hero-enter-x), 0, 0) scale(1.015); }
+    to { opacity: var(--hero-final-opacity, 1); transform: translate3d(0, 0, 0) scale(1); }
+  }
+  @keyframes hero-copy-in {
+    from { opacity: 0; transform: translate3d(var(--hero-enter-x), 8px, 0); }
+    to { opacity: 1; transform: translate3d(0, 0, 0); }
+  }
+  .hero-slide-in { animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
+  .hero-copy { animation: hero-copy-in 360ms cubic-bezier(.22, 1, .36, 1) both; }
+  :global(html[data-motion='reduced']) .hero-slide-in,
+  :global(html[data-motion='reduced']) .hero-copy { animation-duration: 1ms; }
 </style>

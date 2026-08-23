@@ -18,6 +18,7 @@
   import Loader from '@lucide/svelte/icons/loader-circle'
   import { isAndroid } from '$lib/platform'
   import * as h from '$lib/haptics'
+  import { rememberDetail } from '$lib/anilist/detail-hint'
 
   let { media, progress }: { media: Media; progress: number } = $props()
 
@@ -89,7 +90,7 @@
   </div>
 
   <div class="mt-1.5">
-    <a href={`/app/anime/${media.id}`} onclick={(e) => e.stopPropagation()}
+    <a href={`/app/anime/${media.id}`} onclick={(e) => { e.stopPropagation(); rememberDetail(media); h.tap() }}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
     <span class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
   </div>

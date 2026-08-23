@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 // ends in a hard cut, with every piece of text below it on solid background.
 
 const detail = readFileSync(fileURLToPath(new URL('./AnimeDetail.svelte', import.meta.url)), 'utf8')
+const hero = readFileSync(fileURLToPath(new URL('../banner/Hero.svelte', import.meta.url)), 'utf8')
 
 describe('mobile series hero', () => {
   it('takes the full canvas while mounted and gives it back on teardown', () => {
@@ -61,6 +62,17 @@ describe('mobile series hero', () => {
     // Same height classes as the real band, so the page does not re-lay-out when data lands.
     const bands = detail.match(/h-\[26vh\] max-h-72 min-h-44/g) ?? []
     expect(bands.length).toBeGreaterThanOrEqual(2)
+    // Desktop and Deck use the same compact hero variants and overlap as the loaded branch.
+    expect(detail).toContain("$gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
+    expect(hero).toContain('h-[40vh]')
+    expect(hero).toContain("$gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'")
+    expect(detail.match(/\$gameMode \? '-mt-\[16vh\]' : '-mt-\[18vh\]'/g)?.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('carries known titles into loading without a fake alternate-title shimmer', () => {
+    expect(detail).not.toContain('Loading title…')
+    expect(detail.match(/detailHint\?\.title\.native \|\| detailHint\?\.title\.romaji/g)?.length).toBe(2)
+    expect(detail).not.toContain('h-4 w-40 rounded skeloader')
   })
   it('keeps the poster above the artwork band', () => {
     // The band is positioned, so it paints over static in-flow content - and the poster row is
@@ -69,9 +81,24 @@ describe('mobile series hero', () => {
     expect(detail).toContain('relative z-10 -mt-10 flex gap-4')
   })
 
-  it('gives the airing times a row of their own', () => {
-    // AiringStatus emits bare inline chips with no spacing, so sub and dub ran together and sat
-    // flush against the block above.
+  it('keeps a quiet schedule summary beneath mobile facts', () => {
     expect(detail).toContain('mt-3 flex flex-wrap items-center gap-2 empty:mt-0')
+    expect(detail).toContain('<AiringStatus media={m} compact quiet />')
+    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8')
+    expect(airing).toContain('text-foreground')
+    expect(airing.match(/rounded-full/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(airing).toContain("'h-6 px-2.5 text-[0.72rem]' : 'h-6 px-3 text-xs'")
+  })
+})
+
+describe('series airing schedule', () => {
+  it('renders SUB and DUB as distinct schedule cells instead of a dotted text sentence', () => {
+    const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8')
+    expect(airing).toContain("kind === 'Dub'")
+    expect(airing).toContain('bg-violet-400/15')
+    expect(airing).toContain('bg-sky-400/15')
+    expect(airing).toContain("index ? 'border-l border-border/60' : ''")
+    expect(airing).toContain('tabular-nums')
+    expect(airing).not.toContain('<span class="opacity-35">·</span>')
   })
 })

@@ -6,6 +6,7 @@
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import MalListRow from '$lib/components/cards/MalListRow.svelte'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
+  import RecentReleaseRow from '$lib/components/cards/RecentReleaseRow.svelte'
   import PersonalizedRow from '$lib/components/cards/PersonalizedRow.svelte'
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
@@ -140,7 +141,7 @@
           </div>
         </div>
       {:else}
-        <div class="relative mb-6 h-[55vh] overflow-hidden bg-muted">
+        <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
           <div class="absolute inset-0 skeloader"></div>
           <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>
           <div class="absolute bottom-8 left-8 w-[34rem] space-y-4"><div class="h-10 w-4/5 rounded skeloader"></div><div class="h-4 w-2/3 rounded skeloader"></div><div class="h-4 w-full rounded skeloader"></div><div class="h-10 w-48 rounded-lg skeloader"></div></div>
@@ -153,6 +154,8 @@
         {#key listUser}
           <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
         {/key}
+      {:else if row === 'recent'}
+        {#if !catalogUnavailable}<RecentReleaseRow />{/if}
       {:else if row === 'list'}
         {#if listUser}
           {#key listUser}<ListRow title="Your List" userName={listUser} status="PLANNING" />{/key}

@@ -47,10 +47,29 @@ describe('Carousel edge arrows', () => {
     expect(wheel.indexOf('dismissPreview()')).toBeLessThan(wheel.indexOf('scroller.scrollLeft +='))
   })
 
+  it('moves the row only for horizontal input and leaves vertical input to the page', () => {
+    const wheel = src.slice(src.indexOf('function onWheel'), src.indexOf('// Keep arrow visibility'))
+    expect(wheel).toContain('const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)')
+    expect(wheel).toContain('if (!horizontal || !e.deltaX) return')
+    expect(wheel).toContain('const delta = e.deltaX * unit')
+    expect(wheel).toContain('scroller.scrollLeft += delta')
+    expect(wheel).not.toContain('scroller.scrollLeft += e.deltaY')
+    expect(src).toContain('data-carousel-scroller')
+  })
+
   it('requires actual pointer movement before another preview can open', () => {
     expect(card).toContain("window.addEventListener('carousel-nav', () => { needsPointerMove = true })")
     expect(card).toContain("window.addEventListener('carousel-nav', close)")
     expect(card).toContain('onpointermove={openAfterPointerMove}')
     expect(card).not.toContain('suppressedUntil')
+  })
+
+  it('forwards wheel input received by the portalled preview to its originating row', () => {
+    expect(card).toContain('if (Math.abs(e.deltaY) >= Math.abs(e.deltaX))')
+    expect(card).toContain("window.dispatchEvent(new Event('carousel-nav'))")
+    expect(card).toContain("el.closest<HTMLElement>('[data-carousel-scroller]')")
+    expect(card).toContain("const consumed = !row.dispatchEvent(new WheelEvent('wheel'")
+    expect(card).toContain('if (consumed)')
+    expect(card).toContain('onwheel={forwardPreviewWheel}')
   })
 })

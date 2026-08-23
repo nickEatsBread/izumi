@@ -30,20 +30,24 @@
   // listens for this), so clicking the arrow never pops the card beneath it.
   const dismissPreview = () => window.dispatchEvent(new Event('carousel-nav'))
 
-  // Mouse wheel over the row → horizontal scroll (a vertical wheel is the desktop
-  // default and the scrollbar is hidden app-wide, so without this there's no easy way
-  // to scroll right). Native horizontal wheel (deltaX) is left alone; at the ends we
-  // release back to the page so vertical page-scroll still works.
+  // Horizontal wheel/trackpad input moves the row. Vertical input only dismisses a hover preview
+  // and remains entirely owned by the page — scrolling down over a carousel must still go down.
+  // A portalled preview forwards horizontal input back here because it sits outside the row DOM.
   function onWheel(e: WheelEvent) {
     if (!$wheelScrollAcross) return // opt-in (Settings → Interface); arrows otherwise
-    if (!scroller || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
+    if (!scroller) return
+    const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY)
+    // Close/latch the preview for either axis, but never cancel or repurpose vertical scrolling.
+    dismissPreview()
+    if (!horizontal || !e.deltaX) return
+    const unit = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+      : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? scroller.clientWidth : 1
+    const delta = e.deltaX * unit
     const atStart = scroller.scrollLeft <= 0
     const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1
-    if ((e.deltaY < 0 && atStart) || (e.deltaY > 0 && atEnd)) return
-    // Close a playing hover trailer before moving its row. SmallCard latches this event until an
-    // actual pointermove, so a card that merely slides underneath a stationary cursor stays quiet.
-    dismissPreview()
-    scroller.scrollLeft += e.deltaY
+    // At an edge the preview still closes, but leave the horizontal event uncancelled.
+    if ((delta < 0 && atStart) || (delta > 0 && atEnd)) return
+    scroller.scrollLeft += delta
     e.preventDefault()
   }
 
@@ -71,7 +75,7 @@
     {/if}
   </div>
   <div class="relative">
-    <div bind:this={scroller} use:dragScroll onwheel={onWheel} onscroll={update}
+    <div bind:this={scroller} data-carousel-scroller use:dragScroll onwheel={onWheel} onscroll={update}
          class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}>
       {@render children()}
     </div>

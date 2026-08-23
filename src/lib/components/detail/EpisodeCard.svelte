@@ -17,7 +17,7 @@
 
   let {
     media, ep, meta, showThumb, released, isNext, watchedThrough, filler = false, dl, next, onplay,
-    selecting = false, selectedEp = false, numberLabel,
+    selecting = false, selectedEp = false, numberLabel, navId, navUp,
   }: {
     media: Media
     ep: number
@@ -35,6 +35,8 @@
     selecting?: boolean
     selectedEp?: boolean
     numberLabel?: string
+    navId?: string
+    navUp?: string
   } = $props()
   const shownNumber = $derived(numberLabel ?? String(ep))
 
@@ -93,6 +95,8 @@
 
 <div
   data-focusable
+  data-nav-id={navId}
+  data-nav-up={navUp}
   role="button"
   tabindex="0"
   aria-disabled={!released}

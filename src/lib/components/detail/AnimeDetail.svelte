@@ -41,6 +41,8 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import { goto } from '$app/navigation'
   import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
+  import { openTrailerPopup } from '$lib/stores/trailer'
+  import { gameMode } from '$lib/player/session'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -149,7 +151,6 @@
 
   // Action-bar transient/optimistic state.
   let copied = $state(false)
-  let showTrailer = $state(false)
   let showMore = $state(false)      // mobile action overflow menu
   let descExpanded = $state(false)  // mobile description clamp toggle
   // List-editor state. `listOpt` is the optimistic patch applied after a save so the status pill +
@@ -255,30 +256,60 @@
         <div class="relative z-10 -mt-10 flex gap-4">
           {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-28 shrink-0 self-start rounded-xl object-contain shadow-xl min-[420px]:w-32" />{:else}<div class="aspect-[46/65] w-28 shrink-0 self-start rounded-xl skeloader min-[420px]:w-32"></div>{/if}
           <div class="min-w-0 flex-1 self-end space-y-2 pb-1">
-            <div class="h-3 w-20 rounded skeloader"></div>
-            <h1 class="line-clamp-2 text-xl font-black leading-tight">{detailHint ? title(detailHint) : 'Loading title…'}</h1>
+            <div class="min-h-3 text-xs text-muted-foreground">{detailHint?.title.native || detailHint?.title.romaji || ''}</div>
+            {#if detailHint}
+              <h1 class="line-clamp-2 text-xl font-black leading-tight">{title(detailHint)}</h1>
+            {:else}
+              <div class="h-12 w-4/5 rounded skeloader"></div>
+            {/if}
           </div>
         </div>
-        <div class="mt-3 flex gap-2"><span class="h-4 w-16 rounded-full skeloader"></span><span class="h-4 w-24 rounded-full skeloader"></span></div>
-        <div class="mt-4 space-y-2">
-          <div class="h-3 w-full rounded skeloader"></div>
-          <div class="h-3 w-full rounded skeloader"></div>
-          <div class="h-3 w-2/3 rounded skeloader"></div>
+        <div class="mt-3 flex gap-2"><span class="h-5 w-16 rounded-full skeloader"></span><span class="h-5 w-24 rounded-full skeloader"></span></div>
+        <div class="mt-4 space-y-1.5">
+          <div class="h-4 w-full rounded skeloader"></div>
+          <div class="h-4 w-full rounded skeloader"></div>
+          <div class="h-4 w-2/3 rounded skeloader"></div>
         </div>
         <div class="mt-4 h-12 w-full rounded-lg skeloader"></div>
         <div class="mt-2 grid grid-cols-4 gap-2">{#each Array(4) as _}<div class="h-11 rounded-lg skeloader"></div>{/each}</div>
       </div>
     </div>
   {:else}
-    <div class="relative min-h-[70vh] overflow-hidden px-8 pb-16 pt-24">
-      {#if detailHint && banner(detailHint)}<img src={banner(detailHint)} alt="" class="absolute inset-0 -z-10 h-[55vh] w-full object-cover opacity-30" />{/if}
-      <div class="absolute inset-x-0 top-0 -z-10 h-[60vh] bg-gradient-to-b from-transparent to-background"></div>
-      <div class="flex items-end gap-7">
-        <!-- Sized exactly like the loaded cover below (h-auto, same widths): boxing the hint into a
-             fixed 2/3 ratio letterboxed every real cover (AniList ships 46/65) against bg-muted,
-             which read as grey bands above and below the artwork. -->
+    <!-- Match the loaded desktop Hero + overlapping info panel exactly. The previous pt-24
+         skeleton started the poster near the window top, then the real page moved it beneath a
+         55vh banner — a large avoidable layout jump on every series navigation. -->
+    <div class="relative mb-6 h-[40vh] {$gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'}">
+      <div class="absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
+        {#if detailHint && banner(detailHint)}
+          <img src={banner(detailHint)} alt="" class="absolute inset-0 h-full w-full object-cover opacity-30" style="object-position:center 20%" />
+        {:else}
+          <div class="absolute inset-0 skeloader opacity-60"></div>
+        {/if}
+        <div class="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent"></div>
+        <div class="absolute inset-y-0 left-0 w-[45%] bg-gradient-to-r from-background/85 via-background/40 to-transparent"></div>
+      </div>
+    </div>
+    <div class="relative {$gameMode ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
+      <div class="mb-6 flex flex-col gap-6 md:flex-row">
+        <!-- Same intrinsic cover sizing as the loaded panel; using the real hint image avoids a
+             ratio correction when AniList's artwork is not exactly the fallback 46/65 shape. -->
         {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-40 shrink-0 self-start rounded-lg object-contain shadow-lg md:w-52" />{:else}<div class="aspect-[46/65] w-40 shrink-0 self-start rounded-lg skeloader md:w-52"></div>{/if}
-        <div class="max-w-2xl flex-1 pb-3"><h1 class="text-3xl font-black">{detailHint ? title(detailHint) : 'Loading title…'}</h1><div class="mt-4 h-4 w-2/3 rounded skeloader"></div><div class="mt-3 h-4 w-1/2 rounded skeloader"></div><div class="mt-6 h-10 w-52 rounded-lg skeloader"></div></div>
+        <div class="min-w-0 max-w-3xl flex-1">
+          <div class="min-h-5 text-sm text-muted-foreground">{detailHint?.title.native || detailHint?.title.romaji || ''}</div>
+          {#if detailHint}
+            <h1 class="mb-3 text-3xl font-black">{title(detailHint)}</h1>
+          {:else}
+            <div class="mb-3 h-9 w-3/5 rounded skeloader"></div>
+          {/if}
+          <div class="mb-4 flex h-6 gap-2">
+            <span class="w-24 rounded-full skeloader"></span><span class="w-16 rounded-full skeloader"></span><span class="w-20 rounded-full skeloader"></span>
+          </div>
+          <div class="mb-4 space-y-1.5">
+            <div class="h-4 w-full rounded skeloader"></div><div class="h-4 w-full rounded skeloader"></div><div class="h-4 w-4/5 rounded skeloader"></div><div class="h-4 w-1/2 rounded skeloader"></div>
+          </div>
+          <div class="mb-4 flex h-6 gap-2"><span class="w-16 rounded-full skeloader"></span><span class="w-20 rounded-full skeloader"></span><span class="w-14 rounded-full skeloader"></span></div>
+          <div class="flex h-10 gap-2"><span class="w-24 rounded-md skeloader"></span><span class="w-28 rounded-md skeloader"></span><span class="w-10 rounded-md skeloader"></span></div>
+        </div>
       </div>
     </div>
   {/if}
@@ -356,10 +387,10 @@
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
         </div>
 
-        <!-- AiringStatus emits bare inline chips with no spacing of their own, so the sub and dub
-             times ran into each other and sat flush against the block above. Give them a row. -->
+        <!-- Phones have no room for release timing in their episode controls. Keep one quiet
+             grouped summary under the facts; desktop anchors it to the episode toolbar instead. -->
         <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
-          <AiringStatus media={m} compact />
+          <AiringStatus media={m} compact quiet />
         </div>
 
         {#if m.description}
@@ -393,7 +424,7 @@
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
           {#if m.trailer?.id}
-            <button data-focusable onclick={() => { h.tap(); showTrailer = true }} aria-label="Trailer"
+            <button data-focusable onclick={() => { h.tap(); openTrailerPopup(m.trailer!.id, title(m)) }} aria-label="Trailer"
                     class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
               <Clapperboard size={18} />
             </button>
@@ -460,43 +491,50 @@
   {:else}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
   <Hero medias={[m]} showOverlay={false} />
-  <div class="relative -mt-[20vh] px-4 pb-16 sm:px-8">
+  <div class="relative {$gameMode ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
     {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>
     {/if}
 
     <!-- Hero info panel: cover + title/badges/description + action bar. -->
     <div class="mb-6 flex flex-col gap-6 md:flex-row">
-      <img use:reliableImage={cover(m)} alt="" class="h-auto w-40 shrink-0 self-start rounded-lg shadow-lg md:w-52" />
+      <img use:reliableImage={cover(m)} alt="" class="h-auto w-40 shrink-0 self-start rounded-lg shadow-lg {$gameMode ? 'md:w-40' : 'md:w-52'}" />
 
       <div class="min-w-0 flex-1">
         {#if m.title.native || m.title.romaji}
           <div class="text-sm text-muted-foreground">{m.title.native || m.title.romaji}</div>
         {/if}
-        <h1 class="mb-3 text-3xl font-black">{title(m)}</h1>
+        <h1 class="mb-2 text-3xl font-black">{title(m)}</h1>
 
-        <div class="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold">
-          <span class="rounded-full bg-secondary px-3 py-1">{effProgress}/{epsTotal(m) || '?'} Episodes</span>
-          {#if format(m)}<span class="rounded-full bg-secondary px-3 py-1">{format(m)}</span>{/if}
-          {#if status(m)}<span class="rounded-full bg-secondary px-3 py-1">{status(m)}</span>{/if}
-          {#if season(m)}<span class="rounded-full bg-secondary px-3 py-1">{season(m)}</span>{/if}
-          {#if m.averageScore}<span class="rounded-full px-3 py-1 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
-          <AiringStatus media={m} />
+        <!-- One scannable facts line replaces two rows of competing pills. Genres remain useful
+             discovery links for pointer users, but are deliberately not D-pad stops in Game mode:
+             Down from the primary action is a content path, not a tour through metadata. -->
+        <div class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-bold text-muted-foreground">
+          <span class="text-foreground">{effProgress}/{epsTotal(m) || '?'} episodes</span>
+          {#if format(m)}<span class="opacity-40">·</span><span>{format(m)}</span>{/if}
+          {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
+          {#if season(m)}<span class="opacity-40">·</span><span>{season(m)}</span>{/if}
+          {#if m.averageScore}<span class="opacity-40">·</span><span class="rounded px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
+          {#each (m.genres ?? []).slice(0, $gameMode ? 3 : 4) as g (g)}
+            <span class="opacity-40">·</span>
+            <a data-focusable={$gameMode ? undefined : ''} tabindex={$gameMode ? -1 : undefined}
+               href={`/app/search?genre=${encodeURIComponent(g)}`}
+               class="transition-colors hover:text-foreground hover:underline">{g}</a>
+          {/each}
+          {#if (m.genres?.length ?? 0) > ($gameMode ? 3 : 4)}
+            <span class="font-medium opacity-60">+{(m.genres?.length ?? 0) - ($gameMode ? 3 : 4)}</span>
+          {/if}
         </div>
 
         {#if m.description}
-          <p class="mb-4 line-clamp-4 max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
-        {/if}
-
-        {#if m.genres?.length}
-          <div class="mb-4 flex flex-wrap gap-2">
-            {#each m.genres as g (g)}<a data-focusable href={`/app/search?genre=${encodeURIComponent(g)}`} class="rounded-full bg-secondary px-3 py-1 text-xs hover:bg-accent">{g}</a>{/each}
-          </div>
+          <p class="mb-3 {$gameMode ? 'line-clamp-2' : 'line-clamp-3'} max-w-3xl whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>
         {/if}
 
         <!-- Action bar -->
         <div class="flex flex-wrap items-center gap-2">
-          <button data-focusable use:focusOnMount onclick={() => playCta(m)}
+          <button data-focusable data-nav-id="series-primary-action"
+                  data-nav-down={$gameMode ? 'series-quick-episode' : undefined}
+                  use:focusOnMount onclick={() => playCta(m)}
                   class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">
             <Play size={16} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
@@ -519,7 +557,7 @@
           </button>
 
           {#if m.trailer?.id}
-            <button data-focusable onclick={() => (showTrailer = true)} title="Watch trailer"
+            <button data-focusable onclick={() => openTrailerPopup(m.trailer!.id, title(m))} title="Watch trailer"
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <Clapperboard size={18} />
             </button>
@@ -579,27 +617,6 @@
       </div>
     {/if}
   </div>
-  {/if}
-
-  {#if showTrailer && m.trailer?.id}
-    <div
-      role="dialog" aria-modal="true" aria-label="Trailer" tabindex="-1"
-      class="fixed inset-0 z-50 grid place-items-center bg-black/80 sm:p-4"
-      onclick={(e) => { if (e.target === e.currentTarget) showTrailer = false }}
-      onkeydown={(e) => e.key === 'Escape' && (showTrailer = false)}
-    >
-      <div class="aspect-video w-full max-w-4xl sm:px-0">
-        <!-- On Android the surrounding dialog IS the fullscreen surface: the WebView this app runs in
-             has no custom-view handler for iframe-initiated fullscreen, so the iframe's own fullscreen
-             button cannot do anything there. `allow`/`allowfullscreen` still let platforms that can
-             support it do so natively. -->
-        <iframe class="h-full w-full rounded-lg" title="Trailer"
-                src={`https://www.youtube-nocookie.com/embed/${m.trailer.id}?autoplay=1`}
-                allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
-      </div>
-      <button data-focusable onclick={() => (showTrailer = false)}
-              class="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] rounded-md bg-secondary px-3 py-2 text-sm font-bold">Close</button>
-    </div>
   {/if}
 
   {#if showEditor}
