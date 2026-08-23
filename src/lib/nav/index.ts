@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { playing } from '$lib/player/session'
+import { gameMode, playing } from '$lib/player/session'
 import { pickInDirection, type Dir } from './spatial'
 export * from './input'
 export * from './actions'
@@ -101,14 +101,84 @@ export function revealAxisDelta(input: RevealAxisInput): number {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
+const isNavigable = (el: HTMLElement) =>
+  (el.checkVisibility?.() ?? true)
+  && !(el instanceof HTMLButtonElement && el.disabled)
+
+const focusables = (root: ParentNode) =>
+  [...root.querySelectorAll<HTMLElement>('[data-focusable]')].filter(isNavigable)
+
+/**
+ * Fast path for the Home/Browse surface in Game mode. A geometric search across the entire page
+ * forces WebKitGTK to style and lay out every card before it can move the focus ring. Rows expose
+ * their navigation boundary, so ordinary moves only inspect the current/adjacent row instead.
+ *
+ * `undefined` means this element is not in a scoped row and the generic page search should run.
+ * `null` means the row fast path found no target (for example LEFT at the first card), so the
+ * generic search may still cross into the sidebar.
+ */
+function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | undefined {
+  if (!get(gameMode)) return undefined
+  const row = active.closest<HTMLElement>('[data-nav-row]')
+  if (!row) return undefined
+
+  const vertical = dir === 'up' || dir === 'down'
+  const itemRoot = row.querySelector<HTMLElement>('[data-nav-row-items]') ?? row
+
+  // Carousel/hero LEFT and RIGHT follow DOM order. No layout reads are needed for the other 19
+  // posters in the row, and an offscreen neighbour remains reachable without a global search.
+  if (!vertical) {
+    const currentItems = focusables(itemRoot)
+    const index = currentItems.indexOf(active)
+    if (index >= 0) return currentItems[index + (dir === 'right' ? 1 : -1)] ?? null
+  }
+
+  const cur = active.getBoundingClientRect()
+  // A header action such as View more can still move down into its own posters. Normal card
+  // movement skips even querying this list, avoiding visibility/layout work for the current row.
+  if (!itemRoot.contains(active)) {
+    const sameRow = focusables(itemRoot)
+      .map((el) => ({ id: '', rect: el.getBoundingClientRect(), el }))
+    const samePick = pickInDirection(cur, sameRow, dir)
+    if (samePick) return samePick.el
+  }
+  if (!vertical) return null
+
+  const rows = [...document.querySelectorAll<HTMLElement>('[data-nav-row]')]
+    .filter((candidate) => candidate.checkVisibility?.() ?? true)
+  const rowIndex = rows.indexOf(row)
+  if (rowIndex < 0) return null
+  const step = dir === 'down' ? 1 : -1
+  for (let index = rowIndex + step; index >= 0 && index < rows.length; index += step) {
+    const targetRow = rows[index]
+    const preferred = targetRow.querySelector<HTMLElement>('[data-nav-row-default][data-focusable]')
+    if (preferred && isNavigable(preferred)) return preferred
+    const targetRoot = targetRow.querySelector<HTMLElement>('[data-nav-row-items]') ?? targetRow
+    const candidates = focusables(targetRoot)
+      .map((el) => ({ id: '', rect: el.getBoundingClientRect(), el }))
+    // Row order already establishes the intended direction, so do not reject a target merely
+    // because the adjacent row has a different card width or horizontal scroll position.
+    const pick = pickInDirection(cur, candidates, dir, /* cone */ false)
+    if (pick) return pick.el
+  }
+  return null
+}
+
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
-  // A single D-pad press should visibly carry the selected card with it. Held-key repeats switch
-  // to instant movement so WebKitGTK never queues several smooth animations behind the thumb.
+  // WebKitGTK queues smooth scrolling behind Deck input and can leave newly exposed tiles black
+  // while Gamescope waits for the next raster. Game mode always moves immediately; desktop keeps
+  // the gentle reveal for a single keyboard press.
   const reduced = document.documentElement.dataset.motion === 'reduced'
     || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
+  const behavior: ScrollBehavior = get(gameMode) || rapid || reduced ? 'auto' : 'smooth'
+  // The featured carousel is taller than the safe-band math can infer from its bottom action row.
+  // Entering its primary action means reveal the whole feature, not just the focused button.
+  if (vertical && el.hasAttribute('data-nav-scroll-top')) {
+    window.scrollTo({ top: 0, behavior })
+    return
+  }
   // Horizontal carousel navigation owns only that row. Vertical navigation still reveals the
   // destination on the page, rather than trying to scroll the destination row inside itself.
   const pane = vertical
@@ -187,12 +257,6 @@ export function initDpadNav() {
     // The built-in Deck keyboard can sit above another modal. Prefer its trap while it is
     // visible; otherwise arrow navigation would continue moving through the dialog underneath.
     const root: ParentNode = trap ?? document
-    const els = [...root.querySelectorAll<HTMLElement>('[data-focusable]')]
-      .filter(el => el.checkVisibility?.() ?? true)
-      // A disabled button can't be actioned, so skip it as a nav target — otherwise `down` from the
-      // last episode row dead-ends on a greyed-out Prev/Next. (Only real `disabled` buttons: divs
-      // with `aria-disabled`, like unaired episodes, stay focusable on purpose.)
-      .filter(el => !(el instanceof HTMLButtonElement && el.disabled))
     const active = document.activeElement as HTMLElement
     const vertical = dir === 'up' || dir === 'down'
     // No real focus yet (just opened / focus sits on <body>): the FIRST press must land on the
@@ -200,6 +264,7 @@ export function initDpadNav() {
     // "down" from the whole viewport and flings focus deep into the grid (the "jumps to romance,
     // 3rd card" bug). Prefer the first non-sidebar focusable (the hero button) so the row is next.
     if (!active?.closest?.('[data-focusable]') || (trap && !trap.contains(active))) {
+      const els = focusables(root)
       const content = els.filter(el => !el.closest('[data-nav-sidebar]'))
       // Prefer the first content focusable that ISN'T a text box (so entering Downloads/Search
       // doesn't auto-focus the filter/search field and trap the arrows in the on-screen keyboard).
@@ -217,7 +282,8 @@ export function initDpadNav() {
     // spatial navigation everywhere else while letting that strip hand Down to the first airing.
     const explicitName = active.getAttribute(`data-nav-${dir}`)
     const explicit = explicitName
-      ? els.find((el) => el !== active && el.getAttribute('data-nav-id') === explicitName)
+      ? [...root.querySelectorAll<HTMLElement>('[data-nav-id]')]
+        .find((el) => el !== active && el.getAttribute('data-nav-id') === explicitName && isNavigable(el))
       : undefined
     if (explicit) {
       explicit.focus({ preventScroll: true })
@@ -225,6 +291,17 @@ export function initDpadNav() {
       e.preventDefault()
       return
     }
+    // Home/Browse rows have enough semantic structure to avoid a whole-page geometry pass. This
+    // runs after named overrides (schedule/detail contracts still win) and before the generic
+    // fallback used by irregular grids, settings, and sidebar crossings.
+    const rowPick = pickInNavRows(active, dir)
+    if (rowPick) {
+      rowPick.focus({ preventScroll: true })
+      revealFocused(rowPick, vertical, e.repeat)
+      e.preventDefault()
+      return
+    }
+    const els = focusables(root)
     const cur = active.getBoundingClientRect()
     if (!cur) return
     // The sidebar is a separate nav region (a fixed left rail). Movement stays INSIDE the

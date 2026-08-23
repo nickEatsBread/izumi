@@ -30,9 +30,15 @@ describe('featured carousel UX', () => {
     expect(hero.match(/onload=\{artworkSettled\} onerror=\{artworkSettled\}/g)?.length).toBe(2)
   })
 
-  it('keeps pointer arrows out of Steam Deck spatial navigation', () => {
-    expect(hero.match(/data-focusable=\{\$gameMode \? undefined : ''\}/g)?.length).toBe(2)
-    expect(hero.match(/tabindex=\{\$gameMode \? -1 : undefined\}/g)?.length).toBe(2)
+  it('keeps pointer-only carousel controls out of Steam Deck spatial navigation', () => {
+    expect(hero.match(/data-focusable=\{\$gameMode \? undefined : ''\}/g)?.length).toBe(3)
+    expect(hero.match(/tabindex=\{\$gameMode \? -1 : undefined\}/g)?.length).toBe(3)
+  })
+
+  it('makes Watch Now the row entry target and reveals the complete hero', () => {
+    expect(hero).toContain('<div\n    data-nav-row')
+    expect(hero).toContain('<div data-nav-row-items class="mt-4 flex items-center gap-2">')
+    expect(hero).toContain('<button data-focusable data-nav-row-default data-nav-scroll-top')
   })
 
   it('steps directionally after an enabled mouse drag', () => {

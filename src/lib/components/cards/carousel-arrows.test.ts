@@ -25,6 +25,11 @@ describe('Carousel edge arrows', () => {
     expect(src).toContain('const mob = $derived($isMobile)')
   })
 
+  it('exposes row boundaries for low-cost controller navigation', () => {
+    expect(src).toContain('<section data-nav-row')
+    expect(src).toContain('data-carousel-scroller data-nav-row-items')
+  })
+
   it('guards both arrows', () => {
     expect(arrowGuards().map((guard) => guard.direction)).toEqual(['left', 'right'])
   })

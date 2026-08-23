@@ -304,6 +304,7 @@
     </div>
   {:else}
   <div
+    data-nav-row
     class="relative mb-6 h-[40vh] touch-pan-y select-none transition-opacity duration-500 {showOverlay ? 'sm:h-[50vh]' : $gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'} {scrolled ? 'opacity-40' : 'opacity-100'}"
     class:cursor-grab={$dragCarousels && medias.length > 1}
     class:cursor-grabbing={heroDragging}
@@ -391,8 +392,8 @@
             <p class="mt-3 line-clamp-2 max-w-xl text-sm text-white/70 drop-shadow sm:line-clamp-3">{cleanDesc(current.description)}</p>
           {/if}
 
-          <div class="mt-4 flex items-center gap-2">
-            <button data-focusable onclick={() => { rememberDetail(current); onplay?.(current) }}
+          <div data-nav-row-items class="mt-4 flex items-center gap-2">
+            <button data-focusable data-nav-row-default data-nav-scroll-top onclick={() => { rememberDetail(current); onplay?.(current) }}
                     class="flex items-center gap-2 rounded-md px-5 py-2 font-bold text-black shadow-lg transition-transform hover:scale-105"
                     style="background:var(--accent)">
               <Play size={18} fill="currentColor" /> Watch Now
@@ -417,7 +418,8 @@
                auto-advances (and would collide with the Watch/Details buttons), so hide them. -->
           <div class="absolute bottom-8 right-8 hidden gap-1.5 sm:flex">
             {#each medias as _, idx}
-              <button data-focusable onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
+              <button data-focusable={$gameMode ? undefined : ''} tabindex={$gameMode ? -1 : undefined}
+                      onclick={() => go(idx)} aria-label={`Slide ${idx + 1}`}
                       class="h-1 overflow-hidden rounded-full bg-white/25 transition-all duration-700"
                       style="width:{idx === i ? '3rem' : '1.5rem'}">
                 {#if idx === i}

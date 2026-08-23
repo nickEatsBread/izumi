@@ -18,6 +18,10 @@ const bootWork = readFileSync(
   fileURLToPath(new URL('../../../lib/util/boot-work.ts', import.meta.url)),
   'utf8',
 )
+const css = readFileSync(
+  fileURLToPath(new URL('../../../app.css', import.meta.url)),
+  'utf8',
+)
 
 describe('Steam Deck browse loading', () => {
   it('defers each home-row query until controller scroll nears it', () => {
@@ -26,11 +30,29 @@ describe('Steam Deck browse loading', () => {
     expect(row).not.toContain('visible || $gameMode')
   })
 
-  it('smoothly carries single focus moves and makes held repeats immediate', () => {
-    expect(nav).toContain("const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'")
+  it('uses instant Deck reveals without inheriting document smooth scrolling', () => {
+    expect(nav).toContain("const behavior: ScrollBehavior = get(gameMode) || rapid || reduced ? 'auto' : 'smooth'")
+    expect(css).toContain('html.gamemode, html.gamemode body { scroll-behavior: auto; }')
     expect(nav).toContain('endMargin: clamp(portHeight * 0.2, 64, 144)')
     expect(nav).toContain('endMargin: clamp(portWidth * 0.18, 48, 176)')
     expect(nav).toContain("if (!top && !left) return")
+  })
+
+  it('moves between browse rows before falling back to a whole-page geometry pass', () => {
+    const scoped = nav.indexOf('const rowPick = pickInNavRows(active, dir)')
+    const global = nav.indexOf('const els = focusables(root)', scoped)
+    expect(scoped).toBeGreaterThan(-1)
+    expect(global).toBeGreaterThan(scoped)
+    expect(nav).toContain("targetRow.querySelector<HTMLElement>('[data-nav-row-default][data-focusable]')")
+    expect(nav).toContain("window.scrollTo({ top: 0, behavior })")
+  })
+
+  it('renders the Deck focus ring without scaling a newly focused poster layer', () => {
+    const focusCover = css.slice(css.indexOf('.gamemode [data-focusable]:focus .focus-cover {'))
+    expect(focusCover).toContain('transform: none;')
+    expect(focusCover).toContain('transition: none;')
+    expect(focusCover).toContain('.gamemode [data-focusable]:focus .focus-cover::after')
+    expect(focusCover).toContain('border: 3px solid #fff;')
   })
 
   it('does not run a continuous startup sampler or treat animation scroll as fresh input', () => {

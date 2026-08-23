@@ -63,7 +63,7 @@
   })
 </script>
 
-<section class="browse-render-row group/carousel relative mb-8">
+<section data-nav-row class="browse-render-row group/carousel relative mb-8">
   <div class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
     <h2 class="text-lg font-black">{title}</h2>
     {#if viewMoreHref}
@@ -75,7 +75,7 @@
     {/if}
   </div>
   <div class="relative">
-    <div bind:this={scroller} data-carousel-scroller use:dragScroll onwheel={onWheel} onscroll={update}
+    <div bind:this={scroller} data-carousel-scroller data-nav-row-items use:dragScroll onwheel={onWheel} onscroll={update}
          class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}>
       {@render children()}
     </div>
