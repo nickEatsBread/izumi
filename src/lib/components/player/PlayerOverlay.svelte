@@ -238,6 +238,9 @@
       lastDrmError = snapshot.error
       playerNotice.set(snapshot.error)
     }
+    // Adaptive playback does not emit the native player-progress event. Start the
+    // shared skip/chapter metadata pipeline as soon as this surface knows its duration.
+    if (!metaLoaded && snapshot.dur > 0) void loadMeta()
     reportWatchPlayback(pos, dur, paused, buffering)
   }
 
