@@ -777,7 +777,9 @@
 
   function currentGmDynamicState() {
     const s = get(scrub)
-    const skipText = gmMode && showSkip && currentSeg ? `Skip ${currentSeg.label}` : ''
+    // The exact HTML pill is snapshotted in Game mode. Native text is fallback-only so we never
+    // stack the simplified ASS chip over the polished button.
+    const skipText = gmMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
     const liveControls = controlsVisible && firstFrame && dur > 0
     const nativeControls = liveControls && gmNativeControls
     const visible = gmMode && get(playing) && (loading || s.active || nativeControls || !!skipText)

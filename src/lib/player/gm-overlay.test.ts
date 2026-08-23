@@ -24,7 +24,7 @@ describe('gameModeBitmapOverlayActive', () => {
 
   it('does not snapshot an idle video with no chrome', () => {
     expect(gameModeBitmapOverlayActive(base)).toBe(false)
-    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(false)
+    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(true)
   })
 
   it('keeps ordinary controls off the bitmap path so native OSD can animate at 60Hz', () => {
@@ -49,8 +49,8 @@ describe('gameModeBitmapOverlayActive', () => {
     expect(gameModeBitmapOverlayActive({ ...base, dynamicOverlay: true })).toBe(false)
   })
 
-  it('keeps the Skip chip native so it cannot cover or disable the progress bar', () => {
-    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(false)
+  it('snapshots the polished HTML Skip pill', () => {
+    expect(gameModeBitmapOverlayActive({ ...base, skipVisible: true })).toBe(true)
   })
 })
 
@@ -105,6 +105,9 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).not.toContain('p2pText')
     expect(overlay).toContain('gmDynamicOwnsChrome')
     expect(overlay).toContain('gmNativeControls')
+    expect(overlay).toContain('controlsVisible && !overlayFull)')
+    expect(overlay).toContain('currentSeg && !overlayActive')
+    expect(overlay).not.toContain('!overlayFull && !showSkip')
     expect(overlay).toContain('measureNativeChrome')
     expect(overlay).toContain('controlItems')
     expect(overlay).toContain('timelineSegments: segments.map')
