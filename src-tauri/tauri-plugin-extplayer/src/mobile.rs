@@ -7,9 +7,9 @@ use tauri::{
 use crate::models::{
     AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DaLoginRequest, DaLoginResponse,
     DaReactRequest, DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest,
-    InstallRequest, JsonResponse, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
-    ReactResponse, ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse,
-    ShareTextRequest,
+    InstallRequest, JsonResponse, LanDiscoveryRequest, NotificationPermissionResponse,
+    OAuthRequest, OAuthResponse, PlayRequest, ReactResponse, ReactionStateResponse,
+    SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -64,6 +64,12 @@ impl<R: Runtime> ExtPlayer<R> {
             .map_err(Into::into)
     }
 
+    pub fn download_notifications(&self) -> crate::Result<NotificationPermissionResponse> {
+        self.0
+            .run_mobile_plugin("requestDownloadNotifications", ())
+            .map_err(Into::into)
+    }
+
     pub fn set_lan_discovery(&self, payload: LanDiscoveryRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("setLanDiscovery", payload)
@@ -91,7 +97,10 @@ impl<R: Runtime> ExtPlayer<R> {
             .map_err(Into::into)
     }
 
-    pub fn save_text_file(&self, payload: SaveTextFileRequest) -> crate::Result<SaveTextFileResponse> {
+    pub fn save_text_file(
+        &self,
+        payload: SaveTextFileRequest,
+    ) -> crate::Result<SaveTextFileResponse> {
         self.0
             .run_mobile_plugin("saveTextFile", payload)
             .map_err(Into::into)

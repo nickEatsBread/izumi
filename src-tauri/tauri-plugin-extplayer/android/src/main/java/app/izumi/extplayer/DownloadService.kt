@@ -32,6 +32,7 @@ import androidx.core.app.NotificationCompat
 class DownloadService : Service() {
     companion object {
         const val EXTRA_TITLE = "title"
+        const val EXTRA_DETAIL = "detail"
         const val EXTRA_PROGRESS = "progress" // 0-100, or -1 for indeterminate
         const val EXTRA_COUNT = "count"       // total items active+queued, for the line under the title
         private const val CHANNEL_ID = "izumi-downloads"
@@ -57,6 +58,7 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = buildNotification(
             title = intent?.getStringExtra(EXTRA_TITLE),
+            detail = intent?.getStringExtra(EXTRA_DETAIL),
             progress = intent?.getIntExtra(EXTRA_PROGRESS, -1) ?: -1,
             count = intent?.getIntExtra(EXTRA_COUNT, 1) ?: 1,
         )
@@ -79,10 +81,16 @@ class DownloadService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Swiping the app away kills the process (and with it the Rust transfer) — a lingering
-        // notification with no download behind it would be a lie.
-        stopSelf()
+        // Removing the UI task is not cancelling a user-requested download. The foreground service
+        // deliberately remains alive; force-stop is the Android-level action that cancels all work.
         super.onTaskRemoved(rootIntent)
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android 15 caps dataSync foreground work. Stop promptly when the OS exhausts that budget
+        // so it does not raise an ANR; the persisted queue resumes the partial file next launch.
+        Log.w(TAG, "dataSync foreground-service budget exhausted")
+        stopSelf(startId)
     }
 
     override fun onDestroy() {
@@ -91,7 +99,7 @@ class DownloadService : Service() {
         super.onDestroy()
     }
 
-    private fun buildNotification(title: String?, progress: Int, count: Int): android.app.Notification {
+    private fun buildNotification(title: String?, detail: String?, progress: Int, count: Int): android.app.Notification {
         val launch = packageManager.getLaunchIntentForPackage(packageName)
         val contentIntent = launch?.let {
             PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -99,10 +107,13 @@ class DownloadService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(title ?: "Downloading")
-            .setContentText(if (count > 1) "$count episodes" else null)
+            .setContentText(detail ?: if (count > 1) "$count episodes" else "Preparing download…")
             .setProgress(100, progress.coerceIn(0, 100), progress < 0)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(contentIntent)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()

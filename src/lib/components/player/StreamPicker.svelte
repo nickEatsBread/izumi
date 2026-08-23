@@ -9,10 +9,12 @@
   import { flip } from 'svelte/animate'
   import { fade } from 'svelte/transition'
   import { pushState } from '$app/navigation'
-  import { streamPicker, gameMode, bingeSource, debridCaching, connecting } from '$lib/player/session'
+  import { streamPicker, gameMode, bingeSource, debridCaching, connecting, bumpPlayerOverlay } from '$lib/player/session'
   import { rankInfos, pickCandidates, preferDirectStartupCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
   import { isDead, markDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
+  import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
+  import AndroidPreparingPlayer from './AndroidPreparingPlayer.svelte'
   import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState } from '$lib/stremio/play'
@@ -286,6 +288,10 @@
     cancelAuto()
     if (directP2p) void prefetchSourceMetadata(info.stream, 'targeted')
   }
+  function focusSource(info: StreamInfo) {
+    targetSource(info)
+    if ($gameMode) bumpPlayerOverlay()
+  }
   onDestroy(stopAutoTimer)
 
   // Reset per EPISODE only — NOT on every progressive stream update (which would keep
@@ -431,6 +437,8 @@
         title: title(pick.media),
         detail: info.filename ?? info.label,
         art: backdrop,
+        media: pick.media,
+        episode: pick.episode,
         cancel: () => { connecting.set(null); cancelResolve() },
       })
     }
@@ -582,9 +590,9 @@
     aria-disabled={disabled}
     onclick={() => choose(info)}
     onpointerenter={() => targetSource(info)}
-    onfocus={() => targetSource(info)}
+    onfocus={() => focusSource(info)}
     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
-    class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
+    class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_white] {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
   >
     <!-- Mobile has no hover, so this tooltip-only glyph told a touch user nothing. It states
          itself as a worded pill in the meta row down there instead, and the reclaimed ~30px
@@ -608,8 +616,10 @@
             <!-- Unconditional. Suppressing the name whenever a logo EXISTED meant a logo that
                  failed to load left the row with a broken box and no name — no provenance at all. -->
             {#if info.addon}<span class="text-[0.65rem] font-semibold text-muted-foreground">{info.addon}</span>{/if}
-            <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
-            <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
+            {#if !$gameMode}
+              <button type="button" data-focusable onclick={(e) => copyLink(e, info)} title={copiedKey === keyOf(info) ? 'Copied!' : 'Copy link'} aria-label="Copy link" class="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100 {copiedKey === keyOf(info) ? '!opacity-100 text-green-400' : 'text-muted-foreground hover:text-foreground'}">{#if copiedKey === keyOf(info)}<Check size={14} />{:else}<Copy size={14} />{/if}</button>
+              <Play size={14} class="text-muted-foreground opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100" />
+            {/if}
           </span>
         {/if}
       </span>
@@ -664,6 +674,11 @@
      nothing to choose, but the resolve flow still needs the picker to exist to recognise its own
      request. Errors clear the flag, so a failure is never silent. -->
 {#if pick && !pick.hidden}
+  {#if $isAndroid && autoImmediate && !playbackError}
+    <!-- Instant automatic selection is not a choice screen. Keep the destination watch page useful
+         while discovery runs; a playback failure falls through to the real picker below. -->
+    <AndroidPreparingPlayer media={pick.media} episode={pick.episode} />
+  {:else}
   <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
        Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region
        instead of letting WebKit cache one snapshot — at the exact moment the app is busiest
@@ -680,7 +695,7 @@
     onkeydown={(e) => e.key === 'Escape' && close()}
     role="presentation"
   >
-    <div bind:this={pickerTrap} data-nav-trap class="flex flex-col overflow-hidden bg-card shadow-2xl {$isMobile ? 'sp-mobile h-full w-full' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border'}" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div bind:this={pickerTrap} data-nav-trap class="flex flex-col overflow-hidden bg-card shadow-2xl {$isMobile ? 'sp-mobile h-full w-full' : 'max-h-[85vh] w-full max-w-3xl rounded-2xl border border-border'}" onclick={(e) => e.stopPropagation()} onfocusin={() => $gameMode && bumpPlayerOverlay()} role="presentation">
       <!-- Banner-headed title (shrink-0 so a tall list never squeezes it) -->
       <div class="relative shrink-0 overflow-hidden border-b border-border">
         {#if banner(pick.media)}
@@ -932,6 +947,7 @@
       </div>
     </div>
   </div>
+  {/if}
 
   <!-- The gap between "you picked" and "video plays". It used to be dead air: the rows greyed out
        and nothing else happened until either the player or, after a grace period, the debrid
@@ -942,16 +958,12 @@
        app-wide (SourceConnecting), so rendering it here too would stack two of them. -->
   {#if autoImmediate && resolving && !busy && !$connecting && !$debridCaching && !playbackError}
     {#if $isAndroid}
-      <!-- This is the same compact Android playback-status surface used by the connecting phase.
-           Direct P2P spends its first wait preparing the local torrent download, but that must not
-           fall through to the desktop full-screen SourceLoader before connecting takes ownership. -->
-      <div class="android-prepare fixed inset-x-4 z-[55] overflow-hidden rounded-full bg-black/85 shadow-xl"
-           role="status" aria-live="polite" transition:fade={{ duration: 100 }}>
-        <div class="bar-loader h-1.5 w-full"></div>
-        <div class="flex items-center gap-2 px-3 py-2 text-xs text-white/80">
-          <span class="min-w-0 flex-1 truncate">{directP2p ? 'Preparing download' : 'Connecting'}{chosenLabel ? ` · ${chosenLabel}` : ''}</span>
-          <button data-focusable onclick={cancelChoice} class="grid size-7 shrink-0 place-items-center rounded-full bg-white/10" aria-label="Cancel preparing playback">✕</button>
-        </div>
+      <div transition:fade={{ duration: 100 }}>
+        <AndroidConnectionStatus
+          headline={directP2p ? 'Preparing playback' : 'Finding the best source'}
+          detail={chosenLabel || `${title(pick.media)}${pick.episode != null ? ` · Episode ${pick.episode}` : ''}`}
+          oncancel={cancelChoice}
+        />
       </div>
     {:else}
     <div
@@ -1003,12 +1015,6 @@
     touch-action: pan-y;
   }
   :global(.sp-mobile .sp-chips) { scrollbar-width: none; }
-  .android-prepare { top: calc(env(safe-area-inset-top) + 56.25vw - 0.375rem); }
-
-  @media (orientation: landscape) {
-    .android-prepare { top: auto; bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
-  }
-
   @media (max-height: 560px) {
     :global(.sp-mobile .sp-cover) { display: none; }
     :global(.sp-mobile .sp-head) { padding-top: max(0.5rem, env(safe-area-inset-top)); padding-bottom: 0.5rem; }

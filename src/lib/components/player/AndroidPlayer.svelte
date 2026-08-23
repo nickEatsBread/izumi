@@ -60,7 +60,7 @@
     HOLD_MS,
     DOUBLE_TAP_MS,
   } from '$lib/player/android-gestures'
-  import { nowPlaying, nowPlayingMedia, nowPlayingStream, playerLoadId, streamPicker, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
+  import { nowPlaying, nowPlayingMedia, nowPlayingStream, playerLoadId, streamPicker, connecting, debridCaching, commentsOpen, onlineSubCandidates, subtitleNotice, playerNotice, playbackRecovery, chapters as chapterStore } from '$lib/player/session'
   import { pickSubtitleTrackId } from '$lib/player/track-policy'
   import { audioFilter } from '$lib/player/enhancements'
   import { activeChapterIndex, chapterRowLabel, sortChapters } from '$lib/player/chapters'
@@ -1247,7 +1247,9 @@
   // In picture-in-picture the WebView is scaled down to the miniplayer window with it. Every pixel it
   // paints — the watch page's opaque background above all — lands on top of the video surface, so the
   // whole shell goes away and the transparent WebView leaves nothing but the video.
-  const overlayHidden = $derived($streamPicker != null || $commentsOpen || $androidPipActive)
+  // During an episode/source handover the preparation page owns the visible surface. Hiding the
+  // outgoing native frame avoids a black/old-episode flash while the next watch details pre-load.
+  const overlayHidden = $derived($streamPicker != null || $connecting != null || $debridCaching != null || $commentsOpen || $androidPipActive)
 
   // --- GIF recording ---
   // Same 30s bound the desktop recorder uses. The native worker stops itself there too; the UI stop

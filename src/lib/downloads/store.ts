@@ -5,10 +5,11 @@ import { getCurrentWindow, ProgressBarStatus } from '@tauri-apps/api/window'
 import { resolveDownloadUrl } from '$lib/stremio/play'
 import { torrentEngineNetworkOptions } from '$lib/player/direct-torrent'
 import { downloadDir, downloadConcurrency } from '$lib/settings/ui'
-import { downloads, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem, type DownloadPreferences } from './state'
+import { downloads, speeds, keyFor, setItem, removeItem, setSpeed, setDownloadedMedia, type DownloadItem, type DownloadPreferences } from './state'
 import { getEpisodeMeta } from '$lib/anizip'
 import { isAndroid } from '$lib/platform'
 import { downloadTaskbarProgress } from './taskbar'
+import { formatBytes, formatSpeed } from '$lib/util/format'
 import type { Media } from '$lib/anilist/types'
 import { abortShakaOffline, removeShakaOffline, storeShakaOffline } from './shaka-offline'
 
@@ -41,7 +42,7 @@ export function enqueue(media: Media, episode: number, preferences?: DownloadPre
   // and thumbnails without a network fetch.
   setDownloadedMedia(media)
   getEpisodeMeta(media.id).catch(() => {})
-  pump()
+  startPump()
 }
 export function enqueueMany(media: Media, episodes: number[], preferences?: DownloadPreferences) {
   for (const ep of episodes) enqueue(media, ep, preferences)
@@ -51,6 +52,27 @@ export function enqueueMany(media: Media, episodes: number[], preferences?: Down
 // re-launches an already-running stream (which would double-write the .part and
 // make the progress bar yank).
 const running = new Set<string>()
+
+// Android 13+ hides ordinary foreground-service notifications from the notification drawer until
+// POST_NOTIFICATIONS is granted. Ask at the moment the user starts/resumes a download, then keep
+// the result for this app session so a multi-episode batch produces one system prompt.
+let notificationPermission: Promise<boolean> | null = null
+function ensureAndroidDownloadNotifications(): Promise<boolean> {
+  if (!get(isAndroid)) return Promise.resolve(true)
+  if (!notificationPermission) {
+    notificationPermission = invoke<{ granted?: boolean }>('plugin:extplayer|download_notifications')
+      .then((result) => result?.granted === true)
+      .catch(() => false)
+  }
+  return notificationPermission
+}
+
+function startPump() {
+  if (!get(isAndroid)) return pump()
+  // The transfer still starts if permission is declined; Android will keep the required foreground
+  // service visible in its active-apps task manager, even though the drawer notification is hidden.
+  void ensureAndroidDownloadNotifications().finally(pump)
+}
 
 // Concurrency-limited pump. Resolves each url lazily at job time (so a bulk enqueue
 // doesn't fan out debrid calls up front).
@@ -139,7 +161,7 @@ export async function pauseDownload(id: string) {
   await stopJob(id, it, false)
   setItem(id, { status: 'paused' }); setSpeed(id, undefined)
 }
-export function resumeDownload(id: string) { setItem(id, { status: 'queued' }); pump() }
+export function resumeDownload(id: string) { setItem(id, { status: 'queued' }); startPump() }
 export async function cancelDownload(id: string) {
   await stopJob(id, get(downloads)[id], true)
   removeItem(id); setSpeed(id, undefined)
@@ -191,10 +213,17 @@ function syncDownloadForeground() {
   const known = activeItems.filter((x) => x.bytes > 0)
   const total = known.reduce((sum, x) => sum + x.bytes, 0)
   const received = known.reduce((sum, x) => sum + x.downloaded, 0)
+  const totalSpeed = activeItems.reduce((sum, x) => sum + (get(speeds)[x.id] ?? 0), 0)
+  const detail = [
+    total > 0 ? `${formatBytes(received)} / ${formatBytes(total)}` : null,
+    totalSpeed > 0 ? formatSpeed(totalSpeed) : null,
+    activeItems.length + queued > 1 ? `${activeItems.length + queued} episodes` : null,
+  ].filter(Boolean).join(' · ')
   fgOn = true
   void invoke('plugin:extplayer|download_foreground', { payload: {
     active: true,
     title: activeItems.length === 1 ? activeItems[0].title : 'Downloading episodes',
+    detail: detail || null,
     progress: total > 0 ? Math.min(100, Math.round((received / total) * 100)) : null,
     count: activeItems.length + queued,
   } }).catch(() => {})
@@ -231,6 +260,8 @@ export function attachDownloadEvents() {
     syncDownloadForeground()
     syncDownloadTaskbar(snapshot)
   })
+  // Speed is a separate ephemeral store, so it needs its own notification refresh trigger.
+  speeds.subscribe(() => syncDownloadForeground())
   listen<[string, number, number, number]>('download-progress', (e) => {
     const [id, received, total, speed] = e.payload
     // Monotonic: ignore any backward value (a stray/duplicate stream) so the bar
@@ -256,5 +287,5 @@ export function attachDownloadEvents() {
     for (const k of Object.keys(n)) if (n[k].status === 'downloading' && !running.has(k)) n[k] = { ...n[k], status: 'queued' }
     return n
   })
-  pump()
+  startPump()
 }

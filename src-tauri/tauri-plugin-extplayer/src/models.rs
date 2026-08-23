@@ -154,8 +154,15 @@ pub struct DaLoginResponse {
 pub struct DownloadForegroundRequest {
     pub active: bool,
     pub title: Option<String>,
+    /// Human-readable byte/speed/item summary shown below the episode title.
+    pub detail: Option<String>,
     /// 0-100; omit for an indeterminate bar.
     pub progress: Option<u32>,
     /// Active + queued item count, shown under the title.
     pub count: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct NotificationPermissionResponse {
+    pub granted: bool,
 }

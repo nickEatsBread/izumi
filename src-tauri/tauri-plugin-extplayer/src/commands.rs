@@ -3,8 +3,9 @@ use tauri::{command, AppHandle, Runtime};
 use crate::{
     models::{
         BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
-        DeviceStatus, DownloadForegroundRequest, InstallRequest, PlayRequest, ReactResponse,
-        ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
+        DeviceStatus, DownloadForegroundRequest, InstallRequest, NotificationPermissionResponse,
+        PlayRequest, ReactResponse, ReactionStateResponse, SaveTextFileRequest,
+        SaveTextFileResponse, ShareTextRequest,
     },
     ExtPlayerExt, Result,
 };
@@ -49,6 +50,15 @@ pub(crate) async fn open_browser<R: Runtime>(
     payload: BrowserRequest,
 ) -> Result<()> {
     app.extplayer().open_browser(payload)
+}
+
+/// Request Android 13+'s notification permission at the user-initiated download boundary.
+/// Desktop resolves granted without showing anything.
+#[command]
+pub(crate) async fn download_notifications<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<NotificationPermissionResponse> {
+    app.extplayer().download_notifications()
 }
 
 /// Open Android's native ACTION_SEND chooser. Desktop keeps using its clipboard affordance.

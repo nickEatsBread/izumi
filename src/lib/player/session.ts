@@ -46,7 +46,21 @@ export const streamPicker = writable<{
  *  work when there is no picker on screen at all — binge continuation and Continue Watching both
  *  resolve with the picker closed, and they were falling straight through to the debrid caching
  *  screen even when debrid was not what they were waiting for. */
-export const connecting = writable<{ title: string; detail?: string; art?: string; cancel: () => void } | null>(null)
+export const connecting = writable<{
+  title: string
+  detail?: string
+  art?: string
+  // Android uses the target identity to render the useful watch page while source startup runs.
+  // Optional keeps non-episode/external playback callers lightweight.
+  media?: Media
+  episode?: number
+  cancel: () => void
+} | null>(null)
+
+// Timestamp of a source-picker dismissal owned by the app-wide controller router. The player has
+// its own listener for the same native B edge; keeping this tiny hand-off in shared state prevents
+// that one physical press from first closing the picker and then closing playback as well.
+export const streamPickerDismissedAt = writable(-1e9)
 
 /** The next episode has been resolved ahead of time and will start immediately. Purely additive:
  *  it is only ever set when a preload actually succeeded, because under the noAdd contract a
@@ -197,6 +211,9 @@ export const debridCaching = writable<null | {
   title: string
   episode?: number
   cover?: string
+  // Lets Android keep the useful watch page mounted while a remote source is being prepared.
+  // Cloud-library playback has no AniList context, so this remains optional.
+  media?: Media
   info: DebridInfo
   cancel: () => void
 }>(null)

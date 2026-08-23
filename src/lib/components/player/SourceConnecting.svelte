@@ -5,8 +5,10 @@
   // Watching and binge continuation, which both resolve with the picker closed, fell straight
   // through to the debrid caching screen even when debrid was not what they were waiting on. This
   // covers every route into playback, and the caching screen is left to mean what it says.
-  import { connecting, debridCaching, gameMode } from '$lib/player/session'
+  import { connecting, debridCaching, gameMode, playing, streamPicker } from '$lib/player/session'
   import SourceLoader from './SourceLoader.svelte'
+  import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
+  import AndroidPreparingPlayer from './AndroidPreparingPlayer.svelte'
   import { fade } from 'svelte/transition'
   import { isAndroid } from '$lib/platform'
 
@@ -18,16 +20,27 @@
      full-screen overlays would fight over the same z-order. -->
 {#if c && !$debridCaching}
   {#if $isAndroid}
-    <!-- Keep the watch page visible on phones. This slim loader sits against the lower edge of the
-         portrait 16:9 video instead of replacing the entire app with a connecting screen. -->
-    <div class="android-connect fixed inset-x-4 z-[55] overflow-hidden rounded-full bg-black/85 shadow-xl"
-         role="status" aria-live="polite" transition:fade={{ duration: 100 }}>
-      <div class="bar-loader h-1.5 w-full"></div>
-      <div class="flex items-center gap-2 px-3 py-2 text-xs text-white/80">
-        <span class="min-w-0 flex-1 truncate">Connecting{c.detail ? ` · ${c.detail}` : ''}</span>
-        <button data-focusable onclick={() => c?.cancel()} class="grid size-7 shrink-0 place-items-center rounded-full bg-white/10" aria-label="Cancel connecting">✕</button>
-      </div>
+    <!-- A visible instant-auto picker already owns this exact preparation page. Hidden continuation
+         pickers render nothing, so SourceConnecting must keep owning it for resume/next-episode. -->
+    {#if c.media && (!$streamPicker || $streamPicker.hidden)}
+      <AndroidPreparingPlayer media={c.media} episode={c.episode} />
+    {/if}
+    <div transition:fade={{ duration: 100 }}>
+      <AndroidConnectionStatus headline="Getting episode ready" detail={c.detail || c.title} oncancel={() => c?.cancel()} />
     </div>
+  {:else if $gameMode && $playing}
+  <!-- A mid-playback source swap must not replace the current frame with a black loading page.
+       This translucent, compact surface is snapshotted into mpv with the picker/player chrome. -->
+  <div
+    class="fixed inset-0 z-[55] grid place-items-center bg-black/45"
+    onclick={() => c?.cancel()}
+    onkeydown={(e) => e.key === 'Escape' && c?.cancel()}
+    role="presentation"
+  >
+    <div class="relative w-full max-w-xl rounded-2xl border border-white/10 bg-black/80 py-6 shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+      <SourceLoader title={c.title} caption="Switching source" detail={c.detail} onCancel={c.cancel} />
+    </div>
+  </div>
   {:else}
   <div
     class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
@@ -48,10 +61,3 @@
   </div>
   {/if}
 {/if}
-
-<style>
-  .android-connect { top: calc(env(safe-area-inset-top) + 56.25vw - 0.375rem); }
-  @media (orientation: landscape) {
-    .android-connect { top: auto; bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
-  }
-</style>

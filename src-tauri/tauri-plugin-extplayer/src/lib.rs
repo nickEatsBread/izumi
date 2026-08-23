@@ -15,8 +15,9 @@ mod mobile;
 pub use error::{Error, Result};
 pub use models::{
     AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DeviceStatus,
-    DownloadForegroundRequest, InstallRequest, JsonResponse, LanDiscoveryRequest, OAuthRequest,
-    OAuthResponse, PlayRequest, SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
+    DownloadForegroundRequest, InstallRequest, JsonResponse, LanDiscoveryRequest,
+    NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest, SaveTextFileRequest,
+    SaveTextFileResponse, ShareTextRequest,
 };
 
 #[cfg(desktop)]
@@ -44,6 +45,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::install_apk,
             commands::device_status,
             commands::download_foreground,
+            commands::download_notifications,
             commands::open_browser,
             commands::share_text,
             commands::da_reaction_state,

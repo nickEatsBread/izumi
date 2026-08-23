@@ -61,6 +61,9 @@ export function setDownloadedMedia(m: Media) {
     episodes: m.episodes, duration: m.duration, averageScore: m.averageScore, genres: m.genres,
     startDate: m.startDate, coverImage: m.coverImage, bannerImage: m.bannerImage,
     nextAiringEpisode: m.nextAiringEpisode, season: m.season, seasonYear: m.seasonYear,
+    // Source matching uses alternate titles and the main studio. Persist them so starting or
+    // resuming a download never has to refetch AniList merely to rediscover data we already had.
+    synonyms: m.synonyms, studios: m.studios,
     // Keep the airing schedule: OVA/ONA/adult titles have episodes + nextAiringEpisode both null,
     // and their ONLY episode-count signal is airingSchedule.nodes. Without it totalEpisodes()=0
     // OFFLINE → the detail page shows "Episodes TBA" with zero rows even for downloaded episodes

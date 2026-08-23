@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { debridCaching } from '$lib/player/session'
+  import { debridCaching, streamPicker } from '$lib/player/session'
+  import { isAndroid } from '$lib/platform'
   import { formatBytes, formatSpeed } from '$lib/util/format'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Users from '@lucide/svelte/icons/users'
   import Gauge from '@lucide/svelte/icons/gauge'
+  import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
+  import AndroidPreparingPlayer from './AndroidPreparingPlayer.svelte'
 
   const c = $derived($debridCaching)
   // Show the EXACT percent the provider reports — no rounding — so a torrent at 99.x% never
@@ -15,12 +18,30 @@
     : c?.info.stage === 'ready' ? 'Ready — starting…'
     : 'Preparing…',
   )
+  const androidDetail = $derived.by(() => {
+    if (!c) return ''
+    const bits = [stageLabel]
+    if (c.info.speed) bits.push(formatSpeed(c.info.speed))
+    if (c.info.seeders != null) bits.push(`${c.info.seeders} seeders`)
+    return bits.join(' · ')
+  })
 </script>
 
 {#if c}
-  <!-- Full-screen over everything, FULLY OPAQUE so the source picker underneath doesn't bleed
-       through. NO backdrop-blur (Deck WebKit). -->
-  <div class="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-black px-6 text-white">
+  {#if $isAndroid}
+    <!-- Keep useful episode content alive while the remote source is prepared. A visible automatic
+         picker already owns this preparation page, so only add another one for hidden continuations. -->
+    {#if c.media && (!$streamPicker || $streamPicker.hidden)}
+      <AndroidPreparingPlayer media={c.media} episode={c.episode} />
+    {/if}
+    <AndroidConnectionStatus
+      headline={pct != null ? `Preparing video · ${pct}%` : 'Preparing video'}
+      detail={androidDetail}
+      oncancel={c.cancel}
+    />
+  {:else}
+    <!-- Desktop keeps the immersive caching screen. NO backdrop-blur on Deck WebKit. -->
+    <div class="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-black px-6 text-white">
     {#if c.cover}
       <!-- Desktop uses a blurred cover. Game mode keeps it unfiltered via loading-backdrop so the
            spinner/progress updates do not invalidate a full-screen filter on every frame. -->
@@ -69,6 +90,7 @@
         Cancel
       </button>
       <p class="text-xs text-white/40">Cancelling keeps it caching in the background — it'll be instant next time.</p>
+      </div>
     </div>
-  </div>
+  {/if}
 {/if}

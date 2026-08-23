@@ -53,7 +53,8 @@ describe('mobile source picker layout', () => {
   it('uses pointer and controller focus time to prefetch the targeted source metadata', () => {
     expect(source).toContain("prefetchSourceMetadata(info.stream, 'targeted')")
     expect(source).toContain('onpointerenter={() => targetSource(info)}')
-    expect(source).toContain('onfocus={() => targetSource(info)}')
+    expect(source).toContain('onfocus={() => focusSource(info)}')
+    expect(source).toContain('if ($gameMode) bumpPlayerOverlay()')
   })
 
   it('focuses a playable source on every Game-mode picker opening', () => {
@@ -62,12 +63,15 @@ describe('mobile source picker layout', () => {
     expect(source).toContain('bind:this={pickerTrap}')
     expect(source).toContain('setTimeout(focusFirst, 80)')
     expect(source).toContain('data-source-row')
+    expect(source).toContain('focus-visible:shadow-[inset_0_0_0_2px_white]')
+    expect(source).toContain('{#if !$gameMode}')
     expect(source).not.toContain('let focusedBest = false')
   })
 
-  it('keeps Android preparation in the compact playback-status popup', () => {
-    expect(source).toContain('{#if $isAndroid}')
-    expect(source).toContain('class="android-prepare fixed inset-x-4')
-    expect(source).toContain("directP2p ? 'Preparing download' : 'Connecting'")
+  it('keeps instant automatic selection out of the source-list dialog', () => {
+    expect(source).toContain('{#if $isAndroid && autoImmediate && !playbackError}')
+    expect(source).toContain('<AndroidPreparingPlayer media={pick.media} episode={pick.episode} />')
+    expect(source).toContain('<AndroidConnectionStatus')
+    expect(source).not.toContain('class="android-prepare fixed inset-x-4')
   })
 })

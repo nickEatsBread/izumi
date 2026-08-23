@@ -8,6 +8,7 @@ Allow Android playback, sharing, browser authentication, self-update, and power/
 - `allow-install-apk`
 - `allow-device-status`
 - `allow-download-foreground`
+- `allow-download-notifications`
 - `allow-open-browser`
 - `allow-share-text`
 - `allow-da-reaction-state`
@@ -150,6 +151,32 @@ Enables the download_foreground command without any pre-configured scope.
 <td>
 
 Denies the download_foreground command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-download-notifications`
+
+</td>
+<td>
+
+Enables the download_notifications command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-download-notifications`
+
+</td>
+<td>
+
+Denies the download_notifications command without any pre-configured scope.
 
 </td>
 </tr>

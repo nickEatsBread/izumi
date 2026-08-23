@@ -5,6 +5,10 @@ import { describe, expect, it } from 'vitest'
 const read = (url: URL) => readFileSync(fileURLToPath(url), 'utf8')
 const player = read(new URL('./AndroidPlayer.svelte', import.meta.url))
 const connecting = read(new URL('./SourceConnecting.svelte', import.meta.url))
+const connectionStatus = read(new URL('./AndroidConnectionStatus.svelte', import.meta.url))
+const preparing = read(new URL('./AndroidPreparingPlayer.svelte', import.meta.url))
+const watchDetails = read(new URL('./AndroidWatchDetails.svelte', import.meta.url))
+const caching = read(new URL('./DebridCaching.svelte', import.meta.url))
 const picker = read(new URL('./StreamPicker.svelte', import.meta.url))
 const detail = read(new URL('../detail/AnimeDetail.svelte', import.meta.url))
 const layout = read(new URL('../../../routes/app/+layout.svelte', import.meta.url))
@@ -16,12 +20,29 @@ describe('Android UI contracts', () => {
     expect(detail).toContain('aria-label="Share series"')
   })
 
-  it('uses a bottom-edge loader instead of the full connecting screen on Android', () => {
+  it('uses one integrated video-edge status rail on Android', () => {
     expect(connecting).toContain('{#if $isAndroid}')
-    expect(connecting).toContain('class="bar-loader h-1.5 w-full"')
-    expect(connecting).toContain('top: calc(env(safe-area-inset-top) + 56.25vw')
-    expect(picker).toContain("directP2p ? 'Preparing download' : 'Connecting'")
-    expect(picker).toContain('class="android-prepare fixed inset-x-4')
+    expect(connecting).toContain('<AndroidConnectionStatus')
+    expect(picker).toContain('<AndroidConnectionStatus')
+    expect(connectionStatus).toContain('class="android-connection fixed inset-x-0')
+    expect(connectionStatus).toContain('56.25vw - 3.75rem')
+    expect(connectionStatus).toContain('class="bar-loader h-full w-full"')
+    expect(connecting).not.toContain('android-connect fixed')
+    expect(picker).not.toContain('android-prepare fixed')
+  })
+
+  it('renders useful watch content while automatic source startup runs', () => {
+    expect(picker).toContain('{#if $isAndroid && autoImmediate && !playbackError}')
+    expect(picker).toContain('<AndroidPreparingPlayer media={pick.media} episode={pick.episode} />')
+    expect(connecting).toContain('{#if c.media && (!$streamPicker || $streamPicker.hidden)}')
+    expect(connecting).toContain('<AndroidPreparingPlayer media={c.media} episode={c.episode} />')
+    expect(preparing).toContain('<AndroidWatchDetails')
+    expect(watchDetails).not.toContain('resolvingSource')
+    expect(player).toContain('$connecting != null')
+    expect(caching).toContain('{#if $isAndroid}')
+    expect(caching).toContain('<AndroidPreparingPlayer media={c.media} episode={c.episode} />')
+    expect(caching).toContain('<AndroidConnectionStatus')
+    expect(player).toContain('$debridCaching != null')
   })
 
   it('collapses portrait playback to Home and reveals browse behind the mini-player', () => {

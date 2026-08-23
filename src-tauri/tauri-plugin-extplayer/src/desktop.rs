@@ -3,9 +3,9 @@ use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
     BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
-    DeviceStatus, DownloadForegroundRequest, InstallRequest, LanDiscoveryRequest, OAuthRequest,
-    OAuthResponse, PlayRequest, ReactResponse, ReactionStateResponse, SaveTextFileRequest,
-    SaveTextFileResponse, ShareTextRequest,
+    DeviceStatus, DownloadForegroundRequest, InstallRequest, LanDiscoveryRequest,
+    NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest, ReactResponse,
+    ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -52,6 +52,10 @@ impl<R: Runtime> ExtPlayer<R> {
         Ok(())
     }
 
+    pub fn download_notifications(&self) -> crate::Result<NotificationPermissionResponse> {
+        Ok(NotificationPermissionResponse { granted: true })
+    }
+
     // Desktop uses the native second-window `oauth_capture` in the app crate, not this.
     pub fn oauth_capture(&self, _payload: OAuthRequest) -> crate::Result<OAuthResponse> {
         Ok(OAuthResponse { url: String::new() })
@@ -62,7 +66,9 @@ impl<R: Runtime> ExtPlayer<R> {
         &self,
         _payload: DaReactionStateRequest,
     ) -> crate::Result<ReactionStateResponse> {
-        Ok(ReactionStateResponse { body: String::new() })
+        Ok(ReactionStateResponse {
+            body: String::new(),
+        })
     }
 
     pub fn da_react(&self, _payload: DaReactRequest) -> crate::Result<ReactResponse> {

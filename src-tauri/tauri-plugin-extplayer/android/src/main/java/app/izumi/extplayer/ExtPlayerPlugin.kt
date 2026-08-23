@@ -1,9 +1,11 @@
 package app.izumi.extplayer
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -24,12 +26,15 @@ import android.widget.Button
 import android.widget.FrameLayout
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
+import app.tauri.annotation.Permission
+import app.tauri.annotation.PermissionCallback
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -117,6 +122,7 @@ class DaLoginArgs {
 class DownloadForegroundArgs {
     var active: Boolean = false
     var title: String? = null
+    var detail: String? = null
     /** 0-100, or null/absent for indeterminate. */
     var progress: Int? = null
     var count: Int? = null
@@ -129,7 +135,11 @@ class SaveTextFileArgs {
     var contents: String = ""
 }
 
-@TauriPlugin
+@TauriPlugin(
+    permissions = [
+        Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "downloadNotifications"),
+    ],
+)
 class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     private val aniyomiLock = Any()
     @Volatile private var aniyomiRuntime: Any? = null
@@ -513,6 +523,7 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         val intent = Intent(context, DownloadService::class.java)
         if (args.active) {
             intent.putExtra(DownloadService.EXTRA_TITLE, args.title)
+            intent.putExtra(DownloadService.EXTRA_DETAIL, args.detail)
             intent.putExtra(DownloadService.EXTRA_PROGRESS, args.progress ?: -1)
             intent.putExtra(DownloadService.EXTRA_COUNT, args.count ?: 1)
             try {
@@ -527,6 +538,32 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             context.stopService(intent)
         }
         invoke.resolve()
+    }
+
+    /** Ask only when a user starts/resumes a download. Without this runtime grant Android 13+
+     *  keeps the required foreground-service notice out of the notification drawer. */
+    @Command
+    fun requestDownloadNotifications(invoke: Invoke) {
+        if (android.os.Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        ) {
+            invoke.resolve(JSObject().put("granted", true))
+            return
+        }
+        requestPermissionForAliases(
+            arrayOf("downloadNotifications"),
+            invoke,
+            "downloadNotificationsResult",
+        )
+    }
+
+    @PermissionCallback
+    fun downloadNotificationsResult(invoke: Invoke) {
+        val granted = android.os.Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        invoke.resolve(JSObject().put("granted", granted))
     }
 
     @Command

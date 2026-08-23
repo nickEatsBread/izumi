@@ -25,6 +25,8 @@ vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
 // Resolves empty (not pending): resolveDownloadUrl now awaits the online wave (with a budget),
 // so a never-settling mock would stall every test to its own timeout.
 const resolveOnlineStreams = vi.fn(async () => [])
+const getDownloadedMedia = vi.fn()
+const fetchMediaById = vi.fn(async () => media)
 vi.mock('./onlinestream', () => ({ resolveOnlineStreams: (...a: unknown[]) => resolveOnlineStreams(...a) }))
 vi.mock('./debrid', () => ({
   resolveHash: (...a: unknown[]) => resolveHash(...a),
@@ -38,7 +40,7 @@ vi.mock('$lib/anizip', () => ({
   getEpisodeSeasonMap: async () => ({ 2: { season: 1, abs: 2 } }),
   getExtensionIds: async () => ({}),
 }))
-vi.mock('$lib/downloads/state', () => ({ downloadOf: () => undefined }))
+vi.mock('$lib/downloads/state', () => ({ downloadOf: () => undefined, getDownloadedMedia }))
 vi.mock('$lib/extensions/manager', () => ({
   hasConfiguredExtensions: async () => true,
   queryExtensions: async () => [],
@@ -56,7 +58,7 @@ vi.mock('$lib/anilist/media', () => ({
   totalEpisodes: () => 12,
 }))
 vi.mock('$lib/anilist/fetch-media', () => ({
-  fetchMediaById: async () => media,
+  fetchMediaById,
   fetchMediaByIds: async () => new Map(),
 }))
 vi.mock('$lib/platform', () => ({ isAndroid: readable(false) }))
@@ -136,11 +138,25 @@ afterEach(() => {
   debridKey.set('')
   resolveOnlineStreams.mockReset()
   resolveOnlineStreams.mockResolvedValue([])
+  getDownloadedMedia.mockReset()
+  fetchMediaById.mockReset()
+  fetchMediaById.mockResolvedValue(media)
   vi.unstubAllGlobals()
   vi.clearAllMocks()
 })
 
 describe('resolveDownloadUrl source preference', () => {
+  it('uses the saved series snapshot when AniList is unavailable', async () => {
+    getDownloadedMedia.mockReturnValue(media)
+    fetchMediaById.mockRejectedValue(new Error('upstream unavailable'))
+    answer([torrentRow])
+
+    const resolved = await resolveDownloadUrl(1, 2)
+
+    expect(resolved.kind).toBe('torrent')
+    expect(fetchMediaById).not.toHaveBeenCalled()
+  })
+
   it('downloads a torrent-only source through the P2P engine when Direct P2P is selected', async () => {
     answer([torrentRow])
 

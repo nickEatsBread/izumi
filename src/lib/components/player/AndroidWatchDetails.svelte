@@ -12,7 +12,6 @@
   import { fetchDiscussion } from '$lib/comments'
   import { embedResizeHeight, preferredMobileDiscussion } from '$lib/comments/mobile'
   import { hideSpoilers } from '$lib/settings/ui'
-  import { connecting } from '$lib/player/session'
   import { localHistory, sessionProgress } from '$lib/player/history'
   import { getMalProgress } from '$lib/trackers'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
@@ -100,20 +99,12 @@
   // discussion aggregation, an AniList relations query, a MAL progress read and an AniZip lookup
   // each time. Keyed on the identity that actually matters, those re-runs are now no-ops.
   //
-  // This panel exists ONLY in portrait (AndroidPlayer renders it under `{#if !landscape}`), and its
-  // lookups fire the instant `nowPlaying` updates — i.e. DURING an episode switch, competing with
-  // the source resolve for the shared native HTTP lanes. That is why switching episodes felt slower
-  // in portrait than in landscape, where this component is not mounted at all: the transition was
-  // paying for panel content nobody can read yet.
-  //
-  // So while a source is resolving, the panel simply waits. Reading the store makes each effect
-  // re-run when it clears, at which point the key comparison below lets the work proceed normally.
-  // Nothing is skipped — only deferred out of the one window where it costs the user something.
-  const resolvingSource = $derived(!!$connecting)
+  // The preparation page is useful before playback starts, so these independent lookups begin as
+  // soon as the target episode is known. Their caches are shared with the mounted player page;
+  // results therefore carry across instead of restarting after the first frame.
 
   let discussionKey = ''
   $effect(() => {
-    if (resolvingSource) return
     const ep = episode
     const key = `${media.id}:${ep ?? ''}`
     if (key === discussionKey) return
@@ -228,7 +219,6 @@
   let malProgress = $state(0)
   let malKey = ''
   $effect(() => {
-    if (resolvingSource) return
     const idMal = media.idMal
     const key = String(idMal ?? '')
     if (key === malKey) return
@@ -247,7 +237,6 @@
   ))
   let metaKey = ''
   $effect(() => {
-    if (resolvingSource) return
     const id = media.id
     const watched = watchedThrough
     const key = `${id}:${watched}`
@@ -279,7 +268,6 @@
   let relatedMedia = $state<Media | null>(null)
   let relationsKey = ''
   $effect(() => {
-    if (resolvingSource) return
     const key = String(media.id)
     if (key === relationsKey) return
     relationsKey = key

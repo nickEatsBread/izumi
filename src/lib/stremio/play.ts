@@ -45,7 +45,7 @@ const rankOpts = (anilistId?: number): RankOptions => ({
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
-import { downloadOf, type DownloadPreferences } from '$lib/downloads/state'
+import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
 import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
 import { annotateCache } from './cache-state'
 import { resolveOnlineStreams } from './onlinestream'
@@ -2156,6 +2156,8 @@ export async function resumeEpisode(media: Media, episode: number, onState: (s: 
   connecting.set({
     title: title(media),
     art: banner(media) || cover(media),
+    media,
+    episode,
     cancel: () => { connecting.set(null); cancelResolve() },
   })
   const current = await refreshContinueMedia(media)
@@ -2190,6 +2192,8 @@ async function resolveAndPlayBest(
     title: title(media),
     detail: episode != null ? `Episode ${episode}` : undefined,
     art: banner(media) || cover(media),
+    media,
+    episode,
     cancel: () => {
       if (generation === advanceGeneration) advanceGeneration++
       connecting.set(null)
@@ -2322,6 +2326,8 @@ export async function playStream(
     // Carried on the payload rather than read from nowPlayingMedia, which this function sets a few
     // lines later — the overlay would otherwise paint the previous episode's art for a frame.
     art: banner(media) || cover(media),
+    media,
+    episode,
     cancel: cancelPlaybackStart,
   })
   let directPlaybackId: number | null = null
@@ -2473,7 +2479,7 @@ export async function playStream(
         if (overlayShown || !stillOwnsPlayback()) return
         overlayShown = true
         debridCaching.set({
-          provider: pname, title: title(media), episode, cover: cover(media), info: { stage: 'queued' },
+          provider: pname, title: title(media), episode, cover: cover(media), media, info: { stage: 'queued' },
           // Optimistic cancel: close the screen IMMEDIATELY on the first click, then abort the poll in
           // the background. The eventual AbortError just settles playStream to 'idle' (re-enabling the
           // picker); a late onStatus can't resurrect the screen because the store is already null.
@@ -3338,10 +3344,16 @@ export type ResolvedDownload = ResolvedHttpDownload | ResolvedTorrentDownload | 
 // Resolve a single episode to something downloadable — no player, no mpv. Reuses the same
 // resolveStreams+pickBest path as playback, and honours the SAME torrent-source preference:
 // a torrent-only pick goes to the local P2P engine under Direct P2P (or with no debrid
-// credential at all), and through debrid otherwise. Fetches the Media by id so it works even
-// for a persisted download resumed after an app restart.
+// credential at all), and through debrid otherwise. Uses the persisted Media snapshot first so a
+// restart or metadata outage cannot block source resolution; old queues fall back to fetch-by-id.
 export async function resolveDownloadUrl(mediaId: number, episode: number, preferences?: DownloadPreferences): Promise<ResolvedDownload> {
-  const media = await fetchMediaById(mediaId)
+  // A download is queued from a page that already owns this Media object, and enqueue() persists a
+  // source-complete snapshot before the pump starts. Prefer it: AniList being slow, rate-limited or
+  // offline has no bearing on whether the configured source can provide a file. Older queue items
+  // without a snapshot still get the network fallback.
+  const media = getDownloadedMedia(mediaId) ?? await fetchMediaById(mediaId).catch(() => {
+    throw new Error('This download is missing its saved series details. Open the series once, then retry.')
+  })
   const { streams, want, kitsu } = await resolveStreams(media, episode)
   let all = streams
   // Extensions are a first-class playback source but were never consulted here, so an

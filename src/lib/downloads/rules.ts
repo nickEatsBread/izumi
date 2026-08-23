@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store'
 import { persisted } from 'svelte-persisted-store'
 import { fetchMediaByIds } from '$lib/anilist/fetch-media'
 import type { Media } from '$lib/anilist/types'
-import { downloads, keyFor, type DownloadPreferences } from './state'
+import { downloads, getDownloadedMedia, keyFor, setDownloadedMedia, type DownloadPreferences } from './state'
 import { enqueue } from './store'
 import {
   autoDownloadDelayMinutes, downloadAudio, downloadCachedOnly, downloadCodec, downloadQuality,
@@ -36,6 +36,9 @@ export function subscribeAutoDownloads(media: Media, nextEpisode: number): AutoD
     nextEpisode: Math.max(1, Math.floor(nextEpisode)),
     createdAt: Date.now(),
   }
+  // The last-known schedule is enough to keep an already-announced release moving through the
+  // queue during a temporary metadata outage, and supplies source-resolution titles offline.
+  setDownloadedMedia(media)
   autoDownloadRules.update((rules) => [...rules.filter((item) => item.mediaId !== media.id), rule])
   return rule
 }
@@ -101,8 +104,8 @@ export async function runAutoDownloadRules(now = Date.now()): Promise<number> {
       : new Map<number, Media>()
     for (const rule of enabled) {
       try {
-        const media = mediaById.get(rule.mediaId)
-        if (!media) throw new Error('Could not fetch anime info.')
+        const media = mediaById.get(rule.mediaId) ?? getDownloadedMedia(rule.mediaId)
+        if (!media) throw new Error('Waiting for series details — open this series once while online.')
         const due = dueAutoDownloadEpisodes(media, rule.nextEpisode, now, get(autoDownloadDelayMinutes))
         let nextEpisode = rule.nextEpisode
         for (const episode of due) {

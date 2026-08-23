@@ -3,6 +3,7 @@ const COMMANDS: &[&str] = &[
     "install_apk",
     "device_status",
     "download_foreground",
+    "download_notifications",
     "open_browser",
     "share_text",
     "da_reaction_state",
