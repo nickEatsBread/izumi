@@ -91,16 +91,50 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Tag-scoped release runs can read caches from the default branch, but not from a previous
+      # tag. Keep a release-profile dependency cache warm on trusted main pushes so Windows
+      # releases do not cold-compile the entire Rust dependency graph for every version.
+      - name: Rust cache (Windows release)
+        if: matrix.platform == 'windows-latest'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: windows-release
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
       - name: Rust cache
+        if: matrix.platform != 'windows-latest'
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
           key: compile-${{ matrix.name }}
 
+      # A release-profile cache only helps `tauri build` if it contains linked `.rlib` dependency
+      # artifacts. `cargo check` produces debug-profile metadata, so warm the useful cache on main.
+      # Pull requests retain the cheap compile-only coverage below.
+      - name: Setup MSVC (lib.exe)
+        if: matrix.platform == 'windows-latest' && github.event_name == 'push'
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+
+      - name: libmpv (Windows release cache)
+        if: matrix.platform == 'windows-latest' && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pwsh -File scripts/ci/libmpv-windows.ps1
+
+      - name: Warm Windows release cache
+        if: matrix.platform == 'windows-latest' && github.event_name == 'push'
+        working-directory: src-tauri
+        run: cargo build --release
+
       # `cargo check` never links, so the import lib / dylib that libmpv2-sys asks the LINKER for is
       # not needed here — only the crate's own build script has to succeed. That keeps this job at
       # "does it compile" speed instead of re-running the release job's libmpv staging.
       - name: cargo check
+        if: matrix.platform != 'windows-latest' || github.event_name != 'push'
         working-directory: src-tauri
         run: cargo check
 

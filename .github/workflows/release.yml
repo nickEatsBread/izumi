@@ -129,7 +129,19 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # GitHub isolates caches by tag: vX.Y.Z cannot restore a cache saved by vX.Y.(Z-1).
+      # Restore the release-profile dependency cache warmed by the default-branch CI job, and do
+      # not waste time uploading another cache that only this tag could ever reuse.
+      - name: Rust cache (Windows release)
+        if: matrix.platform == 'windows-latest'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: windows-release
+          save-if: false
+
       - name: Rust cache
+        if: matrix.platform != 'windows-latest'
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
