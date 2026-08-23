@@ -293,7 +293,7 @@
       <div class="mb-6 flex flex-col gap-6 md:flex-row">
         <!-- Same intrinsic cover sizing as the loaded panel; using the real hint image avoids a
              ratio correction when AniList's artwork is not exactly the fallback 46/65 shape. -->
-        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-40 shrink-0 self-start rounded-lg object-contain shadow-lg md:w-52" />{:else}<div class="aspect-[46/65] w-40 shrink-0 self-start rounded-lg skeloader md:w-52"></div>{/if}
+        {#if detailHint && cover(detailHint)}<img src={cover(detailHint)} alt="" class="h-auto w-44 shrink-0 self-start rounded-lg object-contain shadow-lg" />{:else}<div class="aspect-[46/65] w-44 shrink-0 self-start rounded-lg skeloader"></div>{/if}
         <div class="min-w-0 max-w-3xl flex-1">
           <div class="min-h-5 text-sm text-muted-foreground">{detailHint?.title.native || detailHint?.title.romaji || ''}</div>
           {#if detailHint}
@@ -497,8 +497,12 @@
     {/if}
 
     <!-- Hero info panel: cover + title/badges/description + action bar. -->
-    <div class="mb-6 flex flex-col gap-6 md:flex-row">
-      <img use:reliableImage={cover(m)} alt="" class="h-auto w-40 shrink-0 self-start rounded-lg shadow-lg {$gameMode ? 'md:w-40' : 'md:w-52'}" />
+    <!-- The banner is the dominant artwork; the portrait is an identity anchor, not the ruler for
+         the whole header. At 13rem it left a poster-height void beneath the much shorter info
+         column, delaying Episodes by roughly a full D-pad viewport. An 11rem cover retains a clear
+         visual identity while keeping both columns close enough in height for Episodes to follow. -->
+    <div class="mb-4 flex flex-col gap-5 md:flex-row">
+      <img use:reliableImage={cover(m)} alt="" class="h-auto w-44 shrink-0 self-start rounded-lg object-contain shadow-lg" />
 
       <div class="min-w-0 flex-1">
         {#if m.title.native || m.title.romaji}

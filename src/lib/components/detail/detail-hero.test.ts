@@ -74,6 +74,15 @@ describe('mobile series hero', () => {
     expect(detail.match(/detailHint\?\.title\.native \|\| detailHint\?\.title\.romaji/g)?.length).toBe(2)
     expect(detail).not.toContain('h-4 w-40 rounded skeloader')
   })
+
+  it('does not let the portrait cover create a dead zone before episodes', () => {
+    // The desktop cover used to grow to 13rem at md, leaving the tabs beneath its height even when
+    // the adjacent title/description/actions ended much earlier. Loading and loaded layouts must
+    // share the balanced 11rem identity-cover geometry.
+    expect(detail).not.toContain('md:w-52')
+    expect(detail.match(/h-auto w-44 shrink-0 self-start rounded-lg/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(detail).toContain('class="mb-4 flex flex-col gap-5 md:flex-row"')
+  })
   it('keeps the poster above the artwork band', () => {
     // The band is positioned, so it paints over static in-flow content - and the poster row is
     // pulled up into it. Without its own stacking context the band covered the poster's top the
