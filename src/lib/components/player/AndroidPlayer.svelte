@@ -87,8 +87,7 @@
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
   import { BUFFER_SPINNER_DELAY_MS } from '$lib/player/overlay-loading'
-  import { mediaHref } from '$lib/anilist/media'
-  import type { Media } from '$lib/anilist/types'
+  import { setAndroidRelatedHandler } from '$lib/player/android-watch-navigation'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
@@ -110,7 +109,6 @@
   import Settings from '@lucide/svelte/icons/settings'
   import Maximize from '@lucide/svelte/icons/maximize'
   import Minimize from '@lucide/svelte/icons/minimize'
-  import AndroidWatchDetails from './AndroidWatchDetails.svelte'
   import P2PStatusOverlay from './P2PStatusOverlay.svelte'
   import BufferSpinner from './BufferSpinner.svelte'
   import SubtitleEditor from './SubtitleEditor.svelte'
@@ -1514,14 +1512,6 @@
       sessionSubtitleStyle.set(null)
     }
   }
-  // Related titles are not all playable — a series' source manga or light novel is a relation like
-  // any other — so the destination comes from the node itself. Hardcoding the anime route sent
-  // every reading title to a query for `Media(id, type: ANIME)`, which AniList answers "Not Found".
-  async function openRelated(media: Media) {
-    await close()
-    await goto(mediaHref(media))
-  }
-
   let viewportGeneration = 0
   async function syncViewport() {
     // The miniplayer window is its own resize, and re-measuring the watch-page layout inside it is
@@ -1574,6 +1564,10 @@
       else if (action === 'prev') { if (hasPrev) void playPrev(undefined, !paused) }
       else void close()
     })
+    setAndroidRelatedHandler(async (href) => {
+      await close()
+      await goto(href)
+    })
     const orientation = window.matchMedia('(orientation: landscape)')
     let viewportFrame = 0
     const scheduleViewportSync = () => {
@@ -1597,6 +1591,7 @@
       orientation.removeEventListener('change', scheduleViewportSync)
       window.removeEventListener('resize', scheduleViewportSync)
       setAndroidMediaHandler(null)
+      setAndroidRelatedHandler(null)
       void setAndroidKeepScreenAwake(false)
       // `mpv_stop` already drops the session natively; this covers an unmount without a stop
       // (the overlay being torn down while the core is reused for the next episode).
@@ -1785,22 +1780,11 @@
   {#if !landscape && !miniLayout}
     <!-- The watch page is displaced by the expanded player's exact lower-edge growth. It dims only
          slightly; the player stays a bounded rectangle instead of bleeding through faded content. -->
-    <section class="watch-details overflow-y-auto"
+    <section class="watch-details overflow-y-auto" class:watch-details-fallback={!$nowPlayingMedia}
       style:transform={`translate3d(0, ${pullDetailsOffset}px, 0)`}
       style:opacity={(miniPullDragging || miniCommitting || miniPull > 0) ? 1 - miniPull : 1 - pullDim * 0.35}
       style:pointer-events={pullDim > 0 ? 'none' : null}>
-      {#if $nowPlayingMedia}
-        <AndroidWatchDetails
-          media={$nowPlayingMedia.media}
-          episode={np.episode}
-          total={np.total}
-          {hasPrev}
-          {hasNext}
-          onPrev={() => playPrev(undefined, !paused)}
-          onNext={() => playNext(undefined, !paused)}
-          onRelated={openRelated}
-        />
-      {:else}
+      {#if !$nowPlayingMedia}
         <div class="px-4 py-5"><h1 class="text-xl font-extrabold">{np.animeTitle ?? np.title}</h1></div>
       {/if}
     </section>
@@ -1949,9 +1933,11 @@
 </div>
 
 <style>
-  .player-shell { touch-action: auto; background: transparent; }
+  .player-shell { touch-action: auto; background: transparent; pointer-events: none; }
+  .player-shell > :not(.watch-details) { pointer-events: auto; }
   .video-frame { width: 100%; height: var(--portrait-player-height); margin-top: var(--player-safe-top); overflow: visible; z-index: 1; transform-origin: center; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .watch-details { height: calc(100% - var(--player-safe-top) - var(--portrait-player-height)); touch-action: pan-y; background: #0a0a0b; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .watch-details { height: calc(100% - var(--player-safe-top) - var(--portrait-player-height)); touch-action: pan-y; background: transparent; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .watch-details-fallback { pointer-events: auto; background: #0a0a0b; }
   .pulling-fullscreen .video-frame { will-change: transform; }
   .pulling-fullscreen .video-frame, .pulling-fullscreen .watch-details { transition: none; }
   .mini-shell { pointer-events: none; overflow: visible; }

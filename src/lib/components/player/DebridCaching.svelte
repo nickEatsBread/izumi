@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { debridCaching, streamPicker } from '$lib/player/session'
+  import { debridCaching } from '$lib/player/session'
   import { isAndroid } from '$lib/platform'
   import { formatBytes, formatSpeed } from '$lib/util/format'
   import Loader from '@lucide/svelte/icons/loader-circle'
   import Users from '@lucide/svelte/icons/users'
   import Gauge from '@lucide/svelte/icons/gauge'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
-  import AndroidPreparingPlayer from './AndroidPreparingPlayer.svelte'
 
   const c = $derived($debridCaching)
   // Show the EXACT percent the provider reports — no rounding — so a torrent at 99.x% never
@@ -29,11 +28,7 @@
 
 {#if c}
   {#if $isAndroid}
-    <!-- Keep useful episode content alive while the remote source is prepared. A visible automatic
-         picker already owns this preparation page, so only add another one for hidden continuations. -->
-    {#if c.media && (!$streamPicker || $streamPicker.hidden)}
-      <AndroidPreparingPlayer media={c.media} episode={c.episode} />
-    {/if}
+    <!-- The app layout owns one persistent watch page across caching and playback. -->
     <AndroidConnectionStatus
       headline={pct != null ? `Preparing video · ${pct}%` : 'Preparing video'}
       detail={androidDetail}

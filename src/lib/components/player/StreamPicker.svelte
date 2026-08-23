@@ -14,7 +14,6 @@
   import { isDead, markDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
-  import AndroidPreparingPlayer from './AndroidPreparingPlayer.svelte'
   import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState } from '$lib/stremio/play'
@@ -675,9 +674,8 @@
      request. Errors clear the flag, so a failure is never silent. -->
 {#if pick && !pick.hidden}
   {#if $isAndroid && autoImmediate && !playbackError}
-    <!-- Instant automatic selection is not a choice screen. Keep the destination watch page useful
-         while discovery runs; a playback failure falls through to the real picker below. -->
-    <AndroidPreparingPlayer media={pick.media} episode={pick.episode} />
+    <!-- The persistent Android watch page is mounted once by the app layout. An instant automatic
+         selection is not a choice screen, so this local picker surface remains intentionally empty. -->
   {:else}
   <!-- No backdrop-blur in Game mode: this is a full-viewport filtered stacking context on the
        Deck's iGPU, and the spinner + the 50ms progress-width write INSIDE it re-dirty the region

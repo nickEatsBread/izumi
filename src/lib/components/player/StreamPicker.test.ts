@@ -70,7 +70,7 @@ describe('mobile source picker layout', () => {
 
   it('keeps instant automatic selection out of the source-list dialog', () => {
     expect(source).toContain('{#if $isAndroid && autoImmediate && !playbackError}')
-    expect(source).toContain('<AndroidPreparingPlayer media={pick.media} episode={pick.episode} />')
+    expect(source).not.toContain('<AndroidPreparingPlayer')
     expect(source).toContain('<AndroidConnectionStatus')
     expect(source).not.toContain('class="android-prepare fixed inset-x-4')
   })

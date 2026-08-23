@@ -5,10 +5,9 @@
   // Watching and binge continuation, which both resolve with the picker closed, fell straight
   // through to the debrid caching screen even when debrid was not what they were waiting on. This
   // covers every route into playback, and the caching screen is left to mean what it says.
-  import { connecting, debridCaching, gameMode, playing, streamPicker } from '$lib/player/session'
+  import { connecting, debridCaching, gameMode, playing } from '$lib/player/session'
   import SourceLoader from './SourceLoader.svelte'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
-  import AndroidPreparingPlayer from './AndroidPreparingPlayer.svelte'
   import { fade } from 'svelte/transition'
   import { isAndroid } from '$lib/platform'
 
@@ -20,11 +19,7 @@
      full-screen overlays would fight over the same z-order. -->
 {#if c && !$debridCaching}
   {#if $isAndroid}
-    <!-- A visible instant-auto picker already owns this exact preparation page. Hidden continuation
-         pickers render nothing, so SourceConnecting must keep owning it for resume/next-episode. -->
-    {#if c.media && (!$streamPicker || $streamPicker.hidden)}
-      <AndroidPreparingPlayer media={c.media} episode={c.episode} />
-    {/if}
+    <!-- The app layout owns one persistent watch page across picker, connection and playback. -->
     <div transition:fade={{ duration: 100 }}>
       <AndroidConnectionStatus headline="Getting episode ready" detail={c.detail || c.title} oncancel={() => c?.cancel()} />
     </div>

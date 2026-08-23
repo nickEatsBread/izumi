@@ -33,16 +33,26 @@ describe('Android UI contracts', () => {
 
   it('renders useful watch content while automatic source startup runs', () => {
     expect(picker).toContain('{#if $isAndroid && autoImmediate && !playbackError}')
-    expect(picker).toContain('<AndroidPreparingPlayer media={pick.media} episode={pick.episode} />')
-    expect(connecting).toContain('{#if c.media && (!$streamPicker || $streamPicker.hidden)}')
-    expect(connecting).toContain('<AndroidPreparingPlayer media={c.media} episode={c.episode} />')
+    expect(layout).toContain('const androidWatchTarget = $derived.by(() => {')
+    expect(layout).toContain('<Lazy load={loadAndroidPreparingPlayer}')
+    expect(layout).toContain('active: $androidMpvActive, mini: $androidMiniPlayer')
+    expect(picker).not.toContain('<AndroidPreparingPlayer')
+    expect(connecting).not.toContain('<AndroidPreparingPlayer')
     expect(preparing).toContain('<AndroidWatchDetails')
     expect(watchDetails).not.toContain('resolvingSource')
     expect(player).toContain('$connecting != null')
     expect(caching).toContain('{#if $isAndroid}')
-    expect(caching).toContain('<AndroidPreparingPlayer media={c.media} episode={c.episode} />')
+    expect(caching).not.toContain('<AndroidPreparingPlayer')
     expect(caching).toContain('<AndroidConnectionStatus')
     expect(player).toContain('$debridCaching != null')
+  })
+
+  it('keeps the Android discussion iframe mounted across the first video frame', () => {
+    expect(layout).toContain('if ($androidMpvActive && $nowPlayingMedia) return $nowPlayingMedia')
+    expect(preparing).toContain('class:active class:hidden={mini}')
+    expect(preparing).toContain('{#if !active && art}')
+    expect(player).not.toContain('<AndroidWatchDetails')
+    expect(player).toContain('.player-shell > :not(.watch-details) { pointer-events: auto; }')
   })
 
   it('collapses portrait playback to Home and reveals browse behind the mini-player', () => {

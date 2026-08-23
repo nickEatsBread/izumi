@@ -16,6 +16,7 @@
   import { title as mediaTitle, banner as mediaBanner, cover as mediaCover } from '$lib/anilist/media'
   const loadPlayerOverlay = () => import('$lib/components/player/PlayerOverlay.svelte')
   const loadAndroidPlayer = () => import('$lib/components/player/AndroidPlayer.svelte')
+  const loadAndroidPreparingPlayer = () => import('$lib/components/player/AndroidPreparingPlayer.svelte')
   const loadCommentsPanel = () => import('$lib/components/player/CommentsPanel.svelte')
   const loadPartyPresence = () => import('$lib/components/watch/PartyPresence.svelte')
   const loadStreamPicker = () => import('$lib/components/player/StreamPicker.svelte')
@@ -31,7 +32,7 @@
   // component; it self-gates its own dialog.
   import DeckKeyboardWarning from '$lib/components/shell/DeckKeyboardWarning.svelte'
   const loadLofiPlayer = () => import('$lib/components/shell/LofiPlayer.svelte')
-  import { streamPicker, connecting, exitPrompt } from '$lib/player/session'
+  import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
@@ -67,6 +68,17 @@
   let { children } = $props()
   let globalSearchMounted = $state(false)
   let trailerDialogMounted = $state(false)
+  const androidWatchTarget = $derived.by(() => {
+    if (!$isAndroid) return null
+    const caching = $debridCaching
+    if (caching?.media) return { media: caching.media, episode: caching.episode }
+    const connection = $connecting
+    if (connection?.media) return { media: connection.media, episode: connection.episode }
+    const picker = $streamPicker
+    if (picker?.media) return { media: picker.media, episode: picker.episode }
+    if ($androidMpvActive && $nowPlayingMedia) return $nowPlayingMedia
+    return null
+  })
   $effect(() => {
     if ($globalSearchOpen) globalSearchMounted = true
     if ($trailerPopup) trailerDialogMounted = true
@@ -316,6 +328,11 @@
      Hidden while playing so its opaque content doesn't block the video. -->
 <main class="relative min-h-screen {$isMobile ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : 'ml-14'}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
+<!-- One Android watch-details instance spans source preparation and native playback. In particular,
+     its Disqus iframe is never destroyed merely because libmpv presented its first frame. -->
+{#if androidWatchTarget}
+  <Lazy load={loadAndroidPreparingPlayer} props={{ ...androidWatchTarget, active: $androidMpvActive, mini: $androidMiniPlayer }} />
+{/if}
 <!-- Touch overlay for the embedded Android libmpv player + its discussion panel (self-gates on
      commentsOpen; the desktop mounts its own inside PlayerOverlay). -->
 {#if $androidMpvActive}<Lazy load={loadAndroidPlayer} />{/if}
