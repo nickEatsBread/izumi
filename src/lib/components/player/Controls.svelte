@@ -27,7 +27,7 @@
   import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import { get } from 'svelte/store'
-  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay } from '$lib/player/session'
+  import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay } from '$lib/player/session'
   import { listenSafe } from '$lib/util/listen'
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import { copyToClipboard } from '$lib/util/clipboard'
@@ -492,6 +492,7 @@
       window.removeEventListener('player-menu-nav', onMenuNav)
       void unlistenMuted.then((unlisten) => unlisten())
       playerMenuOpen.set(false)
+      playerSideSheetOpen.set(false)
     }
   })
 
@@ -710,16 +711,17 @@
   // unmount so the flag cannot stick true after the player closes.
   $effect(() => {
     playerMenuOpen.set(showOptions || showTracks || showServers)
+    playerSideSheetOpen.set(gm && (showOptions || showTracks || showServers))
   })
 </script>
 
 <!-- Now-playing title, reused above the seek bar (default) or at the top (Game-mode option). -->
 {#snippet titleBlock(big: boolean)}
   {#if np.animeTitle}
-    <div class="flex min-w-0 flex-col gap-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.6)]">
-      <span data-gm-title class="line-clamp-1 font-semibold text-white {big ? 'text-2xl' : 'text-lg'}">{np.animeTitle}</span>
+    <div class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
+      <div data-gm-title class="line-clamp-1 text-white {big ? 'text-xl font-black drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
       {#if np.episode != null}
-        <span data-gm-episode class="font-light {big ? 'text-base text-white/85' : 'text-sm text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</span>
+        <div data-gm-episode class="line-clamp-1 {big ? 'text-sm font-semibold text-white/70' : 'text-sm font-normal text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>
       {/if}
     </div>
   {/if}
@@ -922,7 +924,7 @@
             {#if showServers}
               <!-- Same popover rules as the options menu: no backdrop-blur; Desktop promotes its
                    own layer, Game mode must stay on the base layer to snapshot crisply. -->
-              <div class="{gm
+              <div data-gm-side-sheet={gm ? '' : undefined} class="{gm
                 ? 'gm-sheet gm-sheet-in fixed right-5 top-[18%] z-30 w-[22rem] max-h-[70vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl'
                 : 'absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900 p-2 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]'}">
                 <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Servers</p>
@@ -943,7 +945,7 @@
             {#if gm}
               <!-- Game mode keeps the flat, tap-friendly list (the ☰ TrackMenu is the primary
                    Deck path; this popover is the fallback and stays snapshot-crisp with no promoted layer). -->
-              <div class="gm-sheet gm-sheet-in fixed right-5 top-[14%] z-30 max-h-[72vh] w-[22rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl">
+              <div data-gm-side-sheet class="gm-sheet gm-sheet-in fixed right-5 top-[14%] z-30 max-h-[72vh] w-[22rem] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl">
                 <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Audio</p>
                 {#if audios.length}
                   {#each audios as t (t.id)}
@@ -1252,8 +1254,8 @@
   </div>
 
   {#if gm && showOptions}
-    <div class="pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
-    <div class="gm-sheet gm-sheet-in absolute top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+    <div class="gm-sheet-backdrop pointer-events-auto fixed inset-0 z-40 bg-black/50" onclick={closePlayerMenus} role="presentation">
+    <div data-gm-side-sheet class="gm-sheet gm-sheet-in absolute top-10 bottom-10 right-8 z-40 flex w-[22rem] flex-col overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-white shadow-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
       {#if gmSettingsPage === 'root'}
         <p class="px-3 py-2 text-2xl font-bold">Settings</p>
         <button data-focusable class="gm-set-row" class:bg-white={gmSetIdx === 0} class:text-black={gmSetIdx === 0} onclick={changeSource}><span>Change source</span><span class="opacity-50">›</span></button>

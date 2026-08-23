@@ -310,7 +310,7 @@
 
     {#if !$isAndroid}
     <div class="mt-3">
-      <Toggle label="Title at top of player (Game mode)" desc="On the Deck, show the now-playing title at the top of the player (by the Back button) instead of just above the seek bar." value={$playerTitleTop} onToggle={() => ($playerTitleTop = !$playerTitleTop)} />
+      <Toggle label="Title at top of player (Game mode)" desc="On the Deck, show the now-playing title at the top of the screen instead of just above the seek bar." value={$playerTitleTop} onToggle={() => ($playerTitleTop = !$playerTitleTop)} />
     </div>
     {/if}
   </div>

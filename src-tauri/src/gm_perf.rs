@@ -27,15 +27,19 @@ pub const OVERLAY_FADE_MS: u64 = 150;
 pub const OVERLAY_FADE_FRAME_MS: u64 = 25;
 /// Upward travel paired with the control fade, matching the old CSS Leanback motion.
 pub const OVERLAY_MOTION_PX: i64 = 16;
+/// Right-hand settings sheets only need a short travel cue; the small distance reads as motion
+/// without making the panel feel as though it is waiting off-screen.
+pub const OVERLAY_SHEET_MOTION_PX: i64 = 40;
 /// Premultiply scale uses 0..=1000 so a fade tick can be integer math.
 pub const OVERLAY_FADE_FULL: u32 = 1000;
-/// VacuumTube/YouTube-TV uses a 500ms `ease` opacity transition for its progress/actions layers.
-/// Izumi drives the equivalent native ASS layer at 60Hz, avoiding bitmap uploads per frame.
-pub const NATIVE_CONTROLS_FADE_MS: u64 = 500;
-/// The focused control content has a separate 200ms fade/slide inside the parent opacity layer.
-pub const NATIVE_CONTROLS_CONTENT_MS: u64 = 200;
-/// On-screen travel measured from VacuumTube at the Deck-sized player viewport.
-pub const NATIVE_CONTROLS_MOTION_PX: f64 = 30.0;
+/// The source Leanback CSS declares a long parent opacity transition, but on the native mpv path
+/// that duration reads as input latency. A 160ms display-cadence reveal preserves its ease while
+/// matching the immediate feel of VacuumTube on Deck hardware.
+pub const NATIVE_CONTROLS_FADE_MS: u64 = 160;
+/// Content settles just ahead of the wash so buttons feel attached to the input edge.
+pub const NATIVE_CONTROLS_CONTENT_MS: u64 = 120;
+/// Short travel avoids the slow "rising tray" effect of the former 30px motion.
+pub const NATIVE_CONTROLS_MOTION_PX: f64 = 18.0;
 /// Bottom fraction of the viewport that holds the control strip (idle snapshots only).
 /// 0.28 sliced the Game-mode title/episode line (64px play + seek + two text rows).
 pub const CONTROL_STRIP_FRACTION: f64 = 0.36;

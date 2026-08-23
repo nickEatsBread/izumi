@@ -7,6 +7,7 @@ import {
   gameModeDock,
   gameModeDockIsLive,
   gameModeSnapshotCrop,
+  gameModeSideSheetCrop,
   presenceAllowed,
   scheduleGameModeOverlay,
 } from './gm-overlay'
@@ -105,7 +106,7 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).not.toContain('p2pText')
     expect(overlay).toContain('gmDynamicOwnsChrome')
     expect(overlay).toContain('gmNativeControls')
-    expect(overlay).toContain('controlsVisible && !overlayFull)')
+    expect(overlay).toContain('controlsVisible && (!overlayFull || $playerSideSheetOpen)')
     expect(overlay).toContain('currentSeg && !overlayActive')
     expect(overlay).not.toContain('!overlayFull && !showSkip')
     expect(overlay).toContain('measureNativeChrome')
@@ -177,6 +178,12 @@ describe('Game-mode Leanback motion', () => {
     expect(picker).toContain("trap.querySelector<HTMLElement>('[data-source-row]')")
     expect(picker).toContain('bind:this={pickerTrap}')
     expect(picker).not.toContain("document.querySelector<HTMLElement>('[data-best-source]')")
+  })
+
+  it('clips a right-side sheet instead of snapshotting the full player', () => {
+    expect(gameModeSideSheetCrop(1280, 800, { left: 896, top: 40, width: 352, height: 720 }))
+      .toEqual({ x: 872, y: 16, w: 400, h: 768 })
+    expect(gameModeSideSheetCrop(1280, 800, null)).toBeNull()
   })
 })
 

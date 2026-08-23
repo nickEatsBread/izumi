@@ -21,9 +21,15 @@ export type TitleLanguage = 'romaji' | 'english'
 /** Persisted title-language preference (default: Romaji). */
 export const titleLanguage = persisted<TitleLanguage>('title-language', 'romaji')
 
-/** Game-mode player: place the now-playing title at the TOP of the player (by the Back
- *  button) instead of just above the seek bar. Default off (title above the seek bar). */
-export const playerTitleTop = persisted<boolean>('player-title-top', false)
+/** Game-mode player: place the now-playing title at the TOP of the player. This is the default;
+ *  the toggle remains available for people who prefer it above the seek bar. */
+if (typeof localStorage !== 'undefined' && localStorage.getItem('player-title-top-default-r2') == null) {
+  // The old default was persisted as `false`, so changing only the fallback would leave every
+  // existing Deck at the bottom forever. Migrate once; subsequent user toggles remain respected.
+  localStorage.setItem('player-title-top', 'true')
+  localStorage.setItem('player-title-top-default-r2', 'true')
+}
+export const playerTitleTop = persisted<boolean>('player-title-top', true)
 
 /**
  * Auto-skip OP/ED/recap segments (from AniSkip) during playback. When on, the

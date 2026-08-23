@@ -279,6 +279,10 @@ html.gamemode .group:hover .group-hover\:scale-105 {
 /* Game mode snapshots these surfaces into mpv. Snapshotting a CSS animation captures an
    intermediate translucent frame; the native overlay supplies the entrance motion instead. */
 .gamemode .gm-sheet-in, .gamemode .gm-menu-col-in { animation: none; }
+/* The Game-mode compositor supplies the dim layer natively. Keeping this transparent makes the
+   WebKit snapshot contain only the compact sheet, so its right-to-left motion is cheap and the
+   backdrop does not visibly travel with it. */
+.gamemode .gm-sheet-backdrop { background: transparent; }
 .gamemode .gm-set-row {
   display: flex;
   width: 100%;

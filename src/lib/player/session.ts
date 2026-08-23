@@ -174,6 +174,11 @@ export const trackMenuOpen = writable(false)
 // full-viewport Game-mode snapshot (and keeps Controls mounted so the sheet can paint).
 export const playerMenuOpen = writable(false)
 
+// The compact playback/settings popovers are rendered as right-hand sheets in Game mode. Keep
+// this distinct from `playerMenuOpen`: the native compositor uses it to crop just the sheet and
+// animate that small bitmap horizontally while the 60 Hz controls remain native underneath.
+export const playerSideSheetOpen = writable(false)
+
 /** Bump so Game-mode overlay-add re-snapshots after a d-pad move (no 60fps crawl). */
 export const playerOverlayRev = writable(0)
 export function bumpPlayerOverlay() {

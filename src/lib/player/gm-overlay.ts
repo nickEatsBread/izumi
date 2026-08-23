@@ -58,6 +58,23 @@ export function gameModeSnapshotCrop(
   return { x: 0, y: Math.max(0, height - h), w: width, h }
 }
 
+/** Crop a Game-mode side sheet with enough breathing room for its border/shadow. The backdrop is
+ * native, so keeping this bitmap small makes the slide substantially cheaper than moving a full
+ * 1280×800 WebKit snapshot. */
+export function gameModeSideSheetCrop(
+  viewportWidth: number,
+  viewportHeight: number,
+  rect: { left: number; top: number; width: number; height: number } | null,
+): { x: number; y: number; w: number; h: number } | null {
+  if (!rect || viewportWidth <= 0 || viewportHeight <= 0 || rect.width <= 0 || rect.height <= 0) return null
+  const margin = 24
+  const x = Math.max(0, Math.floor(rect.left - margin))
+  const y = Math.max(0, Math.floor(rect.top - margin))
+  const right = Math.min(viewportWidth, Math.ceil(rect.left + rect.width + margin))
+  const bottom = Math.min(viewportHeight, Math.ceil(rect.top + rect.height + margin))
+  return right > x && bottom > y ? { x, y, w: right - x, h: bottom - y } : null
+}
+
 export function gameModeChromeActive(input: {
   skip: boolean
   notice: boolean

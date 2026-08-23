@@ -42,17 +42,19 @@ fn overlay_cpu_fade_scales_premultiplied_bgra() {
     assert!(overlay.contains("SHOWN.store(true"));
     // mpv copies raw-address overlay pixels during overlay-add. A buffer mutation without
     // another command is invisible, which was the frozen/no-animation regression.
-    assert!(overlay.contains("present(&app, y_offset)"));
+    assert!(overlay.contains("present(&app, hidden)"));
     assert!(overlay.contains("fade_in || FAST.load(Ordering::Relaxed)"));
     assert!(!overlay.contains("present(&app, false)"));
-    assert!(overlay.contains("saturating_add(y_offset)"));
+    assert!(overlay.contains("saturating_add(x_offset)"));
+    assert!(overlay.contains("present_sheet_backdrop"));
 }
 
 #[test]
 fn native_controls_match_vacuumtube_motion_curve() {
-    assert_eq!(NATIVE_CONTROLS_FADE_MS, 500);
-    assert_eq!(NATIVE_CONTROLS_CONTENT_MS, 200);
-    assert_eq!(NATIVE_CONTROLS_MOTION_PX, 30.0);
+    assert_eq!(NATIVE_CONTROLS_FADE_MS, 160);
+    assert_eq!(NATIVE_CONTROLS_CONTENT_MS, 120);
+    assert_eq!(NATIVE_CONTROLS_MOTION_PX, 18.0);
+    assert_eq!(OVERLAY_SHEET_MOTION_PX, 40);
     assert_eq!(css_ease(0.0), 0.0);
     assert_eq!(css_ease(1.0), 1.0);
     assert!((css_ease(0.5) - 0.8024).abs() < 0.001);
@@ -63,6 +65,7 @@ fn native_controls_match_vacuumtube_motion_curve() {
     assert!(osd.contains("controls_content_ass"));
     assert!(osd.contains("1000 / OSD_FPS"));
     assert!(osd.contains("\\fnNunito"));
+    assert!(osd.contains("player_title_text"));
     assert!(osd.contains("rounded_rect_ring"));
     assert!(osd.contains("h - 12.0"));
     assert!(osd.contains("timeline_marks_ass"));

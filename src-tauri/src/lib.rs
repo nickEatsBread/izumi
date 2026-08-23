@@ -373,6 +373,7 @@ fn player_gm_overlay(
     fast: Option<bool>,
     animate: Option<bool>,
     crop: Option<OverlayCrop>,
+    sheet: Option<bool>,
 ) {
     #[cfg(target_os = "linux")]
     {
@@ -385,6 +386,7 @@ fn player_gm_overlay(
                     fast.unwrap_or(false),
                     animate.unwrap_or(true),
                     crop,
+                    sheet.unwrap_or(false),
                 );
             } else {
                 player::linux_overlay::stop(app.clone(), animate.unwrap_or(true));
@@ -393,7 +395,7 @@ fn player_gm_overlay(
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, visible, fast, animate, crop);
+        let _ = (app, visible, fast, animate, crop, sheet);
     }
 }
 

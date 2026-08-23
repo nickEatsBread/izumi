@@ -15,7 +15,7 @@
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, connecting } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, connecting } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -50,7 +50,7 @@
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay } from '$lib/player/gm-overlay'
+  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay } from '$lib/player/gm-overlay'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -586,7 +586,7 @@
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
-  const gmNativeControls = $derived(gmMode && firstFrame && controlsVisible && !overlayFull)
+  const gmNativeControls = $derived(gmMode && firstFrame && controlsVisible && (!overlayFull || $playerSideSheetOpen))
   const gmDynamicOwnsChrome = $derived(gmNativeControls)
   const overlayActive = $derived(gameModeBitmapOverlayActive({
     gameMode: gmMode,
@@ -624,16 +624,32 @@
     }
     void $playerOverlayRev
     void paused
-    const crop = gameModeSnapshotCrop(window.innerWidth || 0, window.innerHeight || 0, overlayFull)
+    const viewportWidth = window.innerWidth || 0
+    const viewportHeight = window.innerHeight || 0
+    const sheetElement = $playerSideSheetOpen
+      ? document.querySelector<HTMLElement>('[data-gm-side-sheet]')
+      : null
+    const sheetRect = sheetElement?.getBoundingClientRect() ?? null
+    const sheetMotion = !!sheetRect && $playerSideSheetOpen
+    const crop = sheetMotion
+      ? gameModeSideSheetCrop(viewportWidth, viewportHeight, sheetRect)
+      : gameModeSnapshotCrop(viewportWidth, viewportHeight, overlayFull)
     if (!overlayActive) {
       invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
       return
     }
     // Snapshot now (so tap/pause is not stuck behind a cancellable timer) and once more
     // after paint so Controls/toasts are in the tree.
-    invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop }).catch(() => {})
+    invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop, sheet: sheetMotion }).catch(() => {})
     return scheduleGameModeOverlay(() => {
-      invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop }).catch(() => {})
+      const paintedSheet = $playerSideSheetOpen
+        ? document.querySelector<HTMLElement>('[data-gm-side-sheet]')?.getBoundingClientRect() ?? null
+        : null
+      const paintedSheetMotion = !!paintedSheet && $playerSideSheetOpen
+      const paintedCrop = paintedSheetMotion
+        ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedSheet)
+        : crop
+      invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedSheetMotion }).catch(() => {})
     })
   })
 
@@ -1349,7 +1365,7 @@
   {:else if controlsVisible}
     <!-- In Game mode the normal bar is measured here but painted by Rust's native 60Hz OSD.
          Complex panels switch this HTML back onto the settled bitmap overlay. -->
-    <div class="izumi-hud" class:opacity-0={gmDynamicOwnsChrome}>
+    <div class="izumi-hud" class:opacity-0={gmDynamicOwnsChrome && !$playerSideSheetOpen}>
       <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} />
     </div>
   {/if}

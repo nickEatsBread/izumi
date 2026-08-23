@@ -29,11 +29,13 @@ use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 use crate::gm_perf::{
     clip_to_strip, overlay_fade_step, overlay_loop_fps, overlay_should_snapshot,
     scale_premult_bgra, OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL, OVERLAY_FADE_MS,
-    OVERLAY_MOTION_PX, OVERLAY_SCRUB_FPS,
+    OVERLAY_MOTION_PX, OVERLAY_SCRUB_FPS, OVERLAY_SHEET_MOTION_PX,
 };
 use crate::player::PlayerHandle;
 
 const OVERLAY_ID: i64 = 1;
+const SHEET_BACKDROP_OSD_ID: i64 = 90;
+const SHEET_BACKDROP_Z: i64 = 80;
 
 static GEN: AtomicU64 = AtomicU64::new(0);
 static FADE_GEN: AtomicU64 = AtomicU64::new(0);
@@ -41,6 +43,7 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 static FAST: AtomicBool = AtomicBool::new(false);
 static FORCE: AtomicBool = AtomicBool::new(false);
 static SHOWN: AtomicBool = AtomicBool::new(false);
+static SHEET: AtomicBool = AtomicBool::new(false);
 static ALPHA: AtomicU32 = AtomicU32::new(0);
 
 static PROF_N: AtomicU64 = AtomicU64::new(0);
@@ -54,6 +57,8 @@ static BASE: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 static GEOM: Mutex<Option<(i64, i64, i64, i64, i64)>> = Mutex::new(None);
 /// Idle snapshots clip to this CSS-pixel control strip so we do not upload a full viewport.
 static STRIP: Mutex<Option<(i64, i64, i64, i64)>> = Mutex::new(None);
+/// Full WebKit viewport used by the native settings backdrop (the bitmap itself is sheet-cropped).
+static VIEW: Mutex<Option<(i64, i64)>> = Mutex::new(None);
 static EMPTY_TRIES: AtomicU64 = AtomicU64::new(0);
 
 /// Begin snapshotting the webview controls into an mpv overlay. Safe to call again while
@@ -66,16 +71,21 @@ pub fn start(
     fast: bool,
     animate: bool,
     crop: Option<(i64, i64, i64, i64)>,
+    sheet: bool,
 ) {
     // Only treat this as a fade-in if nothing is on screen yet. Setting SHOWN before the
     // first pixels landed left tap/pause at alpha 0 forever (empty snapshot → hide).
     let fade_in = animate && !SHOWN.load(Ordering::SeqCst);
     let my_gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
     FAST.store(fast, Ordering::SeqCst);
+    SHEET.store(sheet, Ordering::SeqCst);
     FORCE.store(true, Ordering::SeqCst);
     EMPTY_TRIES.store(0, Ordering::SeqCst);
     if let Ok(mut strip) = STRIP.lock() {
         *strip = if fast { None } else { crop };
+    }
+    if !sheet {
+        remove_sheet_backdrop(&app);
     }
     if !animate {
         FADE_GEN.fetch_add(1, Ordering::SeqCst);
@@ -152,6 +162,10 @@ fn hide_now(app: &AppHandle) {
     if let Ok(mut base) = BASE.lock() {
         base.clear();
     }
+    if let Ok(mut view) = VIEW.lock() {
+        *view = None;
+    }
+    remove_sheet_backdrop(app);
     if let Some(ph) = app.try_state::<PlayerHandle>() {
         let _ = ph.overlay_remove(OVERLAY_ID);
     }
@@ -183,10 +197,9 @@ fn kick_fade(app: AppHandle, fade_in: bool) {
             OVERLAY_FADE_MS,
         );
         ALPHA.store(next, Ordering::Relaxed);
-        let hidden = OVERLAY_FADE_FULL.saturating_sub(next) as i64;
-        let y_offset = hidden.saturating_mul(OVERLAY_MOTION_PX) / OVERLAY_FADE_FULL as i64;
+        let hidden = OVERLAY_FADE_FULL.saturating_sub(next);
         let upload_started = Instant::now();
-        present(&app, y_offset);
+        present(&app, hidden);
         max_upload = max_upload.max(upload_started.elapsed());
         frames += 1;
         if fade_in && next >= OVERLAY_FADE_FULL {
@@ -217,7 +230,7 @@ fn kick_fade(app: AppHandle, fade_in: bool) {
 /// Upload one native animation frame. mpv's raw-address form is an input convenience, not
 /// shared memory: `cmd_overlay_add` copies the pixels before returning. Reissuing the command
 /// here is the critical difference between a visible 60fps fade and a frozen first frame.
-fn present(app: &AppHandle, y_offset: i64) {
+fn present(app: &AppHandle, hidden_millis: u32) {
     let Some(geom) = GEOM.lock().ok().and_then(|g| *g) else {
         return;
     };
@@ -237,16 +250,64 @@ fn present(app: &AppHandle, y_offset: i64) {
         buf.as_ptr() as usize
     };
     if let Some(ph) = app.try_state::<PlayerHandle>() {
+        let hidden = hidden_millis as i64;
+        let sheet = SHEET.load(Ordering::Relaxed);
+        let x_offset = if sheet {
+            hidden.saturating_mul(OVERLAY_SHEET_MOTION_PX) / OVERLAY_FADE_FULL as i64
+        } else {
+            0
+        };
+        let y_offset = if sheet {
+            0
+        } else {
+            hidden.saturating_mul(OVERLAY_MOTION_PX) / OVERLAY_FADE_FULL as i64
+        };
         let _ = ph.overlay_add(
             OVERLAY_ID,
-            geom.0,
+            geom.0.saturating_add(x_offset),
             geom.1.saturating_add(y_offset),
             addr,
             geom.2,
             geom.3,
             geom.4,
         );
+        if sheet {
+            present_sheet_backdrop(app, ALPHA.load(Ordering::Relaxed));
+        }
     }
+}
+
+fn remove_sheet_backdrop(app: &AppHandle) {
+    if let Some(ph) = app.try_state::<PlayerHandle>() {
+        let _ = ph.osd_overlay_remove(SHEET_BACKDROP_OSD_ID);
+    }
+}
+
+fn present_sheet_backdrop(app: &AppHandle, alpha_millis: u32) {
+    let Some((width, height)) = VIEW.lock().ok().and_then(|view| *view) else {
+        return;
+    };
+    let Some(ph) = app.try_state::<PlayerHandle>() else {
+        return;
+    };
+    if alpha_millis == 0 {
+        let _ = ph.osd_overlay_remove(SHEET_BACKDROP_OSD_ID);
+        return;
+    }
+    // Full strength matches `bg-black/50`; multiply by the panel tween so open and close both
+    // fade naturally while the much smaller bitmap travels horizontally above it.
+    let opacity = 0.5 * alpha_millis.min(OVERLAY_FADE_FULL) as f64 / OVERLAY_FADE_FULL as f64;
+    let ass_alpha = ((1.0 - opacity) * 255.0).round() as u8;
+    let ass = format!(
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H000000&\\1a&H{ass_alpha:02X}&\\p1}}m 0 0 l {width} 0 l {width} {height} l 0 {height}{{\\p0}}"
+    );
+    let _ = ph.osd_overlay_ass(
+        SHEET_BACKDROP_OSD_ID,
+        &ass,
+        width,
+        height,
+        SHEET_BACKDROP_Z,
+    );
 }
 
 fn alpha_bounds(
@@ -307,6 +368,9 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                 let (w, h, stride) = (img.width() as i64, img.height() as i64, img.stride() as i64);
                 if w <= 0 || h <= 0 || stride <= 0 {
                     return None;
+                }
+                if let Ok(mut view) = VIEW.lock() {
+                    *view = Some((w, h));
                 }
 
                 let need = (stride * h) as usize;
@@ -392,6 +456,9 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                     let ph = app.try_state::<PlayerHandle>()?;
                     let _ =
                         ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);
+                    if SHEET.load(Ordering::Relaxed) {
+                        present_sheet_backdrop(&app, ALPHA.load(Ordering::Relaxed));
+                    }
                 }
                 if fade_in && ALPHA.load(Ordering::Relaxed) < OVERLAY_FADE_FULL {
                     kick_fade(app.clone(), true);

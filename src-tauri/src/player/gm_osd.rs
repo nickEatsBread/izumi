@@ -201,7 +201,7 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
 
         let mut draw_state = state.clone();
         // The frontend unmounts Controls as soon as auto-hide fires. Retain the last measured
-        // geometry/content until the native 500ms outro reaches zero instead of snapping away.
+        // geometry/content until the short native outro reaches zero instead of snapping away.
         if !state.controls && motion.main > 0.0 {
             if let Some(last) = &last_control_state {
                 draw_state.controls = true;
@@ -804,31 +804,32 @@ fn controls_background_ass(w: f64, h: f64, opacity: f64) -> String {
 
 fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -> String {
     let mut lines = Vec::new();
+    let title_at_top = state.title_y < state.height * 0.35;
     if !state.title.trim().is_empty() {
         push(
             &mut lines,
-            text_weight_opacity(
+            player_title_text(
                 state.title_x,
                 state.title_y + y_offset,
-                26.0,
+                if title_at_top { 24.0 } else { 25.0 },
                 state.title.trim(),
                 opacity,
                 4,
-                700,
+                if title_at_top { 900 } else { 400 },
             ),
         );
     }
     if !state.episode_text.trim().is_empty() {
         push(
             &mut lines,
-            text_weight_opacity(
+            player_title_text(
                 state.episode_x,
                 state.episode_y + y_offset,
-                18.0,
+                if title_at_top { 16.0 } else { 17.0 },
                 state.episode_text.trim(),
-                opacity * 0.82,
+                opacity * if title_at_top { 0.7 } else { 0.72 },
                 4,
-                500,
+                if title_at_top { 600 } else { 400 },
             ),
         );
     }
@@ -977,6 +978,29 @@ fn text_weight_opacity(
     weight: u16,
 ) -> String {
     text_color_weight_opacity(x, y, size, body, "FFFFFF", opacity, align, weight)
+}
+
+/// Player metadata should read like application chrome, not a subtitle. Nunito matches the HTML
+/// UI (and Crunchy Deck's player heading); a small drop shadow replaces the former heavy outline.
+fn player_title_text(
+    x: f64,
+    y: f64,
+    size: f64,
+    body: &str,
+    opacity: f64,
+    align: u8,
+    weight: u16,
+) -> String {
+    format!(
+        "{{\\an{}\\pos({},{})\\fnNunito\\b{}\\fs{}\\bord0\\shad1\\1c&HFFFFFF&\\4c&H000000&\\1a&H{}&\\4a&H80&}}{}",
+        align,
+        ir(x),
+        ir(y),
+        weight,
+        ir(size),
+        alpha_hex(opacity),
+        ass_escape(body)
+    )
 }
 
 fn text_color_opacity(
