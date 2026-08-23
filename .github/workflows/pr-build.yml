@@ -173,7 +173,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/izumi-libmpv-android
-          key: libmpv-android-arm64-f77f62c316c6
+          key: libmpv-android-arm64-f77f62c316c6-${{ hashFiles('scripts/ci/libmpv-android.sh') }}
 
       - name: Build libmpv with libass 0.17.5
         run: bash scripts/ci/libmpv-android.sh

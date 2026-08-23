@@ -32,6 +32,19 @@ if [ ! -s "$CACHED_AAR" ]; then
   grep -q 'abiFilters.add("arm64-v8a")' "$WORK/source/libmpv/build.gradle.kts" \
     || { echo "abiFilters patch missed — libmpv build.gradle.kts shape changed"; exit 1; }
 
+  # The AAR build does not publish anything. Upstream nevertheless applies its Maven Central
+  # publishing plugin to every Gradle invocation, making our release depend on the Gradle Plugin
+  # Portal after the expensive native build has already completed. Strip that publishing-only
+  # configuration from the disposable checkout; Android/Gradle still assemble the same AAR.
+  sed -i '/alias(libs.plugins.maven.publish)/d' \
+    "$WORK/source/build.gradle.kts" "$WORK/source/libmpv/build.gradle.kts"
+  sed -i '/^import com\.vanniktech\.maven\.publish/d' \
+    "$WORK/source/libmpv/build.gradle.kts"
+  sed -i '/^mavenPublishing {/,/^}$/d' "$WORK/source/libmpv/build.gradle.kts"
+  ! grep -q 'vanniktech\|mavenPublishing' "$WORK/source/build.gradle.kts" \
+    "$WORK/source/libmpv/build.gradle.kts" \
+    || { echo "publishing-only Gradle configuration was not fully removed"; exit 1; }
+
   (
     cd "$WORK/source/buildscripts"
     ./download.sh

@@ -23,4 +23,11 @@ describe('Flatpak SDK deps', () => {
     expect(deps).toContain('retrying')
     expect(deps).not.toContain('install_ref org.freedesktop.Sdk.Extension.rust-stable')
   })
+
+  it('stages Nunito as a hash-pinned Flatpak source in clean checkouts', () => {
+    expect(manifest).toContain('dest-filename: Nunito-flatpak.ttf')
+    expect(manifest).toContain('sha256: bb55a5ca5c2042335b3991af27c4d0705d0ef41cac6164ac737fd8f2a1e85207')
+    expect(manifest).toContain('install -Dm644 Nunito-flatpak.ttf')
+    expect(manifest).not.toContain('assets/fonts/Nunito.ttf /app/share/fonts')
+  })
 })

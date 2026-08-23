@@ -48,4 +48,13 @@ describe('Android release hardening', () => {
     expect(mpvGradle).toContain('isReleaseBuild')
     expect(mpvGradle).toContain('Release builds require the libass 0.17.5 AAR')
   })
+
+  it('keeps AAR assembly independent of upstream publishing infrastructure', () => {
+    expect(libmpvBuild).toContain("sed -i '/alias(libs.plugins.maven.publish)/d'")
+    expect(libmpvBuild).toContain("sed -i '/^mavenPublishing {/,/^}$/d'")
+    expect(libmpvBuild).toContain("! grep -q 'vanniktech\\|mavenPublishing'")
+    for (const workflow of [preview, release]) {
+      expect(workflow).toContain("${{ hashFiles('scripts/ci/libmpv-android.sh') }}")
+    }
+  })
 })
