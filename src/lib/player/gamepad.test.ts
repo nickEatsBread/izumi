@@ -122,8 +122,11 @@ describe('Steam Deck rear grips', () => {
   it('maps L4 to screenshot and R4 to GIF in Game mode', () => {
     const native = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/gamepad_linux.rs', import.meta.url)), 'utf8')
     const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
-    expect(native).toContain('"l4"')
-    expect(native).toContain('"r4"')
+    expect(native).toContain('0x224 | 0x2c0 => "l4"')
+    expect(native).toContain('0x225 | 0x2c1 => "r4"')
+    expect(native).toContain('0x226 | 0x2c2 => "l5"')
+    expect(native).toContain('0x227 | 0x2c3 => "r5"')
+    expect(native).toContain('grip_btn_name(code).or_else(|| btn_name(b))')
     expect(overlay).toContain("e.payload.name === 'l4'")
     expect(overlay).toContain("e.payload.name === 'r4'")
     expect(overlay).toContain('playerScreenshot()')

@@ -140,22 +140,25 @@ fn btn_name(b: Button) -> Option<&'static str> {
     })
 }
 
-/// Steam Deck rear grips. hid-steam has used both BTN_TRIGGER_HAPPY* and BTN_GRIP*
-/// depending on kernel; gilrs reports them as `Button::Unknown` plus the evdev code.
-fn grip_btn_name(code: gilrs::ev::Code) -> Option<&'static str> {
-    let packed = code.into_u32();
+/// Steam Deck rear grips. hid-steam reports BTN_GRIP* while some Steam virtual-controller
+/// layouts use BTN_TRIGGER_HAPPY*. gilrs leaves both as `Button::Unknown` plus the evdev code.
+fn grip_btn_name_from_packed(packed: u32) -> Option<&'static str> {
     let kind = (packed >> 16) as u16;
     let key = (packed & 0xffff) as u16;
     if kind != 1 {
         return None;
     }
     Some(match key {
-        0x2c0 | 0x139 => "l4", // BTN_TRIGGER_HAPPY1 / BTN_GRIPL
-        0x2c1 | 0x13a => "r4", // BTN_TRIGGER_HAPPY2 / BTN_GRIPR
-        0x2c2 | 0x13b => "l5",
-        0x2c3 | 0x13c => "r5",
+        0x224 | 0x2c0 => "l4", // BTN_GRIPL / BTN_TRIGGER_HAPPY1
+        0x225 | 0x2c1 => "r4", // BTN_GRIPR / BTN_TRIGGER_HAPPY2
+        0x226 | 0x2c2 => "l5", // BTN_GRIPL2 / BTN_TRIGGER_HAPPY3
+        0x227 | 0x2c3 => "r5", // BTN_GRIPR2 / BTN_TRIGGER_HAPPY4
         _ => return None,
     })
+}
+
+fn grip_btn_name(code: gilrs::ev::Code) -> Option<&'static str> {
+    grip_btn_name_from_packed(code.into_u32())
 }
 
 /// Start reading the gamepad on a background thread, emitting `gamepad-input` on every change.
@@ -291,7 +294,7 @@ pub fn start(app: AppHandle) {
                             }
                         }
                         EventType::ButtonPressed(b, code) => {
-                            if let Some(n) = btn_name(b).or_else(|| grip_btn_name(code)) {
+                            if let Some(n) = grip_btn_name(code).or_else(|| btn_name(b)) {
                                 emit(
                                     &app,
                                     &Input {
@@ -302,7 +305,7 @@ pub fn start(app: AppHandle) {
                             }
                         }
                         EventType::ButtonReleased(b, code) => {
-                            if let Some(n) = btn_name(b).or_else(|| grip_btn_name(code)) {
+                            if let Some(n) = grip_btn_name(code).or_else(|| btn_name(b)) {
                                 emit(
                                     &app,
                                     &Input {
@@ -346,4 +349,34 @@ pub fn start(app: AppHandle) {
 /// Stop the reader thread (it exits on its next poll).
 pub fn stop() {
     RUNNING.store(false, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::grip_btn_name_from_packed;
+
+    const EV_KEY: u32 = 1 << 16;
+
+    #[test]
+    fn maps_kernel_steam_deck_grip_codes() {
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x224), Some("l4"));
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x225), Some("r4"));
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x226), Some("l5"));
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x227), Some("r5"));
+    }
+
+    #[test]
+    fn maps_steam_virtual_controller_grip_codes() {
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x2c0), Some("l4"));
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x2c1), Some("r4"));
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x2c2), Some("l5"));
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x2c3), Some("r5"));
+    }
+
+    #[test]
+    fn ignores_non_key_and_standard_button_codes() {
+        assert_eq!(grip_btn_name_from_packed(0x224), None);
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x139), None);
+        assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x13a), None);
+    }
 }
