@@ -1,6 +1,6 @@
 import { derived, writable, get } from 'svelte/store'
 
-export type ScrubSource = 'touch' | 'pad'
+export type ScrubSource = 'touch' | 'pad' | 'dpad'
 export interface ScrubState {
   active: boolean
   time: number
@@ -10,7 +10,7 @@ export interface ScrubState {
 export const scrub = writable<ScrubState>({ active: false, time: 0, source: null })
 export const scrubActive = derived(scrub, ($scrub) => $scrub.active)
 
-let commit: (t: number) => void = () => {}
+let commit: (t: number, source: ScrubSource) => void = () => {}
 let raf = 0
 let pendingTime: number | null = null
 
@@ -33,7 +33,7 @@ function flushPending(): void {
 
 // Wire the commit once (the player's mpv seek). Kept out of the store so the store has no
 // Tauri coupling and stays unit-testable.
-export function initScrub(seek: (t: number) => void): void {
+export function initScrub(seek: (t: number, source: ScrubSource) => void): void {
   commit = seek
 }
 
@@ -61,5 +61,5 @@ export function endScrub(): void {
   flushPending()
   const s = get(scrub)
   scrub.set({ active: false, time: s.time, source: null })
-  if (s.active) commit(s.time)
+  if (s.active && s.source) commit(s.time, s.source)
 }

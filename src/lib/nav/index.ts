@@ -80,26 +80,29 @@ const fieldShape = (target: EventTarget | null): FieldShape | null => {
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
-  // Do not stack smooth-scroll animations while a direction is held. WebKit queues those and then
-  // repaints/decode-rushes several rows at once, which looked like a DOM freeze followed by flashes.
-  // A deliberate Deck press should still glide to the next row/card; only the generated repeat
-  // edges use an immediate reveal. That keeps home/detail navigation fluid without building a
-  // queue when the user holds the stick or D-pad down.
-  const behavior: ScrollBehavior = rapid ? 'auto' : 'smooth'
-  const pane = el.closest<HTMLElement>('[data-nav-scroll-container]')
-  if (!pane) {
-    el.scrollIntoView({
-      behavior,
-      block: vertical ? 'center' : 'nearest',
-      inline: vertical ? 'nearest' : 'center',
-    })
-    return
-  }
+  // Do not stack smooth-scroll animations in Game mode or while a direction is held. WebKitGTK
+  // queues those and then repaints/decode-rushes several rows at once, which looks like a DOM
+  // freeze followed by black flashes. Desktop keyboard navigation keeps its gentle reveal.
+  const behavior: ScrollBehavior = get(gameMode) || rapid ? 'auto' : 'smooth'
+  // Horizontal carousel navigation owns only that row. Vertical navigation still reveals the
+  // destination on the page, rather than trying to scroll the destination row inside itself.
+  const pane = vertical
+    ? el.closest<HTMLElement>('[data-nav-scroll-container]')
+    : el.closest<HTMLElement>('[data-carousel-scroller], [data-nav-scroll-container]')
   const item = el.getBoundingClientRect()
-  const port = pane.getBoundingClientRect()
+  const port = pane?.getBoundingClientRect() ?? {
+    top: 0,
+    left: 0,
+    bottom: window.innerHeight,
+    right: window.innerWidth,
+  }
+  // A focus move wholly inside the viewport needs no scrolling at all. The old unconditional
+  // scrollIntoView(center) repainted the page on every Deck press and queued long smooth motions.
   const top = item.top < port.top ? item.top - port.top : item.bottom > port.bottom ? item.bottom - port.bottom : 0
   const left = item.left < port.left ? item.left - port.left : item.right > port.right ? item.right - port.right : 0
-  if (top || left) pane.scrollBy({ top, left, behavior })
+  if (!top && !left) return
+  if (pane) pane.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
+  else window.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
 }
 
 export function initDpadNav() {

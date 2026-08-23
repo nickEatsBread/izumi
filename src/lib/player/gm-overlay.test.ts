@@ -43,6 +43,8 @@ describe('gameModeBitmapOverlayActive', () => {
     expect(gameModeBitmapOverlayActive({ ...base, playerMenuOpen: true })).toBe(true)
     expect(gameModeBitmapOverlayActive({ ...base, commentsOpen: true })).toBe(true)
     expect(gameModeBitmapOverlayActive({ ...base, statsOpen: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, sourcePickerOpen: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, connectingOpen: true })).toBe(true)
   })
 
   it('yields idle controls to the native loading/scrub overlay', () => {
@@ -101,7 +103,8 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('player_gm_dock')
     expect(overlay).toContain('playerOverlayRev')
     expect(overlay).toContain("void paused")
-    expect(overlay).toContain('streamPickerOpen')
+    expect(overlay).toContain('sourcePickerOpen')
+    expect(overlay).toContain('streamPickerDismissedAt')
     expect(overlay).not.toContain('gameModeP2pLine')
     expect(overlay).not.toContain('p2pText')
     expect(overlay).toContain('gmDynamicOwnsChrome')
@@ -116,7 +119,8 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('fast: overlayFast')
     expect(overlay).toContain('if (!gmMode || !p2pVisible) return')
     expect(overlay).toContain('ontoggleplay={togglePlayback}')
-    expect(overlay).toContain("if (action !== 'playerClose') poke()")
+    expect(overlay).toContain("const quietSeek = gmMode && (action === 'playerSeekBack' || action === 'playerSeekForward')")
+    expect(overlay).toContain("if (action !== 'playerClose' && !quietSeek) poke()")
     expect(overlay).toContain('controls: visible && nativeControls')
     expect(overlay).toContain('loading || get(scrub).active || controlsVisible || showSkip')
     expect(overlay).toContain('if (picker && !picker.hidden) return')
@@ -150,7 +154,8 @@ describe('gameModeDock', () => {
     expect(gameModeDock({ ...base, playerMenuOpen: true }).hide).toBe(false)
     expect(gameModeDock({ ...base, trackMenuOpen: true }).hide).toBe(false)
     expect(gameModeDock({ ...base, commentsOpen: true }).hide).toBe(false)
-    expect(gameModeDock({ ...base, streamPickerOpen: true }).hide).toBe(true)
+    expect(gameModeDock({ ...base, sourcePickerOpen: true }).hide).toBe(false)
+    expect(gameModeDock({ ...base, connecting: true }).hide).toBe(false)
   })
 })
 
@@ -178,6 +183,16 @@ describe('Game-mode Leanback motion', () => {
     expect(picker).toContain("trap.querySelector<HTMLElement>('[data-source-row]')")
     expect(picker).toContain('bind:this={pickerTrap}')
     expect(picker).not.toContain("document.querySelector<HTMLElement>('[data-best-source]')")
+    const connecting = readFileSync(fileURLToPath(new URL('../components/player/SourceConnecting.svelte', import.meta.url)), 'utf8')
+    expect(connecting).toContain('{:else if $gameMode && $playing}')
+    expect(connecting).toContain('bg-black/45')
+  })
+
+  it('lets the picker exclusively consume a Game-mode B edge', () => {
+    const gamepad = readFileSync(fileURLToPath(new URL('../nav/gamepad.ts', import.meta.url)), 'utf8')
+    const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
+    expect(gamepad).toContain('streamPickerDismissedAt.set(performance.now())')
+    expect(overlay).toContain('performance.now() - get(streamPickerDismissedAt) < 500')
   })
 
   it('keeps native Deck metadata and right-side icons aligned with the HTML HUD', () => {
@@ -187,7 +202,7 @@ describe('Game-mode Leanback motion', () => {
     expect(controls).toContain("'text-lg font-semibold leading-snug text-white/75'")
     expect(nativeHud).toContain('if title_at_top { 32.0 } else { 28.0 }')
     expect(nativeHud).toContain('if title_at_top { 20.0 } else { 18.0 }')
-    expect(nativeHud).toContain('item.w.min(item.h) * 0.5')
+    expect(nativeHud).toContain('item.w.min(item.h) * 0.42')
     expect(nativeHud).toContain('Lucide MessageSquare')
   })
 

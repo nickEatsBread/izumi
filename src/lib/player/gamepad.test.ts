@@ -21,7 +21,7 @@ describe('TriggerScrubber', () => {
     const s = new TriggerScrubber(+1, d)
     s.update(true, 0)
     s.update(false, 100)
-    expect(d.seek).toHaveBeenCalledWith(110)
+    expect(d.seek).toHaveBeenCalledWith(110, 'trigger')
     expect(d.beginScrub).not.toHaveBeenCalled()
     expect(d.onActivity).toHaveBeenCalledTimes(1)
   })
@@ -31,7 +31,7 @@ describe('TriggerScrubber', () => {
     const s = new TriggerScrubber(-1, d)
     s.update(true, 0)
     s.update(false, 100)
-    expect(d.seek).toHaveBeenCalledWith(0)
+    expect(d.seek).toHaveBeenCalledWith(0, 'trigger')
   })
 
   it('holding enters a preview scrub and advances by STEP, committing on release', () => {
@@ -39,7 +39,7 @@ describe('TriggerScrubber', () => {
     const s = new TriggerScrubber(+1, d)
     s.update(true, 0)
     s.update(true, SEEK.initialDelay)
-    expect(d.beginScrub).toHaveBeenCalledWith(100)
+    expect(d.beginScrub).toHaveBeenCalledWith(100, 'trigger')
     expect(d.moveScrub).toHaveBeenLastCalledWith(100 + SEEK.step)
     s.update(false, SEEK.initialDelay + 40)
     expect(d.endScrub).toHaveBeenCalledTimes(1)
@@ -59,16 +59,26 @@ describe('TriggerScrubber', () => {
     const s = new TriggerScrubber(+1, d)
     s.update(true, 0)
     s.update(false, 100)
-    expect(d.seek).toHaveBeenCalledWith(110)
+    expect(d.seek).toHaveBeenCalledWith(110, 'trigger')
   })
 
   it('updates a digital d-pad tap on press instead of waiting for release', () => {
     const d = deps(100, 1000)
-    const s = new TriggerScrubber(+1, d, true)
+    const s = new TriggerScrubber(+1, d, 'dpad')
     s.update(true, 0)
-    expect(d.seek).toHaveBeenCalledWith(110)
+    expect(d.seek).toHaveBeenCalledWith(110, 'dpad')
+    expect(d.onActivity).not.toHaveBeenCalled()
     s.update(false, 80)
     expect(d.seek).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps held d-pad scrubbing quiet while retaining its scrub preview', () => {
+    const d = deps(100, 1000)
+    const s = new TriggerScrubber(+1, d, 'dpad')
+    s.update(true, 0)
+    s.update(true, SEEK.initialDelay)
+    expect(d.beginScrub).toHaveBeenCalledWith(100, 'dpad')
+    expect(d.onActivity).not.toHaveBeenCalled()
   })
 })
 
@@ -96,6 +106,15 @@ describe('native Game-mode seek', () => {
     expect(src).toContain("e.payload.name === 'left'")
     expect(src).toContain("e.payload.name === 'right'")
     expect(src).toContain('blocked')
+  })
+
+  it('keeps hidden controls hidden for d-pad taps and preserves subtitle state across seeks', () => {
+    const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
+    const native = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/mod.rs', import.meta.url)), 'utf8')
+    expect(overlay).toContain("$scrub.source === 'dpad'")
+    expect(overlay).toContain("action === 'playerSeekBack' || action === 'playerSeekForward'")
+    expect(native).toContain('mpv.get_property::<String>("sid")')
+    expect(native).toContain('mpv.get_property::<bool>("sub-visibility")')
   })
 })
 

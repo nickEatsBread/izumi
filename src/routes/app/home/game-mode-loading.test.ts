@@ -17,7 +17,8 @@ describe('Steam Deck browse loading', () => {
     expect(row).toContain('pause: !active')
   })
 
-  it('animates discrete controller presses without queuing held-repeat motion', () => {
-    expect(nav).toContain("rapid ? 'auto' : 'smooth'")
+  it('reveals Deck focus immediately without queuing browser smooth-scroll animations', () => {
+    expect(nav).toContain("get(gameMode) || rapid ? 'auto' : 'smooth'")
+    expect(nav).toContain("if (!top && !left) return")
   })
 })

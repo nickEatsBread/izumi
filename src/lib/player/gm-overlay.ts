@@ -13,12 +13,14 @@ export function gameModeBitmapOverlayActive(input: {
   p2pVisible?: boolean
   noticeVisible?: boolean
   skipVisible?: boolean
+  sourcePickerOpen?: boolean
+  connectingOpen?: boolean
 }): boolean {
   if (!input.gameMode || !input.playing) return false
   // Menus/comments are also painted into mpv: leaving them as live HTML requires unmapping the
   // opaque Gamescope video window, which made the output go black. Discrete menus re-snapshot on
   // focus changes; comments use the native self-paced refresh loop while scrolling.
-  if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen || input.statsOpen) return true
+  if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen || input.statsOpen || input.sourcePickerOpen || input.connectingOpen) return true
   // Keep the polished HTML Skip pill. The native progress/controls continue independently below
   // its transparent bitmap; PlayerOverlay must never disable gmNativeControls just because this
   // chip is visible (that coupling was the disappearing-seekbar bug).
@@ -88,8 +90,8 @@ export function presenceAllowed(gameMode: boolean): boolean {
   return !gameMode
 }
 
-/** Only source-resolution surfaces unmap mpv. Player chrome, settings, tracks and comments remain
- * bitmap overlays over the fullscreen child so opening them never blanks the video. */
+/** Player chrome, source selection and connection feedback all stay as bitmap overlays over the
+ * fullscreen child. Unmapping mpv during either half of a source swap caused a black flash. */
 export function gameModeDock(input: {
   loading: boolean
   controlsVisible: boolean
@@ -97,14 +99,12 @@ export function gameModeDock(input: {
   trackMenuOpen: boolean
   commentsOpen: boolean
   noticeVisible: boolean
-  streamPickerOpen?: boolean
+  sourcePickerOpen?: boolean
+  connecting?: boolean
 }): { bottom: number; right: number; top: number; hide: boolean } {
   void input.noticeVisible
-  if (
-    input.streamPickerOpen
-  ) {
-    return { bottom: 0, right: 0, top: 0, hide: true }
-  }
+  void input.sourcePickerOpen
+  void input.connecting
   void input.loading
   void input.controlsVisible
   return { bottom: 0, right: 0, top: 0, hide: false }

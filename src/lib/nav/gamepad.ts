@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { listen } from '@tauri-apps/api/event'
 import { RepeatTimer } from '$lib/player/repeat'
-import { playing, exitPrompt, trackMenuOpen, streamPicker, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen, playerMenuOpen } from '$lib/player/session'
+import { playing, exitPrompt, trackMenuOpen, streamPicker, streamPickerDismissedAt, oskOpen, debridCaching, advancedFiltersOpen, listEditorOpen, commentsOpen, playerMenuOpen } from '$lib/player/session'
 import { inputType } from './input'
 import { acknowledgeDeckKeyboardWarning, deckKeyboardWarning, dismissDeckKeyboardWarning } from '$lib/deck/keyboard-warning'
 import { closeGlobalSearch, globalSearchOpen } from '$lib/search/global-search'
@@ -132,7 +132,12 @@ export function startGamepadNav(): () => void {
     // picker instead of navigating the page back (which would leave the series entirely).
     if (get(streamPicker)) {
       if (name === 'a') (document.activeElement as HTMLElement | null)?.click()
-      else if (name === 'b') streamPicker.set(null)
+      else if (name === 'b') {
+        // PlayerOverlay receives this same raw edge. Publish ownership before clearing the picker,
+        // so listener registration order cannot turn one B press into picker-close + player-close.
+        streamPickerDismissedAt.set(performance.now())
+        streamPicker.set(null)
+      }
       return
     }
     // The series list editor owns A/B while open. Directional input is already confined to its

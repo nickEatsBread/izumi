@@ -16,7 +16,7 @@
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, connecting } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -103,6 +103,8 @@
 
   let visible = $state(true)
   let hideT: ReturnType<typeof setTimeout>
+  let quietPadSeek = $state(false)
+  let quietPadSeekT: ReturnType<typeof setTimeout>
 
   // Game mode (gamescope / Steam Deck): the video is a fullscreen layer-shell surface and the
   // transparent webview composites OVER it — so the player behaves EXACTLY like Desktop
@@ -162,9 +164,14 @@
   // Keep the controls in the DOM while scrubbing (even if the 3s auto-hide fired during a long
   // trigger hold) so the seek bar element stays measurable — otherwise the native scrub bar
   // loses its geometry and jumps to the fallback position lower on screen.
+  // D-pad seeking is intentionally quiet. Keep Controls mounted (the native scrub bar needs its
+  // measured geometry), but do not turn a hidden player into the complete title/button chrome.
+  // Triggers and touch retain the established reveal behaviour.
+  const quietDpadScrub = $derived(gmMode && $scrub.active && $scrub.source === 'dpad')
   const controlsVisible = $derived(
-    visible || paused || loading || $scrubActive || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
+    visible || (!(quietPadSeek || quietDpadScrub) && (paused || loading || $scrubActive)) || $playerMenuOpen || $trackMenuOpen || subtitleEditorOpen,
   )
+  const controlsMounted = $derived(controlsVisible || quietDpadScrub)
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
   // A segment auto-skips only when the setting is on AND it's not the FIRST debut
   // of that OP/ED (per AnimeThemes). Recap always skips. When it WON'T auto-skip,
@@ -352,8 +359,21 @@
     if (gmMode && !get(scrub).active) bumpPlayerOverlay()
   }
 
+  // A hidden-controls D-pad seek stays quiet through mpv's brief seeking/buffering edges. Without
+  // this latch those native events satisfy `loading` and momentarily reveal the complete chrome
+  // even though the input path itself no longer calls poke(). Existing visible/paused controls are
+  // left alone; only a seek that began while hidden gets this suppression window.
+  const quietDpadSeekTo = (t: number) => {
+    if (!controlsVisible) {
+      quietPadSeek = true
+      clearTimeout(quietPadSeekT)
+      quietPadSeekT = setTimeout(() => (quietPadSeek = false), 900)
+    }
+    seekTo(t)
+  }
+
   // The shared scrub store commits through the same absolute seek as touch/skip.
-  initScrub((t) => seekTo(t))
+  initScrub((t, source) => source === 'dpad' ? quietDpadSeekTo(t) : seekTo(t))
 
   // Game mode: read the Deck triggers (L2/R2) via the Rust backend while a video is playing
   // (the webview's own Gamepad API doesn't see the Deck controller under gamescope).
@@ -362,8 +382,8 @@
     const stop = startNativeGamepadSeek({
       getPos: () => pos,
       getDur: () => dur,
-      seek: (t) => seekTo(t),
-      beginScrub: (t) => beginScrub(t, 'pad'),
+      seek: (t, source) => source === 'dpad' ? quietDpadSeekTo(t) : seekTo(t),
+      beginScrub: (t, source) => beginScrub(t, source === 'dpad' ? 'dpad' : 'pad'),
       moveScrub: (t) => moveScrub(t),
       endScrub: () => endScrub(),
       onActivity: () => poke(),
@@ -588,7 +608,9 @@
   const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   const noticeVisible = $derived(!!$playerNotice)
-  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible)
+  const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
+  const sourceConnectingVisible = $derived(!!$connecting)
+  const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
   const gmNativeControls = $derived(gmMode && firstFrame && controlsVisible && (!overlayFull || $playerSideSheetOpen))
@@ -605,6 +627,8 @@
     p2pVisible,
     noticeVisible,
     skipVisible: showSkip,
+    sourcePickerOpen: sourcePickerVisible,
+    connectingOpen: sourceConnectingVisible,
   }))
   $effect(() => {
     if (!gmMode) return
@@ -620,7 +644,8 @@
       trackMenuOpen: $trackMenuOpen,
       commentsOpen: $commentsOpen,
       noticeVisible,
-      streamPickerOpen: (!!$streamPicker && !$streamPicker.hidden) || !!$connecting,
+      sourcePickerOpen: sourcePickerVisible,
+      connecting: sourceConnectingVisible,
     })
     invoke('player_gm_dock', dock).catch(() => {})
     if (gameModeDockIsLive(dock)) {
@@ -982,6 +1007,9 @@
       // deliberately does not take ownership.
       const picker = get(streamPicker)
       if (picker && !picker.hidden) return
+      // The app-wide router may already have cleared the picker while handling this very same B
+      // edge. Its timestamp makes the ownership transfer deterministic in either listener order.
+      if (e.payload.name === 'b' && e.payload.pressed && performance.now() - get(streamPickerDismissedAt) < 500) return
       if (subtitleEditorOpen) {
         if (e.payload.pressed && e.payload.name === 'b') subtitleEditorOpen = false
         return
@@ -1130,16 +1158,17 @@
       if (!action) return
       if (get(deckKeyboardWarning)) return
       e.preventDefault(); e.stopImmediatePropagation()
-      // Back/Escape is an exit command, not player activity. Revealing controls for the one frame
-      // before teardown made a hidden-controls B press visibly flash the chrome.
-      if (action !== 'playerClose') poke()
+      // Back/Escape is an exit command, not player activity. Game-mode arrow seeking is also quiet:
+      // the native seek feedback can move without flashing the complete controls over the video.
+      const quietSeek = gmMode && (action === 'playerSeekBack' || action === 'playerSeekForward')
+      if (action !== 'playerClose' && !quietSeek) poke()
       if (action === 'playerClose') {
         if (gmMode) void close()
         else if (get(fullscreen)) exitFullscreen()
       }
       else if (action === 'playerPlayPause') togglePlayback()
-      else if (action === 'playerSeekBack') seekTo(pos - get(seekDuration))
-      else if (action === 'playerSeekForward') seekTo(pos + get(seekDuration))
+      else if (action === 'playerSeekBack') (gmMode ? quietDpadSeekTo : seekTo)(pos - get(seekDuration))
+      else if (action === 'playerSeekForward') (gmMode ? quietDpadSeekTo : seekTo)(pos + get(seekDuration))
       else if (action === 'playerPreviousChapter') {
         // No chapters means no-op, deliberately: a key that silently turns into a plain seek is
         // worse than one that does nothing, because you cannot tell which happened.
@@ -1248,6 +1277,7 @@
       window.removeEventListener('keydown', onKeyCapture, true)
       clearInterval(recoveryTimer)
       clearTimeout(hideT)
+      clearTimeout(quietPadSeekT)
     }
   })
 </script>
@@ -1371,10 +1401,10 @@
         <span class="text-[0.65rem] tabular-nums text-white/70">{Math.floor(pos / 60)}:{String(Math.floor(pos % 60)).padStart(2, '0')}</span>
       </div>
     </div>
-  {:else if controlsVisible}
+  {:else if controlsMounted}
     <!-- In Game mode the normal bar is measured here but painted by Rust's native 60Hz OSD.
          Complex panels switch this HTML back onto the settled bitmap overlay. -->
-    <div class="izumi-hud" class:opacity-0={gmDynamicOwnsChrome && !$playerSideSheetOpen}>
+    <div class="izumi-hud" class:opacity-0={gmMode && (gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
       <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} />
     </div>
   {/if}

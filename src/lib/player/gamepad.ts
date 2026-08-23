@@ -37,8 +37,8 @@ export class ButtonPressLatch {
 export interface SeekDeps {
   getPos: () => number
   getDur: () => number
-  seek: (absTime: number) => void
-  beginScrub: (t: number) => void
+  seek: (absTime: number, source: 'trigger' | 'dpad') => void
+  beginScrub: (t: number, source: 'trigger' | 'dpad') => void
   moveScrub: (t: number) => void
   endScrub: () => void
   onActivity: () => void
@@ -64,20 +64,20 @@ export class TriggerScrubber {
   private preview = 0
   private tapFired = false
 
-  constructor(private dir: 1 | -1, private d: SeekDeps, private immediateTap = false) {}
+  constructor(private dir: 1 | -1, private d: SeekDeps, private source: 'trigger' | 'dpad' = 'trigger') {}
 
   update(pressed: boolean, now: number): void {
     if (pressed && !this.wasPressed) {
       this.timer.press(now)
       this.scrubbing = false
       this.tapFired = false
-      // Reveal the controls on the physical down edge. Previously a held trigger appeared dead
-      // until the repeat delay elapsed, which made the hold-to-skim feature look broken.
-      this.d.onActivity()
+      // Triggers intentionally reveal the controls so a hold gesture has immediate feedback.
+      // D-pad taps are quiet seeks: they must not bring the whole player chrome back on screen.
+      if (this.source === 'trigger') this.d.onActivity()
       // D-pad seeking is digital and should update on press, like Leanback. Triggers retain the
       // release-to-tap distinction so a trigger hold can become a scrub without a surprise jump.
-      if (this.immediateTap) {
-        this.d.seek(clamp(this.d.getPos() + SEEK.tap * this.dir, this.d.getDur()))
+      if (this.source === 'dpad') {
+        this.d.seek(clamp(this.d.getPos() + SEEK.tap * this.dir, this.d.getDur()), this.source)
         this.tapFired = true
       }
     } else if (pressed && this.wasPressed) {
@@ -85,8 +85,8 @@ export class TriggerScrubber {
         if (!this.scrubbing) {
           this.scrubbing = true
           this.preview = this.d.getPos()
-          this.d.onActivity()
-          this.d.beginScrub(this.preview)
+          if (this.source === 'trigger') this.d.onActivity()
+          this.d.beginScrub(this.preview, this.source)
         }
         this.preview = clamp(this.preview + SEEK.step * this.dir, this.d.getDur())
         this.d.moveScrub(this.preview)
@@ -95,7 +95,7 @@ export class TriggerScrubber {
       if (this.scrubbing) {
         this.d.endScrub()
       } else if (!this.tapFired) {
-        this.d.seek(clamp(this.d.getPos() + SEEK.tap * this.dir, this.d.getDur()))
+        this.d.seek(clamp(this.d.getPos() + SEEK.tap * this.dir, this.d.getDur()), this.source)
       }
       this.scrubbing = false
       this.tapFired = false
@@ -145,8 +145,8 @@ export function startGamepadSeek(d: SeekDeps, debug = false): () => void {
 export function startNativeGamepadSeek(d: SeekDeps): () => void {
   const l2 = new TriggerScrubber(-1, d)
   const r2 = new TriggerScrubber(+1, d)
-  const dpadLeft = new TriggerScrubber(-1, d, true)
-  const dpadRight = new TriggerScrubber(+1, d, true)
+  const dpadLeft = new TriggerScrubber(-1, d, 'dpad')
+  const dpadRight = new TriggerScrubber(+1, d, 'dpad')
   const held = { L: false, R: false, left: false, right: false }
   let unlisten: (() => void) | null = null
   let disposed = false

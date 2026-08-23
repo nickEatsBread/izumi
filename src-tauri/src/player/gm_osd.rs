@@ -876,10 +876,10 @@ fn control_item_ass(item: &GmControlItem, opacity: f64, y_offset: f64, lines: &m
         &item.label.to_ascii_lowercase(),
         cx,
         cy,
-        // The HTML control uses a 24px Lucide icon in a 48px button. Feeding half the measured
-        // button size into the 24x24 vector geometry keeps the native and snapshotted HUDs equal;
-        // 0.42 made the three right-side icons visibly shrink whenever native chrome took over.
-        item.w.min(item.h) * 0.5,
+        // Match the 24px Lucide glyph inside the HTML control's 48px hit target. A 0.5 scale
+        // made the ASS approximation fill the whole nominal icon box, visibly boldening captions,
+        // discussion and the filled previous/next episode shapes only once video was playing.
+        item.w.min(item.h) * 0.42,
         icon_color,
         opacity,
         lines,

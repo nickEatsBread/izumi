@@ -38,7 +38,7 @@ describe('scrub store', () => {
     beginScrub(30, 'pad')
     moveScrub(50)
     endScrub()
-    expect(seek).toHaveBeenCalledWith(50)
+    expect(seek).toHaveBeenCalledWith(50, 'pad')
     expect(get(scrub).active).toBe(false)
   })
 
@@ -51,7 +51,7 @@ describe('scrub store', () => {
     beginScrub(30, 'pad')
     moveScrub(75)
     endScrub()
-    expect(seek).toHaveBeenCalledWith(75)
+    expect(seek).toHaveBeenCalledWith(75, 'pad')
     expect(get(scrub)).toEqual({ active: false, time: 75, source: null })
   })
 

@@ -669,7 +669,28 @@ impl PlayerHandle {
     pub fn command(&self, name: &str, args: &[&str]) -> Result<(), String> {
         let guard = self.mpv.lock().map_err(|e| e.to_string())?;
         let mpv = guard.as_ref().ok_or("no player")?;
-        mpv.command(name, args).map_err(|e| e.to_string())
+        // A seek must be transport-only. Some libmpv/demuxer combinations transiently reset the
+        // subtitle renderer while flushing packets; without restating these properties the chosen
+        // track can remain invisible until the next file. Preserve the exact state, including
+        // `sid=no`, so this never turns subtitles on when the user deliberately disabled them.
+        let subtitle_state = if name == "seek" {
+            Some((
+                mpv.get_property::<String>("sid").ok(),
+                mpv.get_property::<bool>("sub-visibility").ok(),
+            ))
+        } else {
+            None
+        };
+        mpv.command(name, args).map_err(|e| e.to_string())?;
+        if let Some((sid, visible)) = subtitle_state {
+            if let Some(sid) = sid {
+                let _ = mpv.set_property("sid", sid.as_str());
+            }
+            if let Some(visible) = visible {
+                let _ = mpv.set_property("sub-visibility", visible);
+            }
+        }
+        Ok(())
     }
 
     /// Start a bounded GIF frame capture from the already-playing mpv core.
