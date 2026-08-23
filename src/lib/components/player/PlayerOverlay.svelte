@@ -278,7 +278,7 @@
     if (kind === 'gif') {
       if (get(gifRecordingStart) == null) {
         gifRecordingStart.set(pos)
-        playerNotice.set('GIF recording started · press O to stop')
+        playerNotice.set(`GIF recording started · press ${gmMode ? 'R4' : 'O'} to stop`)
         try {
           await playerGifStart($gifIncludeSubtitles)
         } catch {
@@ -298,7 +298,7 @@
           String(error).includes('ffmpeg-unavailable')
             ? 'GIF recording needs ffmpeg installed'
             : String(error).includes('gif-no-frames')
-              ? 'GIF was too short — hold O a bit longer'
+              ? `GIF was too short — hold ${gmMode ? 'R4' : 'O'} a bit longer`
               : 'GIF recording failed',
         )
       }

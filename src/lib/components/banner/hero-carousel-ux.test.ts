@@ -24,6 +24,11 @@ describe('featured carousel UX', () => {
     expect(hero).toContain('--hero-enter-x:{navDirection * 3}%')
   })
 
+  it('keeps pointer arrows out of Steam Deck spatial navigation', () => {
+    expect(hero.match(/data-focusable=\{\$gameMode \? undefined : ''\}/g)?.length).toBe(2)
+    expect(hero.match(/tabindex=\{\$gameMode \? -1 : undefined\}/g)?.length).toBe(2)
+  })
+
   it('steps directionally after an enabled mouse drag', () => {
     expect(hero).toContain("import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'")
     expect(hero).toContain("e.pointerType !== 'mouse'")
@@ -44,8 +49,8 @@ describe('featured carousel UX', () => {
     expect(hero).toContain('onwheel={onHeroWheel}')
   })
 
-  it('uses a shorter desktop hero only on the home overlay', () => {
-    expect(hero).toContain("{showOverlay ? 'sm:h-[50vh]' : 'sm:h-[55vh]'}")
+  it('uses the compact Game-mode detail backdrop height', () => {
+    expect(hero).toContain("{showOverlay ? 'sm:h-[50vh]' : $gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'}")
   })
 
   it('keeps genre labels near-white over variable artwork', () => {

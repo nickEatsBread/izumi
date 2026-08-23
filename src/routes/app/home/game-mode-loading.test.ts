@@ -17,7 +17,7 @@ describe('Steam Deck browse loading', () => {
     expect(row).toContain('pause: !active')
   })
 
-  it('does not queue smooth viewport animations for separate Game Mode presses', () => {
-    expect(nav).toContain("rapid || get(gameMode) ? 'auto' : 'smooth'")
+  it('animates discrete controller presses without queuing held-repeat motion', () => {
+    expect(nav).toContain("rapid ? 'auto' : 'smooth'")
   })
 })

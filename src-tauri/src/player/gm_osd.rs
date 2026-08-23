@@ -811,7 +811,7 @@ fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -
             player_title_text(
                 state.title_x,
                 state.title_y + y_offset,
-                if title_at_top { 24.0 } else { 25.0 },
+                if title_at_top { 32.0 } else { 28.0 },
                 state.title.trim(),
                 opacity,
                 4,
@@ -825,7 +825,7 @@ fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -
             player_title_text(
                 state.episode_x,
                 state.episode_y + y_offset,
-                if title_at_top { 16.0 } else { 17.0 },
+                if title_at_top { 20.0 } else { 18.0 },
                 state.episode_text.trim(),
                 opacity * if title_at_top { 0.7 } else { 0.72 },
                 4,
@@ -876,7 +876,10 @@ fn control_item_ass(item: &GmControlItem, opacity: f64, y_offset: f64, lines: &m
         &item.label.to_ascii_lowercase(),
         cx,
         cy,
-        item.w.min(item.h) * 0.42,
+        // The HTML control uses a 24px Lucide icon in a 48px button. Feeding half the measured
+        // button size into the 24x24 vector geometry keeps the native and snapshotted HUDs equal;
+        // 0.42 made the three right-side icons visibly shrink whenever native chrome took over.
+        item.w.min(item.h) * 0.5,
         icon_color,
         opacity,
         lines,
@@ -914,16 +917,35 @@ fn control_icon_ass(
         push(lines, circle_ring(cx - 5.0 * u, cy - 5.0 * u, 2.0 * u, 4.0 * u, color, &a));
         push(lines, circle_ring(cx + 5.0 * u, cy + 5.0 * u, 2.0 * u, 4.0 * u, color, &a));
     } else if label == "discussion" {
-        let x0 = cx - size * 0.52;
-        let x1 = cx + size * 0.52;
-        let y0 = cy - size * 0.42;
-        let y1 = cy + size * 0.3;
-        let thick = size * 0.1;
-        push(lines, line_shape(x0, y0, x1, y0, thick, color, &a));
-        push(lines, line_shape(x0, y0, x0, y1, thick, color, &a));
-        push(lines, line_shape(x1, y0, x1, y1, thick, color, &a));
-        push(lines, line_shape(x0, y1, x1, y1, thick, color, &a));
-        push(lines, polygon(&[(cx - size * 0.12, y1), (cx - size * 0.28, cy + size * 0.55), (cx + size * 0.12, y1)], color, &a));
+        // Lucide MessageSquare: rounded 20x16 body plus the lower-left reply tail. Keeping this
+        // stroke-only avoids the boxy filled speech bubble used by the old ASS approximation.
+        let u = size / 24.0;
+        let stroke = 2.0 * u;
+        push(
+            lines,
+            rounded_rect_ring(
+                cx - 10.0 * u,
+                cy - 9.0 * u,
+                20.0 * u,
+                16.0 * u,
+                2.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            round_line(
+                cx - 4.5 * u,
+                cy + 7.0 * u,
+                cx - 8.0 * u,
+                cy + 10.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
     } else if label == "switch server" {
         let u = size / 24.0;
         let stroke = 2.0 * u;

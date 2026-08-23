@@ -82,10 +82,10 @@ const fieldShape = (target: EventTarget | null): FieldShape | null => {
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
   // Do not stack smooth-scroll animations while a direction is held. WebKit queues those and then
   // repaints/decode-rushes several rows at once, which looked like a DOM freeze followed by flashes.
-  // A sequence of separate Deck presses is not marked `repeat`, though, and can arrive much faster
-  // than a smooth scroll settles. Game mode therefore always moves the viewport immediately; the
-  // focus ring supplies the movement cue without leaving a compositor animation queue behind it.
-  const behavior: ScrollBehavior = rapid || get(gameMode) ? 'auto' : 'smooth'
+  // A deliberate Deck press should still glide to the next row/card; only the generated repeat
+  // edges use an immediate reveal. That keeps home/detail navigation fluid without building a
+  // queue when the user holds the stick or D-pad down.
+  const behavior: ScrollBehavior = rapid ? 'auto' : 'smooth'
   const pane = el.closest<HTMLElement>('[data-nav-scroll-container]')
   if (!pane) {
     el.scrollIntoView({

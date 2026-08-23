@@ -180,6 +180,17 @@ describe('Game-mode Leanback motion', () => {
     expect(picker).not.toContain("document.querySelector<HTMLElement>('[data-best-source]')")
   })
 
+  it('keeps native Deck metadata and right-side icons aligned with the HTML HUD', () => {
+    const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
+    const nativeHud = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/gm_osd.rs', import.meta.url)), 'utf8')
+    expect(controls).toContain("'text-3xl font-black leading-tight drop-shadow'")
+    expect(controls).toContain("'text-lg font-semibold leading-snug text-white/75'")
+    expect(nativeHud).toContain('if title_at_top { 32.0 } else { 28.0 }')
+    expect(nativeHud).toContain('if title_at_top { 20.0 } else { 18.0 }')
+    expect(nativeHud).toContain('item.w.min(item.h) * 0.5')
+    expect(nativeHud).toContain('Lucide MessageSquare')
+  })
+
   it('clips a right-side sheet instead of snapshotting the full player', () => {
     expect(gameModeSideSheetCrop(1280, 800, { left: 896, top: 40, width: 352, height: 720 }))
       .toEqual({ x: 872, y: 16, w: 400, h: 768 })

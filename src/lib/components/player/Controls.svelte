@@ -384,7 +384,7 @@
       try {
         await playerGifStart($gifIncludeSubtitles)
         gifRecordingStart.set(pos)
-        playerNotice.set('GIF recording started · press O to stop')
+        playerNotice.set(`GIF recording started · press ${gm ? 'R4' : 'O'} to stop`)
       } catch {
         playerNotice.set('GIF recording failed to start')
       } finally { captureBusy = false }
@@ -402,7 +402,7 @@
         String(error).includes('ffmpeg-unavailable')
           ? 'GIF recording needs ffmpeg installed'
           : String(error).includes('gif-no-frames')
-            ? 'GIF was too short — hold O a bit longer'
+            ? `GIF was too short — hold ${gm ? 'R4' : 'O'} a bit longer`
             : 'GIF recording failed',
       )
     } finally { captureBusy = false }
@@ -726,9 +726,9 @@
 {#snippet titleBlock(big: boolean)}
   {#if np.animeTitle}
     <div class="min-w-0 pt-0.5 [text-shadow:0_1px_4px_rgba(0,0,0,.7)]">
-      <div data-gm-title class="line-clamp-1 text-white {big ? 'text-xl font-black drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
+      <div data-gm-title class="line-clamp-1 text-white {big ? 'text-3xl font-black leading-tight drop-shadow' : 'text-lg font-semibold'}">{np.animeTitle}</div>
       {#if np.episode != null}
-        <div data-gm-episode class="line-clamp-1 {big ? 'text-sm font-semibold text-white/70' : 'text-sm font-normal text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>
+        <div data-gm-episode class="line-clamp-1 {big ? 'text-lg font-semibold leading-snug text-white/75' : 'text-sm font-normal text-white/60'}">Episode {np.episode}{np.total ? ` / ${np.total}` : ''}</div>
       {/if}
     </div>
   {/if}
@@ -1243,8 +1243,8 @@
           </div>
         {/if}
 
-        <!-- Screenshot the current frame → Pictures/izumi. Desktop only in Game mode we keep the
-             bar to just Subtitles + options (the Deck has its own Steam screenshot shortcut). -->
+        <!-- Screenshot the current frame → Pictures/izumi. Game mode keeps this off the visual
+             bar because Izumi maps its own screenshot action to L4 (R4 is Izumi's GIF recorder). -->
         {#if !gm}
           <button data-focusable class={iconBtn} onclick={screenshot} aria-label="Screenshot"><Camera size={icSize} /></button>
           <button data-focusable class={iconBtn} onclick={togglePictureInPicture} aria-label="Picture in picture"><PictureInPicture size={icSize} /></button>
