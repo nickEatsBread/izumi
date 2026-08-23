@@ -5,6 +5,8 @@
   import { showAdult } from '$lib/settings/ui'
   import MultiSelect from './MultiSelect.svelte'
   import AdvancedFilters from './AdvancedFilters.svelte'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import { isMobile } from '$lib/platform'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
 
   let { filters = $bindable() }: { filters: SearchFilters } = $props()
@@ -69,33 +71,40 @@
     <MultiSelect label="Status" options={STATUSES} selected={filters.statuses ?? []}
                  onchange={(v) => (filters = { ...filters, statuses: v })} />
 
-    <select
-      data-focusable
-      value={filters.season ?? ''}
-      onchange={(e) => (filters = { ...filters, season: e.currentTarget.value || undefined })}
-      class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
-    >
-      <option value="">Any Season</option>
-      {#each SEASONS as s (s)}<option value={s}>{label(s)}</option>{/each}
-    </select>
-    <select
-      data-focusable
-      value={filters.year != null ? String(filters.year) : ''}
-      onchange={(e) => (filters = { ...filters, year: e.currentTarget.value ? Number(e.currentTarget.value) : null })}
-      class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
-    >
-      <option value="">Any Year</option>
-      {#each YEARS as y (y)}<option value={String(y)}>{y}</option>{/each}
-    </select>
-    <select
-      data-focusable
-      value={filters.sort ?? ''}
-      onchange={(e) => (filters = { ...filters, sort: e.currentTarget.value || undefined })}
-      class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent"
-    >
-      <option value="">Default Sort</option>
-      {#each SORTS as s (s)}<option value={s}>{label(s)}</option>{/each}
-    </select>
+    {#if $isMobile}
+      <!-- Keep Android's space-efficient native pickers inside the horizontal chip scroller. -->
+      <select data-focusable value={filters.season ?? ''}
+              onchange={(e) => (filters = { ...filters, season: e.currentTarget.value || undefined })}
+              class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
+        <option value="">Any Season</option>
+        {#each SEASONS as s (s)}<option value={s}>{label(s)}</option>{/each}
+      </select>
+      <select data-focusable value={filters.year != null ? String(filters.year) : ''}
+              onchange={(e) => (filters = { ...filters, year: e.currentTarget.value ? Number(e.currentTarget.value) : null })}
+              class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
+        <option value="">Any Year</option>
+        {#each YEARS as y (y)}<option value={String(y)}>{y}</option>{/each}
+      </select>
+      <select data-focusable value={filters.sort ?? ''}
+              onchange={(e) => (filters = { ...filters, sort: e.currentTarget.value || undefined })}
+              class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
+        <option value="">Default Sort</option>
+        {#each SORTS as s (s)}<option value={s}>{label(s)}</option>{/each}
+      </select>
+    {:else}
+      <!-- WKWebView leaves native macOS selects with an Aqua face/menu that ignores the app's dark
+           palette. Desktop search uses the same fully-themed, keyboard/gamepad-capable menu as
+           Settings; Android keeps its native picker above because this row scrolls horizontally. -->
+      <SelectMenu value={filters.season ?? ''} ariaLabel="Season" className="w-36 shrink-0"
+                  options={[{ value: '', label: 'Any Season' }, ...SEASONS.map((s) => ({ value: s, label: label(s) }))]}
+                  onChange={(value) => (filters = { ...filters, season: value || undefined })} />
+      <SelectMenu value={filters.year != null ? String(filters.year) : ''} ariaLabel="Year" className="w-32 shrink-0"
+                  options={[{ value: '', label: 'Any Year' }, ...YEARS.map((year) => ({ value: String(year), label: String(year) }))]}
+                  onChange={(value) => (filters = { ...filters, year: value ? Number(value) : null })} />
+      <SelectMenu value={filters.sort ?? ''} ariaLabel="Sort" className="w-40 shrink-0"
+                  options={[{ value: '', label: 'Default Sort' }, ...SORTS.map((sort) => ({ value: sort, label: label(sort) }))]}
+                  onChange={(value) => (filters = { ...filters, sort: value || undefined })} />
+    {/if}
 
     <button data-focusable onclick={() => (showAdvanced = true)}
             class="flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm font-bold transition-colors {advCount ? 'bg-theme/20 text-theme hover:bg-theme/30' : 'bg-secondary hover:bg-accent'}">

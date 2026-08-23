@@ -464,8 +464,8 @@ export const setPlayerFullscreen = (enabled: boolean) =>
  * playing and moves as one unit (a view compositor transform, not a surface resize). Translations
  * are physical pixels. Any `setPlayerViewport` call resets this back to identity.
  */
-export const setPlayerTransform = (scale: number, translateY: number, translateX = 0) =>
-  invoke('plugin:mpv|mpv_transform', { payload: { scale, translateY, translateX } })
+export const setPlayerTransform = (scale: number, translateY: number, translateX = 0, floating = false) =>
+  invoke('plugin:mpv|mpv_transform', { payload: { scale, translateY, translateX, floating } })
 
 /** mpv chapters (time in seconds + title), via sub-property paths. Empty when the file has none.
  *  Titles are needed for chapter-derived skip segments — see player/chapter-skip.ts. Keeps every

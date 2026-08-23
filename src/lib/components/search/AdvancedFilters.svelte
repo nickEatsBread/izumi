@@ -6,6 +6,7 @@
   import { advancedFiltersOpen } from '$lib/player/session'
   import TagPicker from './TagPicker.svelte'
   import MultiSelect from './MultiSelect.svelte'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import X from '@lucide/svelte/icons/x'
 
   let { filters, onApply, onClose }: {
@@ -104,12 +105,9 @@
         <!-- Country of origin (single-select) -->
         <section class="rounded-lg border border-border/70 p-3">
           <h3 class="mb-1.5 text-sm font-black">Country</h3>
-          <select data-focusable value={draft.country ?? ''}
-                  onchange={(e) => set({ country: e.currentTarget.value || undefined })}
-                  class="w-full rounded-md bg-secondary px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent">
-            <option value="">Any country</option>
-            {#each COUNTRIES as c (c.code)}<option value={c.code}>{c.label}</option>{/each}
-          </select>
+          <SelectMenu value={draft.country ?? ''} ariaLabel="Country" className="w-full"
+                      options={[{ value: '', label: 'Any country' }, ...COUNTRIES.map((country) => ({ value: country.code, label: country.label }))]}
+                      onChange={(value) => set({ country: value || undefined })} />
         </section>
       </div>
 

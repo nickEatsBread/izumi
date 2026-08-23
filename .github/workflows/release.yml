@@ -186,7 +186,7 @@ jobs:
         run: |
           set -euo pipefail
           brew update
-          brew install mpv dylibbundler
+          brew install mpv ffmpeg dylibbundler
           BREW="$(brew --prefix)"
           echo "PKG_CONFIG_PATH=$BREW/lib/pkgconfig" >> "$GITHUB_ENV"
           echo "LIBRARY_PATH=$BREW/lib" >> "$GITHUB_ENV"
@@ -201,10 +201,19 @@ jobs:
           cp "$BREW/lib/libmpv.2.dylib" "$STAGE/"
           chmod +w "$STAGE/libmpv.2.dylib"
           dylibbundler -of -b -x "$STAGE/libmpv.2.dylib" -d "$STAGE" -p "@rpath/"
+          # Finder-launched apps do not inherit Homebrew's PATH. Ship a relocatable ffmpeg beside
+          # the app resources so GIF capture works on a clean Mac, and bundle/rewrite every one of
+          # its non-system dylibs into the same Frameworks directory as libmpv.
+          TOOL="$GITHUB_WORKSPACE/src-tauri/macos-tools/ffmpeg"
+          mkdir -p "$(dirname "$TOOL")"
+          cp "$(command -v ffmpeg)" "$TOOL"
+          chmod u+w,+x "$TOOL"
+          dylibbundler -of -b -x "$TOOL" -d "$STAGE" -p "@rpath/"
+          install_name_tool -add_rpath "@executable_path/../Frameworks" "$TOOL"
           # Compact JSON (NO spaces — survives tauri-action splitting args on spaces) listing every
           # staged dylib for Tauri's macOS `frameworks` bundler. Consumed by the build step's args.
           FW="$(python3 -c "import glob,json;print(json.dumps(sorted(glob.glob('$STAGE/*.dylib')),separators=(',',':')))")"
-          echo "MAC_ARGS=--config {\"bundle\":{\"macOS\":{\"frameworks\":$FW}}}" >> "$GITHUB_ENV"
+          echo "MAC_ARGS=--config {\"bundle\":{\"resources\":{\"macos-tools/ffmpeg\":\"ffmpeg\"},\"macOS\":{\"frameworks\":$FW}}}" >> "$GITHUB_ENV"
 
       - name: Install JS deps
         run: npm ci
@@ -242,6 +251,19 @@ jobs:
           copy "$B/appimage/*.AppImage" izumi-x86_64.AppImage
           copy "$B/deb/*.deb"           izumi-amd64.deb
           copy "$B/rpm/*.rpm"           izumi-x86_64.rpm
+
+      - name: Verify bundled macOS GIF encoder
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          set -euo pipefail
+          FFMPEG="src-tauri/target/release/bundle/macos/izumi.app/Contents/Resources/ffmpeg"
+          test -x "$FFMPEG"
+          "$FFMPEG" -hide_banner -version
+          if otool -L "$FFMPEG" | grep -q '/opt/homebrew'; then
+            echo 'Bundled ffmpeg still references Homebrew' >&2
+            otool -L "$FFMPEG" >&2
+            exit 1
+          fi
 
   cleanup-release-signatures:
     needs: [create-release, build]

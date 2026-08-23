@@ -143,6 +143,7 @@
   let miniLayout = $state(false)
   let miniPull = $state(0)
   let miniPullDragging = $state(false)
+  let miniCommitting = $state(false)
 
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
@@ -654,26 +655,42 @@
   let pullLastY = 0
   let pullLastTime = 0
   let pullVelocityY = 0
-  let pullTransformBusy = false
-  let pendingPullTransform: { scale: number; tx: number; ty: number } | null = null
+  let pullTransformTask: Promise<void> | null = null
+  let pullTransformGeneration = 0
+  let pendingPullTransform: { scale: number; tx: number; ty: number; floating: boolean; generation: number } | null = null
   let pullAnimFrame = 0
   let exitAnimFrame = 0
   const VIDEO_SCRUB_SPAN = 90 // seconds spanned by a full-width horizontal drag over the video
   // Coalesced native-surface transform: only the latest (scale, translate) is ever in flight, so a
   // fast drag never floods the IPC bridge. Unlike a viewport resize this is a cheap compositor op.
-  function queuePullTransform(scale: number, tyCssPx: number, txCssPx = 0) {
+  function queuePullTransform(scale: number, tyCssPx: number, txCssPx = 0, floating = false) {
     const dpr = window.devicePixelRatio || 1
-    pendingPullTransform = { scale, tx: Math.round(txCssPx * dpr), ty: Math.round(tyCssPx * dpr) }
-    if (pullTransformBusy) return
-    pullTransformBusy = true
-    void (async () => {
+    pendingPullTransform = {
+      scale,
+      tx: Math.round(txCssPx * dpr),
+      ty: Math.round(tyCssPx * dpr),
+      floating,
+      generation: pullTransformGeneration,
+    }
+    if (pullTransformTask) return
+    const task = (async () => {
       while (pendingPullTransform != null) {
         const t = pendingPullTransform
         pendingPullTransform = null
-        await setPlayerTransform(t.scale, t.ty, t.tx).catch(() => {})
+        if (t.generation !== pullTransformGeneration) continue
+        await setPlayerTransform(t.scale, t.ty, t.tx, t.floating).catch(() => {})
       }
-      pullTransformBusy = false
     })()
+    pullTransformTask = task
+    void task.finally(() => { if (pullTransformTask === task) pullTransformTask = null })
+  }
+
+  /** Invalidate unsent drag frames and wait for the one IPC already in flight. Viewport/PiP then
+   *  becomes the final native layout write instead of an old scale arriving one frame later. */
+  async function drainPullTransforms() {
+    pullTransformGeneration++
+    pendingPullTransform = null
+    await pullTransformTask?.catch(() => {})
   }
 
   // Move the native clipped container and its HTML control frame with identical geometry. YouTube's
@@ -750,7 +767,9 @@
     pullTranslateY = (targetCenterY - sourceCenterY) * p
     pullDim = p
     pullDetailsOffset = 0
-    queuePullTransform(pullScale, pullTranslateY, pullTranslateX)
+    // Once browse is visible the native surface must move above the WebView or its cards cover the
+    // video during the drag. The identity frame at p=0 lowers it again after a cancelled pull.
+    queuePullTransform(pullScale, pullTranslateY, pullTranslateX, p > 0)
   }
 
   function updateMiniPull(e: PointerEvent) {
@@ -787,7 +806,10 @@
     miniPullDragging = false
     const from = miniPull
     miniPull = 0
-    animateMiniTo(from, 0, () => armHide())
+    animateMiniTo(from, 0, () => {
+      androidMiniPlayer.set(false)
+      armHide()
+    })
   }
 
   async function settleMiniPlayer() {
@@ -795,16 +817,19 @@
     controlsShown = false
     sheet = null
     commentsOpen.set(false)
-    await goto('/app/home')
     miniLayout = true
     await tick()
     await syncViewport()
-    // Reveal Home only after the native surface has been raised into its final bounded rectangle;
-    // otherwise the newly painted browse page can cover one black transition frame.
-    androidMiniPlayer.set(true)
+    miniCommitting = false
   }
 
   function minimizeToHome() {
+    // Reveal browse at release, while the video is still physically travelling toward the corner.
+    // This is the direct-manipulation part of YouTube's transition: the destination is visible
+    // underneath rather than popping in only after the animation has finished.
+    miniCommitting = true
+    androidMiniPlayer.set(true)
+    void goto('/app/home')
     animateMiniTo(miniPull, 1, () => { void settleMiniPlayer() })
   }
 
@@ -940,6 +965,9 @@
         clearTimeout(holdTimer)
         gesture = 'minimize'
         miniPullDragging = true
+        // Unlock and reveal the route beneath the watch page for the duration of the pull. A
+        // cancelled gesture hides it again after the spring-back; a committed one navigates Home.
+        androidMiniPlayer.set(true)
         controlsShown = false
         resetTapSequence()
         miniPull = mini
@@ -1262,10 +1290,16 @@
   // this re-measures from the (now correct) CSS layout.
   let wasPip = false
   $effect(() => {
-    if ($androidPipActive) { wasPip = true; return }
+    if ($androidPipActive) {
+      wasPip = true
+      // Native PiP resets the container to identity. Invalidate every queued drag frame so none can
+      // resize that system-owned surface after the reset.
+      void drainPullTransforms()
+      return
+    }
     if (!wasPip) return
     wasPip = false
-    void syncViewport()
+    void (async () => { await drainPullTransforms(); await syncViewport() })()
   })
 
   // Pull-down sheet: follow the finger exactly, then animate either home or fully off-screen.
@@ -1477,6 +1511,7 @@
     // The miniplayer window is its own resize, and re-measuring the watch-page layout inside it is
     // exactly what used to push the video out of frame. The native side ignores viewport calls while
     // in PiP as well; this just avoids the pointless round trip.
+    await drainPullTransforms()
     if (get(androidPipActive)) return
     const generation = ++viewportGeneration
     if (miniLayout) {
@@ -1540,6 +1575,7 @@
       cancelAnimationFrame(pullAnimFrame)
       cancelAnimationFrame(exitAnimFrame)
       pendingPullTransform = null
+      pullTransformGeneration++
       cancelScrub()
       cancelAnimationFrame(viewportFrame)
       orientation.removeEventListener('change', scheduleViewportSync)
@@ -1560,6 +1596,7 @@
 
 <div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden}
   class:pulling-fullscreen={fullscreenPullDragging || miniPullDragging || pullDim > 0} class:mini-shell={miniLayout}
+  class:mini-transitioning={miniCommitting}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
   <section bind:this={rootEl} class="video-frame relative touch-none bg-transparent"
     style:transform={`translate3d(${pullTranslateX}px, ${pullTranslateY}px, 0) scale(${pullScale})`}
@@ -1734,7 +1771,7 @@
          slightly; the player stays a bounded rectangle instead of bleeding through faded content. -->
     <section class="watch-details overflow-y-auto"
       style:transform={`translate3d(0, ${pullDetailsOffset}px, 0)`}
-      style:opacity={1 - pullDim * 0.35}
+      style:opacity={(miniPullDragging || miniCommitting || miniPull > 0) ? 1 - miniPull : 1 - pullDim * 0.35}
       style:pointer-events={pullDim > 0 ? 'none' : null}>
       {#if $nowPlayingMedia}
         <AndroidWatchDetails
@@ -1888,6 +1925,7 @@
   .pulling-fullscreen .video-frame { will-change: transform; }
   .pulling-fullscreen .video-frame, .pulling-fullscreen .watch-details { transition: none; }
   .mini-shell { pointer-events: none; overflow: visible; }
+  .mini-transitioning { pointer-events: none; }
   .mini-shell .video-frame {
     position: fixed; left: 0.5rem; bottom: calc(4rem + env(safe-area-inset-bottom) + 0.5rem);
     width: min(42vw, 160px); height: min(23.625vw, 90px); margin: 0; overflow: hidden;

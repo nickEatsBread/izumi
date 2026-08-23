@@ -119,6 +119,9 @@ pub struct TransformRequest {
     pub translate_y: i32,
     #[serde(default)]
     pub translate_x: i32,
+    /// Raise the shrinking in-app mini-player above the now-visible browse WebView.
+    #[serde(default)]
+    pub floating: bool,
 }
 
 /// Grab a preview frame from a stream at `time_sec`, scaled to `width` px wide.
@@ -248,10 +251,11 @@ mod tests {
     #[test]
     fn transform_request_supports_horizontal_miniplayer_motion() {
         let r: TransformRequest =
-            serde_json::from_str(r#"{"scale":0.42,"translateY":900,"translateX":-240}"#).unwrap();
+            serde_json::from_str(r#"{"scale":0.42,"translateY":900,"translateX":-240,"floating":true}"#).unwrap();
         assert_eq!(r.scale, 0.42);
         assert_eq!(r.translate_y, 900);
         assert_eq!(r.translate_x, -240);
+        assert!(r.floating);
     }
 
     #[test]

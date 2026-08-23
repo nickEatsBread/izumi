@@ -161,6 +161,8 @@ class TransformArgs {
     /** Vertical translate in physical pixels (negative = up). */
     var translateY: Int = 0
     var translateX: Int = 0
+    /** Raise a shrinking in-app mini-player above the browse WebView. */
+    var floating: Boolean = false
 }
 
 @InvokeArg
@@ -553,6 +555,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 )
             params.width = ViewGroup.LayoutParams.MATCH_PARENT
             params.height = ViewGroup.LayoutParams.MATCH_PARENT
+            params.leftMargin = 0
             params.topMargin = 0
             playerContainer.layoutParams = params
             playerContainer.scaleX = 1f
@@ -1190,7 +1193,16 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun transform(invoke: Invoke) {
         val a = invoke.parseArgs(TransformArgs::class.java)
         activity.runOnUiThread {
+            // PiP owns a plain fill layout. A coalesced WebView drag command may already be queued
+            // when Home triggers auto-PiP; accepting it after applyPipLayout() is what left the
+            // system miniplayer scaled and offset. The next normal viewport settle restores gesture
+            // transforms outside PiP, so ignoring them here loses no legitimate state.
+            if (pipActive || pipRequested) {
+                invoke.resolve()
+                return@runOnUiThread
+            }
             container?.let { playerContainer ->
+                view?.setZOrderOnTop(a.floating)
                 playerContainer.pivotX = playerContainer.width / 2f
                 playerContainer.pivotY = playerContainer.height / 2f
                 val s = a.scale.toFloat().coerceIn(0.2f, 4f)

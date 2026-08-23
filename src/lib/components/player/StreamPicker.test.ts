@@ -64,4 +64,10 @@ describe('mobile source picker layout', () => {
     expect(source).toContain('data-source-row')
     expect(source).not.toContain('let focusedBest = false')
   })
+
+  it('keeps Android preparation in the compact playback-status popup', () => {
+    expect(source).toContain('{#if $isAndroid}')
+    expect(source).toContain('class="android-prepare fixed inset-x-4')
+    expect(source).toContain("directP2p ? 'Preparing download' : 'Connecting'")
+  })
 })

@@ -3130,7 +3130,26 @@ fn player_gif_abort(player: tauri::State<'_, player::PlayerHandle>) -> Result<()
 }
 
 #[cfg(not(target_os = "android"))]
+fn capture_ffmpeg_executable(_app: &AppHandle) -> std::path::PathBuf {
+    if let Some(configured) = std::env::var_os("IZUMI_FFMPEG_PATH") {
+        return configured.into();
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(resources) = _app.path().resource_dir() {
+        // Release builds place the relocatable executable directly in Contents/Resources. Finder
+        // launches GUI apps without Homebrew's shell PATH, so probing bare `ffmpeg` first would
+        // incorrectly report it missing even though Izumi ships its own encoder.
+        let bundled = resources.join("ffmpeg");
+        if bundled.is_file() {
+            return bundled;
+        }
+    }
+    "ffmpeg".into()
+}
+
+#[cfg(not(target_os = "android"))]
 fn gif_frames_ffmpeg(
+    executable: &std::path::Path,
     input: &std::path::Path,
     palette: Option<&std::path::Path>,
     output: &std::path::Path,
@@ -3138,7 +3157,6 @@ fn gif_frames_ffmpeg(
     width: u32,
     palette_pass: bool,
 ) -> tokio::process::Command {
-    let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
     let mut command = tokio::process::Command::new(executable);
     command
         .kill_on_drop(true)
@@ -3233,14 +3251,24 @@ async fn encode_gif_frames(app: &AppHandle, frames: &player::GifFrames) -> Resul
     let palette = frames.dir.join("palette.png");
 
     let width = frames.width.clamp(160, 1920);
-    let mut palette_command = gif_frames_ffmpeg(&input, None, &palette, fps, width, true);
+    let executable = capture_ffmpeg_executable(app);
+    let mut palette_command =
+        gif_frames_ffmpeg(&executable, &input, None, &palette, fps, width, true);
     let palette_result = run_capture_ffmpeg(&mut palette_command, 90).await;
     if matches!(&palette_result, Err(error) if error == "ffmpeg-unavailable") {
         return Err("ffmpeg-unavailable".into());
     }
 
     if matches!(&palette_result, Ok(result) if result.status.success()) {
-        let mut gif_command = gif_frames_ffmpeg(&input, Some(&palette), &output, fps, width, false);
+        let mut gif_command = gif_frames_ffmpeg(
+            &executable,
+            &input,
+            Some(&palette),
+            &output,
+            fps,
+            width,
+            false,
+        );
         match run_capture_ffmpeg(&mut gif_command, 90).await {
             Ok(result) if result.status.success() => {
                 return Ok(output.to_string_lossy().into_owned());
@@ -3265,7 +3293,15 @@ async fn encode_gif_frames(app: &AppHandle, frames: &player::GifFrames) -> Resul
     }
 
     let _ = std::fs::remove_file(&output);
-    let mut fallback = gif_frames_ffmpeg(&input, None, &output, fps, width, false);
+    let mut fallback = gif_frames_ffmpeg(
+        &executable,
+        &input,
+        None,
+        &output,
+        fps,
+        width,
+        false,
+    );
     let result = run_capture_ffmpeg(&mut fallback, 90).await?;
     if !result.status.success() {
         let _ = std::fs::remove_file(&output);
@@ -3322,6 +3358,7 @@ async fn drm_gif_stop(
 /// The frontend supplies timestamps from the live player; output always stays in Pictures/izumi.
 #[cfg(not(target_os = "android"))]
 fn capture_ffmpeg_command(
+    executable: &std::path::Path,
     source: &str,
     headers: &str,
     output: &std::path::Path,
@@ -3332,7 +3369,6 @@ fn capture_ffmpeg_command(
     width: u32,
     palette: bool,
 ) -> tokio::process::Command {
-    let executable = std::env::var_os("IZUMI_FFMPEG_PATH").unwrap_or_else(|| "ffmpeg".into());
     let mut command = tokio::process::Command::new(executable);
     command
         .kill_on_drop(true)
@@ -3468,8 +3504,10 @@ async fn player_capture_segment(
         fps.unwrap_or(12.0)
     };
     let sample_width = width.unwrap_or(720);
+    let executable = capture_ffmpeg_executable(&app);
 
     let mut primary = capture_ffmpeg_command(
+        &executable,
         &source,
         &headers,
         &output,
@@ -3494,6 +3532,7 @@ async fn player_capture_segment(
                 }
             );
             let mut fallback = capture_ffmpeg_command(
+                &executable,
                 &source,
                 &headers,
                 &output,

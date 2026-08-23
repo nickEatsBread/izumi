@@ -205,14 +205,21 @@
   // paints html/body solid) so mpv shows through the overlay's transparent areas.
   $effect(() => {
     // Also punch the hole for the embedded Android player (its SurfaceView renders behind the webview).
-    const holePunched = $playing || $androidMpvActive
-    const bg = holePunched ? 'transparent' : ''
+    // The in-app Android mini-player is a bounded SurfaceView raised ABOVE the browse WebView.
+    // Browse must regain native document scrolling while it is present; treating every active
+    // Android core as a full-screen player left html/body permanently overflow:hidden after a
+    // swipe-down collapse. Background transparency and scroll locking are therefore separate.
+    const videoSurfaceActive = $playing || $androidMpvActive
+    const fullPlayerActive = $playing || ($androidMpvActive && !$androidMiniPlayer)
+    // Keep the WebView root transparent during the collapse too: the native video is raised above
+    // browse as soon as it starts shrinking, while route content paints normally everywhere else.
+    const bg = videoSurfaceActive ? 'transparent' : ''
     document.documentElement.style.background = bg
     document.body.style.background = bg
     // Lock page scroll while the player is open. On the Deck a drag in the video area was
     // being taken as a native pan/rubber-band that shoved the (fixed) overlay + video out of
     // place; with the document non-scrollable there's nothing to pan.
-    const lock = holePunched ? 'hidden' : ''
+    const lock = fullPlayerActive ? 'hidden' : ''
     document.documentElement.style.overflow = lock
     document.body.style.overflow = lock
   })

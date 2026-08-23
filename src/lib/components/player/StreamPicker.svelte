@@ -25,7 +25,7 @@
   import { providerProblems } from '$lib/stremio/onlinestream'
   import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
-  import { isMobile } from '$lib/platform'
+  import { isAndroid, isMobile } from '$lib/platform'
   import Search from '@lucide/svelte/icons/search'
   import Zap from '@lucide/svelte/icons/zap'
   import ArrowDownWideNarrow from '@lucide/svelte/icons/arrow-down-wide-narrow'
@@ -941,6 +941,19 @@
   <!-- Only the source-LIST phase: once a stream is chosen, playStream owns the connecting screen
        app-wide (SourceConnecting), so rendering it here too would stack two of them. -->
   {#if autoImmediate && resolving && !busy && !$connecting && !$debridCaching && !playbackError}
+    {#if $isAndroid}
+      <!-- This is the same compact Android playback-status surface used by the connecting phase.
+           Direct P2P spends its first wait preparing the local torrent download, but that must not
+           fall through to the desktop full-screen SourceLoader before connecting takes ownership. -->
+      <div class="android-prepare fixed inset-x-4 z-[55] overflow-hidden rounded-full bg-black/85 shadow-xl"
+           role="status" aria-live="polite" transition:fade={{ duration: 100 }}>
+        <div class="bar-loader h-1.5 w-full"></div>
+        <div class="flex items-center gap-2 px-3 py-2 text-xs text-white/80">
+          <span class="min-w-0 flex-1 truncate">{directP2p ? 'Preparing download' : 'Connecting'}{chosenLabel ? ` · ${chosenLabel}` : ''}</span>
+          <button data-focusable onclick={cancelChoice} class="grid size-7 shrink-0 place-items-center rounded-full bg-white/10" aria-label="Cancel preparing playback">✕</button>
+        </div>
+      </div>
+    {:else}
     <div
       class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
       onclick={close}
@@ -963,6 +976,7 @@
         />
       </div>
     </div>
+    {/if}
   {/if}
 {/if}
 
@@ -989,6 +1003,11 @@
     touch-action: pan-y;
   }
   :global(.sp-mobile .sp-chips) { scrollbar-width: none; }
+  .android-prepare { top: calc(env(safe-area-inset-top) + 56.25vw - 0.375rem); }
+
+  @media (orientation: landscape) {
+    .android-prepare { top: auto; bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
+  }
 
   @media (max-height: 560px) {
     :global(.sp-mobile .sp-cover) { display: none; }
