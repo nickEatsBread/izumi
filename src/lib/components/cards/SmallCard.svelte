@@ -1,11 +1,9 @@
 <script module lang="ts">
-  // ONE shared carousel-nav suppressor for ALL cards. Previously every card added its own
-  // `carousel-nav` window listener — hundreds on a big grid, all firing per event. This single
-  // module-level listener blocks a preview from popping for 500ms after a carousel arrow scrolls
-  // a card under the cursor. (Date.now is browser-only here; guard for SSR.)
-  let suppressedUntil = 0
+  // ONE shared carousel-nav latch for ALL cards. A row moving under a stationary cursor must not
+  // start another trailer; only a real pointer movement over a card explicitly rearms previews.
+  let needsPointerMove = false
   if (typeof window !== 'undefined') {
-    window.addEventListener('carousel-nav', () => { suppressedUntil = Date.now() + 500 })
+    window.addEventListener('carousel-nav', () => { needsPointerMove = true })
   }
 </script>
 
@@ -55,7 +53,12 @@
   // Game mode (Deck) and mobile: no hover-trailer previews — touch has no real hover (a tap
   // fires pointerenter and would strand the popup), and the autoplaying trailer is a PC-only
   // affordance.
-  function open() { if (get(gameMode) || get(isMobile) || Date.now() < suppressedUntil) return; clearTimeout(closeT); place(); hovered = true }
+  function open() { if (get(gameMode) || get(isMobile) || needsPointerMove) return; clearTimeout(closeT); place(); hovered = true }
+  function openAfterPointerMove() {
+    if (!needsPointerMove) return
+    needsPointerMove = false
+    open()
+  }
   function scheduleClose() { clearTimeout(closeT); closeT = setTimeout(() => (hovered = false), 60) }
   function keepOpen() { clearTimeout(closeT) }
 
@@ -66,12 +69,16 @@
     if (!hovered) return
     const close = () => (hovered = false)
     window.addEventListener('scroll', close, true)
-    return () => window.removeEventListener('scroll', close, true)
+    window.addEventListener('carousel-nav', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('carousel-nav', close)
+    }
   })
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointerleave={scheduleClose} role="presentation">
+<div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable onclick={() => { rememberDetail(media); h.tap() }}
      class="group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">

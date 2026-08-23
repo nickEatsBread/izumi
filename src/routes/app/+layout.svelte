@@ -6,7 +6,7 @@
   import OnlineBanner from '$lib/components/shell/OnlineBanner.svelte'
   import IncognitoBanner from '$lib/components/shell/IncognitoBanner.svelte'
   import AniListDegradedBanner from '$lib/components/shell/AniListDegradedBanner.svelte'
-  import { androidMpvActive } from '$lib/player/android-mpv'
+  import { androidMiniPlayer, androidMpvActive } from '$lib/player/android-mpv'
   import OnScreenKeyboard from '$lib/components/shell/OnScreenKeyboard.svelte'
   import GlobalSearch from '$lib/components/search/GlobalSearch.svelte'
   // Lazy-mounted: the player stack + its source-resolve overlays are substantial but never render
@@ -245,11 +245,11 @@
 </script>
 
 <!-- Solid app floor; hidden while playing so mpv (behind the webview) shows. -->
-{#if !$playing && !$androidMpvActive}<Background />{/if}
+{#if !$playing && (!$androidMpvActive || $androidMiniPlayer)}<Background />{/if}
 <!-- Chrome hides in fullscreen playback (edge-to-edge video); stays visible and
      clickable over windowed playback. Game mode (Deck/gamescope) is always fullscreen
      touch — no sidebar/titlebar while playing, just the content. -->
-{#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && !$androidMpvActive}
+{#if !($playing && ($fullscreen || $gameMode || $pictureInPicture)) && (!$androidMpvActive || $androidMiniPlayer)}
   <!-- Mobile: a bottom tab bar instead of the left rail. -->
   {#if $isMobile}<BottomNav />{:else}<Sidebar />{/if}
   <!-- No window-control titlebar in Game mode (gamescope owns the fullscreen window; the
@@ -270,7 +270,7 @@
      (`-left-14 w-screen`) so it never reaches under the sidebar, leaving a black
      column. Horizontal overflow is clipped on <body> instead (app.css).
      Hidden while playing so its opaque content doesn't block the video. -->
-<main class="relative min-h-screen {$isMobile ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : 'ml-14'}" class:hidden={$playing || $androidMpvActive}>{@render children()}</main>
+<main class="relative min-h-screen {$isMobile ? 'mb-[calc(4rem+env(safe-area-inset-bottom))]' : 'ml-14'}" class:hidden={$playing || ($androidMpvActive && !$androidMiniPlayer)}>{@render children()}</main>
 {#if $playing}<Lazy load={loadPlayerOverlay} />{/if}
 <!-- Touch overlay for the embedded Android libmpv player + its discussion panel (self-gates on
      commentsOpen; the desktop mounts its own inside PlayerOverlay). -->
@@ -301,7 +301,16 @@
 {/if}
 {#if $connecting}
   <Lazy load={loadSourceConnecting}>
-    {#snippet pending()}<PlayFeedback label={$connecting?.title ?? ''} art={$connecting?.art ?? ''} />{/snippet}
+    {#snippet pending()}
+      {#if $isAndroid}
+        <div class="fixed inset-x-4 top-[calc(env(safe-area-inset-top)+56.25vw-0.375rem)] z-[55] overflow-hidden rounded-full bg-black/85 shadow-xl" role="status">
+          <div class="bar-loader h-1.5 w-full"></div>
+          <p class="truncate px-3 py-2 text-xs text-white/80">Connecting</p>
+        </div>
+      {:else}
+        <PlayFeedback label={$connecting?.title ?? ''} art={$connecting?.art ?? ''} />
+      {/if}
+    {/snippet}
   </Lazy>
 {/if}
 {#if $debridCaching}<Lazy load={loadDebridCaching} />{/if}

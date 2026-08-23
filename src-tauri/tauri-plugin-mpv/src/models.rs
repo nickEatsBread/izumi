@@ -85,6 +85,15 @@ pub struct ViewportRequest {
     /// Physical pixel height. Zero fills the activity.
     pub height: i32,
     pub immersive: bool,
+    /// Physical pixels from the activity's left edge. Zero preserves the full-width viewport.
+    #[serde(default)]
+    pub left: i32,
+    /// Physical pixel width. Zero fills the activity.
+    #[serde(default)]
+    pub width: i32,
+    /// Raise the SurfaceView above the WebView for the in-app mini-player rectangle.
+    #[serde(default)]
+    pub floating: bool,
 }
 
 /// Lock playback to landscape, or return to the normal portrait watch page.
@@ -101,13 +110,15 @@ pub struct KeepScreenAwakeRequest {
     pub enabled: bool,
 }
 
-/// Live scale + vertical translate for the portrait pull-to-fullscreen gesture. `scale` is a unitless
-/// view scale (1.0 = resting 16:9); `translate_y` is physical pixels (negative = up).
+/// Live scale + translation for direct-manipulation player gestures. `scale` is unitless
+/// (1.0 = resting 16:9); translations are physical pixels.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransformRequest {
     pub scale: f64,
     pub translate_y: i32,
+    #[serde(default)]
+    pub translate_x: i32,
 }
 
 /// Grab a preview frame from a stream at `time_sec`, scaled to `width` px wide.
@@ -229,6 +240,18 @@ mod tests {
         assert_eq!(r.top, 12);
         assert_eq!(r.height, 1080);
         assert!(!r.immersive);
+        assert_eq!(r.left, 0);
+        assert_eq!(r.width, 0);
+        assert!(!r.floating);
+    }
+
+    #[test]
+    fn transform_request_supports_horizontal_miniplayer_motion() {
+        let r: TransformRequest =
+            serde_json::from_str(r#"{"scale":0.42,"translateY":900,"translateX":-240}"#).unwrap();
+        assert_eq!(r.scale, 0.42);
+        assert_eq!(r.translate_y, 900);
+        assert_eq!(r.translate_x, -240);
     }
 
     #[test]

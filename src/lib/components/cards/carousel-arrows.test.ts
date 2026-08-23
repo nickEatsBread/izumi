@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest'
 // row instead, so the arrows must not be rendered there at all.
 
 const src = readFileSync(fileURLToPath(new URL('./Carousel.svelte', import.meta.url)), 'utf8')
+const card = readFileSync(fileURLToPath(new URL('./SmallCard.svelte', import.meta.url)), 'utf8')
 
 /** Each arrow button paired with the `{#if}` condition that guards it. */
 function arrowGuards(): Array<{ direction: string; condition: string }> {
@@ -38,5 +39,18 @@ describe('Carousel edge arrows', () => {
       expect(condition, `the ${direction} arrow lost its game-mode guard`).toContain('!gm')
       expect(condition).toContain(direction === 'left' ? 'canLeft' : 'canRight')
     }
+  })
+
+  it('dismisses a hover trailer before wheel-scrolling the row', () => {
+    const wheel = src.slice(src.indexOf('function onWheel'), src.indexOf('// Keep arrow visibility'))
+    expect(wheel.indexOf('dismissPreview()')).toBeGreaterThan(-1)
+    expect(wheel.indexOf('dismissPreview()')).toBeLessThan(wheel.indexOf('scroller.scrollLeft +='))
+  })
+
+  it('requires actual pointer movement before another preview can open', () => {
+    expect(card).toContain("window.addEventListener('carousel-nav', () => { needsPointerMove = true })")
+    expect(card).toContain("window.addEventListener('carousel-nav', close)")
+    expect(card).toContain('onpointermove={openAfterPointerMove}')
+    expect(card).not.toContain('suppressedUntil')
   })
 })

@@ -5,7 +5,7 @@ use crate::models::{
     BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
     DeviceStatus, DownloadForegroundRequest, InstallRequest, LanDiscoveryRequest, OAuthRequest,
     OAuthResponse, PlayRequest, ReactResponse, ReactionStateResponse, SaveTextFileRequest,
-    SaveTextFileResponse,
+    SaveTextFileResponse, ShareTextRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -29,6 +29,10 @@ impl<R: Runtime> ExtPlayer<R> {
     }
 
     pub fn open_browser(&self, _payload: BrowserRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn share_text(&self, _payload: ShareTextRequest) -> crate::Result<()> {
         Ok(())
     }
 

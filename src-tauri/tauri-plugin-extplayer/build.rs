@@ -4,6 +4,7 @@ const COMMANDS: &[&str] = &[
     "device_status",
     "download_foreground",
     "open_browser",
+    "share_text",
     "da_reaction_state",
     "da_react",
     "da_login",

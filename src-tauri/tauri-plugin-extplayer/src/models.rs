@@ -66,6 +66,13 @@ pub struct BrowserRequest {
     pub url: String,
 }
 
+/// Plain text handed to Android's system share sheet.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ShareTextRequest {
+    pub title: String,
+    pub text: String,
+}
+
 /// Android power/network state used to decide whether optional background seeding is responsible.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

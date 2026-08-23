@@ -9,6 +9,7 @@ use crate::models::{
     DaReactRequest, DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest,
     InstallRequest, JsonResponse, LanDiscoveryRequest, OAuthRequest, OAuthResponse, PlayRequest,
     ReactResponse, ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse,
+    ShareTextRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -42,6 +43,12 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn open_browser(&self, payload: BrowserRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("openBrowser", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn share_text(&self, payload: ShareTextRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("shareText", payload)
             .map_err(Into::into)
     }
 

@@ -142,6 +142,11 @@ class ViewportArgs {
     /** Physical pixel height. Zero means fill the activity. */
     var height: Int = 0
     var immersive: Boolean = false
+    var left: Int = 0
+    /** Physical pixel width. Zero means fill the activity. */
+    var width: Int = 0
+    /** The in-app mini-player must sit above the now-visible browse WebView. */
+    var floating: Boolean = false
 }
 
 @InvokeArg
@@ -155,6 +160,7 @@ class TransformArgs {
     var scale: Double = 1.0
     /** Vertical translate in physical pixels (negative = up). */
     var translateY: Int = 0
+    var translateX: Int = 0
 }
 
 @InvokeArg
@@ -1122,12 +1128,17 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         )
         container?.let { playerContainer ->
             val height = if (a.height > 0) a.height else ViewGroup.LayoutParams.MATCH_PARENT
+            val width = if (a.width > 0) a.width else ViewGroup.LayoutParams.MATCH_PARENT
             val params = (playerContainer.layoutParams as? FrameLayout.LayoutParams)
-                ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height)
-            params.width = ViewGroup.LayoutParams.MATCH_PARENT
+                ?: FrameLayout.LayoutParams(width, height)
+            params.width = width
             params.height = height
+            params.leftMargin = a.left.coerceAtLeast(0)
             params.topMargin = a.top.coerceAtLeast(0) + if (a.immersive) 0 else safeTop
             playerContainer.layoutParams = params
+            // Once browse content is painted again it would cover a behind-WebView SurfaceView.
+            // Raise only the bounded mini rectangle; the adjacent HTML transport remains clickable.
+            view?.setZOrderOnTop(a.floating)
             // A viewport settle returns the whole player rectangle to identity. The child
             // SurfaceView is never transformed independently.
             playerContainer.scaleX = 1f
@@ -1182,9 +1193,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             container?.let { playerContainer ->
                 playerContainer.pivotX = playerContainer.width / 2f
                 playerContainer.pivotY = playerContainer.height / 2f
-                val s = a.scale.toFloat().coerceIn(1f, 4f)
+                val s = a.scale.toFloat().coerceIn(0.2f, 4f)
                 playerContainer.scaleX = s
                 playerContainer.scaleY = s
+                playerContainer.translationX = a.translateX.toFloat()
                 playerContainer.translationY = a.translateY.toFloat()
             }
             invoke.resolve()

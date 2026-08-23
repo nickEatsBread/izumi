@@ -40,6 +40,9 @@
     const atStart = scroller.scrollLeft <= 0
     const atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1
     if ((e.deltaY < 0 && atStart) || (e.deltaY > 0 && atEnd)) return
+    // Close a playing hover trailer before moving its row. SmallCard latches this event until an
+    // actual pointermove, so a card that merely slides underneath a stationary cursor stays quiet.
+    dismissPreview()
     scroller.scrollLeft += e.deltaY
     e.preventDefault()
   }

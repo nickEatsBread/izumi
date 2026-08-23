@@ -9,7 +9,7 @@
   //   horizontal drag    — live scrub anywhere over the video
   // A pure recognizer (android-gestures.ts) classifies each pointer stream; this component wires
   // its verdicts to mpv/native calls.
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { get } from 'svelte/store'
   import { goto } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
@@ -17,6 +17,7 @@
   import {
     mpvState,
     androidMpvActive,
+    androidMiniPlayer,
     mpvStop,
     mpvCommand,
     mpvGet,
@@ -47,6 +48,8 @@
     fullscreenPullProgress,
     fullscreenPullTransform,
     shouldEnterFullscreen,
+    miniPlayerPullProgress,
+    shouldMinimizePlayer,
     shouldDismissSheet,
     sheetGestureIntent,
     needsExplicitPointerCapture,
@@ -132,10 +135,14 @@
   let fullscreenPullDragging = $state(false)
   let pullDim = $state(0) // 0..1 page-dim/scale progress, drives the enlarge + details fade
   let pullScale = $state(1)
+  let pullTranslateX = $state(0)
   let pullTranslateY = $state(0)
   let pullDetailsOffset = $state(0)
   let exitDrag = $state(0) // 0..1 landscape swipe-down-to-exit progress → dims the video
   let orientationForced = false
+  let miniLayout = $state(false)
+  let miniPull = $state(0)
+  let miniPullDragging = $state(false)
 
   const pos = $derived(scrubbing ? scrubPos : $mpvState.pos)
   const dur = $derived($mpvState.dur)
@@ -635,7 +642,7 @@
   }
 
   // --- Whole-surface gesture layer: tap / double-tap / swipe brightness+volume / hold-2× / scrub ---
-  type GestureKind = 'scrub' | 'fullscreen' | 'exit' | 'brightness' | 'volume' | 'hold' | 'none' | null
+  type GestureKind = 'scrub' | 'fullscreen' | 'minimize' | 'exit' | 'brightness' | 'volume' | 'hold' | 'none' | null
   let gesture = $state<GestureKind>(null)
   let startSample = { x: 0, y: 0, t: 0 }
   let scrubStartPos = 0
@@ -648,22 +655,22 @@
   let pullLastTime = 0
   let pullVelocityY = 0
   let pullTransformBusy = false
-  let pendingPullTransform: { scale: number; ty: number } | null = null
+  let pendingPullTransform: { scale: number; tx: number; ty: number } | null = null
   let pullAnimFrame = 0
   let exitAnimFrame = 0
   const VIDEO_SCRUB_SPAN = 90 // seconds spanned by a full-width horizontal drag over the video
   // Coalesced native-surface transform: only the latest (scale, translate) is ever in flight, so a
   // fast drag never floods the IPC bridge. Unlike a viewport resize this is a cheap compositor op.
-  function queuePullTransform(scale: number, tyCssPx: number) {
+  function queuePullTransform(scale: number, tyCssPx: number, txCssPx = 0) {
     const dpr = window.devicePixelRatio || 1
-    pendingPullTransform = { scale, ty: Math.round(tyCssPx * dpr) }
+    pendingPullTransform = { scale, tx: Math.round(txCssPx * dpr), ty: Math.round(tyCssPx * dpr) }
     if (pullTransformBusy) return
     pullTransformBusy = true
     void (async () => {
       while (pendingPullTransform != null) {
         const t = pendingPullTransform
         pendingPullTransform = null
-        await setPlayerTransform(t.scale, t.ty).catch(() => {})
+        await setPlayerTransform(t.scale, t.ty, t.tx).catch(() => {})
       }
       pullTransformBusy = false
     })()
@@ -719,6 +726,100 @@
     const from = fullscreenPull
     fullscreenPull = 0
     animatePullTo(from, 0) // eases scale/lift/dim back to the resting 16:9 box
+  }
+
+  function miniGeometry() {
+    const width = Math.min(160, window.innerWidth * 0.42)
+    const height = width * 9 / 16
+    const left = 8
+    const top = window.innerHeight - safeBottom - 64 - 8 - height
+    return { width, height, left, top }
+  }
+
+  function applyMiniPull(progress: number) {
+    const p = Math.max(0, Math.min(1, progress))
+    const target = miniGeometry()
+    const sourceWidth = window.innerWidth
+    const sourceCenterX = sourceWidth / 2
+    const sourceCenterY = pullPlayerTop + pullPlayerHeight / 2
+    const targetCenterX = target.left + target.width / 2
+    const targetCenterY = target.top + target.height / 2
+    const targetScale = target.width / Math.max(1, sourceWidth)
+    pullScale = 1 + (targetScale - 1) * p
+    pullTranslateX = (targetCenterX - sourceCenterX) * p
+    pullTranslateY = (targetCenterY - sourceCenterY) * p
+    pullDim = p
+    pullDetailsOffset = 0
+    queuePullTransform(pullScale, pullTranslateY, pullTranslateX)
+  }
+
+  function updateMiniPull(e: PointerEvent) {
+    cancelAnimationFrame(pullAnimFrame)
+    const dt = Math.max(1, e.timeStamp - pullLastTime)
+    const velocity = (e.clientY - pullLastY) / dt
+    pullVelocityY = pullVelocityY * 0.65 + velocity * 0.35
+    pullLastY = e.clientY
+    pullLastTime = e.timeStamp
+    miniPull = miniPlayerPullProgress(
+      startSample,
+      { x: e.clientX, y: e.clientY, t: e.timeStamp },
+      pullPlayerHeight,
+    )
+    applyMiniPull(miniPull)
+  }
+
+  function animateMiniTo(from: number, to: number, done?: () => void) {
+    cancelAnimationFrame(pullAnimFrame)
+    let startTs = 0
+    const duration = 240
+    const step = (ts: number) => {
+      if (!startTs) startTs = ts
+      const k = Math.min(1, (ts - startTs) / duration)
+      const eased = 1 - Math.pow(1 - k, 3)
+      applyMiniPull(from + (to - from) * eased)
+      if (k < 1) pullAnimFrame = requestAnimationFrame(step)
+      else done?.()
+    }
+    pullAnimFrame = requestAnimationFrame(step)
+  }
+
+  function resetMiniPull() {
+    miniPullDragging = false
+    const from = miniPull
+    miniPull = 0
+    animateMiniTo(from, 0, () => armHide())
+  }
+
+  async function settleMiniPlayer() {
+    miniPullDragging = false
+    controlsShown = false
+    sheet = null
+    commentsOpen.set(false)
+    await goto('/app/home')
+    miniLayout = true
+    await tick()
+    await syncViewport()
+    // Reveal Home only after the native surface has been raised into its final bounded rectangle;
+    // otherwise the newly painted browse page can cover one black transition frame.
+    androidMiniPlayer.set(true)
+  }
+
+  function minimizeToHome() {
+    animateMiniTo(miniPull, 1, () => { void settleMiniPlayer() })
+  }
+
+  async function restoreFromMini() {
+    if (!miniLayout) return
+    androidMiniPlayer.set(false)
+    miniLayout = false
+    miniPull = 0
+    pullDim = 0
+    pullScale = 1
+    pullTranslateX = 0
+    pullTranslateY = 0
+    await tick()
+    await syncViewport()
+    showControls()
   }
 
   // Landscape swipe-DOWN to exit fullscreen — mirror of the pull-up. Dims the video as the finger
@@ -790,6 +891,7 @@
     // onTap never ran, so onTap's `if (locked) showLockToggle()` branch was dead code — and in
     // landscape immersive there is no top bar, no chevron and no other way back, making the lock a
     // one-way trap that could only be escaped by force-quitting (losing the unfinalized position).
+    if (miniLayout) return
     if (!e.isPrimary || rootPointerId != null) return
     // Blank areas of visible chrome are still part of the video gesture surface. Actual controls
     // remain ordinary taps, so a pull-up can begin beside them without stealing a button press.
@@ -831,6 +933,19 @@
         updateFullscreenPull(e)
         return
       }
+      const mini = !landscape
+        ? miniPlayerPullProgress(startSample, cur, pullPlayerHeight)
+        : 0
+      if (mini > 0) {
+        clearTimeout(holdTimer)
+        gesture = 'minimize'
+        miniPullDragging = true
+        controlsShown = false
+        resetTapSequence()
+        miniPull = mini
+        updateMiniPull(e)
+        return
+      }
       const exit = landscape
         ? landscapeExitProgress(startSample, cur, window.innerHeight)
         : 0
@@ -855,6 +970,8 @@
       schedulePreview(scrubStartPos + ((cur.x - startSample.x) / window.innerWidth) * VIDEO_SCRUB_SPAN)
     } else if (gesture === 'fullscreen') {
       updateFullscreenPull(e)
+    } else if (gesture === 'minimize') {
+      updateMiniPull(e)
     } else if (gesture === 'exit') {
       updateExitDrag(e)
     }
@@ -869,6 +986,11 @@
       fullscreenPullDragging = false
       if (shouldEnterFullscreen(fullscreenPull, pullVelocityY)) void enterFullscreen()
       else { resetFullscreenPull(); armHide() }
+    }
+    else if (gesture === 'minimize') {
+      miniPullDragging = false
+      if (shouldMinimizePlayer(miniPull, pullVelocityY)) minimizeToHome()
+      else resetMiniPull()
     }
     else if (gesture === 'exit') {
       if (shouldExitFullscreen(exitDrag, pullVelocityY)) void exitAndroidFullscreen()
@@ -885,6 +1007,7 @@
     if (heldSpeed) { heldSpeed = false; void mpvCommand(['set', 'speed', String(speed)]) }
     if (scrubOwner === 'surface' && scrubPointerId === e.pointerId) cancelScrub()
     if (gesture === 'fullscreen') resetFullscreenPull()
+    if (gesture === 'minimize') resetMiniPull()
     if (gesture === 'exit') resetExitDrag()
     gesture = null
     armHide()
@@ -1335,6 +1458,7 @@
       // unmounted) over a black native container. Any teardown failure above used to strand that
       // state until a force-quit — the "black app with dead navigation" bug.
       closing = false
+      androidMiniPlayer.set(false)
       androidMpvActive.set(false)
       // Session-scoped by contract: the user's settings style returns on the next play.
       sessionSubtitleStyle.set(null)
@@ -1355,6 +1479,20 @@
     // in PiP as well; this just avoids the pointless round trip.
     if (get(androidPipActive)) return
     const generation = ++viewportGeneration
+    if (miniLayout) {
+      const rect = rootEl?.getBoundingClientRect()
+      if (!rect) return
+      const dpr = window.devicePixelRatio || 1
+      await setPlayerViewport(
+        Math.max(0, rect.top - safeTop) * dpr,
+        rect.height * dpr,
+        false,
+        rect.left * dpr,
+        rect.width * dpr,
+        true,
+      )
+      return
+    }
     const nextLandscape = window.matchMedia('(orientation: landscape)').matches
     landscape = nextLandscape
     const ratioHeight = Math.round(window.innerWidth * 9 / 16)
@@ -1367,6 +1505,7 @@
     fullscreenPull = 0
     pullDim = 0 // the viewport call above already reset the native surface transform to identity
     pullScale = 1
+    pullTranslateX = 0
     pullTranslateY = 0
     pullDetailsOffset = 0
     exitDrag = 0
@@ -1419,10 +1558,11 @@
   })
 </script>
 
-<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden} class:pulling-fullscreen={fullscreenPullDragging || pullDim > 0}
+<div class="player-shell fixed inset-0 z-50 select-none overflow-hidden text-white" class:hidden={overlayHidden}
+  class:pulling-fullscreen={fullscreenPullDragging || miniPullDragging || pullDim > 0} class:mini-shell={miniLayout}
   style={`--player-safe-top:${safeTop}px;--player-safe-right:${safeRight}px;--player-safe-bottom:${safeBottom}px;--player-safe-left:${safeLeft}px;--portrait-player-height:${portraitVideoHeight == null ? 'calc(100vw * 9 / 16)' : `${portraitVideoHeight}px`}`}>
   <section bind:this={rootEl} class="video-frame relative touch-none bg-transparent"
-    style:transform={`translate3d(0, ${pullTranslateY}px, 0) scale(${pullScale})`}
+    style:transform={`translate3d(${pullTranslateX}px, ${pullTranslateY}px, 0) scale(${pullScale})`}
     onpointerdown={onRootDown} onpointermove={onRootMove} onpointerup={onRootUp} onpointercancel={onRootCancel} onlostpointercapture={onRootLostCapture}
     oncontextmenu={(e) => e.preventDefault()}
     onpointerdowncapture={noteDownTarget} onclickcapture={suppressGhostClick} role="presentation">
@@ -1575,7 +1715,21 @@
 
   </section>
 
-  {#if !landscape}
+  {#if miniLayout}
+    <div class="mini-meta pointer-events-auto fixed flex items-center gap-2 overflow-hidden rounded-r-xl bg-neutral-950 px-3 shadow-2xl"
+         role="group" aria-label="Mini player">
+      <button class="min-w-0 flex-1 text-left" onclick={() => void restoreFromMini()} aria-label="Return to player">
+        <span class="block truncate text-sm font-extrabold">{np.animeTitle ?? np.title}</span>
+        <span class="block truncate text-xs text-white/55">Episode {np.episode}</span>
+      </button>
+      <button onclick={pressPause} class="grid size-10 shrink-0 place-items-center rounded-full active:bg-white/10" aria-label={paused ? 'Play' : 'Pause'}>
+        {#if paused}<Play size={21} fill="currentColor" />{:else}<Pause size={21} fill="currentColor" />{/if}
+      </button>
+      <button onclick={() => void close()} class="grid size-10 shrink-0 place-items-center rounded-full active:bg-white/10" aria-label="Close mini player">✕</button>
+    </div>
+  {/if}
+
+  {#if !landscape && !miniLayout}
     <!-- The watch page is displaced by the expanded player's exact lower-edge growth. It dims only
          slightly; the player stays a bounded rectangle instead of bleeding through faded content. -->
     <section class="watch-details overflow-y-auto"
@@ -1600,7 +1754,7 @@
   {/if}
 
   <!-- Sheets -->
-  {#if sheet}
+  {#if sheet && !miniLayout}
     <div class="settings-backdrop absolute inset-0 z-30 bg-black/60" style:opacity={sheetBackdropOpacity} onpointerdown={(e) => e.stopPropagation()} onpointermove={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} onclick={(e) => { e.stopPropagation(); dismissSettings() }} role="presentation"></div>
     <!-- The pointer handlers sit on the sheet ROOT so a pull anywhere on it dismisses. They also
          stopPropagation on move+up (not just down) so swiping the sheet / scrolling the list never
@@ -1733,6 +1887,19 @@
   .watch-details { height: calc(100% - var(--player-safe-top) - var(--portrait-player-height)); touch-action: pan-y; background: #0a0a0b; transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1); }
   .pulling-fullscreen .video-frame { will-change: transform; }
   .pulling-fullscreen .video-frame, .pulling-fullscreen .watch-details { transition: none; }
+  .mini-shell { pointer-events: none; overflow: visible; }
+  .mini-shell .video-frame {
+    position: fixed; left: 0.5rem; bottom: calc(4rem + env(safe-area-inset-bottom) + 0.5rem);
+    width: min(42vw, 160px); height: min(23.625vw, 90px); margin: 0; overflow: hidden;
+    border-radius: 0.75rem 0 0 0.75rem; pointer-events: auto; transform: none !important;
+    transition: none;
+  }
+  .mini-shell .video-frame > * { display: none !important; }
+  .mini-meta {
+    left: calc(0.5rem + min(42vw, 160px)); right: 0.5rem;
+    bottom: calc(4rem + env(safe-area-inset-bottom) + 0.5rem);
+    height: min(23.625vw, 90px);
+  }
   .settings-backdrop { transition: opacity 240ms ease-out; }
   .settings-sheet { left: 0; right: 0; bottom: 0; max-height: 86%; border-radius: 1.25rem 1.25rem 0 0; transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1); will-change: transform; }
   .settings-sheet.sheet-dragging { transition: none; }

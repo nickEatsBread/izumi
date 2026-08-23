@@ -1,6 +1,7 @@
 <script lang="ts">
   import { queryStore, getContextClient } from '@urql/svelte'
   import { openUrl } from '@tauri-apps/plugin-opener'
+  import { invoke } from '@tauri-apps/api/core'
   import { MEDIA_BY_ID } from '$lib/anilist/detail-queries'
   import Hero from '$lib/components/banner/Hero.svelte'
   import Tabs from '$lib/components/detail/Tabs.svelte'
@@ -30,7 +31,7 @@
   import Play from '@lucide/svelte/icons/play'
   import Check from '@lucide/svelte/icons/check'
   import MoreHorizontal from '@lucide/svelte/icons/ellipsis'
-  import { isMobile } from '$lib/platform'
+  import { isAndroid, isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import RichMetadata from './RichMetadata.svelte'
   import AiringStatus from './AiringStatus.svelte'
@@ -179,9 +180,16 @@
   // Total episodes for the badge — schedule-aware so OVAs/ONAs with a null AniList count
   // still show a number (see totalEpisodes).
   const epsTotal = totalEpisodes
-  function onShare(m: Media) {
+  async function onShare(m: Media) {
+    const url = `https://anilist.co/anime/${m.id}`
+    if ($isAndroid) {
+      await invoke('plugin:extplayer|share_text', {
+        payload: { title: `Share ${title(m)}`, text: `${title(m)}\n${url}` },
+      }).catch((error) => console.warn('[share] Android share sheet failed:', error))
+      return
+    }
     // navigator.clipboard is absent in the WebKitGTK webview — use the webview-safe helper.
-    if (copyToClipboard(`https://anilist.co/anime/${m.id}`)) {
+    if (copyToClipboard(url)) {
       copied = true
       setTimeout(() => (copied = false), 1500)
     }
@@ -380,7 +388,7 @@
               {/if}
             </button>
           {/if}
-          <button data-focusable onclick={() => { h.tap(); onShare(m) }} aria-label="Copy link"
+          <button data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
@@ -505,7 +513,7 @@
             </button>
           {/if}
 
-          <button data-focusable onclick={() => onShare(m)} title="Copy AniList link"
+          <button data-focusable onclick={() => void onShare(m)} title="Copy AniList link"
                   class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>

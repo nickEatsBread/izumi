@@ -105,7 +105,7 @@ import {
 } from '$lib/player/playback-owner'
 import { playViaIntent } from '$lib/player/android-playback'
 import {
-  hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, mpvState, startMpvEvents,
+  hasEmbeddedPlayer, mpvLoad, mpvCommand, androidMpvActive, androidMiniPlayer, mpvState, startMpvEvents,
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
@@ -2765,6 +2765,8 @@ export async function playStream(
         recordPlaybackIdentity({ media, episode, stream: recoveryOriginal })
         // Stash the resolved URL + headers so the scrubber's thumbnail grabber can decode frames.
         androidStreamInfo.set({ url: stream.url, headers })
+        // A fresh play always opens the full watch page; a prior in-app mini-player must not leak.
+        androidMiniPlayer.set(false)
         androidMpvActive.set(true)
         rememberSuccess()
         androidFrameTracePending = directPlaybackId != null

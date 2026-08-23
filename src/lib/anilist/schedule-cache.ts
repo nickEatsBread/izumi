@@ -1,0 +1,62 @@
+import type { Client } from '@urql/core'
+import { SCHEDULE_QUERY } from './detail-queries'
+import { remainingSchedulePages, type Airing } from './schedule'
+
+type PageData = {
+  Page?: {
+    airingSchedules?: Airing[]
+    pageInfo?: { hasNextPage?: boolean; lastPage?: number }
+  }
+}
+
+const cache = new Map<string, Airing[]>()
+const inflight = new Map<string, Promise<Airing[]>>()
+const keyOf = (start: number, end: number) => `${start}:${end}`
+
+/** Session cache for schedule weeks. Requests deliberately survive ScheduleGrid unmounts: changing
+ * week used to abort/remount the grid and throw away work which the next click immediately needed. */
+export function loadScheduleWeek(client: Client, start: number, end: number): Promise<Airing[]> {
+  const key = keyOf(start, end)
+  const hit = cache.get(key)
+  if (hit) return Promise.resolve(hit)
+  const pending = inflight.get(key)
+  if (pending) return pending
+
+  const request = (async () => {
+    const fetchPage = (page: number) => client.query<PageData>(
+      SCHEDULE_QUERY,
+      { start, end, page },
+      { requestPolicy: 'network-only' },
+    ).toPromise()
+    const first = await fetchPage(1)
+    if (first.error) throw new Error(first.error.message)
+    const firstPage = first.data?.Page
+    const all = [...(firstPage?.airingSchedules ?? [])]
+    const remaining = remainingSchedulePages(
+      firstPage?.pageInfo?.lastPage,
+      firstPage?.pageInfo?.hasNextPage,
+    )
+    if (remaining.length) {
+      const rest = await Promise.all(remaining.map(fetchPage))
+      for (const result of rest) {
+        if (result.error) throw new Error(result.error.message)
+        all.push(...(result.data?.Page?.airingSchedules ?? []))
+      }
+    }
+    all.sort((a, b) => a.airingAt - b.airingAt)
+    cache.set(key, all)
+    return all
+  })().finally(() => inflight.delete(key))
+
+  inflight.set(key, request)
+  return request
+}
+
+export const cachedScheduleWeek = (start: number, end: number): Airing[] | undefined =>
+  cache.get(keyOf(start, end))
+
+/** Test seam. */
+export function clearScheduleCache(): void {
+  cache.clear()
+  inflight.clear()
+}

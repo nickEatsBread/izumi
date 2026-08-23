@@ -1,6 +1,6 @@
 ## Default Permission
 
-Allow Android playback, browser authentication, self-update, and power/network checks.
+Allow Android playback, sharing, browser authentication, self-update, and power/network checks.
 
 #### This default permission set includes the following:
 
@@ -9,6 +9,7 @@ Allow Android playback, browser authentication, self-update, and power/network c
 - `allow-device-status`
 - `allow-download-foreground`
 - `allow-open-browser`
+- `allow-share-text`
 - `allow-da-reaction-state`
 - `allow-da-react`
 - `allow-da-login`
@@ -253,6 +254,32 @@ Enables the save_text_file command without any pre-configured scope.
 <td>
 
 Denies the save_text_file command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:allow-share-text`
+
+</td>
+<td>
+
+Enables the share_text command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-share-text`
+
+</td>
+<td>
+
+Denies the share_text command without any pre-configured scope.
 
 </td>
 </tr>

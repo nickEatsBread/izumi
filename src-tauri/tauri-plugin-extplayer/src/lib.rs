@@ -16,7 +16,7 @@ pub use error::{Error, Result};
 pub use models::{
     AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DeviceStatus,
     DownloadForegroundRequest, InstallRequest, JsonResponse, LanDiscoveryRequest, OAuthRequest,
-    OAuthResponse, PlayRequest, SaveTextFileRequest, SaveTextFileResponse,
+    OAuthResponse, PlayRequest, SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
 };
 
 #[cfg(desktop)]
@@ -45,6 +45,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::device_status,
             commands::download_foreground,
             commands::open_browser,
+            commands::share_text,
             commands::da_reaction_state,
             commands::da_react,
             commands::da_login,

@@ -5,6 +5,8 @@ import {
   accumulateSeek,
   fullscreenPullProgress,
   shouldEnterFullscreen,
+  miniPlayerPullProgress,
+  shouldMinimizePlayer,
   fullscreenPullTransform,
   shouldDismissSheet,
   sheetGestureIntent,
@@ -164,6 +166,21 @@ describe('landscape swipe-down exit', () => {
     expect(shouldExitFullscreen(0.5, 0.1)).toBe(true)
     expect(shouldExitFullscreen(0.1, 0.7)).toBe(true)
     expect(shouldExitFullscreen(0.1, 0.1)).toBe(false)
+  })
+})
+
+describe('portrait mini-player pull', () => {
+  it('tracks only a dominant downward drag', () => {
+    const start = { x: 180, y: 100, t: 0 }
+    expect(miniPlayerPullProgress(start, { x: 184, y: 210, t: 100 }, 240)).toBeGreaterThan(0.5)
+    expect(miniPlayerPullProgress(start, { x: 180, y: 20, t: 100 }, 240)).toBe(0)
+    expect(miniPlayerPullProgress(start, { x: 290, y: 125, t: 100 }, 240)).toBe(0)
+  })
+
+  it('commits a substantial pull or quick downward fling', () => {
+    expect(shouldMinimizePlayer(0.5, 0.1)).toBe(true)
+    expect(shouldMinimizePlayer(0.1, 0.7)).toBe(true)
+    expect(shouldMinimizePlayer(0.1, 0.1)).toBe(false)
   })
 })
 

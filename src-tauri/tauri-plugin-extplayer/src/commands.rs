@@ -4,7 +4,7 @@ use crate::{
     models::{
         BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
         DeviceStatus, DownloadForegroundRequest, InstallRequest, PlayRequest, ReactResponse,
-        ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse,
+        ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
     },
     ExtPlayerExt, Result,
 };
@@ -49,6 +49,15 @@ pub(crate) async fn open_browser<R: Runtime>(
     payload: BrowserRequest,
 ) -> Result<()> {
     app.extplayer().open_browser(payload)
+}
+
+/// Open Android's native ACTION_SEND chooser. Desktop keeps using its clipboard affordance.
+#[command]
+pub(crate) async fn share_text<R: Runtime>(
+    app: AppHandle<R>,
+    payload: ShareTextRequest,
+) -> Result<()> {
+    app.extplayer().share_text(payload)
 }
 
 /// Read reaction counts + the signed-in user's selected key (carries the native `da_session` cookie).

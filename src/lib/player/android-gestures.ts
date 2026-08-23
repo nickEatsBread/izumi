@@ -45,6 +45,20 @@ export function shouldEnterFullscreen(progress: number, velocityY: number): bool
   return progress >= 0.45 || velocityY <= -0.5
 }
 
+/** Portrait swipe-down progress for collapsing the watch page into its in-app mini-player. */
+export function miniPlayerPullProgress(start: Sample, cur: Sample, playerHeight: number): number {
+  const dx = cur.x - start.x
+  const dy = cur.y - start.y
+  if (dy <= MOVE_PX || Math.abs(dy) <= Math.abs(dx)) return 0
+  const travel = Math.min(280, Math.max(140, playerHeight * 0.75))
+  return Math.min(1, dy / travel)
+}
+
+/** Commit a deliberate collapse or a quick downward fling. */
+export function shouldMinimizePlayer(progress: number, velocityY: number): boolean {
+  return progress >= 0.4 || velocityY >= 0.5
+}
+
 /**
  * YouTube-style direct manipulation for the portrait player. The whole clipped player grows only
  * modestly under the finger; the large geometry change belongs to Android's orientation transition

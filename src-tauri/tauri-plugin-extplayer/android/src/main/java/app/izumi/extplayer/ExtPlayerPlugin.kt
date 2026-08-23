@@ -79,6 +79,12 @@ class BrowserArgs {
 }
 
 @InvokeArg
+class ShareTextArgs {
+    var title: String = ""
+    var text: String = ""
+}
+
+@InvokeArg
 class OAuthArgs {
     var authUrl: String = ""
     var redirectPrefix: String = ""
@@ -413,6 +419,25 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
         }
         launchBrowser(uri)
         invoke.resolve()
+    }
+
+    /** Android's real system share sheet, rather than silently copying a URL to the clipboard. */
+    @Command
+    fun shareText(invoke: Invoke) {
+        val args = invoke.parseArgs(ShareTextArgs::class.java)
+        activity.runOnUiThread {
+            try {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, args.title)
+                    putExtra(Intent.EXTRA_TEXT, args.text)
+                }
+                activity.startActivity(Intent.createChooser(send, args.title))
+                invoke.resolve()
+            } catch (error: Exception) {
+                invoke.reject("Could not open the Android share sheet", error)
+            }
+        }
     }
 
     // WRY's Android WebView keeps zoom enabled and ignores the viewport `user-scalable=no`, so the

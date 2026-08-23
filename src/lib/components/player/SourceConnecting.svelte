@@ -8,6 +8,7 @@
   import { connecting, debridCaching, gameMode } from '$lib/player/session'
   import SourceLoader from './SourceLoader.svelte'
   import { fade } from 'svelte/transition'
+  import { isAndroid } from '$lib/platform'
 
   const c = $derived($connecting)
   const backdrop = $derived(c?.art ?? '')
@@ -16,6 +17,18 @@
 <!-- Yields to the caching screen: once that is up, debrid genuinely is the wait, and two
      full-screen overlays would fight over the same z-order. -->
 {#if c && !$debridCaching}
+  {#if $isAndroid}
+    <!-- Keep the watch page visible on phones. This slim loader sits against the lower edge of the
+         portrait 16:9 video instead of replacing the entire app with a connecting screen. -->
+    <div class="android-connect fixed inset-x-4 z-[55] overflow-hidden rounded-full bg-black/85 shadow-xl"
+         role="status" aria-live="polite" transition:fade={{ duration: 100 }}>
+      <div class="bar-loader h-1.5 w-full"></div>
+      <div class="flex items-center gap-2 px-3 py-2 text-xs text-white/80">
+        <span class="min-w-0 flex-1 truncate">Connecting{c.detail ? ` · ${c.detail}` : ''}</span>
+        <button data-focusable onclick={() => c?.cancel()} class="grid size-7 shrink-0 place-items-center rounded-full bg-white/10" aria-label="Cancel connecting">✕</button>
+      </div>
+    </div>
+  {:else}
   <div
     class="fixed inset-0 z-[55] grid place-items-center overflow-hidden bg-black"
     onclick={() => c?.cancel()}
@@ -33,4 +46,12 @@
       <SourceLoader title={c.title} caption="Connecting" detail={c.detail} onCancel={c.cancel} />
     </div>
   </div>
+  {/if}
 {/if}
+
+<style>
+  .android-connect { top: calc(env(safe-area-inset-top) + 56.25vw - 0.375rem); }
+  @media (orientation: landscape) {
+    .android-connect { top: auto; bottom: calc(env(safe-area-inset-bottom) + 0.75rem); }
+  }
+</style>

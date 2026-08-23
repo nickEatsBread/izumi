@@ -25,6 +25,8 @@ export interface MpvLoad {
 
 /** True while the embedded player overlay is showing (drives the transparent hole + AndroidPlayer). */
 export const androidMpvActive = writable(false)
+/** In-app portrait mini-player: playback remains active while the browse shell is visible. */
+export const androidMiniPlayer = writable(false)
 
 /** Live playback state, fed by the single mpv event subscription. Read by AndroidPlayer + tracking. */
 export interface MpvState {
@@ -441,9 +443,15 @@ export async function setPlayerViewport(
   top: number,
   height: number,
   immersive: boolean,
+  left = 0,
+  width = 0,
+  floating = false,
 ): Promise<PlayerViewportInsets> {
   return (await invoke('plugin:mpv|mpv_viewport', {
-    payload: { top: Math.round(top), height: Math.round(height), immersive },
+    payload: {
+      top: Math.round(top), height: Math.round(height), immersive,
+      left: Math.round(left), width: Math.round(width), floating,
+    },
   })) as PlayerViewportInsets
 }
 
@@ -452,13 +460,12 @@ export const setPlayerFullscreen = (enabled: boolean) =>
   invoke('plugin:mpv|mpv_fullscreen', { payload: { enabled } })
 
 /**
- * Live-scale/translate the native video surface for the portrait pull-to-fullscreen gesture — the
- * video keeps playing and zooms as one unit (a view compositor transform, not a surface resize).
- * `scale` is unitless (1 = resting 16:9); `translateY` is physical pixels (negative = up). Any
- * `setPlayerViewport` call resets this back to identity.
+ * Live-scale/translate the native video surface for direct-manipulation gestures — the video keeps
+ * playing and moves as one unit (a view compositor transform, not a surface resize). Translations
+ * are physical pixels. Any `setPlayerViewport` call resets this back to identity.
  */
-export const setPlayerTransform = (scale: number, translateY: number) =>
-  invoke('plugin:mpv|mpv_transform', { payload: { scale, translateY } })
+export const setPlayerTransform = (scale: number, translateY: number, translateX = 0) =>
+  invoke('plugin:mpv|mpv_transform', { payload: { scale, translateY, translateX } })
 
 /** mpv chapters (time in seconds + title), via sub-property paths. Empty when the file has none.
  *  Titles are needed for chapter-derived skip segments — see player/chapter-skip.ts. Keeps every

@@ -13,10 +13,8 @@
     episodeLayout, hideSpoilers, downloadQuality, downloadAudio, downloadCodec, downloadCachedOnly,
     absoluteEpisodeNumbers, type Quality, type EpisodeLayout,
   } from '$lib/settings/ui'
-  import { localHistory, sessionProgress, manualProgressOverrides, setLocalProgress } from '$lib/player/history'
+  import { localHistory, sessionProgress, manualProgressOverrides } from '$lib/player/history'
   import { positions, progressKey, episodeBarPercent } from '$lib/player/progress'
-  import { updateProgress } from '$lib/trackers'
-  import { anilistToken, malToken } from '$lib/trackers/config'
   import { episodeLabels, episodeNumberLabel } from '$lib/anilist/episode-labels'
   import { fillerEpisodes } from '$lib/anime/filler'
   import { orderEpisodes, type SortDir } from '$lib/anime/episode-order'
@@ -72,8 +70,6 @@
       $sessionProgress[media.id] ?? 0,
     ),
   )
-  const trackerLinked = $derived(Boolean($anilistToken || $malToken))
-
   const PER = 48
   // `page` stays null until the user manually pages; until then we show `autoPage` — the page that
   // holds the next episode to watch — so opening a long-running series (One Piece) lands on where
@@ -90,6 +86,7 @@
     offline ? offlineEps : Array.from({ length: total }, (_, index) => index + 1),
   )
   let episodeQuery = $state('')
+  let searchOpen = $state(false)
   const searchedEpisodes = $derived.by(() => {
     const query = episodeQuery.trim().toLocaleLowerCase().replace(/^ep(?:isode)?\s*/i, '')
     if (!query) return null
@@ -162,21 +159,6 @@
   // this only decides which number the badge prints.
   const numberLabel = (episode: number) => episodeNumberLabel(episode, meta[episode]?.abs, $absoluteEpisodeNumbers)
 
-  let progressTarget = $state(0)
-  let progressStatus = $state('')
-  $effect(() => { if (!progressTarget && watchedThrough) progressTarget = watchedThrough })
-  async function applyProgress() {
-    const value = Math.max(0, Math.min(aired, Math.floor(Number(progressTarget) || 0)))
-    progressTarget = value
-    setLocalProgress(media, value)
-    const status = total > 0 && value >= total ? 'COMPLETED' : 'CURRENT'
-    const trackers = await updateProgress(media, value, status)
-    progressStatus = `Watched through episode ${value}${trackers.length ? ` · synced to ${trackers.join(' + ')}` : ' · saved locally'}`
-  }
-  async function clearProgress() {
-    progressTarget = 0
-    await applyProgress()
-  }
   function randomEpisode() {
     if (aired < 1 || resolving) return
     play(1 + Math.floor(Math.random() * aired))
@@ -261,6 +243,7 @@
 
   {#if aired > 0}
     <div class="mb-4 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+      {#if !$isMobile}
       <label class="relative col-span-2 min-w-0 sm:max-w-sm sm:flex-1">
         <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -270,6 +253,7 @@
           class="h-12 w-full rounded-xl bg-input pl-10 pr-3 text-base sm:h-auto sm:rounded-md sm:py-2 sm:pl-9 sm:text-sm"
         />
       </label>
+      {/if}
       {#if $isMobile}
         <div class="flex min-h-11 w-full items-stretch rounded-xl bg-secondary p-1 text-sm font-bold">
           <button data-focusable onclick={() => toggleSort('asc')}
@@ -299,30 +283,21 @@
                   class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {$episodeLayout === 'grid' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
             <LayoutGrid size={17} />
           </button>
+          <button data-focusable onclick={() => { h.tap(); searchOpen = !searchOpen; if (!searchOpen) episodeQuery = '' }}
+                  aria-label="Search episodes" aria-pressed={searchOpen}
+                  class="grid min-h-9 w-11 place-items-center rounded-lg transition-colors {searchOpen ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">
+            <Search size={17} />
+          </button>
         </div>
       {/if}
-      {#if !trackerLinked}
-        <details class="relative">
-          <summary data-focusable class="flex h-11 cursor-pointer list-none items-center justify-center gap-1.5 rounded-xl bg-secondary px-3 text-sm font-bold hover:bg-accent sm:h-auto sm:rounded-md sm:py-2">
-            <ListChecks size={15} /> Progress tools
-          </summary>
-          <div class="absolute right-0 z-20 mt-2 w-72 rounded-lg border border-border bg-card p-3 shadow-2xl">
-            <label class="text-xs font-bold text-muted-foreground" for="progress-through">Watched through episode</label>
-            <div class="mt-1 flex gap-2">
-              <input id="progress-through" data-focusable type="number" min="0" max={aired} bind:value={progressTarget}
-                     class="min-w-0 flex-1 rounded-md bg-input px-3 py-2 text-sm" />
-              <button data-focusable onclick={applyProgress}
-                      class="rounded-md bg-primary px-3 py-2 text-xs font-black text-primary-foreground">Save</button>
-            </div>
-            <button data-focusable onclick={clearProgress}
-                    class="mt-2 w-full rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent">
-              Mark season unwatched
-            </button>
-            {#if progressStatus}<p class="mt-2 text-[0.68rem] text-muted-foreground">{progressStatus}</p>{/if}
-          </div>
-        </details>
-      {/if}
     </div>
+    {#if $isMobile && searchOpen}
+      <label class="relative mb-4 block min-w-0">
+        <Search size={15} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input bind:value={episodeQuery} data-focusable placeholder="Find episode number or title…"
+               class="h-12 w-full rounded-xl bg-input pl-10 pr-3 text-base" />
+      </label>
+    {/if}
     {#if selecting && $isMobile}
       <!-- Mobile select mode. The desktop toolbar is a row of chips of mismatched heights; dropped
            into the 2-column mobile grid it wrapped into a scattered mess (a bare label sharing a row
