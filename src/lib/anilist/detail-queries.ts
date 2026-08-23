@@ -11,6 +11,8 @@ export const MEDIA_BY_ID = gql`
     Media(id: $id, type: ANIME) {
       ...MediaFields
       isFavourite
+      source countryOfOrigin
+      tags { name rank isMediaSpoiler }
       mediaListEntry { id progress status score(format: POINT_100) repeat startedAt { year month day } completedAt { year month day } }
       relations { edges { relationType node { ...MediaFields } } }
       characters(perPage: 12, sort: [ROLE, RELEVANCE]) {

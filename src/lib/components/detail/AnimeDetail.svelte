@@ -177,6 +177,11 @@
     d?.year ? [d.year, d.month, d.day].filter(Boolean).join('-') : ''
 
   const stripHtml = (s?: string) => (s ? s.replace(/<[^>]+>/g, '') : '')
+  const prettyEnum = (value?: string) => value
+    ? value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : ''
+  const countryName = (code?: string) => ({ JP: 'Japan', CN: 'China', KR: 'South Korea', TW: 'Taiwan' }[code ?? ''] ?? code ?? '')
+  const compactNumber = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
 
   // Total episodes for the badge — schedule-aware so OVAs/ONAs with a null AniList count
   // still show a number (see totalEpisodes).
@@ -383,9 +388,34 @@
           {/if}
           {#if format(m)}<span>{format(m)}</span><span class="opacity-40">·</span>{/if}
           <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
+          {#if m.duration}<span class="opacity-40">·</span><span>{m.duration} min</span>{/if}
           {#if season(m)}<span class="opacity-40">·</span><span>{season(m)}</span>{/if}
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
         </div>
+
+        <!-- Give the title useful provenance without turning the summary into another pill wall.
+             Mature mobile anime clients surface studio/source/popularity before asking the user to
+             hunt through a final tab; this stays a single quiet wrapping line. -->
+        <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground/65">
+          {#if m.studios?.nodes?.[0]}
+            {@const studio = m.studios.nodes[0]}
+            <a href={studio.id ? `/app/search?studio=${studio.id}&name=${encodeURIComponent(studio.name)}` : `/app/search?search=${encodeURIComponent(studio.name)}`}
+               class="font-bold text-foreground/85 underline-offset-2 active:opacity-70">{studio.name}</a>
+          {/if}
+          {#if m.source}<span class="opacity-35">·</span><span>From {prettyEnum(m.source)}</span>{/if}
+          {#if m.popularity}<span class="opacity-35">·</span><span>{compactNumber.format(m.popularity)} members</span>{/if}
+        </div>
+
+        {#if m.genres?.length}
+          <!-- One horizontal rail preserves vertical space while making genre identity visible at a
+               glance. It deliberately scrolls instead of wrapping into a tall block above Play. -->
+          <div class="-mx-4 mt-3 flex gap-2 overflow-x-auto px-4 pb-1" aria-label="Genres">
+            {#each m.genres as genre (genre)}
+              <a href={`/app/search?genre=${encodeURIComponent(genre)}`}
+                 class="shrink-0 rounded-full border border-border/80 bg-secondary/55 px-3 py-1.5 text-xs font-bold text-foreground/85 active:bg-accent">{genre}</a>
+            {/each}
+          </div>
+        {/if}
 
         <!-- Phones have no room for release timing in their episode controls. Keep one quiet
              grouped summary under the facts; desktop anchors it to the episode toolbar instead. -->
@@ -460,9 +490,55 @@
         {/if}
 
         <div class="mt-6">
-          <Tabs tabs={['Episodes', 'Relations', 'Characters', 'Recommended', 'Details']} bind:active />
+          <Tabs tabs={['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']} bind:active />
           {#if active === 'Episodes'}
             <EpisodeList media={m} offline={$offlineMode} />
+          {:else if active === 'Overview'}
+            <div class="mt-4 space-y-5">
+              {#if m.description}
+                <section>
+                  <h2 class="mb-2 text-base font-black">Synopsis</h2>
+                  <p class="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{stripHtml(m.description)}</p>
+                </section>
+              {/if}
+
+              <section>
+                <h2 class="mb-2 text-base font-black">Information</h2>
+                <dl class="grid grid-cols-2 gap-2 text-sm">
+                  {#if m.studios?.nodes?.length}
+                    <div class="col-span-2 rounded-xl bg-secondary/40 p-3">
+                      <dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Studio</dt>
+                      <dd class="mt-1 font-bold">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ' · ' : ''}<a class="underline-offset-2 active:opacity-70" href={studio.id ? `/app/search?studio=${studio.id}&name=${encodeURIComponent(studio.name)}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd>
+                    </div>
+                  {/if}
+                  {#if format(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Format</dt><dd class="mt-1 font-bold">{format(m)}</dd></div>{/if}
+                  {#if status(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd class="mt-1 font-bold">{status(m)}</dd></div>{/if}
+                  <div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
+                  {#if m.duration}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
+                  {#if season(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd class="mt-1 font-bold">{season(m)}</dd></div>{/if}
+                  {#if fmtDate(m.startDate)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
+                  {#if m.source}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
+                  {#if m.countryOfOrigin}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
+                  {#if m.averageScore}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Score</dt><dd class="mt-1 font-bold">{m.averageScore}%</dd></div>{/if}
+                  {#if m.popularity}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Popularity</dt><dd class="mt-1 font-bold">{m.popularity.toLocaleString()} members</dd></div>{/if}
+                </dl>
+              </section>
+
+              {#if m.tags?.filter((tag) => !tag.isMediaSpoiler).length}
+                <section>
+                  <h2 class="mb-2 text-base font-black">Themes</h2>
+                  <div class="flex flex-wrap gap-2">
+                    {#each m.tags.filter((tag) => !tag.isMediaSpoiler).sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0)).slice(0, 10) as tag (tag.name)}
+                      <span class="rounded-full bg-secondary/55 px-3 py-1.5 text-xs font-semibold text-foreground/80">{tag.name}</span>
+                    {/each}
+                  </div>
+                </section>
+              {/if}
+
+              {#if m.synonyms?.length}
+                <section><h2 class="mb-1 text-base font-black">Alternative titles</h2><p class="text-sm leading-relaxed text-muted-foreground">{m.synonyms.join(' · ')}</p></section>
+              {/if}
+            </div>
           {:else if active === 'Relations'}
             {#if m.relations?.edges?.length}
               <div class="mt-3 grid grid-cols-2 gap-4">
@@ -475,15 +551,6 @@
             <div class="mt-3"><RichMetadata media={m} view="people" /></div>
           {:else if active === 'Recommended'}
             <div class="mt-3"><RichMetadata media={m} view="recommendations" /></div>
-          {:else}
-            <div class="mt-3 space-y-4">
-              {#if m.description}<p class="whitespace-pre-line text-sm text-muted-foreground">{stripHtml(m.description)}</p>{/if}
-              <dl class="grid grid-cols-1 gap-2 text-sm">
-                {#if m.studios?.nodes?.length}<div><dt class="font-bold">Studios</dt><dd class="text-muted-foreground">{#each m.studios.nodes as studio, i (studio.id ?? studio.name)}{i ? ', ' : ''}<a data-focusable class="underline-offset-2 hover:underline" href={studio.id ? `/app/search?studio=${studio.id}&name=${encodeURIComponent(studio.name)}` : `/app/search?search=${encodeURIComponent(studio.name)}`}>{studio.name}</a>{/each}</dd></div>{/if}
-                {#if fmtDate(m.startDate)}<div><dt class="font-bold">Start Date</dt><dd class="text-muted-foreground">{fmtDate(m.startDate)}</dd></div>{/if}
-                {#if m.synonyms?.length}<div><dt class="font-bold">Synonyms</dt><dd class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>{/if}
-              </dl>
-            </div>
           {/if}
         </div>
       </div>

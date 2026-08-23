@@ -98,6 +98,17 @@ describe('mobile series hero', () => {
     expect(airing.match(/rounded-full/g)?.length).toBeGreaterThanOrEqual(2)
     expect(airing).toContain("'h-6 px-2.5 text-[0.72rem]' : 'h-6 px-3 text-xs'")
   })
+
+  it('surfaces a complete, discoverable mobile anime overview without crowding the hero', () => {
+    expect(detail).toContain("['Episodes', 'Overview', 'Relations', 'Characters', 'Recommended']")
+    expect(detail).toContain('aria-label="Genres"')
+    expect(detail).toContain('From {prettyEnum(m.source)}')
+    expect(detail).toContain('{m.duration} min')
+    expect(detail).toContain("{:else if active === 'Overview'}")
+    for (const heading of ['Synopsis', 'Information', 'Studio', 'Runtime', 'Source', 'Country', 'Popularity', 'Themes', 'Alternative titles']) {
+      expect(detail).toContain(`>${heading}<`)
+    }
+  })
 })
 
 describe('series airing schedule', () => {

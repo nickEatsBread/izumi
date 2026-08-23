@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { searchVariables } from './detail-queries'
+import { MEDIA_BY_ID, searchVariables } from './detail-queries'
 describe('searchVariables', () => {
   it('omits empty filters and passes provided ones', () => {
     const v = searchVariables({ search: 'frieren', genres: ['Action'], season: '', year: 2026, formats: [], sort: 'SEARCH_MATCH' })
@@ -24,5 +24,13 @@ describe('searchVariables', () => {
     // epMin=0 is still applied (episodes_greater -1, a harmless no-op); minScore 0 is skipped.
     const edge = searchVariables({ epMin: 0, minScore: 0 })
     expect(edge.episodes_greater).toBe(-1); expect('averageScore_greater' in edge).toBe(false)
+  })
+})
+
+describe('anime detail information', () => {
+  it('fetches the mobile overview metadata that is intentionally absent from browse cards', () => {
+    const query = MEDIA_BY_ID.loc?.source.body ?? ''
+    expect(query).toMatch(/source\s+countryOfOrigin/)
+    expect(query).toMatch(/tags\s*\{\s*name\s+rank\s+isMediaSpoiler\s*\}/)
   })
 })
