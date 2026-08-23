@@ -40,8 +40,10 @@ export interface RecoveryWatchState {
   loadedAt: number
   lastAdvancedAt: number
   lastPosition: number
+  positionAdvanceCount: number
   lastNetworkBytes: number
   lastNetworkAdvancedAt: number
+  bufferingSince: number | null
 }
 
 export interface TorrentDeliveryState {
@@ -104,8 +106,10 @@ export function resetRecoveryWatch(now: number): RecoveryWatchState {
     loadedAt: now,
     lastAdvancedAt: now,
     lastPosition: 0,
+    positionAdvanceCount: 0,
     lastNetworkBytes: 0,
     lastNetworkAdvancedAt: now,
+    bufferingSince: null,
   }
 }
 
@@ -122,25 +126,38 @@ export function recoveryWatchDecision(
   previous: RecoveryWatchState,
   signal: RecoverySignal,
 ): { state: RecoveryWatchState; recover: boolean; reason?: 'never-started' | 'stalled' } {
-  const { now, position, duration, paused, seeking, eof, firstFrame } = signal
+  const { now, position, duration, paused, buffering, seeking, eof, firstFrame } = signal
   const advanced = position > previous.lastPosition + POSITION_EPSILON_S
   let state = advanced
-    ? { ...previous, lastAdvancedAt: now, lastPosition: position }
+    ? {
+        ...previous,
+        lastAdvancedAt: now,
+        lastPosition: position,
+        positionAdvanceCount: previous.positionAdvanceCount + 1,
+        bufferingSince: null,
+      }
     : { ...previous, lastPosition: Math.max(previous.lastPosition, position) }
+  let networkAdvanced = false
   if (signal.networkBytes != null
     && Number.isFinite(signal.networkBytes)
     && signal.networkBytes > state.lastNetworkBytes) {
+    networkAdvanced = true
     state = {
       ...state,
       lastNetworkBytes: signal.networkBytes,
       lastNetworkAdvancedAt: now,
+      bufferingSince: null,
     }
   }
 
   if (paused || seeking || eof || (duration > 0 && position >= duration - 3)) {
-    return { state: { ...state, lastAdvancedAt: now }, recover: false }
+    return { state: { ...state, lastAdvancedAt: now, bufferingSince: null }, recover: false }
   }
-  if (!firstFrame) {
+  // Two independent clock advances are stronger proof of presented playback than the platform's
+  // one-shot first-frame event. The latter can be dropped while the native player keeps rendering;
+  // a single jump is not enough because loading at a resume offset also looks like advancement.
+  const playbackConfirmed = firstFrame || state.positionAdvanceCount >= 2
+  if (!playbackConfirmed) {
     // A stream whose CLOCK is moving is alive, whatever the frame flag says. The flag rides a
     // presentation event (Android: PLAYBACK_RESTART) that can be lost in transit, and a lost flag
     // used to park a perfectly-playing torrent in this branch forever — recovery then fired on
@@ -172,7 +189,16 @@ export function recoveryWatchDecision(
     }
     return { state, recover: true, reason: 'never-started' }
   }
-  return now - state.lastAdvancedAt >= STALL_TIMEOUT_MS
+  // A stale JS position sample is not evidence that native playback stopped. Webviews can miss or
+  // batch telemetry while mpv continues to render, which previously force-switched healthy P2P
+  // playback across every OS. Require an explicit, continuous buffering signal and no simultaneous
+  // position or torrent-server delivery progress before declaring a post-frame stall.
+  if (!buffering || advanced || networkAdvanced) {
+    return { state: { ...state, bufferingSince: null }, recover: false }
+  }
+  const bufferingSince = state.bufferingSince ?? now
+  state = { ...state, bufferingSince }
+  return now - bufferingSince >= STALL_TIMEOUT_MS
     ? { state, recover: true, reason: 'stalled' }
     : { state, recover: false }
 }

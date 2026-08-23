@@ -124,10 +124,59 @@ describe('playback recovery watchdog', () => {
   it('recovers playback that stops advancing after a first frame', () => {
     let state = resetRecoveryWatch(1_000)
     ;({ state } = recoveryWatchDecision(state, signal(2_000, { firstFrame: true, position: 10 })))
-    expect(recoveryWatchDecision(state, signal(2_000 + STALL_TIMEOUT_MS, {
+    ;({ state } = recoveryWatchDecision(state, signal(3_000, {
       firstFrame: true,
       position: 10,
+      buffering: true,
+    })))
+    expect(recoveryWatchDecision(state, signal(3_000 + STALL_TIMEOUT_MS, {
+      firstFrame: true,
+      position: 10,
+      buffering: true,
     })).reason).toBe('stalled')
+  })
+
+  it('never force-switches a playing source merely because UI position telemetry is stale', () => {
+    let state = resetRecoveryWatch(1_000)
+    ;({ state } = recoveryWatchDecision(state, signal(2_000, { firstFrame: true, position: 10 })))
+    const delayed = recoveryWatchDecision(state, signal(2_000 + STALL_TIMEOUT_MS * 4, {
+      firstFrame: true,
+      position: 10,
+      buffering: false,
+    }))
+    expect(delayed.recover).toBe(false)
+    expect(delayed.state.bufferingSince).toBeNull()
+  })
+
+  it('treats repeated clock advancement as playback even when the first-frame event was lost', () => {
+    let state = resetRecoveryWatch(1_000)
+    ;({ state } = recoveryWatchDecision(state, signal(2_000, { position: 47 })))
+    ;({ state } = recoveryWatchDecision(state, signal(3_000, { position: 48 })))
+    const delayed = recoveryWatchDecision(state, signal(3_000 + START_TIMEOUT_MS * 2, {
+      position: 48,
+      buffering: false,
+      startTimeoutMs: DIRECT_TORRENT_START_TIMEOUT_MS,
+    }))
+    expect(delayed.recover).toBe(false)
+    expect(delayed.state.positionAdvanceCount).toBe(2)
+  })
+
+  it('does not call a buffering torrent stalled while its server is still delivering bytes', () => {
+    let state = resetRecoveryWatch(1_000)
+    ;({ state } = recoveryWatchDecision(state, signal(2_000, {
+      firstFrame: true,
+      position: 10,
+      buffering: true,
+      networkBytes: 1_000_000,
+    })))
+    const active = recoveryWatchDecision(state, signal(2_000 + STALL_TIMEOUT_MS, {
+      firstFrame: true,
+      position: 10,
+      buffering: true,
+      networkBytes: 2_000_000,
+    }))
+    expect(active.recover).toBe(false)
+    expect(active.state.bufferingSince).toBeNull()
   })
 
   it('never recovers a deliberate pause, seek, EOF, or final frame', () => {
