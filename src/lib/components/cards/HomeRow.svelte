@@ -2,14 +2,13 @@
   // One home section = one query + one carousel row. Each row owns its own
   // query store so Svelte auto-subscription (`$store`) works correctly — an
   // array of stores can't be `$`-subscribed by index from the page.
-  import { onMount } from 'svelte'
-  import { get } from 'svelte/store'
   import { queryStore, getContextClient } from '@urql/svelte'
   import { pageQuery } from '$lib/anilist/queries'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
   import type { Media } from '$lib/anilist/types'
   import { gameMode } from '$lib/player/session'
+  import { nearViewport } from '$lib/util/near-viewport'
 
   let { title, vars }: { title: string; vars: Record<string, unknown> } = $props()
 
@@ -22,8 +21,8 @@
   // resolves as you scroll to it (the per-row stagger). NOT IntersectionObserver: the app's <html>
   // CSS `zoom` breaks IO's geometry (the same reason SearchResults uses a scroll listener).
   let visible = $state(false)
-  let el = $state<HTMLElement>()
   const active = $derived(visible || $gameMode)
+  const reveal = () => { visible = true }
 
   const store = $derived(queryStore<{ Page: { media: Media[] } }>({
     client,
@@ -31,34 +30,6 @@
     variables: { perPage: 20, ...vars },
     pause: !active,
   }))
-
-  onMount(() => {
-    // A Deck has six modest catalogue queries and lazy-loaded cover images; starting all row data
-    // at page mount keeps network and DOM replacement away from controller scrolling. urql's warm
-    // graphcache prevents repeat traffic when returning Home. Desktop retains the viewport gate.
-    if (get(gameMode)) return
-    const check = () => {
-      // Reveal when the row's top is within ~1.5 viewports (prefetch a bit ahead). The CSS zoom can
-      // skew rect-vs-innerHeight, but a scroll listener always fires (unlike IO) and the generous
-      // margin keeps the reveal ahead of the row coming on-screen — a slightly early/late fetch is
-      // harmless. Self-removes once revealed.
-      if (el && el.getBoundingClientRect().top < window.innerHeight * 1.5) {
-        visible = true
-        window.removeEventListener('scroll', check)
-        window.removeEventListener('resize', check)
-      }
-    }
-    check() // above-the-fold rows load immediately
-    window.addEventListener('scroll', check, { passive: true })
-    window.addEventListener('resize', check)
-    // Rows above this one can COLLAPSE after mount (Continue Watching and the tracker list rows
-    // render nothing when empty, dropping ~850px), which slides this row into view without firing
-    // scroll or resize — so it stayed paused and rendered skeletons until the user scrolled. Watch
-    // the container for that height change too.
-    const ro = new ResizeObserver(check)
-    if (el?.parentElement) ro.observe(el.parentElement)
-    return () => { window.removeEventListener('scroll', check); window.removeEventListener('resize', check); ro.disconnect() }
-  })
 
   // "View more" → the search page seeded with this row's filters (sort/genre/season).
   function viewMoreHref(v: Record<string, unknown>): string {
@@ -74,7 +45,7 @@
   }
 </script>
 
-<div bind:this={el}>
+<div use:nearViewport={{ onEnter: reveal }}>
   <!-- Keep the observer anchor, but do not leave a heading/View-more shell behind if every
        catalogue provider genuinely returned an empty page. -->
   {#if !active || $store.fetching || ($store.data?.Page.media.length ?? 0) > 0}

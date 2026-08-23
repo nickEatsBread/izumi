@@ -229,12 +229,22 @@ html.gamemode .group:hover .group-hover\:scale-105 {
    WebKitGTK, whose built-in drag/swipe recognizers own scrolling and kinetic momentum. */
 .gamemode { touch-action: pan-x pan-y; }
 .gamemode, .gamemode * { cursor: none !important; user-select: none !important; -webkit-user-select: none !important; -webkit-touch-callout: none; }
-/* NOTE: `content-visibility: auto` virtualization was removed — on the Deck's WebKit it forced
-   `contain: paint`, which CLIPPED the focus ring + cover-pop (thin/half borders cover-to-cover)
-   and PAINTED off-screen cards a frame late while scrolling (a black flash on the browse page).
-   Scroll perf is handled by the node-scoped drag listeners + per-frame write batching instead.
-   If long-list lag returns, add real windowing (render only in-view items + spacers), which has
-   neither artifact. */
+/* Non-Deck browse containment: long search/list pages retain their DOM so browser find, focus and
+   back-navigation stay correct, but Chromium/WebKit can skip style/layout/paint work far outside
+   the viewport. Game mode deliberately opts out below: Deck WebKit's `contain: paint` clips the
+   controller focus ring/cover pop and used to flash black while kinetic-scrolling. */
+.browse-render-row,
+.browse-render-list-item,
+.browse-render-grid-item { content-visibility: auto; }
+.browse-render-row { contain-intrinsic-size: auto 300px; }
+.browse-render-list-item { contain-intrinsic-size: auto 72px; }
+.browse-render-grid-item { contain-intrinsic-size: auto 260px; }
+.gamemode .browse-render-row,
+.gamemode .browse-render-list-item,
+.gamemode .browse-render-grid-item {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
 /* Default focus indicator = ring the focused element. The box-shadow follows the element's
    OWN border-radius (no override here) so a round button (play/pause) keeps a round ring
    instead of a squared-off rounded-rect. */

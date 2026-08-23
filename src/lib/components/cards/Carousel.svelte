@@ -63,7 +63,7 @@
   })
 </script>
 
-<section class="group/carousel relative mb-8">
+<section class="browse-render-row group/carousel relative mb-8">
   <div class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
     <h2 class="text-lg font-black">{title}</h2>
     {#if viewMoreHref}

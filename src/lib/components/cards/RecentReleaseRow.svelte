@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte'
-  import { get } from 'svelte/store'
   import { queryStore, getContextClient } from '@urql/svelte'
   import { RECENT_RELEASES_QUERY } from '$lib/anilist/queries'
   import type { Media } from '$lib/anilist/types'
@@ -10,6 +9,7 @@
   import * as h from '$lib/haptics'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
+  import { nearViewport } from '$lib/util/near-viewport'
 
   type Release = { episode: number; airingAt: number; media: Media }
 
@@ -17,7 +17,7 @@
   const before = Math.floor(Date.now() / 1000) + 60
   const after = before - 21 * 86_400
   let visible = $state(false)
-  let el = $state<HTMLElement>()
+  const reveal = () => { visible = true }
   let now = $state(Date.now())
   let activeId = $state<number | null>(null)
   const active = $derived(visible || $gameMode)
@@ -67,31 +67,13 @@
 
   onMount(() => {
     const timer = setInterval(() => (now = Date.now()), 60_000)
-    if (get(gameMode)) return () => clearInterval(timer)
-    const check = () => {
-      if (el && el.getBoundingClientRect().top < window.innerHeight * 1.5) {
-        visible = true
-        window.removeEventListener('scroll', check)
-        window.removeEventListener('resize', check)
-      }
-    }
-    check()
-    window.addEventListener('scroll', check, { passive: true })
-    window.addEventListener('resize', check)
-    const ro = new ResizeObserver(check)
-    if (el?.parentElement) ro.observe(el.parentElement)
-    return () => {
-      clearInterval(timer)
-      window.removeEventListener('scroll', check)
-      window.removeEventListener('resize', check)
-      ro.disconnect()
-    }
+    return () => clearInterval(timer)
   })
 </script>
 
 <svelte:window onkeydown={onKey} />
 
-<div bind:this={el}>
+<div use:nearViewport={{ onEnter: reveal }}>
   {#if !active || $store.fetching || releases.length > 0}
     <Carousel title="Recently Released" viewMoreHref="/app/schedule">
       {#if !active || $store.fetching}

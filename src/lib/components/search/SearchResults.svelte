@@ -117,7 +117,7 @@
   <div class="flex flex-col gap-1.5">
     {#each media as m (m.id)}
       <a href={`/app/anime/${m.id}`} data-focusable onclick={() => { rememberDetail(m); h.tap() }}
-         class="load-in flex items-center gap-3 rounded-lg p-2 transition-[color,background-color,transform] active:bg-accent hover:bg-secondary {$isAndroid ? 'android-row-press' : ''}">
+         class="browse-render-list-item load-in flex items-center gap-3 rounded-lg p-2 transition-[color,background-color,transform] active:bg-accent hover:bg-secondary {$isAndroid ? 'android-row-press' : ''}">
         <img src={cover(m)} alt="" loading="lazy" decoding="async"
              class="aspect-[2/3] w-12 shrink-0 rounded-md bg-muted object-cover" />
         <div class="min-w-0 flex-1">
@@ -141,7 +141,7 @@
        an auto-fill responsive grid on desktop. -->
   <div class="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(auto-fill,minmax(152px,1fr))] sm:gap-3">
     {#each media as m (m.id)}
-      <SmallCard media={m} fill />
+      <div class="browse-render-grid-item"><SmallCard media={m} fill /></div>
     {/each}
     {#if loading}
       {#each Array.from({ length: media.length ? 6 : 12 }) as _}

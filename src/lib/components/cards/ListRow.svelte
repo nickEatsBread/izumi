@@ -1,13 +1,13 @@
 <script lang="ts">
   // One personalized home row = one MediaListCollection query + one carousel.
   // Owns its own query store (child-owns-store pattern) so `$store` auto-subscribes.
-  import { onMount } from 'svelte'
   import { queryStore, getContextClient } from '@urql/svelte'
   import {
     LIST_QUERY, READING_LIST_QUERY, flattenEntries, matchesLibraryKind, type LibraryKind,
   } from '$lib/anilist/lists'
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
+  import { nearViewport } from '$lib/util/near-viewport'
   let {
     title, userName, status, kind = 'anime',
   }: {
@@ -21,7 +21,7 @@
   // MediaFields per entry — a large PLANNING/COMPLETED list is multi-MB of JSON parsed on the main
   // thread at boot, for a row that may be below the fold. Hold it until the row nears the viewport.
   let visible = $state(false)
-  let el = $state<HTMLElement>()
+  const reveal = () => { visible = true }
   const store = $derived(queryStore({
     client,
     query: kind === 'anime' ? LIST_QUERY : READING_LIST_QUERY,
@@ -35,23 +35,8 @@
     flattenEntries($store.data).filter(({ media }) => matchesLibraryKind(media, kind)),
   )
   const shown = $derived(entries.slice(0, RENDER_CAP))
-  onMount(() => {
-    const check = () => {
-      if (el && el.getBoundingClientRect().top < window.innerHeight * 1.5) {
-        visible = true
-        window.removeEventListener('scroll', check)
-        window.removeEventListener('resize', check)
-      }
-    }
-    check()
-    window.addEventListener('scroll', check, { passive: true })
-    window.addEventListener('resize', check)
-    const ro = new ResizeObserver(check)
-    if (el?.parentElement) ro.observe(el.parentElement)
-    return () => { window.removeEventListener('scroll', check); window.removeEventListener('resize', check); ro.disconnect() }
-  })
 </script>
-<div bind:this={el}>
+<div use:nearViewport={{ onEnter: reveal }}>
   {#if !visible || $store.fetching}
     <Carousel {title}>
       {#each Array.from({ length: 6 }) as _}
