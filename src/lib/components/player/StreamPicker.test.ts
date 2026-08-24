@@ -55,6 +55,8 @@ describe('mobile source picker layout', () => {
     expect(source).toContain('onpointerenter={() => targetSource(info)}')
     expect(source).toContain('onfocus={() => focusSource(info)}')
     expect(source).toContain('if ($gameMode) bumpPlayerOverlay()')
+    expect(source).toContain('const trap = pickerTrap')
+    expect(source).toContain('trap.isConnected) bumpPlayerOverlay()')
   })
 
   it('focuses a playable source on every Game-mode picker opening', () => {

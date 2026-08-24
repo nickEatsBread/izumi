@@ -16,12 +16,14 @@
   import { isAndroid, isMacOS } from '$lib/platform'
 
   let {
-    paused, command, capture, onclose, frameTop = 0, frameHeight = 0,
+    paused, command, capture, onclose, onpaint, frameTop = 0, frameHeight = 0,
   }: {
     paused: boolean
     command: (name: string, args?: string[]) => void | Promise<void>
     capture: () => Promise<string | null>
     onclose: () => void
+    /** Game-mode XWayland snapshots call this after the editor has painted a visual change. */
+    onpaint?: () => void
     /** CSS-pixel native video surface inside the window; zero height means the full player. */
     frameTop?: number
     frameHeight?: number
@@ -51,6 +53,8 @@
   let dragPointer: number | null = null
   let closing = false
   let resumeAfter = false
+  let paintFrame = 0
+  let paintTimer: ReturnType<typeof setTimeout> | undefined
   const previewFontSize = $derived(subtitlePreviewFontSize(fontSize, previewHeight))
   const previewBorder = $derived(Math.max(0, borderSize * previewHeight / 720))
   const previewShadow = $derived(Math.max(0, shadow * previewHeight / 720))
@@ -58,6 +62,27 @@
   async function safeCommand(name: string, args: string[] = []) {
     try { await command(name, args) } catch { /* player may be closing */ }
   }
+
+  function requestPaint() {
+    if (!onpaint || typeof requestAnimationFrame !== 'function') return
+    if (paintFrame) cancelAnimationFrame(paintFrame)
+    if (paintTimer) clearTimeout(paintTimer)
+    // Run after the browser has applied Svelte state and focus styles. Calling the native snapshot
+    // from the input handler itself captures the previous slider/focus frame on WebKitGTK.
+    paintFrame = requestAnimationFrame(() => {
+      paintFrame = 0
+      paintTimer = setTimeout(() => {
+        paintTimer = undefined
+        onpaint?.()
+      }, 0)
+    })
+  }
+
+  $effect(() => {
+    void font; void fontSize; void textColor; void borderColor; void borderSize; void shadow
+    void position; void snapshot; void captureDone; void previewHeight
+    requestPaint()
+  })
 
   onMount(() => {
     resumeAfter = !paused
@@ -76,6 +101,8 @@
   })
 
   onDestroy(() => {
+    if (paintFrame) cancelAnimationFrame(paintFrame)
+    if (paintTimer) clearTimeout(paintTimer)
     if (closing) return
     void safeCommand('set', ['sub-visibility', 'yes'])
     if (resumeAfter) void safeCommand('set', ['pause', 'no'])
@@ -138,7 +165,7 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="absolute inset-0 z-[80] text-white" class:bg-black={!!snapshot || !captureDone} class:bg-transparent={captureDone && !snapshot} role="dialog" aria-modal="true" aria-label="Subtitle position and size editor" tabindex="-1" onkeydown={keydown} onpointerdown={(event) => event.stopPropagation()} onclick={(event) => event.stopPropagation()}>
+<div data-nav-trap class="absolute inset-0 z-[80] text-white" class:bg-black={!!snapshot || !captureDone} class:bg-transparent={captureDone && !snapshot} role="dialog" aria-modal="true" aria-label="Subtitle position and size editor" tabindex="-1" onkeydown={keydown} onfocusin={requestPaint} onpointerdown={(event) => event.stopPropagation()} onclick={(event) => event.stopPropagation()}>
   <header class="absolute inset-x-0 top-0 z-10 flex items-center gap-3 border-b border-white/10 bg-neutral-950/95 px-3 py-2 sm:px-5">
     {#if $isMacOS}<div class="w-16 shrink-0" aria-hidden="true"></div>{/if}
     <button data-focusable class="grid size-10 place-items-center rounded-full hover:bg-white/10" onclick={() => void finish(false)} aria-label="Cancel subtitle changes"><X size={21} /></button>

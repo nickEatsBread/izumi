@@ -54,6 +54,7 @@ describe('gameModeBitmapOverlayActive', () => {
     expect(gameModeBitmapOverlayActive({ ...base, statsOpen: true })).toBe(true)
     expect(gameModeBitmapOverlayActive({ ...base, sourcePickerOpen: true })).toBe(true)
     expect(gameModeBitmapOverlayActive({ ...base, connectingOpen: true })).toBe(true)
+    expect(gameModeBitmapOverlayActive({ ...base, subtitleEditorOpen: true })).toBe(true)
   })
 
   it('yields idle controls to the native loading/scrub overlay', () => {
@@ -113,6 +114,8 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('playerOverlayRev')
     expect(overlay).toContain("void paused")
     expect(overlay).toContain('sourcePickerOpen')
+    expect(overlay).toContain('subtitleEditorOpen')
+    expect(overlay).toContain('onpaint={gmBitmapMode ? bumpPlayerOverlay : undefined}')
     expect(overlay).toContain('streamPickerDismissedAt')
     expect(overlay).not.toContain('gameModeP2pLine')
     expect(overlay).not.toContain('p2pText')
@@ -167,6 +170,7 @@ describe('gameModeDock', () => {
     expect(gameModeDock({ ...base, commentsOpen: true }).hide).toBe(false)
     expect(gameModeDock({ ...base, sourcePickerOpen: true }).hide).toBe(false)
     expect(gameModeDock({ ...base, connecting: true }).hide).toBe(false)
+    expect(gameModeDock({ ...base, subtitleEditorOpen: true }).hide).toBe(false)
   })
 })
 

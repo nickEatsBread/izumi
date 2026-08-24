@@ -601,14 +601,15 @@
     commentsOpen: $commentsOpen,
     directP2P: directP2pOverlay,
   }))
-  // A comments surface scrolls continuously, so refresh its bitmap at the self-paced native rate.
-  // Settings/track menus are discrete and explicitly bump playerOverlayRev after each move.
-  const overlayFast = $derived($commentsOpen)
   const p2pReady = $derived($directTorrentStats != null || currentDirectTorrentPlaybackId() != null)
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   const noticeVisible = $derived(!!$playerNotice)
   const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
+  const sourcePickerResolving = $derived(sourcePickerVisible && !!$streamPicker?.resolving)
   const sourceConnectingVisible = $derived(!!$connecting)
+  // Comments scroll continuously and a resolving source picker grows progressively. Refresh those
+  // at the self-paced native rate; settled menus/editors explicitly bump playerOverlayRev instead.
+  const overlayFast = $derived($commentsOpen || sourcePickerResolving)
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
@@ -628,6 +629,7 @@
     skipVisible: showSkip,
     sourcePickerOpen: sourcePickerVisible,
     connectingOpen: sourceConnectingVisible,
+    subtitleEditorOpen,
   }))
   $effect(() => {
     if (!gmBitmapMode) return
@@ -645,6 +647,7 @@
       noticeVisible,
       sourcePickerOpen: sourcePickerVisible,
       connecting: sourceConnectingVisible,
+      subtitleEditorOpen,
     })
     invoke('player_gm_dock', dock).catch(() => {})
     if (gameModeDockIsLive(dock)) {
@@ -1010,7 +1013,25 @@
       // edge. Its timestamp makes the ownership transfer deterministic in either listener order.
       if (e.payload.name === 'b' && e.payload.pressed && performance.now() - get(streamPickerDismissedAt) < 500) return
       if (subtitleEditorOpen) {
-        if (e.payload.pressed && e.payload.name === 'b') subtitleEditorOpen = false
+        if (!e.payload.pressed) return
+        if (e.payload.name === 'b') {
+          subtitleEditorOpen = false
+          poke()
+        } else if (e.payload.name === 'a') {
+          ;(document.activeElement as HTMLElement | null)?.click()
+        } else {
+          const active = document.activeElement
+          if ((e.payload.name === 'left' || e.payload.name === 'right') && active instanceof HTMLInputElement && active.type === 'range') {
+            // Synthetic KeyboardEvents do not perform a range input's native default action in
+            // WebKitGTK. Apply one real slider step and emit input so Svelte's binding/repaint runs.
+            if (e.payload.name === 'left') active.stepDown()
+            else active.stepUp()
+            active.dispatchEvent(new Event('input', { bubbles: true }))
+            return
+          }
+          const key = ({ up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' } as Record<string, string>)[e.payload.name]
+          if (key) window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+        }
         return
       }
       // The track menu captures the pad while open — defer A/B/L1/R1 to it.
@@ -1421,6 +1442,7 @@
       {paused}
       command={cmd}
       capture={() => playerEditorSnapshot(pos)}
+      onpaint={gmBitmapMode ? bumpPlayerOverlay : undefined}
       onclose={() => { subtitleEditorOpen = false; poke() }}
     />
   {/if}

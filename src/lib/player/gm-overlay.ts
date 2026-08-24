@@ -25,12 +25,13 @@ export function gameModeBitmapOverlayActive(input: {
   skipVisible?: boolean
   sourcePickerOpen?: boolean
   connectingOpen?: boolean
+  subtitleEditorOpen?: boolean
 }): boolean {
   if (!input.gameMode || !input.playing) return false
   // Menus/comments are also painted into mpv: leaving them as live HTML requires unmapping the
   // opaque Gamescope video window, which made the output go black. Discrete menus re-snapshot on
   // focus changes; comments use the native self-paced refresh loop while scrolling.
-  if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen || input.statsOpen || input.sourcePickerOpen || input.connectingOpen) return true
+  if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen || input.statsOpen || input.sourcePickerOpen || input.connectingOpen || input.subtitleEditorOpen) return true
   // Keep the polished HTML Skip pill. The native progress/controls continue independently below
   // its transparent bitmap; PlayerOverlay must never disable gmNativeControls just because this
   // chip is visible (that coupling was the disappearing-seekbar bug).
@@ -111,10 +112,12 @@ export function gameModeDock(input: {
   noticeVisible: boolean
   sourcePickerOpen?: boolean
   connecting?: boolean
+  subtitleEditorOpen?: boolean
 }): { bottom: number; right: number; top: number; hide: boolean } {
   void input.noticeVisible
   void input.sourcePickerOpen
   void input.connecting
+  void input.subtitleEditorOpen
   void input.loading
   void input.controlsVisible
   return { bottom: 0, right: 0, top: 0, hide: false }

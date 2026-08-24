@@ -312,6 +312,26 @@
   // the removed settings button. The next Down then landed on Close/Copy instead of a source.
   let pickerFocusReady = false
   let pickerTrap = $state<HTMLElement | null>(null)
+  // The source picker is lazy-loaded outside PlayerOverlay. On a cold open, the player's first
+  // one-shot Gamescope snapshot can therefore happen while only the pending placeholder exists.
+  // Re-snapshot once the real trap mounts, after WebKit has painted its card, regardless of whether
+  // source rows have arrived yet. Later focus changes keep using the existing onfocusin bump.
+  $effect(() => {
+    const trap = pickerTrap
+    if (!$gameMode || !trap) return
+    let cancelled = false
+    bumpPlayerOverlay()
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!cancelled && trap.isConnected) bumpPlayerOverlay()
+    }))
+    const timer = setTimeout(() => {
+      if (!cancelled && trap.isConnected) bumpPlayerOverlay()
+    }, 120)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  })
   $effect(() => {
     const open = !!pick && !pick.hidden
     if (!open) {
