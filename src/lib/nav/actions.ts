@@ -56,9 +56,28 @@ let tooltipsSuppressed = false
 export function suppressNativeTooltips() {
   if (tooltipsSuppressed || !get(gameMode)) return
   tooltipsSuppressed = true
+  const stripTitle = (el: Element | null) => {
+    const title = el?.getAttribute('title')
+    if (!el || !title) return
+    el.setAttribute('data-title', title)
+    if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', title)
+    el.removeAttribute('title')
+  }
+  const stripTree = (root: ParentNode) => {
+    if (root instanceof Element) stripTitle(root)
+    root.querySelectorAll?.('[title]').forEach(stripTitle)
+  }
+  // Remove titles which already exist before the emulated Gamescope pointer is moved. Waiting for
+  // pointerover can be one native hit-test too late and briefly paints WebKit's top-left tooltip.
+  stripTree(document)
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes') stripTitle(mutation.target as Element)
+      else mutation.addedNodes.forEach((node) => { if (node instanceof Element) stripTree(node) })
+    }
+  }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['title'] })
   window.addEventListener('pointerover', (e) => {
-    const el = (e.target as HTMLElement | null)?.closest?.('[title]') as HTMLElement | null
-    if (el?.title) { el.dataset.title = el.title; el.removeAttribute('title') }
+    stripTitle((e.target as Element | null)?.closest?.('[title]') ?? null)
   }, true)
 }
 

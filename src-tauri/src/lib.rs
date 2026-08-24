@@ -2129,6 +2129,11 @@ var archive=host==='discussanime.moe'&&path.indexOf('/embed/')===0;
 var tac=(host==='theanimecommunity.com'||host.endsWith('.theanimecommunity.com'));
 if(!disqus&&!archive&&!tac)return;
 if(window.__izumiCommentsTouchScroll)return;window.__izumiCommentsTouchScroll=1;
+function stripTitle(el){if(!el||!el.getAttribute)return;var title=el.getAttribute('title');if(!title)return;el.setAttribute('data-izumi-title',title);if(!el.hasAttribute('aria-label'))el.setAttribute('aria-label',title);el.removeAttribute('title');}
+function stripTitles(root){if(!root)return;if(root.nodeType===1)stripTitle(root);if(root.querySelectorAll){var titled=root.querySelectorAll('[title]');for(var i=0;i<titled.length;i++)stripTitle(titled[i]);}}
+stripTitles(document.documentElement);
+document.addEventListener('pointerover',function(ev){var el=ev.target&&ev.target.closest?ev.target.closest('[title]'):null;stripTitle(el);},true);
+new MutationObserver(function(mutations){for(var i=0;i<mutations.length;i++){var m=mutations[i];if(m.type==='attributes'){stripTitle(m.target);continue;}for(var j=0;j<m.addedNodes.length;j++)stripTitles(m.addedNodes[j]);}}).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['title']});
 var active=false,moved=false,startY=0,lastY=0,lastAt=0,suppressClickUntil=0,target=null;
 var inputKind=null,pointerId=null;
 var velocity=0,momentumFrame=0;

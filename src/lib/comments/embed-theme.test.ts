@@ -62,6 +62,8 @@ describe('DiscussAnime embed theming', () => {
     expect(lib).toContain("host==='discussanime.moe'&&path.indexOf('/embed/')===0")
     expect(lib).toContain("relay('start',0,0)")
     expect(lib).toContain('inputKind=null,pointerId=null')
+    expect(lib).toContain("attributeFilter:['title']")
+    expect(lib).toContain("setAttribute('aria-label',title)")
     expect(panel).toContain("m?.type === 'izumi-comments-touch-scroll'")
     expect(panel).toContain("phase === 'start'")
     expect(panel).toContain("$gameMode ? 'shadow-none' : 'shadow-2xl'")
