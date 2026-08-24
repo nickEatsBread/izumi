@@ -154,6 +154,62 @@ export const SCHEDULE_QUERY = gql`
   }
   ${SCHEDULE_MEDIA_FIELDS}`
 
+/** One HTTP round trip for the normal weekly timetable. AniList caps every Page at 50, but GraphQL
+ * aliases let us request seven independent day Pages in one operation. schedule-cache follows up
+ * only the exceptional day whose Page reports hasNextPage instead of serially paging the whole
+ * week before anything can render. */
+export const SCHEDULE_WEEK_QUERY = gql`
+  query ScheduleWeek(
+    $d0Start: Int!, $d0End: Int!, $d1Start: Int!, $d1End: Int!,
+    $d2Start: Int!, $d2End: Int!, $d3Start: Int!, $d3End: Int!,
+    $d4Start: Int!, $d4End: Int!, $d5Start: Int!, $d5End: Int!,
+    $d6Start: Int!, $d6End: Int!
+  ) {
+    d0: Page(page: 1, perPage: 50) {
+      pageInfo { hasNextPage }
+      airingSchedules(airingAt_greater: $d0Start, airingAt_lesser: $d0End, sort: TIME) {
+        airingAt episode media { ...ScheduleMediaFields }
+      }
+    }
+    d1: Page(page: 1, perPage: 50) {
+      pageInfo { hasNextPage }
+      airingSchedules(airingAt_greater: $d1Start, airingAt_lesser: $d1End, sort: TIME) {
+        airingAt episode media { ...ScheduleMediaFields }
+      }
+    }
+    d2: Page(page: 1, perPage: 50) {
+      pageInfo { hasNextPage }
+      airingSchedules(airingAt_greater: $d2Start, airingAt_lesser: $d2End, sort: TIME) {
+        airingAt episode media { ...ScheduleMediaFields }
+      }
+    }
+    d3: Page(page: 1, perPage: 50) {
+      pageInfo { hasNextPage }
+      airingSchedules(airingAt_greater: $d3Start, airingAt_lesser: $d3End, sort: TIME) {
+        airingAt episode media { ...ScheduleMediaFields }
+      }
+    }
+    d4: Page(page: 1, perPage: 50) {
+      pageInfo { hasNextPage }
+      airingSchedules(airingAt_greater: $d4Start, airingAt_lesser: $d4End, sort: TIME) {
+        airingAt episode media { ...ScheduleMediaFields }
+      }
+    }
+    d5: Page(page: 1, perPage: 50) {
+      pageInfo { hasNextPage }
+      airingSchedules(airingAt_greater: $d5Start, airingAt_lesser: $d5End, sort: TIME) {
+        airingAt episode media { ...ScheduleMediaFields }
+      }
+    }
+    d6: Page(page: 1, perPage: 50) {
+      pageInfo { hasNextPage }
+      airingSchedules(airingAt_greater: $d6Start, airingAt_lesser: $d6End, sort: TIME) {
+        airingAt episode media { ...ScheduleMediaFields }
+      }
+    }
+  }
+  ${SCHEDULE_MEDIA_FIELDS}`
+
 export interface SearchFilters {
   // Quick bar:
   search?: string; genres?: string[]; season?: string; year?: number | null

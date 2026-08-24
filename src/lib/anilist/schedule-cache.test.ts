@@ -6,16 +6,20 @@ describe('schedule week cache', () => {
   beforeEach(clearScheduleCache)
 
   it('deduplicates in-flight pages and reuses the completed week', async () => {
-    const query = vi.fn((_document: unknown, vars: { page: number }) => ({
-      toPromise: async () => ({
-        data: {
-          Page: {
-            airingSchedules: [{ airingAt: vars.page === 1 ? 20 : 10, episode: vars.page, media: { id: vars.page } }],
-            // AniList currently documents lastPage as inaccurate. A bogus value must not fan out.
-            pageInfo: { lastPage: 99, hasNextPage: vars.page === 1 },
-          },
-        },
-      }),
+    const query = vi.fn((_document: unknown, vars: { page?: number }) => ({
+      toPromise: async () => vars.page
+        ? ({ data: { Page: {
+            airingSchedules: [{ airingAt: 10, episode: 2, media: { id: 2 } }],
+            pageInfo: { hasNextPage: false },
+          } } })
+        : ({ data: {
+            d0: {
+              airingSchedules: [{ airingAt: 20, episode: 1, media: { id: 1 } }],
+              // AniList currently documents lastPage as inaccurate. A bogus value must not fan out.
+              pageInfo: { lastPage: 99, hasNextPage: true },
+            },
+            d1: { airingSchedules: [], pageInfo: { hasNextPage: false } },
+          } }),
     }))
     const client = { query } as unknown as Client
 
@@ -59,9 +63,9 @@ describe('schedule week cache', () => {
   })
 
   it('bounds remembered weeks instead of retaining an unlimited browsing session', async () => {
-    const query = vi.fn((_document: unknown, vars: { start: number }) => ({
+    const query = vi.fn((_document: unknown, vars: { d0Start: number }) => ({
       toPromise: async () => ({
-        data: { Page: { airingSchedules: [{ airingAt: vars.start, media: { id: vars.start } }], pageInfo: { hasNextPage: false } } },
+        data: { d0: { airingSchedules: [{ airingAt: vars.d0Start + 1, media: { id: vars.d0Start } }], pageInfo: { hasNextPage: false } } },
       }),
     }))
     const client = { query } as unknown as Client

@@ -345,6 +345,7 @@ describe('AniList rate-limit headers', () => {
     expect(anilistRequestPriority(body('mutation Save { SaveMediaListEntry { id } }'))).toBe(0)
     expect(anilistRequestPriority(body('query MediaById { Media { id } }'))).toBe(1)
     expect(anilistRequestPriority(body('query Schedule { Page { pageInfo { lastPage } } }'))).toBe(1)
+    expect(anilistRequestPriority(body('query ScheduleWeek { d0: Page { pageInfo { hasNextPage } } }'))).toBe(1)
     expect(anilistRequestPriority(body('query Hero { Page { media { id } } }'))).toBe(2)
     expect(anilistRequestPriority(body('query Lists { MediaListCollection { lists { name } } }'))).toBe(4)
     expect(anilistRequestPriority(body('query Page { Page { media { id } } }'))).toBe(7)

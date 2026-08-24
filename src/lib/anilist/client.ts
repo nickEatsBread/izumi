@@ -85,7 +85,7 @@ export function anilistRequestPriority(body: BodyInit | null | undefined): numbe
     if (/\bmutation\b/.test(parsed.query)) return 0
     const operation = /\bquery\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(parsed.query)?.[1]
     if (!operation) return 3
-    if (/^(MediaById|SourceMediaById|ReadingMediaById|Schedule|Search|SearchAll)$/.test(operation)) return 1
+    if (/^(MediaById|SourceMediaById|ReadingMediaById|Schedule|ScheduleWeek|Search|SearchAll)$/.test(operation)) return 1
     if (/^Hero/.test(operation)) return 2
     if (/^(Lists|ListPreview|ListStatuses|ReadingLists|ListIds|MediaByIds|MediaByMal|ReadingMediaByMal)$/.test(operation)) return 4
     if (/^(Page|PageAll|PersonalRecommendations|RecentReleases)$/.test(operation)) return 7

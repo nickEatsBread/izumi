@@ -1,5 +1,5 @@
 import type { Client } from '@urql/core'
-import { SCHEDULE_QUERY } from './detail-queries'
+import { SCHEDULE_QUERY, SCHEDULE_WEEK_QUERY } from './detail-queries'
 import type { Airing } from './schedule'
 
 type PageData = {
@@ -7,6 +7,22 @@ type PageData = {
     airingSchedules?: Airing[]
     pageInfo?: { hasNextPage?: boolean }
   }
+}
+
+const DAY = 24 * 3600
+const DAY_KEYS = ['d0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6'] as const
+type DayKey = typeof DAY_KEYS[number]
+type WeekData = Partial<Record<DayKey, PageData['Page']>>
+
+function weekVariables(start: number): Record<string, number> {
+  const variables: Record<string, number> = {}
+  for (let day = 0; day < DAY_KEYS.length; day++) {
+    // AniList's greater/lesser filters are strict. Subtract one second at the lower edge so an
+    // airing exactly at local midnight is neither lost nor duplicated into the previous day.
+    variables[`d${day}Start`] = start + day * DAY - 1
+    variables[`d${day}End`] = start + (day + 1) * DAY
+  }
+  return variables
 }
 
 const cache = new Map<string, Airing[]>()
@@ -66,23 +82,30 @@ export function loadScheduleWeek(
         timedOut = true
         controller.abort()
       }, SCHEDULE_DEADLINE_MS)
-      const fetchPage = (page: number) => client.query<PageData>(
+      const fetchDayPage = (day: number, page: number) => client.query<PageData>(
         SCHEDULE_QUERY,
-        { start, end, page },
+        { start: start + day * DAY - 1, end: Math.min(end, start + (day + 1) * DAY), page },
         { requestPolicy: 'network-only', fetchOptions: { signal: controller.signal } },
       ).toPromise()
       try {
-        const first = await fetchPage(1)
+        const first = await client.query<WeekData>(
+          SCHEDULE_WEEK_QUERY,
+          weekVariables(start),
+          { requestPolicy: 'network-only', fetchOptions: { signal: controller.signal } },
+        ).toPromise()
         if (first.error) throw new Error(first.error.message)
-        let current = first.data?.Page
-        const all = [...(current?.airingSchedules ?? [])]
-        // AniList documents total/lastPage as currently inaccurate. Follow the authoritative
-        // hasNextPage flag so we neither skip a week tail nor fan out requests for phantom pages.
-        for (let page = 2; current?.pageInfo?.hasNextPage && page <= 12; page++) {
-          const result = await fetchPage(page)
-          if (result.error) throw new Error(result.error.message)
-          current = result.data?.Page
+        const all: Airing[] = []
+        for (let day = 0; day < DAY_KEYS.length; day++) {
+          let current = first.data?.[DAY_KEYS[day]]
           all.push(...(current?.airingSchedules ?? []))
+          // AniList documents total/lastPage as currently inaccurate. Follow the authoritative
+          // hasNextPage flag and page only this unusually busy day, not the whole week again.
+          for (let page = 2; current?.pageInfo?.hasNextPage && page <= 12; page++) {
+            const result = await fetchDayPage(day, page)
+            if (result.error) throw new Error(result.error.message)
+            current = result.data?.Page
+            all.push(...(current?.airingSchedules ?? []))
+          }
         }
         all.sort((a, b) => a.airingAt - b.airingAt)
         remember(key, all)

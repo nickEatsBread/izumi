@@ -47,7 +47,7 @@
   // Schedule/Watchlist tabs, and its filtering state is bound down into ScheduleGrid instead of
   // owned there, so this header can render it without also owning the AniList/MAL list-loading
   // logic that used to size it.
-  let view = $state<'mine' | 'all'>('all')
+  let view = $state<'mine' | 'all'>('mine')
   let viewTouched = $state(false)
   let mineCount = $state(0)
   const pick = (v: 'mine' | 'all') => { view = v; viewTouched = true }

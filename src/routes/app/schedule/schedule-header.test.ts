@@ -98,4 +98,17 @@ describe('schedule page header', () => {
     expect(grid).toContain('loadScheduleWeek(client, s, e, controller.signal)')
     expect(grid).toContain('controller.abort()')
   })
+
+  it('does not switch to All while linked-list sources are still loading', () => {
+    expect(page).toContain("let view = $state<'mine' | 'all'>('mine')")
+    expect(grid).toContain("view = $bindable('mine')")
+    expect(grid).toContain('let mySetsReady = $state(false)')
+    expect(grid).toContain('mySetsReady || sets.local.size > 0')
+  })
+
+  it('never renders a cached week with a transient negative day index', () => {
+    expect(grid).not.toContain('let selected = $state(-1)')
+    expect(grid).toContain('start === weekRange(new Date()).start')
+    expect(grid).toContain('shownDays[selected]')
+  })
 })

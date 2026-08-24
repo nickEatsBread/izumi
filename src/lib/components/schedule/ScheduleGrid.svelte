@@ -7,6 +7,7 @@
   // week to the viewer's tracked/watched titles (AniList list + MAL list + local history), a "Next
   // up" countdown strip, and a Watching/Planning badge on your shows even in the All view.
   import { getContextClient } from '@urql/svelte'
+  import { untrack } from 'svelte'
   import { listenSafe } from '$lib/util/listen'
   import { groupByDay, weekRange, type Airing } from '$lib/anilist/schedule'
   import { cachedScheduleWeek, loadScheduleWeek } from '$lib/anilist/schedule-cache'
@@ -38,7 +39,7 @@
   // since this component no longer renders a header row of its own to measure.
   let {
     start, end, headerOffset = 0, onMineCount,
-    view = $bindable('all'), viewTouched = $bindable(false),
+    view = $bindable('mine'), viewTouched = $bindable(false),
   }: {
     start: number; end: number; headerOffset?: number; onMineCount?: (n: number) => void
     view?: 'mine' | 'all'; viewTouched?: boolean
@@ -97,11 +98,15 @@
   // is folded in reactively so a fresh play shows up without a refetch.
   const listUser = $derived($anilistUserName || $anilistUser)
   let netSets = $state<MySets>(emptyMySets())
+  let mySetsReady = $state(false)
   $effect(() => {
     const u = listUser
     void $malToken // re-run when MAL connects/disconnects
     let cancelled = false
-    loadMySets(u).then((s) => { if (!cancelled) netSets = s })
+    mySetsReady = false
+    loadMySets(u).then((s) => {
+      if (!cancelled) { netSets = s; mySetsReady = true }
+    })
     return () => { cancelled = true }
   })
   const sets = $derived<MySets>({ ...netSets, local: new Set(Object.keys($localHistory).map(Number)) })
@@ -110,7 +115,14 @@
   // View: My Shows vs All. Default to My Shows once we know the viewer has any source; flips to All
   // for a user with nothing tracked. Sticks once the user picks a side. `view`/`viewTouched` are
   // bindable (owned by the page) — this effect stays here because it needs `sets`, loaded above.
-  $effect(() => { if (!viewTouched) view = hasMySources(sets) ? 'mine' : 'all' })
+  // Do not infer "no account" from the empty placeholder while AniList/MAL lists are still in
+  // flight. That transient inference was why reopening Schedule through the Options sidebar
+  // visibly (and sometimes persistently) selected All even though the user never chose it.
+  $effect(() => {
+    if (!viewTouched && (mySetsReady || sets.local.size > 0)) {
+      view = hasMySources(sets) ? 'mine' : 'all'
+    }
+  })
   // "See all airing" below is a one-week escape hatch out of an empty My Shows view, not a
   // deliberate preference — it must NOT set viewTouched, or a single empty week would permanently
   // opt the viewer out of My Shows for the rest of the session (including weeks that do have their
@@ -160,8 +172,12 @@
   })
 
   // Day-view selected day, defaulting to today.
-  let selected = $state(-1)
-  $effect(() => { if (selected < 0) selected = todayIdx >= 0 ? todayIdx : 0 })
+  // Initialize synchronously. On a cached week `loading` becomes false in the first effect flush;
+  // the old -1 + later correction rendered shownDays[-1] between those effects and crashed
+  // DayColumn, making a quick Previous/Next return look like an endless empty load.
+  let selected = $state(untrack(() =>
+    start === weekRange(new Date()).start ? (new Date().getDay() + 6) % 7 : 0,
+  ))
 
   // Keep the selected day card centered in the horizontally-scrollable day strip (mobile).
   let dayRow = $state<HTMLElement>()
