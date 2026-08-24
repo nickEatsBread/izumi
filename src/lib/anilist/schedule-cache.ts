@@ -12,6 +12,7 @@ type PageData = {
 const cache = new Map<string, Airing[]>()
 const inflight = new Map<string, Promise<Airing[]>>()
 const keyOf = (start: number, end: number) => `${start}:${end}`
+const SCHEDULE_DEADLINE_MS = 18_000
 
 /** Session cache for schedule weeks. Requests deliberately survive ScheduleGrid unmounts: changing
  * week used to abort/remount the grid and throw away work which the next click immediately needed. */
@@ -23,29 +24,38 @@ export function loadScheduleWeek(client: Client, start: number, end: number): Pr
   if (pending) return pending
 
   const request = (async () => {
+    const controller = new AbortController()
+    const deadline = setTimeout(() => controller.abort(), SCHEDULE_DEADLINE_MS)
     const fetchPage = (page: number) => client.query<PageData>(
       SCHEDULE_QUERY,
       { start, end, page },
-      { requestPolicy: 'network-only' },
+      { requestPolicy: 'network-only', fetchOptions: { signal: controller.signal } },
     ).toPromise()
-    const first = await fetchPage(1)
-    if (first.error) throw new Error(first.error.message)
-    const firstPage = first.data?.Page
-    const all = [...(firstPage?.airingSchedules ?? [])]
-    const remaining = remainingSchedulePages(
-      firstPage?.pageInfo?.lastPage,
-      firstPage?.pageInfo?.hasNextPage,
-    )
-    if (remaining.length) {
-      const rest = await Promise.all(remaining.map(fetchPage))
-      for (const result of rest) {
-        if (result.error) throw new Error(result.error.message)
-        all.push(...(result.data?.Page?.airingSchedules ?? []))
+    try {
+      const first = await fetchPage(1)
+      if (first.error) throw new Error(first.error.message)
+      const firstPage = first.data?.Page
+      const all = [...(firstPage?.airingSchedules ?? [])]
+      const remaining = remainingSchedulePages(
+        firstPage?.pageInfo?.lastPage,
+        firstPage?.pageInfo?.hasNextPage,
+      )
+      if (remaining.length) {
+        const rest = await Promise.all(remaining.map(fetchPage))
+        for (const result of rest) {
+          if (result.error) throw new Error(result.error.message)
+          all.push(...(result.data?.Page?.airingSchedules ?? []))
+        }
       }
+      all.sort((a, b) => a.airingAt - b.airingAt)
+      cache.set(key, all)
+      return all
+    } catch (error) {
+      if (controller.signal.aborted) throw new Error('AniList schedule request timed out')
+      throw error
+    } finally {
+      clearTimeout(deadline)
     }
-    all.sort((a, b) => a.airingAt - b.airingAt)
-    cache.set(key, all)
-    return all
   })().finally(() => inflight.delete(key))
 
   inflight.set(key, request)

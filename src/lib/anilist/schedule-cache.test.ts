@@ -29,4 +29,33 @@ describe('schedule week cache', () => {
     expect(sameInflight).toBe(first)
     expect(cached).toBe(first)
   })
+
+  it('times out a stuck week and clears it from the in-flight cache', async () => {
+    vi.useFakeTimers()
+    try {
+      const query = vi.fn((_document: unknown, _vars: unknown, context: {
+        fetchOptions: { signal: AbortSignal }
+      }) => ({
+        toPromise: () => new Promise((_, reject) => {
+          context.fetchOptions.signal.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'))
+          }, { once: true })
+        }),
+      }))
+      const client = { query } as unknown as Client
+
+      const first = loadScheduleWeek(client, 300, 400)
+      const firstRejected = expect(first).rejects.toThrow('AniList schedule request timed out')
+      await vi.advanceTimersByTimeAsync(18_000)
+      await firstRejected
+
+      const second = loadScheduleWeek(client, 300, 400)
+      const secondRejected = expect(second).rejects.toThrow('AniList schedule request timed out')
+      expect(query).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(18_000)
+      await secondRejected
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

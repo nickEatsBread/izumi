@@ -51,7 +51,9 @@ async function nativeFetch(
   const r = await invokeNativeHttp<{ status: number; headers: Record<string, string>; body: string }>(
     'http_post',
     { url, body, headers },
-    { signal: init?.signal ?? undefined },
+    // The Rust bridge has a 30s default, but catalogue screens have working backup providers.
+    // Fail over while the loading UI is still useful instead of making a Deck look frozen.
+    { signal: init?.signal ?? undefined, timeoutMs: 15_000 },
   )
   return new Response(r.body, { status: r.status, headers: r.headers })
 }
@@ -66,12 +68,11 @@ const limiter = new Bottleneck({
   reservoir: RATE_LIMIT,
   reservoirRefreshAmount: RATE_LIMIT,
   reservoirRefreshInterval: 60_000,
-  // The reservoir is the quota guard; concurrency is only a latency control. Two-at-a-time made
-  // Home's independent rows resolve in waves and made Schedule's remaining pages sit behind them.
-  // AniList accepts a modest burst (the server still reports/decrements the same 30/min quota), so
-  // let one screen's visible work overlap while retaining a small start-time stagger.
-  maxConcurrent: 6,
-  minTime: 100,
+  // AniList also has a separate (undocumented-size) burst limiter. Three overlapping requests keep
+  // Schedule pagination quick without the six-at-100ms burst that could put every Browse query into
+  // a one-minute 429 window at once.
+  maxConcurrent: 3,
+  minTime: 350,
 })
 
 /** Bottleneck priority for a serialized GraphQL request (0 = first, 9 = last). A navigation to a
@@ -152,35 +153,110 @@ async function syncReservoirFromHeaders(res: Response) {
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)))
-
-// Shared cooldown: when ANY request gets a 429, every other in-flight/queued request
-// waits it out too, so a burst degrades to a brief pause instead of a storm of 429s.
+// Shared cooldown: once AniList reports a 429, public reads immediately use their existing backup
+// provider. Waiting out Retry-After inside the limiter used to hold all slots (and all skeletons)
+// for as much as five minutes.
 let cooldownUntil = 0
 
-// On 429, honor `Retry-After` (seconds) or `X-RateLimit-Reset` (unix seconds), pause, and
-// retry (bounded) — the request eventually succeeds instead of surfacing as an error.
-async function fetchWithBackoff(
-  input: RequestInfo | URL,
-  init?: RequestInit,
-  attempt = 0,
-  onRequestStart?: () => void,
-): Promise<Response> {
-  const wait = cooldownUntil - Date.now()
-  if (wait > 0) await sleep(wait)
-  const res = await nativeFetch(input, init, onRequestStart)
-  await syncReservoirFromHeaders(res)
-  if (res.status !== 429 || attempt >= 5) return res
+function rateLimitDelayMs(res: Response, now = Date.now()): number {
   const retryAfter = res.headers.get('retry-after')
   const reset = res.headers.get('x-ratelimit-reset')
   let ms: number
   if (retryAfter) ms = Number(retryAfter) * 1000
-  else if (reset) ms = Number(reset) * 1000 - Date.now()
-  else ms = 1000 * 2 ** attempt // exponential fallback
-  ms = Math.min(Math.max(ms, 1000), 65_000)
-  cooldownUntil = Date.now() + ms
-  await sleep(ms)
-  return fetchWithBackoff(input, init, attempt + 1, onRequestStart)
+  else if (reset) ms = Number(reset) * 1000 - now
+  else ms = 60_000
+  return Number.isFinite(ms) ? Math.min(Math.max(ms, 1000), 65_000) : 60_000
+}
+
+async function openRateLimitCooldown(wait: number): Promise<void> {
+  cooldownUntil = Math.max(cooldownUntil, Date.now() + wait)
+  // Keep one control-plane token available so already-queued jobs can enter their callback, see
+  // the cooldown and settle. They refund it without touching AniList.
+  await limiter.updateSettings({ reservoir: 1 })
+  if (resetTimer) clearTimeout(resetTimer)
+  knownResetAtMs = cooldownUntil
+  resetTimer = setTimeout(() => {
+    cooldownUntil = 0
+    knownResetAtMs = 0
+    void limiter.updateSettings({ reservoir: knownLimit })
+  }, Math.max(0, cooldownUntil - Date.now()) + 50)
+}
+
+function rateLimitedResponse(waitMs: number): Response {
+  const seconds = Math.max(1, Math.ceil(waitMs / 1000))
+  return Response.json(
+    { data: null, errors: [{ message: 'Too Many Requests.', status: 429 }] },
+    { status: 429, headers: { 'retry-after': String(seconds) } },
+  )
+}
+
+function activeCooldownResponse(now = Date.now()): Response | null {
+  const wait = cooldownUntil - now
+  return wait > 0 ? rateLimitedResponse(wait) : null
+}
+
+function abortError(): DOMException {
+  return new DOMException('The request was aborted', 'AbortError')
+}
+
+/** Bottleneck cannot remove an individual queued job. Settle the urql operation on abort anyway;
+ * when the orphan reaches the callback it observes the same signal, avoids the network and refunds
+ * the reservoir token. This prevents navigation-away work from pinning a new page's skeleton. */
+function settleOnAbort<T>(pending: Promise<T>, signal?: AbortSignal | null): Promise<T> {
+  if (!signal) return pending
+  if (signal.aborted) return Promise.reject(abortError())
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => { cleanup(); reject(abortError()) }
+    const cleanup = () => signal.removeEventListener('abort', aborted)
+    signal.addEventListener('abort', aborted, { once: true })
+    pending.then(
+      (value) => { cleanup(); resolve(value) },
+      (error) => { cleanup(); reject(error) },
+    )
+  })
+}
+
+async function fetchAniList(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (init?.signal?.aborted) throw abortError()
+  const coolingDown = activeCooldownResponse()
+  if (coolingDown) return coolingDown
+
+  // A depleted local reservoir normally makes Bottleneck queue until its minute tick. There is no
+  // value in keeping the UI in a loading state meanwhile: surface a 429-shaped response so public
+  // screens can use their backup and account operations can fail normally.
+  const remaining = await limiter.currentReservoir()
+  if (remaining === 0) {
+    const wait = knownResetAtMs > Date.now() ? knownResetAtMs - Date.now() : 60_000
+    cooldownUntil = Math.max(cooldownUntil, Date.now() + wait)
+    return rateLimitedResponse(wait)
+  }
+
+  const scheduled = limiter.schedule(
+    { priority: anilistRequestPriority(init?.body) },
+    async () => {
+      let requestStarted = false
+      try {
+        // A different in-flight request may have opened the cooldown while this job was queued.
+        const blocked = activeCooldownResponse()
+        if (blocked) return blocked
+        const response = await nativeFetch(input, init, () => { requestStarted = true })
+        await syncReservoirFromHeaders(response)
+        // `remaining: 0` on an otherwise successful final response is just as important as a 429:
+        // Bottleneck has already queued later rows. Open the local cooldown while returning this
+        // successful response unchanged, allowing those rows to fail over instead of waiting a
+        // minute for the reservoir refresh.
+        const quotaExhausted = parseRateLimitHeaders(response.headers).remaining === 0
+        if (response.status === 429 || quotaExhausted) {
+          const wait = rateLimitDelayMs(response)
+          await openRateLimitCooldown(wait)
+        }
+        return response
+      } finally {
+        if (!requestStarted) await limiter.incrementReservoir(1)
+      }
+    },
+  ) as Promise<Response>
+  return settleOnAbort(scheduled, init?.signal)
 }
 
 /** AniList stays authoritative. Only named, public catalog queries can cross this boundary: after a
@@ -229,28 +305,17 @@ async function fetchWithCatalogFallback(input: RequestInfo | URL, init?: Request
     catch { /* Every backup is unavailable too — let the once-per-minute AniList probe run. */ }
   }
 
+  // The request may have been created before the first 429 marked the degraded state. Re-check the
+  // transport cooldown here so those already-mounted Browse rows also bypass the limiter promptly.
+  if (backup && activeCooldownResponse()) {
+    try { return await fetchFromBackup(backup) }
+    catch { /* Preserve the normal AniList-shaped 429 error below. */ }
+  }
+
   try {
     // Only actual AniList traffic spends AniList reservoir tokens. Once the circuit is open,
     // Jikan-backed rows must not stall behind or drain the failed service's quota queue.
-    const response = await limiter.schedule(
-      { priority: anilistRequestPriority(init?.body) },
-      async () => {
-        // urql aborts a fetch when its component is unmounted. Bottleneck has already debited the
-        // reservoir by the time this callback starts, so refund a queued job that was cancelled
-        // before it touched the network. Without this, browsing quickly through screens could burn
-        // all 30 local tokens on requests AniList never received, freezing useful work until the
-        // next minute boundary.
-        let requestStarted = false
-        try {
-          return await fetchWithBackoff(input, init, 0, () => { requestStarted = true })
-        } catch (error) {
-          if (!requestStarted && error instanceof Error && error.name === 'AbortError') {
-            await limiter.incrementReservoir(1)
-          }
-          throw error
-        }
-      },
-    ) as Response
+    const response = await fetchAniList(input, init)
     if (!backup) return response
     const failure = await aniListCatalogFailure(response)
     if (!failure) {

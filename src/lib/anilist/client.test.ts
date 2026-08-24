@@ -291,6 +291,39 @@ describe('anilist client', () => {
     expect(mocks.get).not.toHaveBeenCalled()
     expect(get(anilistDegraded)).toBeNull()
   })
+
+  it('hands a catalog 429 to the backup immediately instead of sleeping and retrying', async () => {
+    const query = gql`query HeroAll($perPage: Int) {
+      Page(perPage: $perPage) { media { id title { userPreferred } } }
+    }`
+    mocks.post.mockResolvedValue({
+      status: 429,
+      headers: { 'retry-after': '60', 'x-ratelimit-remaining': '0' },
+      body: JSON.stringify({ data: null, errors: [{ message: 'Too Many Requests.', status: 429 }] }),
+    })
+    mocks.get.mockResolvedValueOnce({
+      ok: true, status: 200,
+      json: async () => ({
+        data: [{ id: '42', attributes: { canonicalTitle: 'Backup Anime' } }],
+        included: [{
+          type: 'mappings', id: 'm1',
+          attributes: { externalSite: 'anilist/anime', externalId: '9001' },
+        }],
+        links: { next: null }, meta: { count: 1 },
+      }),
+    })
+    mocks.getIndex.mockResolvedValue(new Map())
+    mocks.lookupKitsu.mockReturnValue(9001)
+
+    const result = await anilist.query<{ Page: { media: { id: number }[] } }>(
+      query, { perPage: 1 }, { requestPolicy: 'network-only' },
+    ).toPromise()
+
+    expect(result.error).toBeUndefined()
+    expect(result.data?.Page.media).toMatchObject([{ id: 9001 }])
+    expect(mocks.post).toHaveBeenCalledTimes(1)
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('AniList rate-limit headers', () => {
