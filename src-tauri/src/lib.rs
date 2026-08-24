@@ -2116,29 +2116,47 @@ document.addEventListener('DOMContentLoaded',pass);
 new MutationObserver(schedule).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['href']});
 }catch(e){}})();"#;
 
-/// Gamescope/WebKitGTK does not scroll-chain a Deck touch drag out of Disqus's cross-origin child
-/// frame to the same-origin loader document that actually owns the scrollbar. Injected into all
-/// frames at document start below, this script self-gates to DiscussAnime's Disqus comments and
-/// forwards only post-slop drag deltas. Taps remain native Disqus events; an actual drag suppresses
-/// its trailing synthetic click. The loader validates both the sender origin and frame window.
+/// Gamescope/WebKitGTK does not reliably deliver native touch scrolling inside third-party comment
+/// frames. Injected into every frame at document start, this script self-gates to the three comment
+/// providers Izumi embeds. Disqus and the DiscussAnime archive relay drag deltas to the parent that
+/// owns their scrollbar; Anime Community scrolls the nearest local overflow owner. Taps remain
+/// native provider events, while a real drag suppresses only its trailing synthetic click.
 #[cfg(target_os = "linux")]
-const DISQUS_TOUCH_SCROLL_SCRIPT: &str = r#"(function(){try{
-if(location.hostname!=='disqus.com'||location.pathname.indexOf('/embed/comments')!==0)return;
-if(new URLSearchParams(location.search).get('f')!=='discussanime')return;
-if(window.__izumiDisqusTouchScroll)return;window.__izumiDisqusTouchScroll=1;
-var active=false,moved=false,startY=0,lastY=0,lastAt=0,lastTouchAt=0,suppressClickUntil=0;
-function send(phase,dy,dt){try{window.parent.postMessage({type:'izumi-disqus-touch-scroll',phase:phase,dy:dy||0,dt:dt||0},'*')}catch(_e){}}
-function begin(y,now){active=true;moved=false;startY=lastY=y;lastAt=now;}
+const COMMENTS_TOUCH_SCROLL_SCRIPT: &str = r#"(function(){try{
+var host=location.hostname,path=location.pathname;
+var disqus=host==='disqus.com'&&path.indexOf('/embed/comments')===0&&new URLSearchParams(location.search).get('f')==='discussanime';
+var archive=host==='discussanime.moe'&&path.indexOf('/embed/')===0;
+var tac=(host==='theanimecommunity.com'||host.endsWith('.theanimecommunity.com'));
+if(!disqus&&!archive&&!tac)return;
+if(window.__izumiCommentsTouchScroll)return;window.__izumiCommentsTouchScroll=1;
+var active=false,moved=false,startY=0,lastY=0,lastAt=0,lastTouchAt=0,suppressClickUntil=0,target=null;
+var velocity=0,momentumFrame=0;
+function relay(phase,dy,dt){try{window.parent.postMessage({type:disqus?'izumi-disqus-touch-scroll':'izumi-comments-touch-scroll',phase:phase,dy:dy||0,dt:dt||0},'*')}catch(_e){}}
+function scrollableFrom(ev){
+  var nodes=ev.composedPath?ev.composedPath():[],i,n,s;
+  for(i=0;i<nodes.length;i++){n=nodes[i];if(!n||n.nodeType!==1)continue;s=getComputedStyle(n);if(n.scrollHeight>n.clientHeight+1&&/(auto|scroll)/.test(s.overflowY))return n;}
+  n=document.scrollingElement;if(n&&n.scrollHeight>n.clientHeight+1)return n;
+  return null;
+}
+function stopMomentum(){if(momentumFrame)cancelAnimationFrame(momentumFrame);momentumFrame=0;}
+function localScroll(dy){if(target)target.scrollTop+=dy;}
+function startMomentum(){
+  if(!target||Math.abs(velocity)<0.15)return;stopMomentum();var last=performance.now();
+  function step(now){var dt=Math.min(32,Math.max(1,now-last));last=now;velocity*=Math.pow(0.92,dt/16.67);if(Math.abs(velocity)<0.15){momentumFrame=0;return;}localScroll(velocity*dt);momentumFrame=requestAnimationFrame(step);}
+  momentumFrame=requestAnimationFrame(step);
+}
+function begin(y,now,ev){active=true;moved=false;startY=lastY=y;lastAt=now;target=tac?scrollableFrom(ev):null;velocity=0;stopMomentum();}
 function move(y,now,ev){
   if(!active)return;
   var total=startY-y,dy=lastY-y,dt=Math.max(1,now-lastAt);lastY=y;lastAt=now;
   if(!moved&&Math.abs(total)<6)return;
   moved=true;suppressClickUntil=now+450;
-  if(ev.cancelable)ev.preventDefault();ev.stopPropagation();send('move',dy,dt);
+  if(ev.cancelable)ev.preventDefault();ev.stopPropagation();
+  if(target){localScroll(dy);velocity=velocity*0.65+(dy/dt)*0.35;}else relay('move',dy,dt);
 }
-function end(){if(!active)return;active=false;if(moved)send('end',0,0);moved=false;}
+function end(){if(!active)return;active=false;if(moved){if(target)startMomentum();else relay('end',0,0);}moved=false;}
 document.addEventListener('touchstart',function(ev){
-  if(ev.touches.length!==1)return;lastTouchAt=performance.now();begin(ev.touches[0].clientY,lastTouchAt);
+  if(ev.touches.length!==1)return;lastTouchAt=performance.now();begin(ev.touches[0].clientY,lastTouchAt,ev);
 },{capture:true,passive:true});
 document.addEventListener('touchmove',function(ev){
   if(ev.touches.length!==1)return;lastTouchAt=performance.now();move(ev.touches[0].clientY,lastTouchAt,ev);
@@ -2146,7 +2164,7 @@ document.addEventListener('touchmove',function(ev){
 document.addEventListener('touchend',end,{capture:true,passive:true});
 document.addEventListener('touchcancel',end,{capture:true,passive:true});
 document.addEventListener('pointerdown',function(ev){
-  var now=performance.now();if(ev.button!==0||now-lastTouchAt<700)return;begin(ev.clientY,now);
+  var now=performance.now();if(ev.button!==0||now-lastTouchAt<700)return;begin(ev.clientY,now,ev);
 },true);
 document.addEventListener('pointermove',function(ev){
   var now=performance.now();if(now-lastTouchAt<700)return;move(ev.clientY,now,ev);
@@ -5362,7 +5380,7 @@ pub fn run() {
                         // script reaches its cross-origin document without polling or DOM overlays.
                         if let Some(manager) = wv.user_content_manager() {
                             manager.add_script(&UserScript::new(
-                                DISQUS_TOUCH_SCROLL_SCRIPT,
+                                COMMENTS_TOUCH_SCROLL_SCRIPT,
                                 UserContentInjectedFrames::AllFrames,
                                 UserScriptInjectionTime::Start,
                                 &[],

@@ -155,6 +155,44 @@
   let archiveScroller = $state<HTMLElement>()
   let listScroller = $state<HTMLElement>()
   let archiveHeight = $state<number | null>(null)
+  let archiveTouchDelta = 0
+  let archiveTouchVelocity = 0
+  let archiveTouchFrame = 0
+  let archiveMomentumFrame = 0
+  function stopArchiveMomentum() {
+    if (archiveMomentumFrame) window.cancelAnimationFrame(archiveMomentumFrame)
+    archiveMomentumFrame = 0
+  }
+  function flushArchiveTouch() {
+    archiveTouchFrame = 0
+    if (!archiveTouchDelta) return
+    archiveScroller?.scrollBy(0, archiveTouchDelta)
+    archiveTouchDelta = 0
+  }
+  function archiveTouchScroll(phase?: string, rawDy?: number, rawDt?: number) {
+    if (phase === 'move') {
+      const dy = Number(rawDy)
+      const dt = Math.max(1, Number(rawDt) || 16)
+      if (!Number.isFinite(dy) || Math.abs(dy) > 300) return
+      stopArchiveMomentum()
+      archiveTouchDelta += dy
+      archiveTouchVelocity = archiveTouchVelocity * 0.65 + (dy / dt) * 0.35
+      if (!archiveTouchFrame) archiveTouchFrame = window.requestAnimationFrame(flushArchiveTouch)
+      return
+    }
+    if (phase !== 'end' || Math.abs(archiveTouchVelocity) < 0.15) return
+    stopArchiveMomentum()
+    let last = performance.now()
+    function step(now: number) {
+      const dt = Math.min(32, Math.max(1, now - last))
+      last = now
+      archiveTouchVelocity *= Math.pow(0.92, dt / 16.67)
+      if (Math.abs(archiveTouchVelocity) < 0.15) { archiveMomentumFrame = 0; return }
+      archiveScroller?.scrollBy(0, archiveTouchVelocity * dt)
+      archiveMomentumFrame = window.requestAnimationFrame(step)
+    }
+    archiveMomentumFrame = window.requestAnimationFrame(step)
+  }
   function finishTacVerification() {
     if (tacPopupPoll != null) window.clearInterval(tacPopupPoll)
     tacPopupPoll = undefined
@@ -209,7 +247,7 @@
   $effect(() => { void embedSrc; archiveHeight = null })
   $effect(() => {
     function onMsg(e: MessageEvent) {
-      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number; url?: string } | null
+      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number; url?: string; phase?: string; dy?: number; dt?: number } | null
       // Profile links in the live Disqus embed are rewritten to the forum's profile-redirect
       // endpoint by a frame init script (DISQUS_PROFILE_SCRIPT, lib.rs). The INNER disqus.com
       // frame asks us to open them — window.open in that sandboxed frame has nowhere good to go.
@@ -243,13 +281,26 @@
         if (Number.isFinite(height) && height > 0) archiveHeight = Math.min(height, 100_000)
         return
       }
+      // WebKitGTK/SteamOS does not scroll-chain touch movement out of this cross-origin, auto-sized
+      // archive iframe. Its injected frame bridge forwards drag deltas to the padded parent which
+      // actually owns overflow; origin + exact contentWindow keep unrelated frames out.
+      if (archiveEmbed && e.origin === 'https://discussanime.moe' && e.source === embedIframe?.contentWindow
+          && m?.type === 'izumi-comments-touch-scroll') {
+        archiveTouchScroll(m.phase, m.dy, m.dt)
+        return
+      }
       if (e.origin !== location.origin) return
       if (!m || !m.base || !m.identifier) return
       if (m.type === 'izumi-reaction-state') void handleReactionState(m.base, m.identifier)
       else if (m.type === 'izumi-react') void handleReact(m.base, m.identifier, m.key ?? null)
     }
     window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
+    return () => {
+      window.removeEventListener('message', onMsg)
+      if (archiveTouchFrame) window.cancelAnimationFrame(archiveTouchFrame)
+      archiveTouchFrame = 0
+      stopArchiveMomentum()
+    }
   })
   // A Cloudflare interstitial never emits TAC's `ready` message. Replace the otherwise permanent
   // black frame with a recovery action that opens the first-party verification view.
@@ -481,7 +532,7 @@
      overflow clip intersecting the iframe surface forces another render surface (kRoundedCorner);
      the iframe's square bottom corners on the near-identical dark panel are imperceptible. -->
 <div data-comments-panel data-gm-comments-surface inert={!$commentsOpen}
-     class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground shadow-2xl
+     class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground {$gameMode ? 'shadow-none' : 'shadow-2xl'}
        {$discussionExpanded
          ? `inset-0 m-auto h-[85vh] w-[94vw] max-w-[920px] rounded-2xl border ${embedActive ? '' : 'overflow-hidden'}`
          : 'inset-y-0 right-0 w-full max-w-md border-l'}
