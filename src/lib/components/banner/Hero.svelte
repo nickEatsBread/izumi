@@ -460,7 +460,7 @@
   .hero-slide-in { animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
   .hero-copy { animation: hero-copy-in 360ms cubic-bezier(.22, 1, .36, 1) both; }
   @media (min-width: 640px) {
-    .game-home-hero { height: 52vh; }
+    .game-home-hero { height: 54vh; }
   }
   :global(html[data-motion='reduced']) .hero-slide-in,
   :global(html[data-motion='reduced']) .hero-copy { animation-duration: 1ms; }

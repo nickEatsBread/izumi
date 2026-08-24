@@ -6,6 +6,6 @@ describe('Game-mode featured carousel height', () => {
     const source = readFileSync(new URL('./Hero.svelte', import.meta.url), 'utf8')
 
     expect(source).toContain('class:game-home-hero={$gameMode && showOverlay}')
-    expect(source).toMatch(/\.game-home-hero\s*\{\s*height:\s*52vh;/)
+    expect(source).toMatch(/\.game-home-hero\s*\{\s*height:\s*54vh;/)
   })
 })
