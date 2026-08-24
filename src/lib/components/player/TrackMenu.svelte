@@ -3,7 +3,7 @@
   import { invoke } from '@tauri-apps/api/core'
   import { playerTracks } from '$lib/player/native'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, bingeSource, bumpPlayerOverlay } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, bumpPlayerOverlay } from '$lib/player/session'
   import { get } from 'svelte/store'
   import { searchOnlineSubtitles } from '$lib/stremio/play'
   import { openSubtitlesToken } from '$lib/settings/ui'
@@ -25,6 +25,7 @@
   type Track = {
     id: number; type: string; title?: string; lang?: string; selected?: boolean
     codec?: string; channels?: number; default?: boolean; forced?: boolean
+    external?: boolean; externalFilename?: string
   }
   let tracks = $state<Track[]>([])
   const audios = $derived(tracks.filter((t) => t.type === 'audio'))
@@ -40,7 +41,8 @@
   // Language-forward, deduped track labels — shared with the desktop menu (Controls.svelte) so
   // the two never diverge. Leads with the language name so a multi-language Blu-ray's subtitle
   // tracks (identical "Full Subtitles"/codec titles) are actually distinguishable. See track-label.ts.
-  const label = trackLabel
+  const label = (track: Track, group: Track[]) =>
+    trackLabel(track, group, { filename: $nowPlayingStream.filename })
 
   // A leaf is either an mpv track (audio/sub), an online-subtitle candidate to download, or the
   // "Search again" action. Distinguished by `kind` so `apply` knows what to do on A/click.

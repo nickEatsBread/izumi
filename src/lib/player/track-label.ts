@@ -21,6 +21,14 @@ export type Track = {
   channels?: number
   default?: boolean
   forced?: boolean
+  external?: boolean
+  externalFilename?: string
+}
+
+export type TrackLabelContext = {
+  /** Exact source filename selected by the player. Used only for tightly matched recovery
+   * profiles when a broken mux omitted every subtitle language/title tag. */
+  filename?: string
 }
 
 // ISO 639-2 (what mpv usually reports: jpn/eng/fre…) + 639-1 → English name. Covers the
@@ -176,6 +184,59 @@ const isForcedTitle = (title?: string) => !!title && /\bforced\b/i.test(title)
 const isSignsOnlyTitle = (title?: string) => !!title && /signs?.*(songs?|karaoke)|(?:songs?|karaoke).*signs?/i.test(title)
 const isFullDialogueTitle = (title?: string) => !!title && /full[\s_-]*(?:subtitles?|subs?)|dialogue|honorific/i.test(title)
 
+// Some external subtitle files retain their language in the filename even when mpv cannot infer
+// a `lang` property from it. Prefer explicit words and region tags; bare two-letter tokens are
+// deliberately not guessed because ordinary release names contain words such as "it" and "no".
+const TEXT_LANGS: [RegExp, string][] = [
+  [/\b(?:brazilian[\s._-]+portuguese|portuguese[\s._-]+(?:brazil|br)|pt[\s._-]*br)\b/i, 'pt-BR'],
+  [/\b(?:latin[\s._-]+american[\s._-]+spanish|spanish[\s._-]+(?:latin[\s._-]+america|latam)|es[\s._-]*(?:419|latam))\b/i, 'es-419'],
+  [/\b(?:castilian|spanish[\s._-]+spain|es[\s._-]*es)\b/i, 'es-ES'],
+  [/\b(?:english|eng)\b/i, 'eng'],
+  [/\b(?:arabic|ara)\b/i, 'ara'],
+  [/\b(?:portuguese|por)\b/i, 'por'],
+  [/\b(?:spanish|spa)\b/i, 'spa'],
+  [/\b(?:french|fra|fre)\b/i, 'fra'],
+  [/\b(?:german|deu|ger)\b/i, 'deu'],
+  [/\b(?:italian|ita)\b/i, 'ita'],
+  [/\b(?:polish|pol)\b/i, 'pol'],
+  [/\b(?:russian|rus)\b/i, 'rus'],
+  [/\b(?:japanese|jpn)\b/i, 'jpn'],
+]
+
+function languageInText(text?: string): string | undefined {
+  if (!text) return undefined
+  return TEXT_LANGS.find(([pattern]) => pattern.test(text))?.[1]
+}
+
+// This is the exact language order used by the current Crunchyroll multi-subtitle MeGusta mux.
+// Affected files carry no language or title tags at all and incorrectly flag the full English
+// dialogue track as forced. Never infer from position unless every structural fingerprint below
+// matches, so a random untagged ten-track file is left as honest "Subtitle (n)" labels.
+const MEGUSTA_CR_ASS_10 = [
+  'eng', 'ara', 'pt-BR', 'es-ES', 'fra', 'deu', 'ita', 'es-419', 'pol', 'rus',
+] as const
+
+function isMeGustaCrunchyrollProfile(group: Track[], context?: TrackLabelContext): boolean {
+  const filename = context?.filename ?? ''
+  return /(?:^|[^a-z0-9])megusta(?:$|[^a-z0-9])/i.test(filename)
+    && group.length === MEGUSTA_CR_ASS_10.length
+    && group.every((track) =>
+      track.type === 'sub'
+      && track.codec?.toLowerCase() === 'ass'
+      && !langName(track.lang)
+      && !distinctiveTitle(track.title, track.lang)
+      && !track.external)
+    && !!group[0]?.default
+    && !!group[0]?.forced
+    && group.slice(1).every((track) => !track.default && !track.forced)
+}
+
+function recoveredProfileLang(t: Track, group: Track[], context?: TrackLabelContext): string | undefined {
+  if (!isMeGustaCrunchyrollProfile(group, context)) return undefined
+  const index = group.findIndex((track) => track.id === t.id)
+  return index >= 0 ? MEGUSTA_CR_ASS_10[index] : undefined
+}
+
 export type SubtitleKind = 'signs' | 'forced' | 'sdh' | 'full' | 'other'
 
 /** Classify a subtitle track for auto-selection (Signs vs full dialogue vs forced). */
@@ -190,7 +251,7 @@ export function subtitleKind(t: Track): SubtitleKind {
 // Some anime muxers tag subtitle tracks by the AUDIO they accompany: `eng / Signs & Songs` and
 // `jpn / Full Subtitles`, even though both tracks contain English text. Correct the menu language
 // only when that exact paired layout proves what the otherwise misleading `jpn` tag means.
-function effectiveLang(t: Track, group: Track[]): string | undefined {
+function effectiveLang(t: Track, group: Track[], context?: TrackLabelContext): string | undefined {
   if (
     t.type === 'sub'
     && ['ja', 'jpn', 'japanese'].includes(t.lang?.trim().toLowerCase() ?? '')
@@ -200,7 +261,11 @@ function effectiveLang(t: Track, group: Track[]): string | undefined {
       && ['en', 'eng', 'english'].includes(other.lang?.trim().toLowerCase() ?? '')
       && isSignsOnlyTitle(other.title))
   ) return 'eng'
-  return t.lang
+  const taggedLang = langName(t.lang) ? t.lang : undefined
+  return taggedLang
+    ?? languageInText(t.title)
+    ?? languageInText(t.externalFilename)
+    ?? recoveredProfileLang(t, group, context)
 }
 
 /** Audio channel count → a friendly layout name. */
@@ -214,8 +279,8 @@ export function chLabel(n?: number): string {
 }
 
 // The label BEFORE collision-disambiguation: "{language|title} · {qualifiers…}".
-function baseLabel(t: Track, group: Track[]): string {
-  const effective = effectiveLang(t, group)
+function baseLabel(t: Track, group: Track[], context?: TrackLabelContext): string {
+  const effective = effectiveLang(t, group, context)
   const lang = langName(effective)
   const title = distinctiveTitle(t.title, effective)
   const primary = lang ?? title ?? (t.type === 'sub' ? 'Subtitle' : `Track ${t.id}`)
@@ -224,7 +289,12 @@ function baseLabel(t: Track, group: Track[]): string {
   if (lang && title) bits.push(title)
   if (t.type === 'sub' && isSdh(t.title)) bits.push('SDH')
   if (t.type === 'audio') { const c = chLabel(t.channels); if (c) bits.push(c) }
-  if (t.forced || isForcedTitle(t.title)) bits.push('Forced')
+  // The matched MeGusta profile's first track contains full English dialogue; its forced bit is a
+  // bad mux flag, verified from the ASS payload. Suppress that one false badge only.
+  const badProfileForcedFlag = t.forced
+    && group[0]?.id === t.id
+    && isMeGustaCrunchyrollProfile(group, context)
+  if ((!badProfileForcedFlag && t.forced) || isForcedTitle(t.title)) bits.push('Forced')
   return bits.length ? `${primary} · ${bits.join(' · ')}` : primary
 }
 
@@ -236,16 +306,16 @@ const withCodec = (t: Track, base: string) =>
 /** The display label for `t`, disambiguated against the other tracks of its kind in `group`:
  *  language-forward, codec appended only for colliding audio tracks, and a numeric suffix as a
  *  last resort so two rows are never identical. */
-export function trackLabel(t: Track, group: Track[]): string {
-  const base = baseLabel(t, group)
-  if (group.filter((o) => baseLabel(o, group) === base).length <= 1) return base
+export function trackLabel(t: Track, group: Track[], context?: TrackLabelContext): string {
+  const base = baseLabel(t, group, context)
+  if (group.filter((o) => baseLabel(o, group, context) === base).length <= 1) return base
 
   // Collision. Try the codec (audio); if that makes it unique, use it.
   const tagged = withCodec(t, base)
-  if (group.filter((o) => withCodec(o, baseLabel(o, group)) === tagged).length <= 1) return tagged
+  if (group.filter((o) => withCodec(o, baseLabel(o, group, context)) === tagged).length <= 1) return tagged
 
   // Still identical (same lang + codec, or codec-less subtitles) → number them so a pick is
   // always possible. Index is 1-based within the colliding subset.
-  const peers = group.filter((o) => baseLabel(o, group) === base)
+  const peers = group.filter((o) => baseLabel(o, group, context) === base)
   return `${tagged} (${peers.findIndex((o) => o.id === t.id) + 1})`
 }

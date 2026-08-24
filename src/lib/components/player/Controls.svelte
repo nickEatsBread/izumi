@@ -613,7 +613,8 @@
   // never diverge. Leads with the language name (a multi-language Blu-ray's subtitle tracks
   // are only told apart by language, not their identical "Full Subtitles"/codec title). See
   // track-label.ts.
-  const label = trackLabel
+  const label = (track: Track, group: Track[]) =>
+    trackLabel(track, group, { filename: $nowPlayingStream.filename })
   function pick(kind: 'sid' | 'aid' | 'secondary-sid' | 'ccid', id: number) {
     cmd('set', [kind, String(id)])
     if (kind === 'secondary-sid') { secondaryId = String(id); return }

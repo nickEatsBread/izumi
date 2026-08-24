@@ -84,6 +84,11 @@ describe('trackLabel — subtitles', () => {
     expect(trackLabel(t, [t])).toBe('English · Signs & Songs')
   })
 
+  it('recovers a language retained only in an external subtitle filename', () => {
+    const t = sub({ id: 1, external: true, externalFilename: '/tmp/episode.pt-BR.ass' })
+    expect(trackLabel(t, [t])).toBe('Portuguese (Brazil)')
+  })
+
   it('corrects anime muxes that tag full English dialogue by Japanese audio', () => {
     const g = [
       sub({ id: 1, lang: 'eng', title: 'Signs & Songs (Shio-freeka)' }),
@@ -97,6 +102,42 @@ describe('trackLabel — subtitles', () => {
       'English · Signs & Songs (Coalgirls)',
       'English · Full Subtitles (Coalgirls)',
     ])
+  })
+})
+
+describe('trackLabel — malformed MeGusta Crunchyroll mux', () => {
+  const brokenMux: Track[] = Array.from({ length: 10 }, (_, index) => sub({
+    id: index + 2,
+    lang: '',
+    title: '',
+    codec: 'ass',
+    default: index === 0,
+    forced: index === 0,
+    external: false,
+    externalFilename: '',
+  }))
+  const context = {
+    filename: 'Skeleton.Knight.in.Another.World.S02E08.1080p.HEVC.x265-MeGusta[EZTVx.to].mkv',
+  }
+
+  it('recovers every language and ignores the incorrect forced flag on full English dialogue', () => {
+    expect(brokenMux.map((track) => trackLabel(track, brokenMux, context))).toEqual([
+      'English',
+      'Arabic',
+      'Portuguese (Brazil)',
+      'Spanish (Spain)',
+      'French',
+      'German',
+      'Italian',
+      'Spanish (Latin America)',
+      'Polish',
+      'Russian',
+    ])
+  })
+
+  it('does not guess for an unrelated release or a layout that differs', () => {
+    expect(trackLabel(brokenMux[0], brokenMux, { filename: 'Unknown.Group.mkv' })).toBe('Subtitle · Forced')
+    expect(trackLabel(brokenMux[0], brokenMux.slice(0, 9), context)).toBe('Subtitle · Forced')
   })
 })
 

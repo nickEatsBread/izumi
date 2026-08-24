@@ -114,6 +114,8 @@ export const nowPlayingStream = writable<{
   url: string
   headers: Record<string, string>
   infoHash: string | null
+  // Credential-free source identity used to recover labels from known malformed mux layouts.
+  filename?: string
   drm?: import('./drm').StreamDrm | null
   startSeconds?: number
   audioLang?: string

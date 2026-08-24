@@ -2675,6 +2675,7 @@ export async function playStream(
         url: stream.url,
         headers: stream.__headers ?? {},
         infoHash: stream.infoHash ?? null,
+        filename: stream.behaviorHints?.filename,
         drm: stream.__drm,
         startSeconds,
         audioLang: stream.__audioLang,
@@ -2948,6 +2949,7 @@ export async function playStream(
       url: stream.url,
       headers: mergedHeaders ?? {},
       infoHash: stream.infoHash ?? null,
+      filename: stream.behaviorHints?.filename,
     })
     // alang/slang drive mpv's preferred-language track auto-selection.
     const embedStartedAt = performance.now()
