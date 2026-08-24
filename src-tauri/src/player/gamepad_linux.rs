@@ -4,12 +4,19 @@
 //! Steam Deck's (Steam-virtual) controller inside a flatpak — unlike Chromium, which reads the
 //! evdev device directly. So we do the same on the Rust side: read the pad via evdev (through
 //! gilrs, which enumerates devices + maps to the standard Xbox layout) and emit a single
-//! `gamepad-input` = `{ name, pressed }` event to the webview for every mapped button. The
-//! frontend translates those into navigation + player controls (see nav/gamepad.ts and
-//! player/gamepad.ts). Needs the flatpak `--device=all` permission so /dev/input is reachable.
+//! `gamepad-input` = `{ name, pressed }` event to the webview for every mapped button. Steam's
+//! virtual Xbox pad deliberately omits the rear grips, so a second read-only reader consumes the
+//! physical Deck's Valve HID state reports for L4/R4 only. The frontend translates those events
+//! into navigation + player controls (see nav/gamepad.ts and player/gamepad.ts). Needs the flatpak
+//! `--device=all` permission so /dev/input and /dev/hidraw are reachable.
 
 #![cfg(target_os = "linux")]
 
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Read};
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
@@ -102,6 +109,15 @@ fn schedule_native_touch_restore(app: &AppHandle) {
     }
 }
 
+fn emit_input(app: &AppHandle, input: &Input) {
+    set_trigger_state(input);
+    if input.pressed && crate::gm_perf::gamepad_input_restores_touch(input.name) {
+        schedule_native_touch_restore(app);
+    }
+    crate::player::linux_embed::elog(&format!("gamepad: {}={}", input.name, input.pressed));
+    let _ = app.emit("gamepad-input", input.clone());
+}
+
 /// Merged direction state: a direction is "pressed" if the d-pad OR the left stick says so, so
 /// the frontend gets one clean up/down/left/right stream regardless of which the user uses.
 #[derive(Default)]
@@ -166,6 +182,171 @@ fn grip_btn_name(code: gilrs::ev::Code) -> Option<&'static str> {
     grip_btn_name_from_packed(code.into_u32())
 }
 
+// Valve's packed Steam Deck input report. See SDL's official Steam Deck HIDAPI driver:
+// header bytes 0..4 are version/type/length, then packet number and the 64-bit button mask.
+// L4/R4 live in the high half of that mask and are not forwarded by Steam's virtual Xbox pad.
+const DECK_HID_ID: &str = "HID_ID=0003:000028DE:00001205";
+const DECK_REPORT_LEN: usize = 64;
+const DECK_REPORT_VERSION: u16 = 1;
+const DECK_STATE_TYPE: u8 = 9;
+const DECK_L4: u32 = 0x0000_0200;
+const DECK_R4: u32 = 0x0000_0400;
+
+fn deck_grip_bits(report: &[u8]) -> Option<u32> {
+    if report.len() != DECK_REPORT_LEN
+        || u16::from_le_bytes([report[0], report[1]]) != DECK_REPORT_VERSION
+        || report[2] != DECK_STATE_TYPE
+        || report[3] as usize != DECK_REPORT_LEN
+    {
+        return None;
+    }
+    let buttons_high = u32::from_le_bytes(report[12..16].try_into().ok()?);
+    Some(buttons_high & (DECK_L4 | DECK_R4))
+}
+
+fn deck_hidraw_paths() -> io::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    for entry in fs::read_dir("/sys/class/hidraw")? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Ok(uevent) = fs::read_to_string(entry.path().join("device/uevent")) else {
+            continue;
+        };
+        if uevent.lines().any(|line| line == DECK_HID_ID) {
+            paths.push(PathBuf::from("/dev").join(name));
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+fn open_deck_hidraw() -> io::Result<Vec<File>> {
+    let mut devices = Vec::new();
+    for path in deck_hidraw_paths()? {
+        match OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK | libc::O_CLOEXEC)
+            .open(&path)
+        {
+            Ok(device) => devices.push(device),
+            Err(error) => crate::player::linux_embed::elog(&format!(
+                "gamepad: cannot open {} for Deck grips: {error}",
+                path.display()
+            )),
+        }
+    }
+    Ok(devices)
+}
+
+fn emit_deck_grip_edges(app: &AppHandle, previous: &mut u32, current: u32) {
+    let changed = *previous ^ current;
+    for (mask, name) in [(DECK_L4, "l4"), (DECK_R4, "r4")] {
+        if changed & mask != 0 {
+            emit_input(
+                app,
+                &Input {
+                    name,
+                    pressed: current & mask != 0,
+                },
+            );
+        }
+    }
+    *previous = current;
+}
+
+fn read_deck_grips(app: AppHandle, run_id: u64) {
+    let mut previous = 0;
+    while RUNNING.load(Ordering::SeqCst) && RUN_ID.load(Ordering::SeqCst) == run_id {
+        let mut devices = match open_deck_hidraw() {
+            Ok(devices) if !devices.is_empty() => devices,
+            Ok(_) => {
+                std::thread::sleep(Duration::from_secs(2));
+                continue;
+            }
+            Err(error) => {
+                crate::player::linux_embed::elog(&format!(
+                    "gamepad: Deck hidraw discovery failed: {error}"
+                ));
+                std::thread::sleep(Duration::from_secs(2));
+                continue;
+            }
+        };
+        crate::player::linux_embed::elog(&format!(
+            "gamepad: watching {} Deck HID interface(s) for L4/R4",
+            devices.len()
+        ));
+
+        let mut reconnect = false;
+        while !reconnect
+            && RUNNING.load(Ordering::SeqCst)
+            && RUN_ID.load(Ordering::SeqCst) == run_id
+        {
+            let mut poll_fds: Vec<libc::pollfd> = devices
+                .iter()
+                .map(|device| libc::pollfd {
+                    fd: device.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                })
+                .collect();
+            // The Deck publishes state at roughly 250 Hz even while idle. A bounded wait plus the
+            // throttle below limits this grip-only reader to display cadence, while queued HID
+            // reports preserve short press/release edges and stop() still retires promptly.
+            let ready = unsafe { libc::poll(poll_fds.as_mut_ptr(), poll_fds.len() as _, 250) };
+            if ready < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() != io::ErrorKind::Interrupted {
+                    crate::player::linux_embed::elog(&format!(
+                        "gamepad: Deck hidraw poll failed: {error}"
+                    ));
+                    reconnect = true;
+                }
+                continue;
+            }
+
+            for (device, poll_fd) in devices.iter_mut().zip(poll_fds) {
+                if poll_fd.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
+                    reconnect = true;
+                    break;
+                }
+                if poll_fd.revents & libc::POLLIN == 0 {
+                    continue;
+                }
+                loop {
+                    let mut report = [0u8; DECK_REPORT_LEN];
+                    match device.read(&mut report) {
+                        Ok(DECK_REPORT_LEN) => {
+                            if let Some(current) = deck_grip_bits(&report) {
+                                emit_deck_grip_edges(&app, &mut previous, current);
+                            }
+                        }
+                        Ok(0) => {
+                            reconnect = true;
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                        Err(error) => {
+                            crate::player::linux_embed::elog(&format!(
+                                "gamepad: Deck hidraw read failed: {error}"
+                            ));
+                            reconnect = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if ready > 0 && !reconnect {
+                std::thread::sleep(Duration::from_millis(16));
+            }
+        }
+        // Treat a reconnect as a fresh physical state so a release from a removed device cannot
+        // leave a rear button latched in the webview.
+        emit_deck_grip_edges(&app, &mut previous, 0);
+    }
+}
+
 /// Start reading the gamepad on a background thread, emitting `gamepad-input` on every change.
 /// Idempotent — a second call while running is a no-op.
 pub fn start(app: AppHandle) {
@@ -176,6 +357,15 @@ pub fn start(app: AppHandle) {
     // a reader still inside next_event_blocking could wake after RUNNING became true again and
     // accidentally continue alongside its replacement.
     let run_id = RUN_ID.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
+    let grip_app = app.clone();
+    if let Err(error) = std::thread::Builder::new()
+        .name("izumi-deck-grips".into())
+        .spawn(move || read_deck_grips(grip_app, run_id))
+    {
+        crate::player::linux_embed::elog(&format!(
+            "gamepad: Deck grip reader spawn failed: {error}"
+        ));
+    }
     let _ = std::thread::Builder::new()
         .name("izumi-gamepad".into())
         .spawn(move || {
@@ -206,14 +396,6 @@ pub fn start(app: AppHandle) {
             // bool, so it's unaffected.
             let mut l2_on = false;
             let mut r2_on = false;
-            let emit = |app: &AppHandle, i: &Input| {
-                set_trigger_state(i);
-                if i.pressed && crate::gm_perf::gamepad_input_restores_touch(i.name) {
-                    schedule_native_touch_restore(app);
-                }
-                crate::player::linux_embed::elog(&format!("gamepad: {}={}", i.name, i.pressed));
-                let _ = app.emit("gamepad-input", i.clone());
-            };
             while RUNNING.load(Ordering::SeqCst) && RUN_ID.load(Ordering::SeqCst) == run_id {
                 // Sleep in the kernel until evdev has work instead of waking the Deck CPU every
                 // 8ms for the lifetime of Game mode. The timeout only bounds gamepad_stop(); an
@@ -250,7 +432,7 @@ pub fn start(app: AppHandle) {
                             };
                             dirs.dpad[i] = pressed;
                             for c in dirs.resolve() {
-                                emit(&app, &c);
+                                emit_input(&app, &c);
                             }
                         }
                         // Analog triggers report as ButtonChanged (0..1); everything else as press/release.
@@ -263,7 +445,7 @@ pub fn start(app: AppHandle) {
                             };
                             if now != l2_on {
                                 l2_on = now;
-                                emit(
+                                emit_input(
                                     &app,
                                     &Input {
                                         name: "l2",
@@ -280,7 +462,7 @@ pub fn start(app: AppHandle) {
                             };
                             if now != r2_on {
                                 r2_on = now;
-                                emit(
+                                emit_input(
                                     &app,
                                     &Input {
                                         name: "r2",
@@ -304,7 +486,7 @@ pub fn start(app: AppHandle) {
                             let now = if *state { v > 0.25 } else { v > 0.55 };
                             if now != *state {
                                 *state = now;
-                                emit(
+                                emit_input(
                                     &app,
                                     &Input {
                                         name: if matches!(axis, Axis::LeftZ) {
@@ -319,7 +501,7 @@ pub fn start(app: AppHandle) {
                         }
                         EventType::ButtonPressed(b, code) => {
                             if let Some(n) = grip_btn_name(code).or_else(|| btn_name(b)) {
-                                emit(
+                                emit_input(
                                     &app,
                                     &Input {
                                         name: n,
@@ -330,7 +512,7 @@ pub fn start(app: AppHandle) {
                         }
                         EventType::ButtonReleased(b, code) => {
                             if let Some(n) = grip_btn_name(code).or_else(|| btn_name(b)) {
-                                emit(
+                                emit_input(
                                     &app,
                                     &Input {
                                         name: n,
@@ -352,7 +534,7 @@ pub fn start(app: AppHandle) {
                             dirs.dpad[neg] = v < -0.5;
                             dirs.dpad[pos] = v > 0.5;
                             for c in dirs.resolve() {
-                                emit(&app, &c);
+                                emit_input(&app, &c);
                             }
                         }
                         // Left stick → merged directions with hysteresis.
@@ -375,7 +557,7 @@ pub fn start(app: AppHandle) {
                                 dirs.stick[neg] = false;
                             }
                             for c in dirs.resolve() {
-                                emit(&app, &c);
+                                emit_input(&app, &c);
                             }
                         }
                         _ => {}
@@ -397,7 +579,7 @@ pub fn stop() {
 
 #[cfg(test)]
 mod tests {
-    use super::grip_btn_name_from_packed;
+    use super::{deck_grip_bits, grip_btn_name_from_packed, DECK_L4, DECK_R4};
 
     const EV_KEY: u32 = 1 << 16;
 
@@ -422,5 +604,25 @@ mod tests {
         assert_eq!(grip_btn_name_from_packed(0x224), None);
         assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x139), None);
         assert_eq!(grip_btn_name_from_packed(EV_KEY | 0x13a), None);
+    }
+
+    #[test]
+    fn parses_valve_deck_grips_from_high_button_mask() {
+        let mut report = [0u8; 64];
+        report[0..2].copy_from_slice(&1u16.to_le_bytes());
+        report[2] = 9;
+        report[3] = 64;
+        report[12..16].copy_from_slice(&(DECK_L4 | DECK_R4).to_le_bytes());
+        assert_eq!(deck_grip_bits(&report), Some(DECK_L4 | DECK_R4));
+    }
+
+    #[test]
+    fn ignores_non_deck_and_malformed_hid_reports() {
+        let mut report = [0u8; 64];
+        report[0..2].copy_from_slice(&1u16.to_le_bytes());
+        report[2] = 1;
+        report[3] = 64;
+        assert_eq!(deck_grip_bits(&report), None);
+        assert_eq!(deck_grip_bits(&report[..63]), None);
     }
 }
