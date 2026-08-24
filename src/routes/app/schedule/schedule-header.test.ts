@@ -12,6 +12,10 @@ const grid = readFileSync(
   fileURLToPath(new URL('../../../lib/components/schedule/ScheduleGrid.svelte', import.meta.url)),
   'utf8',
 )
+const dayColumn = readFileSync(
+  fileURLToPath(new URL('../../../lib/components/schedule/DayColumn.svelte', import.meta.url)),
+  'utf8',
+)
 
 // Slice out the header row: the `<div bind:clientHeight={headerH} ...>` that carries the tabs, the
 // My Shows/All toggle, and the week nav, up to its matching closing `</div>`. Depth-counts nested
@@ -86,6 +90,8 @@ describe('schedule page header', () => {
   it('hands weekday Down navigation to the first airing instead of a geometric lower row', () => {
     expect(grid).toContain('data-nav-down="schedule-first-airing"')
     expect(grid).toContain('navFirst="schedule-first-airing"')
+    expect(dayColumn).toContain('data-nav-left={nav.left}')
+    expect(dayColumn).toContain('data-nav-right={nav.right}')
   })
 
   it('shows the backup failure instead of repeating the AniList error', () => {

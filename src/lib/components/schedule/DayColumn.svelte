@@ -4,6 +4,7 @@
   import type { Media } from '$lib/anilist/types'
   import type { MineKind } from '$lib/anilist/my-shows'
   import { delayLines, type ScheduleInfo } from '$lib/anime/animeschedule'
+  import { scheduleCardNav } from './schedule-nav'
 
   let { label, airings, today = false, big = false, badgeOf, infoOf, navFirst }:
     { label: string; airings: Airing[]; today?: boolean; big?: boolean
@@ -23,9 +24,12 @@
       {#each airings as a, i (a.media.id + '-' + a.episode)}
         {@const mine = badgeOf?.(a.media)}
         {@const delay = delayOf(a.media)}
+        {@const nav = scheduleCardNav(big ? navFirst : undefined, i, airings.length)}
           <a
             data-focusable
-            data-nav-id={i === 0 ? navFirst : undefined}
+            data-nav-id={nav.id}
+            data-nav-left={nav.left}
+            data-nav-right={nav.right}
             href={`/app/anime/${a.media.id}`}
             class="flex min-w-0 items-center gap-3 rounded-xl bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-70' : ''} {mine ? 'border border-theme/60' : 'border border-transparent'}"
           >
