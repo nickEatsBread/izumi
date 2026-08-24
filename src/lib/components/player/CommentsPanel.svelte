@@ -163,6 +163,13 @@
     if (archiveMomentumFrame) window.cancelAnimationFrame(archiveMomentumFrame)
     archiveMomentumFrame = 0
   }
+  function resetArchiveTouch() {
+    stopArchiveMomentum()
+    if (archiveTouchFrame) window.cancelAnimationFrame(archiveTouchFrame)
+    archiveTouchFrame = 0
+    archiveTouchDelta = 0
+    archiveTouchVelocity = 0
+  }
   function flushArchiveTouch() {
     archiveTouchFrame = 0
     if (!archiveTouchDelta) return
@@ -170,25 +177,33 @@
     archiveTouchDelta = 0
   }
   function archiveTouchScroll(phase?: string, rawDy?: number, rawDt?: number) {
+    if (phase === 'start') { resetArchiveTouch(); return }
     if (phase === 'move') {
       const dy = Number(rawDy)
       const dt = Math.max(1, Number(rawDt) || 16)
       if (!Number.isFinite(dy) || Math.abs(dy) > 300) return
       stopArchiveMomentum()
       archiveTouchDelta += dy
-      archiveTouchVelocity = archiveTouchVelocity * 0.65 + (dy / dt) * 0.35
+      const nextVelocity = Math.max(-3, Math.min(3, dy / dt))
+      archiveTouchVelocity = archiveTouchVelocity && nextVelocity
+        && Math.sign(archiveTouchVelocity) !== Math.sign(nextVelocity)
+        ? nextVelocity
+        : archiveTouchVelocity * 0.6 + nextVelocity * 0.4
       if (!archiveTouchFrame) archiveTouchFrame = window.requestAnimationFrame(flushArchiveTouch)
       return
     }
     if (phase !== 'end' || Math.abs(archiveTouchVelocity) < 0.15) return
     stopArchiveMomentum()
-    let last = performance.now()
+    const started = performance.now()
+    let last = started
     function step(now: number) {
       const dt = Math.min(32, Math.max(1, now - last))
+      const before = archiveScroller?.scrollTop
       last = now
       archiveTouchVelocity *= Math.pow(0.92, dt / 16.67)
-      if (Math.abs(archiveTouchVelocity) < 0.15) { archiveMomentumFrame = 0; return }
+      if (now - started > 420 || Math.abs(archiveTouchVelocity) < 0.15) { archiveMomentumFrame = 0; return }
       archiveScroller?.scrollBy(0, archiveTouchVelocity * dt)
+      if (before != null && archiveScroller?.scrollTop === before) { archiveMomentumFrame = 0; return }
       archiveMomentumFrame = window.requestAnimationFrame(step)
     }
     archiveMomentumFrame = window.requestAnimationFrame(step)

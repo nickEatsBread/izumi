@@ -2129,7 +2129,8 @@ var archive=host==='discussanime.moe'&&path.indexOf('/embed/')===0;
 var tac=(host==='theanimecommunity.com'||host.endsWith('.theanimecommunity.com'));
 if(!disqus&&!archive&&!tac)return;
 if(window.__izumiCommentsTouchScroll)return;window.__izumiCommentsTouchScroll=1;
-var active=false,moved=false,startY=0,lastY=0,lastAt=0,lastTouchAt=0,suppressClickUntil=0,target=null;
+var active=false,moved=false,startY=0,lastY=0,lastAt=0,suppressClickUntil=0,target=null;
+var inputKind=null,pointerId=null;
 var velocity=0,momentumFrame=0;
 function relay(phase,dy,dt){try{window.parent.postMessage({type:disqus?'izumi-disqus-touch-scroll':'izumi-comments-touch-scroll',phase:phase,dy:dy||0,dt:dt||0},'*')}catch(_e){}}
 function scrollableFrom(ev){
@@ -2140,36 +2141,37 @@ function scrollableFrom(ev){
 }
 function stopMomentum(){if(momentumFrame)cancelAnimationFrame(momentumFrame);momentumFrame=0;}
 function localScroll(dy){if(target)target.scrollTop+=dy;}
+function addVelocity(dy,dt){var next=Math.max(-3,Math.min(3,dy/dt));velocity=(velocity&&next&&Math.sign(velocity)!==Math.sign(next))?next:velocity*0.6+next*0.4;}
 function startMomentum(){
-  if(!target||Math.abs(velocity)<0.15)return;stopMomentum();var last=performance.now();
-  function step(now){var dt=Math.min(32,Math.max(1,now-last));last=now;velocity*=Math.pow(0.92,dt/16.67);if(Math.abs(velocity)<0.15){momentumFrame=0;return;}localScroll(velocity*dt);momentumFrame=requestAnimationFrame(step);}
+  if(!target||Math.abs(velocity)<0.15)return;stopMomentum();var started=performance.now(),last=started;
+  function step(now){var dt=Math.min(32,Math.max(1,now-last)),before=target.scrollTop;last=now;velocity*=Math.pow(0.92,dt/16.67);if(now-started>420||Math.abs(velocity)<0.15){momentumFrame=0;return;}localScroll(velocity*dt);if(target.scrollTop===before){momentumFrame=0;return;}momentumFrame=requestAnimationFrame(step);}
   momentumFrame=requestAnimationFrame(step);
 }
-function begin(y,now,ev){active=true;moved=false;startY=lastY=y;lastAt=now;target=tac?scrollableFrom(ev):null;velocity=0;stopMomentum();}
-function move(y,now,ev){
-  if(!active)return;
+function begin(y,now,ev,kind,id){active=true;inputKind=kind;pointerId=id;moved=false;startY=lastY=y;lastAt=now;target=tac?scrollableFrom(ev):null;velocity=0;stopMomentum();if(!target&&(disqus||archive))relay('start',0,0);}
+function move(y,now,ev,kind,id){
+  if(!active||inputKind!==kind||(kind==='pointer'&&pointerId!==id))return;
   var total=startY-y,dy=lastY-y,dt=Math.max(1,now-lastAt);lastY=y;lastAt=now;
   if(!moved&&Math.abs(total)<6)return;
   moved=true;suppressClickUntil=now+450;
   if(ev.cancelable)ev.preventDefault();ev.stopPropagation();
-  if(target){localScroll(dy);velocity=velocity*0.65+(dy/dt)*0.35;}else relay('move',dy,dt);
+  if(target){localScroll(dy);addVelocity(dy,dt);}else relay('move',dy,dt);
 }
-function end(){if(!active)return;active=false;if(moved){if(target)startMomentum();else relay('end',0,0);}moved=false;}
+function end(kind,id){if(!active||inputKind!==kind||(kind==='pointer'&&pointerId!==id))return;active=false;inputKind=null;pointerId=null;if(moved){if(target)startMomentum();else relay('end',0,0);}moved=false;}
 document.addEventListener('touchstart',function(ev){
-  if(ev.touches.length!==1)return;lastTouchAt=performance.now();begin(ev.touches[0].clientY,lastTouchAt,ev);
+  if(ev.touches.length!==1)return;begin(ev.touches[0].clientY,performance.now(),ev,'touch',null);
 },{capture:true,passive:true});
 document.addEventListener('touchmove',function(ev){
-  if(ev.touches.length!==1)return;lastTouchAt=performance.now();move(ev.touches[0].clientY,lastTouchAt,ev);
+  if(ev.touches.length!==1)return;move(ev.touches[0].clientY,performance.now(),ev,'touch',null);
 },{capture:true,passive:false});
-document.addEventListener('touchend',end,{capture:true,passive:true});
-document.addEventListener('touchcancel',end,{capture:true,passive:true});
+document.addEventListener('touchend',function(){end('touch',null);},{capture:true,passive:true});
+document.addEventListener('touchcancel',function(){end('touch',null);},{capture:true,passive:true});
 document.addEventListener('pointerdown',function(ev){
-  var now=performance.now();if(ev.button!==0||now-lastTouchAt<700)return;begin(ev.clientY,now,ev);
+  if(ev.button!==0||ev.pointerType==='touch'||inputKind==='touch')return;begin(ev.clientY,performance.now(),ev,'pointer',ev.pointerId);
 },true);
 document.addEventListener('pointermove',function(ev){
-  var now=performance.now();if(now-lastTouchAt<700)return;move(ev.clientY,now,ev);
+  move(ev.clientY,performance.now(),ev,'pointer',ev.pointerId);
 },{capture:true,passive:false});
-document.addEventListener('pointerup',end,true);document.addEventListener('pointercancel',end,true);
+document.addEventListener('pointerup',function(ev){end('pointer',ev.pointerId);},true);document.addEventListener('pointercancel',function(ev){end('pointer',ev.pointerId);},true);
 document.addEventListener('click',function(ev){if(performance.now()<suppressClickUntil){ev.preventDefault();ev.stopImmediatePropagation();}},true);
 }catch(e){}})();"#;
 
