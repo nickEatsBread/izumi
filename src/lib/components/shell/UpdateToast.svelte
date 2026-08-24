@@ -16,13 +16,22 @@
       {$isMobile ? 'bottom-[calc(4rem+env(safe-area-inset-bottom))] left-3 right-3' : 'bottom-4 right-4 w-80'}"
   >
     {#if $updatePhase === 'available'}
-      <p class="mb-2 text-sm font-bold">Version {$availableUpdate.version} is ready.</p>
+      <p class="mb-2 text-sm font-bold">
+        {$availableUpdate.channelSwitch
+          ? `Switch to ${$availableUpdate.channelSwitch === 'beta' ? 'Beta' : 'Stable'} channel.`
+          : `Version ${$availableUpdate.version} is ready.`}
+      </p>
       <div class="flex gap-2">
-        <button data-focusable onclick={applyUpdate} class="rounded bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground">Update now</button>
+        <button data-focusable onclick={applyUpdate} class="rounded bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground">
+          {$availableUpdate.channelSwitch ? 'Switch channel' : 'Update now'}
+        </button>
         <button data-focusable onclick={() => updateDismissed.set(true)} class="rounded px-3 py-1.5 text-sm text-muted-foreground">Later</button>
       </div>
     {:else if $updatePhase === 'downloading'}
-      <p class="mb-2 text-sm font-bold">Downloading… {known ? `${pct}%` : $updateBytes > 0 ? `${mb} MB` : ''}</p>
+      <p class="mb-2 text-sm font-bold">
+        {$availableUpdate.channelSwitch ? 'Switching channel…' : 'Downloading…'}
+        {known ? `${pct}%` : $updateBytes > 0 ? `${mb} MB` : ''}
+      </p>
       <div class="h-1.5 w-full overflow-hidden rounded bg-background">
         {#if known}
           <div class="h-full bg-primary transition-[width]" style="width:{pct}%"></div>
@@ -31,8 +40,12 @@
         {/if}
       </div>
     {:else if $updatePhase === 'ready'}
-      <p class="mb-2 text-sm font-bold">Update ready.</p>
-      <p class="text-xs text-muted-foreground">Quit izumi to apply {$availableUpdate.version}, then relaunch from Steam.</p>
+      <p class="mb-2 text-sm font-bold">{$availableUpdate.channelSwitch ? 'Channel change ready.' : 'Update ready.'}</p>
+      <p class="text-xs text-muted-foreground">
+        {$availableUpdate.channelSwitch
+          ? `Quit izumi, then relaunch from Steam on the ${$availableUpdate.channelSwitch} channel.`
+          : `Quit izumi to apply ${$availableUpdate.version}, then relaunch from Steam.`}
+      </p>
     {:else if $updatePhase === 'error'}
       <p class="text-sm text-destructive">Update failed: {$updateError}</p>
       <button data-focusable onclick={() => updateDismissed.set(true)} class="mt-2 text-sm text-muted-foreground">Dismiss</button>

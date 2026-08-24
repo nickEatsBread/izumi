@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // Mock the Tauri + Android layers so the facade logic is tested in isolation.
 const h = vi.hoisted(() => ({
   isAndroid: false, isPackaged: true, flatpak: false, gameMode: false,
+  flatpakChannel: 'stable',
   // Registered Tauri event handlers, so a test can fire a progress payload at the facade.
   handlers: new Map<string, (e: unknown) => void>(),
 }))
@@ -11,6 +12,7 @@ vi.mock('$lib/platform', () => ({ isAndroid: { subscribe: (f: any) => (f(h.isAnd
 vi.mock('$lib/player/session', () => ({ gameMode: { subscribe: (f: any) => (f(h.gameMode), () => {}) } }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async (cmd: string) => {
   if (cmd === 'is_flatpak') return h.flatpak
+  if (cmd === 'flatpak_current_channel') return h.flatpakChannel
   if (cmd === 'updater_check') return { version: '0.2.0', current: '0.1.3', notes: 'x', date: null }
   return null
 }) }))
@@ -29,7 +31,7 @@ import { pickTarget, type UpdateTarget } from './index'
 
 // Reset shared mock state before EVERY test in the file — the later top-level it() blocks live
 // outside the describe, so a describe-scoped beforeEach wouldn't isolate them (order-independence).
-beforeEach(() => { h.isAndroid = false; h.flatpak = false; h.gameMode = false; h.handlers.clear() })
+beforeEach(() => { h.isAndroid = false; h.flatpak = false; h.gameMode = false; h.flatpakChannel = 'stable'; h.handlers.clear() })
 
 describe('updater facade', () => {
   it('routes desktop to the tauri updater', async () => {
@@ -51,6 +53,18 @@ import { get } from 'svelte/store'
 it('checkForUpdate populates the store + phase on desktop', async () => {
   await checkForUpdate()
   expect(get(availableUpdate)?.version).toBe('0.2.0')
+  expect(get(updatePhase)).toBe('available')
+})
+it('checkForUpdate detects a Flatpak branch switch independently of semver', async () => {
+  const { invoke } = await import('@tauri-apps/api/core')
+  ;(invoke as any).mockClear()
+  h.flatpak = true
+  h.flatpakChannel = 'beta'
+  availableUpdate.set(null); updatePhase.set('idle')
+  await checkForUpdate()
+  expect(get(availableUpdate)?.channelSwitch).toBe('stable')
+  expect(get(availableUpdate)?.notes).toContain('beta Flatpak channel')
+  expect(invoke).toHaveBeenCalledWith('flatpak_current_channel')
   expect(get(updatePhase)).toBe('available')
 })
 it('checkForUpdate is a no-op when up to date', async () => {
@@ -111,7 +125,7 @@ it('applyUpdate on flatpak uses the portal + ends in ready (no relaunch)', async
   availableUpdate.set({ version: '0.2.0', notes: '', target: 'flatpak' })
   updatePhase.set('idle')
   await applyUpdate()
-  expect(invoke).toHaveBeenCalledWith('flatpak_update_install')
+  expect(invoke).toHaveBeenCalledWith('flatpak_update_install', { channel: expect.anything() })
   expect(get(updatePhase)).toBe('ready')
   expect(get(updateError)).toBe('')
 })

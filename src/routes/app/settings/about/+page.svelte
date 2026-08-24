@@ -14,8 +14,8 @@
   let tauriVersion = $state('')
   let mpvVersion = $state('')
   let os = $state('')
-  // Steam Deck / Flatpak: the in-app binary updater can't apply an update in the read-only
-  // sandbox (EXDEV), so updates route to the release page there instead.
+  // Steam Deck / Flatpak uses its signed OSTree repositories instead of replacing the read-only
+  // app binary. It still exposes the same stable/beta preference as the desktop updater.
   let flatpak = $state(false)
 
   onMount(async () => {
@@ -117,9 +117,9 @@
       izumi checks for updates at launch and every 6 hours. Nothing installs without your OK.
     </p>
 
-    <!-- Release channel is a desktop-updater concept; the Android flow always tracks the
-         latest GitHub release. -->
-    {#if !$isAndroid && !flatpak}
+    <!-- Android always tracks the latest APK release. Desktop and Flatpak both support the
+         persisted stable/beta channel; Flatpak maps it to its matching OSTree branch. -->
+    {#if !$isAndroid}
     <label class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-3">
       <div>
         <div class="text-sm font-bold">Release channel</div>
@@ -134,7 +134,11 @@
 
     {#if $availableUpdate}
       <div class="rounded-md border border-primary/40 bg-primary/10 p-3">
-        <div class="text-sm font-bold">Update available — v{$availableUpdate.version}</div>
+        <div class="text-sm font-bold">
+          {$availableUpdate.channelSwitch
+            ? `Switch to ${$availableUpdate.channelSwitch === 'beta' ? 'Beta' : 'Stable'} channel`
+            : `Update available — v${$availableUpdate.version}`}
+        </div>
         {#if $availableUpdate.notes}<p class="mt-1 line-clamp-4 whitespace-pre-line text-xs text-muted-foreground">{$availableUpdate.notes}</p>{/if}
         {#if flatpak}
           <p class="mt-1 text-xs text-muted-foreground">On the Steam Deck the update installs in the background and applies the next time you launch izumi from Steam.</p>
@@ -143,7 +147,8 @@
                 class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition disabled:opacity-60">
           {installing
             ? (flatpak ? 'Installing…' : pct > 0 ? `Downloading… ${pct}%` : 'Downloading…')
-            : flatpak ? 'Install update' : $isAndroid ? 'Download & install' : 'Restart & install'}
+            : $availableUpdate.channelSwitch ? 'Switch channel'
+              : flatpak ? 'Install update' : $isAndroid ? 'Download & install' : 'Restart & install'}
         </button>
       </div>
     {:else}

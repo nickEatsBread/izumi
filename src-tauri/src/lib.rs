@@ -4292,6 +4292,50 @@ fn is_flatpak() -> bool {
     running_in_flatpak()
 }
 
+/// Read one key from Flatpak's runtime metadata without asking the host CLI. `[Instance]` exposes
+/// the exact branch and deployment path of the process that is running, so this remains
+/// unambiguous when stable and beta are both installed (which Flatpak explicitly supports).
+#[cfg(not(target_os = "android"))]
+fn flatpak_metadata_value(metadata: &str, section: &str, key: &str) -> Option<String> {
+    let mut in_section = false;
+    for raw in metadata.lines() {
+        let line = raw.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            in_section = &line[1..line.len() - 1] == section;
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        let Some((name, value)) = line.split_once('=') else {
+            continue;
+        };
+        if name.trim() == key {
+            let value = value.trim();
+            return (!value.is_empty()).then(|| value.to_string());
+        }
+    }
+    None
+}
+
+#[cfg(not(target_os = "android"))]
+fn flatpak_instance_value(key: &str) -> Option<String> {
+    std::fs::read_to_string("/.flatpak-info")
+        .ok()
+        .and_then(|metadata| flatpak_metadata_value(&metadata, "Instance", key))
+}
+
+/// The channel of the running Flatpak, not merely whichever alternate branch was installed last.
+/// The frontend uses this to offer a real stable/beta switch even when switching to stable is a
+/// semver downgrade from a beta build and the binary updater would therefore report no update.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn flatpak_current_channel() -> Option<String> {
+    running_in_flatpak()
+        .then(|| flatpak_instance_value("branch"))
+        .flatten()
+}
+
 // Build a channel-scoped updater: GitHub primary + distnet failover, plus the security
 // headers the failover checks — `repository: izumi` and `key: <channel>` (matching the
 // requested URL). Headers are sent to every endpoint; GitHub ignores unknown ones.
@@ -4495,10 +4539,13 @@ async fn flatpak_portal_update(app: &tauri::AppHandle) -> Result<(), String> {
 /// UpdateMonitor API. In that case, ask the host Flatpak CLI to update only Izumi. The manifest
 /// grants access to org.freedesktop.Flatpak specifically for this fallback.
 #[cfg(all(not(target_os = "android"), target_os = "linux"))]
-async fn flatpak_host_commit() -> Result<String, String> {
+async fn flatpak_host_commit(channel: &str) -> Result<String, String> {
     const APP_ID: &str = "com.nicho.izumi";
+    let scope = flatpak_host_scope();
+    let app_ref = format!("{APP_ID}//{channel}");
     let output = tokio::process::Command::new("flatpak-spawn")
-        .args(["--host", "flatpak", "info", "--show-commit", APP_ID])
+        .args(["--host", "flatpak", scope, "info", "--show-commit"])
+        .arg(&app_ref)
         .output()
         .await
         .map_err(|error| format!("could not inspect the installed Flatpak: {error}"))?;
@@ -4513,26 +4560,35 @@ async fn flatpak_host_commit() -> Result<String, String> {
 }
 
 #[cfg(all(not(target_os = "android"), target_os = "linux"))]
-async fn flatpak_host_update() -> Result<(), String> {
+fn flatpak_host_scope() -> &'static str {
+    // A direct/GUI .flatpakref install on SteamOS is per-user. Keep system installations working
+    // too: Instance.app-path is the authoritative host deployment path exposed by Flatpak itself.
+    if flatpak_instance_value("app-path")
+        .is_some_and(|path| path.contains("/.local/share/flatpak/"))
+    {
+        "--user"
+    } else {
+        "--system"
+    }
+}
+
+#[cfg(all(not(target_os = "android"), target_os = "linux"))]
+async fn flatpak_host_update(channel: &str) -> Result<(), String> {
     const APP_ID: &str = "com.nicho.izumi";
+    let scope = flatpak_host_scope();
+    let app_ref = format!("{APP_ID}//{channel}");
     // `flatpak update` returns success when there is nothing to do. Preserve the installed commit
     // when this Flatpak version supports --show-commit, then make sure the app actually changed.
-    let previous_commit = flatpak_host_commit().await.ok();
+    let previous_commit = flatpak_host_commit(channel).await.ok();
     let output = tokio::process::Command::new("flatpak-spawn")
-        .args([
-            "--host",
-            "flatpak",
-            "update",
-            "--noninteractive",
-            "-y",
-            APP_ID,
-        ])
+        .args(["--host", "flatpak", scope, "update", "--noninteractive", "-y"])
+        .arg(&app_ref)
         .output()
         .await
         .map_err(|error| format!("could not start the host Flatpak updater: {error}"))?;
     if output.status.success() {
         if let Some(previous) = previous_commit {
-            if let Ok(current) = flatpak_host_commit().await {
+            if let Ok(current) = flatpak_host_commit(channel).await {
                 if current == previous {
                     return Err(
                         "the Flatpak repository has not published the new Izumi build yet. \
@@ -4558,22 +4614,86 @@ async fn flatpak_host_update() -> Result<(), String> {
     ))
 }
 
+/// Install (or update) an alternate branch from its signed `.flatpakref`, then make that branch
+/// current. A ref file carries the channel repository URL and GPG key, so this works for a first
+/// beta switch without weakening signature verification or mutating the existing stable remote.
+#[cfg(all(not(target_os = "android"), target_os = "linux"))]
+async fn flatpak_host_switch(channel: &str) -> Result<(), String> {
+    const APP_ID: &str = "com.nicho.izumi";
+    let scope = flatpak_host_scope();
+    let ref_url = format!(
+        "https://flatpak.izumi.watch/{channel}/com.nicho.izumi.flatpakref"
+    );
+    let output = tokio::process::Command::new("flatpak-spawn")
+        .args([
+            "--host",
+            "flatpak",
+            scope,
+            "install",
+            "--or-update",
+            "--noninteractive",
+            "-y",
+        ])
+        .arg(&ref_url)
+        .output()
+        .await
+        .map_err(|error| format!("could not start the host Flatpak channel switch: {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = stderr
+            .trim()
+            .lines()
+            .last()
+            .or_else(|| stdout.trim().lines().last())
+            .unwrap_or("unknown error");
+        return Err(format!(
+            "host Flatpak channel install exited with {}: {detail}",
+            output.status
+        ));
+    }
+
+    // `install` normally makes the new branch current. Make it explicit for the --or-update case,
+    // where the requested alternate branch might already have been installed and fully up to date.
+    let current = tokio::process::Command::new("flatpak-spawn")
+        .args(["--host", "flatpak", scope, "make-current", APP_ID, channel])
+        .output()
+        .await
+        .map_err(|error| format!("could not activate the Flatpak channel: {error}"))?;
+    if current.status.success() {
+        Ok(())
+    } else {
+        let detail = String::from_utf8_lossy(&current.stderr);
+        Err(format!(
+            "could not activate the {channel} Flatpak channel: {}",
+            detail.trim().lines().last().unwrap_or("unknown error")
+        ))
+    }
+}
+
 /// Install a Flatpak update without leaving Gamescope. Prefer the narrow UpdateMonitor portal and
 /// fall back to a host `flatpak update` when SteamOS lacks that portal version. Either path stages
 /// the new deploy atomically; it takes effect the next time Izumi launches.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-async fn flatpak_update_install(app: tauri::AppHandle) -> Result<(), String> {
+async fn flatpak_update_install(app: tauri::AppHandle, channel: String) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         if !running_in_flatpak() {
             return Err("not a flatpak build".into());
         }
+        let channel = if channel == "beta" { "beta" } else { "stable" };
+        let current_channel = flatpak_instance_value("branch").unwrap_or_default();
+        if current_channel != channel {
+            flatpak_host_switch(channel).await?;
+            let _ = app.emit("flatpak-update-progress", 100u32);
+            return Ok(());
+        }
         if let Err(portal_error) = flatpak_portal_update(&app).await {
             player::linux_embed::elog(&format!(
                 "updater: Flatpak portal failed, trying host updater: {portal_error}"
             ));
-            flatpak_host_update().await.map_err(|host_error| {
+            flatpak_host_update(channel).await.map_err(|host_error| {
                 format!(
                     "automatic Flatpak update failed. Portal: {portal_error}. \
                      Host fallback: {host_error}"
@@ -4585,7 +4705,7 @@ async fn flatpak_update_install(app: tauri::AppHandle) -> Result<(), String> {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = app;
+        let _ = (app, channel);
         Err("not a flatpak build".into())
     }
 }
@@ -5361,6 +5481,7 @@ pub fn run() {
             updater_check,
             updater_install,
             is_flatpak,
+            flatpak_current_channel,
             flatpak_update_check,
             flatpak_update_install,
             player_tracks,
@@ -5513,6 +5634,41 @@ pub fn run() {
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+#[cfg(not(target_os = "android"))]
+mod flatpak_channel_tests {
+    use super::*;
+
+    const INFO: &str = r#"[Application]
+name=com.nicho.izumi
+
+[Instance]
+instance-id=123
+app-path=/home/deck/.local/share/flatpak/app/com.nicho.izumi/x86_64/beta/active/files
+app-commit=abc123
+branch=beta
+arch=x86_64
+"#;
+
+    #[test]
+    fn reads_the_running_branch_from_instance_metadata() {
+        assert_eq!(
+            flatpak_metadata_value(INFO, "Instance", "branch").as_deref(),
+            Some("beta")
+        );
+        assert_eq!(
+            flatpak_metadata_value(INFO, "Instance", "app-path").as_deref(),
+            Some("/home/deck/.local/share/flatpak/app/com.nicho.izumi/x86_64/beta/active/files")
+        );
+    }
+
+    #[test]
+    fn does_not_take_a_same_named_key_from_another_section() {
+        assert_eq!(flatpak_metadata_value(INFO, "Application", "branch"), None);
+        assert_eq!(flatpak_metadata_value(INFO, "Instance", "missing"), None);
+    }
 }
 
 #[cfg(test)]

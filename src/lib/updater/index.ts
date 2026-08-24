@@ -9,7 +9,13 @@ import { checkAndroidUpdate, downloadAndInstall, type UpdateInfo as AndroidUpdat
 
 export type UpdateTarget = 'android' | 'flatpak' | 'desktop'
 export type Phase = 'idle' | 'available' | 'downloading' | 'ready' | 'error'
-export type Available = { version: string; notes: string; target: UpdateTarget; android?: AndroidUpdate }
+export type Available = {
+  version: string
+  notes: string
+  target: UpdateTarget
+  android?: AndroidUpdate
+  channelSwitch?: 'stable' | 'beta'
+}
 
 export const availableUpdate = writable<Available | null>(null)
 export const updatePhase = writable<Phase>('idle')
@@ -53,10 +59,28 @@ export async function checkForUpdate(): Promise<void> {
       if (u) { availableUpdate.set({ version: u.version, notes: u.notes, target, android: u }); updatePhase.set('available') }
       return
     }
-    // desktop + flatpak both use the Rust `updater_check` (a plain manifest/version check that
-    // works inside the sandbox — only the *install* differs by target).
-    const r = await invoke<{ version: string; current: string; notes: string | null } | null>(
-      'updater_check', { channel: get(updateChannel) })
+    const channel = get(updateChannel)
+    // Flatpak allows stable and beta to coexist as separate branches. Compare the running branch
+    // as well as semantic versions: switching from a newer beta to stable is intentionally a
+    // version downgrade, so a normal updater manifest check alone would incorrectly say current.
+    const currentChannel = target === 'flatpak'
+      ? invoke<string | null>('flatpak_current_channel').catch(() => null)
+      : Promise.resolve<string | null>(null)
+    const [r, flatpakChannel] = await Promise.all([
+      invoke<{ version: string; current: string; notes: string | null } | null>(
+        'updater_check', { channel }),
+      currentChannel,
+    ])
+    if (target === 'flatpak' && flatpakChannel && flatpakChannel !== channel) {
+      availableUpdate.set({
+        version: r?.version ?? channel,
+        notes: `Switch from the ${flatpakChannel} Flatpak channel to ${channel}. The change applies after you relaunch izumi.`,
+        target,
+        channelSwitch: channel,
+      })
+      updatePhase.set('available')
+      return
+    }
     if (r) { availableUpdate.set({ version: r.version, notes: r.notes ?? '', target }); updatePhase.set('available') }
   } catch (e) { updateError.set(String(e)) }
 }
@@ -98,7 +122,7 @@ export async function applyUpdate(): Promise<void> {
       updatePhase.set('downloading')
       const unlisten = listenSafe<number>('flatpak-update-progress', (e) => updateProgress.set((e.payload ?? 0) / 100))
       try {
-        await invoke('flatpak_update_install')
+        await invoke('flatpak_update_install', { channel: get(updateChannel) })
         updateProgress.set(1)
         updatePhase.set('ready') // toast: quit + relaunch from Steam
       } catch (e) {
