@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fieldOwnsArrow, isEnterInertInput, revealAxisDelta, type ArrowKey, type FieldShape } from './index'
+import { containedInAxis, fieldOwnsArrow, isEnterInertInput, revealAxisDelta, type ArrowKey, type FieldShape } from './index'
 
 const input = (type: string): FieldShape => ({ tag: 'INPUT', type })
 const KEYS: ArrowKey[] = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']
@@ -81,5 +81,19 @@ describe('revealAxisDelta', () => {
       itemStart: -20, itemEnd: 760, portStart: 0, portEnd: 800,
       startMargin: 100, endMargin: 160,
     })).toBe(-30)
+  })
+})
+
+describe('containedInAxis', () => {
+  it('accepts cards fully inside the visible row lane', () => {
+    expect(containedInAxis(100, 200, 0, 800)).toBe(true)
+    expect(containedInAxis(0, 800, 0, 800)).toBe(true)
+  })
+
+  it('rejects cards even partially clipped beyond either horizontal edge', () => {
+    expect(containedInAxis(-20, 40, 0, 800)).toBe(false)
+    expect(containedInAxis(780, 840, 0, 800)).toBe(false)
+    expect(containedInAxis(-100, 0, 0, 800)).toBe(false)
+    expect(containedInAxis(800, 900, 0, 800)).toBe(false)
   })
 })

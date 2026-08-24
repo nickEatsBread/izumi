@@ -108,6 +108,18 @@ const isNavigable = (el: HTMLElement) =>
 const focusables = (root: ParentNode) =>
   [...root.querySelectorAll<HTMLElement>('[data-focusable]')].filter(isNavigable)
 
+export const containedInAxis = (itemStart: number, itemEnd: number, portStart: number, portEnd: number) =>
+  itemStart >= portStart && itemEnd <= portEnd
+
+/** Up/Down keeps the destination in the row's currently visible horizontal lane. A card that is
+ * merely rendered somewhere in an overflow scroller is not a visible controller target. */
+function visibleRowCandidates(root: HTMLElement): ElCand[] {
+  const port = root.getBoundingClientRect()
+  return focusables(root)
+    .map((el) => ({ id: '', rect: el.getBoundingClientRect(), el }))
+    .filter(({ rect }) => containedInAxis(rect.left, rect.right, port.left, port.right))
+}
+
 /**
  * Fast path for the Home/Browse surface in Game mode. A geometric search across the entire page
  * forces WebKitGTK to style and lay out every card before it can move the focus ring. Rows expose
@@ -137,9 +149,7 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
   // A header action such as View more can still move down into its own posters. Normal card
   // movement skips even querying this list, avoiding visibility/layout work for the current row.
   if (!itemRoot.contains(active)) {
-    const sameRow = focusables(itemRoot)
-      .map((el) => ({ id: '', rect: el.getBoundingClientRect(), el }))
-    const samePick = pickInDirection(cur, sameRow, dir)
+    const samePick = pickInDirection(cur, visibleRowCandidates(itemRoot), dir, /* cone */ false)
     if (samePick) return samePick.el
   }
   if (!vertical) return null
@@ -149,30 +159,30 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
   const rowIndex = rows.indexOf(row)
   if (rowIndex < 0) return null
   const step = dir === 'down' ? 1 : -1
-  for (let index = rowIndex + step; index >= 0 && index < rows.length; index += step) {
-    const targetRow = rows[index]
-    const preferred = targetRow.querySelector<HTMLElement>('[data-nav-row-default][data-focusable]')
-    if (preferred && isNavigable(preferred)) return preferred
-    const targetRoot = targetRow.querySelector<HTMLElement>('[data-nav-row-items]') ?? targetRow
-    const candidates = focusables(targetRoot)
-      .map((el) => ({ id: '', rect: el.getBoundingClientRect(), el }))
-    // Row order already establishes the intended direction, so do not reject a target merely
-    // because the adjacent row has a different card width or horizontal scroll position.
-    const pick = pickInDirection(cur, candidates, dir, /* cone */ false)
-    if (pick) return pick.el
-  }
-  return null
+  const targetRow = rows[rowIndex + step]
+  if (!targetRow) return null
+  const preferred = targetRow.querySelector<HTMLElement>('[data-nav-row-default][data-focusable]')
+  if (preferred && isNavigable(preferred)) return preferred
+  const targetRoot = targetRow.querySelector<HTMLElement>('[data-nav-row-items]') ?? targetRow
+  // Row order already establishes the intended direction, so do not reject a target merely
+  // because the adjacent row has a different card width or horizontal scroll position. Do reject
+  // cards clipped to the left/right: vertical reveal intentionally scrolls only the page axis.
+  const pick = pickInDirection(cur, visibleRowCandidates(targetRoot), dir, /* cone */ false)
+  if (pick) return pick.el
+
+  // Skeleton rows have no card focusables yet. Retain the current focus while data arrives instead
+  // of skipping across multiple placeholders and selecting something outside the viewport.
+  return active
 }
 
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
-  // WebKitGTK queues smooth scrolling behind Deck input and can leave newly exposed tiles black
-  // while Gamescope waits for the next raster. Game mode always moves immediately; desktop keeps
-  // the gentle reveal for a single keyboard press.
+  // A single D-pad press should visibly carry the selected card with it. Held-key repeats switch
+  // to instant movement so WebKitGTK never queues several smooth animations behind the thumb.
   const reduced = document.documentElement.dataset.motion === 'reduced'
     || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  const behavior: ScrollBehavior = get(gameMode) || rapid || reduced ? 'auto' : 'smooth'
+  const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'
   // The featured carousel is taller than the safe-band math can infer from its bottom action row.
   // Entering its primary action means reveal the whole feature, not just the focused button.
   if (vertical && el.hasAttribute('data-nav-scroll-top')) {

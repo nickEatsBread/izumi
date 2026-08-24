@@ -30,9 +30,9 @@ describe('Steam Deck browse loading', () => {
     expect(row).not.toContain('visible || $gameMode')
   })
 
-  it('uses instant Deck reveals without inheriting document smooth scrolling', () => {
-    expect(nav).toContain("const behavior: ScrollBehavior = get(gameMode) || rapid || reduced ? 'auto' : 'smooth'")
-    expect(css).toContain('html.gamemode, html.gamemode body { scroll-behavior: auto; }')
+  it('smoothly carries single focus moves and makes held repeats immediate', () => {
+    expect(nav).toContain("const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'")
+    expect(css).not.toContain('html.gamemode, html.gamemode body { scroll-behavior: auto; }')
     expect(nav).toContain('endMargin: clamp(portHeight * 0.2, 64, 144)')
     expect(nav).toContain('endMargin: clamp(portWidth * 0.18, 48, 176)')
     expect(nav).toContain("if (!top && !left) return")
@@ -47,12 +47,18 @@ describe('Steam Deck browse loading', () => {
     expect(nav).toContain("window.scrollTo({ top: 0, behavior })")
   })
 
-  it('renders the Deck focus ring without scaling a newly focused poster layer', () => {
+  it('never skips a loading row or chooses a horizontally clipped card on vertical input', () => {
+    expect(nav).toContain('const targetRow = rows[rowIndex + step]')
+    expect(nav).not.toContain('for (let index = rowIndex + step')
+    expect(nav).toContain('visibleRowCandidates(targetRoot)')
+    expect(nav).toContain('return active')
+  })
+
+  it('animates the Deck focus ring and poster pop', () => {
     const focusCover = css.slice(css.indexOf('.gamemode [data-focusable]:focus .focus-cover {'))
-    expect(focusCover).toContain('transform: none;')
-    expect(focusCover).toContain('transition: none;')
-    expect(focusCover).toContain('.gamemode [data-focusable]:focus .focus-cover::after')
-    expect(focusCover).toContain('border: 3px solid #fff;')
+    expect(focusCover).toContain('transform: scale(1.04);')
+    expect(focusCover).toContain('transition: transform 80ms')
+    expect(focusCover).toContain('box-shadow: 0 0 0 3px #fff;')
   })
 
   it('does not run a continuous startup sampler or treat animation scroll as fresh input', () => {
