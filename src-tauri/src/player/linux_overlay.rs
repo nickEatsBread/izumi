@@ -27,9 +27,9 @@ use tauri::{AppHandle, Manager};
 use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
 use crate::gm_perf::{
-    clip_to_strip, overlay_fade_step, overlay_loop_fps, overlay_should_snapshot,
-    scale_premult_bgra, OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL, OVERLAY_FADE_MS,
-    OVERLAY_MOTION_PX, OVERLAY_SCRUB_FPS, OVERLAY_SHEET_MOTION_PX,
+    overlay_fade_step, overlay_loop_fps, overlay_should_snapshot, scale_premult_bgra,
+    OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL, OVERLAY_FADE_MS, OVERLAY_MOTION_PX,
+    OVERLAY_SCRUB_FPS, OVERLAY_SHEET_MOTION_PX,
 };
 use crate::player::PlayerHandle;
 
@@ -82,7 +82,10 @@ pub fn start(
     FORCE.store(true, Ordering::SeqCst);
     EMPTY_TRIES.store(0, Ordering::SeqCst);
     if let Ok(mut strip) = STRIP.lock() {
-        *strip = if fast { None } else { crop };
+        // Fast means "keep refreshing", not "force a full viewport". Comments are the only fast
+        // surface now; honouring their panel crop avoids processing most of a 1280x800 frame for
+        // every Disqus scroll tick while retaining the self-paced refresh loop.
+        *strip = crop;
     }
     if !sheet {
         remove_sheet_backdrop(&app);
@@ -315,23 +318,42 @@ fn alpha_bounds(
     w: usize,
     h: usize,
     stride: usize,
+    strip: Option<(i64, i64, i64, i64)>,
 ) -> Option<(usize, usize, usize, usize)> {
     if w == 0 || h == 0 || stride < w.checked_mul(4)? {
         return None;
     }
 
-    let mut min_x = w;
-    let mut min_y = h;
+    let (scan_x, scan_y, scan_right, scan_bottom) = match strip {
+        Some((x, y, sw, sh)) if sw > 0 && sh > 0 => {
+            let left = x.max(0).min(w as i64) as usize;
+            let top = y.max(0).min(h as i64) as usize;
+            let right = x.saturating_add(sw).max(0).min(w as i64) as usize;
+            let bottom = y.saturating_add(sh).max(0).min(h as i64) as usize;
+            if right <= left || bottom <= top {
+                return None;
+            }
+            (left, top, right, bottom)
+        }
+        Some(_) => return None,
+        None => (0, 0, w, h),
+    };
+
+    let mut min_x = scan_right;
+    let mut min_y = scan_bottom;
     let mut max_x = 0usize;
     let mut max_y = 0usize;
     let mut found = false;
 
-    for y in 0..h {
+    // A cropped fast surface (notably Disqus) does not need an alpha scan over the rest of the
+    // viewport. WebKit still supplies one visible snapshot, but native processing and upload now
+    // scale with the comments panel instead of the 1280x800 player.
+    for y in scan_y..scan_bottom {
         let row = y.checked_mul(stride)?;
         if row.checked_add(w * 4)? > data.len() {
             return None;
         }
-        for x in 0..w {
+        for x in scan_x..scan_right {
             // cairo ARGB32 on little-endian is premultiplied BGRA in memory.
             if data[row + x * 4 + 3] != 0 {
                 found = true;
@@ -375,14 +397,14 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
 
                 let need = (stride * h) as usize;
                 let data = img.data().ok()?;
-                let Some((x, y, cw, ch)) =
-                    alpha_bounds(&data[..need], w as usize, h as usize, stride as usize).and_then(
-                        |bounds| {
-                            let strip = STRIP.lock().ok().and_then(|g| *g);
-                            clip_to_strip(bounds, strip)
-                        },
-                    )
-                else {
+                let strip = STRIP.lock().ok().and_then(|g| *g);
+                let Some((x, y, cw, ch)) = alpha_bounds(
+                    &data[..need],
+                    w as usize,
+                    h as usize,
+                    stride as usize,
+                    strip,
+                ) else {
                     let tries = EMPTY_TRIES.fetch_add(1, Ordering::SeqCst);
                     if GEN.load(Ordering::SeqCst) == my_gen && tries < 4 {
                         let app_retry = app.clone();

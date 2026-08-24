@@ -480,7 +480,7 @@
      While the embed tab is showing in expanded mode, the rounded clip is dropped too — a rounded
      overflow clip intersecting the iframe surface forces another render surface (kRoundedCorner);
      the iframe's square bottom corners on the near-identical dark panel are imperceptible. -->
-<div data-comments-panel inert={!$commentsOpen}
+<div data-comments-panel data-gm-comments-surface inert={!$commentsOpen}
      class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground shadow-2xl
        {$discussionExpanded
          ? `inset-0 m-auto h-[85vh] w-[94vw] max-w-[920px] rounded-2xl border ${embedActive ? '' : 'overflow-hidden'}`

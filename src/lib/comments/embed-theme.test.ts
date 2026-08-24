@@ -44,4 +44,12 @@ describe('DiscussAnime embed theming', () => {
     expect(androidScaffold).not.toContain('android:isLightTheme')
     expect(lib).toContain('DISQUS_PROFILE_SCRIPT')
   })
+
+  it('keeps the Deck embed on a download-free font path with touch scroll containment', () => {
+    const loader = read('../../../static/disqus-embed.html')
+    expect(loader).not.toContain('fonts.googleapis.com')
+    expect(loader).not.toContain('fonts.gstatic.com')
+    expect(loader).toContain('font-family: system-ui')
+    expect(loader).toContain('overscroll-behavior: contain; touch-action: pan-y;')
+  })
 })

@@ -131,6 +131,8 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('timelineSegments: segments.map')
     expect(overlay).toContain('chapterMarks: chapters.map')
     expect(overlay).toContain('fast: overlayFast')
+    expect(overlay).toContain("'[data-gm-comments-surface]'")
+    expect(overlay).toContain('paintedCommentsCrop')
     expect(overlay).toContain('if (!gmBitmapMode || !p2pVisible) return')
     expect(overlay).toContain('ontoggleplay={togglePlayback}')
     expect(overlay).toContain("const quietSeek = gmMode && (action === 'playerSeekBack' || action === 'playerSeekForward')")
@@ -210,6 +212,13 @@ describe('Game-mode Leanback motion', () => {
     expect(overlay).toContain('performance.now() - get(streamPickerDismissedAt) < 500')
   })
 
+  it('routes picker Up/Down locally instead of relying on hidden-page geometry', () => {
+    const gamepad = readFileSync(fileURLToPath(new URL('../nav/gamepad.ts', import.meta.url)), 'utf8')
+    const picker = readFileSync(fileURLToPath(new URL('../components/player/StreamPicker.svelte', import.meta.url)), 'utf8')
+    expect(gamepad).toContain("new CustomEvent('stream-picker-nav', { detail: dir })")
+    expect(picker).toContain("window.addEventListener('stream-picker-nav', onNav)")
+  })
+
   it('keeps native Deck metadata and right-side icons aligned with the HTML HUD', () => {
     const controls = readFileSync(fileURLToPath(new URL('../components/player/Controls.svelte', import.meta.url)), 'utf8')
     const nativeHud = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/gm_osd.rs', import.meta.url)), 'utf8')
@@ -229,6 +238,14 @@ describe('Game-mode Leanback motion', () => {
     expect(gameModeSideSheetCrop(1280, 800, { left: 896, top: 40, width: 352, height: 720 }))
       .toEqual({ x: 872, y: 16, w: 400, h: 768 })
     expect(gameModeSideSheetCrop(1280, 800, null)).toBeNull()
+  })
+
+  it('honours a crop while the native overlay is continuously refreshing', () => {
+    const native = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/linux_overlay.rs', import.meta.url)), 'utf8')
+    expect(native).toContain('*strip = crop;')
+    expect(native).toContain('for y in scan_y..scan_bottom')
+    expect(native).toContain('for x in scan_x..scan_right')
+    expect(native).not.toContain('*strip = if fast { None } else { crop };')
   })
 })
 

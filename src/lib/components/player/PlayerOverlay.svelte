@@ -605,11 +605,10 @@
   const p2pVisible = $derived(shouldShowP2PStatus($p2pStatusVisibility, directP2pOverlay, loading, firstFrame) && p2pReady)
   const noticeVisible = $derived(!!$playerNotice)
   const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
-  const sourcePickerResolving = $derived(sourcePickerVisible && !!$streamPicker?.resolving)
   const sourceConnectingVisible = $derived(!!$connecting)
-  // Comments scroll continuously and a resolving source picker grows progressively. Refresh those
-  // at the self-paced native rate; settled menus/editors explicitly bump playerOverlayRev instead.
-  const overlayFast = $derived($commentsOpen || sourcePickerResolving)
+  // Comments scroll continuously. Source resolution now explicitly bumps the bitmap for each
+  // progressive result and stepped spinner frame, avoiding a wasteful full-screen 30fps loop.
+  const overlayFast = $derived($commentsOpen)
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
@@ -663,8 +662,21 @@
       : null
     const sheetRect = sheetElement?.getBoundingClientRect() ?? null
     const sheetMotion = !!sheetRect && $playerSideSheetOpen
+    const commentsElement = $commentsOpen
+      ? document.querySelector<HTMLElement>('[data-gm-comments-surface]')
+      : null
+    const commentsRect = commentsElement?.getBoundingClientRect() ?? null
+    // The Disqus iframe is the heaviest continuously-changing surface in the player. Publish just
+    // its panel; expanded mode gets the equivalent dim from the native sheet backdrop instead of
+    // uploading and compositing a full-screen translucent bitmap on every scroll frame.
+    const commentsCrop = commentsRect
+      ? gameModeSideSheetCrop(viewportWidth, viewportHeight, commentsRect)
+      : null
+    const nativeSheet = sheetMotion || (!!commentsCrop && $commentsOpen && $discussionExpanded)
     const crop = sheetMotion
       ? gameModeSideSheetCrop(viewportWidth, viewportHeight, sheetRect)
+      : commentsCrop
+        ? commentsCrop
       : gameModeSnapshotCrop(viewportWidth, viewportHeight, overlayFull)
     if (!overlayActive) {
       invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
@@ -672,16 +684,23 @@
     }
     // Snapshot now (so tap/pause is not stuck behind a cancellable timer) and once more
     // after paint so Controls/toasts are in the tree.
-    invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop, sheet: sheetMotion }).catch(() => {})
+    invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop, sheet: nativeSheet }).catch(() => {})
     return scheduleGameModeOverlay(() => {
       const paintedSheet = $playerSideSheetOpen
         ? document.querySelector<HTMLElement>('[data-gm-side-sheet]')?.getBoundingClientRect() ?? null
         : null
       const paintedSheetMotion = !!paintedSheet && $playerSideSheetOpen
+      const paintedComments = $commentsOpen
+        ? document.querySelector<HTMLElement>('[data-gm-comments-surface]')?.getBoundingClientRect() ?? null
+        : null
+      const paintedCommentsCrop = paintedComments
+        ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedComments)
+        : null
       const paintedCrop = paintedSheetMotion
         ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedSheet)
-        : crop
-      invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedSheetMotion }).catch(() => {})
+        : paintedCommentsCrop ?? crop
+      const paintedNativeSheet = paintedSheetMotion || (!!paintedCommentsCrop && $commentsOpen && $discussionExpanded)
+      invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedNativeSheet }).catch(() => {})
     })
   })
 
