@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { title, banner, cardCover, format, mediaHref, isReadingMedia, ratingBg, airedCount, totalEpisodes, resumeEp, hasAiredEpisodeToWatch } from './media'
+import { title, banner, cardCover, format, mediaHref, isReadingMedia, ratingBg, airedCount, totalEpisodes, resumeEp, hasAiredEpisodeToWatch, seasonBrowseHref } from './media'
 
 describe('media helpers', () => {
   it('title prefers userPreferred, falls back to TBA', () => {
@@ -37,6 +37,11 @@ describe('media helpers', () => {
     expect(format({ id: 1, title: {}, format: 'TV_SHORT' } as any)).toBe('TV Short')
     expect(format({ id: 1, title: {}, format: 'MOVIE' } as any)).toBe('Movie')
     expect(format({ id: 1, title: {}, format: 'NOVEL' } as any)).toBe('Novel')
+  })
+  it('routes a season label to Browse with its season and year selected', () => {
+    expect(seasonBrowseHref({ id: 1, title: {}, season: 'SUMMER', seasonYear: 2026 }))
+      .toBe('/app/search?season=SUMMER&year=2026')
+    expect(seasonBrowseHref({ id: 2, title: {}, season: 'SUMMER' })).toBe('')
   })
   it('routes manga and novels to the information-only detail page', () => {
     expect(mediaHref({ id: 1, type: 'ANIME', title: {} })).toBe('/app/anime/1')

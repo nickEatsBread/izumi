@@ -5,6 +5,12 @@ import { describe, expect, it } from 'vitest'
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
 
 describe('Steam Deck series interactions', () => {
+  it('opens Browse with the selected series season and year', () => {
+    const detail = read('./AnimeDetail.svelte')
+    expect(detail).toContain("import { banner, title, cover, format, status, season, seasonBrowseHref")
+    expect(detail.match(/href=\{seasonBrowseHref\(m\)\}/g)?.length).toBe(3)
+  })
+
   it('releases pointer focus from a tapped tab without releasing controller focus', () => {
     const tabs = read('./Tabs.svelte')
     expect(tabs).toContain('$gameMode && event.detail > 0')

@@ -7,7 +7,7 @@
   import Tabs from '$lib/components/detail/Tabs.svelte'
   import EpisodeList from '$lib/components/detail/EpisodeList.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
-  import { banner, title, cover, format, status, season, ratingBg, resumeEp, totalEpisodes } from '$lib/anilist/media'
+  import { banner, title, cover, format, status, season, seasonBrowseHref, ratingBg, resumeEp, totalEpisodes } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import { resumeEpisode, playEpisode, type PlayState } from '$lib/stremio/play'
   import { offlineMode } from '$lib/stores/offline'
@@ -389,7 +389,7 @@
           {#if format(m)}<span>{format(m)}</span><span class="opacity-40">·</span>{/if}
           <span>{effProgress}/{epsTotal(m) || '?'} eps</span>
           {#if m.duration}<span class="opacity-40">·</span><span>{m.duration} min</span>{/if}
-          {#if season(m)}<span class="opacity-40">·</span><span>{season(m)}</span>{/if}
+          {#if season(m)}<span class="opacity-40">·</span><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a>{/if}
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
         </div>
 
@@ -515,7 +515,7 @@
                   {#if status(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Status</dt><dd class="mt-1 font-bold">{status(m)}</dd></div>{/if}
                   <div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Episodes</dt><dd class="mt-1 font-bold">{epsTotal(m) || 'Unknown'}</dd></div>
                   {#if m.duration}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Runtime</dt><dd class="mt-1 font-bold">{m.duration} minutes</dd></div>{/if}
-                  {#if season(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd class="mt-1 font-bold">{season(m)}</dd></div>{/if}
+                  {#if season(m)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Season</dt><dd class="mt-1 font-bold"><a href={seasonBrowseHref(m)} class="underline-offset-2 active:opacity-70">{season(m)}</a></dd></div>{/if}
                   {#if fmtDate(m.startDate)}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Premiered</dt><dd class="mt-1 font-bold">{fmtDate(m.startDate)}</dd></div>{/if}
                   {#if m.source}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Source</dt><dd class="mt-1 font-bold">{prettyEnum(m.source)}</dd></div>{/if}
                   {#if m.countryOfOrigin}<div class="rounded-xl bg-secondary/40 p-3"><dt class="text-xs font-bold uppercase tracking-wide text-muted-foreground">Country</dt><dd class="mt-1 font-bold">{countryName(m.countryOfOrigin)}</dd></div>{/if}
@@ -584,7 +584,11 @@
           <span class="text-foreground">{effProgress}/{epsTotal(m) || '?'} episodes</span>
           {#if format(m)}<span class="opacity-40">·</span><span>{format(m)}</span>{/if}
           {#if status(m)}<span class="opacity-40">·</span><span>{status(m)}</span>{/if}
-          {#if season(m)}<span class="opacity-40">·</span><span>{season(m)}</span>{/if}
+          {#if season(m)}
+            <span class="opacity-40">·</span>
+            <a data-focusable={$gameMode ? undefined : ''} tabindex={$gameMode ? -1 : undefined}
+               href={seasonBrowseHref(m)} class="transition-colors hover:text-foreground hover:underline">{season(m)}</a>
+          {/if}
           {#if m.averageScore}<span class="opacity-40">·</span><span class="rounded px-1.5 py-0.5 text-white {ratingBg(m.averageScore)}">{m.averageScore}%</span>{/if}
           {#each (m.genres ?? []).slice(0, $gameMode ? 3 : 4) as g (g)}
             <span class="opacity-40">·</span>

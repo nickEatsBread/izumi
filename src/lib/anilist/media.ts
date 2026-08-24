@@ -71,6 +71,11 @@ export const status = (m: Media) => (m.status ? STATUS[m.status] ?? m.status : '
 
 export const season = (m: Media) => (m.season && m.seasonYear ? `${m.season[0]}${m.season.slice(1).toLowerCase()} ${m.seasonYear}` : '')
 
+/** Browse the exact AniList cour represented by a detail-page season label. */
+export const seasonBrowseHref = (m: Media) => m.season && m.seasonYear
+  ? `/app/search?season=${encodeURIComponent(m.season)}&year=${m.seasonYear}`
+  : ''
+
 export const ratingBg = (score?: number) => score == null ? 'bg-muted' : score >= 75 ? 'bg-green-700' : score >= 65 ? 'bg-orange-400' : 'bg-red-400'
 
 // AniList leaves the scalar `episodes` (and often `nextAiringEpisode`) null on many
