@@ -241,7 +241,15 @@ describe('Game-mode Leanback motion', () => {
   it('clips a right-side sheet instead of snapshotting the full player', () => {
     expect(gameModeSideSheetCrop(1280, 800, { left: 896, top: 40, width: 352, height: 720 }))
       .toEqual({ x: 872, y: 16, w: 400, h: 768 })
+    expect(gameModeSideSheetCrop(1280, 800, { left: 180, top: 60, width: 920, height: 680 }, 0))
+      .toEqual({ x: 180, y: 60, w: 920, h: 680 })
     expect(gameModeSideSheetCrop(1280, 800, null)).toBeNull()
+  })
+
+  it('does not capture the browse page around the Game-mode comments panel', () => {
+    const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
+    expect(overlay).toContain('gameModeSideSheetCrop(viewportWidth, viewportHeight, commentsRect, 0)')
+    expect(overlay).toContain('gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedComments, 0)')
   })
 
   it('honours a crop while the native overlay is continuously refreshing', () => {

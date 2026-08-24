@@ -667,10 +667,11 @@
       : null
     const commentsRect = commentsElement?.getBoundingClientRect() ?? null
     // The Disqus iframe is the heaviest continuously-changing surface in the player. Publish just
-    // its panel. Do not add the native settings-sheet backdrop here: Gamescope renders that OSD
-    // rectangle opaquely on some Deck builds, which surrounded the comments popup in black.
+    // its exact panel bounds. Unlike settings sheets it has no Game-mode shadow, so a crop margin
+    // captures the transparent player hole's browse page underneath (including chopped card-title
+    // text) and Gamescope composites that strip as a fake shadow around the comments.
     const commentsCrop = commentsRect
-      ? gameModeSideSheetCrop(viewportWidth, viewportHeight, commentsRect)
+      ? gameModeSideSheetCrop(viewportWidth, viewportHeight, commentsRect, 0)
       : null
     const nativeSheet = sheetMotion
     const crop = sheetMotion
@@ -694,7 +695,7 @@
         ? document.querySelector<HTMLElement>('[data-gm-comments-surface]')?.getBoundingClientRect() ?? null
         : null
       const paintedCommentsCrop = paintedComments
-        ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedComments)
+        ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedComments, 0)
         : null
       const paintedCrop = paintedSheetMotion
         ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedSheet)

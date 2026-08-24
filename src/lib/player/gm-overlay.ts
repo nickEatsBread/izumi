@@ -78,13 +78,14 @@ export function gameModeSideSheetCrop(
   viewportWidth: number,
   viewportHeight: number,
   rect: { left: number; top: number; width: number; height: number } | null,
+  margin = 24,
 ): { x: number; y: number; w: number; h: number } | null {
   if (!rect || viewportWidth <= 0 || viewportHeight <= 0 || rect.width <= 0 || rect.height <= 0) return null
-  const margin = 24
-  const x = Math.max(0, Math.floor(rect.left - margin))
-  const y = Math.max(0, Math.floor(rect.top - margin))
-  const right = Math.min(viewportWidth, Math.ceil(rect.left + rect.width + margin))
-  const bottom = Math.min(viewportHeight, Math.ceil(rect.top + rect.height + margin))
+  const safeMargin = Math.max(0, margin)
+  const x = Math.max(0, Math.floor(rect.left - safeMargin))
+  const y = Math.max(0, Math.floor(rect.top - safeMargin))
+  const right = Math.min(viewportWidth, Math.ceil(rect.left + rect.width + safeMargin))
+  const bottom = Math.min(viewportHeight, Math.ceil(rect.top + rect.height + safeMargin))
   return right > x && bottom > y ? { x, y, w: right - x, h: bottom - y } : null
 }
 
