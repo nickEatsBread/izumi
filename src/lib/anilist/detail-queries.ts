@@ -7,7 +7,7 @@ import { showAdult } from '$lib/settings/ui'
 // flag. Kept off the shared MediaFields fragment so browse/card queries don't
 // over-fetch per-viewer data.
 export const MEDIA_BY_ID = gql`
-  query MediaById($id: Int!, $withPreview: Boolean! = true) {
+  query MediaById($id: Int!, $withPreview: Boolean = true) {
     Media(id: $id, type: ANIME) {
       ...MediaFields
       isFavourite
@@ -65,7 +65,7 @@ export const READING_MEDIA_BY_ID = gql`
 // Shared filter arg lists, kept in ONE place so the SFW / 18+ variants can't drift.
 // Interpolated as plain strings into the gql templates below (advanced fields —
 // tags, source, country, score, episode range — sit alongside the quick-bar ones).
-const SEARCH_ARGS = '$page: Int = 1, $perPage: Int = 30, $search: String, $genre_in: [String], $tag_in: [String], $tag_not_in: [String], $minimumTagRank: Int, $season: MediaSeason, $seasonYear: Int, $format_in: [MediaFormat], $status_in: [MediaStatus], $source_in: [MediaSource], $countryOfOrigin: CountryCode, $averageScore_greater: Int, $episodes_greater: Int, $episodes_lesser: Int, $sort: [MediaSort], $withPreview: Boolean! = true'
+const SEARCH_ARGS = '$page: Int = 1, $perPage: Int = 30, $search: String, $genre_in: [String], $tag_in: [String], $tag_not_in: [String], $minimumTagRank: Int, $season: MediaSeason, $seasonYear: Int, $format_in: [MediaFormat], $status_in: [MediaStatus], $source_in: [MediaSource], $countryOfOrigin: CountryCode, $averageScore_greater: Int, $episodes_greater: Int, $episodes_lesser: Int, $sort: [MediaSort], $withPreview: Boolean = true'
 const MEDIA_ARGS = 'search: $search, genre_in: $genre_in, tag_in: $tag_in, tag_not_in: $tag_not_in, minimumTagRank: $minimumTagRank, season: $season, seasonYear: $seasonYear, format_in: $format_in, status_in: $status_in, source_in: $source_in, countryOfOrigin: $countryOfOrigin, averageScore_greater: $averageScore_greater, episodes_greater: $episodes_greater, episodes_lesser: $episodes_lesser, sort: $sort'
 
 // SFW variant (excludes adult). See queries.ts for why we need two variants
@@ -93,7 +93,7 @@ const SEARCH_QUERY_ALL = gql`
 export const searchQuery = () => (get(showAdult) ? SEARCH_QUERY_ALL : SEARCH_QUERY)
 
 export const STUDIO_MEDIA_QUERY = gql`
-  query StudioMedia($id: Int!, $page: Int = 1, $withPreview: Boolean! = true) {
+  query StudioMedia($id: Int!, $page: Int = 1, $withPreview: Boolean = true) {
     Studio(id: $id) {
       name
       media(page: $page, perPage: 30, sort: POPULARITY_DESC, type: ANIME) {
@@ -105,7 +105,7 @@ export const STUDIO_MEDIA_QUERY = gql`
   ${CARD_MEDIA_FIELDS}`
 
 export const STAFF_MEDIA_QUERY = gql`
-  query StaffMedia($id: Int!, $page: Int = 1, $withPreview: Boolean! = true) {
+  query StaffMedia($id: Int!, $page: Int = 1, $withPreview: Boolean = true) {
     Staff(id: $id) {
       name { full }
       staffMedia(page: $page, perPage: 30, sort: POPULARITY_DESC, type: ANIME) {

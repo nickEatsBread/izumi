@@ -14,7 +14,7 @@ export const LIST_QUERY = gql`
 // paginated MediaList field for this use; the previous MediaListCollection downloaded an account's
 // entire status list and then rendered only the first thirty entries.
 export const LIST_PREVIEW_QUERY = gql`
-  query ListPreview($userName: String!, $status: MediaListStatus!, $withPreview: Boolean! = true) {
+  query ListPreview($userName: String!, $status: MediaListStatus!, $withPreview: Boolean = true) {
     Page(page: 1, perPage: 30) {
       mediaList(userName: $userName, type: ANIME, status: $status, sort: UPDATED_TIME_DESC) {
         status progress updatedAt media { ...CardMediaFields }

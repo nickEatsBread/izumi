@@ -14,7 +14,7 @@ export function currentSeason(now: Date) {
 // so returns EMPTY). A GraphQL variable can't omit an argument, so we keep two
 // query variants and pick per the setting.
 export const PAGE_QUERY = gql`
-  query Page($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean! = true) {
+  query Page($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean = true) {
     Page(page: $page, perPage: $perPage) {
       media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre) {
         ...CardMediaFields
@@ -24,7 +24,7 @@ export const PAGE_QUERY = gql`
   ${CARD_MEDIA_FIELDS}`
 
 const PAGE_QUERY_ALL = gql`
-  query PageAll($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean! = true) {
+  query PageAll($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean = true) {
     Page(page: $page, perPage: $perPage) {
       media(type: ANIME, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre) {
         ...CardMediaFields
@@ -68,7 +68,7 @@ export const heroQuery = () => (get(showAdult) ? HERO_QUERY_ALL : HERO_QUERY)
  * changes for harmless metadata edits). The row filters adult media after the response because
  * AniList's Page.airingSchedules field does not expose an isAdult argument. */
 export const RECENT_RELEASES_QUERY = gql`
-  query RecentReleases($page: Int = 1, $perPage: Int = 50, $after: Int!, $before: Int!, $withPreview: Boolean! = false) {
+  query RecentReleases($page: Int = 1, $perPage: Int = 50, $after: Int!, $before: Int!, $withPreview: Boolean = false) {
     Page(page: $page, perPage: $perPage) {
       airingSchedules(airingAt_greater: $after, airingAt_lesser: $before, sort: TIME_DESC) {
         episode airingAt
@@ -100,7 +100,7 @@ export function homeSections(now: Date) {
 
 /** Recommendations from the connected user's highest-scored current/completed titles. */
 export const PERSONAL_RECOMMENDATIONS_QUERY = gql`
-  query PersonalRecommendations($userName: String!, $withPreview: Boolean! = true) {
+  query PersonalRecommendations($userName: String!, $withPreview: Boolean = true) {
     Page(page: 1, perPage: 8) {
       mediaList(
         userName: $userName

@@ -1,5 +1,14 @@
+import { get } from 'svelte/store'
 import { describe, it, expect } from 'vitest'
-import { PAGE_QUERY, currentSeason, heroQuery } from './queries'
+import { showAdult } from '$lib/settings/ui'
+import { LIST_PREVIEW_QUERY } from './lists'
+import {
+  MEDIA_BY_ID, SEARCH_QUERY, STAFF_MEDIA_QUERY, STUDIO_MEDIA_QUERY, searchQuery,
+} from './detail-queries'
+import {
+  PAGE_QUERY, PERSONAL_RECOMMENDATIONS_QUERY, RECENT_RELEASES_QUERY,
+  currentSeason, heroQuery, pageQuery,
+} from './queries'
 describe('currentSeason', () => {
   it('maps month to AniList season', () => {
     expect(currentSeason(new Date('2026-01-15')).season).toBe('WINTER')
@@ -11,6 +20,23 @@ describe('currentSeason', () => {
 })
 
 describe('catalogue projection', () => {
+  it('uses GraphQL-valid nullable variables when a preview default is declared', () => {
+    const previous = get(showAdult)
+    showAdult.set(true)
+    const documents = [
+      PAGE_QUERY, pageQuery(), RECENT_RELEASES_QUERY, PERSONAL_RECOMMENDATIONS_QUERY,
+      MEDIA_BY_ID, SEARCH_QUERY, searchQuery(), STUDIO_MEDIA_QUERY, STAFF_MEDIA_QUERY,
+      LIST_PREVIEW_QUERY,
+    ]
+    showAdult.set(previous)
+
+    for (const document of documents) {
+      const query = document.loc?.source.body ?? ''
+      expect(query).toMatch(/\$withPreview:\s*Boolean\s*=\s*(?:true|false)/)
+      expect(query).not.toMatch(/\$withPreview:\s*Boolean!\s*=/)
+    }
+  })
+
   it('does not attach full airing schedules to ordinary cards', () => {
     const query = PAGE_QUERY.loc?.source.body ?? ''
     expect(query).toContain('...CardMediaFields')
