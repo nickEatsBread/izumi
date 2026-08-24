@@ -76,7 +76,7 @@ export async function playerGifStart(includeSubtitles: boolean): Promise<void> {
   if (drmStream()) throw new Error('DRM GIF capture is unavailable')
 }
 
-export async function playerGifStop(range?: { startSec: number; endSec: number }): Promise<void> {
+export async function playerGifStop(range?: { startSec?: number; endSec?: number }): Promise<void> {
   const drm = getDrmEngine()
   if (drm?.gifStop) {
     await drm.gifStop()

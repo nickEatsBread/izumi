@@ -9,8 +9,8 @@ const invoke = vi.fn(async (command: string, _args?: Record<string, unknown>) =>
   (command === 'download_dir_default' ? '/downloads' : undefined))
 const resolveDownloadUrl = vi.fn()
 const storeShakaOffline = vi.fn()
-const abortShakaOffline = vi.fn(async () => {})
-const removeShakaOffline = vi.fn(async () => {})
+const abortShakaOffline = vi.fn(async (..._args: unknown[]) => {})
+const removeShakaOffline = vi.fn(async (..._args: unknown[]) => {})
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (command: string, args?: Record<string, unknown>) => invoke(command, args),

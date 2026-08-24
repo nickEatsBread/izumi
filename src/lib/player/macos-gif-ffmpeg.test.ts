@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const read = (url: URL) => readFileSync(fileURLToPath(url), 'utf8')
+const read = (url: URL) => readFileSync(fileURLToPath(url), 'utf8').replaceAll('\r\n', '\n')
 const rust = read(new URL('../../../src-tauri/src/lib.rs', import.meta.url))
 const release = read(new URL('../../../.github/workflows/release.yml', import.meta.url))
 

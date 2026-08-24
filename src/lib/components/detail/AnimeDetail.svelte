@@ -454,7 +454,7 @@
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
           </button>
           {#if m.trailer?.id}
-            <button data-focusable onclick={() => { h.tap(); openTrailerPopup(m.trailer!.id, title(m)) }} aria-label="Trailer"
+            <button data-focusable onclick={() => { h.tap(); openTrailerPopup(m.trailer!.id!, title(m)) }} aria-label="Trailer"
                     class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
               <Clapperboard size={18} />
             </button>
@@ -628,7 +628,7 @@
           </button>
 
           {#if m.trailer?.id}
-            <button data-focusable onclick={() => openTrailerPopup(m.trailer!.id, title(m))} title="Watch trailer"
+            <button data-focusable onclick={() => openTrailerPopup(m.trailer!.id!, title(m))} title="Watch trailer"
                     class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
               <Clapperboard size={18} />
             </button>

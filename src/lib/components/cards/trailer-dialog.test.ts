@@ -9,7 +9,7 @@ describe('app-level trailer dialog', () => {
     const layout = read('../../../routes/app/+layout.svelte')
     expect(layout).toContain("const loadTrailerDialog = () => import('$lib/components/cards/TrailerDialog.svelte')")
     expect(layout).toContain('{#if trailerDialogMounted}<Lazy load={loadTrailerDialog} />{/if}')
-    expect(read('../detail/AnimeDetail.svelte')).toContain('openTrailerPopup(m.trailer!.id, title(m))')
+    expect(read('../detail/AnimeDetail.svelte')).toContain('openTrailerPopup(m.trailer!.id!, title(m))')
   })
 
   it('supports backdrop, close-button, and Escape dismissal', () => {

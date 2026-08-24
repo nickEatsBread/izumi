@@ -24,7 +24,7 @@ vi.mock('./idmap', () => ({ getIndex: async () => ({}), lookupKitsu: () => undef
 vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
 // Resolves empty (not pending): resolveDownloadUrl now awaits the online wave (with a budget),
 // so a never-settling mock would stall every test to its own timeout.
-const resolveOnlineStreams = vi.fn(async (): Promise<unknown[]> => [])
+const resolveOnlineStreams = vi.fn(async (..._args: unknown[]): Promise<unknown[]> => [])
 const getDownloadedMedia = vi.fn()
 const fetchMediaById = vi.fn(async () => media)
 vi.mock('./onlinestream', () => ({ resolveOnlineStreams: (...a: unknown[]) => resolveOnlineStreams(...a) }))

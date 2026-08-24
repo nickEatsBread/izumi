@@ -15,9 +15,13 @@ describe('Flatpak SDK deps', () => {
     expect(rust).toContain('command -v rustc')
   })
 
-  it('pre-installs GNOME/node with retries instead of a single --install-deps-from shot', () => {
-    expect(workflow).toContain('scripts/ci/flatpak-install-sdk-deps.sh')
+  it('uses the pre-provisioned GNOME image and installs only the Node extension', () => {
+    expect(workflow).toContain('ghcr.io/flathub-infra/flatpak-github-actions:gnome-49')
+    expect(workflow).toContain('flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.node22//25.08')
+    expect(workflow).not.toContain('scripts/ci/flatpak-install-sdk-deps.sh')
     expect(workflow).not.toContain('flatpak-builder --user --install-deps-from=flathub')
+
+    // Keep the retry helper covered for older/local builders that still need to provision an SDK.
     expect(deps).toContain('org.gnome.Sdk//49')
     expect(deps).toContain('org.freedesktop.Sdk.Extension.node22//25.08')
     expect(deps).toContain('retrying')
