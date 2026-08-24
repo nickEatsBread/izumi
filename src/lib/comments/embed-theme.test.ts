@@ -47,9 +47,14 @@ describe('DiscussAnime embed theming', () => {
 
   it('keeps the Deck embed on a download-free font path with touch scroll containment', () => {
     const loader = read('../../../static/disqus-embed.html')
+    const lib = read('../../../src-tauri/src/lib.rs')
     expect(loader).not.toContain('fonts.googleapis.com')
     expect(loader).not.toContain('fonts.gstatic.com')
     expect(loader).toContain('font-family: system-ui')
     expect(loader).toContain('overscroll-behavior: contain; touch-action: pan-y;')
+    expect(loader).toContain("message.type !== 'izumi-disqus-touch-scroll'")
+    expect(loader).toContain('window.requestAnimationFrame(flushTouchScroll)')
+    expect(lib).toContain('DISQUS_TOUCH_SCROLL_SCRIPT')
+    expect(lib).toContain('UserContentInjectedFrames::AllFrames')
   })
 })

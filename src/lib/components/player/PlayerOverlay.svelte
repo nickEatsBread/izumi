@@ -667,12 +667,12 @@
       : null
     const commentsRect = commentsElement?.getBoundingClientRect() ?? null
     // The Disqus iframe is the heaviest continuously-changing surface in the player. Publish just
-    // its panel; expanded mode gets the equivalent dim from the native sheet backdrop instead of
-    // uploading and compositing a full-screen translucent bitmap on every scroll frame.
+    // its panel. Do not add the native settings-sheet backdrop here: Gamescope renders that OSD
+    // rectangle opaquely on some Deck builds, which surrounded the comments popup in black.
     const commentsCrop = commentsRect
       ? gameModeSideSheetCrop(viewportWidth, viewportHeight, commentsRect)
       : null
-    const nativeSheet = sheetMotion || (!!commentsCrop && $commentsOpen && $discussionExpanded)
+    const nativeSheet = sheetMotion
     const crop = sheetMotion
       ? gameModeSideSheetCrop(viewportWidth, viewportHeight, sheetRect)
       : commentsCrop
@@ -699,7 +699,7 @@
       const paintedCrop = paintedSheetMotion
         ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedSheet)
         : paintedCommentsCrop ?? crop
-      const paintedNativeSheet = paintedSheetMotion || (!!paintedCommentsCrop && $commentsOpen && $discussionExpanded)
+      const paintedNativeSheet = paintedSheetMotion
       invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedNativeSheet }).catch(() => {})
     })
   })

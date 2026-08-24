@@ -125,6 +125,56 @@
       var title = (q.get('t_t') || '').trim();
       var expand = q.get('izumi_expand') === '1';
 
+      // The comments themselves live in Disqus's cross-origin child iframe. On Gamescope,
+      // WebKitGTK cannot chain a touchscreen drag from that child back to this document (the real
+      // scroll owner). A narrowly injected document-start bridge in the native shell forwards drag
+      // deltas here. Coalesce them to one scroll per frame and retain a short decaying velocity so
+      // a Deck swipe feels like native kinetic scrolling without running a high-frequency timer.
+      var touchDelta = 0;
+      var touchVelocity = 0;
+      var touchFrame = 0;
+      var momentumFrame = 0;
+      function flushTouchScroll() {
+        touchFrame = 0;
+        if (!touchDelta) return;
+        window.scrollBy(0, touchDelta);
+        touchDelta = 0;
+      }
+      function stopMomentum() {
+        if (momentumFrame) window.cancelAnimationFrame(momentumFrame);
+        momentumFrame = 0;
+      }
+      function startMomentum() {
+        stopMomentum();
+        var last = performance.now();
+        function step(now) {
+          var dt = Math.min(32, Math.max(1, now - last));
+          last = now;
+          touchVelocity *= Math.pow(0.92, dt / 16.67);
+          if (Math.abs(touchVelocity) < 0.15) { momentumFrame = 0; return; }
+          window.scrollBy(0, touchVelocity * dt);
+          momentumFrame = window.requestAnimationFrame(step);
+        }
+        if (Math.abs(touchVelocity) >= 0.15) momentumFrame = window.requestAnimationFrame(step);
+      }
+      window.addEventListener('message', function (event) {
+        var message = event.data;
+        if (event.origin !== 'https://disqus.com' || !message || message.type !== 'izumi-disqus-touch-scroll') return;
+        var inner = document.querySelector('iframe[src*="disqus.com/embed/comments"]');
+        if (!inner || event.source !== inner.contentWindow) return;
+        if (message.phase === 'move') {
+          stopMomentum();
+          var dy = Number(message.dy);
+          var dt = Math.max(1, Number(message.dt) || 16);
+          if (!Number.isFinite(dy) || Math.abs(dy) > 300) return;
+          touchDelta += dy;
+          touchVelocity = touchVelocity * 0.65 + (dy / dt) * 0.35;
+          if (!touchFrame) touchFrame = window.requestAnimationFrame(flushTouchScroll);
+        } else if (message.phase === 'end') {
+          startMomentum();
+        }
+      });
+
       if (expand) {
         document.documentElement.classList.add('izumi-expand');
         var lastReportedHeight = 0;

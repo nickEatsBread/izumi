@@ -2116,6 +2116,45 @@ document.addEventListener('DOMContentLoaded',pass);
 new MutationObserver(schedule).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['href']});
 }catch(e){}})();"#;
 
+/// Gamescope/WebKitGTK does not scroll-chain a Deck touch drag out of Disqus's cross-origin child
+/// frame to the same-origin loader document that actually owns the scrollbar. Injected into all
+/// frames at document start below, this script self-gates to DiscussAnime's Disqus comments and
+/// forwards only post-slop drag deltas. Taps remain native Disqus events; an actual drag suppresses
+/// its trailing synthetic click. The loader validates both the sender origin and frame window.
+#[cfg(target_os = "linux")]
+const DISQUS_TOUCH_SCROLL_SCRIPT: &str = r#"(function(){try{
+if(location.hostname!=='disqus.com'||location.pathname.indexOf('/embed/comments')!==0)return;
+if(new URLSearchParams(location.search).get('f')!=='discussanime')return;
+if(window.__izumiDisqusTouchScroll)return;window.__izumiDisqusTouchScroll=1;
+var active=false,moved=false,startY=0,lastY=0,lastAt=0,lastTouchAt=0,suppressClickUntil=0;
+function send(phase,dy,dt){try{window.parent.postMessage({type:'izumi-disqus-touch-scroll',phase:phase,dy:dy||0,dt:dt||0},'*')}catch(_e){}}
+function begin(y,now){active=true;moved=false;startY=lastY=y;lastAt=now;}
+function move(y,now,ev){
+  if(!active)return;
+  var total=startY-y,dy=lastY-y,dt=Math.max(1,now-lastAt);lastY=y;lastAt=now;
+  if(!moved&&Math.abs(total)<6)return;
+  moved=true;suppressClickUntil=now+450;
+  if(ev.cancelable)ev.preventDefault();ev.stopPropagation();send('move',dy,dt);
+}
+function end(){if(!active)return;active=false;if(moved)send('end',0,0);moved=false;}
+document.addEventListener('touchstart',function(ev){
+  if(ev.touches.length!==1)return;lastTouchAt=performance.now();begin(ev.touches[0].clientY,lastTouchAt);
+},{capture:true,passive:true});
+document.addEventListener('touchmove',function(ev){
+  if(ev.touches.length!==1)return;lastTouchAt=performance.now();move(ev.touches[0].clientY,lastTouchAt,ev);
+},{capture:true,passive:false});
+document.addEventListener('touchend',end,{capture:true,passive:true});
+document.addEventListener('touchcancel',end,{capture:true,passive:true});
+document.addEventListener('pointerdown',function(ev){
+  var now=performance.now();if(ev.button!==0||now-lastTouchAt<700)return;begin(ev.clientY,now);
+},true);
+document.addEventListener('pointermove',function(ev){
+  var now=performance.now();if(now-lastTouchAt<700)return;move(ev.clientY,now,ev);
+},{capture:true,passive:false});
+document.addEventListener('pointerup',end,true);document.addEventListener('pointercancel',end,true);
+document.addEventListener('click',function(ev){if(performance.now()<suppressClickUntil){ev.preventDefault();ev.stopImmediatePropagation();}},true);
+}catch(e){}})();"#;
+
 #[cfg(windows)]
 static FRAME_SCRIPT_ADDED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -5192,11 +5231,24 @@ pub fn run() {
                     use glib::object::ObjectType;
                     use webkit2gtk::{
                         CookieAcceptPolicy, CookieManagerExt, SettingsExt,
-                        WebContextExt, WebViewExt, WebsiteDataManagerExt,
+                        UserContentInjectedFrames, UserContentManagerExt, UserScript,
+                        UserScriptInjectionTime, WebContextExt, WebViewExt,
+                        WebsiteDataManagerExt,
                     };
                     let wv = pw.inner();
                     wv.set_background_color(&gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
                     if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
+                        // The comments iframe is created well after setup, so one all-frame user
+                        // script reaches its cross-origin document without polling or DOM overlays.
+                        if let Some(manager) = wv.user_content_manager() {
+                            manager.add_script(&UserScript::new(
+                                DISQUS_TOUCH_SCROLL_SCRIPT,
+                                UserContentInjectedFrames::AllFrames,
+                                UserScriptInjectionTime::Start,
+                                &[],
+                                &[],
+                            ));
+                        }
                         // TAC's Cloudflare clearance and Disqus's login live in third-party
                         // discussion frames. WebKitGTK's tracking policy otherwise withholds those
                         // cookies after the related first-party popup closes, causing TAC to loop

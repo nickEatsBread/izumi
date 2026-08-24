@@ -467,7 +467,7 @@
        render surface that janked scrolling in the embed. The dim alone reads identically. -->
   <button type="button" data-comments-panel aria-label="Close discussion" transition:fade={{ duration: $gameMode ? 0 : 150 }}
           onclick={() => commentsOpen.set(false)}
-          class="absolute inset-0 z-40 bg-black/60"></button>
+          class="absolute inset-0 z-40 {$gameMode ? 'bg-transparent' : 'bg-black/60'}"></button>
 {/if}
 <!-- Always mounted: open/close and docked/expanded are pure CSS state so the embed iframe inside is
      never reparented or destroyed (either reboots the third-party embed). Closed = visibility:hidden
