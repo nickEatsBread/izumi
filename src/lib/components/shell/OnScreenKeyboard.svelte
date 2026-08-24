@@ -20,8 +20,11 @@
   let symbols = $state(false)
 
   const isTextField = (el: EventTarget | null): el is Field => {
-    if (el instanceof HTMLTextAreaElement) return true
+    // Clipboard fallbacks focus a hidden, readonly textarea because WebKitGTK's custom-protocol
+    // origin has no async Clipboard API. It is not user input and must not summon Steam's OSK.
+    if (el instanceof HTMLTextAreaElement) return !el.readOnly && !el.disabled && !el.dataset.clipboardProxy
     if (el instanceof HTMLInputElement) {
+      if (el.readOnly || el.disabled || el.dataset.clipboardProxy) return false
       // Only real text-entry inputs; skip checkbox/range/etc.
       return !['checkbox', 'radio', 'range', 'button', 'submit', 'color'].includes(el.type)
     }

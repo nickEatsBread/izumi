@@ -603,7 +603,7 @@
 
         <!-- Action bar -->
         <div class="flex flex-wrap items-center gap-2">
-          <button data-focusable data-nav-id="series-primary-action"
+          <button data-focusable data-nav-id="series-primary-action" data-nav-scroll-top
                   data-nav-down={$gameMode ? 'series-quick-episode' : undefined}
                   use:focusOnMount onclick={() => playCta(m)}
                   class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">

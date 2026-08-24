@@ -18,9 +18,13 @@ export function copyToClipboard(text: string): boolean {
 }
 
 function execCopy(text: string): boolean {
+  const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null
   const ta = document.createElement('textarea')
   ta.value = text
   ta.setAttribute('readonly', '')
+  // OnScreenKeyboard ignores this proxy explicitly. WebKitGTK still needs it focused for the
+  // synchronous copy command, but a Share press must never summon Steam's keyboard.
+  ta.dataset.clipboardProxy = 'true'
   ta.style.position = 'fixed'
   ta.style.top = '0'
   ta.style.left = '0'
@@ -35,7 +39,10 @@ function execCopy(text: string): boolean {
   let ok = false
   try { ok = document.execCommand('copy') }
   catch { ok = false }
-  document.body.removeChild(ta)
-  if (sel && prev) { sel.removeAllRanges(); sel.addRange(prev) }
+  finally {
+    ta.remove()
+    if (sel && prev) { sel.removeAllRanges(); sel.addRange(prev) }
+    if (focused?.isConnected) focused.focus({ preventScroll: true })
+  }
   return ok
 }

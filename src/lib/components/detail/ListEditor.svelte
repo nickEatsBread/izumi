@@ -138,7 +138,7 @@
         <label class="min-w-0 text-center">
           <span class="sr-only">Episodes watched</span>
           <input type="number" min="0" max={total || undefined} bind:value={progress}
-            class="w-16 bg-transparent text-center text-lg font-black tabular-nums outline-none" />
+            class="progress-input w-16 bg-transparent text-center text-lg font-black tabular-nums outline-none" />
           <span class="text-sm text-muted-foreground"> / {total || '?'}</span>
         </label>
         <button type="button" data-focusable onclick={() => changeProgress(1)} disabled={!!total && progress >= total}
@@ -176,3 +176,11 @@
     </div>
   </div>
 </div>
+
+<style>
+  /* WebKitGTK exposes the native number stepper even though this editor already has large Deck-
+     friendly minus/plus buttons. Keeping both creates a tiny accidental touch target under 0/12. */
+  .progress-input { appearance: textfield; -moz-appearance: textfield; }
+  .progress-input::-webkit-inner-spin-button,
+  .progress-input::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+</style>
