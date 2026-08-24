@@ -30,6 +30,7 @@ permissions:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       release_id: ${{ steps.create.outputs.result }}
       prerelease: ${{ steps.meta.outputs.prerelease }}
@@ -110,6 +111,7 @@ jobs:
 
   build:
     needs: create-release
+    timeout-minutes: 40
     env:
       PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
     strategy:
@@ -145,12 +147,14 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          # A tag cache is isolated from every future tag. Restoring main is useful; uploading
+          # another ~800 MB cache at the end of every release only evicts reusable caches.
+          save-if: false
 
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
 
       # libmpv2-sys links `-l mpv`, so libmpv must be on the linker path.
       - name: libmpv + Tauri deps (Linux)
@@ -280,6 +284,7 @@ jobs:
   cleanup-release-signatures:
     needs: [create-release, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Remove standalone updater signature assets
         env:
@@ -303,26 +308,25 @@ jobs:
   flatpak:
     needs: create-release
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    # Flathub publishes this purpose-built image with GNOME 49 Platform + SDK already installed.
+    # Pulling it through GHCR is bounded and observable; downloading the SDK from Flathub inside
+    # the job took 30 minutes without progress in v0.1.47-10.
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
+      options: --privileged
     env:
       PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install flatpak + flatpak-builder
+      # The base image has the GNOME runtime/SDK. The manifest's much smaller Node extension is the
+      # only extra ref; install it system-wide so it is visible to the system flatpak-builder.
+      - name: Install Node SDK extension
         run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-
-      # Cache the built runtime/SDK downloads + the module build tree so reruns skip the ~15min
-      # mpv/libplacebo/libass compile. Keyed on the manifest — a dep bump invalidates it.
-      - name: Cache flatpak build
-        uses: actions/cache@v6
-        with:
-          path: |
-            flatpak/.flatpak-builder
-            ~/.local/share/flatpak
-          key: flatpak-${{ hashFiles('flatpak/com.nicho.izumi.yml') }}
-          restore-keys: flatpak-
+          set -euo pipefail
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.node22//25.08
 
       # Stable tag `vX.Y.Z` -> that tag; any pre-release (`-`) -> the rolling `beta` release.
       - name: Resolve release tag
@@ -334,33 +338,32 @@ jobs:
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build the Steam Deck Flatpak bundle
+      - name: Import Flatpak signing key
         run: |
-          # dbus-run-session: flatpak's --user ops need a session bus (absent on bare runners).
-          # SDK/runtime/node are installed with retries first (scripts/ci/flatpak-install-sdk-deps.sh)
-          # because --install-deps-from=flathub is a single shot that 404s while Flathub republishes
-          # an extension. --disable-rofiles-fuse avoids fuse-in-CI issues.
           # Import the signing key + export a BINARY public key FIRST, so build-bundle can bake an
           # update ORIGIN into the .flatpak itself (--repo-url) plus the key that verifies it
           # (--gpg-keys). That's what lets a DIRECT `.flatpak` install (not just the .flatpakref)
           # `flatpak update` from Pages afterwards — the bundle is no longer install-only.
           echo "${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}" | gpg --batch --import
           gpg --export ${{ secrets.FLATPAK_GPG_KEY_ID }} > flatpak/izumi-key.gpg
-          dbus-run-session -- bash -euxo pipefail -c '
-            flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-            bash scripts/ci/flatpak-install-sdk-deps.sh
-            cd flatpak
-            # Deps are installed above with retries. Do not use --install-deps-from=flathub: a
-            # 404 on a republishing SDK extension aborts the whole Deck job.
-            flatpak-builder --user --force-clean --disable-rofiles-fuse \
-              --repo=_repo _build com.nicho.izumi.yml
-            flatpak build-bundle _repo \
-              "../izumi-${{ steps.meta.outputs.tag }}-steamdeck.flatpak" \
-              com.nicho.izumi \
-              --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
-              --repo-url=https://flatpak.izumi.watch/ \
-              --gpg-keys=izumi-key.gpg
-          '
+
+      - name: Build the Steam Deck app
+        working-directory: flatpak
+        run: |
+          set -euxo pipefail
+          flatpak-builder --force-clean --ccache --disable-rofiles-fuse \
+            --repo=_repo _build com.nicho.izumi.yml
+
+      - name: Create the Steam Deck bundle
+        working-directory: flatpak
+        run: |
+          set -euxo pipefail
+          flatpak build-bundle _repo \
+            "../izumi-${{ steps.meta.outputs.tag }}-steamdeck.flatpak" \
+            com.nicho.izumi \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            --repo-url=https://flatpak.izumi.watch/ \
+            --gpg-keys=izumi-key.gpg
 
       # Turn ./flatpak/_repo into a real, GPG-verified update ORIGIN published on GitHub Pages, so
       # BOTH the `.flatpakref` install and the direct `.flatpak` bundle (which now bakes in this same
@@ -417,11 +420,12 @@ jobs:
           cname: flatpak.izumi.watch
 
       - name: Attach the Flatpak to the release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ steps.meta.outputs.tag }}" \
-            izumi-*.flatpak --repo "${{ github.repository }}" --clobber
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          draft: true
+          files: izumi-*.flatpak
+          fail_on_unmatched_files: true
 
   # Android APK (arm64), signed with the release keystore so the in-app self-updater can
   # install it over a previous build. Runs independently of `build` (a hiccup here never
@@ -430,6 +434,7 @@ jobs:
   android:
     needs: create-release
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     # Two flavors: `lite` (external player, ~12 MB) and `full` (embedded libmpv, ~36 MB). Both are
     # signed with the same release key so the in-app updater can install either over a prior build;
     # the updater picks the asset matching the running flavor (see src/lib/updater/android.ts).
@@ -472,7 +477,6 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
 
       - name: Install Rust + Android target
         uses: dtolnay/rust-toolchain@stable
@@ -483,17 +487,29 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-          key: android-${{ matrix.flavor }}
+          # Both flavors can reuse the release-profile dependency graph warmed on trusted main.
+          # Never save from a tag: caches are tag-scoped, so the next version cannot read them.
+          shared-key: android-release
+          save-if: false
 
       - name: Install JS deps
         run: npm ci
 
       - name: Cache secure libmpv build
         if: matrix.flavor == 'full'
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/izumi-libmpv-android
           key: libmpv-android-arm64-f77f62c316c6-${{ hashFiles('scripts/ci/libmpv-android.sh') }}
+
+      - name: Restore Gradle cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('src-tauri/Cargo.lock', 'scripts/ci/android-scaffold.sh') }}
+          restore-keys: gradle-android-
 
       - name: Build libmpv with libass 0.17.5
         if: matrix.flavor == 'full'
@@ -560,6 +576,7 @@ jobs:
     # Keep the release draft if any shipped platform fails its build or validation gates.
     needs: [create-release, build, flatpak, android, cleanup-release-signatures]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Publish the release (un-draft)
         uses: actions/github-script@v9

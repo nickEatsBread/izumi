@@ -30,6 +30,7 @@ jobs:
     # trigger (synchronize/opened/reopened), so a push to an unlabelled PR costs nothing.
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-preview')
     runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 
@@ -86,37 +87,38 @@ jobs:
   flatpak:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-preview')
     runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
+      options: --privileged
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install flatpak + flatpak-builder
+      - name: Install Node SDK extension
         run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          set -euo pipefail
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y --noninteractive flathub org.freedesktop.Sdk.Extension.node22//25.08
 
-      # Same cache key as the release job, so a preview build reuses the ~15min mpv/libplacebo/
-      # libass compile the last release already paid for.
+      # PR caches are readable by later runs of the same PR, unlike caches written by release tags.
+      # The SDK itself lives in the image, so only persist Flatpak Builder's compact module state.
       - name: Cache flatpak build
         uses: actions/cache@v6
         with:
-          path: |
-            flatpak/.flatpak-builder
-            ~/.local/share/flatpak
-          key: flatpak-${{ hashFiles('flatpak/com.nicho.izumi.yml') }}
-          restore-keys: flatpak-
+          path: flatpak/.flatpak-builder
+          key: flatpak-pr-${{ hashFiles('flatpak/com.nicho.izumi.yml') }}
+          restore-keys: flatpak-pr-
 
       # Unsigned, and with no `--repo-url`: a preview bundle must not advertise the production
       # update origin, or installing one would wire the Deck up to `flatpak update` into a release.
       - name: Build the Steam Deck Flatpak bundle
         run: |
-          dbus-run-session -- bash -euxo pipefail -c '
-            flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-            cd flatpak
-            flatpak-builder --user --install-deps-from=flathub --force-clean --disable-rofiles-fuse \
-              --repo=_repo _build com.nicho.izumi.yml
-            flatpak build-bundle _repo ../izumi-preview-steamdeck.flatpak com.nicho.izumi \
-              --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
-          '
+          set -euxo pipefail
+          cd flatpak
+          flatpak-builder --force-clean --ccache --disable-rofiles-fuse \
+            --repo=_repo _build com.nicho.izumi.yml
+          flatpak build-bundle _repo ../izumi-preview-steamdeck.flatpak com.nicho.izumi \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
 
       - name: Upload bundle
         uses: actions/upload-artifact@v7
@@ -129,6 +131,7 @@ jobs:
   android:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-preview')
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     # Only the `full` flavor: the embedded-player build is the one worth device-testing, and
     # building both would double the slowest job in this workflow for little extra signal.
     env:
@@ -167,16 +170,26 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
-          key: pr-android-full
+          shared-key: android-release
+          save-if: false
 
       - name: Install JS deps
         run: npm ci
 
       - name: Cache secure libmpv build
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/izumi-libmpv-android
           key: libmpv-android-arm64-f77f62c316c6-${{ hashFiles('scripts/ci/libmpv-android.sh') }}
+
+      - name: Restore Gradle cache
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('src-tauri/Cargo.lock', 'scripts/ci/android-scaffold.sh') }}
+          restore-keys: gradle-android-
 
       - name: Build libmpv with libass 0.17.5
         run: bash scripts/ci/libmpv-android.sh
@@ -231,6 +244,7 @@ jobs:
     needs: [windows, flatpak, android]
     if: always() && (github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'build-preview'))
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Write install notes
         run: |

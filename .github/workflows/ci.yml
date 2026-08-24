@@ -12,9 +12,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -51,12 +56,15 @@ jobs:
         run: npm run check
 
       - name: Unit tests
+        if: ${{ !cancelled() }}
         run: npm test
 
       - name: Build frontend
+        if: ${{ !cancelled() }}
         run: npm run build
 
       - name: cargo check
+        if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo check
 
@@ -64,6 +72,7 @@ jobs:
       # `cargo test --test extension_package` for a while, which silently skipped every
       # in-crate test (~60 of them) on every CI run.
       - name: Rust tests
+        if: ${{ !cancelled() }}
         working-directory: src-tauri
         run: cargo test
 
@@ -85,6 +94,7 @@ jobs:
           - platform: macos-14
             name: macos (arm64)
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -143,24 +153,60 @@ jobs:
   # likely to break — it is invisible to every other job in this file.
   compile-android:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     env:
       # r28+ emits 16 KiB-aligned ELF LOAD segments by default. Match the pinned libmpv build.
       NDK_VERSION: "29.0.14206865"
+      BUILD_TOOLS: "36.0.0"
+      PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
     steps:
       - uses: actions/checkout@v7
+
+      - name: Setup JDK 21
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
 
       - name: Install NDK
-        run: sdkmanager --install "ndk;${NDK_VERSION}"
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install Android release tools
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: sdkmanager --install "platforms;android-36" "build-tools;${BUILD_TOOLS}"
+
+      - name: Setup Node
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
 
       - name: Install Rust + Android target
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
 
-      - name: Rust cache
+      # Main produces the only cache scope that future tags and PRs can read. Build the real full
+      # APK there, so both release flavors restore optimized Android artifacts instead of spending
+      # ~10 minutes compiling the same Rust graph twice per tag.
+      - name: Rust cache (Android release)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: android-release
+          save-if: true
+
+      - name: Rust cache (Android check)
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
@@ -169,6 +215,7 @@ jobs:
       # The API level in the clang wrapper's name must match minSdkVersion (26, tauri.conf.json).
       # Without CC_*/AR_* the ring build script fails looking for `aarch64-linux-android-clang`.
       - name: cargo check (aarch64, android-mpv)
+        if: github.event_name != 'push' || github.ref != 'refs/heads/main'
         working-directory: src-tauri
         run: |
           set -euo pipefail
@@ -178,3 +225,42 @@ jobs:
           export AR_aarch64_linux_android="$BIN/llvm-ar"
           export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$BIN/aarch64-linux-android26-clang"
           cargo check --target aarch64-linux-android --features android-mpv
+
+      - name: Install JS deps
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npm ci
+
+      - name: Cache secure libmpv build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/izumi-libmpv-android
+          key: libmpv-android-arm64-f77f62c316c6-${{ hashFiles('scripts/ci/libmpv-android.sh') }}
+
+      - name: Build libmpv with libass 0.17.5
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: bash scripts/ci/libmpv-android.sh
+
+      - name: Cache Gradle
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-android-${{ hashFiles('src-tauri/Cargo.lock', 'scripts/ci/android-scaffold.sh') }}
+          restore-keys: gradle-android-
+
+      - name: Stage the subtitle font
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          npm run fonts:subtitle
+          test -s src-tauri/tauri-plugin-mpv/android/src/main/assets/fonts/Nunito.ttf
+
+      - name: Configure full Android build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: bash scripts/ci/android-scaffold.sh full
+
+      - name: Warm Android release caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: npx tauri android build --apk --target aarch64 --features android-mpv --config src-tauri/tauri.android-mpv.conf.json

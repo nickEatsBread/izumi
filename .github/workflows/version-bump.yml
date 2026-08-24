@@ -24,9 +24,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: version-bump
+  cancel-in-progress: false
+
 jobs:
   bump:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
