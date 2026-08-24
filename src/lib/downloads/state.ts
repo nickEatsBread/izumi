@@ -26,6 +26,9 @@ export interface DownloadItem {
   /** Which engine is fetching this item. Absent on items queued by older builds, which were all
    *  HTTP (debrid) downloads — pause/cancel must keep routing those to the HTTP job. */
   kind?: 'http' | 'torrent' | 'shaka'
+  /** The HTTP engine is assembling an adaptive playlist. Its raw partial restarts from segment 1
+   * on resume, so the visible byte counter must restart with it. */
+  hls?: boolean
   /** Shaka's IndexedDB manifest URI for adaptive/DRM offline playback. */
   offlineUri?: string
   drmKeySystem?: string

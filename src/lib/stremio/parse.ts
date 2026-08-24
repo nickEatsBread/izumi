@@ -58,6 +58,9 @@ export interface Stream {
   // Direct streaming source (Seanime onlinestream-provider): plays its `url` straight in libmpv
   // with no debrid. __headers → mpv http-header-fields; __subtitles → external sub tracks.
   __stream?: boolean
+  /** Adaptive manifest identity supplied by an online extension. This must survive the generic
+   * Stream mapping: localhost JVM wrappers and signed endpoints often have no useful suffix. */
+  __manifest?: 'hls' | 'dash'
   __headers?: Record<string, string>
   /** Encrypted stream (Widevine/PlayReady). Played in the webview CDM instead of mpv. */
   __drm?: import('$lib/player/drm').StreamDrm

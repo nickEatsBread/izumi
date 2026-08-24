@@ -3324,7 +3324,15 @@ export function playNext(onState: (s: PlayState) => void = noticeState, autoplay
 interface ResolvedDownloadBase { filename: string; quality?: string; provider?: string; infoHash?: string }
 /** A byte-addressable link (a plain addon url, or a debrid resolve) streamed to disk over HTTP.
  *  `headers` carries an extension source's gate (Referer/Origin) — absent for debrid links. */
-export interface ResolvedHttpDownload extends ResolvedDownloadBase { kind: 'http'; url: string; headers?: Record<string, string> }
+export interface ResolvedHttpDownload extends ResolvedDownloadBase {
+  kind: 'http'
+  url: string
+  headers?: Record<string, string>
+  /** HLS uses the native HTTP engine too, but it must resolve and assemble media segments instead
+   * of saving the manifest response as though it were the episode. */
+  hls?: boolean
+  preferredHeight?: number
+}
 /** A torrent fetched from peers by the local P2P engine. Carries the episode identity so the
  *  native side can pick the right file out of a season pack, exactly as playback does. */
 export interface ResolvedTorrentDownload extends ResolvedDownloadBase {
@@ -3386,10 +3394,10 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
       all = merged
     }
   }
-  // HLS manifests are playable but not saveable — the byte-stream downloader would write the
-  // playlist text, not the video. Torrent rows (no url) pass through untouched.
-  let eligible = all.filter((s) => !/\.m3u8(?:$|\?)/i.test(s.url ?? ''))
-  if (!eligible.length) eligible = all
+  // HLS is a first-class download source. It used to be filtered out and then put back when it
+  // was the provider's only option, which handed the tiny playlist to the progressive downloader
+  // and reported ~25 KB as a completed episode. The native path now resolves and joins segments.
+  let eligible = all
   if (preferences?.sourceOriginId) {
     const sameSource = eligible.filter((stream) => stream.__origin?.id === preferences.sourceOriginId)
     if (sameSource.length) eligible = sameSource
@@ -3421,10 +3429,13 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
   const info = describe(best)
   // The saved name follows the release when it has one; otherwise the title/episode. The extension
   // is only ever guessed for an HTTP link — a torrent's real one is known natively and applied there.
-  const named = (url?: string) => {
-    const ext = url?.split('?')[0].match(/\.(mkv|mp4|avi|mov|webm)$/i)?.[1]?.toLowerCase() ?? 'mkv'
+  const named = (url?: string, forcedExt?: string) => {
+    const ext = forcedExt ?? url?.split('?')[0].match(/\.(mkv|mp4|avi|mov|webm)$/i)?.[1]?.toLowerCase() ?? 'mkv'
     const base = best.behaviorHints?.filename || `${title(media)} - E${episode}`
-    return /\.(?:mkv|mp4|avi|mov|webm)$/i.test(base) ? base : `${base}.${ext}`
+    if (/\.(?:mkv|mp4|avi|mov|webm|ts)$/i.test(base)) {
+      return forcedExt ? base.replace(/\.[^.]+$/, `.${forcedExt}`) : base
+    }
+    return `${base}.${ext}`
   }
   const common = { quality: info.quality ? `${info.quality}p` : undefined, infoHash: best.infoHash }
 
@@ -3452,6 +3463,22 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
         preferredSubLang: get(preferredSubLang),
         sourceOriginId: best.__origin?.id,
         filename: named(best.url),
+        provider: info.provider,
+        ...common,
+      }
+    }
+    const hls = best.__manifest === 'hls' || /\.m3u8(?:[?#&]|$)/i.test(best.url)
+    if (hls) {
+      const wantedHeight = preferences?.quality && preferences.quality !== 'any'
+        ? Number(preferences.quality)
+        : info.quality || undefined
+      return {
+        kind: 'http',
+        url: best.url,
+        headers: best.__headers,
+        hls: true,
+        preferredHeight: Number.isFinite(wantedHeight) ? wantedHeight : undefined,
+        filename: named(best.url, 'ts'),
         provider: info.provider,
         ...common,
       }

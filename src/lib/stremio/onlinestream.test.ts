@@ -275,6 +275,7 @@ describe('videoSourceToStream', () => {
     )
     expect(s.url).toBe('https://cdn/x.m3u8')
     expect(s.__stream).toBe(true)
+    expect(s.__manifest).toBe('hls')
     expect(s.__headers).toEqual({ Referer: 'https://site' })
     // `lang` is normalized to an ISO code so mpv's `slang` can match it; `title` keeps the label.
     expect(s.__subtitles).toEqual([{ url: 'https://s/en.vtt', lang: 'eng', title: 'en', isDefault: false, headers: undefined, kind: undefined, switchUrl: undefined }])

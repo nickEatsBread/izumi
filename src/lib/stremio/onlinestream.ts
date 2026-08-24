@@ -327,6 +327,7 @@ export function videoSourceToStream(
     // and never shows `name`, which is why a language baked into this string was invisible.
     name: `⚡ ${provider}${sourceServer && sourceServer !== 'default' ? ` · ${sourceServer}` : ''} · ${quality}`,
     __stream: true,
+    __manifest: kind === 'HLS' ? 'hls' : /dash|mpd/i.test(vs.type ?? '') ? 'dash' : undefined,
     __headers: vs.headers ?? headers,
     __audio: vs.audio ?? audio,
     __audioLang: vs.audioLang,

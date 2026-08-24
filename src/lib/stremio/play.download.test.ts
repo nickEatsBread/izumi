@@ -24,7 +24,7 @@ vi.mock('./idmap', () => ({ getIndex: async () => ({}), lookupKitsu: () => undef
 vi.mock('./kitsu', () => ({ kitsuIdFromMal: async () => undefined }))
 // Resolves empty (not pending): resolveDownloadUrl now awaits the online wave (with a budget),
 // so a never-settling mock would stall every test to its own timeout.
-const resolveOnlineStreams = vi.fn(async () => [])
+const resolveOnlineStreams = vi.fn(async (): Promise<unknown[]> => [])
 const getDownloadedMedia = vi.fn()
 const fetchMediaById = vi.fn(async () => media)
 vi.mock('./onlinestream', () => ({ resolveOnlineStreams: (...a: unknown[]) => resolveOnlineStreams(...a) }))
@@ -209,6 +209,29 @@ describe('resolveDownloadUrl source preference', () => {
 
     expect(resolved).toMatchObject({ kind: 'http', url: 'https://host/ep.mkv' })
     expect(resolveHash).not.toHaveBeenCalled()
+  })
+
+  it('routes JVM HLS wrappers through segment assembly instead of saving the playlist', async () => {
+    answer([])
+    resolveOnlineStreams.mockResolvedValueOnce([{
+      url: 'http://localhost:39123/m3u8?url=https%3A%2F%2Fcdn.example%2Fepisode.m3u8',
+      name: '⚡ JVM Source · 720p',
+      behaviorHints: { filename: 'Test Anime — Episode 2' },
+      __stream: true,
+      __manifest: 'hls',
+      __headers: { Referer: 'https://provider.example/' },
+      __origin: { kind: 'online-extension', id: 'jvm:source', name: 'JVM Source' },
+    }])
+
+    const resolved = await resolveDownloadUrl(1, 2, { quality: '720' })
+
+    expect(resolved).toMatchObject({
+      kind: 'http',
+      hls: true,
+      preferredHeight: 720,
+      filename: 'Test Anime — Episode 2.ts',
+      headers: { Referer: 'https://provider.example/' },
+    })
   })
 
   it('routes encrypted DASH to Shaka offline instead of saving the MPD as a file', async () => {

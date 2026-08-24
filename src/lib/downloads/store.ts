@@ -97,6 +97,7 @@ async function runJob(item: DownloadItem) {
     const r = await resolveDownloadUrl(item.mediaId, item.episode, item.preferences)
     setItem(item.id, {
       kind: r.kind, url: r.kind === 'http' ? r.url : undefined,
+      hls: r.kind === 'http' ? r.hls : undefined,
       filename: r.filename, infoHash: r.infoHash, provider: r.provider, quality: r.quality,
       sourceOriginId: r.kind === 'shaka' ? r.sourceOriginId : item.sourceOriginId,
     })
@@ -133,7 +134,10 @@ async function runJob(item: DownloadItem) {
       })
       setSpeed(item.id, undefined)
     } else {
-      await invoke('download_start', { id: item.id, url: r.url, dir, filename: r.filename, headers: r.headers })
+      await invoke('download_start', {
+        id: item.id, url: r.url, dir, filename: r.filename, headers: r.headers,
+        hls: r.hls, preferredHeight: r.preferredHeight,
+      })
     }
   } catch (e) {
     if (get(downloads)[item.id]?.status === 'paused') return // benign — user paused it
@@ -163,7 +167,11 @@ export async function pauseDownload(id: string) {
   await stopJob(id, it, false)
   setItem(id, { status: 'paused' }); setSpeed(id, undefined)
 }
-export function resumeDownload(id: string) { setItem(id, { status: 'queued' }); startPump() }
+export function resumeDownload(id: string) {
+  const item = get(downloads)[id]
+  setItem(id, { status: 'queued', ...(item?.hls ? { downloaded: 0, bytes: 0 } : {}) })
+  startPump()
+}
 export async function cancelDownload(id: string) {
   await stopJob(id, get(downloads)[id], true)
   removeItem(id); setSpeed(id, undefined)

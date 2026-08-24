@@ -583,7 +583,11 @@ function episodeNumber(value: { episode_number?: unknown; name?: unknown }): num
   return Number.parseFloat(parsed ?? '')
 }
 
-function mediaType(url: string): 'm3u8' | 'dash' | 'mp4' {
+function mediaType(url: string, label = ''): 'm3u8' | 'dash' | 'mp4' {
+  // Some JVM sources wrap a manifest in a localhost URL whose path no longer ends in `.m3u8`
+  // so an in-process bridge can preprocess each segment. The Video quality still says "(HLS)",
+  // so keep that signal instead of misclassifying the wrapper as MP4.
+  if (/\bhls\b/i.test(label)) return 'm3u8'
   if (/\.m3u8(?:[?#]|$)/i.test(url)) return 'm3u8'
   if (/\.mpd(?:[?#]|$)/i.test(url)) return 'dash'
   return 'mp4'
@@ -684,7 +688,7 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
           })
         return {
           url,
-          type: mediaType(url),
+          type: mediaType(url, `${String(video.quality ?? '')} ${String(video.title ?? '')}`),
           quality: String(video.quality ?? identity.quality ?? video.title ?? 'auto'),
           server: identity.server,
           audio: identity.audio,

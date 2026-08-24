@@ -28,7 +28,7 @@ vi.mock('$lib/player/direct-torrent', () => ({
 }))
 
 const { downloads } = await import('./state')
-const { enqueue, pauseDownload, cancelDownload } = await import('./store')
+const { enqueue, pauseDownload, resumeDownload, cancelDownload } = await import('./store')
 
 const media = {
   id: 7,
@@ -101,6 +101,33 @@ describe('download queue engine routing', () => {
     expect(calls('torrent_download_start')).toHaveLength(0)
     expect(calls('download_start')[0][1]).toMatchObject({ id: '7:2', url: 'https://debrid.example/file.mkv' })
     expect(get(downloads)['7:2']).toMatchObject({ kind: 'http' })
+  })
+
+  it('tells the native HTTP engine to assemble HLS media segments', async () => {
+    resolveDownloadUrl.mockResolvedValue({
+      kind: 'http',
+      url: 'http://localhost:39123/m3u8?url=episode.m3u8',
+      filename: 'Test Anime - E2.ts',
+      headers: { Referer: 'https://provider.example/' },
+      hls: true,
+      preferredHeight: 720,
+    })
+
+    enqueue(media, 2)
+    await settle()
+
+    expect(calls('download_start')[0][1]).toMatchObject({
+      hls: true,
+      preferredHeight: 720,
+      filename: 'Test Anime - E2.ts',
+      headers: { Referer: 'https://provider.example/' },
+    })
+    expect(get(downloads)['7:2']).toMatchObject({ hls: true })
+
+    await pauseDownload('7:2')
+    downloads.update((items) => ({ ...items, '7:2': { ...items['7:2'], downloaded: 25_000_000, bytes: 100_000_000 } }))
+    resumeDownload('7:2')
+    expect(get(downloads)['7:2']).toMatchObject({ downloaded: 0, bytes: 0 })
   })
 
   it('stores adaptive DRM through Shaka and persists its offline manifest', async () => {
