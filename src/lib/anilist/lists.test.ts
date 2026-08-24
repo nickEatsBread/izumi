@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { flattenEntries, matchesLibraryKind } from './lists'
+import {
+  LIST_IDS_QUERY, LIST_PREVIEW_QUERY, LIST_STATUSES_QUERY, flattenEntries, matchesLibraryKind,
+} from './lists'
 const COLL = { MediaListCollection: { lists: [
   { entries: [ { progress: 3, media: { id: 1, title: {} } }, { progress: 0, media: { id: 2, title: {} } } ] },
   { entries: [ { progress: 12, media: { id: 3, title: {} } } ] },
@@ -24,5 +26,21 @@ describe('matchesLibraryKind', () => {
     expect(matchesLibraryKind(manga, 'manga')).toBe(true)
     expect(matchesLibraryKind(novel, 'manga')).toBe(false)
     expect(matchesLibraryKind(novel, 'novel')).toBe(true)
+  })
+})
+
+describe('list query shapes', () => {
+  const source = (document: { loc?: { source: { body: string } } }) => document.loc?.source.body ?? ''
+
+  it('uses one status_in collection for multi-status consumers', () => {
+    expect(source(LIST_IDS_QUERY)).toMatch(/status_in:\s*\$statuses/)
+    expect(source(LIST_STATUSES_QUERY)).toMatch(/status_in:\s*\$statuses/)
+  })
+
+  it('caps carousel previews with the paginated MediaList field', () => {
+    const query = source(LIST_PREVIEW_QUERY)
+    expect(query).toMatch(/Page\(page:\s*1,\s*perPage:\s*30\)/)
+    expect(query).toMatch(/mediaList\(/)
+    expect(query).not.toMatch(/MediaListCollection/)
   })
 })

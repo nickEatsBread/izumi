@@ -1,20 +1,20 @@
 import { gql } from '@urql/core'
 import { get } from 'svelte/store'
-import { MEDIA_FIELDS, READING_MEDIA_FIELDS, SCHEDULE_MEDIA_FIELDS } from './fragments'
+import { CARD_MEDIA_FIELDS, MEDIA_FIELDS, READING_MEDIA_FIELDS, SCHEDULE_MEDIA_FIELDS } from './fragments'
 import { showAdult } from '$lib/settings/ui'
 
 // Detail page only: pull the viewer's list entry (progress/status) + favourite
 // flag. Kept off the shared MediaFields fragment so browse/card queries don't
 // over-fetch per-viewer data.
 export const MEDIA_BY_ID = gql`
-  query MediaById($id: Int!) {
+  query MediaById($id: Int!, $withPreview: Boolean! = true) {
     Media(id: $id, type: ANIME) {
       ...MediaFields
       isFavourite
       source countryOfOrigin
       tags { name rank isMediaSpoiler }
       mediaListEntry { id progress status score(format: POINT_100) repeat startedAt { year month day } completedAt { year month day } }
-      relations { edges { relationType node { ...MediaFields } } }
+      relations { edges { relationType node { ...CardMediaFields } } }
       characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
         edges {
           role
@@ -28,11 +28,12 @@ export const MEDIA_BY_ID = gql`
         edges { role node { id name { full native } image { large } } }
       }
       recommendations(perPage: 12, sort: [RATING_DESC]) {
-        nodes { rating mediaRecommendation { ...MediaFields } }
+        nodes { rating mediaRecommendation { ...CardMediaFields } }
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${MEDIA_FIELDS}
+  ${CARD_MEDIA_FIELDS}`
 
 // Information-only detail query for manga and light novels. It intentionally has no playback
 // fields or mutation-facing list entry: reading media can be browsed from tracker libraries, but
@@ -61,10 +62,10 @@ export const READING_MEDIA_BY_ID = gql`
   }
   ${READING_MEDIA_FIELDS}`
 
-// Shared filter arg lists, kept in ONE place so the SFW / 18+ / count variants can't
-// drift. Interpolated as plain strings into the gql templates below (advanced fields —
+// Shared filter arg lists, kept in ONE place so the SFW / 18+ variants can't drift.
+// Interpolated as plain strings into the gql templates below (advanced fields —
 // tags, source, country, score, episode range — sit alongside the quick-bar ones).
-const SEARCH_ARGS = '$page: Int = 1, $perPage: Int = 30, $search: String, $genre_in: [String], $tag_in: [String], $tag_not_in: [String], $minimumTagRank: Int, $season: MediaSeason, $seasonYear: Int, $format_in: [MediaFormat], $status_in: [MediaStatus], $source_in: [MediaSource], $countryOfOrigin: CountryCode, $averageScore_greater: Int, $episodes_greater: Int, $episodes_lesser: Int, $sort: [MediaSort]'
+const SEARCH_ARGS = '$page: Int = 1, $perPage: Int = 30, $search: String, $genre_in: [String], $tag_in: [String], $tag_not_in: [String], $minimumTagRank: Int, $season: MediaSeason, $seasonYear: Int, $format_in: [MediaFormat], $status_in: [MediaStatus], $source_in: [MediaSource], $countryOfOrigin: CountryCode, $averageScore_greater: Int, $episodes_greater: Int, $episodes_lesser: Int, $sort: [MediaSort], $withPreview: Boolean! = true'
 const MEDIA_ARGS = 'search: $search, genre_in: $genre_in, tag_in: $tag_in, tag_not_in: $tag_not_in, minimumTagRank: $minimumTagRank, season: $season, seasonYear: $seasonYear, format_in: $format_in, status_in: $status_in, source_in: $source_in, countryOfOrigin: $countryOfOrigin, averageScore_greater: $averageScore_greater, episodes_greater: $episodes_greater, episodes_lesser: $episodes_lesser, sort: $sort'
 
 // SFW variant (excludes adult). See queries.ts for why we need two variants
@@ -73,70 +74,51 @@ export const SEARCH_QUERY = gql`
   query Search(${SEARCH_ARGS}) {
     Page(page: $page, perPage: $perPage) {
       pageInfo { hasNextPage currentPage }
-      media(type: ANIME, isAdult: false, ${MEDIA_ARGS}) { ...MediaFields }
+      media(type: ANIME, isAdult: false, ${MEDIA_ARGS}) { ...CardMediaFields }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${CARD_MEDIA_FIELDS}`
 
 // "Show 18+" variant — drops the isAdult argument so AniList returns both.
 const SEARCH_QUERY_ALL = gql`
   query SearchAll(${SEARCH_ARGS}) {
     Page(page: $page, perPage: $perPage) {
       pageInfo { hasNextPage currentPage }
-      media(type: ANIME, ${MEDIA_ARGS}) { ...MediaFields }
+      media(type: ANIME, ${MEDIA_ARGS}) { ...CardMediaFields }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${CARD_MEDIA_FIELDS}`
 
 /** Search query for the current adult setting. Evaluated at store-creation time. */
 export const searchQuery = () => (get(showAdult) ? SEARCH_QUERY_ALL : SEARCH_QUERY)
 
 export const STUDIO_MEDIA_QUERY = gql`
-  query StudioMedia($id: Int!, $page: Int = 1) {
+  query StudioMedia($id: Int!, $page: Int = 1, $withPreview: Boolean! = true) {
     Studio(id: $id) {
       name
       media(page: $page, perPage: 30, sort: POPULARITY_DESC, type: ANIME) {
         pageInfo { hasNextPage }
-        nodes { ...MediaFields }
+        nodes { ...CardMediaFields }
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${CARD_MEDIA_FIELDS}`
 
 export const STAFF_MEDIA_QUERY = gql`
-  query StaffMedia($id: Int!, $page: Int = 1) {
+  query StaffMedia($id: Int!, $page: Int = 1, $withPreview: Boolean! = true) {
     Staff(id: $id) {
       name { full }
       staffMedia(page: $page, perPage: 30, sort: POPULARITY_DESC, type: ANIME) {
         pageInfo { hasNextPage }
-        nodes { ...MediaFields }
+        nodes { ...CardMediaFields }
       }
       characterMedia(page: $page, perPage: 30, sort: POPULARITY_DESC) {
         pageInfo { hasNextPage }
-        edges { node { ...MediaFields } }
+        edges { node { ...CardMediaFields } }
       }
     }
   }
-  ${MEDIA_FIELDS}`
-
-// Count-only queries backing the Advanced modal's live "Apply · N": same filter args,
-// but only pageInfo.total. Call with `{ ...searchVariables(draft), perPage: 1 }`. The
-// SFW/18+ split matters — adult gating changes the total.
-const SEARCH_COUNT = gql`
-  query SearchCount(${SEARCH_ARGS}) {
-    Page(page: $page, perPage: $perPage) {
-      pageInfo { total }
-      media(type: ANIME, isAdult: false, ${MEDIA_ARGS}) { id }
-    }
-  }`
-const SEARCH_COUNT_ALL = gql`
-  query SearchCountAll(${SEARCH_ARGS}) {
-    Page(page: $page, perPage: $perPage) {
-      pageInfo { total }
-      media(type: ANIME, ${MEDIA_ARGS}) { id }
-    }
-  }`
-export const searchCountQuery = () => (get(showAdult) ? SEARCH_COUNT_ALL : SEARCH_COUNT)
+  ${CARD_MEDIA_FIELDS}`
 
 /** The full, authoritative list of AniList genres (so the filter isn't a stale
  *  hardcoded subset). Returns a plain string[]. */
@@ -163,7 +145,7 @@ export const COUNTRIES = [
 export const SCHEDULE_QUERY = gql`
   query Schedule($start: Int!, $end: Int!, $page: Int = 1) {
     Page(page: $page, perPage: 50) {
-      pageInfo { hasNextPage lastPage }
+      pageInfo { hasNextPage }
       airingSchedules(airingAt_greater: $start, airingAt_lesser: $end, sort: TIME) {
         airingAt episode
         media { ...ScheduleMediaFields }

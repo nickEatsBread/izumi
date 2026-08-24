@@ -124,9 +124,8 @@
            GPU layer (hundreds on a grid → the Deck iGPU thrashes + lag accumulates). The
            browser promotes the one card being hovered on demand; that's all this needs. -->
       {#if !coverReady}<div class="absolute inset-0 skeloader"></div>{/if}
-      <!-- `loading="lazy"` is load-bearing, not a nicety: ListRow renders EVERY entry of a tracker
-           list with no cap, so a large account mounted ~1100 of these and fired ~1100 concurrent
-           extraLarge cover fetches at mount. -->
+      <!-- Keep image loading lazy: large browse grids and several library rows can still put many
+           cards in the DOM, even though each AniList preview query is now capped to thirty. -->
       <img use:reliableImage={coverSrc} alt={title(media)} loading="lazy" decoding="async" onload={() => (coverReady = true)}
            class="relative h-full w-full object-cover transition-[opacity,transform] duration-150 ease-out {coverReady ? 'opacity-100' : 'opacity-0'} group-hover:scale-105" />
       {#if simpleHover}

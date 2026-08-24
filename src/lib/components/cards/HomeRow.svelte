@@ -8,6 +8,7 @@
   import SmallCard from './SmallCard.svelte'
   import type { Media } from '$lib/anilist/types'
   import { nearViewport } from '$lib/util/near-viewport'
+  import { gameMode } from '$lib/player/session'
 
   let { title, vars }: { title: string; vars: Record<string, unknown> } = $props()
 
@@ -26,7 +27,7 @@
   const store = $derived(queryStore<{ Page: { media: Media[] } }>({
     client,
     query: pageQuery(),
-    variables: { perPage: 20, ...vars },
+    variables: { perPage: 20, withPreview: !$gameMode, ...vars },
     pause: !active,
   }))
 

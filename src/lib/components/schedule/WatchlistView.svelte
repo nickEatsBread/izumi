@@ -4,7 +4,7 @@
   // caught-up shows dimmed below with a next-episode countdown.
   import { onMount } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { LIST_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries, type Entry } from '$lib/anilist/lists'
+  import { LIST_STATUSES_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries, type Entry } from '$lib/anilist/lists'
   import { getMalAnimeListMediaOrThrow, type MalListEntry } from '$lib/trackers'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -22,9 +22,11 @@
 
   // Best-effort per source (same policy as loadMySets): a failing tracker just contributes
   // nothing instead of blanking the whole list.
-  async function aniEntries(userName: string, status: string): Promise<Entry[]> {
+  async function aniEntries(userName: string): Promise<Entry[]> {
     try {
-      const r = await client.query(LIST_QUERY, { userName, status }).toPromise()
+      const r = await client.query(LIST_STATUSES_QUERY, {
+        userName, statuses: ['CURRENT', 'REPEATING'],
+      }).toPromise()
       return r.error ? [] : flattenEntries(r.data)
     }
     catch { return [] }
@@ -58,12 +60,11 @@
 
   onMount(async () => {
     const user = listUser
-    const [cur, rep, mal] = await Promise.all([
-      user ? aniEntries(user, 'CURRENT') : Promise.resolve([]),
-      user ? aniEntries(user, 'REPEATING') : Promise.resolve([]),
+    const [ani, mal] = await Promise.all([
+      user ? aniEntries(user) : Promise.resolve([]),
       malSide(),
     ])
-    items = buildWatchlist([...cur, ...rep], mal.entries, mal.media)
+    items = buildWatchlist(ani, mal.entries, mal.media)
     loading = false
   })
 

@@ -1,11 +1,11 @@
 import type { Client } from '@urql/core'
 import { SCHEDULE_QUERY } from './detail-queries'
-import { remainingSchedulePages, type Airing } from './schedule'
+import type { Airing } from './schedule'
 
 type PageData = {
   Page?: {
     airingSchedules?: Airing[]
-    pageInfo?: { hasNextPage?: boolean; lastPage?: number }
+    pageInfo?: { hasNextPage?: boolean }
   }
 }
 
@@ -34,18 +34,15 @@ export function loadScheduleWeek(client: Client, start: number, end: number): Pr
     try {
       const first = await fetchPage(1)
       if (first.error) throw new Error(first.error.message)
-      const firstPage = first.data?.Page
-      const all = [...(firstPage?.airingSchedules ?? [])]
-      const remaining = remainingSchedulePages(
-        firstPage?.pageInfo?.lastPage,
-        firstPage?.pageInfo?.hasNextPage,
-      )
-      if (remaining.length) {
-        const rest = await Promise.all(remaining.map(fetchPage))
-        for (const result of rest) {
-          if (result.error) throw new Error(result.error.message)
-          all.push(...(result.data?.Page?.airingSchedules ?? []))
-        }
+      let current = first.data?.Page
+      const all = [...(current?.airingSchedules ?? [])]
+      // AniList documents total/lastPage as currently inaccurate. Follow the authoritative
+      // hasNextPage flag so we neither skip a week tail nor fan out requests for phantom pages.
+      for (let page = 2; current?.pageInfo?.hasNextPage && page <= 12; page++) {
+        const result = await fetchPage(page)
+        if (result.error) throw new Error(result.error.message)
+        current = result.data?.Page
+        all.push(...(current?.airingSchedules ?? []))
       }
       all.sort((a, b) => a.airingAt - b.airingAt)
       cache.set(key, all)

@@ -1,4 +1,4 @@
-import { fetch as httpFetch } from '@tauri-apps/plugin-http'
+import { gql } from '@urql/core'
 import { anilist } from './client'
 import { MEDIA_BY_IDS_QUERY } from './lists'
 import type { Media } from './types'
@@ -8,23 +8,58 @@ import type { Media } from './types'
 // source extensions receive on the detail-page path (synonyms/season/start date are significant for
 // new seasons and ambiguous light-novel titles). Session-cached.
 
-const Q = `query($id:Int!){Media(id:$id,type:ANIME){id idMal title{romaji english userPreferred native} description(asHtml:false) season seasonYear format status episodes duration averageScore popularity trending genres synonyms startDate{year month day} studios(isMain:true){nodes{id name}} coverImage{extraLarge medium color} bannerImage trailer{id site} nextAiringEpisode{episode timeUntilAiring} airingSchedule(perPage:100){nodes{episode airingAt}} relations{edges{relationType node{id idMal type title{romaji english userPreferred native} season seasonYear format status episodes averageScore popularity trending coverImage{extraLarge medium color}}}}}}`
+export const SOURCE_MEDIA_BY_ID = gql`
+  query SourceMediaById($id: Int!) {
+    Media(id: $id, type: ANIME) {
+      id idMal
+      title { romaji english userPreferred native }
+      description(asHtml: false)
+      season seasonYear format status episodes duration averageScore popularity trending genres synonyms
+      startDate { year month day }
+      studios(isMain: true) { nodes { id name } }
+      coverImage { extraLarge medium color }
+      bannerImage trailer { id site }
+      nextAiringEpisode { episode timeUntilAiring }
+      airingSchedule(perPage: 100) { nodes { episode airingAt } }
+      relations {
+        edges {
+          relationType
+          node {
+            id idMal type
+            title { romaji english userPreferred native }
+            season seasonYear format status episodes averageScore popularity trending
+            coverImage { extraLarge medium color }
+          }
+        }
+      }
+    }
+  }`
 
 const cache = new Map<number, Media>()
+const inflight = new Map<number, Promise<Media>>()
 
 export async function fetchMediaById(id: number, fresh = false): Promise<Media> {
   const hit = fresh ? undefined : cache.get(id)
   if (hit) return hit
-  const r = await httpFetch('https://graphql.anilist.co', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ query: Q, variables: { id } }),
-  })
-  const j = await r.json() as { data?: { Media?: Media } }
-  const m = j?.data?.Media
-  if (!m) throw new Error('Could not fetch anime info.')
-  cache.set(id, m)
-  return m
+  const pending = inflight.get(id)
+  if (pending) return pending
+
+  const request = anilist
+    .query<{ Media?: Media }>(
+      SOURCE_MEDIA_BY_ID,
+      { id },
+      fresh ? { requestPolicy: 'network-only' } : undefined,
+    )
+    .toPromise()
+    .then((result) => {
+      const media = result.data?.Media
+      if (result.error || !media) throw new Error(result.error?.message || 'Could not fetch anime info.')
+      cache.set(id, media)
+      return media
+    })
+    .finally(() => inflight.delete(id))
+  inflight.set(id, request)
+  return request
 }
 
 /** Batch-fetch many media by id in one request per 50 ids (AniList's page cap), through the

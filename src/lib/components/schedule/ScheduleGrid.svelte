@@ -54,10 +54,9 @@
   let loading = $state(true)
   let error = $state('')
 
-  const WEEK = 7 * 24 * 3600
-
-  // Weeks are session-cached and in-flight deduped. Prefetch the next week while this one is on
-  // screen, so pressing Next swaps data instead of starting a fresh multi-page network waterfall.
+  // Weeks are session-cached and in-flight deduped. Only fetch the week the user requested: an
+  // automatic next-week prefetch doubled this screen's AniList page count even when Next was never
+  // pressed, delaying visible work behind speculative requests on the 30/minute quota.
   $effect(() => {
     const s = start, e = end
     let cancelled = false
@@ -68,8 +67,6 @@
       try {
         const all = await loadScheduleWeek(client, s, e)
         if (!cancelled) airings = all
-        // Fire after the visible week owns its first request, but don't await/background-error it.
-        void loadScheduleWeek(client, s + WEEK, e + WEEK).catch(() => {})
       } catch (err) {
         if (!cancelled) {
           const primaryError = err instanceof Error ? err.message : String(err)

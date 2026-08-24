@@ -5,6 +5,7 @@
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
   import { nearViewport } from '$lib/util/near-viewport'
+  import { gameMode } from '$lib/player/session'
 
   let { userName }: { userName: string } = $props()
   const client = getContextClient()
@@ -21,7 +22,7 @@
   }>({
     client,
     query: PERSONAL_RECOMMENDATIONS_QUERY,
-    variables: { userName },
+    variables: { userName, withPreview: !$gameMode },
     pause: !userName || !visible,
   }))
 

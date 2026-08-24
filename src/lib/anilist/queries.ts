@@ -1,6 +1,6 @@
 import { gql } from '@urql/core'
 import { get } from 'svelte/store'
-import { MEDIA_FIELDS } from './fragments'
+import { CARD_MEDIA_FIELDS, HERO_MEDIA_FIELDS } from './fragments'
 import { showAdult } from '$lib/settings/ui'
 
 export function currentSeason(now: Date) {
@@ -14,24 +14,24 @@ export function currentSeason(now: Date) {
 // so returns EMPTY). A GraphQL variable can't omit an argument, so we keep two
 // query variants and pick per the setting.
 export const PAGE_QUERY = gql`
-  query Page($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String) {
+  query Page($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean! = true) {
     Page(page: $page, perPage: $perPage) {
       media(type: ANIME, isAdult: false, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre) {
-        ...MediaFields
+        ...CardMediaFields
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${CARD_MEDIA_FIELDS}`
 
 const PAGE_QUERY_ALL = gql`
-  query PageAll($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String) {
+  query PageAll($page: Int = 1, $perPage: Int = 20, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int, $genre: String, $withPreview: Boolean! = true) {
     Page(page: $page, perPage: $perPage) {
       media(type: ANIME, sort: $sort, season: $season, seasonYear: $seasonYear, genre: $genre) {
-        ...MediaFields
+        ...CardMediaFields
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${CARD_MEDIA_FIELDS}`
 
 /** Browse query for the current adult setting: SFW excludes adult; "Show 18+" drops
  *  the isAdult filter so AniList returns both. Evaluated at store-creation time. */
@@ -46,21 +46,21 @@ const HERO_QUERY = gql`
   query Hero($page: Int = 1, $perPage: Int = 15, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int) {
     Page(page: $page, perPage: $perPage) {
       media(type: ANIME, isAdult: false, format_not: MUSIC, status_not_in: [NOT_YET_RELEASED], sort: $sort, season: $season, seasonYear: $seasonYear) {
-        ...MediaFields
+        ...HeroMediaFields
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${HERO_MEDIA_FIELDS}`
 
 const HERO_QUERY_ALL = gql`
   query HeroAll($page: Int = 1, $perPage: Int = 15, $sort: [MediaSort], $season: MediaSeason, $seasonYear: Int) {
     Page(page: $page, perPage: $perPage) {
       media(type: ANIME, format_not: MUSIC, status_not_in: [NOT_YET_RELEASED], sort: $sort, season: $season, seasonYear: $seasonYear) {
-        ...MediaFields
+        ...HeroMediaFields
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${HERO_MEDIA_FIELDS}`
 
 export const heroQuery = () => (get(showAdult) ? HERO_QUERY_ALL : HERO_QUERY)
 
@@ -68,15 +68,15 @@ export const heroQuery = () => (get(showAdult) ? HERO_QUERY_ALL : HERO_QUERY)
  * changes for harmless metadata edits). The row filters adult media after the response because
  * AniList's Page.airingSchedules field does not expose an isAdult argument. */
 export const RECENT_RELEASES_QUERY = gql`
-  query RecentReleases($page: Int = 1, $perPage: Int = 50, $after: Int!, $before: Int!) {
+  query RecentReleases($page: Int = 1, $perPage: Int = 50, $after: Int!, $before: Int!, $withPreview: Boolean! = false) {
     Page(page: $page, perPage: $perPage) {
       airingSchedules(airingAt_greater: $after, airingAt_lesser: $before, sort: TIME_DESC) {
         episode airingAt
-        media { ...MediaFields }
+        media { ...CardMediaFields }
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${CARD_MEDIA_FIELDS}`
 
 /** Variables for the hero pool: this season's highest-scored, already-airing titles. */
 export function heroVars(now: Date) {
@@ -100,7 +100,7 @@ export function homeSections(now: Date) {
 
 /** Recommendations from the connected user's highest-scored current/completed titles. */
 export const PERSONAL_RECOMMENDATIONS_QUERY = gql`
-  query PersonalRecommendations($userName: String!) {
+  query PersonalRecommendations($userName: String!, $withPreview: Boolean! = true) {
     Page(page: 1, perPage: 8) {
       mediaList(
         userName: $userName
@@ -112,11 +112,11 @@ export const PERSONAL_RECOMMENDATIONS_QUERY = gql`
           recommendations(perPage: 5, sort: RATING_DESC) {
             nodes {
               rating
-              mediaRecommendation { ...MediaFields }
+              mediaRecommendation { ...CardMediaFields }
             }
           }
         }
       }
     }
   }
-  ${MEDIA_FIELDS}`
+  ${CARD_MEDIA_FIELDS}`

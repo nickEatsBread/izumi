@@ -17,6 +17,7 @@
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import type { Media } from '$lib/anilist/types'
   import { isAndroid } from '$lib/platform'
+  import { gameMode } from '$lib/player/session'
   import * as h from '$lib/haptics'
 
   let { filters }: { filters: SearchFilters } = $props()
@@ -37,7 +38,7 @@
       let nextPage = false
       if (filters.studioId) {
         const res = await client
-          .query(STUDIO_MEDIA_QUERY, { id: filters.studioId, page }, { requestPolicy: 'network-only' })
+          .query(STUDIO_MEDIA_QUERY, { id: filters.studioId, page, withPreview: !$gameMode }, { requestPolicy: 'network-only' })
           .toPromise()
         if (res.error) { error = res.error.message; hasNext = false; return }
         const conn = res.data?.Studio?.media as { nodes?: Media[]; pageInfo?: { hasNextPage?: boolean } } | undefined
@@ -45,7 +46,7 @@
         nextPage = !!conn?.pageInfo?.hasNextPage
       } else if (filters.staffId) {
         const res = await client
-          .query(STAFF_MEDIA_QUERY, { id: filters.staffId, page }, { requestPolicy: 'network-only' })
+          .query(STAFF_MEDIA_QUERY, { id: filters.staffId, page, withPreview: !$gameMode }, { requestPolicy: 'network-only' })
           .toPromise()
         if (res.error) { error = res.error.message; hasNext = false; return }
         const staff = res.data?.Staff as {
@@ -60,7 +61,7 @@
           : !!staff?.characterMedia?.pageInfo?.hasNextPage
       } else {
         const res = await client
-          .query(searchQuery(), { ...searchVariables(filters), page }, { requestPolicy: 'network-only' })
+          .query(searchQuery(), { ...searchVariables(filters), page, withPreview: !$gameMode }, { requestPolicy: 'network-only' })
           .toPromise()
         if (res.error) { error = res.error.message; hasNext = false; return }
         const p = res.data?.Page as { media?: Media[]; pageInfo?: { hasNextPage?: boolean } } | undefined

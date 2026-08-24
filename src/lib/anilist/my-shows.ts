@@ -57,31 +57,42 @@ export function hasMySources(s: MySets): boolean {
   return s.aniWatching.size + s.aniPlanning.size + s.malWatching.size + s.malPlanning.size + s.local.size > 0
 }
 
-type IdColl = { MediaListCollection?: { lists?: { entries?: { media: { id: number } }[] }[] } }
-async function aniIds(userName: string | undefined, status: string): Promise<Set<number>> {
-  if (!userName) return new Set()
+const ANI_STATUSES = ['CURRENT', 'PLANNING', 'DROPPED'] as const
+type AniStatus = typeof ANI_STATUSES[number]
+type IdColl = {
+  MediaListCollection?: { lists?: { entries?: { status?: string; media: { id: number } }[] }[] }
+}
+
+export function splitAniListIds(data: IdColl | undefined): Record<AniStatus, Set<number>> {
+  const out: Record<AniStatus, Set<number>> = {
+    CURRENT: new Set(), PLANNING: new Set(), DROPPED: new Set(),
+  }
+  for (const entry of (data?.MediaListCollection?.lists ?? []).flatMap((list) => list.entries ?? [])) {
+    if (ANI_STATUSES.includes(entry.status as AniStatus)) out[entry.status as AniStatus].add(entry.media.id)
+  }
+  return out
+}
+
+async function aniIds(userName: string | undefined): Promise<Record<AniStatus, Set<number>>> {
+  if (!userName) return splitAniListIds(undefined)
   try {
-    const r = await anilist.query(LIST_IDS_QUERY, { userName, status }).toPromise()
-    if (r.error) return new Set()
-    const lists = (r.data as IdColl)?.MediaListCollection?.lists ?? []
-    return new Set(lists.flatMap((l) => l.entries ?? []).map((e) => e.media.id))
-  } catch { return new Set() }
+    const r = await anilist.query(LIST_IDS_QUERY, { userName, statuses: ANI_STATUSES }).toPromise()
+    return r.error ? splitAniListIds(undefined) : splitAniListIds(r.data as IdColl)
+  } catch { return splitAniListIds(undefined) }
 }
 
 /** Load every "my shows" source concurrently. Best-effort — a failing/absent source just contributes
  *  an empty set. `userName` is the linked AniList handle (empty ⇒ AniList sources skipped). */
 export async function loadMySets(userName: string | undefined): Promise<MySets> {
-  const [aniWatching, aniPlanning, aniDropped, malW, malP, malD] = await Promise.all([
-    aniIds(userName, 'CURRENT'),
-    aniIds(userName, 'PLANNING'),
-    aniIds(userName, 'DROPPED'),
+  const [ani, malW, malP, malD] = await Promise.all([
+    aniIds(userName),
     getMalAnimeIds('watching', 500),
     getMalAnimeIds('plan_to_watch', 500),
     getMalAnimeIds('dropped', 500),
   ])
   const local = new Set(Object.keys(get(localHistory)).map(Number))
   return {
-    aniWatching, aniPlanning, aniDropped,
+    aniWatching: ani.CURRENT, aniPlanning: ani.PLANNING, aniDropped: ani.DROPPED,
     malWatching: new Set(malW), malPlanning: new Set(malP), malDropped: new Set(malD),
     local,
   }

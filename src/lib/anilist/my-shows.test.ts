@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { classifyMine, isDropped, isMine, hasMySources, emptyMySets, type MySets } from './my-shows'
+import {
+  classifyMine, isDropped, isMine, hasMySources, emptyMySets, splitAniListIds, type MySets,
+} from './my-shows'
 import type { Media } from './types'
 
 const media = (id: number, idMal?: number) => ({ id, idMal }) as Media
@@ -48,5 +50,23 @@ describe('isDropped', () => {
 describe('hasMySources', () => {
   it('does not count a dropped list as a source to personalize from', () => {
     expect(hasMySources(sets({ aniDropped: new Set([1]), malDropped: new Set([99]) }))).toBe(false)
+  })
+})
+
+describe('splitAniListIds', () => {
+  it('splits one status_in collection and deduplicates custom-list copies', () => {
+    const result = splitAniListIds({ MediaListCollection: { lists: [
+      { entries: [
+        { status: 'CURRENT', media: { id: 1 } },
+        { status: 'PLANNING', media: { id: 2 } },
+      ] },
+      { entries: [
+        { status: 'CURRENT', media: { id: 1 } },
+        { status: 'DROPPED', media: { id: 3 } },
+      ] },
+    ] } })
+    expect([...result.CURRENT]).toEqual([1])
+    expect([...result.PLANNING]).toEqual([2])
+    expect([...result.DROPPED]).toEqual([3])
   })
 })

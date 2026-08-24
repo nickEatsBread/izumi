@@ -11,7 +11,8 @@ describe('schedule week cache', () => {
         data: {
           Page: {
             airingSchedules: [{ airingAt: vars.page === 1 ? 20 : 10, episode: vars.page, media: { id: vars.page } }],
-            pageInfo: { lastPage: 2, hasNextPage: vars.page === 1 },
+            // AniList currently documents lastPage as inaccurate. A bogus value must not fan out.
+            pageInfo: { lastPage: 99, hasNextPage: vars.page === 1 },
           },
         },
       }),

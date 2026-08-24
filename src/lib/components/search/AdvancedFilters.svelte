@@ -1,8 +1,6 @@
 <script lang="ts">
   import { untrack, onMount } from 'svelte'
-  import { getContextClient } from '@urql/svelte'
-  import { searchCountQuery, searchVariables, MEDIA_SOURCES, COUNTRIES, type SearchFilters } from '$lib/anilist/detail-queries'
-  import { showAdult } from '$lib/settings/ui'
+  import { MEDIA_SOURCES, COUNTRIES, type SearchFilters } from '$lib/anilist/detail-queries'
   import { advancedFiltersOpen } from '$lib/player/session'
   import TagPicker from './TagPicker.svelte'
   import MultiSelect from './MultiSelect.svelte'
@@ -27,25 +25,6 @@
   // Edit a DRAFT clone captured once when the modal opens; nothing re-queries the page
   // behind the dim until Apply (untrack = intentionally read filters' value at mount only).
   let draft = $state<SearchFilters>(untrack(() => $state.snapshot(filters)) as SearchFilters)
-
-  const client = getContextClient()
-  let count = $state<number | null>(null)
-  let counting = $state(false)
-
-  // Debounced count-only query → "Apply · N". Re-runs on any draft change (and reads the
-  // current 18+ setting via searchCountQuery). Never throws out to the UI.
-  $effect(() => {
-    const vars = { ...searchVariables($state.snapshot(draft) as SearchFilters), perPage: 1 }
-    void $showAdult
-    counting = true
-    const t = setTimeout(async () => {
-      try {
-        const r = await client.query(searchCountQuery(), vars, { requestPolicy: 'network-only' }).toPromise()
-        count = (r.data as { Page?: { pageInfo?: { total?: number } } } | undefined)?.Page?.pageInfo?.total ?? null
-      } catch { count = null } finally { counting = false }
-    }, 350)
-    return () => clearTimeout(t)
-  })
 
   const set = (patch: Partial<SearchFilters>) => (draft = { ...draft, ...patch })
   const num = (s: string) => (s === '' ? undefined : Number(s))
@@ -141,7 +120,7 @@
       </button>
       <button data-focusable onclick={() => onApply($state.snapshot(draft) as SearchFilters)}
               class="rounded-md bg-primary px-5 py-2 text-sm font-black text-primary-foreground transition hover:opacity-90">
-        Apply{counting ? ' …' : count != null ? ` · ${count}` : ''}
+        Apply
       </button>
     </div>
   </div>

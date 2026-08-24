@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MEDIA_BY_ID, searchVariables } from './detail-queries'
+import { MEDIA_BY_ID, SCHEDULE_QUERY, searchVariables } from './detail-queries'
 describe('searchVariables', () => {
   it('omits empty filters and passes provided ones', () => {
     const v = searchVariables({ search: 'frieren', genres: ['Action'], season: '', year: 2026, formats: [], sort: 'SEARCH_MATCH' })
@@ -32,5 +32,20 @@ describe('anime detail information', () => {
     const query = MEDIA_BY_ID.loc?.source.body ?? ''
     expect(query).toMatch(/source\s+countryOfOrigin/)
     expect(query).toMatch(/tags\s*\{\s*name\s+rank\s+isMediaSpoiler\s*\}/)
+  })
+
+  it('uses the compact card fragment for relations and recommendations', () => {
+    const query = MEDIA_BY_ID.loc?.source.body ?? ''
+    expect(query).toMatch(/relations\s*\{\s*edges\s*\{\s*relationType\s+node\s*\{\s*\.\.\.CardMediaFields/)
+    expect(query).toMatch(/mediaRecommendation\s*\{\s*\.\.\.CardMediaFields/)
+  })
+})
+
+describe('schedule pagination', () => {
+  it('requests only the authoritative hasNextPage flag', () => {
+    const query = SCHEDULE_QUERY.loc?.source.body ?? ''
+    expect(query).toContain('hasNextPage')
+    expect(query).not.toContain('lastPage')
+    expect(query).not.toContain('total')
   })
 })

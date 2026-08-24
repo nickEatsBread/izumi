@@ -33,6 +33,41 @@ export const CONTINUE_MEDIA_FIELDS = gql`
     airingSchedule(perPage: 26) { nodes { episode airingAt } }
   }`
 
+// Catalogue cards do not need the source-resolution and episode-history payload carried by the
+// detail fragment. In particular, nesting a 100-node airing schedule in every home/search card made
+// a twenty-card page normalize hundreds or thousands of objects that the card never reads.
+// Desktop hover previews opt into their three rich fields; Gamescope/mobile pass `withPreview=false`
+// because SmallCard deliberately disables that popup there.
+export const CARD_MEDIA_FIELDS = gql`
+  fragment CardMediaFields on Media {
+    id idMal type isAdult
+    title { romaji english native userPreferred }
+    description(asHtml: false) @include(if: $withPreview)
+    season seasonYear format status episodes averageScore
+    startDate { year month day }
+    coverImage { extraLarge large medium color }
+    bannerImage @include(if: $withPreview)
+    trailer @include(if: $withPreview) { id site }
+    nextAiringEpisode { episode airingAt timeUntilAiring }
+  }`
+
+// Featured banners need richer discovery metadata than a card, but not source-matching aliases,
+// popularity counters, start dates, or a hundred episode nodes. Keep the small schedule fallback so
+// short OVAs whose scalar episode count is null still show a useful total.
+export const HERO_MEDIA_FIELDS = gql`
+  fragment HeroMediaFields on Media {
+    id idMal type isAdult
+    title { romaji english native userPreferred }
+    description(asHtml: false)
+    season seasonYear format status episodes duration averageScore genres
+    studios(isMain: true) { nodes { id name } }
+    coverImage { extraLarge large medium color }
+    bannerImage
+    trailer { id site }
+    nextAiringEpisode { episode airingAt timeUntilAiring }
+    airingSchedule(perPage: 26) { nodes { episode airingAt } }
+  }`
+
 export const MEDIA_FIELDS = gql`
   fragment MediaFields on Media {
     id idMal type isAdult
