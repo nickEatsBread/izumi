@@ -60,12 +60,13 @@
   $effect(() => {
     const s = start, e = end
     let cancelled = false
+    const controller = new AbortController()
     ;(async () => {
       const cached = cachedScheduleWeek(s, e)
       if (cached) airings = cached
       loading = !cached; error = ''
       try {
-        const all = await loadScheduleWeek(client, s, e)
+        const all = await loadScheduleWeek(client, s, e, controller.signal)
         if (!cancelled) airings = all
       } catch (err) {
         if (!cancelled) {
@@ -88,7 +89,7 @@
       }
       if (!cancelled) loading = false
     })()
-    return () => { cancelled = true }
+    return () => { cancelled = true; controller.abort() }
   })
 
   // ── Personalization ──────────────────────────────────────────────────────────

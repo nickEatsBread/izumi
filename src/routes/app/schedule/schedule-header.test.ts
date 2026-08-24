@@ -92,4 +92,10 @@ describe('schedule page header', () => {
     expect(grid).toContain('error = `Backup schedule unavailable: ${message}`')
     expect(grid).not.toContain('error = primaryError')
   })
+
+  it('cancels an obsolete AniList week when navigation replaces the grid', () => {
+    expect(grid).toContain('const controller = new AbortController()')
+    expect(grid).toContain('loadScheduleWeek(client, s, e, controller.signal)')
+    expect(grid).toContain('controller.abort()')
+  })
 })
