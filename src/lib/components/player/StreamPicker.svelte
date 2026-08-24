@@ -312,6 +312,65 @@
   // the removed settings button. The next Down then landed on Close/Copy instead of a source.
   let pickerFocusReady = false
   let pickerTrap = $state<HTMLElement | null>(null)
+  let spinnerFrame = $state(0)
+  const pickerOpen = $derived(!!pick && !pick.hidden)
+
+  // CSS animation time is not guaranteed to advance between WebKit snapshots under Gamescope.
+  // Step the spinner in state and request one bitmap per step: it visibly moves without keeping a
+  // full-viewport 30fps raster loop alive for the entire (network-bound) source resolution.
+  $effect(() => {
+    if (!$gameMode || !resolving || !pickerTrap) return
+    const timer = setInterval(() => {
+      spinnerFrame = (spinnerFrame + 1) % 8
+      bumpPlayerOverlay()
+    }, 125)
+    return () => clearInterval(timer)
+  })
+
+  // A local vertical path is intentionally independent of page-wide spatial geometry. On the
+  // XWayland snapshot path focus can still belong to the settings button behind this dialog, which
+  // made ArrowDown a no-op. Enter the first source from outside, then walk every visible picker
+  // control in DOM order so grouped-source toggles and the tail actions remain reachable too.
+  $effect(() => {
+    const trap = pickerTrap
+    if (!$gameMode || !trap || !pickerOpen) return
+    const onNav = (event: Event) => {
+      const dir = (event as CustomEvent<'up' | 'down'>).detail
+      if (dir !== 'up' && dir !== 'down') return
+      const items = [...trap.querySelectorAll<HTMLElement>('[data-focusable]')].filter((item) => {
+        // Entering the filter field would summon the Deck keyboard simply because Down was held
+        // while providers were loading. Text entry stays touch/explicit-focus only; toggles and
+        // selects remain in the controller order.
+        const textEntry = item instanceof HTMLTextAreaElement
+          || (item instanceof HTMLInputElement
+            && !['checkbox', 'radio', 'range', 'button', 'submit'].includes(item.type))
+        return !textEntry
+          && (item.checkVisibility?.() ?? true)
+          && !(item instanceof HTMLButtonElement && item.disabled)
+          && item.getAttribute('aria-disabled') !== 'true'
+      })
+      if (!items.length) return
+      const active = document.activeElement as HTMLElement | null
+      let index = active ? items.indexOf(active) : -1
+      if (index < 0) {
+        const firstSource = items.findIndex((item) => item.hasAttribute('data-source-row'))
+        // No playable row yet: keep focus on the player control behind the modal. The progressive
+        // row effect below will focus the first source the instant one arrives.
+        if (firstSource < 0) return
+        index = dir === 'down'
+          ? firstSource
+          : items.length - 1
+      } else {
+        index = Math.max(0, Math.min(items.length - 1, index + (dir === 'down' ? 1 : -1)))
+      }
+      const target = items[index]
+      target.focus({ preventScroll: true })
+      target.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
+      bumpPlayerOverlay()
+    }
+    window.addEventListener('stream-picker-nav', onNav)
+    return () => window.removeEventListener('stream-picker-nav', onNav)
+  })
   // The source picker is lazy-loaded outside PlayerOverlay. On a cold open, the player's first
   // one-shot Gamescope snapshot can therefore happen while only the pending placeholder exists.
   // Re-snapshot once the real trap mounts, after WebKit has painted its card, regardless of whether
@@ -727,7 +786,7 @@
           <div class="min-w-0 flex-1">
             <h2 class="sp-title font-black leading-tight drop-shadow {$isMobile ? 'line-clamp-1 text-base' : 'line-clamp-2 text-xl'}">{title(pick.media)}</h2>
             <p class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-              {#if resolving}<span class="size-3 shrink-0 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
+              {#if resolving}<span data-source-spinner class="size-3 shrink-0 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" class:animate-spin={!$gameMode} style:transform={$gameMode ? `rotate(${spinnerFrame * 45}deg)` : undefined}></span>Finding sources…{:else}{pick.cachedCount} cached{uncachedCount ? ` · ${uncachedCount} uncached` : ''}{unknownCount ? ` · ${unknownCount} unknown` : ''}{deadCount && $showDeadSources ? ` · ${deadCount} dead` : ''}{/if}
             </p>
           </div>
           <button data-focusable onclick={close} class="grid shrink-0 place-items-center bg-black/40 text-white/80 transition-colors hover:bg-black/60 hover:text-white {$isMobile ? 'size-11 rounded-full text-lg' : 'size-10 rounded-lg sm:size-8'}" aria-label="Close">✕</button>
@@ -937,7 +996,7 @@
         {/each}
         {#if resolving}
           <div class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
-            <span class="size-3 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground"></span>
+            <span data-source-spinner class="size-3 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" class:animate-spin={!$gameMode} style:transform={$gameMode ? `rotate(${spinnerFrame * 45}deg)` : undefined}></span>
             Finding more sources…
           </div>
         {/if}

@@ -61,7 +61,14 @@ export function startGamepadNav(): () => void {
     // on the settings button behind the picker.
     const picker = get(streamPicker)
     if (picker && !picker.hidden) {
-      keydown(ARROW[dir], repeat)
+      // WebKitGTK occasionally leaves activeElement on the settings button behind the snapshotted
+      // picker. Its local vertical navigator starts from the source rows directly, so Down remains
+      // deterministic even when generic geometry cannot see the modal through mpv's overlay.
+      if (dir === 'up' || dir === 'down') {
+        window.dispatchEvent(new CustomEvent('stream-picker-nav', { detail: dir }))
+      } else {
+        keydown(ARROW[dir], repeat)
+      }
       return
     }
     if (inPlayer()) {

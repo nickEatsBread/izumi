@@ -70,6 +70,16 @@ describe('mobile source picker layout', () => {
     expect(source).not.toContain('let focusedBest = false')
   })
 
+  it('owns vertical controller navigation and steps its Gamescope spinner explicitly', () => {
+    expect(source).toContain("window.addEventListener('stream-picker-nav', onNav)")
+    expect(source).toContain("item.hasAttribute('data-source-row')")
+    expect(source).toContain('if (firstSource < 0) return')
+    expect(source).toContain("!['checkbox', 'radio', 'range', 'button', 'submit'].includes(item.type)")
+    expect(source).toContain("target.scrollIntoView({ block: 'nearest'")
+    expect(source).toContain('spinnerFrame = (spinnerFrame + 1) % 8')
+    expect(source).toContain('class:animate-spin={!$gameMode}')
+  })
+
   it('keeps instant automatic selection out of the source-list dialog', () => {
     expect(source).toContain('{#if $isAndroid && autoImmediate && !playbackError}')
     expect(source).not.toContain('<AndroidPreparingPlayer')
