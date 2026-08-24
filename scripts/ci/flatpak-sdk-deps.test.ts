@@ -34,4 +34,23 @@ describe('Flatpak SDK deps', () => {
     expect(manifest).toContain('install -Dm644 Nunito-flatpak.ttf')
     expect(manifest).not.toContain('assets/fonts/Nunito.ttf /app/share/fonts')
   })
+
+  it('publishes stable and beta releases to matching Flatpak branches', () => {
+    expect(workflow).toContain('echo "branch=beta" >> "$GITHUB_OUTPUT"')
+    expect(workflow).toContain('echo "branch=stable" >> "$GITHUB_OUTPUT"')
+    expect(workflow).toContain('--default-branch="${{ steps.meta.outputs.branch }}"')
+    expect(workflow).toContain('Branch=${{ steps.meta.outputs.branch }}')
+    expect(workflow).toContain('Url=https://flatpak.izumi.watch/${{ steps.meta.outputs.branch }}/')
+    expect(workflow).toContain('destination_dir: ${{ steps.meta.outputs.branch }}')
+    expect(workflow).not.toContain('Branch=master')
+  })
+
+  it('keeps old master installs updating through the signed channel redirect', () => {
+    expect(workflow).toContain('flatpak build-commit-from')
+    expect(workflow).toContain('"app/$app/$arch/master"')
+    expect(workflow).toContain('--default-branch=master')
+    expect(workflow).toContain('--redirect-url="https://flatpak.izumi.watch/stable/"')
+    expect(workflow).toContain("if: steps.meta.outputs.branch == 'stable'")
+    expect(workflow).toContain('izumi-*.flatpakref')
+  })
 })
