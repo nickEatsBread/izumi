@@ -8,6 +8,7 @@ import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
 import type { SharedSourceState } from '$lib/watch-together/source'
 import type { DirectTorrentHealth } from '$lib/player/direct-torrent'
 import type { Chapter } from '$lib/player/chapter-skip'
+import type { PlayerCompositorPath } from '$lib/player/gm-overlay'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
@@ -269,11 +270,21 @@ export const pictureInPicture = writable(false)
 // while playing. Resolved once from Rust (`player_is_game_mode`) at boot. When true it
 // implies "always fullscreen" for the chrome-hiding + video-inset logic.
 export const gameMode = writable(false)
+/** Native window/compositor contract. Native Wayland keeps HTML chrome live; Gamescope XWayland
+ * uses the bitmap/native-OSD bridge because it cannot blend the transparent webview over mpv. */
+export const playerCompositorPath = writable<PlayerCompositorPath>('desktop-live')
 /** True once native Game-mode detection has answered (including an error fallback). */
 export const gameModeResolved = writable(false)
 export async function initGameMode() {
-  try { gameMode.set(await invoke<boolean>('player_is_game_mode')) }
-  catch { /* non-linux / no window yet — stays false (Desktop/windowed) */ }
+  try {
+    const [detected, compositor] = await Promise.all([
+      invoke<boolean>('player_is_game_mode'),
+      invoke<PlayerCompositorPath>('player_compositor_path'),
+    ])
+    gameMode.set(detected)
+    playerCompositorPath.set(compositor)
+  }
+  catch { /* non-linux / no window yet — stays false with live Desktop chrome */ }
   finally { gameModeResolved.set(true) }
 }
 

@@ -22,6 +22,7 @@
     chapters,
     onseek,
     gm = false,
+    native = false,
   }: {
     pos: number
     dur: number
@@ -30,6 +31,7 @@
     chapters: { time: number; title: string }[]
     onseek: (t: number) => void
     gm?: boolean
+    native?: boolean
   } = $props()
 
   let el = $state<HTMLDivElement>()
@@ -329,7 +331,7 @@
   onpointerleave={() => (hovering = false)}
   onpointercancel={onup}
   onlostpointercapture={onup}
-  class:opacity-0={gm}
+  class:opacity-0={native}
 >
   <!-- Per-chapter segments. Each is its % of the duration with a small gap;
        the hovered chapter's fill bars grow (h-0.5 → h-1) — the popout. Fills are

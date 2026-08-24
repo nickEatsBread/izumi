@@ -362,6 +362,36 @@ fn player_is_game_mode(app: AppHandle) -> bool {
     }
 }
 
+/// The compositor contract the frontend should use for player chrome. Gamescope's XWayland
+/// toplevel cannot alpha-composite live HTML over mpv, so it needs the snapshot/native-OSD path.
+/// A native Wayland toplevel can keep the WebKit overlay live above the layer-shell video surface.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn player_compositor_path(app: AppHandle) -> String {
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_none() {
+            return "desktop-live".into();
+        }
+        return app
+            .get_webview_window("main")
+            .map(|window| {
+                if player::linux_embed::is_wayland(&window) {
+                    "wayland-live"
+                } else {
+                    "x11-snapshot"
+                }
+            })
+            .unwrap_or("x11-snapshot")
+            .into();
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        "desktop-live".into()
+    }
+}
+
 /// Game mode: start/stop compositing the HTML controls onto the video via an mpv overlay.
 /// gamescope can't blend a transparent app surface, so the frontend calls this whenever the
 /// controls show/hide and mpv bakes a snapshot of them over the video (see linux_overlay).
@@ -378,6 +408,9 @@ fn player_gm_overlay(
     #[cfg(target_os = "linux")]
     {
         if let Some(win) = app.get_webview_window("main") {
+            if player::linux_embed::is_wayland(&win) {
+                return;
+            }
             if visible {
                 let crop = crop.map(|c| (c.x, c.y, c.w, c.h));
                 player::linux_overlay::start(
@@ -417,7 +450,16 @@ fn player_gm_dock(bottom: f64, right: f64, top: f64, hide: bool) {
 #[tauri::command]
 fn player_gm_dynamic_overlay(app: AppHandle, state: GmDynamicOverlay) {
     #[cfg(target_os = "linux")]
-    player::gm_osd::update(app, state);
+    {
+        if app
+            .get_webview_window("main")
+            .map(|window| player::linux_embed::is_wayland(&window))
+            .unwrap_or(false)
+        {
+            return;
+        }
+        player::gm_osd::update(app, state);
+    }
     #[cfg(not(target_os = "linux"))]
     let _ = (app, state);
 }
@@ -4591,8 +4633,53 @@ fn take_pending_magnet() -> Option<String> {
     PENDING_MAGNET.lock().ok().and_then(|mut slot| slot.take())
 }
 
+/// Opt-in bring-up for Gamescope's native Wayland/layer-shell player path.
+///
+/// The tested SteamOS image accepted a Wayland connection but did not present GTK's toplevel, so
+/// XWayland remains the production default. Setting `IZUMI_GAMESCOPE_NATIVE_WAYLAND=1` before
+/// launch enables the experiment only after the socket advertises GTK input/toplevel, accelerated
+/// buffer, and player-composition protocols. This matters because GTK cannot recover to X11 after
+/// it has successfully opened an incomplete Wayland display.
+#[cfg(target_os = "linux")]
+fn configure_gamescope_native_wayland_prototype() {
+    let requested = std::env::var("IZUMI_GAMESCOPE_NATIVE_WAYLAND")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+        .unwrap_or(false);
+    if !requested {
+        return;
+    }
+    let Some(display) = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY") else {
+        player::linux_embed::elog(
+            "native Gamescope Wayland requested, but GAMESCOPE_WAYLAND_DISPLAY is absent",
+        );
+        return;
+    };
+    let display = display.to_string_lossy().into_owned();
+    if let Err(error) = player::linux_embed::gamescope_native_wayland_ready(&display) {
+        player::linux_embed::elog(&format!(
+            "native Gamescope Wayland preflight failed; keeping XWayland: {error}"
+        ));
+        return;
+    }
+
+    std::env::set_var("WAYLAND_DISPLAY", &display);
+    std::env::set_var("GDK_BACKEND", "wayland");
+    // Match Gamescope's own --expose-wayland environment contract for toolkits and portals.
+    std::env::set_var("XDG_SESSION_TYPE", "wayland");
+    player::linux_embed::elog(&format!(
+        "native Gamescope Wayland preflight passed on '{display}'"
+    ));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_gamescope_native_wayland_prototype();
     // Linux: the embedded player composites mpv (a wl_subsurface) BELOW the webview,
     // needing a native Wayland session — so we do NOT force GDK_BACKEND=x11 (Desktop mode
     // / KWin gives us Wayland). We DELIBERATELY do NOT set WEBKIT_DISABLE_DMABUF_RENDERER
@@ -4607,12 +4694,11 @@ pub fn run() {
     //     once guarded against was a bundled-mesa clash; the Flatpak uses the runtime's
     //     matched mesa (+ --device=dri), so it doesn't recur.
     //
-    // Steam Deck GAME MODE (gamescope): do NOT force the app onto gamescope's native Wayland
-    // socket. Although gamescope exposes wayland + layer-shell, its window management is
-    // XWayland-centric: a native-Wayland GTK/webkit TOPLEVEL is never presented (no seat —
-    // `gdk_seat_get_keyboard` assertion — and no visible window; the session even tore down).
-    // So the app stays an XWayland X11 client (visible), and the controls-over-video overlay
-    // is solved a different way (self-composite), not by routing through gamescope's compositor.
+    // Steam Deck GAME MODE stays on the proven XWayland path by default. Native Wayland is an
+    // explicit prototype because an older tested Gamescope accepted the socket connection but did
+    // not present GTK's toplevel. The opt-in above now checks the actual protocol registry before
+    // selecting Wayland; failed preflight leaves every display variable untouched and therefore
+    // keeps the established XWayland/snapshot path.
     let builder = tauri::Builder::default();
     #[cfg(not(target_os = "android"))]
     let window_state_flags = tauri_plugin_window_state::StateFlags::POSITION
@@ -5077,8 +5163,12 @@ pub fn run() {
                 // this XWayland app. Change Gamescope back to passthrough after our window exists so
                 // WebKitGTK receives real XI2 touch sequences and owns drag + kinetic scrolling,
                 // including inside cross-origin discussion frames.
-                if let Err(e) = player::linux_x11::enable_native_touch(&win) {
-                    player::linux_embed::elog(&format!("x11: native touch passthrough failed: {e}"));
+                let x11_game_mode = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+                    && !player::linux_embed::is_wayland(&win);
+                if x11_game_mode {
+                    if let Err(e) = player::linux_x11::enable_native_touch(&win) {
+                        player::linux_embed::elog(&format!("x11: native touch passthrough failed: {e}"));
+                    }
                 }
                 let touch_win = win.clone();
                 win.on_window_event(move |event| {
@@ -5086,6 +5176,9 @@ pub fn run() {
                     // passthrough after GTK receives focus; this remains compositor-level native
                     // input routing and does not synthesize or reinterpret any gestures.
                     if matches!(event, tauri::WindowEvent::Focused(true)) {
+                        if player::linux_embed::is_wayland(&touch_win) {
+                            return;
+                        }
                         // Focus returning usually means an overlay (Steam menu/OSK/QAM) just
                         // closed — the exact transition that can swallow a touch-release and
                         // strand a phantom button press. Clear it before re-asserting the mode.
@@ -5163,6 +5256,7 @@ pub fn run() {
             player_embed,
             close_player,
             player_is_game_mode,
+            player_compositor_path,
             player_gm_overlay,
             player_gm_dock,
             player_gm_dynamic_overlay,

@@ -10,7 +10,16 @@ import {
   gameModeSideSheetCrop,
   presenceAllowed,
   scheduleGameModeOverlay,
+  usesGameModeBitmapCompositor,
 } from './gm-overlay'
+
+describe('Gamescope compositor routing', () => {
+  it('uses bitmap/native chrome only for the XWayland path', () => {
+    expect(usesGameModeBitmapCompositor(true, 'x11-snapshot')).toBe(true)
+    expect(usesGameModeBitmapCompositor(true, 'wayland-live')).toBe(false)
+    expect(usesGameModeBitmapCompositor(false, 'desktop-live')).toBe(false)
+  })
+})
 
 describe('gameModeBitmapOverlayActive', () => {
   const base = {
@@ -109,6 +118,8 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).not.toContain('p2pText')
     expect(overlay).toContain('gmDynamicOwnsChrome')
     expect(overlay).toContain('gmNativeControls')
+    expect(overlay).toContain('usesGameModeBitmapCompositor')
+    expect(overlay).toContain('native={gmBitmapMode}')
     expect(overlay).toContain('controlsVisible && (!overlayFull || $playerSideSheetOpen)')
     expect(overlay).toContain('currentSeg && !overlayActive')
     expect(overlay).not.toContain('!overlayFull && !showSkip')
@@ -117,7 +128,7 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('timelineSegments: segments.map')
     expect(overlay).toContain('chapterMarks: chapters.map')
     expect(overlay).toContain('fast: overlayFast')
-    expect(overlay).toContain('if (!gmMode || !p2pVisible) return')
+    expect(overlay).toContain('if (!gmBitmapMode || !p2pVisible) return')
     expect(overlay).toContain('ontoggleplay={togglePlayback}')
     expect(overlay).toContain("const quietSeek = gmMode && (action === 'playerSeekBack' || action === 'playerSeekForward')")
     expect(overlay).toContain("if (action !== 'playerClose' && !quietSeek) poke()")
@@ -174,7 +185,7 @@ describe('Game-mode Leanback motion', () => {
     const comments = readFileSync(fileURLToPath(new URL('../components/player/CommentsPanel.svelte', import.meta.url)), 'utf8')
     expect(comments).toContain('dq-gm-hide')
     const seekbar = readFileSync(fileURLToPath(new URL('../components/player/Seekbar.svelte', import.meta.url)), 'utf8')
-    expect(seekbar).toContain('class:opacity-0={gm}')
+    expect(seekbar).toContain('class:opacity-0={native}')
     const menu = readFileSync(fileURLToPath(new URL('../components/player/TrackMenu.svelte', import.meta.url)), 'utf8')
     expect(menu).toContain('gm-open-tracks')
     expect(menu).toContain('bumpPlayerOverlay')

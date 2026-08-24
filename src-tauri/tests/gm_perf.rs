@@ -16,6 +16,35 @@ fn game_mode_keeps_hardware_webkit() {
 }
 
 #[test]
+fn deck_wayland_prefers_zero_copy_with_safe_fallbacks() {
+    assert_eq!(libmpv_hwdec(true), "auto");
+    assert_eq!(libmpv_hwdec(false), "auto-copy");
+    let player = include_str!("../src/player/mod.rs");
+    assert!(player.contains("libmpv_hwdec(game_mode_wayland)"));
+}
+
+#[test]
+fn gamepad_blocks_until_input_instead_of_polling_at_120hz() {
+    let gamepad = include_str!("../src/player/gamepad_linux.rs");
+    assert!(gamepad.contains("next_event_blocking(Some(Duration::from_millis(250)))"));
+    assert!(gamepad.contains("with_default_filters(false)"));
+    assert!(gamepad.contains("Axis::DPadX | Axis::DPadY"));
+    assert!(gamepad.contains("RUN_ID"));
+    assert!(!gamepad.contains("sleep(Duration::from_millis(8))"));
+}
+
+#[test]
+fn gamescope_wayland_is_opt_in_and_reports_live_chrome() {
+    let lib = include_str!("../src/lib.rs");
+    assert!(lib.contains("IZUMI_GAMESCOPE_NATIVE_WAYLAND"));
+    assert!(lib.contains("gamescope_native_wayland_ready"));
+    assert!(lib.contains("GDK_BACKEND\", \"wayland"));
+    assert!(lib.contains("player_compositor_path"));
+    assert!(lib.contains("wayland-live"));
+    assert!(lib.contains("x11-snapshot"));
+}
+
+#[test]
 fn overlay_cpu_fade_scales_premultiplied_bgra() {
     assert_eq!(OVERLAY_FADE_MS, 150);
     assert_eq!(OVERLAY_FADE_FRAME_MS, 25);
@@ -66,7 +95,9 @@ fn native_controls_match_vacuumtube_motion_curve() {
     assert!(osd.contains("1000 / OSD_FPS"));
     assert!(osd.contains("\\fnNunito"));
     assert!(osd.contains("player_title_text"));
-    assert!(osd.contains("rounded_rect_ring"));
+    // The current Lucide controls use real strokes; the obsolete compound ASS ring produced
+    // filled/garbled icons and is explicitly forbidden by the matching frontend contract test.
+    assert!(!osd.contains("rounded_rect_ring"));
     assert!(osd.contains("h - 12.0"));
     assert!(osd.contains("timeline_marks_ass"));
     assert!(osd.contains("timeline_segments"));

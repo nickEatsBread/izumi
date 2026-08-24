@@ -16,7 +16,7 @@
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
   import { firstOccurrences } from '$lib/anime/animethemes'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -51,7 +51,7 @@
   import { sessionSubtitleStyle, effectiveSubtitleStyle } from '$lib/settings/subtitle-presets'
   import { incognito } from '$lib/stores/incognito'
   import { presenceDecision, type PresencePayload, type PresenceThrottleState } from '$lib/player/presence'
-  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay } from '$lib/player/gm-overlay'
+  import { gameModeBitmapOverlayActive, gameModeDock, gameModeDockIsLive, gameModeSideSheetCrop, gameModeSnapshotCrop, presenceAllowed, scheduleGameModeOverlay, usesGameModeBitmapCompositor } from '$lib/player/gm-overlay'
   import { deckWebviewZoom } from '$lib/deck/webview-zoom'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import StatsOverlay from './StatsOverlay.svelte'
@@ -106,12 +106,11 @@
   let quietPadSeek = $state(false)
   let quietPadSeekT: ReturnType<typeof setTimeout>
 
-  // Game mode (gamescope / Steam Deck): the video is a fullscreen layer-shell surface and the
-  // transparent webview composites OVER it — so the player behaves EXACTLY like Desktop
-  // fullscreen (controls FLOAT over live video, both visible at once). `gmMode` only drives
-  // fullscreen chrome (no sidebar) + full-width overlay; there is no dock/swap. On the
-  // touchscreen a tap reveals the (auto-hiding) controls; on Desktop a click toggles pause.
+  // Game mode (Gamescope / Steam Deck) always uses the fullscreen Deck layout. Native Wayland
+  // composites this webview live over the layer-shell video; XWayland keeps the established
+  // native-OSD/bitmap bridge. On touch, a tap reveals the auto-hiding controls.
   const gmMode = $derived($gameMode)
+  const gmBitmapMode = $derived(usesGameModeBitmapCompositor(gmMode, $playerCompositorPath))
   function onOverlayTap(e: MouseEvent) {
     // Clicks inside the discussion panel (links, filter pills) bubble up here — don't let them
     // toggle play/pause. The panel tags itself `data-comments-panel` instead of stopPropagation
@@ -356,7 +355,7 @@
     cmd('seek', [next.toFixed(3), 'absolute+exact'])
     // One snapshot per tap-seek so the HTML bar moves. Hold-skim uses the native ASS bar
     // (a snapshot per pad step was the crawl).
-    if (gmMode && !get(scrub).active) bumpPlayerOverlay()
+    if (gmBitmapMode && !get(scrub).active) bumpPlayerOverlay()
   }
 
   // A hidden-controls D-pad seek stays quiet through mpv's brief seeking/buffering edges. Without
@@ -593,10 +592,10 @@
     cmd('set', ['cursor-autohide', gmMode ? 'always' : controlsVisible ? 'no' : 'always'])
   })
 
-  // Game mode (gamescope): normal controls, loading and moving scrub feedback are native ASS.
-  // Complex HTML panels are snapshotted into mpv only while those surfaces are actually open.
+  // Gamescope/XWayland: normal controls, loading and moving scrub feedback are native ASS;
+  // complex HTML panels are snapshotted into mpv. Native Wayland leaves all HTML live.
   const directP2pOverlay = $derived(isDirectP2PStream($nowPlayingStream))
-  const gmDynamicActive = $derived(gmMode && $playing && shouldUseGameModeDynamicOverlay({
+  const gmDynamicActive = $derived(gmBitmapMode && $playing && shouldUseGameModeDynamicOverlay({
     loading,
     scrubbing: $scrubActive,
     commentsOpen: $commentsOpen,
@@ -613,10 +612,10 @@
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
-  const gmNativeControls = $derived(gmMode && firstFrame && controlsVisible && (!overlayFull || $playerSideSheetOpen))
+  const gmNativeControls = $derived(gmBitmapMode && firstFrame && controlsVisible && (!overlayFull || $playerSideSheetOpen))
   const gmDynamicOwnsChrome = $derived(gmNativeControls)
   const overlayActive = $derived(gameModeBitmapOverlayActive({
-    gameMode: gmMode,
+    gameMode: gmBitmapMode,
     playing: $playing,
     dynamicOverlay: gmDynamicOwnsChrome,
     controlsVisible,
@@ -631,7 +630,7 @@
     connectingOpen: sourceConnectingVisible,
   }))
   $effect(() => {
-    if (!gmMode) return
+    if (!gmBitmapMode) return
     if (!$playing) {
       invoke('player_gm_dock', { bottom: 0, right: 0, top: 0, hide: false }).catch(() => {})
       invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
@@ -684,7 +683,7 @@
   })
 
   $effect(() => {
-    if (!gmMode || !p2pVisible) return
+    if (!gmBitmapMode || !p2pVisible) return
     void $directTorrentStats
     bumpPlayerOverlay()
   })
@@ -703,7 +702,7 @@
   let gmScrubWasActive = false
 
   $effect(() => {
-    const active = gmMode && $scrub.active
+    const active = gmBitmapMode && $scrub.active
     if (active && !gmScrubWasActive) {
       gmScrubBasePos = pos
       gmScrubBaseBuffer = buffer
@@ -711,7 +710,7 @@
     // The settled bitmap normally contains the HTML progress line, and mpv bitmaps are above ASS.
     // Re-snapshot at gesture edges after Seekbar hides/shows that line so the native moving bar is
     // actually visible on top instead of appearing to skim underneath it.
-    if (gmMode && active !== gmScrubWasActive) bumpPlayerOverlay()
+    if (gmBitmapMode && active !== gmScrubWasActive) bumpPlayerOverlay()
     gmScrubWasActive = active
   })
 
@@ -725,7 +724,7 @@
   // the exact seek still commits on release via endScrub. The frozen frame is fine — you're skimming.
   let scrubAutoPaused = false
   $effect(() => {
-    if (!gmMode) return
+    if (!gmBitmapMode) return
     if ($scrub.active) {
       if (!paused && !scrubAutoPaused) { scrubAutoPaused = true; cmd('set', ['pause', 'yes']) }
     } else if (scrubAutoPaused) {
@@ -825,10 +824,10 @@
     const s = get(scrub)
     // The exact HTML pill is snapshotted in Game mode. Native text is fallback-only so we never
     // stack the simplified ASS chip over the polished button.
-    const skipText = gmMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
+    const skipText = gmBitmapMode && showSkip && currentSeg && !overlayActive ? `Skip ${currentSeg.label}` : ''
     const liveControls = controlsVisible && firstFrame && dur > 0
     const nativeControls = liveControls && gmNativeControls
-    const visible = gmMode && get(playing) && (loading || s.active || nativeControls || !!skipText)
+    const visible = gmBitmapMode && get(playing) && (loading || s.active || nativeControls || !!skipText)
     // The player's own seek bar rect (CSS px). The native scrub bar is drawn here so it lands
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
@@ -879,7 +878,7 @@
 
   function scheduleGmDynamicOverlay() {
     if (typeof window === 'undefined' || gmDynDisposed || gmDynRaf) return
-    if (!(gmMode && get(playing) && (loading || get(scrub).active || controlsVisible || showSkip)) && !gmDynLastVisible) return
+    if (!(gmBitmapMode && get(playing) && (loading || get(scrub).active || controlsVisible || showSkip)) && !gmDynLastVisible) return
     gmDynRaf = requestAnimationFrame(() => {
       gmDynRaf = 0
       if (gmDynInFlight) {
@@ -904,7 +903,7 @@
   }
 
   $effect(() => {
-    gmMode; $playing; loading; firstFrame; controlsVisible; paused; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters
+    gmMode; gmBitmapMode; $playing; loading; firstFrame; controlsVisible; paused; gmDynamicPos; dur; gmDynamicBuffer; $scrub.active; $scrub.time; $scrub.source; showSkip; currentSeg; overlayActive; gmNativeControls; gmFocusRev; $playerProgressAnimations; segments; chapters
     scheduleGmDynamicOverlay()
   })
 
@@ -1327,7 +1326,7 @@
        white webview + the transparent hole). Mid-playback stalls show just the
        spinner over the frozen frame. Stall-show is debounced in DrmSurface
        (~150ms); do not add a second fade delay here or unbuffered seeks feel idle. -->
-  {#if loading && !gmMode}
+  {#if loading && !gmBitmapMode}
     <div
       transition:fade={{ duration: 120 }}
       class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center"
@@ -1402,10 +1401,9 @@
       </div>
     </div>
   {:else if controlsMounted}
-    <!-- In Game mode the normal bar is measured here but painted by Rust's native 60Hz OSD.
-         Complex panels switch this HTML back onto the settled bitmap overlay. -->
-    <div class="izumi-hud" class:opacity-0={gmMode && (gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
-      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} />
+    <!-- XWayland measures this bar for Rust's native 60Hz OSD. Native Wayland paints it live. -->
+    <div class="izumi-hud" class:opacity-0={(gmBitmapMode && gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
+      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} />
     </div>
   {/if}
 

@@ -54,6 +54,18 @@ pub fn game_mode_uses_hardware_webkit() -> bool {
     true
 }
 
+/// Native Gamescope Wayland can import the Deck's VAAPI surfaces directly into libmpv's EGL
+/// renderer. mpv's `auto` policy already orders whitelisted direct methods before their copy
+/// variants and retains software fallback; appending `auto-copy` is redundant. Desktop Wayland
+/// keeps the conservative copy path because its wider driver matrix is not Deck-qualified.
+pub fn libmpv_hwdec(game_mode_wayland: bool) -> &'static str {
+    if game_mode_wayland {
+        "auto"
+    } else {
+        "auto-copy"
+    }
+}
+
 /// Whether this overlay tick should take a WebKit snapshot.
 pub fn overlay_should_snapshot(fast: bool, force: bool, busy: bool) -> bool {
     if busy {
@@ -86,9 +98,7 @@ pub fn css_ease(progress: f64) -> f64 {
         3.0 * inv * inv * t * p1 + 3.0 * inv * t * t * p2 + t * t * t
     }
     fn slope(t: f64, p1: f64, p2: f64) -> f64 {
-        3.0 * (1.0 - t).powi(2) * p1
-            + 6.0 * (1.0 - t) * t * (p2 - p1)
-            + 3.0 * t * t * (1.0 - p2)
+        3.0 * (1.0 - t).powi(2) * p1 + 6.0 * (1.0 - t) * t * (p2 - p1) + 3.0 * t * t * (1.0 - p2)
     }
 
     let mut t = x;

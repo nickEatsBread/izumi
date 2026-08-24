@@ -1219,7 +1219,92 @@ fn wayland_globals_for(name: &str) -> Result<Vec<String>, String> {
     res
 }
 
+fn validate_gamescope_native_globals(globals: &[String]) -> Result<(), String> {
+    // These are the minimum protocol contracts used by GTK/WebKit and the accelerated player.
+    // Merely opening the socket is not enough: GTK considers that a successful backend choice
+    // even when the compositor lacks a usable seat or xdg-shell toplevel.
+    const REQUIRED: [&str; 7] = [
+        "wl_compositor",
+        "wl_shm",
+        "wl_output",
+        "wl_seat",
+        "xdg_wm_base",
+        "zwp_linux_dmabuf_v1",
+        "wp_viewporter",
+    ];
+    let missing: Vec<_> = REQUIRED
+        .into_iter()
+        .filter(|required| !globals.iter().any(|found| found == required))
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "Gamescope Wayland socket is missing required globals: {}",
+            missing.join(", ")
+        ));
+    }
+
+    let has_video_parent = globals.iter().any(|g| g == "wl_subcompositor");
+    let has_video_layer = globals.iter().any(|g| g == "zwlr_layer_shell_v1");
+    if !has_video_parent && !has_video_layer {
+        return Err(
+            "Gamescope Wayland socket has neither wl_subcompositor nor zwlr_layer_shell_v1"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+/// Verify Gamescope's socket before GTK commits the process to its Wayland backend. GTK only
+/// falls through to another backend when opening the display returns null; a connected but
+/// incomplete compositor can otherwise leave the app running invisibly with no X11 recovery.
+pub fn gamescope_native_wayland_ready(name: &str) -> Result<(), String> {
+    let globals = wayland_globals_for(name)
+        .map_err(|error| format!("cannot inspect Gamescope Wayland socket '{name}': {error}"))?;
+    validate_gamescope_native_globals(&globals)
+}
+
 // Keep the Weak import meaningful even if the callback path is refactored.
 const _: fn() = || {
     let _: Option<Weak<Inner>> = None;
 };
+
+#[cfg(test)]
+mod native_gamescope_tests {
+    use super::validate_gamescope_native_globals;
+
+    fn globals(extra: &[&str]) -> Vec<String> {
+        [
+            "wl_compositor",
+            "wl_shm",
+            "wl_output",
+            "wl_seat",
+            "xdg_wm_base",
+            "zwp_linux_dmabuf_v1",
+            "wp_viewporter",
+        ]
+        .into_iter()
+        .chain(extra.iter().copied())
+        .map(str::to_string)
+        .collect()
+    }
+
+    #[test]
+    fn accepts_subsurface_or_layer_shell_video_contract() {
+        assert!(validate_gamescope_native_globals(&globals(&["wl_subcompositor"])).is_ok());
+        assert!(
+            validate_gamescope_native_globals(&globals(&["zwlr_layer_shell_v1"])).is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_connected_but_incomplete_gamescope_socket() {
+        let mut missing_seat = globals(&["zwlr_layer_shell_v1"]);
+        missing_seat.retain(|global| global != "wl_seat");
+        assert!(validate_gamescope_native_globals(&missing_seat)
+            .expect_err("missing seat must fail")
+            .contains("wl_seat"));
+        assert!(validate_gamescope_native_globals(&globals(&[]))
+            .expect_err("missing video composition contract must fail")
+            .contains("neither wl_subcompositor nor zwlr_layer_shell_v1"));
+    }
+}

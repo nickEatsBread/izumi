@@ -67,6 +67,7 @@
     cmd,
     onclose,
     gm = false,
+    native = false,
     ontoggleplay,
     oneditsubtitles,
   }: {
@@ -81,6 +82,9 @@
     // play button must swap the fullscreen video back in (not just unpause under a black
     // screen). `ontoggleplay` overrides the default cycle-pause when provided.
     gm?: boolean
+    // Gamescope/XWayland paints these Game-mode controls through native ASS/bitmap chrome.
+    // Native Wayland keeps the same Deck layout but renders this HTML live.
+    native?: boolean
     ontoggleplay?: () => void
     oneditsubtitles?: () => void
   } = $props()
@@ -118,7 +122,7 @@
   // seek, not a stream, so mpv doesn't loop over the cached window.
   const seekTo = (t: number) => {
     cmd('seek', [t.toFixed(3), 'absolute+exact'])
-    if (gm) bumpPlayerOverlay()
+    if (native) bumpPlayerOverlay()
   }
 
   // Game mode: changing episode needs a DOUBLE press (touch double-tap, or two quick A presses on
@@ -718,7 +722,7 @@
   // unmount so the flag cannot stick true after the player closes.
   $effect(() => {
     playerMenuOpen.set(showOptions || showTracks || showServers)
-    playerSideSheetOpen.set(gm && (showOptions || showTracks || showServers))
+    playerSideSheetOpen.set(native && (showOptions || showTracks || showServers))
   })
 </script>
 
@@ -780,14 +784,14 @@
          is narrower; Desktop keeps the full-width bar with the time in the button row. -->
     {#if gm}
       <div class="pointer-events-auto flex items-center gap-3">
-        <!-- Game mode's visible time/bar pixels come from mpv's live OSD. These transparent HTML
-             elements retain the exact layout and touch hitbox used to measure/operate that OSD. -->
-        <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums opacity-0">{fmt(pos)}</span>
-        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
-        <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums opacity-0">{fmt(dur)}</span>
+        <!-- XWayland's visible time/bar pixels come from mpv's live OSD, so these HTML elements
+             become transparent measurement/hit targets there. Native Wayland paints them live. -->
+        <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(pos)}</span>
+        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} /></div>
+        <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(dur)}</span>
       </div>
     {:else}
-      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} onseek={seekTo} /></div>
+      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} /></div>
     {/if}
 
     <div class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">

@@ -422,7 +422,12 @@ impl PlayerHandle {
             }
         }
 
-        let mpv = new_mpv_libmpv().map_err(|e| e.to_string())?;
+        #[cfg(target_os = "linux")]
+        let game_mode_wayland = std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some()
+            && linux_embed::is_wayland(window);
+        #[cfg(target_os = "macos")]
+        let game_mode_wayland = false;
+        let mpv = new_mpv_libmpv(game_mode_wayland).map_err(|e| e.to_string())?;
         spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
             .map_err(|e| e.to_string())?;
         set_langs(&mpv, &alang, &slang);
@@ -1716,7 +1721,7 @@ fn create_mpv_for_embed(wid: Option<i64>, app: &AppHandle) -> Result<Mpv, String
 /// used: on macOS it creates a separate NSWindow. mpv handles NO input (the HTML
 /// overlay owns the controls); streaming/quality options mirror the Windows path.
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
+fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
     // mpv_create() returns NULL unless LC_NUMERIC == "C". GTK (Linux) overwrites
     // the process locale from the environment; macOS may too via AppKit.
     unsafe {
@@ -1749,9 +1754,11 @@ fn new_mpv_libmpv() -> Result<Mpv, libmpv2::Error> {
         let _ = init.set_option("video-timing-offset", "0");
         // Show the landed frame while paused — d-pad/L2 skim otherwise leaves a frozen picture.
         let _ = init.set_option("hr-seek", "yes");
-        // Decode on the GPU but copy frames to system memory for GL upload (auto-copy) —
-        // avoids VAAPI GL interop that color-corrupts on some drivers.
-        let _ = init.set_option("hwdec", "auto-copy");
+        // On the known Deck/Gamescope EGL stack, try direct VAAPI/DMABUF interop first to avoid
+        // the decoded-frame RAM round-trip. mpv's ordered list falls back to the copy variants,
+        // then its normal software fallback. Other Wayland drivers keep the conservative copy
+        // path because direct interop has produced corrupt colours on some of them.
+        let _ = init.set_option("hwdec", crate::gm_perf::libmpv_hwdec(game_mode_wayland));
         // Direct rendering for the software-decode fallback (unsupported 10-bit HEVC/AV1);
         // inert on the hardware path, so it's a free win. See new_mpv_with_vo.
         let _ = init.set_option("vd-lavc-dr", "yes");

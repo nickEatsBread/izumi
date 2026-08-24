@@ -10,15 +10,16 @@
 
 #![cfg(target_os = "linux")]
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use gilrs::{Axis, Button, EventType, Gilrs};
+use gilrs::{Axis, Button, EventType, GilrsBuilder};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
+static RUN_ID: AtomicU64 = AtomicU64::new(0);
 static TOUCH_RESTORE_PENDING: AtomicBool = AtomicBool::new(false);
 static TRIGGERS: OnceLock<Mutex<TriggerState>> = OnceLock::new();
 
@@ -82,6 +83,10 @@ fn schedule_native_touch_restore(app: &AppHandle) {
         .run_on_main_thread(move || {
             glib::timeout_add_local_once(Duration::from_millis(120), move || {
                 if let Some(window) = delayed_app.get_webview_window("main") {
+                    if crate::player::linux_embed::is_wayland(&window) {
+                        TOUCH_RESTORE_PENDING.store(false, Ordering::SeqCst);
+                        return;
+                    }
                     if let Err(error) = crate::player::linux_x11::enable_native_touch(&window) {
                         crate::player::linux_embed::elog(&format!(
                             "gamepad: native touch restore failed: {error}"
@@ -167,14 +172,25 @@ pub fn start(app: AppHandle) {
     if RUNNING.swap(true, Ordering::SeqCst) {
         return;
     }
+    // stop() invalidates the prior generation before a replacement reader starts. Without this,
+    // a reader still inside next_event_blocking could wake after RUNNING became true again and
+    // accidentally continue alongside its replacement.
+    let run_id = RUN_ID.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
     let _ = std::thread::Builder::new()
         .name("izumi-gamepad".into())
         .spawn(move || {
-            let mut gilrs = match Gilrs::new() {
+            // The built-in filter loop restarts the full blocking timeout whenever it drops a
+            // jitter/dead-zone event. A noisy analogue axis can therefore keep a stopped reader
+            // alive well past the advertised 250 ms bound. This consumer already applies larger
+            // hysteresis thresholds to every analogue input it uses, so read mapped raw events
+            // and handle d-pad axes below instead.
+            let mut gilrs = match GilrsBuilder::new().with_default_filters(false).build() {
                 Ok(g) => g,
                 Err(e) => {
                     crate::player::linux_embed::elog(&format!("gamepad: gilrs init failed: {e}"));
-                    RUNNING.store(false, Ordering::SeqCst);
+                    if RUN_ID.load(Ordering::SeqCst) == run_id {
+                        RUNNING.store(false, Ordering::SeqCst);
+                    }
                     return;
                 }
             };
@@ -198,8 +214,16 @@ pub fn start(app: AppHandle) {
                 crate::player::linux_embed::elog(&format!("gamepad: {}={}", i.name, i.pressed));
                 let _ = app.emit("gamepad-input", i.clone());
             };
-            while RUNNING.load(Ordering::SeqCst) {
-                while let Some(ev) = gilrs.next_event() {
+            while RUNNING.load(Ordering::SeqCst) && RUN_ID.load(Ordering::SeqCst) == run_id {
+                // Sleep in the kernel until evdev has work instead of waking the Deck CPU every
+                // 8ms for the lifetime of Game mode. The timeout only bounds gamepad_stop(); an
+                // input edge wakes immediately, so controller latency is unchanged. After the
+                // first edge, drain everything already queued before blocking again.
+                let mut pending = gilrs.next_event_blocking(Some(Duration::from_millis(250)));
+                if !RUNNING.load(Ordering::SeqCst) || RUN_ID.load(Ordering::SeqCst) != run_id {
+                    break;
+                }
+                while let Some(ev) = pending {
                     match ev.event {
                         EventType::Connected => {
                             crate::player::linux_embed::elog(&format!(
@@ -315,6 +339,22 @@ pub fn start(app: AppHandle) {
                                 );
                             }
                         }
+                        // With gilrs' default filters disabled, controllers whose d-pad is a
+                        // pair of hat axes reach us directly. Merge them with button-style d-pads
+                        // so Steam Input layouts and external controllers behave identically.
+                        EventType::AxisChanged(axis, v, _)
+                            if matches!(axis, Axis::DPadX | Axis::DPadY) =>
+                        {
+                            let (neg, pos) = match axis {
+                                Axis::DPadX => (2usize, 3usize), // left, right
+                                _ => (1usize, 0usize),           // down, up
+                            };
+                            dirs.dpad[neg] = v < -0.5;
+                            dirs.dpad[pos] = v > 0.5;
+                            for c in dirs.resolve() {
+                                emit(&app, &c);
+                            }
+                        }
                         // Left stick → merged directions with hysteresis.
                         EventType::AxisChanged(axis, v, _)
                             if matches!(axis, Axis::LeftStickX | Axis::LeftStickY) =>
@@ -340,15 +380,19 @@ pub fn start(app: AppHandle) {
                         }
                         _ => {}
                     }
+                    pending = gilrs.next_event();
                 }
-                std::thread::sleep(Duration::from_millis(8)); // ~120 Hz poll
+            }
+            if RUN_ID.load(Ordering::SeqCst) == run_id {
+                RUNNING.store(false, Ordering::SeqCst);
             }
         });
 }
 
-/// Stop the reader thread (it exits on its next poll).
+/// Stop the reader thread (it exits within the blocking read's 250ms shutdown bound).
 pub fn stop() {
     RUNNING.store(false, Ordering::SeqCst);
+    RUN_ID.fetch_add(1, Ordering::SeqCst);
 }
 
 #[cfg(test)]

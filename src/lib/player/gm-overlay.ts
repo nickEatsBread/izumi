@@ -1,6 +1,16 @@
 /** Game-mode overlay policy: ordinary controls/progress are native ASS so their reveal/hide can
  * run at display cadence. Complex panels, comments, P2P and toasts remain bitmap chrome. */
 
+export type PlayerCompositorPath = 'desktop-live' | 'x11-snapshot' | 'wayland-live'
+
+/** Only Gamescope's XWayland child-window path needs WebKit snapshots and native ASS chrome. */
+export function usesGameModeBitmapCompositor(
+  gameMode: boolean,
+  path: PlayerCompositorPath,
+): boolean {
+  return gameMode && path === 'x11-snapshot'
+}
+
 export function gameModeBitmapOverlayActive(input: {
   gameMode: boolean
   playing: boolean
