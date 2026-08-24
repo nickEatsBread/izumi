@@ -27,6 +27,7 @@
   import { rejectLabel } from '$lib/stremio/refine'
   import { title, banner, cover } from '$lib/anilist/media'
   import { isAndroid, isMobile } from '$lib/platform'
+  import { inputType } from '$lib/nav/input'
   import Search from '@lucide/svelte/icons/search'
   import Zap from '@lucide/svelte/icons/zap'
   import ArrowDownWideNarrow from '@lucide/svelte/icons/arrow-down-wide-narrow'
@@ -670,7 +671,11 @@
     onpointerenter={() => targetSource(info)}
     onfocus={() => focusSource(info)}
     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(info) } }}
-    class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_white] {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
+    class="flex min-w-0 flex-1 items-start gap-3 px-3 text-left transition-colors hover:bg-accent active:bg-accent focus:outline-none
+      {$gameMode && $inputType === 'dpad'
+        ? 'focus:bg-accent focus:shadow-[inset_0_0_0_2px_white]'
+        : 'focus-visible:bg-accent focus-visible:shadow-[inset_0_0_0_2px_white]'}
+      {$isMobile ? 'py-3' : 'py-2.5'} {disabled ? 'cursor-not-allowed' : 'cursor-pointer'}"
   >
     <!-- Mobile has no hover, so this tooltip-only glyph told a touch user nothing. It states
          itself as a worded pill in the meta row down there instead, and the reclaimed ~30px
