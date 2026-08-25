@@ -420,7 +420,7 @@
         <!-- Phones have no room for release timing in their episode controls. Keep one quiet
              grouped summary under the facts; desktop anchors it to the episode toolbar instead. -->
         <div class="mt-3 flex flex-wrap items-center gap-2 empty:mt-0">
-          <AiringStatus media={m} compact quiet />
+          <AiringStatus media={m} />
         </div>
 
         {#if m.description}

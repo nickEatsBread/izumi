@@ -11,6 +11,15 @@ export type EpisodeLayout = 'cards' | 'compact' | 'grid'
 /** Persisted episode-list layout preference (default: rich cards). */
 export const episodeLayout = persisted<EpisodeLayout>('episode-layout', 'cards')
 
+/** Watchlist presentation: cover grid, detailed rows, or dense one-line rows. */
+export type WatchlistLayout = 'cards' | 'list' | 'compact'
+export const watchlistLayout = persisted<WatchlistLayout>('watchlist-layout', 'cards')
+
+/** Watchlist ordering. `behind` is the default aired-but-unwatched-first sort. */
+export type WatchlistSort = 'behind' | 'updated' | 'title' | 'next'
+export const watchlistSort = persisted<WatchlistSort>('watchlist-sort', 'behind')
+
+
 /** What removing a series from Continue Watching (press D on a card) also does to the tracker.
  *  'none' = just hide it from the row (default). */
 export type CwDismissAction = 'none' | 'paused' | 'dropped'
