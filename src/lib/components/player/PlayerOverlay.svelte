@@ -15,7 +15,6 @@
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { firstOccurrences } from '$lib/anime/animethemes'
   import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
@@ -96,10 +95,9 @@
   let subtitleSyncKey = ''
   // Segments already auto-skipped this episode (by start time), so seeking back
   // into one lets you actually watch it instead of being bounced out again.
-  let autoSkipped = new Set<number>()
-  // AnimeThemes: is this the episode where the OP/ED first debuts? If so we DON'T
-  // auto-skip it, so the user hears each new theme once.
-  let firstOcc = $state({ op: false, ed: false })
+  let autoSkipped = $state(new Set<number>())
+  let autoSkipPending = $state(new Set<number>())
+  let autoSkipFailed = $state(new Set<number>())
 
   let visible = $state(true)
   let hideT: ReturnType<typeof setTimeout>
@@ -172,12 +170,13 @@
   )
   const controlsMounted = $derived(controlsVisible || quietDpadScrub)
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end))
-  // A segment auto-skips only when the setting is on AND it's not the FIRST debut
-  // of that OP/ED (per AnimeThemes). Recap always skips. When it WON'T auto-skip,
-  // the manual Skip button is shown instead.
-  const willSkip = (s: Segment) =>
-    $autoSkip && !((s.type === 'op' && firstOcc.op) || (s.type === 'ed' && firstOcc.ed))
-  const autoSkipCurrent = $derived(!!currentSeg && willSkip(currentSeg))
+  const willSkip = (_segment: Segment) => $autoSkip
+  const autoSkipCurrent = $derived(
+    !!currentSeg
+      && willSkip(currentSeg)
+      && !autoSkipped.has(currentSeg.start)
+      && !autoSkipFailed.has(currentSeg.start),
+  )
 
   // The manual Skip button shows for ~5s after entering an OP/ED segment, then hides
   // itself — unless the player controls are currently up (mouse active). Moving the
@@ -349,13 +348,22 @@
   })
   // Exact absolute seek so auto-skip/skip land past the segment (a keyframe seek could
   // snap back into it and re-skip forever).
-  const seekTo = (t: number) => {
+  const seekTo = (t: number): Promise<boolean> => {
+    const previous = pos
     const next = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t)
     pos = next
-    cmd('seek', [next.toFixed(3), 'absolute+exact'])
+    const request = Promise.resolve()
+      .then(() => playerCommand('seek', [next.toFixed(3), 'absolute+exact']))
+      .then(() => true)
+      .catch((error) => {
+        if (pos === next) pos = previous
+        console.warn('player_command', 'seek', [next.toFixed(3), 'absolute+exact'], error)
+        return false
+      })
     // One snapshot per tap-seek so the HTML bar moves. Hold-skim uses the native ASS bar
     // (a snapshot per pad step was the crawl).
     if (gmBitmapMode && !get(scrub).active) bumpPlayerOverlay()
+    return request
   }
 
   // A hidden-controls D-pad seek stays quiet through mpv's brief seeking/buffering edges. Without
@@ -482,18 +490,11 @@
     const malId = np.malId
     const episode = np.episode
     const length = dur
-    // AniSkip and AnimeThemes run in parallel, and the debut guard is assigned BEFORE the segments
-    // it guards: the auto-skip effect fires the instant `segments` lands, so assigning firstOcc
-    // second leaves a window in which a debut opening gets skipped anyway.
     // Do not wait on mpv chapters before painting AniSkip — on Deck a slow/empty chapter
     // probe for a still-buffering torrent left the skip button missing even when AniSkip
     // already had the opening.
-    const [segs, occ] = await Promise.all([
-      getSkipSegments(malId, episode, length),
-      firstOccurrences(np.id, episode),
-    ])
+    const segs = await getSkipSegments(malId, episode, length)
     if (key !== loadedKey) return
-    firstOcc = occ
     segments = mergeSkipSegments(segs, [])
     void invoke<string>('player_chapters')
       .then((raw) => JSON.parse(raw) as { time: number; title: string }[])
@@ -504,14 +505,18 @@
         chapterStore.set(chapters)
         segments = mergeSkipSegments(segs, segmentsFromChapters(ch, length))
       })
-    if (segs.length === 0 && malId && episode) {
-      window.setTimeout(() => {
-        if (key !== loadedKey) return
-        void getSkipSegments(malId, episode, length).then((retry) => {
-          if (key !== loadedKey || !retry.length) return
-          segments = mergeSkipSegments(retry, segmentsFromChapters(chapters, length))
-        })
-      }, SKIP_RETRY_MS[1])
+    let skipResolved = segs.length > 0
+    if (!skipResolved && malId && episode) {
+      for (const delay of SKIP_RETRY_MS.slice(1)) {
+        window.setTimeout(() => {
+          if (key !== loadedKey || skipResolved) return
+          void getSkipSegments(malId, episode, length).then((retry) => {
+            if (key !== loadedKey || skipResolved || !retry.length) return
+            skipResolved = true
+            segments = mergeSkipSegments(retry, segmentsFromChapters(chapters, length))
+          })
+        }, delay)
+      }
     }
   }
 
@@ -532,7 +537,8 @@
     directTorrentDeliveredBytes = 0
     directTorrentDelivery = resetTorrentDelivery()
     autoSkipped = new Set()
-    firstOcc = { op: false, ed: false }
+    autoSkipPending = new Set()
+    autoSkipFailed = new Set()
     playerAbLoop.set({ a: null, b: null })
     if (get(gifRecordingStart) != null) void playerGifAbort().catch(() => {})
     gifRecordingStart.set(null)
@@ -1106,14 +1112,27 @@
     }
   })
 
-  // Auto-skip: seek past a segment the first time the playhead is inside it —
-  // unless it's the OP/ED's debut episode (AnimeThemes). Tracked per-segment so a
-  // manual seek-back isn't re-skipped.
+  // Auto-skip once per segment. A rejected seek is not marked as handled: the manual
+  // Skip button becomes available instead of leaving the viewer stuck in the segment.
   $effect(() => {
     const seg = currentSeg
-    if (!seg || !willSkip(seg) || autoSkipped.has(seg.start)) return
-    autoSkipped.add(seg.start)
-    seekTo(seg.end + 0.5)
+    if (
+      !seg
+      || !willSkip(seg)
+      || autoSkipped.has(seg.start)
+      || autoSkipPending.has(seg.start)
+      || autoSkipFailed.has(seg.start)
+    ) return
+    const key = loadedKey
+    autoSkipPending = new Set(autoSkipPending).add(seg.start)
+    void seekTo(seg.end + 0.5).then((success) => {
+      if (key !== loadedKey) return
+      const pending = new Set(autoSkipPending)
+      pending.delete(seg.start)
+      autoSkipPending = pending
+      if (success) autoSkipped = new Set(autoSkipped).add(seg.start)
+      else autoSkipFailed = new Set(autoSkipFailed).add(seg.start)
+    })
   })
 
   onMount(() => {

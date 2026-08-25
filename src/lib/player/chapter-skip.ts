@@ -5,7 +5,7 @@ import { LABELS, mergeOverlapping, type Segment, type SkipType } from '$lib/stre
 // AniSkip is crowdsourced and thin outside popular titles, but well-tagged fansub and BD releases
 // ship named chapters ("Opening", "ED", "Preview") — and the player already fetches and draws that
 // chapter list, it just never read the titles. This turns them into the same Segment shape so the
-// skip button, seekbar bands and the AnimeThemes debut guard all work unchanged.
+// skip button, seekbar bands and automatic skipping all work unchanged.
 
 export interface Chapter { time: number; title: string }
 

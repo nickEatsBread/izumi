@@ -106,6 +106,15 @@ describe('Android mpv seek coordination', () => {
     mocks.progress?.({ property: 'time-pos', value: 120 })
     expect(get(mpvState).pos).toBe(120)
   })
+
+  it('restores the playhead when the native seek command is rejected', async () => {
+    mocks.invoke.mockRejectedValueOnce(new Error('seek rejected'))
+
+    await expect(seekRelative(10)).rejects.toThrow('seek rejected')
+    expect(get(mpvState).pos).toBe(100)
+    expect(get(mpvState).seekBusy).toBe(false)
+    expect(get(mpvState).frameReady).toBe(true)
+  })
 })
 
 describe('Android mpv loading signals', () => {

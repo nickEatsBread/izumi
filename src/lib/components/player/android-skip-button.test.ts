@@ -26,6 +26,22 @@ describe('Android skip button auto-hide', () => {
   })
 
   it('still suppresses the button for a segment that will auto-skip', () => {
-    expect(android).toContain('!!currentSeg && willSkip(currentSeg) && !autoSkipped.has(currentSeg.start)')
+    expect(android).toContain('&& !autoSkipped.has(currentSeg.start)')
+    expect(android).toContain('&& !autoSkipFailed.has(currentSeg.start)')
+  })
+
+  it('honours auto-skip for every detected segment on both players', () => {
+    expect(android).toContain('const willSkip = (_segment: Segment) => $autoSkip')
+    expect(desktop).toContain('const willSkip = (_segment: Segment) => $autoSkip')
+    expect(android).not.toContain('firstOccurrences')
+    expect(desktop).not.toContain('firstOccurrences')
+  })
+
+  it('only marks a segment handled after its automatic seek succeeds', () => {
+    expect(android).toContain('.then(() => {')
+    expect(android).toContain('autoSkipped = new Set(autoSkipped).add(seg.start)')
+    expect(desktop).toContain('if (success) autoSkipped = new Set(autoSkipped).add(seg.start)')
+    expect(android).toContain('autoSkipFailed = new Set(autoSkipFailed).add(seg.start)')
+    expect(desktop).toContain('autoSkipFailed = new Set(autoSkipFailed).add(seg.start)')
   })
 })

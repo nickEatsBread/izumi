@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { resolveCandidates, SKIP_RETRY_MS, type SkipCandidate } from './aniskip'
+import {
+  resolveCandidates,
+  segmentsFromResponses,
+  skipTimeUrls,
+  SKIP_RETRY_MS,
+  type AniSkipResp,
+  type SkipCandidate,
+} from './aniskip'
 
 const cand = (start: number, end: number, type: 'op' | 'ed' | 'recap', mixed = false): SkipCandidate =>
   ({ start, end, type, label: type, mixed })
@@ -8,6 +15,69 @@ describe('skip-time retries', () => {
   it('retries after broadcast so a new episode can pick up crowd timings', () => {
     expect(SKIP_RETRY_MS[0]).toBe(0)
     expect(SKIP_RETRY_MS[1]).toBeGreaterThan(5_000)
+    expect(SKIP_RETRY_MS[2]).toBeGreaterThan(SKIP_RETRY_MS[1])
+  })
+})
+
+describe('runtime-aware skip lookup', () => {
+  it('requests both the playing runtime and an unfiltered fallback', () => {
+    const urls = skipTimeUrls(123, 4, 1440.1234)
+    expect(urls).toHaveLength(2)
+    expect(urls[0]).toContain('/123/4/?episodeLength=1440.123')
+    expect(urls[1]).toContain('/123/4/?episodeLength=0')
+    for (const type of ['op', 'ed', 'recap', 'mixed-op', 'mixed-ed']) {
+      expect(urls[0]).toContain(`&types=${type}`)
+    }
+  })
+
+  it('does not duplicate the fallback request when duration is unknown', () => {
+    expect(skipTimeUrls(123, 4, 0)).toHaveLength(1)
+    expect(skipTimeUrls(123, 4, Number.POSITIVE_INFINITY)).toHaveLength(1)
+  })
+
+  it('prefers runtime-matched annotations and fills missing types from fallback data', () => {
+    const exact: AniSkipResp = {
+      found: true,
+      results: [{
+        skipType: 'op',
+        interval: { startTime: 60, endTime: 150 },
+        episodeLength: 1440,
+      }],
+    }
+    const fallback: AniSkipResp = {
+      found: true,
+      results: [
+        {
+          skipType: 'op',
+          interval: { startTime: 10, endTime: 100 },
+          episodeLength: 1400,
+        },
+        {
+          skipType: 'ed',
+          interval: { startTime: 1300, endTime: 1390 },
+          episodeLength: 1400,
+        },
+      ],
+    }
+
+    expect(segmentsFromResponses([exact, fallback], 1440)).toEqual([
+      { start: 60, end: 150, type: 'op', label: 'Opening' },
+      { start: 1340, end: 1430, type: 'ed', label: 'Ending' },
+    ])
+  })
+
+  it('clamps shifted fallback intervals to the playing file', () => {
+    const fallback: AniSkipResp = {
+      found: true,
+      results: [{
+        skipType: 'ed',
+        interval: { startTime: 1380, endTime: 1500 },
+        episodeLength: 1450,
+      }],
+    }
+    expect(segmentsFromResponses([fallback], 1440)).toEqual([
+      { start: 1370, end: 1440, type: 'ed', label: 'Ending' },
+    ])
   })
 })
 

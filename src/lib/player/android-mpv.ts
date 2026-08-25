@@ -530,7 +530,9 @@ export const setPaused = (paused: boolean) => mpvCommand(['set', 'pause', paused
 /** Precise seek — `+exact` avoids the keyframe snap that made taps/scrubs feel imprecise. */
 function requestExactSeek(sec: number) {
   let target = Math.max(0, sec)
+  let previous = { pos: 0, frameReady: false }
   mpvState.update((s) => {
+    previous = { pos: s.pos, frameReady: s.frameReady }
     target = s.dur > 0 ? Math.min(s.dur, target) : target
     // seekBusy from the instant the seek is requested: mpv only reports `seeking` once the command
     // has crossed the JNI bridge and been picked up, and that gap is exactly where a fast-forward
@@ -552,7 +554,14 @@ function requestExactSeek(sec: number) {
     if (Number.isFinite(actual)) mpvState.update((s) => ({ ...s, pos: actual }))
   }, 2000)
   return mpvCommand(['seek', target.toFixed(3), 'absolute+exact']).catch((error) => {
-    clearPendingSeek(generation)
+    if (clearPendingSeekTimers(generation)) {
+      mpvState.update((s) => ({
+        ...s,
+        pos: previous.pos,
+        seekBusy: false,
+        frameReady: previous.frameReady,
+      }))
+    }
     throw error
   })
 }

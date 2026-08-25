@@ -77,9 +77,8 @@
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, effectiveSubtitleStyle, subtitlePresetSourceName } from '$lib/settings/subtitle-presets'
   import { bingeSource } from '$lib/player/session'
-  import { getSkipSegments, type Segment } from '$lib/stremio/aniskip'
+  import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { firstOccurrences } from '$lib/anime/animethemes'
   import { playNext, playPrev, playEpisode, playStream, finalizeAndroidWatch, searchOnlineSubtitles } from '$lib/stremio/play'
   import { serverSiblings, variantLabel, variantLabels } from '$lib/player/source-variants'
   import type { Stream } from '$lib/stremio/addon'
@@ -254,13 +253,10 @@
   let segKey = ''
   let firstFrameSeen = $state(false)
   let autoSkipped = $state(new Set<number>())
-  // AnimeThemes: don't auto-skip the episode where an OP/ED first debuts, so each new theme is
-  // heard once. Matches the desktop overlay — and it matters more now that chapter-derived
-  // segments mean more titles have OP/ED bands at all.
-  let firstOcc = $state({ op: false, ed: false })
+  let autoSkipPending = $state(new Set<number>())
+  let autoSkipFailed = $state(new Set<number>())
   const currentSeg = $derived(segments.find((s) => pos >= s.start && pos <= s.end) ?? null)
-  const willSkip = (s: Segment) =>
-    $autoSkip && !((s.type === 'op' && firstOcc.op) || (s.type === 'ed' && firstOcc.ed))
+  const willSkip = (_segment: Segment) => $autoSkip
   // `$playerLoadId` is in the key because a dub/sub or alternate-server swap re-plays the SAME
   // media and episode from a different release: on media+episode alone the guard never fires, so
   // auto-skip stayed armed with the previous release's OP/ED windows (a jump mid-scene) and the
@@ -284,7 +280,8 @@
     chapters = []
     chapterStore.set([])
     autoSkipped = new Set()
-    firstOcc = { op: false, ed: false }
+    autoSkipPending = new Set()
+    autoSkipFailed = new Set()
     thumbCache.clear() // new file → drop cached preview frames
   }
   $effect(() => {
@@ -304,18 +301,27 @@
     if (dur > 0 && key !== segKey) {
       segKey = key
       void (async () => {
-        // Assign the debut guard before the segments it guards — the auto-skip effect fires as soon
-        // as `segments` lands.
-        const [segs, occ, chapterList] = await Promise.all([
+        const [segs, chapterList] = await Promise.all([
           getSkipSegments(np.malId, np.episode, dur),
-          firstOccurrences(np.id, np.episode),
           getChapterList().catch(() => []),
         ])
         if (key !== segKey) return
-        firstOcc = occ
         chapters = sortChapters(chapterList)
         chapterStore.set(chapters)
         segments = mergeSkipSegments(segs, segmentsFromChapters(chapterList, dur))
+        let skipResolved = segs.length > 0
+        if (!skipResolved && np.malId && np.episode) {
+          for (const delay of SKIP_RETRY_MS.slice(1)) {
+            window.setTimeout(() => {
+              if (key !== segKey || skipResolved) return
+              void getSkipSegments(np.malId, np.episode, dur).then((retry) => {
+                if (key !== segKey || skipResolved || !retry.length) return
+                skipResolved = true
+                segments = mergeSkipSegments(retry, segmentsFromChapters(chapterList, dur))
+              })
+            }, delay)
+          }
+        }
       })()
     }
   })
@@ -343,9 +349,30 @@
   })
   $effect(() => {
     const seg = currentSeg
-    if (seg && willSkip(seg) && !autoSkipped.has(seg.start)) { autoSkipped.add(seg.start); seekAbsolute(seg.end) }
+    if (
+      !seg
+      || !willSkip(seg)
+      || autoSkipped.has(seg.start)
+      || autoSkipPending.has(seg.start)
+      || autoSkipFailed.has(seg.start)
+    ) return
+    const key = segKey
+    autoSkipPending = new Set(autoSkipPending).add(seg.start)
+    void seekAbsolute(seg.end + 0.5)
+      .then(() => {
+        if (key === segKey) autoSkipped = new Set(autoSkipped).add(seg.start)
+      })
+      .catch(() => {
+        if (key === segKey) autoSkipFailed = new Set(autoSkipFailed).add(seg.start)
+      })
+      .finally(() => {
+        if (key !== segKey) return
+        const pending = new Set(autoSkipPending)
+        pending.delete(seg.start)
+        autoSkipPending = pending
+      })
   })
-  function skipSegment() { if (currentSeg) seekAbsolute(currentSeg.end) }
+  function skipSegment() { if (currentSeg) void seekAbsolute(currentSeg.end + 0.5).catch(() => {}) }
 
   // The manual Skip button shows for ~5s after entering a segment, then hides itself unless the
   // controls happen to be up — the same rule the desktop overlay follows. Without the timer the
@@ -354,7 +381,12 @@
   // brings it back (that is the `controlsShown` arm below).
   let skipTimer = $state(false)
   let skipT: ReturnType<typeof setTimeout>
-  const autoSkipCurrent = $derived(!!currentSeg && willSkip(currentSeg) && !autoSkipped.has(currentSeg.start))
+  const autoSkipCurrent = $derived(
+    !!currentSeg
+      && willSkip(currentSeg)
+      && !autoSkipped.has(currentSeg.start)
+      && !autoSkipFailed.has(currentSeg.start),
+  )
   $effect(() => {
     if (currentSeg && !autoSkipCurrent) {
       skipTimer = true
