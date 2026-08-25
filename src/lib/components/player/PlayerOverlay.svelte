@@ -11,7 +11,6 @@
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
   import { playerCommand, playerEditorSnapshot, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
-  import { usePlayerGifRecordingIndicator } from '$lib/player/gif-indicator'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
@@ -1365,9 +1364,9 @@
     />
   {/if}
 
-  {#if usePlayerGifRecordingIndicator && ($fullscreen || gmMode) && !$pictureInPicture && $gifRecordingStart != null}
+  {#if ($fullscreen || gmMode) && !$pictureInPicture && $gifRecordingStart != null}
     <!-- This lives in the controls-only mirror during protected capture, so it stays visible to the
-         viewer without being baked into the GIF. The titlebar variant remains behind the mode flag. -->
+         viewer without being baked into the GIF. Windowed playback uses the compact titlebar pill. -->
     <button
       data-gif-recording-indicator
       aria-label="Stop GIF recording"

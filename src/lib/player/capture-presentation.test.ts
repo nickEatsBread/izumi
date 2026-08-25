@@ -7,7 +7,6 @@ const presentation = readFileSync('src/lib/player/capture-presentation.ts', 'utf
 const surface = readFileSync('src/lib/components/player/DrmSurface.svelte', 'utf8')
 const overlay = readFileSync('src/routes/capture-overlay/+page.svelte', 'utf8')
 const comments = readFileSync('src/lib/components/player/CommentsPanel.svelte', 'utf8')
-const titlebar = readFileSync('src/lib/components/shell/Titlebar.svelte', 'utf8')
 const css = readFileSync('src/app.css', 'utf8')
 const rust = readFileSync('src-tauri/src/lib.rs', 'utf8')
 
@@ -34,8 +33,8 @@ describe('protected capture presentation', () => {
     document.body.replaceChildren()
   })
 
-  it('does not mirror capture-excluded titlebar chrome across the player seam', () => {
-    expect(titlebar).toContain('data-capture-exclude')
+  it('does not mirror explicitly capture-excluded titlebar chrome', () => {
+    expect(presentation).toContain("'[data-capture-exclude]'")
     document.body.innerHTML = `
       <div data-tauri-drag-region>
         <button data-capture-exclude>GIF</button>
