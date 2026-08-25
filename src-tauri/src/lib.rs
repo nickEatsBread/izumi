@@ -3283,7 +3283,9 @@ async fn drm_gif_capture_loop(
     let mut next_request_to_write = 0_u32;
     let mut written = 0_u32;
     let mut pending = std::collections::BTreeMap::<u32, Option<Vec<u8>>>::new();
-    let mut jobs = tokio::task::JoinSet::new();
+    // The queue is consumed only by the Windows fallback below. Keep its item type explicit so
+    // non-Windows release builds do not have to infer it from a cfg-elided spawn call.
+    let mut jobs = tokio::task::JoinSet::<(u32, Result<Vec<u8>, String>)>::new();
 
     let accept = |request_id: u32,
                   sample: Result<Vec<u8>, String>,

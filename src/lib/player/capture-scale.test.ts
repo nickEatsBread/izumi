@@ -61,6 +61,7 @@ describe('compositor capture', () => {
     expect(rust).toContain('frames.crop')
     expect(rust).toContain('crop={crop_width}:{crop_height}:{x}:{y}')
     expect(rust).toContain('const MAX_CAPTURE_REQUESTS: usize = 4')
+    expect(rust).toContain('JoinSet::<(u32, Result<Vec<u8>, String>)>::new()')
     expect(rust).toContain('while jobs.len() < MAX_CAPTURE_REQUESTS')
     expect(rust).toContain('capture_webview_cdp(&webview, params.into()).await')
     expect(rust).toContain('"optimizeForSpeed":true')
