@@ -16,7 +16,9 @@ pub fn gif_playback_fps(frame_count: usize, captured_ms: u64, requested: f64) ->
         return requested;
     }
     let actual = frame_count as f64 / (captured_ms as f64 / 1000.0);
-    actual.clamp(2.0, requested)
+    // Sparse compatibility captures must still span the time the user recorded. GIF delays can
+    // represent sub-2 fps playback, so imposing a 2 fps floor would incorrectly fast-forward it.
+    actual.clamp(0.1, requested)
 }
 
 #[cfg(test)]
@@ -26,7 +28,8 @@ mod tests {
     #[test]
     fn slow_capture_stays_realtime() {
         assert!((gif_playback_fps(8, 2000, 15.0) - 4.0).abs() < 0.01);
-        assert_eq!(gif_playback_fps(3, 2000, 24.0), 2.0);
+        assert!((gif_playback_fps(3, 2000, 24.0) - 1.5).abs() < 0.01);
+        assert!((gif_playback_fps(4, 10000, 24.0) - 0.4).abs() < 0.01);
     }
 
     #[test]

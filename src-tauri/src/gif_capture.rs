@@ -118,6 +118,32 @@ pub fn crop_compositor_jpeg(
     encode_jpeg(&scaled, 92)
 }
 
+/// Validate the first streamed compositor frame and resolve its CSS video rectangle to pixels.
+/// Streaming capture can then persist subsequent JPEGs unchanged and defer the crop to ffmpeg,
+/// avoiding a decode + encode on every frame while the user is recording.
+pub fn inspect_compositor_jpeg(
+    jpeg: &[u8],
+    crop: Option<&ViewCrop>,
+) -> Result<Option<(u32, u32, u32, u32)>, String> {
+    let img = image::load_from_memory(jpeg).map_err(|e| e.to_string())?;
+    let rgb = img.to_rgb8();
+    let (iw, ih) = rgb.dimensions();
+    let Some(crop) = crop else {
+        if raster_is_solid_black_rgb(&rgb) {
+            return Err("black-gif-frame".into());
+        }
+        return Ok(None);
+    };
+    let Some(pixel_crop @ (sx, sy, sw, sh)) = map_screenshot_crop(iw, ih, crop) else {
+        return Err("invalid-gif-crop".into());
+    };
+    let video = image::imageops::crop_imm(&rgb, sx, sy, sw, sh).to_image();
+    if raster_is_solid_black_rgb(&video) {
+        return Err("black-gif-frame".into());
+    }
+    Ok(Some(pixel_crop))
+}
+
 fn encode_jpeg(rgb: &image::RgbImage, quality: u8) -> Result<Vec<u8>, String> {
     let mut buf = Vec::new();
     let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, quality);

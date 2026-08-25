@@ -161,6 +161,7 @@ pub struct GifFrames {
     pub captured_ms: u64,
     pub width: u32,
     pub fps: f64,
+    pub crop: Option<(u32, u32, u32, u32)>,
 }
 
 /// Reply to `player_thumb_tile`. `status` = `ready|pending|failed|none`; when `ready`,
@@ -808,6 +809,7 @@ impl PlayerHandle {
                 .load(std::sync::atomic::Ordering::Relaxed),
             width: session.width,
             fps: session.fps,
+            crop: None,
         })
     }
 

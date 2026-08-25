@@ -11,7 +11,7 @@ describe('macOS GIF encoder packaging', () => {
     expect(rust).toContain('fn capture_ffmpeg_executable(_app: &AppHandle)')
     expect(rust).toContain('resources.join("ffmpeg")')
     expect(rust).toContain('capture_ffmpeg_command(\n        &executable,')
-    expect(rust).toContain('gif_frames_ffmpeg(&executable')
+    expect(rust).toMatch(/gif_frames_ffmpeg\(\s*&executable,/)
   })
 
   it('builds and verifies a relocatable ffmpeg in the macOS app resources', () => {
