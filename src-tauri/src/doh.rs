@@ -6,7 +6,9 @@
 //! (Cloudflare by default) instead of the OS resolver. If the DoH query fails it
 //! falls back to the system resolver so networking never hard-breaks — best-effort,
 //! not fail-closed. AniList/MAL browse traffic (webview fetch) and mpv playback use
-//! their own resolvers and are out of scope.
+//! their own resolvers and are out of scope. Desktop JVM extensions use this
+//! resolver through a loopback SOCKS bridge and fail closed instead of falling
+//! back to a potentially intercepted system answer.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -107,6 +109,36 @@ impl DohResolver {
             }
         }
         Ok(out)
+    }
+
+    /// Resolve only through the configured endpoint. The JVM bridge deliberately
+    /// fails closed here: falling back to OS DNS would silently reintroduce the
+    /// interception that the user enabled DoH to avoid.
+    pub(crate) async fn resolve_doh_only(&self, host: &str) -> Result<Vec<IpAddr>, BoxError> {
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            return Ok(vec![ip]);
+        }
+        if let Some(ips) = self.cached(host) {
+            return Ok(ips);
+        }
+        let (a, aaaa) = tokio::join!(self.query(host, 1), self.query(host, 28));
+        if a.is_err() && aaaa.is_err() {
+            return Err("DNS-over-HTTPS endpoint is unreachable".into());
+        }
+        let mut records = a.unwrap_or_default();
+        records.extend(aaaa.unwrap_or_default());
+        if records.is_empty() {
+            return Err(format!("DNS-over-HTTPS returned no address for {host}").into());
+        }
+        let ttl = records
+            .iter()
+            .map(|(_, ttl)| *ttl)
+            .min()
+            .unwrap_or(60)
+            .clamp(30, 3600);
+        let ips: Vec<IpAddr> = records.into_iter().map(|(ip, _)| ip).collect();
+        self.store(host, &ips, ttl);
+        Ok(ips)
     }
 
     async fn lookup(&self, host: &str) -> Result<Vec<SocketAddr>, BoxError> {

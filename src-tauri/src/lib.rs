@@ -7,6 +7,8 @@ mod direct_torrent_range;
 mod direct_torrent_select;
 mod direct_torrent_stream;
 mod doh;
+#[cfg(not(target_os = "android"))]
+mod doh_socks;
 mod download;
 mod extension_package;
 #[cfg(not(target_os = "android"))]
@@ -962,13 +964,16 @@ pub(crate) fn download_http_client() -> reqwest::Client {
 /// JSON endpoint (e.g. https://cloudflare-dns.com/dns-query). Covers every request
 /// that goes through the pooled client (addons, AniZip, id-map, Kitsu, downloads,
 /// prefetch); AniList/MAL browse fetches and mpv playback keep their own resolvers.
-#[tauri::command]
-fn set_doh(enabled: bool, url: String) {
+fn requested_doh(enabled: bool, url: &str) -> Option<String> {
     let doh = if enabled && url.trim().starts_with("http") {
         Some(url.trim().to_string())
     } else {
         None
     };
+    doh
+}
+
+fn apply_http_doh(doh: Option<String>) {
     // No-op when the endpoint is unchanged from what's applied (initial = None = the lazy default).
     {
         let mut state = HTTP_DOH_STATE.lock().unwrap();
@@ -980,6 +985,33 @@ fn set_doh(enabled: bool, url: String) {
     *http_lock().write().unwrap() = build_http_client(doh.clone(), false);
     *http_dl_lock().write().unwrap() = build_http_client(doh.clone(), true);
     *http_ext_lock().write().unwrap() = build_ext_client(doh);
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn set_doh(enabled: bool, url: String) {
+    apply_http_doh(requested_doh(enabled, &url));
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn set_doh(
+    enabled: bool,
+    url: String,
+    bridge: tauri::State<'_, doh_socks::DohSocksProxy>,
+    runtime: tauri::State<'_, jvm_extensions::Runtime>,
+) -> Result<(), String> {
+    let doh = requested_doh(enabled, &url);
+    apply_http_doh(doh.clone());
+    let proxy = match doh {
+        Some(endpoint) => Some(bridge.enable(&endpoint).await?),
+        None => {
+            bridge.disable().await;
+            None
+        }
+    };
+    runtime.set_socks_proxy(proxy).await;
+    Ok(())
 }
 
 const OPENSUBTITLES_CHUNK: u64 = 64 * 1024;
@@ -5339,6 +5371,7 @@ pub fn run() {
         .manage(DrmGifCapture::default());
     #[cfg(not(target_os = "android"))]
     let builder = builder
+        .manage(doh_socks::DohSocksProxy::default())
         .manage(jvm_extensions::Runtime::default())
         .manage(extension_service::ExtensionServices::default());
     // Same per-frame delivery for the Disqus profile-redirect rewrite (see DISQUS_PROFILE_SCRIPT):

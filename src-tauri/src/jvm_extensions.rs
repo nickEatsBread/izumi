@@ -3,6 +3,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -134,6 +135,7 @@ pub struct Runtime {
     process: Mutex<Option<Arc<Process>>>,
     sources: RwLock<Option<Value>>,
     developer_logging: Arc<AtomicBool>,
+    socks_proxy: RwLock<Option<SocketAddr>>,
 }
 
 fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -611,6 +613,7 @@ async fn start_process(
     runtime: &Path,
     tls_provider_jar: Option<&Path>,
     developer_logging: Arc<AtomicBool>,
+    socks_proxy: Option<SocketAddr>,
 ) -> Result<Arc<Process>, String> {
     let logger = DeveloperLogger {
         app: app.clone(),
@@ -628,12 +631,17 @@ async fn start_process(
             &format!("using Conscrypt TLS provider {}", jar.display()),
         );
     }
+    let args = runtime_jvm_args(std::env::consts::OS, tls_provider_jar, socks_proxy);
+    if let Some(proxy) = socks_proxy {
+        logger.emit(
+            "aniyomi-jvm",
+            "info",
+            &format!("routing extension DNS through local DoH bridge {proxy}"),
+        );
+    }
     let mut command = Command::new(java);
     command
-        .args(java_runtime_jvm_args(
-            std::env::consts::OS,
-            tls_provider_jar,
-        ))
+        .args(args)
         .arg(runtime)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -726,6 +734,29 @@ async fn start_process(
     }))
 }
 
+fn runtime_jvm_args(
+    os: &str,
+    tls_provider_jar: Option<&Path>,
+    socks_proxy: Option<SocketAddr>,
+) -> Vec<String> {
+    let mut args = java_runtime_jvm_args(os, tls_provider_jar);
+    if let Some(proxy) = socks_proxy {
+        let insert_at = args
+            .iter()
+            .position(|arg| arg == "-jar")
+            .unwrap_or(args.len());
+        args.splice(
+            insert_at..insert_at,
+            [
+                format!("-DsocksProxyHost={}", proxy.ip()),
+                format!("-DsocksProxyPort={}", proxy.port()),
+                "-DsocksProxyVersion=5".to_string(),
+            ],
+        );
+    }
+    args
+}
+
 fn java_home_from_executable(java: &Path) -> Option<PathBuf> {
     let bin = java.parent()?;
     (bin.file_name().and_then(|name| name.to_str()) == Some("bin"))
@@ -770,6 +801,7 @@ impl Runtime {
             &runtime,
             tls_provider.as_deref(),
             self.developer_logging.clone(),
+            *self.socks_proxy.read().await,
         )
         .await?;
         let folder = extension_dir(app)?;
@@ -790,6 +822,21 @@ impl Runtime {
     async fn stop(&self) {
         if let Some(process) = self.process.lock().await.take() {
             let _ = process.child.lock().await.kill().await;
+        }
+        *self.sources.write().await = None;
+    }
+
+    pub(crate) async fn set_socks_proxy(&self, address: Option<SocketAddr>) {
+        // Keep the same lock order as ensure_started so a setting change cannot
+        // race a process launch using the previous resolver configuration.
+        let mut process = self.process.lock().await;
+        let mut configured = self.socks_proxy.write().await;
+        if *configured == address {
+            return;
+        }
+        *configured = address;
+        if let Some(active) = process.take() {
+            let _ = active.child.lock().await.kill().await;
         }
         *self.sources.write().await = None;
     }
@@ -836,7 +883,11 @@ pub async fn jvm_extension_reload(runtime: tauri::State<'_, Runtime>) -> Result<
 
 #[cfg(test)]
 mod tests {
-    use super::{java_home_from_executable, macos_homebrew_java_candidates, parse_java_major};
+    use super::{
+        java_home_from_executable, macos_homebrew_java_candidates, parse_java_major,
+        runtime_jvm_args,
+    };
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -875,5 +926,15 @@ mod tests {
         assert!(candidates.contains(&PathBuf::from(
             "/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java"
         )));
+    }
+
+    #[test]
+    fn inserts_doh_bridge_properties_before_the_runtime_jar() {
+        let proxy = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 43123);
+        let args = runtime_jvm_args("windows", None, Some(proxy));
+        let jar = args.iter().position(|arg| arg == "-jar").unwrap();
+        assert!(args[..jar].contains(&"-DsocksProxyHost=127.0.0.1".to_string()));
+        assert!(args[..jar].contains(&"-DsocksProxyPort=43123".to_string()));
+        assert!(args[..jar].contains(&"-DsocksProxyVersion=5".to_string()));
     }
 }
