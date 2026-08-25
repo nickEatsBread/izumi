@@ -188,8 +188,7 @@
         <Search size={23} class="shrink-0 text-theme" />
         <input bind:this={input} bind:value={query} data-focusable type="search"
           placeholder="Search anime…" aria-label="Search anime" autocomplete="off" onkeydown={onInputKeydown}
-          style="box-shadow:none"
-          class="min-w-0 flex-1 bg-transparent py-4 text-lg font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground sm:py-5 sm:text-xl" />
+          class="global-search-input min-w-0 flex-1 bg-transparent py-4 text-lg font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground sm:py-5 sm:text-xl" />
         {#if searchState === 'loading'}<LoaderCircle size={20} class="shrink-0 animate-spin text-muted-foreground" />{/if}
         <span class="hidden rounded-md border border-border bg-background/70 px-2 py-1 font-mono text-[0.65rem] font-bold text-muted-foreground sm:inline">Esc</span>
         <button type="button" data-focusable onclick={() => close()} aria-label="Close search"
@@ -313,3 +312,14 @@
     </div>
   </div>
 {/if}
+
+<style>
+  /* The shell already communicates focus by tinting the field row's bottom border. Give this
+     selector enough specificity to beat app.css's generic *:focus-visible outline, which otherwise
+     draws a theme-coloured rounded rectangle around the full-width search input on desktop. */
+  .global-search-input:focus,
+  .global-search-input:focus-visible {
+    outline: none;
+    box-shadow: none;
+  }
+</style>
