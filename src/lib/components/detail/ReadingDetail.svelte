@@ -10,6 +10,7 @@
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import BookOpen from '@lucide/svelte/icons/book-open'
+  import MediaTagList from './MediaTagList.svelte'
 
   let { id }: { id: number } = $props()
   const client = getContextClient()
@@ -103,11 +104,7 @@
             {#if m.tags?.length}
               <div class="mt-6">
                 <h3 class="mb-2 text-sm font-black">Tags</h3>
-                <div class="flex flex-wrap gap-2">
-                  {#each m.tags.filter((tag) => !tag.isMediaSpoiler).slice(0, 18) as tag (tag.name)}
-                    <span class="rounded-md bg-secondary px-2 py-1 text-xs text-muted-foreground">{tag.name}{tag.rank ? ` · ${tag.rank}%` : ''}</span>
-                  {/each}
-                </div>
+                <MediaTagList tags={m.tags} showRank />
               </div>
             {/if}
           </section>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { MEDIA_BY_ID, SCHEDULE_QUERY, searchVariables } from './detail-queries'
+import { MEDIA_BY_ID, READING_MEDIA_BY_ID, SCHEDULE_QUERY, searchVariables } from './detail-queries'
 describe('searchVariables', () => {
   it('omits empty filters and passes provided ones', () => {
     const v = searchVariables({ search: 'frieren', genres: ['Action'], season: '', year: 2026, formats: [], sort: 'SEARCH_MATCH' })
@@ -31,7 +31,12 @@ describe('anime detail information', () => {
   it('fetches the mobile overview metadata that is intentionally absent from browse cards', () => {
     const query = MEDIA_BY_ID.loc?.source.body ?? ''
     expect(query).toMatch(/source\s+countryOfOrigin/)
-    expect(query).toMatch(/tags\s*\{\s*name\s+rank\s+isMediaSpoiler\s*\}/)
+    expect(query).toMatch(/tags\s*\{\s*name\s+rank\s+isGeneralSpoiler\s+isMediaSpoiler\s*\}/)
+  })
+
+  it('fetches both spoiler flags for reading details too', () => {
+    const query = READING_MEDIA_BY_ID.loc?.source.body ?? ''
+    expect(query).toMatch(/tags\s*\{\s*name\s+rank\s+isGeneralSpoiler\s+isMediaSpoiler\s*\}/)
   })
 
   it('uses the compact card fragment for relations and recommendations', () => {

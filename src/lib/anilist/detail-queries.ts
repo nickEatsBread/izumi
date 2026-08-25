@@ -12,7 +12,7 @@ export const MEDIA_BY_ID = gql`
       ...MediaFields
       isFavourite
       source countryOfOrigin
-      tags { name rank isMediaSpoiler }
+      tags { name rank isGeneralSpoiler isMediaSpoiler }
       mediaListEntry { id progress status score(format: POINT_100) repeat startedAt { year month day } completedAt { year month day } }
       relations { edges { relationType node { ...CardMediaFields } } }
       characters(perPage: 12, sort: [ROLE, RELEVANCE]) {
@@ -42,7 +42,7 @@ export const READING_MEDIA_BY_ID = gql`
   query ReadingMediaById($id: Int!) {
     Media(id: $id, type: MANGA) {
       ...ReadingMediaFields
-      tags { name rank isMediaSpoiler }
+      tags { name rank isGeneralSpoiler isMediaSpoiler }
       relations {
         edges { relationType node { ...ReadingMediaFields } }
       }

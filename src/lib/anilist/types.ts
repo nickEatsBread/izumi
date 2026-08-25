@@ -2,6 +2,13 @@
 // Media.startDate + the viewer's list-entry start/finish dates.
 export type FuzzyDate = { year?: number; month?: number; day?: number }
 
+export interface MediaTag {
+  name: string
+  rank?: number
+  isGeneralSpoiler?: boolean
+  isMediaSpoiler?: boolean
+}
+
 export interface Media {
   id: number
   idMal?: number
@@ -53,5 +60,5 @@ export interface Media {
     }[]
   }
   recommendations?: { nodes: { rating?: number; mediaRecommendation?: Media | null }[] }
-  tags?: { name: string; rank?: number; isMediaSpoiler?: boolean }[]
+  tags?: MediaTag[]
 }

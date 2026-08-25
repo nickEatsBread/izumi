@@ -35,6 +35,7 @@
   import * as h from '$lib/haptics'
   import RichMetadata from './RichMetadata.svelte'
   import AiringStatus from './AiringStatus.svelte'
+  import MediaTagList from './MediaTagList.svelte'
   import { reliableImage } from '$lib/util/reliable-image'
   import { detailHints, rememberDetail } from '$lib/anilist/detail-hint'
   import { heroBarState } from './hero-bar'
@@ -524,14 +525,10 @@
                 </dl>
               </section>
 
-              {#if m.tags?.filter((tag) => !tag.isMediaSpoiler).length}
+              {#if m.tags?.length}
                 <section>
                   <h2 class="mb-2 text-base font-black">Themes</h2>
-                  <div class="flex flex-wrap gap-2">
-                    {#each m.tags.filter((tag) => !tag.isMediaSpoiler).sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0)).slice(0, 10) as tag (tag.name)}
-                      <span class="rounded-full bg-secondary/55 px-3 py-1.5 text-xs font-semibold text-foreground/80">{tag.name}</span>
-                    {/each}
-                  </div>
+                  <MediaTagList tags={m.tags} limit={10} sortByRank />
                 </section>
               {/if}
 
@@ -689,6 +686,12 @@
             <div class="sm:col-span-2"><dt class="font-bold">Synonyms</dt><dd class="text-muted-foreground">{m.synonyms.join(' · ')}</dd></div>
           {/if}
         </dl>
+        {#if m.tags?.length}
+          <section>
+            <h2 class="mb-2 font-black">Themes</h2>
+            <MediaTagList tags={m.tags} limit={10} sortByRank />
+          </section>
+        {/if}
       </div>
     {/if}
   </div>
