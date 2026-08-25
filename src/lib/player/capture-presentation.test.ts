@@ -47,6 +47,19 @@ describe('protected capture presentation', () => {
     document.body.replaceChildren()
   })
 
+  it('does not recreate a focus outline on the clipped player root', () => {
+    document.body.innerHTML = `
+      <div class="izumi-player-root" tabindex="-1">
+        <button>Pause</button>
+      </div>`
+    const root = document.querySelector<HTMLElement>('.izumi-player-root')!
+    root.focus()
+    const frame = captureControlsFrame(4)
+    expect(frame.html).not.toContain('data-capture-focus')
+    expect(overlay).toContain('[data-capture-focus]:not(.izumi-player-root)')
+    document.body.replaceChildren()
+  })
+
   it('keeps the real controls interactive while only their pixels leave the captured WebView', () => {
     expect(css).toContain('html.izumi-capture-output .izumi-player-root > :not(.izumi-capture-root)')
     expect(css).toContain('opacity: 0 !important')

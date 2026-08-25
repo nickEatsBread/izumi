@@ -118,6 +118,10 @@ function markMirrorState(original: HTMLElement, clone: HTMLElement): void {
 function cloneSurface(element: HTMLElement): string {
   const clone = element.cloneNode(true) as HTMLElement
   markMirrorState(element, clone)
+  // The player root receives keyboard focus for shortcuts. Mirroring that focus as an outlined
+  // rounded rectangle leaves one antialiased accent pixel at its clipped top-left/sidebar seam.
+  // Child controls still retain their focus marker and remain visually identifiable.
+  if (clone.classList.contains('izumi-player-root')) clone.removeAttribute('data-capture-focus')
   clone.querySelector('.izumi-capture-root')?.remove()
   // Small chrome that is already represented inside the player can create clipped paint remnants
   // when copied across fixed surfaces. Keep it in the real window, but never serialize it twice.

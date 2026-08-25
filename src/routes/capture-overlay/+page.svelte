@@ -68,7 +68,7 @@
   .capture-controls-surface :global(.izumi-capture-copy) {
     pointer-events: none !important;
   }
-  .capture-controls-surface :global([data-capture-focus]) {
+  .capture-controls-surface :global([data-capture-focus]:not(.izumi-player-root)) {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
     border-radius: var(--radius);
