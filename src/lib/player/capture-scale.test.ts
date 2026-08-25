@@ -69,8 +69,11 @@ describe('compositor capture', () => {
     expect(overlay).toContain('data-gif-recording-indicator')
     expect(overlay).toContain('controls-only mirror')
     expect(drm).not.toContain('Math.max(20, remaining)')
-    expect(native).toContain('player_capture_segment')
-    expect(native).not.toContain('fps: plan.fps')
+    expect(native).toContain("invoke('player_gif_start'")
+    expect(native).toContain('fps: plan.fps')
+    expect(native).toContain('maxSeconds: plan.maxSeconds')
+    expect(native).toContain("invoke('player_gif_stop')")
+    expect(native).not.toContain("kind: 'gif'")
   })
 
   it('restores chrome once capture stops and encodes in the background', () => {
