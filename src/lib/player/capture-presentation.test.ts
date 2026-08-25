@@ -1,9 +1,12 @@
+// @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { captureControlsFrame } from './capture-presentation'
 
 const presentation = readFileSync('src/lib/player/capture-presentation.ts', 'utf8')
 const surface = readFileSync('src/lib/components/player/DrmSurface.svelte', 'utf8')
 const overlay = readFileSync('src/routes/capture-overlay/+page.svelte', 'utf8')
+const comments = readFileSync('src/lib/components/player/CommentsPanel.svelte', 'utf8')
 const css = readFileSync('src/app.css', 'utf8')
 const rust = readFileSync('src-tauri/src/lib.rs', 'utf8')
 
@@ -12,6 +15,22 @@ describe('protected capture presentation', () => {
     expect(presentation).toContain("clone.querySelector('.izumi-capture-root')?.remove()")
     expect(presentation).toContain("clone.querySelectorAll('video, audio, iframe, script')")
     expect(overlay).toContain('pointer-events: none')
+  })
+
+  it('does not resurrect the inert cached discussion panel in the controls mirror', () => {
+    expect(comments).toContain('data-capture-exclude-when-inert')
+    expect(presentation).toContain("'[data-capture-exclude-when-inert][inert]'")
+    document.body.innerHTML = `
+      <div class="izumi-player-root">
+        <button>Play</button>
+        <div data-comments-panel data-capture-exclude-when-inert inert>Discussion cache</div>
+      </div>`
+    const frame = captureControlsFrame(1)
+    expect(frame.html).toContain('Play')
+    expect(frame.html).not.toContain('Discussion cache')
+    document.querySelector('[data-comments-panel]')?.removeAttribute('inert')
+    expect(captureControlsFrame(2).html).toContain('Discussion cache')
+    document.body.replaceChildren()
   })
 
   it('keeps the real controls interactive while only their pixels leave the captured WebView', () => {

@@ -119,6 +119,10 @@ function cloneSurface(element: HTMLElement): string {
   const clone = element.cloneNode(true) as HTMLElement
   markMirrorState(element, clone)
   clone.querySelector('.izumi-capture-root')?.remove()
+  // Some expensive panels deliberately remain mounted while closed. Their hidden state can live
+  // in component-scoped CSS that is not loaded by the lightweight mirror route, so never copy an
+  // explicitly marked inert cache into the visible controls window.
+  clone.querySelectorAll('[data-capture-exclude-when-inert][inert]').forEach((node) => node.remove())
   clone.querySelectorAll('video, audio, iframe, script').forEach((node) => node.remove())
   clone.removeAttribute('tabindex')
   clone.classList.add('izumi-capture-copy')
