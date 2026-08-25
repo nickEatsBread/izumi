@@ -280,7 +280,6 @@
     cmd('set', ['ab-loop-a', 'no']); cmd('set', ['ab-loop-b', 'no'])
   }
   async function takeScreenshot() {
-    playerNotice.set('Saving screenshot…')
     try {
       await playerScreenshot(true)
       playerNotice.set('Screenshot saved to Pictures/izumi')
