@@ -16,7 +16,11 @@
   import { AUTO_ABR, abrMaxHeight, shouldPinFastStart } from '$lib/player/abr'
   import { gifCapturePlan } from '$lib/player/gif-settings'
   import { BUFFER_SPINNER_DELAY_MS, bufferSpinnerAction } from '$lib/player/overlay-loading'
-  import { PLAYER_CAPTURE_CLASS, withPlayerChromeHidden } from '$lib/player/capture-chrome'
+  import {
+    beginCapturePresentation,
+    warmCapturePresentation,
+    type CapturePresentation,
+  } from '$lib/player/capture-presentation'
   import { playerNotice } from '$lib/player/session'
   import { listenSafe } from '$lib/util/listen'
   import {
@@ -108,6 +112,8 @@
   const releaseJobs = new Map<string, Promise<void>>()
   let gifActive = false
   let gifSubtitlesHidden = false
+  let gifPresentation: CapturePresentation | null = null
+  let capturePresentationWarmed = false
   let abrWarmTimer: ReturnType<typeof setTimeout> | undefined
   let qualityMode: 'auto' | number = 'auto'
   let lastGoodDur = 0
@@ -826,30 +832,12 @@
     }
   }
 
-  async function nextPaint(): Promise<void> {
-    if (typeof requestAnimationFrame !== 'function') {
-      await new Promise((resolve) => setTimeout(resolve, 32))
-      return
-    }
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-    })
-  }
-
-  async function concealCaptureChrome(): Promise<void> {
-    document.documentElement.classList.add(PLAYER_CAPTURE_CLASS)
-    await nextPaint()
-  }
-
-  async function restoreCaptureChrome(): Promise<void> {
-    document.documentElement.classList.remove(PLAYER_CAPTURE_CLASS)
-  }
-
   let gifBoot: Promise<void> | null = null
 
-  async function screenshot(fast = false) {
+  async function screenshot(_fast = false) {
     const video = videoEl
     if (!video) throw new Error('no video')
+    const presentation = await beginCapturePresentation(false)
     const persist = async () => {
       try {
         await invoke('capture_player_surface', {
@@ -864,12 +852,17 @@
       if (!png) throw new Error('empty screenshot')
       await invoke('save_player_png', { png })
     }
-    if (fast) await persist()
-    else await withPlayerChromeHidden(persist)
+    try {
+      await persist()
+    } finally {
+      await presentation.end()
+    }
   }
 
-  function finishGifUi() {
-    void restoreCaptureChrome()
+  async function finishGifUi() {
+    const presentation = gifPresentation
+    gifPresentation = null
+    await presentation?.end()
     if (gifSubtitlesHidden) {
       try { player?.setTextTrackVisibility?.(selectedSid >= 0 || selectedCcid >= 0) } catch { /* keep going */ }
     }
@@ -889,7 +882,7 @@
     }
   }
 
-  async function gifStart(includeSubtitles: boolean, fast = false) {
+  async function gifStart(includeSubtitles: boolean, _fast = false) {
     if (gifActive || gifBoot) throw new Error('GIF is already recording')
     if (!videoEl || !firstFrame || videoEl.videoWidth <= 0) throw new Error('Video is not ready for GIF capture')
     const plan = gifCapturePlan(get(gifScale), get(gifMaxSeconds))
@@ -900,17 +893,22 @@
           gifSubtitlesHidden = true
         } catch { /* burned-in subtitles cannot be hidden */ }
       }
-      if (!fast) await concealCaptureChrome()
       const video = videoEl
       if (!video) throw new Error('Video is not ready for GIF capture')
-      await invoke('drm_gif_start', {
-        width: plan.width,
-        maxFrames: plan.maxFrames,
-        fps: plan.fps,
-        maxSeconds: plan.maxSeconds,
-        ...gifVideoCrop(video),
-      })
-      gifActive = true
+      gifPresentation = await beginCapturePresentation(true)
+      try {
+        await invoke('drm_gif_start', {
+          width: plan.width,
+          maxFrames: plan.maxFrames,
+          fps: plan.fps,
+          maxSeconds: plan.maxSeconds,
+          ...gifVideoCrop(video),
+        })
+        gifActive = true
+      } catch (error) {
+        await finishGifUi()
+        throw error
+      }
     })()
     gifBoot = boot
     try {
@@ -927,7 +925,7 @@
     try {
       await invoke('drm_gif_stop')
     } finally {
-      finishGifUi()
+      await finishGifUi()
     }
   }
 
@@ -935,8 +933,8 @@
     if (gifBoot) await gifBoot.catch(() => {})
     const wasActive = gifActive
     gifActive = false
-    finishGifUi()
     if (wasActive) await invoke('drm_gif_abort').catch(() => {})
+    await finishGifUi()
   }
 
   const thumbCache = new Map<number, string>()
@@ -1435,6 +1433,12 @@
   onplaying={() => {
     setSegmentPrefetch(4)
     firstFrame = true
+    if (!capturePresentationWarmed) {
+      capturePresentationWarmed = true
+      // Prime the controls-mirror handshake after playback is healthy, not on the critical path
+      // to first frame. Later shortcut captures can then switch layers without waiting.
+      setTimeout(() => { void warmCapturePresentation() }, 500)
+    }
     setBuffering(false)
     ended = false
     publish()

@@ -2677,6 +2677,109 @@ fn main_video_webview(app: &AppHandle) -> Result<tauri::Webview, String> {
         .ok_or_else(|| "no main webview".into())
 }
 
+const CAPTURE_CONTROLS_WINDOW: &str = "capture-controls";
+#[cfg(not(target_os = "android"))]
+const DESKTOP_WEBVIEW_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-direct-composition-video-overlays";
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn capture_controls_overlay_prepare(app: AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        return app
+            .get_webview_window(CAPTURE_CONTROLS_WINDOW)
+            .map(|_| ())
+            .ok_or_else(|| "capture controls overlay is not ready".into());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Err("capture controls overlay is only available on Windows".into())
+    }
+}
+
+#[cfg(windows)]
+fn sync_capture_controls_overlay(
+    main: &tauri::WebviewWindow,
+    overlay: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    let position = main.outer_position().map_err(|error| error.to_string())?;
+    let size = main.outer_size().map_err(|error| error.to_string())?;
+    overlay
+        .set_position(position)
+        .map_err(|error| error.to_string())?;
+    overlay.set_size(size).map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn capture_controls_overlay_sync(app: AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let main = app
+            .get_webview_window("main")
+            .ok_or_else(|| "no main window".to_string())?;
+        let overlay = app
+            .get_webview_window(CAPTURE_CONTROLS_WINDOW)
+            .ok_or_else(|| "capture controls overlay is not ready".to_string())?;
+        overlay
+            .set_ignore_cursor_events(true)
+            .map_err(|error| error.to_string())?;
+        sync_capture_controls_overlay(&main, &overlay)?;
+        // `contentProtected` maps to this flag too; set it explicitly after creation so the
+        // controls remain excluded even if a WebView runtime ignores the constructor option.
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
+        };
+        if let Ok(hwnd) = overlay.hwnd() {
+            let _ = unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) };
+        }
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Err("capture controls overlay is only available on Windows".into())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn capture_controls_overlay_present(app: AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        capture_controls_overlay_sync(app.clone())?;
+        let overlay = app
+            .get_webview_window(CAPTURE_CONTROLS_WINDOW)
+            .ok_or_else(|| "capture controls overlay is not ready".to_string())?;
+        overlay.show().map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Err("capture controls overlay is only available on Windows".into())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn capture_controls_overlay_hide(app: AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if let Some(overlay) = app.get_webview_window(CAPTURE_CONTROLS_WINDOW) {
+            overlay.hide().map_err(|error| error.to_string())?;
+        }
+        return Ok(());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+
 #[cfg(not(target_os = "android"))]
 fn raster_is_solid_black(bytes: &[u8]) -> bool {
     let Ok(img) = image::load_from_memory(bytes) else {
@@ -2764,8 +2867,9 @@ async fn crop_compositor_frame(
     .map_err(|error| error.to_string())?
 }
 
-/// Capture, crop, and persist the composed video surface in one native round trip. The fast
-/// keyboard path leaves document chrome untouched; button callers can still conceal it first.
+/// Capture, crop, and persist the composed video surface in one native round trip. Protected
+/// playback moves visible chrome to a separate controls-only window before entering here, so the
+/// sampled main WebView contains only video and subtitles without making the controls unusable.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
 async fn capture_player_surface(
@@ -3611,11 +3715,14 @@ async fn drm_gif_stop(
         width: session.width,
         fps: session.fps,
     };
+    // Drain the one compositor read that may already be in flight before the frontend restores
+    // the main WebView's chrome. Encoding remains detached below; this short join only guarantees
+    // the final sampled frame obeys the video-only capture contract.
+    if let Some(join) = join {
+        let _ = join.await;
+    }
+    let count = captured.load(std::sync::atomic::Ordering::Relaxed);
     tauri::async_runtime::spawn(async move {
-        if let Some(join) = join {
-            let _ = join.await;
-        }
-        let count = captured.load(std::sync::atomic::Ordering::Relaxed);
         eprintln!("[gif] compositor frames={count} in {captured_ms}ms");
         let result = if count == 0 {
             Err("gif-no-frames".into())
@@ -5150,9 +5257,7 @@ pub fn run() {
                     // Keep decoded video in the HTML compositor so GIF/screenshot can read
                     // the <video> bitmap (mpv-style: OSD stays on screen, file is video only).
                     // wry's default --disable-features must be restated when we set args.
-                    .additional_browser_args(
-                        "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,CalculateNativeWinOcclusion --disable-direct-composition-video-overlays",
-                    )
+                    .additional_browser_args(DESKTOP_WEBVIEW_ARGS)
                     .inner_size(1280.0, 800.0)
                     .min_inner_size(900.0, 560.0)
                     // This is only the unknown-position default. The window-state plugin restores
@@ -5169,7 +5274,7 @@ pub fn run() {
                     .traffic_light_position(tauri::LogicalPosition::new(12.0, 10.0));
                 #[cfg(not(target_os = "macos"))]
                 let main_window = main_window.decorations(false);
-                main_window
+                let main_window = main_window
                     .background_color(tauri::window::Color(10, 10, 11, 255))
                     // A native webview begins with an opaque white surface. Keep the window hidden
                     // until the app document finishes its first load so that surface can never be
@@ -5439,6 +5544,47 @@ pub fn run() {
                         }
                     })
                     .build()?;
+
+                // WebView2 environments must be created while Tauri is setting up its event loop.
+                // Later construction from a WebView IPC callback leaves the new controller waiting
+                // on the same UI thread. The hidden view stays inert until protected capture uses it.
+                #[cfg(windows)]
+                {
+                    let overlay = WebviewWindowBuilder::new(
+                        app,
+                        CAPTURE_CONTROLS_WINDOW,
+                        WebviewUrl::default(),
+                    )
+                    .title("izumi capture controls")
+                    .additional_browser_args(DESKTOP_WEBVIEW_ARGS)
+                    .initialization_script(
+                        "if(location.pathname==='/'&&!location.search.includes('capture-overlay'))location.replace('/?capture-overlay=1')",
+                    )
+                    .decorations(false)
+                    .transparent(true)
+                    .background_color(tauri::window::Color(0, 0, 0, 0))
+                    .shadow(false)
+                    .resizable(false)
+                    .maximizable(false)
+                    .minimizable(false)
+                    .closable(false)
+                    .skip_taskbar(true)
+                    .always_on_top(true)
+                    .content_protected(true)
+                    .focused(false)
+                    .focusable(false)
+                    .visible(false)
+                    .parent(&main_window)
+                    .and_then(|builder| builder.build());
+                    match overlay {
+                        Ok(overlay) => {
+                            set_webview_transparent(&overlay);
+                            let _ = overlay.set_ignore_cursor_events(true);
+                            let _ = sync_capture_controls_overlay(&main_window, &overlay);
+                        }
+                        Err(error) => eprintln!("[capture-controls] create failed: {error}"),
+                    }
+                }
             }
 
             // Keep mpv's embedded child sized to the window on every resize (mpv)
@@ -5662,6 +5808,10 @@ pub fn run() {
             save_player_png,
             capture_webview_png,
             capture_webview_jpeg,
+            capture_controls_overlay_sync,
+            capture_controls_overlay_prepare,
+            capture_controls_overlay_present,
+            capture_controls_overlay_hide,
             capture_player_surface,
             drm_gif_start,
             drm_gif_frame,

@@ -18,6 +18,14 @@
 html, body { background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: 'Nunito Variable', sans-serif; scroll-behavior: smooth; }
 /* Compositor screenshots hide in-webview OSD so the file is video + subs, not controls. */
 html.izumi-capturing .izumi-hud { visibility: hidden !important; }
+/* Protected captures are composed from the main WebView, while a separate input-transparent
+   window mirrors this chrome for the viewer. Opacity (rather than visibility/display) is
+   intentional: the real controls keep their hit boxes, focus and event handlers during a GIF. */
+html.izumi-capture-output .izumi-player-root > :not(.izumi-capture-root),
+html.izumi-capture-output [data-nav-sidebar],
+html.izumi-capture-output [data-tauri-drag-region] {
+  opacity: 0 !important;
+}
 /* Keyboard `O` focuses the overlay; *:focus-visible would draw a rounded ring at the
    video's top-left. Capture mode also drops any focus chrome so it cannot enter the file. */
 .izumi-player-root:focus,

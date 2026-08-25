@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-// CDP clip/scale mutates the live window. Fast screenshots and GIFs capture the
-// compositor in Rust and crop there without changing in-document chrome.
+// CDP clip/scale mutates the live window. Screenshots and GIFs capture the main
+// compositor in Rust while an input-transparent window keeps controls visible.
 
 const drm = readFileSync(fileURLToPath(new URL('../components/player/DrmSurface.svelte', import.meta.url)), 'utf8')
 const overlay = readFileSync(fileURLToPath(new URL('../components/player/PlayerOverlay.svelte', import.meta.url)), 'utf8')
@@ -34,16 +34,16 @@ describe('compositor capture', () => {
 
   it('captures protected playback without trying a decoded video frame first', () => {
     expect(drm).not.toContain('encodeVideoFrame')
-    expect(drm).toContain('async function screenshot(fast = false)')
-    expect(drm).toContain('if (fast) await persist()')
-    expect(drm).toContain('else await withPlayerChromeHidden(persist)')
+    expect(drm).toContain('async function screenshot(_fast = false)')
+    expect(drm).toContain('const presentation = await beginCapturePresentation(false)')
+    expect(drm).toContain('await presentation.end()')
     expect(overlay).toContain('playerScreenshot(true)')
     expect(rust).toContain('capture_player_surface,')
   })
 
   it('records protected GIFs from a native compositor loop', () => {
-    expect(drm).toContain('concealCaptureChrome')
-    expect(drm).toContain('if (!fast) await concealCaptureChrome()')
+    expect(drm).toContain('gifPresentation = await beginCapturePresentation(true)')
+    expect(drm).toContain('await finishGifUi()')
     expect(drm).toContain('cropX')
     expect(drm).toContain("invoke('drm_gif_start'")
     expect(drm).not.toContain('recordGifFrames')
@@ -64,7 +64,8 @@ describe('compositor capture', () => {
     expect(stop.indexOf("invoke('drm_gif_stop')")).toBeLessThan(stop.indexOf('finishGifUi()'))
     expect(rust).toContain('if jobs.len() >= 2')
     expect(rust).toContain('jobs.abort_all()')
-    expect(nativeStop.indexOf('tauri::async_runtime::spawn(async move')).toBeLessThan(nativeStop.indexOf('join.await'))
+    // Finish the one in-flight sample while chrome is still excluded, then detach only encoding.
+    expect(nativeStop.indexOf('join.await')).toBeLessThan(nativeStop.indexOf('tauri::async_runtime::spawn(async move'))
     expect(rust).toContain('tauri::async_runtime::spawn(async move')
     expect(rust).toContain('player-gif-save-complete')
     expect(drm).toContain("listenSafe<{ ok: boolean; error?: string }>('player-gif-save-complete'")

@@ -7,6 +7,7 @@
   import { onMount } from 'svelte'
   import { get } from 'svelte/store'
   import { invoke } from '@tauri-apps/api/core'
+  import { getCurrentWindow } from '@tauri-apps/api/window'
   import { startQualitySync } from '$lib/player/quality'
   import { startEnhancementSync } from '$lib/player/enhancements'
   import { startThemeSync } from '$lib/theme'
@@ -19,7 +20,11 @@
   import { torrentProxyEndpoint } from '$lib/player/torrent-proxy'
   setContextClient(anilist)
   let { children } = $props()
+  const captureControlsWindow = getCurrentWindow().label === 'capture-controls'
   onMount(() => {
+    // The controls mirror is a deliberately inert second WebView. Starting the normal client
+    // services here would duplicate sync, update, DHT and notification work while recording.
+    if (captureControlsWindow) return
     const stopPerformance = initClientPerformance()
     document.documentElement.lang = getLocale()
     document.documentElement.dir = getTextDirection()
