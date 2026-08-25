@@ -27,9 +27,9 @@ use tauri::{AppHandle, Manager};
 use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
 use crate::gm_perf::{
-    overlay_fade_step, overlay_loop_fps, overlay_should_snapshot, scale_premult_bgra,
-    OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL, OVERLAY_FADE_MS, OVERLAY_MOTION_PX,
-    OVERLAY_SCRUB_FPS, OVERLAY_SHEET_MOTION_PX,
+    clip_to_strip, overlay_fade_step, overlay_loop_fps, overlay_should_snapshot, scale_premult_bgra,
+    OVERLAY_ACTIVE_POLL_MS, OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL, OVERLAY_FADE_MS,
+    OVERLAY_MOTION_PX, OVERLAY_SHEET_MOTION_PX,
 };
 use crate::player::PlayerHandle;
 
@@ -72,6 +72,7 @@ pub fn start(
     animate: bool,
     crop: Option<(i64, i64, i64, i64)>,
     sheet: bool,
+    exact_crop: bool,
 ) {
     // Only treat this as a fade-in if nothing is on screen yet. Setting SHOWN before the
     // first pixels landed left tap/pause at alpha 0 forever (empty snapshot → hide).
@@ -103,7 +104,7 @@ pub fn start(
     let _ = window.with_webview(move |pw| {
         let wv = pw.inner();
         BUSY.store(true, Ordering::SeqCst);
-        snapshot_once(&wv, &app, my_gen, fade_in);
+        snapshot_once(&wv, &app, my_gen, fade_in, exact_crop);
 
         if overlay_loop_fps(fast) == 0 {
             return;
@@ -111,7 +112,7 @@ pub fn start(
 
         let app = app.clone();
         let mut last_tick = Instant::now();
-        glib::timeout_add_local(Duration::from_millis(1000 / OVERLAY_SCRUB_FPS), move || {
+        glib::timeout_add_local(Duration::from_millis(OVERLAY_ACTIVE_POLL_MS), move || {
             if GEN.load(Ordering::SeqCst) != my_gen {
                 return glib::ControlFlow::Break;
             }
@@ -132,7 +133,7 @@ pub fn start(
                 && !BUSY.swap(true, Ordering::SeqCst)
             {
                 last_tick = now;
-                snapshot_once(&wv, &app, my_gen, false);
+                snapshot_once(&wv, &app, my_gen, false, exact_crop);
             }
             glib::ControlFlow::Continue
         });
@@ -369,7 +370,13 @@ fn alpha_bounds(
 }
 
 /// Take one WebKit snapshot and push the non-transparent crop to mpv as an overlay.
-fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in: bool) {
+fn snapshot_once(
+    wv: &webkit2gtk::WebView,
+    app: &AppHandle,
+    my_gen: u64,
+    fade_in: bool,
+    exact_crop: bool,
+) {
     let app = app.clone();
     let wv_retry = wv.clone();
     let t_req = Instant::now();
@@ -398,19 +405,27 @@ fn snapshot_once(wv: &webkit2gtk::WebView, app: &AppHandle, my_gen: u64, fade_in
                 let need = (stride * h) as usize;
                 let data = img.data().ok()?;
                 let strip = STRIP.lock().ok().and_then(|g| *g);
-                let Some((x, y, cw, ch)) = alpha_bounds(
-                    &data[..need],
-                    w as usize,
-                    h as usize,
-                    stride as usize,
-                    strip,
-                ) else {
+                // The comments panel supplies its exact rectangle. Preserve its transparent rounded
+                // corners, but skip scanning ~360k alpha bytes on every scroll frame just to recover
+                // bounds the frontend already measured.
+                let bounds = if exact_crop && strip.is_some() {
+                    clip_to_strip((0, 0, w as usize, h as usize), strip)
+                } else {
+                    alpha_bounds(
+                        &data[..need],
+                        w as usize,
+                        h as usize,
+                        stride as usize,
+                        strip,
+                    )
+                };
+                let Some((x, y, cw, ch)) = bounds else {
                     let tries = EMPTY_TRIES.fetch_add(1, Ordering::SeqCst);
                     if GEN.load(Ordering::SeqCst) == my_gen && tries < 4 {
                         let app_retry = app.clone();
                         glib::timeout_add_local_once(Duration::from_millis(40), move || {
                             if GEN.load(Ordering::SeqCst) == my_gen {
-                                snapshot_once(&wv_retry, &app_retry, my_gen, fade_in);
+                                snapshot_once(&wv_retry, &app_retry, my_gen, fade_in, exact_crop);
                             }
                         });
                         return Some(());

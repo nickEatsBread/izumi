@@ -15,7 +15,7 @@
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, commentsOverlayMoving, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -622,7 +622,7 @@
   const sourceConnectingVisible = $derived(!!$connecting)
   // Comments scroll continuously. Source resolution now explicitly bumps the bitmap for each
   // progressive result and stepped spinner frame, avoiding a wasteful full-screen 30fps loop.
-  const overlayFast = $derived($commentsOpen)
+  const overlayFast = $derived($commentsOpen && $commentsOverlayMoving)
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
@@ -699,7 +699,7 @@
     }
     // Snapshot now (so tap/pause is not stuck behind a cancellable timer) and once more
     // after paint so Controls/toasts are in the tree.
-    invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop, sheet: nativeSheet }).catch(() => {})
+    invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop, sheet: nativeSheet, exactCrop: !!commentsCrop }).catch(() => {})
     return scheduleGameModeOverlay(() => {
       const paintedSheet = $playerSideSheetOpen
         ? document.querySelector<HTMLElement>('[data-gm-side-sheet]')?.getBoundingClientRect() ?? null
@@ -715,7 +715,7 @@
         ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedSheet)
         : paintedCommentsCrop ?? crop
       const paintedNativeSheet = paintedSheetMotion
-      invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedNativeSheet }).catch(() => {})
+      invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedNativeSheet, exactCrop: !!paintedCommentsCrop }).catch(() => {})
     })
   })
 

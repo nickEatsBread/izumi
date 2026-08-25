@@ -115,6 +115,13 @@ fn idle_overlay_does_not_raster_unless_forced() {
     assert!(!overlay_should_snapshot(true, true, true));
     assert_eq!(overlay_loop_fps(false), 0);
     assert_eq!(overlay_loop_fps(true), 30);
+    assert_eq!(OVERLAY_ACTIVE_POLL_MS, 8);
+
+    let overlay = include_str!("../src/player/linux_overlay.rs");
+    assert!(overlay.contains("SnapshotOptions::TRANSPARENT_BACKGROUND"));
+    assert!(overlay.contains("if exact_crop && strip.is_some()"));
+    assert!(overlay.contains("clip_to_strip((0, 0, w as usize, h as usize), strip)"));
+    assert!(overlay.contains("Duration::from_millis(OVERLAY_ACTIVE_POLL_MS)"));
 }
 
 #[test]

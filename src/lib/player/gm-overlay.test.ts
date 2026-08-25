@@ -131,8 +131,11 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('timelineSegments: segments.map')
     expect(overlay).toContain('chapterMarks: chapters.map')
     expect(overlay).toContain('fast: overlayFast')
+    expect(overlay).toContain('const overlayFast = $derived($commentsOpen && $commentsOverlayMoving)')
     expect(overlay).toContain("'[data-gm-comments-surface]'")
     expect(overlay).toContain('paintedCommentsCrop')
+    expect(overlay).toContain('exactCrop: !!commentsCrop')
+    expect(overlay).toContain('exactCrop: !!paintedCommentsCrop')
     expect(overlay).toContain('const nativeSheet = sheetMotion')
     expect(overlay).toContain('const paintedNativeSheet = paintedSheetMotion')
     expect(overlay).not.toContain('commentsOpen && $discussionExpanded')
@@ -259,6 +262,13 @@ describe('Game-mode Leanback motion', () => {
     expect(native).toContain('for y in scan_y..scan_bottom')
     expect(native).toContain('for x in scan_x..scan_right')
     expect(native).not.toContain('*strip = if fast { None } else { crop };')
+  })
+
+  it('settles idle comments and skips the bounds scan for their exact crop', () => {
+    const native = readFileSync(fileURLToPath(new URL('../../../src-tauri/src/player/linux_overlay.rs', import.meta.url)), 'utf8')
+    expect(native).toContain('SnapshotOptions::TRANSPARENT_BACKGROUND')
+    expect(native).toContain('if exact_crop && strip.is_some()')
+    expect(native).toContain('clip_to_strip((0, 0, w as usize, h as usize), strip)')
   })
 })
 

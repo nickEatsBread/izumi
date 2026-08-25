@@ -4,6 +4,7 @@
   // r/anime episode thread found by search (inline comment bodies) + an optional configured mapper.
   // Read-only for now — posting (AniList free, Reddit OAuth) is a later phase.
   import { fade } from 'svelte/transition'
+  import { onDestroy } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import MessageSquare from '@lucide/svelte/icons/message-square'
@@ -12,7 +13,7 @@
   import Minimize2 from '@lucide/svelte/icons/minimize-2'
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import ArrowBigUp from '@lucide/svelte/icons/arrow-big-up'
-  import { nowPlayingMedia, commentsOpen, gameMode } from '$lib/player/session'
+  import { nowPlayingMedia, commentsOpen, commentsOverlayMoving, gameMode } from '$lib/player/session'
   import { fetchDiscussion, defaultDiscussionPlatform, discussionExpanded, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
   import { loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
   import { warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
@@ -43,6 +44,7 @@
     if ($gameMode && open !== commentsWereOpen) {
       const focused = document.activeElement as HTMLElement | null
       if (!open && focused?.closest?.('[data-comments-panel]')) focused.blur()
+      if (!open) finishCommentsMotion()
       restoreGmTouchAfterTransition()
     }
     commentsWereOpen = open
@@ -159,6 +161,21 @@
   let archiveTouchVelocity = 0
   let archiveTouchFrame = 0
   let archiveMomentumFrame = 0
+  let commentsMotionTimer: number | undefined
+  function finishCommentsMotion() {
+    if (commentsMotionTimer != null) window.clearTimeout(commentsMotionTimer)
+    commentsMotionTimer = undefined
+    commentsOverlayMoving.set(false)
+  }
+  function noteCommentsMotion() {
+    if (!$gameMode || !$commentsOpen) return
+    commentsOverlayMoving.set(true)
+    if (commentsMotionTimer != null) window.clearTimeout(commentsMotionTimer)
+    // Scroll events continue through kinetic motion, so this only settles after the last painted
+    // offset. The final false transition asks the native bridge for one authoritative end frame.
+    commentsMotionTimer = window.setTimeout(finishCommentsMotion, 140)
+  }
+  onDestroy(finishCommentsMotion)
   function stopArchiveMomentum() {
     if (archiveMomentumFrame) window.cancelAnimationFrame(archiveMomentumFrame)
     archiveMomentumFrame = 0
@@ -177,6 +194,7 @@
     archiveTouchDelta = 0
   }
   function archiveTouchScroll(phase?: string, rawDy?: number, rawDt?: number) {
+    noteCommentsMotion()
     if (phase === 'start') { resetArchiveTouch(); return }
     if (phase === 'move') {
       const dy = Number(rawDy)
@@ -263,6 +281,20 @@
   $effect(() => {
     function onMsg(e: MessageEvent) {
       const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number; url?: string; phase?: string; dy?: number; dt?: number } | null
+      // The same-origin Disqus loader and direct third-party Deck widgets report real scroll
+      // activity. Origin + exact iframe window prevent unrelated page messages from starting the
+      // expensive native refresh loop.
+      const trustedScrollActivity = m?.type === 'izumi-comments-scroll-activity' && (
+        (e.origin === location.origin && e.source === embedIframe?.contentWindow)
+        || (archiveEmbed && e.origin === 'https://discussanime.moe' && e.source === embedIframe?.contentWindow)
+        // The direct widget can own scrolling in a same-provider descendant frame. Its fixed origin
+        // is sufficient here: the only permitted effect is waking a bounded bitmap refresh loop.
+        || (directTacEmbed && e.origin === TAC_ORIGIN)
+      )
+      if (trustedScrollActivity) {
+        noteCommentsMotion()
+        return
+      }
       // Profile links in the live Disqus embed are rewritten to the forum's profile-redirect
       // endpoint by a frame init script (DISQUS_PROFILE_SCRIPT, lib.rs). The INNER disqus.com
       // frame asks us to open them — window.open in that sandboxed frame has nowhere good to go.
@@ -350,6 +382,7 @@
         return
       }
       const amount = dir === 'down' ? 180 : -180
+      noteCommentsMotion()
       // The embed's scroller stays bound while hidden on another tab — pick by what's visible.
       if (!embedActive) { listScroller?.scrollBy(0, amount); return }
       if (archiveScroller) { archiveScroller.scrollBy(0, amount); return }
@@ -448,7 +481,7 @@
          while other tabs are selected or the panel is closed — detaching an iframe reboots the embed
          from scratch, so it boots once per episode instead of on every tab switch/expand/reopen. -->
     {#if archiveEmbed}
-      <div bind:this={archiveScroller} class={embedActive ? 'discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5' : 'hidden'}>
+      <div bind:this={archiveScroller} onscroll={noteCommentsMotion} class={embedActive ? 'discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5' : 'hidden'}>
         <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} scrolling="no"
                 style:height={archiveHeight ? `${archiveHeight}px` : '100%'}
                 class="block min-h-full w-full border-0"
@@ -480,9 +513,12 @@
     {/if}
   {/if}
   {#if !embedActive}
-    <div bind:this={listScroller} class="flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3">
+    <div bind:this={listScroller} onscroll={noteCommentsMotion} class="flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3">
       {#if loading}
-        {#each Array.from({ length: 5 }) as _}<div class="mb-2 h-20 animate-pulse rounded-lg bg-muted"></div>{/each}
+        <!-- A CSS pulse keeps WebKit painting underneath the native Deck video surface while the
+             network is pending, even though the bitmap bridge intentionally displays a settled
+             frame. A static placeholder communicates loading without that hidden compositor work. -->
+        {#each Array.from({ length: 5 }) as _}<div class="mb-2 h-20 rounded-lg bg-muted" class:animate-pulse={!$gameMode}></div>{/each}
       {:else if !shown.length}
         <div class="grid h-full place-items-center px-6 text-center">
           <div>

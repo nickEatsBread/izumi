@@ -13,8 +13,13 @@ pub const OSD_FPS: u64 = 60;
 /// Snapshot the HTML chrome only when it changes (show/hide or a menu). Idle 12fps rasters
 /// were the dominant Game-mode cost while the control bar sat still.
 pub const OVERLAY_IDLE_FPS: u64 = 0;
-/// Menu highlight / d-pad navigation still needs a high snapshot cadence.
+/// An actively moving comments surface still needs a high snapshot cadence. Idle comments settle
+/// to one frame; the frontend only enables this loop between real scroll events.
 pub const OVERLAY_SCRUB_FPS: u64 = 30;
+/// Check for a completed WebKit raster more often than the output cadence. A 35–40ms Deck frame
+/// otherwise misses a 33ms timer tick and waits until 66ms, halving visible scroll smoothness.
+/// This poll exists only during real comment movement; idle panels have no timer loop.
+pub const OVERLAY_ACTIVE_POLL_MS: u64 = 8;
 /// Native fade of an already-snapshotted overlay. Each short animation tick reissues
 /// `overlay-add` because mpv copies BGRA input when the command runs; WebKit is not rastered
 /// again. Kept short enough to feel like Leanback chrome rather than a modal transition.
@@ -129,7 +134,7 @@ pub fn scale_premult_bgra(src: &[u8], dst: &mut [u8], alpha_millis: u32) {
     }
 }
 
-/// Idle overlay loops must not raster. Fast (menu) loops run at [`OVERLAY_SCRUB_FPS`].
+/// Idle overlay loops must not raster. Active comment scrolling runs at [`OVERLAY_SCRUB_FPS`].
 pub fn overlay_loop_fps(fast: bool) -> u64 {
     if fast {
         OVERLAY_SCRUB_FPS

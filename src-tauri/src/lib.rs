@@ -415,6 +415,7 @@ fn player_gm_overlay(
     animate: Option<bool>,
     crop: Option<OverlayCrop>,
     sheet: Option<bool>,
+    exact_crop: Option<bool>,
 ) {
     #[cfg(target_os = "linux")]
     {
@@ -431,6 +432,7 @@ fn player_gm_overlay(
                     animate.unwrap_or(true),
                     crop,
                     sheet.unwrap_or(false),
+                    exact_crop.unwrap_or(false),
                 );
             } else {
                 player::linux_overlay::stop(app.clone(), animate.unwrap_or(true));
@@ -439,7 +441,7 @@ fn player_gm_overlay(
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, visible, fast, animate, crop, sheet);
+        let _ = (app, visible, fast, animate, crop, sheet, exact_crop);
     }
 }
 
@@ -2178,6 +2180,8 @@ new MutationObserver(function(mutations){for(var i=0;i<mutations.length;i++){var
 var active=false,moved=false,startY=0,lastY=0,lastAt=0,suppressClickUntil=0,target=null;
 var inputKind=null,pointerId=null;
 var velocity=0,momentumFrame=0;
+var activityFrame=0;
+function activity(){if(!tac||activityFrame)return;activityFrame=requestAnimationFrame(function(){activityFrame=0;try{window.top.postMessage({type:'izumi-comments-scroll-activity'},'*')}catch(_e){}});}
 function relay(phase,dy,dt){try{window.parent.postMessage({type:disqus?'izumi-disqus-touch-scroll':'izumi-comments-touch-scroll',phase:phase,dy:dy||0,dt:dt||0},'*')}catch(_e){}}
 function scrollableFrom(ev){
   var nodes=ev.composedPath?ev.composedPath():[],i,n,s;
@@ -2186,14 +2190,14 @@ function scrollableFrom(ev){
   return null;
 }
 function stopMomentum(){if(momentumFrame)cancelAnimationFrame(momentumFrame);momentumFrame=0;}
-function localScroll(dy){if(target)target.scrollTop+=dy;}
+function localScroll(dy){if(target){target.scrollTop+=dy;activity();}}
 function addVelocity(dy,dt){var next=Math.max(-3,Math.min(3,dy/dt));velocity=(velocity&&next&&Math.sign(velocity)!==Math.sign(next))?next:velocity*0.6+next*0.4;}
 function startMomentum(){
   if(!target||Math.abs(velocity)<0.15)return;stopMomentum();var started=performance.now(),last=started;
   function step(now){var dt=Math.min(32,Math.max(1,now-last)),before=target.scrollTop;last=now;velocity*=Math.pow(0.92,dt/16.67);if(now-started>420||Math.abs(velocity)<0.15){momentumFrame=0;return;}localScroll(velocity*dt);if(target.scrollTop===before){momentumFrame=0;return;}momentumFrame=requestAnimationFrame(step);}
   momentumFrame=requestAnimationFrame(step);
 }
-function begin(y,now,ev,kind,id){active=true;inputKind=kind;pointerId=id;moved=false;startY=lastY=y;lastAt=now;target=tac?scrollableFrom(ev):null;velocity=0;stopMomentum();if(!target&&(disqus||archive))relay('start',0,0);}
+function begin(y,now,ev,kind,id){active=true;inputKind=kind;pointerId=id;moved=false;startY=lastY=y;lastAt=now;target=tac?scrollableFrom(ev):null;velocity=0;stopMomentum();activity();if(!target&&(disqus||archive))relay('start',0,0);}
 function move(y,now,ev,kind,id){
   if(!active||inputKind!==kind||(kind==='pointer'&&pointerId!==id))return;
   var total=startY-y,dy=lastY-y,dt=Math.max(1,now-lastAt);lastY=y;lastAt=now;
@@ -2218,6 +2222,7 @@ document.addEventListener('pointermove',function(ev){
   move(ev.clientY,performance.now(),ev,'pointer',ev.pointerId);
 },{capture:true,passive:false});
 document.addEventListener('pointerup',function(ev){end('pointer',ev.pointerId);},true);document.addEventListener('pointercancel',function(ev){end('pointer',ev.pointerId);},true);
+document.addEventListener('scroll',activity,true);
 document.addEventListener('click',function(ev){if(performance.now()<suppressClickUntil){ev.preventDefault();ev.stopImmediatePropagation();}},true);
 }catch(e){}})();"#;
 

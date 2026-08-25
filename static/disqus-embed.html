@@ -134,6 +134,14 @@
       var touchVelocity = 0;
       var touchFrame = 0;
       var momentumFrame = 0;
+      var hostMotionFrame = 0;
+      function notifyHostMotion() {
+        if (hostMotionFrame) return;
+        hostMotionFrame = window.requestAnimationFrame(function () {
+          hostMotionFrame = 0;
+          window.parent.postMessage({ type: 'izumi-comments-scroll-activity' }, location.origin);
+        });
+      }
       function flushTouchScroll() {
         touchFrame = 0;
         if (!touchDelta) return;
@@ -191,6 +199,10 @@
           startMomentum();
         }
       });
+      // Native wheel, d-pad and relayed touch movement all end up changing this document's scroll
+      // offset. One coalesced message per paint wakes the Gamescope bitmap bridge only for the
+      // duration of that motion; an untouched comments panel no longer snapshots forever.
+      window.addEventListener('scroll', notifyHostMotion, { passive: true });
 
       if (expand) {
         document.documentElement.classList.add('izumi-expand');

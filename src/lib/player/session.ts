@@ -207,6 +207,11 @@ export function bumpPlayerOverlay() {
 // episode}. Desktop-first; Game-mode (mpv-snapshot) rendering of a scrollable panel is a later phase.
 export const commentsOpen = writable(false)
 
+// The Gamescope XWayland compositor only needs continuous WebKit snapshots while comments are
+// actually moving. Keeping this separate from `commentsOpen` lets an idle discussion settle to one
+// bitmap instead of burning a full-WebView readback 30 times per second.
+export const commentsOverlayMoving = writable(false)
+
 // Active debrid caching session: set while an UNCACHED torrent downloads at the debrid
 // service, drives the full-screen DebridCaching progress screen. `cancel` aborts the poll
 // (the torrent keeps caching at the service, so returning later is instant). null = idle.
