@@ -35,7 +35,7 @@ describe('desktop episode toolbar', () => {
 
   it('anchors the release schedule after Download at the far right of the episode toolbar', () => {
     const toolbar = src.slice(src.indexOf('<div class="mb-4 grid'), src.indexOf('{#if $isMobile && searchOpen}'))
-    expect(toolbar.indexOf('<AiringStatus {media} compact quiet toolbar />')).toBeGreaterThan(toolbar.indexOf('Download…'))
+    expect(toolbar.indexOf('<AiringStatus {media} toolbar />')).toBeGreaterThan(toolbar.indexOf('Download…'))
     expect(toolbar).toContain('col-span-2 ml-auto flex shrink-0 items-center')
   })
 })

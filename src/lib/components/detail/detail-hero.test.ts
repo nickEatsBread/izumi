@@ -90,13 +90,14 @@ describe('mobile series hero', () => {
     expect(detail).toContain('relative z-10 -mt-10 flex gap-4')
   })
 
-  it('keeps a quiet schedule summary beneath mobile facts', () => {
+  it('keeps a quiet borderless schedule summary beneath mobile facts', () => {
     expect(detail).toContain('mt-3 flex flex-wrap items-center gap-2 empty:mt-0')
-    expect(detail).toContain('<AiringStatus media={m} compact quiet />')
+    expect(detail).toContain('<AiringStatus media={m} />')
     const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8')
-    expect(airing).toContain('text-foreground')
-    expect(airing.match(/rounded-full/g)?.length).toBeGreaterThanOrEqual(2)
-    expect(airing).toContain("'h-6 px-2.5 text-[0.72rem]' : 'h-6 px-3 text-xs'")
+    expect(airing).toContain('gap-x-2 whitespace-nowrap text-xs text-muted-foreground')
+    expect(airing).toContain("toolbar ? 'h-9' : ''")
+    expect(airing).not.toContain('compact = false')
+    expect(airing).not.toContain('quiet = false')
   })
 
   it('surfaces a complete, discoverable mobile anime overview without crowding the hero', () => {
@@ -112,13 +113,14 @@ describe('mobile series hero', () => {
 })
 
 describe('series airing schedule', () => {
-  it('renders SUB and DUB as distinct schedule cells instead of a dotted text sentence', () => {
+  it('renders SUB and DUB as distinct colored words in one quiet schedule line', () => {
     const airing = readFileSync(fileURLToPath(new URL('./AiringStatus.svelte', import.meta.url)), 'utf8')
     expect(airing).toContain("kind === 'Dub'")
-    expect(airing).toContain('bg-violet-400/15')
-    expect(airing).toContain('bg-sky-400/15')
-    expect(airing).toContain("index ? 'border-l border-border/60' : ''")
+    expect(airing).toContain('text-violet-300')
+    expect(airing).toContain('text-sky-300')
+    expect(airing).toContain('{#if index}<span class="opacity-40"')
     expect(airing).toContain('tabular-nums')
-    expect(airing).not.toContain('<span class="opacity-35">·</span>')
+    expect(airing).not.toContain('ring-violet')
+    expect(airing).not.toContain('border-l border-border')
   })
 })

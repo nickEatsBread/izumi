@@ -9,7 +9,8 @@ const css = readFileSync(fileURLToPath(new URL('../../../app.css', import.meta.u
 describe('schedule loading and motion', () => {
   it('renders animated shimmer placeholders in both schedule tabs', () => {
     expect(grid.match(/class="skeloader/g)?.length).toBeGreaterThanOrEqual(3)
-    expect(watchlist).toContain('class="skeloader h-[84px] rounded-lg"')
+    expect(watchlist).toContain('class="skeloader aspect-[2/3] rounded-lg"')
+    expect(watchlist).toContain("class=\"skeloader {$watchlistLayout === 'compact' ? 'h-11' : 'h-[84px]'} rounded-lg\"")
     expect(css).not.toContain('.gamemode .skeloader::before { display: none')
   })
 
