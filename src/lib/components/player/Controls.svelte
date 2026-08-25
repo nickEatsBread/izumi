@@ -399,8 +399,8 @@
     captureBusy = true
     playerNotice.set('Encoding GIF…')
     try {
-      await playerGifStop({ startSec: startedAt ?? Math.max(0, pos - 3), endSec: pos })
-      playerNotice.set('GIF saved to Pictures/izumi')
+      const background = await playerGifStop({ startSec: startedAt ?? Math.max(0, pos - 3), endSec: pos })
+      playerNotice.set(background ? 'Saving GIF in background…' : 'GIF saved to Pictures/izumi')
     } catch (error) {
       playerNotice.set(
         String(error).includes('ffmpeg-unavailable')

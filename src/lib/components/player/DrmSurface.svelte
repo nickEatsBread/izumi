@@ -15,9 +15,10 @@
   import { DRM_CATALOG_WAIT_MS, preferredDrmPresentation, shouldAutoReloadHardsub, waitForCatalog } from '$lib/player/preferred-drm'
   import { AUTO_ABR, abrMaxHeight, shouldPinFastStart } from '$lib/player/abr'
   import { gifCapturePlan } from '$lib/player/gif-settings'
-  import { encodeVideoFrame } from '$lib/player/video-frame'
   import { BUFFER_SPINNER_DELAY_MS, bufferSpinnerAction } from '$lib/player/overlay-loading'
   import { PLAYER_CAPTURE_CLASS, withPlayerChromeHidden } from '$lib/player/capture-chrome'
+  import { playerNotice } from '$lib/player/session'
+  import { listenSafe } from '$lib/util/listen'
   import {
     applyPlayerCommand,
     assToVtt,
@@ -111,6 +112,20 @@
   let qualityMode: 'auto' | number = 'auto'
   let lastGoodDur = 0
   let lastGoodPos = 0
+
+  $effect(() => listenSafe<{ ok: boolean; error?: string }>('player-gif-save-complete', ({ payload }) => {
+    if (payload.ok) {
+      playerNotice.set('GIF saved to Pictures/izumi')
+      return
+    }
+    playerNotice.set(
+      payload.error?.includes('ffmpeg-unavailable')
+        ? 'GIF recording needs ffmpeg installed'
+        : payload.error?.includes('gif-no-frames')
+          ? 'GIF was too short — hold the shortcut a bit longer'
+        : 'GIF recording failed',
+    )
+  }))
 
   // Parent player commands can race this component's engine registration during initial mount.
   // Read the same effective style directly as well, so a non-default preset is correct on frame 1.
@@ -832,22 +847,25 @@
 
   let gifBoot: Promise<void> | null = null
 
-  async function screenshot() {
+  async function screenshot(fast = false) {
     const video = videoEl
     if (!video) throw new Error('no video')
-    const overlay = (selectedSid >= 0 || selectedCcid >= 0) ? textEl : null
-    try {
-      const png = await encodeVideoFrame(video, 'image/png', video.videoWidth, overlay)
+    const persist = async () => {
+      try {
+        await invoke('capture_player_surface', {
+          width: video.videoWidth,
+          ...gifVideoCrop(video),
+        })
+        return
+      } catch (captureError) {
+        console.warn('[drm] native compositor screenshot unavailable; using fallback', captureError)
+      }
+      const png = await captureCropped(video, 'image/png', video.videoWidth)
+      if (!png) throw new Error('empty screenshot')
       await invoke('save_player_png', { png })
-      return
-    } catch (error) {
-      console.warn('[drm] decoded screenshot unavailable; using compositor', error)
     }
-    const png = await withPlayerChromeHidden(
-      () => captureCropped(video, 'image/png', video.videoWidth),
-    )
-    if (!png) throw new Error('empty screenshot')
-    await invoke('save_player_png', { png })
+    if (fast) await persist()
+    else await withPlayerChromeHidden(persist)
   }
 
   function finishGifUi() {
@@ -871,7 +889,7 @@
     }
   }
 
-  async function gifStart(includeSubtitles: boolean) {
+  async function gifStart(includeSubtitles: boolean, fast = false) {
     if (gifActive || gifBoot) throw new Error('GIF is already recording')
     if (!videoEl || !firstFrame || videoEl.videoWidth <= 0) throw new Error('Video is not ready for GIF capture')
     const plan = gifCapturePlan(get(gifScale), get(gifMaxSeconds))
@@ -882,7 +900,7 @@
           gifSubtitlesHidden = true
         } catch { /* burned-in subtitles cannot be hidden */ }
       }
-      await concealCaptureChrome()
+      if (!fast) await concealCaptureChrome()
       const video = videoEl
       if (!video) throw new Error('Video is not ready for GIF capture')
       await invoke('drm_gif_start', {

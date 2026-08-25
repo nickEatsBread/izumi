@@ -79,6 +79,14 @@ struct DrmGifSession {
 #[derive(Default)]
 struct DrmGifCapture(std::sync::Mutex<Option<DrmGifSession>>);
 
+#[cfg(not(target_os = "android"))]
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GifSaveComplete {
+    ok: bool,
+    error: Option<String>,
+}
+
 // Unique labels for webview popups created from discussion embeds. Tauri requires each live
 // webview window to have a distinct label, and Disqus can open more than one OAuth hop.
 static DISCUSSION_POPUP_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -2617,20 +2625,33 @@ fn player_pictures_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 }
 
 #[cfg(not(target_os = "android"))]
-fn next_shot_path(dir: &std::path::Path) -> std::path::PathBuf {
+fn write_next_shot(
+    dir: &std::path::Path,
+    extension: &str,
+    bytes: &[u8],
+) -> Result<std::path::PathBuf, String> {
+    use std::io::Write as _;
+
     for n in 1..10_000u32 {
-        let path = dir.join(format!("izumi-shot{n:04}.png"));
-        if !path.exists() {
-            return path;
+        let path = dir.join(format!("izumi-shot{n:04}.{extension}"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                if let Err(error) = file.write_all(bytes) {
+                    drop(file);
+                    let _ = std::fs::remove_file(&path);
+                    return Err(error.to_string());
+                }
+                return Ok(path);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.to_string()),
         }
     }
-    dir.join(format!(
-        "izumi-shot-{}.png",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis()
-    ))
+    Err("screenshot numbering exhausted".into())
 }
 
 /// Persist a PNG already captured in the webview (encrypted streams don't go through mpv).
@@ -2644,7 +2665,7 @@ fn save_player_png(app: AppHandle, png: Vec<u8>) -> Result<String, String> {
         return Err("black screenshot".into());
     }
     let dir = player_pictures_dir(&app)?;
-    std::fs::write(next_shot_path(&dir), png).map_err(|e| e.to_string())?;
+    write_next_shot(&dir, "png", &png)?;
     Ok(dir.to_string_lossy().into_owned())
 }
 
@@ -2726,6 +2747,85 @@ async fn capture_webview_jpeg(app: AppHandle, quality: Option<u8>) -> Result<Vec
     #[cfg(not(windows))]
     {
         let _ = (app, quality);
+        Err("window capture is only implemented on Windows".into())
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+async fn crop_compositor_frame(
+    jpeg: Vec<u8>,
+    crop: Option<gif_capture::ViewCrop>,
+    width: u32,
+) -> Result<Vec<u8>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        gif_capture::crop_compositor_jpeg(&jpeg, crop.as_ref(), width)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// Capture, crop, and persist the composed video surface in one native round trip. The fast
+/// keyboard path leaves document chrome untouched; button callers can still conceal it first.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+async fn capture_player_surface(
+    app: AppHandle,
+    view_width: Option<f64>,
+    view_height: Option<f64>,
+    crop_x: Option<f64>,
+    crop_y: Option<f64>,
+    crop_w: Option<f64>,
+    crop_h: Option<f64>,
+    width: Option<u32>,
+) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        let crop = gif_capture::ViewCrop::from_parts(
+            view_width.unwrap_or(0.0),
+            view_height.unwrap_or(0.0),
+            crop_x.unwrap_or(0.0),
+            crop_y.unwrap_or(0.0),
+            crop_w.unwrap_or(0.0),
+            crop_h.unwrap_or(0.0),
+        );
+        let width = width.unwrap_or(1920).clamp(160, 1920);
+        let webview = main_video_webview(&app)?;
+
+        // CapturePreview avoids the slow DevTools JSON/base64 round trip and is valid for most
+        // composed surfaces. Some protected renderers return black, so retain one proven CDP
+        // fallback and validate after the crop/decode that we already have to perform.
+        let preview = capture_webview_preview(&webview).await;
+        let jpeg = match preview {
+            Ok(jpeg) => match crop_compositor_frame(jpeg, crop, width).await {
+                Ok(cropped) => cropped,
+                Err(_) => {
+                    let params = r#"{"format":"jpeg","quality":92,"fromSurface":true,"captureBeyondViewport":false}"#;
+                    let jpeg = capture_webview_cdp(&webview, params.into()).await?;
+                    crop_compositor_frame(jpeg, crop, width).await?
+                }
+            },
+            Err(_) => {
+                let params = r#"{"format":"jpeg","quality":92,"fromSurface":true,"captureBeyondViewport":false}"#;
+                let jpeg = capture_webview_cdp(&webview, params.into()).await?;
+                crop_compositor_frame(jpeg, crop, width).await?
+            }
+        };
+        let dir = player_pictures_dir(&app)?;
+        let path = write_next_shot(&dir, "jpg", &jpeg)?;
+        return Ok(path.to_string_lossy().into_owned());
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (
+            app,
+            view_width,
+            view_height,
+            crop_x,
+            crop_y,
+            crop_w,
+            crop_h,
+            width,
+        );
         Err("window capture is only implemented on Windows".into())
     }
 }
@@ -2856,19 +2956,30 @@ async fn drm_gif_capture_loop(
 ) {
     let started = std::time::Instant::now();
     let limit = std::time::Duration::from_secs(max_seconds as u64 + 1);
-    // Encrypted video is black in DevTools screencast. Burst compositor JPEGs and crop
-    // off-thread, then take one more shot after stop so the GIF includes the O/R4 press.
+    // Protected video is black in DevTools screencast. Burst compositor JPEGs and crop
+    // off-thread, but keep the queue bounded so stopping never has a large crop backlog to drain.
     let params =
         r#"{"format":"jpeg","quality":80,"fromSurface":true,"captureBeyondViewport":false}"#;
     let mut jobs = tokio::task::JoinSet::new();
     let use_preview = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let grab = async |jobs: &mut tokio::task::JoinSet<()>| {
+    let grab = async |jobs: &mut tokio::task::JoinSet<()>, first: bool| {
         #[cfg(windows)]
         {
             let Ok(webview) = main_video_webview(&app) else {
                 return;
             };
-            let jpeg = if use_preview.load(std::sync::atomic::Ordering::Relaxed) {
+            // CapturePreview can have a cold first callback. Page.captureScreenshot is slower for
+            // a sustained burst but starts predictably, so use it once to avoid missing the first
+            // seconds after the shortcut and then switch to the higher-throughput preview API.
+            let jpeg = if first {
+                match capture_webview_cdp(&webview, params.into()).await {
+                    Ok(jpeg) if !raster_is_solid_black(&jpeg) => jpeg,
+                    _ => match capture_webview_preview(&webview).await {
+                        Ok(jpeg) => jpeg,
+                        Err(_) => return,
+                    },
+                }
+            } else if use_preview.load(std::sync::atomic::Ordering::Relaxed) {
                 match capture_webview_preview(&webview).await {
                     Ok(jpeg) if !raster_is_solid_black(&jpeg) => jpeg,
                     _ => {
@@ -2903,18 +3014,30 @@ async fn drm_gif_capture_loop(
         }
         #[cfg(not(windows))]
         {
-            let _ = (&app, &dir, crop, width, &params, &mut *jobs, &use_preview);
+            let _ = (
+                &app,
+                &dir,
+                crop,
+                width,
+                &params,
+                &mut *jobs,
+                &use_preview,
+                first,
+            );
         }
     };
+    let mut first = true;
     while !stop.load(std::sync::atomic::Ordering::Relaxed)
         && frames.load(std::sync::atomic::Ordering::Relaxed) < max_frames
         && started.elapsed() < limit
     {
-        grab(&mut jobs).await;
+        grab(&mut jobs, first).await;
+        first = false;
+        if jobs.len() >= 2 {
+            let _ = jobs.join_next().await;
+        }
     }
-    if frames.load(std::sync::atomic::Ordering::Relaxed) < max_frames {
-        grab(&mut jobs).await;
-    }
+    jobs.abort_all();
     while jobs.join_next().await.is_some() {}
 }
 
@@ -3469,7 +3592,7 @@ async fn player_gif_stop(
 async fn drm_gif_stop(
     app: AppHandle,
     capture: tauri::State<'_, DrmGifCapture>,
-) -> Result<String, String> {
+) -> Result<(), String> {
     let mut session = capture
         .0
         .lock()
@@ -3479,21 +3602,40 @@ async fn drm_gif_stop(
     session
         .stop
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    if let Some(join) = session.join.take() {
-        let _ = join.await;
-    }
     let captured_ms = session.started.elapsed().as_millis() as u64;
-    let captured = session.frames.load(std::sync::atomic::Ordering::Relaxed);
-    eprintln!("[gif] compositor frames={captured} in {captured_ms}ms");
+    let join = session.join.take();
+    let captured = session.frames;
     let frames = player::GifFrames {
         dir: session.dir,
         captured_ms,
         width: session.width,
         fps: session.fps,
     };
-    let result = encode_gif_frames(&app, &frames).await;
-    let _ = std::fs::remove_dir_all(&frames.dir);
-    result
+    tauri::async_runtime::spawn(async move {
+        if let Some(join) = join {
+            let _ = join.await;
+        }
+        let count = captured.load(std::sync::atomic::Ordering::Relaxed);
+        eprintln!("[gif] compositor frames={count} in {captured_ms}ms");
+        let result = if count == 0 {
+            Err("gif-no-frames".into())
+        } else {
+            encode_gif_frames(&app, &frames).await
+        };
+        let _ = std::fs::remove_dir_all(&frames.dir);
+        let payload = match result {
+            Ok(_) => GifSaveComplete {
+                ok: true,
+                error: None,
+            },
+            Err(error) => GifSaveComplete {
+                ok: false,
+                error: Some(error),
+            },
+        };
+        let _ = app.emit("player-gif-save-complete", payload);
+    });
+    Ok(())
 }
 
 /// Encode a bounded segment of the current source as GIF or MP4 using the user's local ffmpeg.
@@ -5520,6 +5662,7 @@ pub fn run() {
             save_player_png,
             capture_webview_png,
             capture_webview_jpeg,
+            capture_player_surface,
             drm_gif_start,
             drm_gif_frame,
             drm_gif_stop,

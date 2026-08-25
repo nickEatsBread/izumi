@@ -286,7 +286,7 @@
         gifRecordingStart.set(pos)
         playerNotice.set(`GIF recording started · press ${gmMode ? 'R4' : 'O'} to stop`)
         try {
-          await playerGifStart($gifIncludeSubtitles)
+          await playerGifStart($gifIncludeSubtitles, true)
         } catch {
           gifRecordingStart.set(null)
           playerNotice.set('GIF recording failed to start')
@@ -297,8 +297,8 @@
       gifRecordingStart.set(null)
       playerNotice.set('Saving GIF…')
       try {
-        await playerGifStop({ startSec: startedAt ?? Math.max(0, pos - 3), endSec: pos })
-        playerNotice.set('GIF saved to Pictures/izumi')
+        const background = await playerGifStop({ startSec: startedAt ?? Math.max(0, pos - 3), endSec: pos })
+        playerNotice.set(background ? 'Saving GIF in background…' : 'GIF saved to Pictures/izumi')
       } catch (error) {
         playerNotice.set(
           String(error).includes('ffmpeg-unavailable')
@@ -1011,7 +1011,7 @@
       if (e.payload.name === 'l4') {
         if (!deckL4Press.update(e.payload.pressed, performance.now())) return
         if (get(commentsOpen)) return
-        playerScreenshot()
+        playerScreenshot(true)
           .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))
           .catch(() => playerNotice.set('Screenshot failed'))
         return
@@ -1201,7 +1201,8 @@
       // Back/Escape is an exit command, not player activity. Game-mode arrow seeking is also quiet:
       // the native seek feedback can move without flashing the complete controls over the video.
       const quietSeek = gmMode && (action === 'playerSeekBack' || action === 'playerSeekForward')
-      if (action !== 'playerClose' && !quietSeek) poke()
+      const quietCapture = action === 'playerScreenshot' || action === 'playerGif'
+      if (action !== 'playerClose' && !quietSeek && !quietCapture) poke()
       if (action === 'playerClose') {
         if (gmMode) void close()
         else if (get(fullscreen)) exitFullscreen()
@@ -1230,7 +1231,7 @@
       else if (action === 'playerNextEpisode') playNext(undefined, !paused)
       else if (action === 'playerPreviousEpisode') playPrev(undefined, !paused)
       else if (action === 'playerFullscreen') toggleFullscreen()
-      else if (action === 'playerScreenshot') playerScreenshot()
+      else if (action === 'playerScreenshot') playerScreenshot(true)
         .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))
         .catch(() => playerNotice.set('Screenshot failed'))
       else if (action === 'playerStats') playerStatsOpen.update((value) => !value)

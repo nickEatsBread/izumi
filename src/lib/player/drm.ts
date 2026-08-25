@@ -82,9 +82,9 @@ export interface DrmEngine {
   command(name: string, args: string[]): void
   getProperty(name: string): string
   tracks(): DrmTrack[]
-  screenshot?: () => Promise<void>
+  screenshot?: (fast?: boolean) => Promise<void>
   /** Capture composed DRM frames; direct video/canvas reads are black under Widevine. */
-  gifStart?: (includeSubtitles: boolean) => Promise<void>
+  gifStart?: (includeSubtitles: boolean, fast?: boolean) => Promise<void>
   gifStop?: () => Promise<void>
   gifAbort?: () => Promise<void>
   /** Seek-bar hover preview as a data/HTTP URL, or null when this stream has no tiles. */

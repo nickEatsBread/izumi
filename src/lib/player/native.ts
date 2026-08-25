@@ -35,10 +35,10 @@ export function playerTracks(): Promise<string> {
   return invoke<string>('player_tracks')
 }
 
-export async function playerScreenshot(): Promise<void> {
+export async function playerScreenshot(fast = false): Promise<void> {
   const drm = getDrmEngine()
   if (drm?.screenshot) {
-    await drm.screenshot()
+    await drm.screenshot(fast)
     return
   }
   if (drmStream()) return
@@ -67,20 +67,21 @@ export async function playerEditorSnapshot(time: number): Promise<string | null>
   catch { return null }
 }
 
-export async function playerGifStart(includeSubtitles: boolean): Promise<void> {
+export async function playerGifStart(includeSubtitles: boolean, fast = false): Promise<void> {
   const drm = getDrmEngine()
   if (drm?.gifStart) {
-    await drm.gifStart(includeSubtitles)
+    await drm.gifStart(includeSubtitles, fast)
     return
   }
   if (drmStream()) throw new Error('DRM GIF capture is unavailable')
 }
 
-export async function playerGifStop(range?: { startSec?: number; endSec?: number }): Promise<void> {
+/** Stop recording. `true` means encoding continues natively in the background. */
+export async function playerGifStop(range?: { startSec?: number; endSec?: number }): Promise<boolean> {
   const drm = getDrmEngine()
   if (drm?.gifStop) {
     await drm.gifStop()
-    return
+    return true
   }
   if (drmStream()) throw new Error('DRM GIF capture is unavailable')
   let start = range?.startSec
@@ -99,6 +100,7 @@ export async function playerGifStop(range?: { startSec?: number; endSec?: number
     endSec: end,
     width: plan.width,
   })
+  return false
 }
 
 /** Safe even when no recorder is active; used during close/source replacement. */

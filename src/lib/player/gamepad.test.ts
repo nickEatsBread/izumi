@@ -133,7 +133,7 @@ describe('Steam Deck rear grips', () => {
     expect(native).toContain('.name("izumi-deck-grips".into())')
     expect(overlay).toContain("e.payload.name === 'l4'")
     expect(overlay).toContain("e.payload.name === 'r4'")
-    expect(overlay).toContain('playerScreenshot()')
+    expect(overlay).toContain('playerScreenshot(true)')
     expect(overlay).toContain("void capture('gif')")
   })
 })

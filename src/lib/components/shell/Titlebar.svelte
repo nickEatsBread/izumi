@@ -31,8 +31,8 @@
     const startedAt = $gifRecordingStart
     gifRecordingStart.set(null)
     try {
-      await playerGifStop({ startSec: startedAt })
-      playerNotice.set('GIF saved to Pictures/izumi')
+      const background = await playerGifStop({ startSec: startedAt })
+      playerNotice.set(background ? 'Saving GIF in background…' : 'GIF saved to Pictures/izumi')
     } catch (error) {
       playerNotice.set(
         String(error).includes('ffmpeg-unavailable')
