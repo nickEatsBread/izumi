@@ -37,16 +37,23 @@ describe('protected capture presentation', () => {
     expect(css).toContain('html.izumi-capture-output .izumi-player-root > :not(.izumi-capture-root)')
     expect(css).toContain('opacity: 0 !important')
     expect(rust).toContain('.set_ignore_cursor_events(true)')
-    expect(rust).toContain('WDA_EXCLUDEFROMCAPTURE')
+    expect(rust).not.toContain('WDA_EXCLUDEFROMCAPTURE')
+    expect(rust).not.toContain('.content_protected(true)')
   })
 
   it('reuses the main WebView2 environment and handshakes without a missed ready event', () => {
     expect(rust).toContain('.additional_browser_args(DESKTOP_WEBVIEW_ARGS)')
-    expect(rust).toContain('.content_protected(true)')
     expect(rust).toContain('WebviewUrl::default()')
     expect(presentation).toContain("invoke('capture_controls_overlay_prepare')")
     expect(presentation).toContain('PROBE_EVENT')
     expect(overlay).toContain('captureControlsEvents.probe')
+  })
+
+  it('matches the main client area without disappearing from Windows screen captures', () => {
+    expect(rust).toContain('main.inner_position()')
+    expect(rust).toContain('main.inner_size()')
+    expect(rust).not.toContain('main.outer_position()')
+    expect(rust).not.toContain('main.outer_size()')
   })
 
   it('uses the clean presentation for both screenshots and the full GIF sampling lifetime', () => {

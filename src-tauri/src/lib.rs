@@ -2703,8 +2703,11 @@ fn sync_capture_controls_overlay(
     main: &tauri::WebviewWindow,
     overlay: &tauri::WebviewWindow,
 ) -> Result<(), String> {
-    let position = main.outer_position().map_err(|error| error.to_string())?;
-    let size = main.outer_size().map_err(|error| error.to_string())?;
+    // A maximized undecorated Windows window still has an invisible resize frame (typically 7px).
+    // The controls window has no such frame, so matching outer bounds shifts its WebView left/up.
+    // Align the two client areas instead: these are the pixels the user actually sees.
+    let position = main.inner_position().map_err(|error| error.to_string())?;
+    let size = main.inner_size().map_err(|error| error.to_string())?;
     overlay
         .set_position(position)
         .map_err(|error| error.to_string())?;
@@ -2727,14 +2730,6 @@ fn capture_controls_overlay_sync(app: AppHandle) -> Result<(), String> {
             .set_ignore_cursor_events(true)
             .map_err(|error| error.to_string())?;
         sync_capture_controls_overlay(&main, &overlay)?;
-        // `contentProtected` maps to this flag too; set it explicitly after creation so the
-        // controls remain excluded even if a WebView runtime ignores the constructor option.
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
-        };
-        if let Ok(hwnd) = overlay.hwnd() {
-            let _ = unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) };
-        }
         return Ok(());
     }
     #[cfg(not(windows))]
@@ -5570,7 +5565,6 @@ pub fn run() {
                     .closable(false)
                     .skip_taskbar(true)
                     .always_on_top(true)
-                    .content_protected(true)
                     .focused(false)
                     .focusable(false)
                     .visible(false)
