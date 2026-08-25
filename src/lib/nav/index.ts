@@ -175,6 +175,34 @@ function pickInNavRows(active: HTMLElement, dir: Dir): HTMLElement | null | unde
   return active
 }
 
+type RevealScrollTarget = Window | HTMLElement
+const controllerScrollUntil = new WeakMap<object, number>()
+const CONTROLLER_SMOOTH_WINDOW_MS = 600
+
+/** WebKitGTK versions shipped by SteamOS can retain the old destination when one smooth scroll
+ * interrupts another. Stop at the interpolated position before starting the replacement, so
+ * rapid Down taps cannot later rebound toward an older focused row. `instant` also ignores the
+ * document's global smooth-scroll CSS. */
+function abortOngoingScroll(target: RevealScrollTarget): void {
+  if (target instanceof HTMLElement) {
+    target.scrollTo({ left: target.scrollLeft, top: target.scrollTop, behavior: 'instant' })
+  } else {
+    window.scrollTo({ left: window.scrollX, top: window.scrollY, behavior: 'instant' })
+  }
+}
+
+function runControllerScroll(
+  target: RevealScrollTarget,
+  behavior: ScrollBehavior,
+  request: () => void,
+): void {
+  const now = performance.now()
+  if ((controllerScrollUntil.get(target) ?? 0) > now) abortOngoingScroll(target)
+  request()
+  if (behavior === 'smooth') controllerScrollUntil.set(target, now + CONTROLLER_SMOOTH_WINDOW_MS)
+  else controllerScrollUntil.delete(target)
+}
+
 /** Reveal controller focus without asking scrollIntoView to move every scrollable ancestor. The
  * settings category rail owns its own viewport; moving it must never scroll the category content. */
 function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void {
@@ -186,7 +214,7 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
   // The featured carousel is taller than the safe-band math can infer from its bottom action row.
   // Entering its primary action means reveal the whole feature, not just the focused button.
   if (vertical && el.hasAttribute('data-nav-scroll-top')) {
-    window.scrollTo({ top: 0, behavior })
+    runControllerScroll(window, behavior, () => window.scrollTo({ top: 0, behavior }))
     return
   }
   // Horizontal carousel navigation owns only that row. Vertical navigation still reveals the
@@ -222,8 +250,10 @@ function revealFocused(el: HTMLElement, vertical: boolean, rapid = false): void 
     endMargin: clamp(portWidth * 0.18, 48, 176),
   })
   if (!top && !left) return
-  if (pane) pane.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
-  else window.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
+  const target: RevealScrollTarget = pane ?? window
+  runControllerScroll(target, behavior, () => {
+    target.scrollBy({ top: vertical ? top : 0, left: vertical ? 0 : left, behavior })
+  })
 }
 
 export function initDpadNav() {

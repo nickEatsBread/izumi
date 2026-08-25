@@ -226,6 +226,13 @@ pub fn should_restore_touch(last_ms: u64, now_ms: u64) -> bool {
     now_ms.saturating_sub(last_ms) >= TOUCH_RESTORE_MIN_INTERVAL_MS || now_ms < last_ms
 }
 
+/// A normal touch release keeps a short grace deadline so a transient Gamescope focus-return
+/// cannot inject XTest events into WebKit's still-settling kinetic scroll. A genuinely lost
+/// release is recovered by the webview watchdog after its own quiet-window check.
+pub fn touch_focus_recovery_allowed(hold_until_ms: u64, now_ms: u64) -> bool {
+    now_ms >= hold_until_ms
+}
+
 /// Player-only grips/triggers never change Gamescope's screen, so they must not wake the
 /// XWayland touch-mode writer.
 pub fn gamepad_input_restores_touch(name: &str) -> bool {

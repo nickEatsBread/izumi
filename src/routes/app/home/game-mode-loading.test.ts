@@ -33,6 +33,8 @@ describe('Steam Deck browse loading', () => {
   it('smoothly carries single focus moves and makes held repeats immediate', () => {
     expect(nav).toContain("const behavior: ScrollBehavior = rapid || reduced ? 'auto' : 'smooth'")
     expect(css).not.toContain('html.gamemode, html.gamemode body { scroll-behavior: auto; }')
+    expect(nav).toContain("behavior: 'instant'")
+    expect(nav).toContain('abortOngoingScroll(target)')
     expect(nav).toContain('endMargin: clamp(portHeight * 0.2, 64, 144)')
     expect(nav).toContain('endMargin: clamp(portWidth * 0.18, 48, 176)')
     expect(nav).toContain("if (!top && !left) return")

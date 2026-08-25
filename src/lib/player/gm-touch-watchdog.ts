@@ -17,6 +17,7 @@ import { invoke } from '@tauri-apps/api/core'
 //    also logged through `gm_log` — the field signal that tells us which failure mode users hit.
 const STUCK_MS = 6_000
 const CHECK_MS = 2_000
+const FOCUS_RECOVERY_MS = 600
 
 type Tracked = { downAt: number; lastAt: number; captured: Element | null }
 
@@ -37,12 +38,22 @@ export function restoreGmTouchAfterTransition(): void {
 export function initGmTouchWatchdog(): () => void {
   const active = new Map<number, Tracked>()
   let held = false
+  let focusRecoveryTimer: number | undefined
   const setHold = (h: boolean) => {
     if (h === held) return
     held = h
     void invoke('native_touch_hold', { held: h }).catch(() => {})
   }
   const down = (e: PointerEvent) => {
+    // Controller focus reveal is deliberately smooth, but SteamOS's WebKit can retain its old
+    // target when touch interrupts that animation. An instant no-distance scroll aborts the old
+    // programmatic animation before native panning owns the same scrolling boxes.
+    window.scrollTo({ left: window.scrollX, top: window.scrollY, behavior: 'instant' })
+    for (const target of e.composedPath()) {
+      if (!(target instanceof HTMLElement)) continue
+      if (target.scrollHeight <= target.clientHeight && target.scrollWidth <= target.clientWidth) continue
+      target.scrollTo({ left: target.scrollLeft, top: target.scrollTop, behavior: 'instant' })
+    }
     // Track EVERY pointer type. WebKitGTK 2.48-2.50 (the shipped Deck runtime) compiles touch
     // pointer events out entirely — every finger arrives as a synthesized MOUSE pointer (id 1) —
     // so the old `pointerType === 'touch'` filter made the watchdog and the keepalive hold inert
@@ -58,12 +69,11 @@ export function initGmTouchWatchdog(): () => void {
   }
   const clear = (e: PointerEvent) => {
     active.delete(e.pointerId)
-    if (!active.size) {
-      setHold(false)
-      // Gamescope's synthesized mouse stays at the last touch with button 1 often still
-      // logically down. Browse hover then lights play buttons as rows slide under that point.
-      void invoke('gm_touch_unstick').catch(() => {})
-    }
+    // Receiving pointerup/cancel proves Gamescope and WebKit already ended this sequence. The old
+    // path still fired XTest + warped the cursor to (0,0) here; that extra pointer transition could
+    // interrupt kinetic scrolling and pull the document back toward its previous smooth target.
+    // Reserve the native unstick for a release that is actually missing (recover(), below).
+    if (!active.size) setHold(false)
   }
   const got = (e: Event) => {
     const pe = e as PointerEvent
@@ -105,29 +115,42 @@ export function initGmTouchWatchdog(): () => void {
     active.clear()
     setHold(false)
   }
-  // Coming BACK (overlay/OSK closed, window refocused) is the moment a swallowed release has just
-  // happened — an ordinary reset() only fires when something was tracked, but the swipe that
-  // opened the overlay may never have produced a pointerdown here at all (gamescope can route the
-  // whole gesture to the overlay). Unstick unconditionally and re-assert passthrough: both are
-  // no-ops when nothing is stuck.
+  const suspendFocusRecovery = () => {
+    if (focusRecoveryTimer !== undefined) window.clearTimeout(focusRecoveryTimer)
+    focusRecoveryTimer = undefined
+  }
+  // A brief Gamescope focus wobble can happen *during* a valid swipe (field logs showed one eight
+  // milliseconds after pointerdown). Immediate reset used to fake-release and warp that live
+  // gesture. On return, recover only pointers which existed at the edge and produced no later
+  // move/up for a quiet window. Continued gestures and brand-new touches are left alone.
   const returned = () => {
-    reset()
-    void invoke('gm_touch_unstick').catch(() => {})
+    suspendFocusRecovery()
+    const returnedAt = Date.now()
+    const candidates = [...active]
+    focusRecoveryTimer = window.setTimeout(() => {
+      focusRecoveryTimer = undefined
+      for (const [id, pointer] of candidates) {
+        if (active.get(id) === pointer && pointer.lastAt <= returnedAt) {
+          recover(id, pointer, 'focus-return')
+        }
+      }
+    }, FOCUS_RECOVERY_MS)
     window.setTimeout(() => void invoke('restore_native_touch').catch(() => {}), GM_TOUCH_RESTORE_DELAY_MS)
   }
-  const onVisibility = () => (document.visibilityState === 'visible' ? returned() : reset())
+  const onVisibility = () => (document.visibilityState === 'visible' ? returned() : suspendFocusRecovery())
   window.addEventListener('pointerdown', down, true)
   window.addEventListener('pointermove', move, true)
   window.addEventListener('pointerup', clear, true)
   window.addEventListener('pointercancel', clear, true)
   window.addEventListener('gotpointercapture', got, true)
   window.addEventListener('lostpointercapture', lost, true)
-  window.addEventListener('blur', reset)
+  window.addEventListener('blur', suspendFocusRecovery)
   window.addEventListener('focus', returned)
   window.addEventListener('gm-touch-reset', reset)
   document.addEventListener('visibilitychange', onVisibility)
   return () => {
     clearInterval(timer)
+    suspendFocusRecovery()
     setHold(false)
     window.removeEventListener('pointerdown', down, true)
     window.removeEventListener('pointermove', move, true)
@@ -135,7 +158,7 @@ export function initGmTouchWatchdog(): () => void {
     window.removeEventListener('pointercancel', clear, true)
     window.removeEventListener('gotpointercapture', got, true)
     window.removeEventListener('lostpointercapture', lost, true)
-    window.removeEventListener('blur', reset)
+    window.removeEventListener('blur', suspendFocusRecovery)
     window.removeEventListener('focus', returned)
     window.removeEventListener('gm-touch-reset', reset)
     document.removeEventListener('visibilitychange', onVisibility)

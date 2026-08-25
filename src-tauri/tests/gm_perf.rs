@@ -188,6 +188,8 @@ fn touch_restore_coalesces_and_ignores_player_grips() {
     assert!(!gamepad_input_restores_touch("r2"));
     assert!(gamepad_input_restores_touch("a"));
     assert!(gamepad_input_restores_touch("down"));
+    assert!(!touch_focus_recovery_allowed(1_600, 1_200));
+    assert!(touch_focus_recovery_allowed(1_600, 1_600));
 }
 
 #[test]

@@ -16,9 +16,23 @@ describe('Game-mode touch watchdog', () => {
     expect(src).toContain("window.addEventListener('focus', returned)")
   })
 
-  it('unsticks the synthesized pointer when the last finger lifts', () => {
-    expect(src).toContain('if (!active.size)')
-    expect(src).toContain("invoke('gm_touch_unstick')")
+  it('does not fake-release or warp an ordinary completed swipe', () => {
+    const clear = src.slice(src.indexOf('const clear ='), src.indexOf('const got ='))
+    expect(clear).toContain('if (!active.size) setHold(false)')
+    expect(clear).not.toContain("invoke('gm_touch_unstick')")
+  })
+
+  it('aborts a pending controller animation when a finger takes over', () => {
+    const down = src.slice(src.indexOf('const down ='), src.indexOf('const move ='))
+    expect(down).toContain("behavior: 'instant'")
+    expect(down).toContain('e.composedPath()')
+  })
+
+  it('gives transient focus wobbles a quiet window before recovery', () => {
+    expect(src).toContain('const FOCUS_RECOVERY_MS = 600')
+    expect(src).toContain("recover(id, pointer, 'focus-return')")
+    expect(src).toContain('pointer.lastAt <= returnedAt')
+    expect(src).not.toContain('const returned = () => {\n    reset()')
   })
 
   it('provides a transition reset for releases swallowed by comments iframes', () => {

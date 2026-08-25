@@ -5363,10 +5363,11 @@ pub fn run() {
                         if player::linux_embed::is_wayland(&touch_win) {
                             return;
                         }
-                        // Focus returning usually means an overlay (Steam menu/OSK/QAM) just
-                        // closed — the exact transition that can swallow a touch-release and
-                        // strand a phantom button press. Clear it before re-asserting the mode.
-                        player::linux_x11::unstick_pointer();
+                        // Focus returning usually means an overlay closed, but Gamescope can also
+                        // wobble focus during a valid swipe. Do not fake-release/warp an active or
+                        // just-completed gesture; the webview watchdog handles a genuinely missing
+                        // release after a quiet window.
+                        player::linux_x11::unstick_pointer_if_idle();
                         if let Err(e) = player::linux_x11::enable_native_touch(&touch_win) {
                             player::linux_embed::elog(&format!("x11: focus touch passthrough failed: {e}"));
                         }

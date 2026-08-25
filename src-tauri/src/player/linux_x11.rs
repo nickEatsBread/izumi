@@ -172,12 +172,14 @@ const TOUCH_KEEPALIVE: Duration = Duration::from_millis(50);
 /// legitimate write-hold is never mistaken for a dead worker.
 static TOUCH_ALIVE_MS: AtomicU64 = AtomicU64::new(0);
 const TOUCH_STALE_MS: u64 = 2_000;
-/// Keepalive writes are HELD while a finger is physically down (reported by the webview): a mode
-/// write landing mid-gesture makes gamescope reroute that gesture's remaining MOTION (the release
-/// itself is safe — gamescope pairs it with how the down was delivered), so the drag freezes or
-/// warps. Deadline-based so a lost pointerup can never silence the keepalive for good.
+/// Keepalive writes are HELD while a finger is physically down and briefly after release (reported
+/// by the webview): a mode write landing mid-gesture makes gamescope reroute that gesture's
+/// remaining MOTION, so the drag freezes or warps. Deadline-based so a lost pointerup can never
+/// silence the keepalive for good.
 static TOUCH_HOLD_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
 const TOUCH_HOLD_MAX_MS: u64 = 10_000;
+/// Keep focus-triggered XTest recovery away from an ordinary release and its kinetic tail.
+const TOUCH_RELEASE_GRACE_MS: u64 = 600;
 /// Set by the IO handlers when the worker's private Display dies (XWayland restart). The worker
 /// exits on seeing it; the next enable_native_touch respawns with a fresh connection.
 static TOUCH_DPY_DEAD: AtomicBool = AtomicBool::new(false);
@@ -217,12 +219,25 @@ pub fn unstick_pointer() {
     });
 }
 
+/// Focus can wobble during a valid Deck swipe. Only blind-recover when the webview has not
+/// reported an active or just-completed touch; tracked lost releases use the delayed JS watchdog.
+pub fn unstick_pointer_if_idle() {
+    if crate::gm_perf::touch_focus_recovery_allowed(
+        TOUCH_HOLD_UNTIL_MS.load(Ordering::Relaxed),
+        now_ms(),
+    ) {
+        unstick_pointer();
+    } else {
+        crate::player::linux_embed::elog("x11: skipped focus unstick during active/recent touch");
+    }
+}
+
 /// Webview-reported "a finger is physically on the screen" edge (see native_touch_hold).
 pub fn set_touch_hold(held: bool) {
     let deadline = if held {
         now_ms() + TOUCH_HOLD_MAX_MS
     } else {
-        0
+        now_ms() + TOUCH_RELEASE_GRACE_MS
     };
     TOUCH_HOLD_UNTIL_MS.store(deadline, Ordering::Relaxed);
 }
