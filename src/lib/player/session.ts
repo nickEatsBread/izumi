@@ -9,6 +9,7 @@ import type { SharedSourceState } from '$lib/watch-together/source'
 import type { DirectTorrentHealth } from '$lib/player/direct-torrent'
 import type { Chapter } from '$lib/player/chapter-skip'
 import type { PlayerCompositorPath } from '$lib/player/gm-overlay'
+import { getDrmEngine } from '$lib/player/drm'
 
 // Open source-picker: set after Play resolves the cached streams;
 // the picker lists them and `playStream` starts the chosen one. null = closed.
@@ -303,23 +304,54 @@ export async function exitFullscreen() {
   catch (e) { console.warn('exit fullscreen', e) }
 }
 
-/** Desktop miniplayer uses the existing main window and embedded mpv instance, so playback remains
- * uninterrupted. Android owns its native Activity PiP and does not call this path. */
-export async function togglePictureInPicture() {
-  if (get(fullscreen)) await exitFullscreen()
+let pipTransition: Promise<void> = Promise.resolve()
+
+function queuePipTransition(operation: () => Promise<void>): Promise<void> {
+  const queued = pipTransition.catch(() => {}).then(operation)
+  pipTransition = queued
+  return queued
+}
+
+async function prepareCaptureForPip() {
+  const engine = getDrmEngine()
+  if (!engine?.prepareForViewportChange) return
   try {
-    pictureInPicture.set(await invoke<boolean>('player_toggle_pip'))
+    const gifStopped = await engine.prepareForViewportChange()
+    if (gifStopped) {
+      gifRecordingStart.set(null)
+      playerNotice.set('Saving GIF in background…')
+    }
   } catch (error) {
-    console.warn('toggle picture-in-picture', error)
-    playerNotice.set(error instanceof Error ? error.message : String(error))
+    // The capture implementation restores its presentation in finally blocks. PiP should still
+    // be usable after a failed screenshot/encoder drain instead of becoming permanently disabled.
+    console.warn('prepare capture for picture-in-picture', error)
+    gifRecordingStart.set(null)
   }
 }
 
-export async function exitPictureInPicture() {
-  if (!get(pictureInPicture)) return
-  try {
-    pictureInPicture.set(await invoke<boolean>('player_toggle_pip'))
-  } catch (error) {
-    console.warn('exit picture-in-picture', error)
-  }
+/** Desktop miniplayer uses the existing main window and embedded mpv instance, so playback remains
+ * uninterrupted. Android owns its native Activity PiP and does not call this path. */
+export function togglePictureInPicture(): Promise<void> {
+  return queuePipTransition(async () => {
+    if (get(fullscreen)) await exitFullscreen()
+    await prepareCaptureForPip()
+    try {
+      pictureInPicture.set(await invoke<boolean>('player_toggle_pip'))
+    } catch (error) {
+      console.warn('toggle picture-in-picture', error)
+      playerNotice.set(error instanceof Error ? error.message : String(error))
+    }
+  })
+}
+
+export function exitPictureInPicture(): Promise<void> {
+  return queuePipTransition(async () => {
+    if (!get(pictureInPicture)) return
+    await prepareCaptureForPip()
+    try {
+      pictureInPicture.set(await invoke<boolean>('player_toggle_pip'))
+    } catch (error) {
+      console.warn('exit picture-in-picture', error)
+    }
+  })
 }

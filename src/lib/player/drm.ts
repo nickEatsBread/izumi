@@ -87,6 +87,8 @@ export interface DrmEngine {
   gifStart?: (includeSubtitles: boolean, fast?: boolean) => Promise<void>
   gifStop?: () => Promise<void>
   gifAbort?: () => Promise<void>
+  /** Finish capture work whose fixed viewport would be invalidated by a window resize/PiP move. */
+  prepareForViewportChange?: () => Promise<boolean>
   /** Seek-bar hover preview as a data/HTTP URL, or null when this stream has no tiles. */
   thumbnail?: (time: number) => Promise<string | null>
   destroy(): void

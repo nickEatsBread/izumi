@@ -962,6 +962,22 @@
     await finishGifUi()
   }
 
+  async function prepareForViewportChange() {
+    // Screenshots and GIFs map a CSS video rectangle onto a compositor frame. Resizing the main
+    // window midway through either operation invalidates that map and can also strand the controls
+    // mirror at the old bounds. Let a one-shot finish; detach an active recorder for background
+    // encoding before native PiP changes any geometry.
+    if (screenshotTask) await screenshotTask.catch(() => {})
+    if (gifBoot) await gifBoot.catch(() => {})
+    if (gifStopping) {
+      await gifStopping.catch(() => {})
+      return true
+    }
+    if (!gifActive) return false
+    await gifStop()
+    return true
+  }
+
   const thumbCache = new Map<number, string>()
   const bifCache = new Map<number, string>()
   const BIF_CACHE_MAX = 48
@@ -1222,6 +1238,7 @@
     gifStart,
     gifStop,
     gifAbort,
+    prepareForViewportChange,
     thumbnail,
     destroy() {
       void teardown()
