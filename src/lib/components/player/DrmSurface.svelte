@@ -833,6 +833,7 @@
   }
 
   let gifBoot: Promise<void> | null = null
+  let gifStopping: Promise<void> | null = null
 
   async function screenshot(_fast = false) {
     const video = videoEl
@@ -883,6 +884,9 @@
   }
 
   async function gifStart(includeSubtitles: boolean, _fast = false) {
+    // Native stop drains the final compositor request before detaching the encoder. A rapid second
+    // recording waits only for that drain, not for GIF encoding, which continues independently.
+    if (gifStopping) await gifStopping.catch(() => {})
     if (gifActive || gifBoot) throw new Error('GIF is already recording')
     if (!videoEl || !firstFrame || videoEl.videoWidth <= 0) throw new Error('Video is not ready for GIF capture')
     const plan = gifCapturePlan(get(gifScale), get(gifMaxSeconds))
@@ -919,13 +923,22 @@
   }
 
   async function gifStop() {
-    if (gifBoot) await gifBoot.catch(() => {})
-    if (!gifActive) throw new Error('GIF is not recording')
-    gifActive = false
+    if (gifStopping) return gifStopping
+    const task = (async () => {
+      if (gifBoot) await gifBoot.catch(() => {})
+      if (!gifActive) throw new Error('GIF is not recording')
+      gifActive = false
+      try {
+        await invoke('drm_gif_stop')
+      } finally {
+        await finishGifUi()
+      }
+    })()
+    gifStopping = task
     try {
-      await invoke('drm_gif_stop')
+      await task
     } finally {
-      await finishGifUi()
+      if (gifStopping === task) gifStopping = null
     }
   }
 
