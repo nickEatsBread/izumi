@@ -10,7 +10,7 @@
   import Volume2 from '@lucide/svelte/icons/volume-2'
   import VolumeX from '@lucide/svelte/icons/volume-x'
   import Captions from '@lucide/svelte/icons/captions'
-  import MessageCircleMore from '@lucide/svelte/icons/message-circle-more'
+  import MessageSquare from '@lucide/svelte/icons/message-square'
   import Maximize from '@lucide/svelte/icons/maximize'
   import Minimize from '@lucide/svelte/icons/minimize'
   import Settings from '@lucide/svelte/icons/settings-2'
@@ -927,7 +927,7 @@
         <!-- Discussion / comments panel toggle (keyed on the playing episode). -->
         <button data-focusable class={iconBtn} onclick={toggleComments}
                 aria-label="Discussion" aria-pressed={$commentsOpen}>
-          <MessageCircleMore size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
+          <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
         </button>
 
         <!-- Alternate servers/qualities for the current source (same site, same flavour). -->
