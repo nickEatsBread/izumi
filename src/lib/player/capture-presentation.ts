@@ -119,6 +119,9 @@ function cloneSurface(element: HTMLElement): string {
   const clone = element.cloneNode(true) as HTMLElement
   markMirrorState(element, clone)
   clone.querySelector('.izumi-capture-root')?.remove()
+  // Small chrome that is already represented inside the player can create clipped paint remnants
+  // when copied across fixed surfaces. Keep it in the real window, but never serialize it twice.
+  clone.querySelectorAll('[data-capture-exclude]').forEach((node) => node.remove())
   // Some expensive panels deliberately remain mounted while closed. Their hidden state can live
   // in component-scoped CSS that is not loaded by the lightweight mirror route, so never copy an
   // explicitly marked inert cache into the visible controls window.
