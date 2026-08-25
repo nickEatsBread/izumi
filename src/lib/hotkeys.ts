@@ -80,27 +80,31 @@ export function isModifierOnly(event: KeyboardEvent) {
   return ['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)
 }
 
-export function effectiveBinding(id: HotkeyId, overrides: Record<string, string>) {
-  return overrides[id] || definitions[id].defaultBinding
+export function effectiveBinding(id: HotkeyId, overrides: Record<string, string>, macOS = false) {
+  if (overrides[id]) return overrides[id]
+  // Command is the conventional application-shortcut modifier on macOS. Keep Ctrl+K as the
+  // Windows/Linux default and continue to honour an explicit user override on every platform.
+  if (macOS && id === 'globalSearch') return 'meta+k'
+  return definitions[id].defaultBinding
 }
 
-export function findHotkey(event: KeyboardEvent, overrides: Record<string, string>, scope: HotkeyScope) {
+export function findHotkey(event: KeyboardEvent, overrides: Record<string, string>, scope: HotkeyScope, macOS = false) {
   const binding = eventToBinding(event)
-  return HOTKEYS.find((hotkey) => hotkey.scope === scope && effectiveBinding(hotkey.id, overrides) === binding)?.id ?? null
+  return HOTKEYS.find((hotkey) => hotkey.scope === scope && effectiveBinding(hotkey.id, overrides, macOS) === binding)?.id ?? null
 }
 
-export function conflictingHotkey(id: HotkeyId, binding: string, overrides: Record<string, string>) {
+export function conflictingHotkey(id: HotkeyId, binding: string, overrides: Record<string, string>, macOS = false) {
   const source = definitions[id]
   return HOTKEYS.find((hotkey) =>
     hotkey.id !== id
     && hotkey.scope === source.scope
-    && effectiveBinding(hotkey.id, overrides) === binding,
+    && effectiveBinding(hotkey.id, overrides, macOS) === binding,
   ) ?? null
 }
 
-export function displayBinding(binding: string) {
+export function displayBinding(binding: string, macOS = false) {
   const labels: Record<string, string> = {
-    ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt', meta: 'Meta',
+    ctrl: 'Ctrl', shift: 'Shift', alt: 'Alt', meta: macOS ? '⌘' : 'Meta',
     ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓',
     PageUp: 'Page Up', PageDown: 'Page Down',
   }

@@ -41,7 +41,7 @@
   import { startGamepadNav } from '$lib/nav/gamepad'
   import { attachDownloadEvents } from '$lib/downloads/store'
   import { scheduleBootWork } from '$lib/util/boot-work'
-  import { isAndroid, isMobile, initPlatform } from '$lib/platform'
+  import { isAndroid, isMacOS, isMobile, initPlatform } from '$lib/platform'
   import { initOffline } from '$lib/stores/offline'
   import { initReturnTracking, watchToast } from '$lib/player/android-tracking'
   import { initTrackerQueue } from '$lib/trackers/queue'
@@ -88,7 +88,7 @@
     if (event.defaultPrevented) return
     if (!$globalSearchOpen && !$playing && !document.querySelector('[data-nav-trap]')
         && !isTypingTarget(event.target)
-        && findHotkey(event, $hotkeyBindings, 'Global') === 'globalSearch') {
+        && findHotkey(event, $hotkeyBindings, 'Global', $isMacOS) === 'globalSearch') {
       event.preventDefault()
       openGlobalSearch()
     } else if ($globalSearchOpen && event.key === 'Escape') {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { conflictingHotkey, displayBinding, effectiveBinding, eventToBinding } from './hotkeys'
+import { conflictingHotkey, displayBinding, effectiveBinding, eventToBinding, findHotkey } from './hotkeys'
 
 describe('hotkeys', () => {
   it('normalizes keyboard events and displays bindings', () => {
@@ -11,5 +11,16 @@ describe('hotkeys', () => {
     expect(effectiveBinding('playerMute', { playerMute: 'q' })).toBe('q')
     expect(conflictingHotkey('playerMute', 'f', {} )?.id).toBe('playerFullscreen')
     expect(conflictingHotkey('playerMute', 'ctrl+k', {})).toBeNull()
+  })
+
+  it('uses Command+K for quick search on macOS without replacing user overrides', () => {
+    const commandK = { key: 'k', ctrlKey: false, shiftKey: false, altKey: false, metaKey: true } as KeyboardEvent
+    const controlK = { key: 'k', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false } as KeyboardEvent
+
+    expect(effectiveBinding('globalSearch', {}, true)).toBe('meta+k')
+    expect(findHotkey(commandK, {}, 'Global', true)).toBe('globalSearch')
+    expect(findHotkey(controlK, {}, 'Global', true)).toBeNull()
+    expect(displayBinding('meta+k', true)).toBe('⌘ + K')
+    expect(effectiveBinding('globalSearch', { globalSearch: 'ctrl+k' }, true)).toBe('ctrl+k')
   })
 })

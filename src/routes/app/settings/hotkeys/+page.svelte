@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
-  import { isAndroid } from '$lib/platform'
+  import { isAndroid, isMacOS } from '$lib/platform'
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
   import {
     HOTKEYS,
@@ -29,9 +29,9 @@
       return
     }
     const binding = eventToBinding(event)
-    const other = conflictingHotkey(id, binding, $hotkeyBindings)
+    const other = conflictingHotkey(id, binding, $hotkeyBindings, $isMacOS)
     if (other) {
-      conflict = `${displayBinding(binding)} is already used by “${other.label}” in ${other.scope}.`
+      conflict = `${displayBinding(binding, $isMacOS)} is already used by “${other.label}” in ${other.scope}.`
       return
     }
     $hotkeyBindings = { ...$hotkeyBindings, [id]: binding }
@@ -96,7 +96,7 @@
                 onclick={() => { recording = hotkey.id; conflict = '' }}
                 class="min-w-24 rounded-md border px-3 py-2 font-mono text-xs font-bold {recording === hotkey.id ? 'border-theme bg-theme/10 text-theme' : 'border-border bg-secondary'}"
               >
-                {recording === hotkey.id ? 'Press a key…' : displayBinding(effectiveBinding(hotkey.id, $hotkeyBindings))}
+                {recording === hotkey.id ? 'Press a key…' : displayBinding(effectiveBinding(hotkey.id, $hotkeyBindings, $isMacOS), $isMacOS)}
               </button>
             </div>
           {/each}
