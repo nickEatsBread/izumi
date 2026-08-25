@@ -83,6 +83,18 @@ describe('protected capture presentation', () => {
     expect(rust).not.toContain('main.outer_size()')
   })
 
+  it('does not leak the controls mirror over unrelated foreground applications', () => {
+    const builder = rust.slice(
+      rust.indexOf('.title("izumi capture controls")'),
+      rust.indexOf('Err(error) => eprintln!("[capture-controls] create failed'),
+    )
+    expect(builder).toContain('.always_on_top(false)')
+    expect(builder).not.toContain('.always_on_top(true)')
+    expect(rust).toContain('.set_always_on_top(false)')
+    expect(presentation).toContain('mainWindow.onFocusChanged')
+    expect(presentation).toContain("focused ? 'capture_controls_overlay_present' : 'capture_controls_overlay_hide'")
+  })
+
   it('uses the clean presentation for both screenshots and the full GIF sampling lifetime', () => {
     expect(surface).toContain('const presentation = await beginCapturePresentation(false)')
     expect(surface).toContain('gifPresentation = await beginCapturePresentation(true)')

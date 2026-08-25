@@ -1,5 +1,6 @@
 import { emitTo, listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { platform } from '@tauri-apps/plugin-os'
 
 export const CAPTURE_CONTROLS_WINDOW = 'capture-controls'
@@ -37,6 +38,7 @@ let revision = 0
 let users = 0
 let mirrorTimer: ReturnType<typeof setInterval> | undefined
 let syncTimer: ReturnType<typeof setInterval> | undefined
+let focusUnlisten: UnlistenFn | undefined
 let lastHtml = ''
 let activeCleanup: (() => Promise<void>) | null = null
 
@@ -234,11 +236,21 @@ export async function beginCapturePresentation(live: boolean): Promise<CapturePr
   document.documentElement.classList.add(CAPTURE_OUTPUT_CLASS)
   await nextPaint()
   users = 1
+  const mainWindow = getCurrentWindow()
+  focusUnlisten = await mainWindow.onFocusChanged(({ payload: focused }) => {
+    if (users <= 0) return
+    void invoke(focused ? 'capture_controls_overlay_present' : 'capture_controls_overlay_hide').catch(() => {})
+  }).catch(() => undefined)
+  if (!await mainWindow.isFocused().catch(() => true)) {
+    await invoke('capture_controls_overlay_hide').catch(() => {})
+  }
   if (live) {
     mirrorTimer = setInterval(() => { void publishFrame(false).catch(() => {}) }, MIRROR_INTERVAL_MS)
     syncTimer = setInterval(() => { void invoke('capture_controls_overlay_sync').catch(() => {}) }, SYNC_INTERVAL_MS)
   }
   activeCleanup = async () => {
+    focusUnlisten?.()
+    focusUnlisten = undefined
     if (mirrorTimer) clearInterval(mirrorTimer)
     if (syncTimer) clearInterval(syncTimer)
     mirrorTimer = undefined

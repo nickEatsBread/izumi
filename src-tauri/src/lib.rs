@@ -2749,6 +2749,11 @@ fn capture_controls_overlay_present(app: AppHandle) -> Result<(), String> {
         let overlay = app
             .get_webview_window(CAPTURE_CONTROLS_WINDOW)
             .ok_or_else(|| "capture controls overlay is not ready".to_string())?;
+        // This is an owned window, so Windows already keeps it over Izumi. Global topmost state
+        // leaks the mirrored controls over unrelated foreground applications during Alt+Tab.
+        overlay
+            .set_always_on_top(false)
+            .map_err(|error| error.to_string())?;
         overlay.show().map_err(|error| error.to_string())?;
         return Ok(());
     }
@@ -5659,7 +5664,7 @@ pub fn run() {
                     .minimizable(false)
                     .closable(false)
                     .skip_taskbar(true)
-                    .always_on_top(true)
+                    .always_on_top(false)
                     .focused(false)
                     .focusable(false)
                     .visible(false)
