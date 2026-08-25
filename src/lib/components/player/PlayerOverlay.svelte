@@ -11,6 +11,7 @@
   import CommentsPanel from './CommentsPanel.svelte'
   import DrmSurface from './DrmSurface.svelte'
   import { playerCommand, playerEditorSnapshot, playerGifAbort, playerGifStart, playerGifStop, playerScreenshot, playerTracks } from '$lib/player/native'
+  import { usePlayerGifRecordingIndicator } from '$lib/player/gif-indicator'
   import type { DrmSnapshot } from '$lib/player/drm'
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
@@ -1362,6 +1363,21 @@
       previewUrl={$nowPlayingStream.previewUrl ?? ''}
       onupdate={onDrmUpdate}
     />
+  {/if}
+
+  {#if usePlayerGifRecordingIndicator && ($fullscreen || gmMode) && !$pictureInPicture && $gifRecordingStart != null}
+    <!-- This lives in the controls-only mirror during protected capture, so it stays visible to the
+         viewer without being baked into the GIF. The titlebar variant remains behind the mode flag. -->
+    <button
+      data-gif-recording-indicator
+      aria-label="Stop GIF recording"
+      transition:fade={{ duration: gmMode ? 0 : 150 }}
+      class="absolute right-6 top-6 z-40 flex items-center gap-2 rounded-full border border-white/15 bg-black/70 px-3.5 py-2 text-xs font-black tracking-wide text-white shadow-lg backdrop-blur"
+      onclick={(event) => { event.stopPropagation(); void capture('gif') }}
+    >
+      <span class="size-2.5 animate-pulse rounded-full bg-red-500"></span>
+      GIF recording
+    </button>
   {/if}
 
   <!-- Loading/buffering. Black backdrop ONLY before the first frame (covers the

@@ -7,6 +7,7 @@
   import X from '@lucide/svelte/icons/x'
   import { commentsOpen, gifRecordingStart, playerNotice } from '$lib/player/session'
   import { playerGifStop } from '$lib/player/native'
+  import { usePlayerGifRecordingIndicator } from '$lib/player/gif-indicator'
   import { isMacOS } from '$lib/platform'
 
   const win = getCurrentWindow()
@@ -63,7 +64,7 @@
   <!-- macOS keeps its real native traffic lights at the leading edge. Reserve their hit area and
        place the GIF indicator after them; Windows/Linux retain the sidebar-width indicator slot. -->
   <div class="flex h-8 shrink-0 items-center overflow-hidden [contain:paint] {$isMacOS ? 'w-28 justify-end pr-2' : 'w-14 justify-center'}">
-    {#if $gifRecordingStart != null}
+    {#if !usePlayerGifRecordingIndicator && $gifRecordingStart != null}
       <button
         data-capture-exclude
         class="flex h-5 max-w-[48px] items-center gap-0.5 rounded-full bg-red-600 px-1.5 text-[9px] font-semibold leading-none text-white outline-none hover:bg-red-500 focus:outline-none focus-visible:outline-none"

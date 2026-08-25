@@ -59,7 +59,10 @@ describe('compositor capture', () => {
     expect(rust).toContain('while jobs.len() < MAX_CAPTURE_REQUESTS')
     expect(rust).toContain('capture_webview_cdp(&webview, params.into()).await')
     expect(rust).toContain('"optimizeForSpeed":true')
-    expect(overlay).not.toContain('Stop GIF')
+    // Recording state belongs to the separate controls mirror. The main compositor hides every
+    // player-root child while frames are sampled, so this stop affordance cannot enter the GIF.
+    expect(overlay).toContain('data-gif-recording-indicator')
+    expect(overlay).toContain('controls-only mirror')
     expect(drm).not.toContain('Math.max(20, remaining)')
     expect(native).toContain('player_capture_segment')
     expect(native).not.toContain('fps: plan.fps')
