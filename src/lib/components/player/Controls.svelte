@@ -326,6 +326,7 @@
 
   // Screenshot the current frame (with subtitles) → app Pictures/izumi folder.
   async function screenshot() {
+    playerNotice.set('Saving screenshot…')
     try { await playerScreenshot(); playerNotice.set('Screenshot saved to Pictures/izumi') }
     catch { playerNotice.set('Screenshot failed') }
   }

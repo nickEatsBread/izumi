@@ -26,7 +26,7 @@ describe('compositor capture', () => {
     expect(drm).not.toContain('capture_webview_jpeg_clip')
     expect(rust).not.toContain('capture_webview_jpeg_clip')
     expect(drm).toContain("invoke('capture_player_surface'")
-    expect(rust).toContain('capture_webview_preview(&webview).await')
+    expect(rust).toContain('capture_webview_screencast_frame(&app, crop, width).await')
     expect(rust).toContain('crop_compositor_frame')
     expect(rust).toContain('async fn capture_webview_jpeg(')
     expect(rust).toContain('Do not pass a CDP `clip`')
@@ -35,10 +35,14 @@ describe('compositor capture', () => {
   it('captures protected playback without trying a decoded video frame first', () => {
     expect(drm).not.toContain('encodeVideoFrame')
     expect(drm).toContain('async function screenshot(_fast = false)')
-    expect(drm).toContain('const presentation = await beginCapturePresentation(false)')
+    expect(drm).toContain('const presentation = await beginCapturePresentation(true)')
+    expect(drm).toContain('if (screenshotTask) return screenshotTask')
+    expect(drm).toContain('if (screenshotTask) await screenshotTask.catch(() => {})')
     expect(drm).toContain('await presentation.end()')
     expect(overlay).toContain('playerScreenshot(true)')
+    expect(overlay).toContain("playerNotice.set('Saving screenshot…')")
     expect(rust).toContain('capture_player_surface,')
+    expect(rust).toContain('capture_webview_screencast_frame(&app, crop, width).await')
   })
 
   it('records protected GIFs from a native compositor loop', () => {

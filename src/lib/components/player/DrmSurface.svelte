@@ -834,29 +834,40 @@
 
   let gifBoot: Promise<void> | null = null
   let gifStopping: Promise<void> | null = null
+  let screenshotTask: Promise<void> | null = null
 
   async function screenshot(_fast = false) {
-    const video = videoEl
-    if (!video) throw new Error('no video')
-    const presentation = await beginCapturePresentation(false)
-    const persist = async () => {
-      try {
-        await invoke('capture_player_surface', {
-          width: video.videoWidth,
-          ...gifVideoCrop(video),
-        })
-        return
-      } catch (captureError) {
-        console.warn('[drm] native compositor screenshot unavailable; using fallback', captureError)
+    if (screenshotTask) return screenshotTask
+    const task = (async () => {
+      const video = videoEl
+      if (!video) throw new Error('no video')
+      // Keep mirroring while the native capture is in flight so pause/seek/menus never freeze.
+      const presentation = await beginCapturePresentation(true)
+      const persist = async () => {
+        try {
+          await invoke('capture_player_surface', {
+            width: video.videoWidth,
+            ...gifVideoCrop(video),
+          })
+          return
+        } catch (captureError) {
+          console.warn('[drm] native compositor screenshot unavailable; using fallback', captureError)
+        }
+        const png = await captureCropped(video, 'image/png', video.videoWidth)
+        if (!png) throw new Error('empty screenshot')
+        await invoke('save_player_png', { png })
       }
-      const png = await captureCropped(video, 'image/png', video.videoWidth)
-      if (!png) throw new Error('empty screenshot')
-      await invoke('save_player_png', { png })
-    }
+      try {
+        await persist()
+      } finally {
+        await presentation.end()
+      }
+    })()
+    screenshotTask = task
     try {
-      await persist()
+      await task
     } finally {
-      await presentation.end()
+      if (screenshotTask === task) screenshotTask = null
     }
   }
 
@@ -887,6 +898,7 @@
     // Native stop drains the final compositor request before detaching the encoder. A rapid second
     // recording waits only for that drain, not for GIF encoding, which continues independently.
     if (gifStopping) await gifStopping.catch(() => {})
+    if (screenshotTask) await screenshotTask.catch(() => {})
     if (gifActive || gifBoot) throw new Error('GIF is already recording')
     if (!videoEl || !firstFrame || videoEl.videoWidth <= 0) throw new Error('Video is not ready for GIF capture')
     const plan = gifCapturePlan(get(gifScale), get(gifMaxSeconds))

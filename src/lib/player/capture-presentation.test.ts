@@ -95,7 +95,7 @@ describe('protected capture presentation', () => {
   })
 
   it('uses the clean presentation for both screenshots and the full GIF sampling lifetime', () => {
-    expect(surface).toContain('const presentation = await beginCapturePresentation(false)')
+    expect(surface).toContain('const presentation = await beginCapturePresentation(true)')
     expect(surface).toContain('gifPresentation = await beginCapturePresentation(true)')
     expect(surface).toContain('await presentation.end()')
     expect(rust).toContain('the final sampled frame obeys the video-only capture contract')

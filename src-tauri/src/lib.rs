@@ -2868,6 +2868,142 @@ async fn crop_compositor_frame(
     .map_err(|error| error.to_string())?
 }
 
+/// Take the first usable frame from the same WebView2 compositor stream used by protected GIFs.
+/// Unlike CapturePreview, this includes protected video pixels; unlike captureScreenshot, WebView2
+/// delivers a bounded JPEG directly instead of serialising a full-resolution PNG/base64 response.
+#[cfg(windows)]
+async fn capture_webview_screencast_frame(
+    app: &AppHandle,
+    crop: Option<gif_capture::ViewCrop>,
+    width: u32,
+) -> Result<Vec<u8>, String> {
+    use webview2_com::{
+        take_pwstr, CallDevToolsProtocolMethodCompletedHandler,
+        DevToolsProtocolEventReceivedEventHandler,
+    };
+    use windows::core::{HSTRING, PCWSTR, PWSTR};
+
+    let webview = main_video_webview(app)?;
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(4);
+    let hold = std::sync::Arc::new(std::sync::Mutex::new(None::<DrmGifScreencastHold>));
+    let (view_width, view_height, video_width) = crop
+        .map(|crop| (crop.view_width, crop.view_height, crop.width))
+        .unwrap_or((16.0, 9.0, 16.0));
+    let max_w = ((width as f64 * view_width / video_width).ceil() as u32).clamp(480, 1920);
+    let max_h = ((max_w as f64 * view_height / view_width).ceil() as u32).clamp(270, 1200);
+
+    webview
+        .with_webview({
+            let tx = tx.clone();
+            let hold = hold.clone();
+            move |pw| unsafe {
+                let core = match pw.controller().CoreWebView2() {
+                    Ok(core) => core,
+                    Err(_) => return,
+                };
+                let name = HSTRING::from("Page.screencastFrame");
+                let Ok(receiver) = core.GetDevToolsProtocolEventReceiver(PCWSTR(name.as_ptr()))
+                else {
+                    return;
+                };
+                let core_ack = core.clone();
+                let handler = DevToolsProtocolEventReceivedEventHandler::create(Box::new(
+                    move |_, args| {
+                        let Some(args) = args else {
+                            return Ok(());
+                        };
+                        let mut json = PWSTR::null();
+                        args.ParameterObjectAsJson(&mut json)?;
+                        let parsed: serde_json::Value =
+                            serde_json::from_str(&take_pwstr(json)).unwrap_or(serde_json::Value::Null);
+                        let session_id = parsed
+                            .get("sessionId")
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(0);
+                        if let Some(data) = parsed.get("data").and_then(|value| value.as_str()) {
+                            if let Ok(bytes) = data_encoding::BASE64.decode(data.as_bytes()) {
+                                let _ = tx.try_send(bytes);
+                            }
+                        }
+                        let ack = HSTRING::from("Page.screencastFrameAck");
+                        let params = HSTRING::from(format!(r#"{{"sessionId":{session_id}}}"#));
+                        let completed = CallDevToolsProtocolMethodCompletedHandler::create(
+                            Box::new(|_, _| Ok(())),
+                        );
+                        let _ = core_ack.CallDevToolsProtocolMethod(
+                            PCWSTR(ack.as_ptr()),
+                            PCWSTR(params.as_ptr()),
+                            &completed,
+                        );
+                        Ok(())
+                    },
+                ));
+                let mut token = 0_i64;
+                if receiver
+                    .add_DevToolsProtocolEventReceived(&handler, &mut token)
+                    .is_err()
+                {
+                    return;
+                }
+                let start = HSTRING::from("Page.startScreencast");
+                let params = HSTRING::from(format!(
+                    r#"{{"format":"jpeg","quality":92,"everyNthFrame":1,"maxWidth":{max_w},"maxHeight":{max_h},"maxFramesInFlight":2,"sendLastFrame":true}}"#
+                ));
+                let completed =
+                    CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(())));
+                let _ = core.CallDevToolsProtocolMethod(
+                    PCWSTR(start.as_ptr()),
+                    PCWSTR(params.as_ptr()),
+                    &completed,
+                );
+                *hold.lock().unwrap() = Some(DrmGifScreencastHold {
+                    core,
+                    receiver,
+                    token,
+                    _handler: handler,
+                });
+            }
+        })
+        .map_err(|error| error.to_string())?;
+    drop(tx);
+
+    let started = std::time::Instant::now();
+    let mut result = Err("screencast screenshot timed out".to_string());
+    while started.elapsed() < std::time::Duration::from_millis(900) {
+        match tokio::time::timeout(std::time::Duration::from_millis(150), rx.recv()).await {
+            Ok(Some(jpeg)) if jpeg.starts_with(&[0xff, 0xd8, 0xff]) => {
+                if let Ok(frame) = crop_compositor_frame(jpeg, crop, width).await {
+                    result = Ok(frame);
+                    break;
+                }
+            }
+            Ok(None) => break,
+            _ => {}
+        }
+    }
+
+    let _ = webview.with_webview({
+        let hold = hold.clone();
+        move |_| unsafe {
+            if let Some(session) = hold.lock().unwrap().take() {
+                let stop = HSTRING::from("Page.stopScreencast");
+                let params = HSTRING::from("{}");
+                let completed =
+                    CallDevToolsProtocolMethodCompletedHandler::create(Box::new(|_, _| Ok(())));
+                let _ = session.core.CallDevToolsProtocolMethod(
+                    PCWSTR(stop.as_ptr()),
+                    PCWSTR(params.as_ptr()),
+                    &completed,
+                );
+                let _ = session
+                    .receiver
+                    .remove_DevToolsProtocolEventReceived(session.token);
+            }
+        }
+    });
+    result
+}
+
 /// Capture, crop, and persist the composed video surface in one native round trip. Protected
 /// playback moves visible chrome to a separate controls-only window before entering here, so the
 /// sampled main WebView contains only video and subtitles without making the controls unusable.
@@ -2875,6 +3011,7 @@ async fn crop_compositor_frame(
 #[tauri::command]
 async fn capture_player_surface(
     app: AppHandle,
+    capture: tauri::State<'_, DrmGifCapture>,
     view_width: Option<f64>,
     view_height: Option<f64>,
     crop_x: Option<f64>,
@@ -2894,22 +3031,22 @@ async fn capture_player_surface(
             crop_h.unwrap_or(0.0),
         );
         let width = width.unwrap_or(1920).clamp(160, 1920);
-        let webview = main_video_webview(&app)?;
-
-        // CapturePreview avoids the slow DevTools JSON/base64 round trip and is valid for most
-        // composed surfaces. Some protected renderers return black, so retain one proven CDP
-        // fallback and validate after the crop/decode that we already have to perform.
-        let preview = capture_webview_preview(&webview).await;
-        let jpeg = match preview {
-            Ok(jpeg) => match crop_compositor_frame(jpeg, crop, width).await {
-                Ok(cropped) => cropped,
-                Err(_) => {
-                    let params = r#"{"format":"jpeg","quality":92,"fromSurface":true,"captureBeyondViewport":false}"#;
-                    let jpeg = capture_webview_cdp(&webview, params.into()).await?;
-                    crop_compositor_frame(jpeg, crop, width).await?
-                }
-            },
+        let gif_running = capture
+            .0
+            .lock()
+            .map_err(|error| error.to_string())?
+            .is_some();
+        // A second startScreencast would replace an active GIF stream. Outside that case, its
+        // first frame is the fastest protected-pixel path and normally lands within one refresh.
+        let streamed = if gif_running {
+            Err("GIF screencast already active".into())
+        } else {
+            capture_webview_screencast_frame(&app, crop, width).await
+        };
+        let jpeg = match streamed {
+            Ok(jpeg) => jpeg,
             Err(_) => {
+                let webview = main_video_webview(&app)?;
                 let params = r#"{"format":"jpeg","quality":92,"fromSurface":true,"captureBeyondViewport":false}"#;
                 let jpeg = capture_webview_cdp(&webview, params.into()).await?;
                 crop_compositor_frame(jpeg, crop, width).await?
@@ -2923,6 +3060,7 @@ async fn capture_player_surface(
     {
         let _ = (
             app,
+            capture,
             view_width,
             view_height,
             crop_x,
@@ -3382,95 +3520,6 @@ async fn drm_gif_screencast(
         Err("screencast produced no usable frames".into())
     } else {
         Ok(count)
-    }
-}
-
-/// Binary JPEG of the live webview. Faster than CDP `Page.captureScreenshot` because it
-/// skips the DevTools JSON/base64 round-trip. Encrypted video is sometimes black here;
-/// callers fall back to `fromSurface` CDP when that happens.
-#[cfg(windows)]
-async fn capture_webview_preview(webview: &tauri::Webview) -> Result<Vec<u8>, String> {
-    use webview2_com::CapturePreviewCompletedHandler;
-    use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG;
-    use windows::Win32::Foundation::HGLOBAL;
-    use windows::Win32::System::Com::StructuredStorage::CreateStreamOnHGlobal;
-    let (tx, rx) = tokio::sync::oneshot::channel::<Result<Vec<u8>, String>>();
-    let slot = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
-    webview
-        .with_webview({
-            let slot = slot.clone();
-            move |pw| unsafe {
-                let fail = |msg: String| {
-                    if let Some(t) = slot.lock().unwrap().take() {
-                        let _ = t.send(Err(msg));
-                    }
-                };
-                let core = match pw.controller().CoreWebView2() {
-                    Ok(c) => c,
-                    Err(e) => return fail(e.to_string()),
-                };
-                let stream = match CreateStreamOnHGlobal(HGLOBAL::default(), true) {
-                    Ok(s) => s,
-                    Err(e) => return fail(e.to_string()),
-                };
-                let reader = stream.clone();
-                let slot_ok = slot.clone();
-                let handler = CapturePreviewCompletedHandler::create(Box::new(move |hr| {
-                    let send = |v: Result<Vec<u8>, String>| {
-                        if let Some(t) = slot_ok.lock().unwrap().take() {
-                            let _ = t.send(v);
-                        }
-                    };
-                    if let Err(e) = hr {
-                        send(Err(format!("preview failed: {e}")));
-                        return Ok(());
-                    }
-                    send(read_istream(&reader));
-                    Ok(())
-                }));
-                if core
-                    .CapturePreview(
-                        COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_JPEG,
-                        &stream,
-                        &handler,
-                    )
-                    .is_err()
-                {
-                    fail("CapturePreview failed".into());
-                }
-            }
-        })
-        .map_err(|e| e.to_string())?;
-    tokio::time::timeout(std::time::Duration::from_secs(4), rx)
-        .await
-        .map_err(|_| "preview timed out".to_string())?
-        .map_err(|_| "preview cancelled".to_string())?
-}
-
-#[cfg(windows)]
-fn read_istream(stream: &windows::Win32::System::Com::IStream) -> Result<Vec<u8>, String> {
-    unsafe {
-        use windows::Win32::System::Com::STREAM_SEEK_SET;
-        stream
-            .Seek(0, STREAM_SEEK_SET, None)
-            .map_err(|e| e.to_string())?;
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 65_536];
-        loop {
-            let mut n = 0u32;
-            stream
-                .Read(chunk.as_mut_ptr().cast(), chunk.len() as u32, Some(&mut n))
-                .ok()
-                .map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            buf.extend_from_slice(&chunk[..n as usize]);
-        }
-        if buf.len() < 16 || !buf.starts_with(&[0xff, 0xd8, 0xff]) {
-            return Err("empty preview".into());
-        }
-        Ok(buf)
     }
 }
 
@@ -4950,7 +4999,14 @@ async fn flatpak_host_update(channel: &str) -> Result<(), String> {
     // when this Flatpak version supports --show-commit, then make sure the app actually changed.
     let previous_commit = flatpak_host_commit(channel).await.ok();
     let output = tokio::process::Command::new("flatpak-spawn")
-        .args(["--host", "flatpak", scope, "update", "--noninteractive", "-y"])
+        .args([
+            "--host",
+            "flatpak",
+            scope,
+            "update",
+            "--noninteractive",
+            "-y",
+        ])
         .arg(&app_ref)
         .output()
         .await
@@ -4990,9 +5046,7 @@ async fn flatpak_host_update(channel: &str) -> Result<(), String> {
 async fn flatpak_host_switch(channel: &str) -> Result<(), String> {
     const APP_ID: &str = "com.nicho.izumi";
     let scope = flatpak_host_scope();
-    let ref_url = format!(
-        "https://flatpak.izumi.watch/{channel}/com.nicho.izumi.flatpakref"
-    );
+    let ref_url = format!("https://flatpak.izumi.watch/{channel}/com.nicho.izumi.flatpakref");
     let output = tokio::process::Command::new("flatpak-spawn")
         .args([
             "--host",

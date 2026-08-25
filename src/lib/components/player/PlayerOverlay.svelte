@@ -279,6 +279,15 @@
     playerAbLoop.set({ a: null, b: null })
     cmd('set', ['ab-loop-a', 'no']); cmd('set', ['ab-loop-b', 'no'])
   }
+  async function takeScreenshot() {
+    playerNotice.set('Saving screenshot…')
+    try {
+      await playerScreenshot(true)
+      playerNotice.set('Screenshot saved to Pictures/izumi')
+    } catch {
+      playerNotice.set('Screenshot failed')
+    }
+  }
   async function capture(kind: 'gif' | 'clip') {
     if (kind === 'gif') {
       if (get(gifRecordingStart) == null) {
@@ -1017,9 +1026,7 @@
       if (e.payload.name === 'l4') {
         if (!deckL4Press.update(e.payload.pressed, performance.now())) return
         if (get(commentsOpen)) return
-        playerScreenshot(true)
-          .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))
-          .catch(() => playerNotice.set('Screenshot failed'))
+        void takeScreenshot()
         return
       }
       if (e.payload.name === 'r4') {
@@ -1250,9 +1257,7 @@
       else if (action === 'playerNextEpisode') playNext(undefined, !paused)
       else if (action === 'playerPreviousEpisode') playPrev(undefined, !paused)
       else if (action === 'playerFullscreen') toggleFullscreen()
-      else if (action === 'playerScreenshot') playerScreenshot(true)
-        .then(() => playerNotice.set('Screenshot saved to Pictures/izumi'))
-        .catch(() => playerNotice.set('Screenshot failed'))
+      else if (action === 'playerScreenshot') void takeScreenshot()
       else if (action === 'playerStats') playerStatsOpen.update((value) => !value)
       else if (action === 'playerGif') void capture('gif')
       else if (action === 'playerClip') void capture('clip')
