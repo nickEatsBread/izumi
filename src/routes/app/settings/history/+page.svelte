@@ -76,13 +76,13 @@
         account. The XML format imports into MyAnimeList and AniList directly.
       </p>
       <div class="mt-3 flex flex-wrap gap-2">
-        <button data-focusable onclick={doExportJson} class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
+        <button data-focusable onclick={doExportJson} class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2.5 text-sm font-bold transition-colors active:bg-accent sm:py-2 sm:hover:bg-accent">
           <Download size={15} /> Export (izumi JSON)
         </button>
-        <button data-focusable onclick={doExportXml} class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
+        <button data-focusable onclick={doExportXml} class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2.5 text-sm font-bold transition-colors active:bg-accent sm:py-2 sm:hover:bg-accent">
           <Download size={15} /> Export for MAL/AniList (XML)
         </button>
-        <button data-focusable onclick={() => fileInput?.click()} class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
+        <button data-focusable onclick={() => fileInput?.click()} class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-2.5 text-sm font-bold transition-colors active:bg-accent sm:py-2 sm:hover:bg-accent">
           <Upload size={15} /> Import (izumi JSON)
         </button>
         <input bind:this={fileInput} onchange={onImportFile} type="file" accept="application/json,.json" class="hidden" />
@@ -96,7 +96,7 @@
         <h3 class="text-sm font-black">Watched ({entries.length})</h3>
         {#if entries.length}
           <button data-focusable onclick={doClear}
-            class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors {confirmClear ? 'bg-destructive text-white' : 'text-destructive hover:bg-destructive/10'}">
+            class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors sm:px-2.5 sm:py-1.5 {confirmClear ? 'bg-destructive text-white' : 'text-destructive active:bg-destructive/10 sm:hover:bg-destructive/10'}">
             <Trash2 size={14} /> {confirmClear ? 'Click again to clear all' : 'Clear all'}
           </button>
         {/if}
@@ -115,7 +115,7 @@
                 <p class="text-xs text-muted-foreground">Episode {e.episode} · {fmt(e.updatedAt)}</p>
               </div>
               <button data-focusable onclick={() => forgetMedia(e.media.id)} title="Remove" aria-label="Remove from history"
-                class="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive">
+                class="grid size-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors active:bg-secondary active:text-destructive sm:size-8 sm:hover:bg-secondary sm:hover:text-destructive">
                 <X size={16} />
               </button>
             </li>

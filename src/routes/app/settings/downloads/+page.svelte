@@ -55,7 +55,7 @@
     <label class="flex flex-col gap-1">
       <span class="text-sm font-bold">Download folder</span>
       <span class="flex gap-2">
-        <input type="text" data-focusable bind:value={$downloadDir} readonly={$isAndroid} placeholder="(default: app data / downloads)" class="min-w-0 flex-1 rounded-md bg-input px-3 py-2 text-sm {$isAndroid ? 'text-muted-foreground' : ''}" />
+        <input type="text" data-focusable bind:value={$downloadDir} readonly={$isAndroid} placeholder="(default: app data / downloads)" class="min-w-0 flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm {$isAndroid ? 'text-muted-foreground' : ''}" />
         {#if !$isAndroid}
           <button data-focusable onclick={browse} class="shrink-0 rounded-md bg-secondary px-4 py-2 text-sm font-bold transition-colors hover:bg-accent">Browse…</button>
         {/if}
@@ -67,15 +67,15 @@
       {/if}
     </label>
 
-    <label class="flex items-center justify-between rounded-md border border-border p-3">
+    <label class="flex items-center justify-between rounded-md border border-border p-4 sm:p-3">
       <div>
         <div class="font-bold">Simultaneous downloads</div>
         <p class="mt-1 text-xs text-muted-foreground">1–2 recommended (debrid CDN + disk).</p>
       </div>
-      <input type="number" min="1" max="4" data-focusable bind:value={$downloadConcurrency} class="w-20 rounded-md bg-input px-3 py-2 text-right text-sm" />
+      <input type="number" min="1" max="4" data-focusable bind:value={$downloadConcurrency} class="w-20 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
     </label>
 
-    <section class="rounded-md border border-border p-3">
+    <section class="rounded-md border border-border p-4 sm:p-3">
       <div class="font-bold">Source matching</div>
       <p class="mt-1 text-xs text-muted-foreground">Used by both manual downloads and automatic new-episode downloads. A preference falls back to the best available match when no exact match exists.</p>
       <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -101,26 +101,27 @@
       <div class="mt-3"><Toggle label="Only download cached sources" desc="Require a source that is already available through the configured debrid service." value={$downloadCachedOnly} onToggle={() => ($downloadCachedOnly = !$downloadCachedOnly)} /></div>
     </section>
 
-    <label class="flex items-center justify-between rounded-md border border-border p-3">
+    <label class="flex items-center justify-between rounded-md border border-border p-4 sm:p-3">
       <div class="pr-4"><div class="font-bold">New-episode delay</div><p class="mt-1 text-xs text-muted-foreground">Wait after the scheduled air time before looking for a release.</p></div>
-      <span class="flex items-center gap-2"><input data-focusable type="number" min="0" max="1440" bind:value={$autoDownloadDelayMinutes} class="w-20 rounded-md bg-input px-3 py-2 text-right text-sm" /><span class="text-sm text-muted-foreground">min</span></span>
+      <span class="flex items-center gap-2"><input data-focusable type="number" min="0" max="1440" bind:value={$autoDownloadDelayMinutes} class="w-20 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" /><span class="text-sm text-muted-foreground">min</span></span>
     </label>
 
-    <section class="rounded-md border border-border p-3">
-      <div class="flex items-center justify-between gap-3">
+    <section class="rounded-md border border-border p-4 sm:p-3">
+      <!-- Stacked on a phone: the long description squeezed the button into a stub beside it. -->
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div><div class="font-bold">Automatic downloads</div><p class="mt-1 text-xs text-muted-foreground">Enable a series from its episode Download menu. Izumi checks on launch, when reconnecting, and every 15 minutes while running.</p></div>
-        <button data-focusable onclick={() => runAutoDownloadRules()} disabled={$autoDownloadRunning} class="flex shrink-0 items-center gap-2 rounded-md bg-secondary px-3 py-2 text-xs font-bold"><RefreshCw size={14} class={$autoDownloadRunning ? 'animate-spin' : ''} /> Check now</button>
+        <button data-focusable onclick={() => runAutoDownloadRules()} disabled={$autoDownloadRunning} class="flex shrink-0 items-center gap-2 self-start rounded-md bg-secondary px-3 py-2.5 text-sm font-bold sm:self-auto sm:py-2 sm:text-xs"><RefreshCw size={14} class={$autoDownloadRunning ? 'animate-spin' : ''} /> Check now</button>
       </div>
       {#if !$autoDownloadRules.length}
         <p class="mt-3 rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">No series enabled. Open a series, choose Download…, then turn on “Auto-download new episodes”.</p>
       {:else}
         <div class="mt-3 space-y-2">
           {#each $autoDownloadRules as rule (rule.id)}
-            <div class="flex flex-wrap items-center gap-3 rounded-md bg-secondary/50 p-2.5">
+            <div class="flex flex-wrap items-center gap-3 rounded-md bg-secondary/50 p-3 sm:p-2.5">
               {#if rule.poster}<img src={rule.poster} alt="" loading="lazy" decoding="async" class="h-12 w-9 rounded object-cover" />{/if}
               <div class="min-w-0 flex-1"><div class="truncate text-sm font-bold">{rule.title}</div><div class="text-xs text-muted-foreground">Waiting for episode {rule.nextEpisode}{rule.lastError ? ` · ${rule.lastError}` : ''}</div></div>
-              <label class="text-xs font-bold"><input data-focusable type="checkbox" checked={rule.enabled} onchange={(e) => updateAutoDownloadRule(rule.id, { enabled: e.currentTarget.checked })} /> Enabled</label>
-              <button data-focusable aria-label={`Remove ${rule.title}`} onclick={() => removeAutoDownloadRule(rule.id)} class="grid size-9 place-items-center rounded-md text-destructive hover:bg-accent"><Trash2 size={16} /></button>
+              <label class="py-2 text-xs font-bold sm:py-0"><input data-focusable type="checkbox" checked={rule.enabled} onchange={(e) => updateAutoDownloadRule(rule.id, { enabled: e.currentTarget.checked })} /> Enabled</label>
+              <button data-focusable aria-label={`Remove ${rule.title}`} onclick={() => removeAutoDownloadRule(rule.id)} class="grid size-10 place-items-center rounded-md text-destructive hover:bg-accent sm:size-9"><Trash2 size={16} /></button>
             </div>
           {/each}
         </div>

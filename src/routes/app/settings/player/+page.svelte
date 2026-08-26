@@ -111,8 +111,8 @@
         <!-- Size is the real asset size measured against the pinned release (~208 KB today); the
              download is one-time and cached under the app config dir. -->
         <p class="mb-2">Anime mode needs a shader file (~200 KB) that isn't bundled with the app. Turning it on downloads that file from the internet once, then keeps using the local copy. Download it now?</p>
-        <button class="mr-2 rounded bg-primary px-3 py-1 font-bold" onclick={() => { pendingAnime = false; $videoQualityPreset = 'anime' }}>Download</button>
-        <button class="rounded bg-muted px-3 py-1" onclick={() => { pendingAnime = false }}>Cancel</button>
+        <button class="mr-2 rounded bg-primary px-3 py-2 font-bold sm:py-1" onclick={() => { pendingAnime = false; $videoQualityPreset = 'anime' }}>Download</button>
+        <button class="rounded bg-muted px-3 py-2 sm:py-1" onclick={() => { pendingAnime = false }}>Cancel</button>
       </div>
     {/if}
 
@@ -125,7 +125,7 @@
         <span class="text-sm font-bold">Custom mpv options</span>
         <textarea
           data-focusable
-          class="min-h-32 rounded-md bg-input px-3 py-2 font-mono text-xs"
+          class="min-h-32 rounded-md bg-input px-3 py-2.5 font-mono text-base sm:py-2 sm:text-sm"
           placeholder="scale=ewa_lanczossharp&#10;deband=yes&#10;glsl-shaders=C:/path/to/shader.glsl"
           bind:value={$rawMpvOptions}
         ></textarea>
@@ -244,7 +244,7 @@
 
     <!-- Player cache size: the main tunable RAM cost. Presets + Custom. -->
     <div class="rounded-md border border-border p-3">
-      <div class="flex items-center justify-between gap-4">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div class="min-w-0 pr-2">
           <div class="font-bold">Player cache size</div>
           <p class="mt-1 text-xs text-muted-foreground">How much video the player buffers in RAM. This is a baseline that automatically scales up for high-bitrate files (e.g. a 4K Blu-ray) so they don't rebuffer, while normal files stay near the preset. Lower frees memory; higher buffers more. <span class="text-foreground">Uncapped</span> buffers the whole file (up to 4 GiB) — most resistant to buffering, highest RAM. Applies to the next video.</p>

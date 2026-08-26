@@ -108,6 +108,11 @@
       </div>
     {/each}
   </div>
+  <a
+    href="/app/settings/about/license-information"
+    data-focusable
+    class="mt-3 inline-block text-sm font-medium underline underline-offset-2 hover:no-underline"
+  >License Information</a>
 
   <!-- Updates -->
   <div class="mt-6 max-w-md">
@@ -120,7 +125,7 @@
     <!-- Android always tracks the latest APK release. Desktop and Flatpak both support the
          persisted stable/beta channel; Flatpak maps it to its matching OSTree branch. -->
     {#if !$isAndroid}
-    <label class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-3">
+    <label class="mb-3 flex items-center justify-between gap-4 rounded-md border border-border p-4 sm:p-3">
       <div>
         <div class="text-sm font-bold">Release channel</div>
         <p class="mt-0.5 text-xs text-muted-foreground">Beta receives pre-releases first.</p>
@@ -144,7 +149,7 @@
           <p class="mt-1 text-xs text-muted-foreground">On the Steam Deck the update installs in the background and applies the next time you launch izumi from Steam.</p>
         {/if}
         <button data-focusable onclick={applyUpdate} disabled={installing}
-                class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition disabled:opacity-60">
+                class="mt-3 rounded-md bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition disabled:opacity-60 sm:py-2">
           {installing
             ? (flatpak ? 'Installing…' : pct > 0 ? `Downloading… ${pct}%` : 'Downloading…')
             : $availableUpdate.channelSwitch ? 'Switch channel'
@@ -154,7 +159,7 @@
     {:else}
       <div class="flex items-center gap-3">
         <button data-focusable onclick={checkUpdates} disabled={checking}
-                class="rounded-md bg-secondary px-4 py-2 text-sm font-bold transition hover:bg-accent disabled:opacity-60">
+                class="rounded-md bg-secondary px-4 py-2.5 text-sm font-bold transition hover:bg-accent disabled:opacity-60 sm:py-2">
           {checking ? 'Checking…' : 'Check for updates'}
         </button>
         {#if upToDate}<span class="text-sm text-muted-foreground">On the latest {$updateChannel} build.</span>{/if}
@@ -181,12 +186,12 @@
       </div>
     {/if}
     <div class="flex flex-wrap gap-2">
-      <button data-focusable onclick={copyDiagnostics} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Copy report</button>
-      <button data-focusable onclick={saveDiagnostics} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent">Save report</button>
-      <button data-focusable onclick={() => { clearDiagnostics(); diagnosticNotice = 'Diagnostics cleared' }} class="rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-secondary">Clear</button>
+      <button data-focusable onclick={copyDiagnostics} class="rounded-md bg-secondary px-4 py-2.5 text-sm font-bold hover:bg-accent sm:px-3 sm:py-2">Copy report</button>
+      <button data-focusable onclick={saveDiagnostics} class="rounded-md bg-secondary px-4 py-2.5 text-sm font-bold hover:bg-accent sm:px-3 sm:py-2">Save report</button>
+      <button data-focusable onclick={() => { clearDiagnostics(); diagnosticNotice = 'Diagnostics cleared' }} class="rounded-md border border-border px-4 py-2.5 text-sm font-bold hover:bg-secondary sm:px-3 sm:py-2">Clear</button>
       {#if !$isAndroid}
         <button data-focusable onclick={openDeveloperTools} disabled={openingDeveloperTools}
-                class="rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-secondary disabled:opacity-60">
+                class="rounded-md border border-border px-4 py-2.5 text-sm font-bold hover:bg-secondary disabled:opacity-60 sm:px-3 sm:py-2">
           {openingDeveloperTools ? 'Opening…' : 'Open developer tools'}
         </button>
       {/if}

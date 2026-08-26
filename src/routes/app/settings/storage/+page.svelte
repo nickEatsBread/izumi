@@ -76,7 +76,8 @@
   </p>
 
   <div class="max-w-2xl space-y-4">
-    <div class="flex items-center justify-between rounded-xl border border-border p-4">
+    <!-- Wraps on a phone: the total plus two buttons don't fit one 360px line. -->
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4">
       <div class="flex items-center gap-3">
         <HardDrive size={20} class="text-muted-foreground" />
         <div>
@@ -86,11 +87,11 @@
       </div>
       <div class="flex gap-2">
         <button data-focusable onclick={refresh} aria-label="Refresh sizes"
-                class="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-bold hover:bg-accent">
+                class="flex items-center gap-2 rounded-md border border-border px-3 py-2.5 text-sm font-bold hover:bg-accent sm:py-2 sm:text-xs">
           <RefreshCw size={14} /> Refresh
         </button>
         <button data-focusable onclick={() => clear('all')} disabled={busy !== '' || total === 0}
-                class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent disabled:opacity-50">
+                class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm font-bold hover:bg-accent disabled:opacity-50 sm:py-2 sm:text-xs">
           <Trash2 size={14} /> Clear all
         </button>
       </div>
@@ -106,7 +107,7 @@
           <div class="shrink-0 text-right">
             <div class="font-bold tabular-nums">{loaded ? formatBytes(sizes[bucket.id] ?? 0) || '0 B' : '…'}</div>
             <button data-focusable onclick={() => clear(bucket.id)} disabled={busy !== '' || !sizes[bucket.id]}
-                    class="mt-2 rounded-md border border-border px-3 py-1.5 text-xs font-bold hover:bg-accent disabled:opacity-50">
+                    class="mt-2 rounded-md border border-border px-3 py-2 text-sm font-bold hover:bg-accent disabled:opacity-50 sm:py-1.5 sm:text-xs">
               {busy === bucket.id ? 'Clearing…' : 'Clear'}
             </button>
           </div>

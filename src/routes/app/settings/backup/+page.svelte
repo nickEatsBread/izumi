@@ -73,7 +73,7 @@
           <ShieldAlert size={17} class="shrink-0" /> This backup contains credentials in readable form.
         </div>
       {/if}
-      <button data-focusable onclick={exportBackup} class="flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">
+      <button data-focusable onclick={exportBackup} class="flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground sm:py-2">
         <Download size={16} /> Save backup
       </button>
     </section>
@@ -81,7 +81,7 @@
     <section class="rounded-xl border border-border p-4">
       <h3 class="font-black">Restore application backup</h3>
       <p class="mb-3 mt-1 text-xs text-muted-foreground">Imported values overwrite matching settings. Other values remain unchanged. Izumi reloads after a successful restore.</p>
-      <button data-focusable onclick={() => fileInput?.click()} class="flex items-center gap-2 rounded-md bg-secondary px-4 py-2 font-bold hover:bg-accent">
+      <button data-focusable onclick={() => fileInput?.click()} class="flex items-center gap-2 rounded-md bg-secondary px-4 py-2.5 font-bold active:bg-accent sm:py-2 sm:hover:bg-accent">
         <Upload size={16} /> Choose backup
       </button>
       <input bind:this={fileInput} onchange={chooseBackup} type="file" accept="application/json,.json" class="hidden" />
@@ -94,8 +94,8 @@
             {pending.includesSecrets ? ' · includes secrets' : ''}
           </div>
           <div class="mt-3 flex gap-2">
-            <button data-focusable onclick={applyRestore} class="rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground">Restore and restart</button>
-            <button data-focusable onclick={() => (pending = null)} class="rounded-md border border-border px-3 py-2 text-sm font-bold">Cancel</button>
+            <button data-focusable onclick={applyRestore} class="rounded-md bg-primary px-3 py-2.5 text-sm font-bold sm:py-2 text-primary-foreground">Restore and restart</button>
+            <button data-focusable onclick={() => (pending = null)} class="rounded-md border border-border px-3 py-2.5 text-sm font-bold sm:py-2">Cancel</button>
           </div>
         </div>
       {/if}

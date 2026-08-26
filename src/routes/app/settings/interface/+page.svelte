@@ -80,7 +80,7 @@
   <p class="mb-4 text-sm text-muted-foreground">{m.settings_interface_intro()}</p>
 
   <div class="max-w-2xl">
-    <label class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-3">
+    <label class="mb-5 flex items-center justify-between gap-3 rounded-md border border-border p-4 sm:p-3">
       <span><span class="block font-bold">{m.settings_language()}</span><span class="text-xs text-muted-foreground">{m.settings_language_hint()}</span></span>
       <SelectMenu value={locale} onChange={changeLocale} ariaLabel={m.settings_language()} options={[
         { value: 'en', label: m.language_english() }, { value: 'ja', label: m.language_japanese() },
@@ -208,10 +208,10 @@
       {#each orderedRows as id, index (id)}
         {@const hidden = $hiddenHomeRows.includes(id)}
         <div class="flex items-center gap-2 px-3 py-2">
-          <button data-focusable disabled={index === 0} onclick={() => moveRow(id, -1)} aria-label={`Move ${rowLabels[id]} up`} class="rounded px-2 py-1 font-bold disabled:opacity-25 hover:bg-secondary">↑</button>
-          <button data-focusable disabled={index === orderedRows.length - 1} onclick={() => moveRow(id, 1)} aria-label={`Move ${rowLabels[id]} down`} class="rounded px-2 py-1 font-bold disabled:opacity-25 hover:bg-secondary">↓</button>
+          <button data-focusable disabled={index === 0} onclick={() => moveRow(id, -1)} aria-label={`Move ${rowLabels[id]} up`} class="rounded px-3 py-2 font-bold disabled:opacity-25 active:bg-secondary sm:px-2 sm:py-1 sm:hover:bg-secondary">↑</button>
+          <button data-focusable disabled={index === orderedRows.length - 1} onclick={() => moveRow(id, 1)} aria-label={`Move ${rowLabels[id]} down`} class="rounded px-3 py-2 font-bold disabled:opacity-25 active:bg-secondary sm:px-2 sm:py-1 sm:hover:bg-secondary">↓</button>
           <span class="min-w-0 flex-1 font-semibold" class:opacity-50={hidden}>{rowLabels[id]}</span>
-          <button data-focusable onclick={() => toggleRow(id)} aria-pressed={!hidden} class="rounded-md border border-border px-3 py-1 text-xs font-bold hover:bg-secondary">
+          <button data-focusable onclick={() => toggleRow(id)} aria-pressed={!hidden} class="rounded-md border border-border px-3 py-2 text-sm font-bold active:bg-secondary sm:py-1 sm:text-xs sm:hover:bg-secondary">
             {hidden ? m.settings_show() : m.settings_hide()}
           </button>
         </div>
@@ -256,14 +256,14 @@
         {/if}
         {#if notificationError}<p role="alert" class="mt-1 text-xs text-amber-400">{notificationError}</p>{/if}
       </div>
-      <label class="flex items-center justify-between rounded-md border border-border p-3">
+      <label class="flex flex-col gap-3 rounded-md border border-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-3">
         <div>
           <div class="font-bold">{m.settings_ui_scale()}</div>
           <p class="mt-1 text-xs text-muted-foreground">{m.settings_ui_scale_hint()}</p>
         </div>
         <span class="flex items-center gap-3">
-          <input type="range" min="0.5" max="2" step="0.1" data-focusable bind:value={$uiScale} class="ui-range h-2 w-40 cursor-pointer" />
-          <span class="w-10 text-right text-sm tabular-nums text-muted-foreground">{$uiScale.toFixed(1)}×</span>
+          <input type="range" min="0.5" max="2" step="0.1" data-focusable bind:value={$uiScale} class="ui-range h-6 w-full cursor-pointer sm:h-2 sm:w-40" />
+          <span class="w-10 shrink-0 text-right text-sm tabular-nums text-muted-foreground">{$uiScale.toFixed(1)}×</span>
         </span>
       </label>
 

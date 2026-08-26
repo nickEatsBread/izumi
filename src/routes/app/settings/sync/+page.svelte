@@ -176,14 +176,14 @@
       <p class="mt-1 text-sm text-muted-foreground">
         Izumi does not start iroh, contact a relay, listen for peers, or advertise this device until you enable it.
       </p>
-      <button onclick={enable} disabled={!!busy} data-focusable class="mt-3 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">
+      <button onclick={enable} disabled={!!busy} data-focusable class="mt-3 rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:py-2">
         {busy === 'enable' ? 'Enabling…' : 'Enable device sync'}
       </button>
     </section>
   {:else if status.state === 'failed'}
     <div class="max-w-2xl rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
       Sync could not start: {status.error}
-      <button onclick={enable} disabled={!!busy} data-focusable class="mt-3 block rounded-md bg-secondary px-3 py-2 font-bold text-foreground disabled:opacity-50">
+      <button onclick={enable} disabled={!!busy} data-focusable class="mt-3 block rounded-md bg-secondary px-3 py-2.5 font-bold text-foreground disabled:opacity-50 sm:py-2">
         {busy === 'enable' ? 'Retrying…' : 'Retry'}
       </button>
     </div>
@@ -206,8 +206,8 @@
         <div class="mt-4 flex items-center justify-between gap-3">
           <div class="text-sm font-bold">Nearby Izumi devices</div>
           <div class="flex gap-2">
-            <button onclick={refreshNearby} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold">Refresh</button>
-            <button onclick={disable} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold text-destructive">Turn off</button>
+            <button onclick={refreshNearby} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-3 py-2 text-xs font-bold sm:px-2.5 sm:py-1.5">Refresh</button>
+            <button onclick={disable} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-3 py-2 text-xs font-bold sm:px-2.5 sm:py-1.5 text-destructive">Turn off</button>
           </div>
         </div>
         {#if nearby.length}
@@ -218,7 +218,7 @@
                   <div class="text-sm font-bold">Izumi device {device.shortId}</div>
                   <div class="text-xs text-muted-foreground">Discovered on this local network</div>
                 </div>
-                <button onclick={() => joinNearby(device)} disabled={!!busy} data-focusable class="rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                <button onclick={() => joinNearby(device)} disabled={!!busy} data-focusable class="rounded-md bg-primary px-3 py-2.5 text-sm font-bold sm:py-2 text-primary-foreground disabled:opacity-50">
                   {busy === `nearby-${device.endpointId}` ? 'Waiting...' : 'Pair'}
                 </button>
               </li>
@@ -230,7 +230,7 @@
 
         <div class="mt-4 border-t border-border pt-4">
           <p class="text-sm text-muted-foreground">Starting the first device instead?</p>
-          <button onclick={allowNearby} disabled={!!busy} data-focusable class="mt-2 flex items-center gap-2 rounded-md bg-secondary px-4 py-2 text-sm font-bold disabled:opacity-50">
+          <button onclick={allowNearby} disabled={!!busy} data-focusable class="mt-2 flex items-center gap-2 rounded-md bg-secondary px-4 py-2.5 text-sm font-bold disabled:opacity-50 sm:py-2">
             <Link size={17} /> {busy === 'nearby-open' ? 'Starting...' : 'Create group and allow nearby pairing'}
           </button>
           {#if pairingActive && pairingWindow}
@@ -242,8 +242,8 @@
       <details class="rounded-md border border-border p-4">
         <summary data-focusable class="cursor-pointer text-sm font-bold">Advanced: use a pairing ticket</summary>
         <p class="mt-3 text-sm text-muted-foreground">Use this only when the devices cannot be placed on the same local network.</p>
-        <textarea bind:value={joinTicket} data-focusable rows="4" spellcheck="false" placeholder="doc..." class="mt-3 w-full resize-y rounded-md bg-input px-3 py-2 font-mono text-xs"></textarea>
-        <button onclick={join} disabled={!!busy || !joinTicket.trim()} data-focusable class="mt-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">
+        <textarea bind:value={joinTicket} data-focusable rows="4" spellcheck="false" placeholder="doc..." class="mt-3 w-full resize-y rounded-md bg-input px-3 py-2.5 font-mono text-sm sm:py-2 sm:text-xs"></textarea>
+        <button onclick={join} disabled={!!busy || !joinTicket.trim()} data-focusable class="mt-2 rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:py-2">
           {busy === 'join' ? 'Pairing...' : 'Pair with ticket'}
         </button>
       </details>
@@ -257,8 +257,8 @@
           <div class="mt-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Check that both screens show</div>
           <div class="mt-1 font-mono text-3xl font-black tracking-widest">{incoming.code}</div>
           <div class="mt-4 flex gap-2">
-            <button onclick={() => respond(true)} disabled={!!busy} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">Approve</button>
-            <button onclick={() => respond(false)} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-4 py-2 font-bold disabled:opacity-50">Decline</button>
+            <button onclick={() => respond(true)} disabled={!!busy} data-focusable class="rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:py-2">Approve</button>
+            <button onclick={() => respond(false)} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-4 py-2.5 font-bold disabled:opacity-50 sm:py-2">Decline</button>
           </div>
         </section>
       {/if}
@@ -269,18 +269,18 @@
             <h3 class="font-bold text-emerald-400">Paired</h3>
             <p class="mt-1 text-sm text-muted-foreground">Iroh reconnects directly where possible and uses its encrypted relay fallback when needed.</p>
           </div>
-          <button onclick={leave} disabled={!!busy} data-focusable class="flex shrink-0 items-center gap-2 rounded-md bg-secondary px-3 py-2 text-sm font-bold text-destructive disabled:opacity-50"><Unlink size={16} /> Leave</button>
+          <button onclick={leave} disabled={!!busy} data-focusable class="flex shrink-0 items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm font-bold sm:py-2 text-destructive disabled:opacity-50"><Unlink size={16} /> Leave</button>
         </div>
 
         <label class="mt-4 flex flex-col gap-1">
           <span class="text-sm font-bold">This device name</span>
-          <input bind:value={$syncDeviceName} data-focusable placeholder="e.g. Steam Deck" class="rounded-md bg-input px-3 py-2 text-sm" />
+          <input bind:value={$syncDeviceName} data-focusable placeholder="e.g. Steam Deck" class="rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" />
         </label>
 
         <div class="mt-4">
           <div class="mb-1 text-sm font-bold">Pair another device</div>
           <p class="text-sm text-muted-foreground">Make this device visible on the local network for two minutes. The other device can select it without typing anything.</p>
-          <button onclick={allowNearby} disabled={!!busy} data-focusable class="mt-2 flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+          <button onclick={allowNearby} disabled={!!busy} data-focusable class="mt-2 flex items-center gap-2 rounded-md bg-primary px-3 py-2.5 text-sm font-bold sm:py-2 text-primary-foreground disabled:opacity-50">
             <Link size={16} /> {busy === 'nearby-open' ? 'Starting...' : 'Allow nearby pairing'}
           </button>
           {#if pairingActive && pairingWindow}
@@ -289,8 +289,8 @@
 
           <details class="mt-4 border-t border-border pt-3">
             <summary data-focusable class="cursor-pointer text-xs font-bold text-muted-foreground">Advanced ticket fallback</summary>
-            <textarea readonly value={ticket} rows="4" data-focusable spellcheck="false" class="mt-3 w-full resize-y rounded-md bg-input px-3 py-2 font-mono text-xs"></textarea>
-            <button onclick={copyTicket} data-focusable class="mt-2 flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-sm font-bold"><Copy size={16} /> {copied ? 'Copied' : 'Copy pairing ticket'}</button>
+            <textarea readonly value={ticket} rows="4" data-focusable spellcheck="false" class="mt-3 w-full resize-y rounded-md bg-input px-3 py-2.5 font-mono text-sm sm:py-2 sm:text-xs"></textarea>
+            <button onclick={copyTicket} data-focusable class="mt-2 flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm font-bold sm:py-2"><Copy size={16} /> {copied ? 'Copied' : 'Copy pairing ticket'}</button>
             <p class="mt-2 text-xs text-amber-400">Anyone with this reusable ticket can read and change the group. Share it privately; it may also contain your current IP addresses.</p>
           </details>
         </div>
@@ -301,12 +301,12 @@
           <div>
             <h3 class="font-bold">Watch progress</h3>
             {#if trackerGate}
-              <p class="mt-1 text-sm text-muted-foreground">Exact resume positions and remembered playback sources sync through Iroh. AniList or MyAnimeList remains the source of truth for watched episode numbers.</p>
+              <p class="mt-1 text-sm text-muted-foreground">Exact resume positions and remembered playback sources sync through Iroh. Your connected tracker remains the source of truth for watched episode numbers.</p>
             {:else}
               <p class="mt-1 text-sm text-muted-foreground">Anime history, episode numbers, exact resume positions, and remembered playback sources sync automatically after playback changes.</p>
             {/if}
           </div>
-          <button onclick={syncWatchNow} disabled={!!busy} data-focusable class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2 text-sm font-bold disabled:opacity-50"><RefreshCw size={16} /> Sync now</button>
+          <button onclick={syncWatchNow} disabled={!!busy} data-focusable class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm font-bold sm:py-2 disabled:opacity-50"><RefreshCw size={16} /> Sync now</button>
         </div>
       </section>
 
@@ -314,12 +314,12 @@
         <h3 class="font-bold">Sources, extensions, and Izumi settings</h3>
         <p class="mt-1 text-sm text-muted-foreground">Manual only. “Send” publishes this device’s Stremio URLs, extension list, debrid configuration, and portable preferences. Device-specific paths and account tokens are excluded.</p>
         <p class="mt-1 text-xs text-amber-400">Configured addon URLs and the extension debrid credential can contain secrets. Only send them to devices you trust.</p>
-        <button onclick={sendManual} disabled={!!busy} data-focusable class="mt-3 flex items-center gap-2 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50"><Upload size={17} /> {busy === 'send' ? 'Sending…' : 'Send this device’s setup'}</button>
+        <button onclick={sendManual} disabled={!!busy} data-focusable class="mt-3 flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:py-2"><Upload size={17} /> {busy === 'send' ? 'Sending…' : 'Send this device’s setup'}</button>
 
         <div class="mt-5 border-t border-border pt-4">
           <div class="mb-2 flex items-center justify-between gap-3">
             <h4 class="text-sm font-bold">Available device setups</h4>
-            <button onclick={() => void action('refresh', async () => { devices = await listManualDevices() })} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-2.5 py-1.5 text-xs font-bold">Refresh</button>
+            <button onclick={() => void action('refresh', async () => { devices = await listManualDevices() })} disabled={!!busy} data-focusable class="rounded-md bg-secondary px-3 py-2 text-xs font-bold sm:px-2.5 sm:py-1.5">Refresh</button>
           </div>
           {#if devices.length}
             <ul class="space-y-2">
@@ -329,7 +329,7 @@
                     <div class="truncate text-sm font-bold">{device.deviceName}{device.isThisDevice ? ' (this device)' : ''}</div>
                     <div class="text-xs text-muted-foreground">Sent {new Date(device.updatedAt).toLocaleString()}</div>
                   </div>
-                  <button onclick={() => receive(device)} disabled={!!busy || device.isThisDevice} data-focusable class="flex shrink-0 items-center gap-2 rounded-md bg-secondary px-3 py-2 text-xs font-bold disabled:opacity-40"><Download size={15} /> Receive</button>
+                  <button onclick={() => receive(device)} disabled={!!busy || device.isThisDevice} data-focusable class="flex shrink-0 items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-xs font-bold disabled:opacity-40 sm:py-2"><Download size={15} /> Receive</button>
                 </li>
               {/each}
             </ul>

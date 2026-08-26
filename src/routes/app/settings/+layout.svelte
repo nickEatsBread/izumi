@@ -41,6 +41,7 @@
     '/app/settings/player': 'Player', '/app/settings/subtitles': 'Subtitles',
     '/app/settings/hotkeys': 'Hotkeys',
     '/app/settings/store': 'Source Store',
+    '/app/settings/catalog': 'Catalog',
     // Nested routes come FIRST: the lookup below takes the first prefix that matches, so listing
     // /sources ahead of /sources/priority would title the reorder screen "Sources".
     '/app/settings/sources/priority': 'Source priority',
@@ -49,7 +50,8 @@
     '/app/settings/history': 'History', '/app/settings/sync': 'Device sync',
     '/app/settings/backup': 'Backup & restore',
     '/app/settings/accounts': 'Accounts', '/app/settings/network': 'Network',
-    '/app/settings/changelog': 'Changelog', '/app/settings/about': 'About',
+    '/app/settings/changelog': 'Changelog',
+    '/app/settings/about/license-information': 'License Information', '/app/settings/about': 'About',
   }
   const childTitle = $derived.by(() => {
     const p = $page.url.pathname

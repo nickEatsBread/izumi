@@ -20,6 +20,7 @@
   import Keyboard from '@lucide/svelte/icons/keyboard'
   import DatabaseBackup from '@lucide/svelte/icons/database-backup'
   import HardDrive from '@lucide/svelte/icons/hard-drive'
+  import Library from '@lucide/svelte/icons/library'
 
   // Grouped for the mobile list index (desktop rail renders them flat, in order).
   const groups = [
@@ -29,6 +30,7 @@
       { title: 'Hotkeys', href: '/app/settings/hotkeys', icon: Keyboard, subtitle: 'Keyboard shortcuts' },
     ] },
     { label: 'Content', items: [
+      { title: 'Catalog', href: '/app/settings/catalog', icon: Library, subtitle: 'AniList, Kitsu, TMDB or Stremio metadata' },
       { title: 'Sources', href: '/app/settings/sources', icon: Rss, subtitle: 'Addons, providers, priority' },
       { title: 'Extensions', href: '/app/settings/extensions', icon: Puzzle, subtitle: 'Installed source extensions' },
       { title: 'Downloads', href: '/app/settings/downloads', icon: Download, subtitle: 'Offline library and storage' },
@@ -73,19 +75,19 @@
 {#if $isMobile}
   <!-- Mobile: a vertical grouped list of chevron rows. Tapping a row navigates to its route; the
        layout shows a back-header on the child page. Vertical scroll only — no horizontal strip. -->
-  <div class="space-y-5">
+  <div class="space-y-4">
     {#each visibleGroups as g (g.label)}
       <div>
-        <div class="mb-1.5 px-1 text-sm font-bold text-muted-foreground">{g.label}</div>
+        <div class="mb-1 px-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">{g.label}</div>
         <div class="overflow-hidden rounded-xl bg-secondary/40">
           {#each g.items as it (it.href)}
             {@const Icon = it.icon}
             <a href={it.href} data-focusable use:ripple onclick={() => h.tap()}
-               class="ripple-host flex min-h-16 items-center gap-4 border-b border-border/50 px-4 py-3 last:border-b-0 transition-transform active:scale-[0.985]">
-              <Icon size={22} class="shrink-0 text-muted-foreground" />
+               class="ripple-host flex min-h-14 items-center gap-3 border-b border-border/50 px-3 py-2.5 last:border-b-0 transition-transform active:scale-[0.985]">
+              <Icon size={20} class="shrink-0 text-muted-foreground" />
               <span class="min-w-0 flex-1">
                 <span class="block text-[0.95rem] font-bold leading-tight">{it.title}</span>
-                <span class="mt-0.5 block truncate text-xs text-muted-foreground">{it.subtitle}</span>
+                <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">{it.subtitle}</span>
               </span>
               <ChevronRight size={18} class="shrink-0 text-muted-foreground" />
             </a>

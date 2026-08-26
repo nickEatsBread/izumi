@@ -16,6 +16,7 @@ const appCss = read('../../../app.css')
 /** Files that render a switch track, and the source of each. */
 const SWITCH_SOURCES: Array<[string, string]> = [
   ['Toggle.svelte', read('./Toggle.svelte')],
+  ['SettingsSwitch.svelte', read('./SettingsSwitch.svelte')],
   ['settings/sources/+page.svelte', read('../../../routes/app/settings/sources/+page.svelte')],
   ['settings/extensions/+page.svelte', read('../../../routes/app/settings/extensions/+page.svelte')],
 ]

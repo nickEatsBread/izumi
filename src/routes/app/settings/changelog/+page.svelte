@@ -45,10 +45,12 @@
 
   <div class="mt-6 space-y-2">
     {#each entries as e (e.sha)}
-      <div class="flex items-baseline gap-3 rounded-lg border border-border p-3">
+      <!-- Stacked on a phone: date + message + sha on one baseline squeezed the message to a
+           sliver at 360px; the sha drops under the message instead. -->
+      <div class="flex flex-col gap-1 rounded-lg border border-border p-3 sm:flex-row sm:items-baseline sm:gap-3">
         <span class="shrink-0 text-xs tabular-nums text-muted-foreground">{fmt(e.date)}</span>
         <span class="min-w-0 flex-1 text-sm">{e.message}</span>
-        <span class="shrink-0 font-mono text-[0.65rem] text-muted-foreground">{e.sha.slice(0, 7)}</span>
+        <span class="shrink-0 font-mono text-xs text-muted-foreground sm:text-[0.65rem]">{e.sha.slice(0, 7)}</span>
       </div>
     {/each}
 
@@ -64,7 +66,7 @@
     {#if error}
       <div class="rounded-lg border border-border p-3 text-sm text-muted-foreground">
         <p>Couldn't load more changes. Check your connection and try again.</p>
-        <button data-focusable onclick={() => loadMore()} class="mt-2 rounded-md bg-secondary px-3 py-1.5 font-bold text-foreground hover:bg-accent">Try again</button>
+        <button data-focusable onclick={() => loadMore()} class="mt-2 rounded-md bg-secondary px-3 py-2 font-bold text-foreground hover:bg-accent sm:py-1.5">Try again</button>
       </div>
     {:else if !loading && !entries.length}
       <p class="text-sm text-muted-foreground">No changes to show.</p>

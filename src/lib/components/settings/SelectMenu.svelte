@@ -2,6 +2,7 @@
   import { onMount, tick } from 'svelte'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Check from '@lucide/svelte/icons/check'
+  import { isMobile } from '$lib/platform'
   import { rootZoom } from '$lib/components/cards/preview-pos'
   import { menuPlacement } from '$lib/components/menu-placement'
 
@@ -36,20 +37,29 @@
   let menu = $state<HTMLDivElement>()
   let placement = $state<'down' | 'up'>('down')
   let maxHeight = $state(260)
+  // Viewport offsets in LOCAL px for the fixed mobile panel (same pattern as MultiSelect): the
+  // anchored dropdown reads as a desktop widget on a phone, so mobile gets a near-full-width sheet
+  // hanging off the trigger's screen position instead.
+  const GAP = 4
+  let panelTop = $state(0)
+  let panelBottom = $state(0)
 
   /** @param content the menu's natural height in local px, once it has rendered. */
   function measure(content?: number) {
     if (!trigger) return
     const rect = trigger.getBoundingClientRect()
+    const zoom = rootZoom()
     const fit = menuPlacement({
       top: rect.top,
       bottom: rect.bottom,
       viewport: window.innerHeight,
-      zoom: rootZoom(),
+      zoom,
       content,
     })
     placement = fit.side
     maxHeight = fit.maxHeight
+    panelTop = rect.bottom / zoom + GAP
+    panelBottom = window.innerHeight / zoom - rect.top / zoom + GAP
   }
 
   async function setOpen(next: boolean) {
@@ -121,6 +131,24 @@
   })
 </script>
 
+{#snippet optionList()}
+  {#each options as option (option.value)}
+    <button
+      type="button"
+      data-focusable
+      data-select-value={option.value}
+      role="option"
+      aria-selected={option.value === value}
+      disabled={option.disabled}
+      class="flex w-full items-center justify-between gap-4 whitespace-nowrap rounded px-3 py-3 text-left text-base hover:bg-accent focus:bg-accent disabled:opacity-40 sm:py-2 sm:text-sm"
+      onclick={() => choose(option)}
+    >
+      <span class="truncate">{option.label}</span>
+      {#if option.value === value}<Check size={15} class="shrink-0 text-primary" />{/if}
+    </button>
+  {/each}
+{/snippet}
+
 <div bind:this={root} class="relative {className}" data-nav-trap={open ? '' : undefined}>
   <button
     bind:this={trigger}
@@ -129,7 +157,7 @@
     aria-label={ariaLabel}
     aria-haspopup="listbox"
     aria-expanded={open}
-    class="flex w-full items-center justify-between gap-3 rounded-md bg-input px-3 py-2 text-left text-sm"
+    class="flex min-h-11 w-full items-center justify-between gap-3 rounded-md bg-input px-3 py-2.5 text-left text-base sm:min-h-0 sm:py-2 sm:text-sm"
     onclick={() => void setOpen(!open)}
     onkeydown={onTriggerKeydown}
   >
@@ -138,31 +166,34 @@
   </button>
 
   {#if open}
-    <div
-      bind:this={menu}
-      role="listbox"
-      tabindex="-1"
-      aria-label={ariaLabel}
-      class="absolute left-0 z-[80] min-w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl
-        {placement === 'down' ? 'top-[calc(100%+0.25rem)]' : 'bottom-[calc(100%+0.25rem)]'}"
-      style="max-height:{maxHeight}px"
-      onkeydown={onMenuKeydown}
-    >
-      {#each options as option (option.value)}
-        <button
-          type="button"
-          data-focusable
-          data-select-value={option.value}
-          role="option"
-          aria-selected={option.value === value}
-          disabled={option.disabled}
-          class="flex w-full items-center justify-between gap-4 whitespace-nowrap rounded px-3 py-2 text-left text-sm hover:bg-accent focus:bg-accent disabled:opacity-40"
-          onclick={() => choose(option)}
-        >
-          <span>{option.label}</span>
-          {#if option.value === value}<Check size={15} class="shrink-0 text-primary" />{/if}
-        </button>
-      {/each}
-    </div>
+    {#if $isMobile}
+      <!-- Mobile: a viewport-anchored sheet (same pattern as MultiSelect). The absolutely-positioned
+           desktop dropdown reads as a desktop widget on a phone and can be clipped by a narrow
+           parent; the fixed panel gets the full width minus margins. -->
+      <div
+        bind:this={menu}
+        role="listbox"
+        tabindex="-1"
+        aria-label={ariaLabel}
+        class="fixed left-3 right-3 z-[80] overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl"
+        style="{placement === 'down' ? `top:${panelTop}px` : `bottom:${panelBottom}px`};max-height:{maxHeight}px"
+        onkeydown={onMenuKeydown}
+      >
+        {@render optionList()}
+      </div>
+    {:else}
+      <div
+        bind:this={menu}
+        role="listbox"
+        tabindex="-1"
+        aria-label={ariaLabel}
+        class="absolute left-0 z-[80] min-w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1 text-foreground shadow-xl
+          {placement === 'down' ? 'top-[calc(100%+0.25rem)]' : 'bottom-[calc(100%+0.25rem)]'}"
+        style="max-height:{maxHeight}px"
+        onkeydown={onMenuKeydown}
+      >
+        {@render optionList()}
+      </div>
+    {/if}
   {/if}
 </div>

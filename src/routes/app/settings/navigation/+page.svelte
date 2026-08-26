@@ -43,22 +43,27 @@
     {#each $effectiveNav as it, i (it.id)}
       {@const meta = NAV_META[it.id]}
       {@const Icon = meta.icon}
-      <div class="flex items-center gap-2 rounded-md border border-border p-2.5">
-        <Icon size={18} class="shrink-0 text-muted-foreground" />
-        <span class="min-w-0 flex-1 truncate text-sm font-bold">{meta.label}</span>
+      <!-- Stacked on a phone: destination name on one line, placement + reorder controls below. -->
+      <div class="flex flex-col gap-2 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:gap-2 sm:p-2.5">
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <Icon size={18} class="shrink-0 text-muted-foreground" />
+          <span class="min-w-0 flex-1 truncate text-sm font-bold">{meta.label}</span>
+        </div>
 
-        <div class="flex shrink-0 rounded-lg bg-secondary p-0.5 text-xs font-bold">
+        <div class="flex items-center justify-end gap-2">
+        <div class="flex shrink-0 rounded-lg bg-secondary p-1 text-sm font-bold sm:p-0.5 sm:text-xs">
           {#each placements as p (p.value)}
             <button data-focusable onclick={() => setPlacement(it.id, p.value)}
-                    class="rounded-md px-2 py-1 transition-colors {it.placement === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">{p.label}</button>
+                    class="rounded-md px-3 py-2 transition-colors sm:px-2 sm:py-1 {it.placement === p.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'}">{p.label}</button>
           {/each}
         </div>
 
-        <div class="flex shrink-0 flex-col">
+        <div class="flex shrink-0 gap-1 sm:flex-col sm:gap-0">
           <button data-focusable aria-label="Move up" disabled={i === 0} onclick={() => move(i, -1)}
-                  class="grid size-6 place-items-center rounded transition-colors hover:bg-accent disabled:opacity-30"><ChevronUp size={15} /></button>
+                  class="grid size-10 place-items-center rounded transition-colors active:bg-accent disabled:opacity-30 sm:size-6 sm:hover:bg-accent"><ChevronUp size={15} /></button>
           <button data-focusable aria-label="Move down" disabled={i === $effectiveNav.length - 1} onclick={() => move(i, 1)}
-                  class="grid size-6 place-items-center rounded transition-colors hover:bg-accent disabled:opacity-30"><ChevronDown size={15} /></button>
+                  class="grid size-10 place-items-center rounded transition-colors active:bg-accent disabled:opacity-30 sm:size-6 sm:hover:bg-accent"><ChevronDown size={15} /></button>
+        </div>
         </div>
       </div>
     {/each}

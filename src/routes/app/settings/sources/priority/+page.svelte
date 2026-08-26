@@ -54,7 +54,7 @@
         <h3 id="priority-order-heading" class="text-sm font-black">Your order</h3>
         {#if $sourcePriority.length}
           <button data-focusable onclick={clearAll}
-            class="rounded-md px-2 py-1 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent">
+            class="rounded-md px-3 py-2 text-sm font-bold text-muted-foreground transition-colors active:bg-accent sm:px-2 sm:py-1 sm:text-xs sm:hover:bg-accent">
             Clear order
           </button>
         {/if}

@@ -75,7 +75,7 @@
   <h2 class="mb-1 text-xl font-black">Sources</h2>
   <p class="mb-4 text-sm text-muted-foreground">Stremio addons backed by your debrid, and how sources are chosen. Installed anime packages are listed under Extensions and the Source Store.</p>
   <a href="/app/settings/store" data-focusable
-     class="mb-6 inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 text-sm font-black transition-colors hover:bg-accent">
+     class="mb-6 inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-3 text-sm font-black transition-colors active:bg-accent sm:py-2.5 sm:hover:bg-accent">
     <Store size={16} />
     Open Source Store
   </a>
@@ -128,14 +128,14 @@
   <div class="max-w-2xl">
     <p class="mb-2 text-sm text-muted-foreground">Paste a debrid-configured addon manifest URL.</p>
     <div class="flex gap-2">
-      <input bind:value={input} data-focusable placeholder="https://…/manifest.json" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" onkeydown={(event) => { if (event.key === 'Enter') add() }} />
-      <button onclick={add} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Add</button>
+      <input bind:value={input} data-focusable placeholder="https://…/manifest.json" class="flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" onkeydown={(event) => { if (event.key === 'Enter') add() }} />
+      <button onclick={add} data-focusable class="rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground sm:py-2">Add</button>
     </div>
     {#if addError}<p role="alert" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
     <ul class="mt-3 space-y-2">
       {#each $addonUrls as url, i (url)}
         {@const off = $disabledSources.includes(url)}
-        <li class="flex items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
+        <li class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
           {#await fetchManifest(url)}
             <div class="skeloader size-10 shrink-0 rounded-md"></div>
             <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
@@ -145,7 +145,7 @@
             {:else}
               <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Globe size={18} /></div>
             {/if}
-            <div class="min-w-0 flex-1">
+            <div class="min-w-0 flex-1 basis-48">
               <div class="flex items-center gap-2">
                 <span class="truncate font-bold">{m?.name ?? host(url)}</span>
                 {#if m?.version}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{m.version}</span>{/if}
@@ -156,7 +156,7 @@
               {#await findAddonConfigureUrl(url, m) then configureUrl}
                 {#if configureUrl}
                   <button data-focusable onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
-                          class="shrink-0 rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent">Configure</button>
+                          class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm font-bold active:bg-accent sm:py-1.5 sm:text-xs sm:hover:bg-accent">Configure</button>
                 {/if}
               {/await}
             {/if}
@@ -164,10 +164,10 @@
           <!-- `data-switch`: fixed-geometry pill — the large-target a11y mode grows its pointer
                target, not its box, so the slider never squares off into a circle (app.css). -->
           <button data-focusable data-switch onclick={() => toggle(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
-            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
-            <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+            <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
           </button>
-          <button onclick={() => remove(i)} data-focusable class="shrink-0 text-sm text-destructive">Remove</button>
+          <button onclick={() => remove(i)} data-focusable class="shrink-0 rounded-md px-3 py-2 text-sm text-destructive active:bg-destructive/10 sm:px-1 sm:py-1">Remove</button>
         </li>
       {/each}
       {#if !$addonUrls.length}<li class="text-sm text-muted-foreground">No sources yet.</li>{/if}
@@ -179,7 +179,7 @@
     <p class="mb-3 text-xs text-muted-foreground">The order to trust your addons and extensions in, most trusted first. It settles ties the ranking already makes — a listed source is preferred within its quality tier, never ahead of a cached copy or your audio language.</p>
 
     <a href="/app/settings/sources/priority" data-focusable
-       class="flex items-center gap-3 rounded-lg border border-border p-3 transition-colors hover:bg-secondary active:bg-secondary">
+       class="flex items-center gap-3 rounded-lg border border-border p-4 transition-colors active:bg-secondary sm:p-3 sm:hover:bg-secondary">
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-2">
           <span class="text-sm font-bold">{$sourcePriority.length ? `${$sourcePriority.length} ${$sourcePriority.length === 1 ? 'source' : 'sources'} ordered` : 'Not set'}</span>

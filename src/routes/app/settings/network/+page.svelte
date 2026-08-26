@@ -85,7 +85,7 @@
     {#if $enableDoH}
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">DNS-over-HTTPS URL</span>
-        <input type="text" data-focusable bind:value={$doHUrl} placeholder="https://cloudflare-dns.com/dns-query" class="rounded-md bg-input px-3 py-2 text-sm" />
+        <input type="text" data-focusable bind:value={$doHUrl} placeholder="https://cloudflare-dns.com/dns-query" class="rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" />
       </label>
     {/if}
 
@@ -99,7 +99,7 @@
           <span class="block text-xs text-muted-foreground">Use 0 for uncapped.</span>
         </span>
         <span class="flex items-center gap-2">
-          <input type="number" min="0" max="10000" step="1" data-focusable bind:value={$torrentDownloadLimitMbps} class="w-24 rounded-md bg-input px-3 py-2 text-right text-sm" />
+          <input type="number" min="0" max="10000" step="1" data-focusable bind:value={$torrentDownloadLimitMbps} class="w-24 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
           <span class="text-sm text-muted-foreground">Mb/s</span>
         </span>
       </label>
@@ -122,7 +122,7 @@
             <span class="block text-xs text-muted-foreground">Izumi uses at most 70% ({Math.max(0, Number($torrentUpstreamCapacityMbps) || 0) * 0.7} Mb/s).</span>
           </span>
           <span class="flex items-center gap-2">
-            <input type="number" min="0.1" max="10000" step="0.1" data-focusable bind:value={$torrentUpstreamCapacityMbps} class="w-24 rounded-md bg-input px-3 py-2 text-right text-sm" />
+            <input type="number" min="0.1" max="10000" step="0.1" data-focusable bind:value={$torrentUpstreamCapacityMbps} class="w-24 rounded-md bg-input px-3 py-2.5 text-right text-base sm:py-2 sm:text-sm" />
             <span class="text-sm text-muted-foreground">Mb/s</span>
           </span>
         </label>
@@ -170,7 +170,7 @@
           <span class="text-sm font-bold">SOCKS5 URL</span>
           <input type="text" autocomplete="off" spellcheck="false" data-focusable bind:value={$torrentProxyUrl}
                  placeholder="socks5://127.0.0.1:1080"
-                 class="rounded-md bg-input px-3 py-2 font-mono text-sm" />
+                 class="rounded-md bg-input px-3 py-2.5 font-mono text-base sm:py-2 sm:text-sm" />
           <span class="text-xs text-muted-foreground">Credentials are optional: <code>socks5://user:password@host:port</code>. Many VPN desktop clients expose a local SOCKS5 port.</span>
         </label>
         {#if proxyError}<p class="mt-2 text-xs text-destructive">{proxyError}</p>{/if}
@@ -186,16 +186,16 @@
       <div class="font-bold">Peer-to-peer relay</div>
       <p class="mt-1 text-xs text-muted-foreground">Device Sync and Watch Together use separate encrypted connections, but may independently use this Iroh relay when a direct path is unavailable. A custom relay changes routing only; it never combines their data.</p>
       <div class="mt-3 grid grid-cols-2 gap-2">
-        <button data-focusable onclick={() => ($syncRelayMode = 'public')} class="rounded-md px-3 py-2 text-sm font-bold {$syncRelayMode === 'public' ? 'bg-theme text-white' : 'bg-secondary'}">Public relay</button>
-        <button data-focusable onclick={() => ($syncRelayMode = 'custom')} class="rounded-md px-3 py-2 text-sm font-bold {$syncRelayMode === 'custom' ? 'bg-theme text-white' : 'bg-secondary'}">Custom relay</button>
+        <button data-focusable onclick={() => ($syncRelayMode = 'public')} class="rounded-md px-3 py-2.5 text-sm font-bold sm:py-2 {$syncRelayMode === 'public' ? 'bg-theme text-white' : 'bg-secondary'}">Public relay</button>
+        <button data-focusable onclick={() => ($syncRelayMode = 'custom')} class="rounded-md px-3 py-2.5 text-sm font-bold sm:py-2 {$syncRelayMode === 'custom' ? 'bg-theme text-white' : 'bg-secondary'}">Custom relay</button>
       </div>
       {#if $syncRelayMode === 'custom'}
         <label class="mt-3 flex flex-col gap-1">
           <span class="text-sm font-bold">Iroh relay URL</span>
-          <input type="url" data-focusable bind:value={$syncRelayUrl} placeholder="https://relay.example.com." class="rounded-md bg-input px-3 py-2 text-sm" />
+          <input type="url" data-focusable bind:value={$syncRelayUrl} placeholder="https://relay.example.com." class="rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" />
         </label>
       {/if}
-      <button data-focusable disabled={applyingRelay || ($syncRelayMode === 'custom' && !$syncRelayUrl.trim())} onclick={applyRelay} class="mt-3 rounded-md bg-secondary px-4 py-2 text-sm font-bold disabled:opacity-50">{applyingRelay ? 'Applying…' : 'Apply relay'}</button>
+      <button data-focusable disabled={applyingRelay || ($syncRelayMode === 'custom' && !$syncRelayUrl.trim())} onclick={applyRelay} class="mt-3 w-full rounded-md bg-secondary px-4 py-2.5 text-sm font-bold disabled:opacity-50 sm:w-auto sm:py-2">{applyingRelay ? 'Applying…' : 'Apply relay'}</button>
       <p class="mt-2 text-xs text-muted-foreground">The selection is used for new connections. Leave and rejoin an active room after changing it.</p>
       {#if relayNotice}<p class="mt-2 text-xs text-green-500">{relayNotice}</p>{/if}
       {#if relayError}<p class="mt-2 text-xs text-destructive">{relayError}</p>{/if}
