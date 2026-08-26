@@ -4,7 +4,6 @@
   import Calendar from '@lucide/svelte/icons/calendar'
   import Search from '@lucide/svelte/icons/search'
   import Download from '@lucide/svelte/icons/download'
-  import Cloud from '@lucide/svelte/icons/cloud'
   import Users from '@lucide/svelte/icons/users'
   import Settings from '@lucide/svelte/icons/settings'
   import VenetianMask from '@lucide/svelte/icons/venetian-mask'
@@ -23,7 +22,6 @@
     { href: '/app/search', icon: Search, label: m.nav_search(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
     { href: '/app/downloads', icon: Download, label: m.nav_downloads(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
     { href: '/app/watch', icon: Users, label: m.nav_watch_together(), anim: 'group-hover:animate-[wiggle_0.4s_ease]' },
-    { href: '/app/cloud', icon: Cloud, label: m.nav_cloud(), anim: 'group-hover:animate-[bounce-sm_0.4s_ease]' },
   ]
   const name = $derived($anilistUserName || $malUserName || $anilistUser || $malUser)
   const avatarUrl = $derived($anilistUserAvatar || $malUserAvatar)

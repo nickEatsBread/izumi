@@ -6,7 +6,6 @@
   import { heroMedia } from '$lib/stores/hero'
   import Search from '@lucide/svelte/icons/search'
   import Cloud from '@lucide/svelte/icons/cloud'
-  import { isMobile } from '$lib/platform'
   import Play from '@lucide/svelte/icons/play'
   import Pause from '@lucide/svelte/icons/pause'
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
@@ -97,15 +96,14 @@
   <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
     <h1 class="text-2xl font-black">Downloads</h1>
     <div class="flex flex-wrap items-center justify-end gap-3">
-      {#if $isMobile}
-        <!-- Cloud library moved here on mobile (it gave up its bottom-nav slot to Schedule). -->
-        <a href="/app/cloud" data-focusable class="flex items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-sm font-bold"><Cloud size={16} /> Cloud</a>
-      {/if}
       <span class="text-sm text-muted-foreground">{fmtBytes(totalBytes)} used · {done.length} saved</span>
-      <label class="flex w-full items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 sm:w-auto">
-        <Search size={15} class="text-muted-foreground" />
-        <input bind:value={filter} data-focusable placeholder="Filter…" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground sm:w-40" />
-      </label>
+      <div class="flex min-w-0 items-center gap-2">
+        <a href="/app/cloud" data-focusable class="flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary px-3 py-1.5 text-sm font-bold"><Cloud size={16} /> Cloud</a>
+        <label class="flex min-w-0 items-center gap-2 rounded-lg bg-secondary px-3 py-1.5">
+          <Search size={15} class="shrink-0 text-muted-foreground" />
+          <input bind:value={filter} data-focusable placeholder="Filter…" class="min-w-0 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground sm:w-40" />
+        </label>
+      </div>
     </div>
   </div>
 
