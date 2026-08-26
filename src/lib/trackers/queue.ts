@@ -1,6 +1,6 @@
 import { persisted } from 'svelte-persisted-store'
 import { get, type Readable } from 'svelte/store'
-import { anilistToken, malToken } from './config'
+import { anilistToken, kitsuToken, malToken, simklToken } from './config'
 import type { AniStatus } from './index'
 import type { FuzzyDate } from '$lib/anilist/types'
 
@@ -14,7 +14,7 @@ import type { FuzzyDate } from '$lib/anilist/types'
 // in index.ts and is injected via registerReplay() at its module load — so queue.ts never imports
 // index.ts at runtime (only the AniStatus TYPE, which is erased). index.ts → queue.ts is one-way.
 
-export type TrackerName = 'AniList' | 'MAL'
+export type TrackerName = 'AniList' | 'MAL' | 'Kitsu' | 'Simkl'
 export type OpKind = 'progress' | 'status' | 'score' | 'remove'
 
 // Extra list-entry fields that ride along with a progress push (start/finish dates, rewatch count).
@@ -28,8 +28,11 @@ export interface ProgressExtras {
 // One tracker write, normalized so both the live path and a replay build the same request.
 export interface TrackerOp {
   kind: OpKind
+  /** Provider-neutral local key used for queue dedupe/history. */
   mediaId: number
+  idAniList?: number
   idMal?: number
+  idKitsu?: number
   listEntryId?: number // AniList mediaList entry id — required to DELETE the entry (kind 'remove')
   progress?: number
   status?: AniStatus
@@ -175,7 +178,7 @@ export async function flushQueue(): Promise<void> {
       } else {
         bump(e, now)
       }
-      if (e.tracker === 'MAL') await sleep(350) // MAL has no client-side limiter — space replays
+      if (e.tracker !== 'AniList') await sleep(350) // REST trackers have no shared client limiter
     }
   } finally {
     flushing = false
@@ -197,7 +200,10 @@ function bump(target: QueueEntry, now: number) {
 }
 
 function tokenReady(t: TrackerName): boolean {
-  return t === 'AniList' ? !!get(anilistToken) : !!get(malToken)
+  if (t === 'AniList') return !!get(anilistToken)
+  if (t === 'MAL') return !!get(malToken)
+  if (t === 'Kitsu') return !!get(kitsuToken)
+  return !!get(simklToken)
 }
 
 // Date.now() is available at app runtime (the ban is workflow-scripts-only).
@@ -227,7 +233,7 @@ export function initTrackerQueue(): () => void {
   // tokenReady() gates the replay, so ops queued while signed out (or while a MAL token was
   // cleared pending refresh) are skipped by every wake until auth lands. The token stores ARE the
   // readiness signal, so subscribing turns sign-in into a trigger instead of a wait for the next tick.
-  const unsubs = [anilistToken, malToken].map((store) => watchToken(store, wake))
+  const unsubs = [anilistToken, malToken, kitsuToken, simklToken].map((store) => watchToken(store, wake))
   teardown = () => {
     clearInterval(timer)
     window.removeEventListener('online', wake)

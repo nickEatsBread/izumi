@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { get } from "svelte/store";
 import { persisted } from "svelte-persisted-store";
 import { anilistToken } from "$lib/anilist/auth";
-import { malToken } from "$lib/trackers/config";
+import { kitsuToken, malToken, simklToken } from "$lib/trackers/config";
 // Durable stores only: an incognito overlay change must not schedule a device-sync push (and
 // exportJson reads the durable stores anyway, so pushing on overlay edits would be pure noise).
 import { durableHistory } from "$lib/player/history";
@@ -25,7 +25,7 @@ import type {
 
 export const syncDeviceName = persisted<string>("sync-device-name", "");
 
-export const trackersOwnProgress = () => !!get(anilistToken) || !!get(malToken);
+export const trackersOwnProgress = () => !!get(anilistToken) || !!get(malToken) || !!get(kitsuToken) || !!get(simklToken);
 export const getSyncStatus = () => invoke<SyncStatus>("sync_status");
 export const getSyncRelayConfig = () => invoke<{ customUrl?: string | null }>("sync_relay_config");
 export const setSyncRelay = (customUrl?: string | null) =>
@@ -64,7 +64,7 @@ async function read(category: "watch" | "manual") {
 export async function pushWatchProgress(): Promise<boolean> {
   const status = await getSyncStatus();
   if (status.state !== "ready" || !status.paired) return false;
-  // AniList/MAL own anime-level episode counts. Iroh still owns exact
+  // Connected trackers own anime-level episode counts. Iroh still owns exact
   // per-episode resume positions because trackers cannot represent them.
   await write("watch", exportJson({ includeHistory: !trackersOwnProgress() }));
   return true;

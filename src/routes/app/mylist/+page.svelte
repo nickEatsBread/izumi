@@ -1,11 +1,12 @@
 <script lang="ts">
-  // The viewer's personal library — AniList and/or MyAnimeList lists by status, plus the unified
+  // The viewer's personal library — connected tracker lists by status, plus the unified
   // resume row. Reachable from the customizable nav (Settings → Navigation → My List).
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import MalListRow from '$lib/components/cards/MalListRow.svelte'
+  import TrackerListRow from '$lib/components/cards/TrackerListRow.svelte'
   import { anilistUser } from '$lib/anilist/account'
-  import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
+  import { anilistUserName, kitsuToken, malToken, malUser, simklToken } from '$lib/trackers/config'
   import { heroMedia } from '$lib/stores/hero'
   import { offlineMode } from '$lib/stores/offline'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
@@ -22,12 +23,13 @@
 <div class="p-4 pb-16 sm:p-8">
   <h1 class="mb-4 text-2xl font-black">My List</h1>
 
-  {#if listUser || $malToken || $malUser}
+  {#if listUser || $malToken || $malUser || $kitsuToken || $simklToken}
     <div class="mb-6 inline-flex rounded-lg bg-secondary p-1 text-sm font-black">
       <button data-focusable onclick={() => (section = 'anime')}
         class="rounded-md px-4 py-2 transition-colors {section === 'anime' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
         Anime
       </button>
+      {#if listUser || $malToken || $malUser}
       <button data-focusable onclick={() => (section = 'manga')}
         class="rounded-md px-4 py-2 transition-colors {section === 'manga' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
         Manga
@@ -36,6 +38,7 @@
         class="rounded-md px-4 py-2 transition-colors {section === 'novel' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}">
         Novels
       </button>
+      {/if}
     </div>
 
     {#key section}
@@ -55,6 +58,20 @@
           <MalListRow title="Completed (MAL)" status="completed" />
           <MalListRow title="On Hold (MAL)" status="on_hold" />
           <MalListRow title="Dropped (MAL)" status="dropped" />
+        {/if}
+        {#if $kitsuToken}
+          <TrackerListRow title="Watching (Kitsu)" tracker="Kitsu" status="current" />
+          <TrackerListRow title="Planning (Kitsu)" tracker="Kitsu" status="planned" />
+          <TrackerListRow title="Completed (Kitsu)" tracker="Kitsu" status="completed" />
+          <TrackerListRow title="On Hold (Kitsu)" tracker="Kitsu" status="on_hold" />
+          <TrackerListRow title="Dropped (Kitsu)" tracker="Kitsu" status="dropped" />
+        {/if}
+        {#if $simklToken}
+          <TrackerListRow title="Watching (Simkl)" tracker="Simkl" status="watching" />
+          <TrackerListRow title="Plan to Watch (Simkl)" tracker="Simkl" status="plantowatch" />
+          <TrackerListRow title="Completed (Simkl)" tracker="Simkl" status="completed" />
+          <TrackerListRow title="On Hold (Simkl)" tracker="Simkl" status="hold" />
+          <TrackerListRow title="Dropped (Simkl)" tracker="Simkl" status="dropped" />
         {/if}
       {:else}
         <p class="mb-5 max-w-2xl text-sm text-muted-foreground">
@@ -80,7 +97,7 @@
   {:else}
     <div class="grid min-h-[50vh] place-items-center text-center">
       <div class="max-w-sm">
-        <p class="mb-4 text-sm text-muted-foreground">Connect AniList or MyAnimeList to see your library here.</p>
+        <p class="mb-4 text-sm text-muted-foreground">Connect AniList, MyAnimeList, Kitsu, or Simkl to see your library here.</p>
         <a href="/app/settings/accounts" data-focusable
            class="rounded-md bg-secondary px-4 py-2 text-sm font-bold transition-colors hover:bg-accent">Connect an account</a>
       </div>

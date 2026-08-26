@@ -39,11 +39,33 @@ export function malToAni(s?: string | null): AniStatus | undefined {
   }
 }
 
-/** Effective watch progress across trackers: the max of AniList and MAL. Never chain these with
+export function kitsuToAni(s?: string | null): AniStatus | undefined {
+  switch (s) {
+    case 'current': return 'CURRENT'
+    case 'planned': return 'PLANNING'
+    case 'completed': return 'COMPLETED'
+    case 'on_hold': return 'PAUSED'
+    case 'dropped': return 'DROPPED'
+    default: return undefined
+  }
+}
+
+export function simklToAni(s?: string | null): AniStatus | undefined {
+  switch (s) {
+    case 'watching': return 'CURRENT'
+    case 'plantowatch': return 'PLANNING'
+    case 'completed': return 'COMPLETED'
+    case 'hold': return 'PAUSED'
+    case 'dropped': return 'DROPPED'
+    default: return undefined
+  }
+}
+
+/** Effective watch progress across trackers. Never chain these with
  *  `??` — an AniList entry at progress 0 is a real value, and letting it short-circuit silently
  *  hides higher MAL progress (MAL is the canonical tracker for MAL-first users). */
-export function mergedProgress(anilist?: number | null, mal?: number | null): number {
-  return Math.max(anilist ?? 0, mal ?? 0)
+export function mergedProgress(...values: Array<number | null | undefined>): number {
+  return Math.max(0, ...values.map((value) => value ?? 0))
 }
 
 /** Descriptive 0-10 score labels (the canonical izumi score is 0-100 → /10 here). Index 0 = unrated. */

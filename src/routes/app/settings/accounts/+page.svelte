@@ -1,130 +1,360 @@
 <script lang="ts">
   import { anilistUser } from '$lib/anilist/account'
-  import { anilistToken, anilistUserName, malToken, malUserName, malUser } from '$lib/trackers/config'
+  import SettingsGroup from '$lib/components/settings/SettingsGroup.svelte'
+  import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
+  import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
+  import TrackerProviderBadge from '$lib/components/settings/TrackerProviderBadge.svelte'
   import { promoteToWatching } from '$lib/settings/ui'
+  import {
+    anilistToken,
+    anilistUserName,
+    kitsuToken,
+    kitsuUserName,
+    malToken,
+    malUser,
+    malUserName,
+    simklToken,
+    simklUserName,
+  } from '$lib/trackers/config'
   import { trackerQueue } from '$lib/trackers/queue'
-  import Toggle from '$lib/components/settings/Toggle.svelte'
+  import type { SimklPin } from '$lib/trackers/simkl-auth'
+  import ChevronDown from '@lucide/svelte/icons/chevron-down'
+  import Clock3 from '@lucide/svelte/icons/clock-3'
+  import Eye from '@lucide/svelte/icons/eye'
+  import Link2 from '@lucide/svelte/icons/link-2'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import ShieldCheck from '@lucide/svelte/icons/shield-check'
 
-  // Read-only usernames (no login) — one per tracker. Public lists only; progress never syncs back.
+  type PublicProfile = 'anilist' | 'mal'
+
+  let publicProfileOpen = $state<PublicProfile | null>(null)
+  let kitsuFormOpen = $state(false)
+
   let aniInput = $state($anilistUser)
-  function saveAni() { $anilistUser = aniInput.trim() }
-  function clearAni() { $anilistUser = ''; aniInput = '' }
   let malInput = $state($malUser)
-  function saveMal() { $malUser = malInput.trim() }
-  function clearMal() { $malUser = ''; malInput = '' }
 
   let aniBusy = $state(false)
   let aniError = $state('')
   let malBusy = $state(false)
   let malError = $state('')
+  let kitsuBusy = $state(false)
+  let kitsuError = $state('')
+  let kitsuLogin = $state('')
+  let kitsuPassword = $state('')
+  let simklBusy = $state(false)
+  let simklError = $state('')
+  let simklPin = $state<SimklPin | null>(null)
+
+  const connectedCount = $derived(
+    [$anilistToken, $malToken, $kitsuToken, $simklToken].filter(Boolean).length,
+  )
+
+  function togglePublicProfile(profile: PublicProfile) {
+    publicProfileOpen = publicProfileOpen === profile ? null : profile
+  }
+
+  function saveAni() {
+    $anilistUser = aniInput.trim()
+    publicProfileOpen = null
+  }
+
+  function clearAni() {
+    $anilistUser = ''
+    aniInput = ''
+    publicProfileOpen = null
+  }
+
+  function saveMal() {
+    $malUser = malInput.trim()
+    publicProfileOpen = null
+  }
+
+  function clearMal() {
+    $malUser = ''
+    malInput = ''
+    publicProfileOpen = null
+  }
 
   async function connectAniListClick() {
-    aniError = ''; aniBusy = true
+    aniError = ''
+    aniBusy = true
     try {
       const { connectAniList } = await import('$lib/trackers/anilist-auth')
       await connectAniList()
-    } catch (e) { aniError = e instanceof Error ? e.message : String(e) }
-    finally { aniBusy = false }
+    } catch (error) {
+      aniError = error instanceof Error ? error.message : String(error)
+    } finally {
+      aniBusy = false
+    }
   }
+
   async function disconnectAniListClick() {
     const { disconnectAniList } = await import('$lib/trackers/anilist-auth')
     disconnectAniList()
+    aniError = ''
   }
+
   async function connectMalClick() {
-    malError = ''; malBusy = true
+    malError = ''
+    malBusy = true
     try {
       const { connectMal } = await import('$lib/trackers/mal-auth')
       await connectMal()
-    } catch (e) { malError = e instanceof Error ? e.message : String(e) }
-    finally { malBusy = false }
+    } catch (error) {
+      malError = error instanceof Error ? error.message : String(error)
+    } finally {
+      malBusy = false
+    }
   }
+
   async function disconnectMalClick() {
     const { disconnectMal } = await import('$lib/trackers/mal-auth')
     disconnectMal()
+    malError = ''
+  }
+
+  async function connectKitsuClick() {
+    kitsuError = ''
+    kitsuBusy = true
+    const password = kitsuPassword
+    kitsuPassword = ''
+    try {
+      const { connectKitsu } = await import('$lib/trackers/kitsu-auth')
+      await connectKitsu(kitsuLogin, password)
+      kitsuFormOpen = false
+    } catch (error) {
+      kitsuError = error instanceof Error ? error.message : String(error)
+    } finally {
+      kitsuBusy = false
+    }
+  }
+
+  async function disconnectKitsuClick() {
+    const { disconnectKitsu } = await import('$lib/trackers/kitsu-auth')
+    disconnectKitsu()
+    kitsuError = ''
+    kitsuFormOpen = false
+  }
+
+  async function connectSimklClick() {
+    simklError = ''
+    simklPin = null
+    simklBusy = true
+    try {
+      const { connectSimkl } = await import('$lib/trackers/simkl-auth')
+      await connectSimkl((pin) => { simklPin = pin })
+    } catch (error) {
+      simklError = error instanceof Error ? error.message : String(error)
+    } finally {
+      simklBusy = false
+      simklPin = null
+    }
+  }
+
+  async function disconnectSimklClick() {
+    const { disconnectSimkl } = await import('$lib/trackers/simkl-auth')
+    disconnectSimkl()
+    simklError = ''
   }
 </script>
 
+{#snippet anilistBadge()}<TrackerProviderBadge provider="anilist" />{/snippet}
+{#snippet malBadge()}<TrackerProviderBadge provider="mal" />{/snippet}
+{#snippet kitsuBadge()}<TrackerProviderBadge provider="kitsu" />{/snippet}
+{#snippet simklBadge()}<TrackerProviderBadge provider="simkl" />{/snippet}
+
+{#snippet anilistMeta()}
+  <span class="inline-flex min-w-0 items-center gap-1.5">
+    <span class="size-1.5 shrink-0 rounded-full {$anilistToken ? 'bg-emerald-400' : 'bg-white/25'}"></span>
+    <span class="truncate">{$anilistToken ? `Connected${$anilistUserName ? ` as ${$anilistUserName}` : ''}` : 'Not connected · browser sign-in'}</span>
+  </span>
+{/snippet}
+{#snippet malMeta()}
+  <span class="inline-flex min-w-0 items-center gap-1.5">
+    <span class="size-1.5 shrink-0 rounded-full {$malToken ? 'bg-emerald-400' : 'bg-white/25'}"></span>
+    <span class="truncate">{$malToken ? `Connected${$malUserName ? ` as ${$malUserName}` : ''}` : 'Not connected · browser sign-in'}</span>
+  </span>
+{/snippet}
+{#snippet kitsuMeta()}
+  <span class="inline-flex min-w-0 items-center gap-1.5">
+    <span class="size-1.5 shrink-0 rounded-full {$kitsuToken ? 'bg-emerald-400' : 'bg-white/25'}"></span>
+    <span class="truncate">{$kitsuToken ? `Connected${$kitsuUserName ? ` as ${$kitsuUserName}` : ''}` : 'Not connected · account sign-in'}</span>
+  </span>
+{/snippet}
+{#snippet simklMeta()}
+  <span class="inline-flex min-w-0 items-center gap-1.5">
+    <span class="size-1.5 shrink-0 rounded-full {$simklToken ? 'bg-emerald-400' : simklBusy ? 'bg-amber-400' : 'bg-white/25'}"></span>
+    <span class="truncate">{$simklToken ? `Connected${$simklUserName ? ` as ${$simklUserName}` : ''}` : simklBusy ? 'Waiting for browser approval' : 'Not connected · device code'}</span>
+  </span>
+{/snippet}
+
+{#snippet anilistControl()}
+  {#if $anilistToken}
+    <button type="button" data-focusable onclick={disconnectAniListClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+  {:else}
+    <button type="button" data-focusable onclick={connectAniListClick} disabled={aniBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{aniBusy ? 'Connecting…' : 'Connect'}</button>
+  {/if}
+{/snippet}
+{#snippet malControl()}
+  {#if $malToken}
+    <button type="button" data-focusable onclick={disconnectMalClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+  {:else}
+    <button type="button" data-focusable onclick={connectMalClick} disabled={malBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{malBusy ? 'Connecting…' : 'Connect'}</button>
+  {/if}
+{/snippet}
+{#snippet kitsuControl()}
+  {#if $kitsuToken}
+    <button type="button" data-focusable onclick={disconnectKitsuClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+  {:else}
+    <button type="button" data-focusable onclick={() => (kitsuFormOpen = !kitsuFormOpen)} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">{kitsuFormOpen ? 'Cancel' : 'Sign in'}</button>
+  {/if}
+{/snippet}
+{#snippet simklControl()}
+  {#if $simklToken}
+    <button type="button" data-focusable onclick={disconnectSimklClick} class="min-h-8 rounded-md px-2.5 text-xs font-bold text-destructive transition-colors hover:bg-destructive/10">Disconnect</button>
+  {:else}
+    <button type="button" data-focusable onclick={connectSimklClick} disabled={simklBusy} class="min-h-8 rounded-md bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent disabled:opacity-40">{simklBusy ? 'Waiting…' : 'Connect'}</button>
+  {/if}
+{/snippet}
+
+{#snippet aniPublicMeta()}
+  <span class="inline-flex min-w-0 items-center gap-1.5">
+    <span class="size-1.5 shrink-0 rounded-full {$anilistUser ? 'bg-sky-400' : 'bg-white/25'}"></span>
+    <span class="truncate">{$anilistUser ? `Using ${$anilistUser}` : 'Not set'}</span>
+  </span>
+{/snippet}
+{#snippet malPublicMeta()}
+  <span class="inline-flex min-w-0 items-center gap-1.5">
+    <span class="size-1.5 shrink-0 rounded-full {$malUser ? 'bg-sky-400' : 'bg-white/25'}"></span>
+    <span class="truncate">{$malUser ? `Using ${$malUser}` : 'Not set'}</span>
+  </span>
+{/snippet}
+{#snippet aniPublicControl()}
+  <ChevronDown size={17} class="transition-transform {publicProfileOpen === 'anilist' ? 'rotate-180' : ''}" aria-hidden="true" />
+{/snippet}
+{#snippet malPublicControl()}
+  <ChevronDown size={17} class="transition-transform {publicProfileOpen === 'mal' ? 'rotate-180' : ''}" aria-hidden="true" />
+{/snippet}
+
+{#snippet promotionControl()}
+  <SettingsSwitch
+    interactive={false}
+    label="Move to Watching after 90 seconds"
+    value={$promoteToWatching}
+    onToggle={() => ($promoteToWatching = !$promoteToWatching)}
+  />
+{/snippet}
+{#snippet queueLeading()}
+  <span class="grid size-8 place-items-center rounded-lg bg-amber-500/10 text-amber-300" aria-hidden="true"><Clock3 size={16} /></span>
+{/snippet}
+{#snippet queueMeta()}
+  <span>{$trackerQueue.length} update{$trackerQueue.length === 1 ? '' : 's'} will retry automatically when the connection returns.</span>
+{/snippet}
+
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Accounts</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Show a public AniList or MyAnimeList library without logging in, or connect an account to sync progress.</p>
+  <p class="mb-5 max-w-2xl text-sm text-muted-foreground">Connect tracking services, choose optional public libraries, and control when progress is sent.</p>
 
-  <section class="mb-8 max-w-2xl">
-    <h3 class="mb-1 font-bold">Read-only (no login)</h3>
-    <p class="mb-3 text-sm text-muted-foreground">Enter a public username to browse that library. Progress only syncs when you connect an account below.</p>
+  <SettingsGroup
+    icon={Link2}
+    title="Tracker accounts"
+    desc={`${connectedCount} of 4 connected. Connected accounts can receive progress, list status, and ratings.`}
+  >
+    <SettingsRow settingKey="anilist-account" title="AniList" leading={anilistBadge} meta={anilistMeta} control={anilistControl} expanded={Boolean(aniError)}>
+      {#if aniError}<p role="alert" class="text-xs text-destructive">{aniError}</p>{/if}
+    </SettingsRow>
 
-    <!-- AniList username -->
-    <label for="ani-user" class="mb-1 block text-sm font-bold">AniList username</label>
-    <div class="flex gap-2">
-      <input id="ani-user" bind:value={aniInput} data-focusable placeholder="AniList username" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
-      <button onclick={saveAni} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Save</button>
-    </div>
-    {#if $anilistUser}
-      <div class="mt-2 flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
-        <span class="truncate">Reading <span class="font-bold">{$anilistUser}</span>’s AniList</span>
-        <button onclick={clearAni} data-focusable class="ml-2 text-destructive">Clear</button>
+    <SettingsRow settingKey="myanimelist-account" title="MyAnimeList" leading={malBadge} meta={malMeta} control={malControl} expanded={Boolean(malError)}>
+      {#if malError}<p role="alert" class="text-xs text-destructive">{malError}</p>{/if}
+    </SettingsRow>
+
+    <SettingsRow settingKey="kitsu-account" title="Kitsu" leading={kitsuBadge} meta={kitsuMeta} control={kitsuControl} expanded={!$kitsuToken && (kitsuFormOpen || Boolean(kitsuError))}>
+      <div class="grid gap-2 sm:grid-cols-2">
+        <label for="kitsu-login" class="sr-only">Kitsu username or email</label>
+        <input id="kitsu-login" bind:value={kitsuLogin} autocomplete="username" data-focusable placeholder="Username or email" class="h-10 min-w-0 rounded-md bg-input px-3 text-base sm:text-sm" />
+        <label for="kitsu-password" class="sr-only">Kitsu password</label>
+        <input
+          id="kitsu-password"
+          bind:value={kitsuPassword}
+          autocomplete="current-password"
+          type="password"
+          data-focusable
+          placeholder="Password"
+          class="h-10 min-w-0 rounded-md bg-input px-3 text-base sm:text-sm"
+          onkeydown={(event) => event.key === 'Enter' && !kitsuBusy && connectKitsuClick()}
+        />
       </div>
-    {/if}
-
-    <!-- MyAnimeList username -->
-    <label for="mal-user" class="mb-1 mt-4 block text-sm font-bold">MyAnimeList username</label>
-    <div class="flex gap-2">
-      <input id="mal-user" bind:value={malInput} data-focusable placeholder="MyAnimeList username" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" />
-      <button onclick={saveMal} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Save</button>
-    </div>
-    {#if $malUser}
-      <div class="mt-2 flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
-        <span class="truncate">Reading <span class="font-bold">{$malUser}</span>’s MyAnimeList</span>
-        <button onclick={clearMal} data-focusable class="ml-2 text-destructive">Clear</button>
+      <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <span class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"><ShieldCheck size={13} aria-hidden="true" />Your password is exchanged once and never saved.</span>
+        <button type="button" data-focusable onclick={connectKitsuClick} disabled={kitsuBusy || !kitsuLogin.trim() || !kitsuPassword} class="min-h-9 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-40">{kitsuBusy ? 'Signing in…' : 'Sign in'}</button>
       </div>
-    {/if}
-  </section>
+      {#if kitsuError}<p role="alert" class="mt-2 text-xs text-destructive">{kitsuError}</p>{/if}
+    </SettingsRow>
 
-  <section class="max-w-2xl">
-    <h3 class="mb-2 font-bold">Connected trackers</h3>
-    <p class="mb-3 text-sm text-muted-foreground">Sign in to push your watch progress. A login window opens in-app and captures your access automatically.</p>
-
-    <div class="mb-6 rounded-md border border-border p-4">
-      <h4 class="mb-2 font-bold">AniList</h4>
-      {#if $anilistToken && $anilistUserName}
-        <div class="flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
-          <span class="truncate">Connected as <span class="font-bold">{$anilistUserName}</span></span>
-          <button onclick={disconnectAniListClick} data-focusable class="ml-2 text-destructive">Disconnect</button>
+    <SettingsRow settingKey="simkl-account" title="Simkl" leading={simklBadge} meta={simklMeta} control={simklControl} expanded={Boolean(simklPin || simklError)}>
+      {#if simklPin}
+        <div class="rounded-lg bg-secondary/70 px-3 py-3">
+          <p class="text-[11px] text-muted-foreground">The approval page is open in your browser. Enter this code:</p>
+          <strong class="mt-1 block font-mono text-xl tracking-[0.18em]">{simklPin.code}</strong>
         </div>
-      {:else}
-        <button onclick={connectAniListClick} data-focusable disabled={aniBusy} class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">
-          {aniBusy ? 'Connecting…' : 'Connect'}
-        </button>
       {/if}
-      {#if aniError}<p class="mt-2 text-sm text-destructive">{aniError}</p>{/if}
-    </div>
+      {#if simklError}<p role="alert" class="mt-2 text-xs text-destructive">{simklError}</p>{/if}
+    </SettingsRow>
+  </SettingsGroup>
 
-    <div class="mb-6">
-      <Toggle
-        label="Move to Watching after 90 seconds"
-        desc="If a title is Planning or not on your list, start tracking it as Watching after about 90 seconds of playback. Off by default."
-        value={$promoteToWatching}
-        onToggle={() => ($promoteToWatching = !$promoteToWatching)}
-      />
-    </div>
+  <SettingsGroup icon={Eye} title="Public libraries" desc="Browse a public AniList or MyAnimeList library without signing in. These profiles are never updated.">
+    <SettingsRow
+      settingKey="anilist-public-profile"
+      title="AniList public profile"
+      leading={anilistBadge}
+      meta={aniPublicMeta}
+      control={aniPublicControl}
+      expanded={publicProfileOpen === 'anilist'}
+      onActivate={() => togglePublicProfile('anilist')}
+      pressed={publicProfileOpen === 'anilist'}
+    >
+      <label for="ani-public-user" class="mb-1 block text-xs font-bold">Public username</label>
+      <div class="flex flex-col gap-2 sm:flex-row">
+        <input id="ani-public-user" bind:value={aniInput} data-focusable autocomplete="off" placeholder="AniList username" class="h-10 min-w-0 flex-1 rounded-md bg-input px-3 text-base sm:text-sm" onkeydown={(event) => event.key === 'Enter' && saveAni()} />
+        <div class="grid grid-cols-2 gap-2 sm:flex">
+          <button type="button" data-focusable onclick={saveAni} disabled={!aniInput.trim() || aniInput.trim() === $anilistUser} class="min-h-10 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-40">Save</button>
+          <button type="button" data-focusable onclick={clearAni} disabled={!$anilistUser} class="min-h-10 rounded-md px-3 text-xs font-bold text-destructive hover:bg-destructive/10 disabled:opacity-40">Clear</button>
+        </div>
+      </div>
+    </SettingsRow>
+
+    <SettingsRow
+      settingKey="myanimelist-public-profile"
+      title="MyAnimeList public profile"
+      leading={malBadge}
+      meta={malPublicMeta}
+      control={malPublicControl}
+      expanded={publicProfileOpen === 'mal'}
+      onActivate={() => togglePublicProfile('mal')}
+      pressed={publicProfileOpen === 'mal'}
+    >
+      <label for="mal-public-user" class="mb-1 block text-xs font-bold">Public username</label>
+      <div class="flex flex-col gap-2 sm:flex-row">
+        <input id="mal-public-user" bind:value={malInput} data-focusable autocomplete="off" placeholder="MyAnimeList username" class="h-10 min-w-0 flex-1 rounded-md bg-input px-3 text-base sm:text-sm" onkeydown={(event) => event.key === 'Enter' && saveMal()} />
+        <div class="grid grid-cols-2 gap-2 sm:flex">
+          <button type="button" data-focusable onclick={saveMal} disabled={!malInput.trim() || malInput.trim() === $malUser} class="min-h-10 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground disabled:opacity-40">Save</button>
+          <button type="button" data-focusable onclick={clearMal} disabled={!$malUser} class="min-h-10 rounded-md px-3 text-xs font-bold text-destructive hover:bg-destructive/10 disabled:opacity-40">Clear</button>
+        </div>
+      </div>
+    </SettingsRow>
+  </SettingsGroup>
+
+  <SettingsGroup icon={RefreshCw} title="Sync behaviour" desc="One shared rule for every connected tracker.">
+    <SettingsRow
+      settingKey="move-to-watching-after-90-seconds"
+      title="Move to Watching after 90 seconds"
+      description="When a title is Planning or absent, start tracking it after sustained playback."
+      control={promotionControl}
+      onActivate={() => ($promoteToWatching = !$promoteToWatching)}
+      pressed={$promoteToWatching}
+    />
     {#if $trackerQueue.length}
-      <p class="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-        {$trackerQueue.length} tracker update{$trackerQueue.length === 1 ? '' : 's'} waiting to sync. They retry automatically when you are online.
-      </p>
+      <SettingsRow title="Pending tracker updates" leading={queueLeading} meta={queueMeta} />
     {/if}
-
-    <div class="rounded-md border border-border p-4">
-      <h4 class="mb-2 font-bold">MyAnimeList</h4>
-      {#if $malToken && $malUserName}
-        <div class="flex items-center justify-between rounded-md bg-secondary px-3 py-2 text-sm">
-          <span class="truncate">Connected as <span class="font-bold">{$malUserName}</span></span>
-          <button onclick={disconnectMalClick} data-focusable class="ml-2 text-destructive">Disconnect</button>
-        </div>
-      {:else}
-        <button onclick={connectMalClick} data-focusable disabled={malBusy} class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground disabled:opacity-50">
-          {malBusy ? 'Connecting…' : 'Connect'}
-        </button>
-      {/if}
-      {#if malError}<p class="mt-2 text-sm text-destructive">{malError}</p>{/if}
-    </div>
-  </section>
+  </SettingsGroup>
 </div>

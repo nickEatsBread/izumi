@@ -2,6 +2,8 @@ import { get } from 'svelte/store'
 import { anilist } from './client'
 import { LIST_IDS_QUERY } from './lists'
 import { getMalAnimeIds } from '$lib/trackers'
+import { getKitsuAnimeIds } from '$lib/trackers/kitsu'
+import { getSimklAnimeIds } from '$lib/trackers/simkl'
 import { localHistory } from '$lib/player/history'
 import type { Media } from './types'
 
@@ -10,6 +12,7 @@ import type { Media } from './types'
 //   - AniList list: CURRENT (watching) + PLANNING (keyed by media.id)
 //   - MAL list: watching + plan_to_watch (keyed by idMal — the weekly airings carry media.idMal, so
 //     no MAL→AniList id mapping is needed)
+//   - Kitsu/Simkl lists (mapped to canonical AniList ids)
 //   - Local watch history (keyed by media.id) — covers "something you're watching right now" with no
 //     tracker linked.
 // Dropped lists are loaded too, but only as a VETO on the local-history source: dropping a show is a
@@ -84,15 +87,23 @@ async function aniIds(userName: string | undefined): Promise<Record<AniStatus, S
 /** Load every "my shows" source concurrently. Best-effort — a failing/absent source just contributes
  *  an empty set. `userName` is the linked AniList handle (empty ⇒ AniList sources skipped). */
 export async function loadMySets(userName: string | undefined): Promise<MySets> {
-  const [ani, malW, malP, malD] = await Promise.all([
+  const [ani, malW, malP, malD, kitsuW, kitsuP, kitsuD, simklW, simklP, simklD] = await Promise.all([
     aniIds(userName),
     getMalAnimeIds('watching', 500),
     getMalAnimeIds('plan_to_watch', 500),
     getMalAnimeIds('dropped', 500),
+    getKitsuAnimeIds('current', 20),
+    getKitsuAnimeIds('planned', 20),
+    getKitsuAnimeIds('dropped', 20),
+    getSimklAnimeIds('watching', 500),
+    getSimklAnimeIds('plantowatch', 500),
+    getSimklAnimeIds('dropped', 500),
   ])
   const local = new Set(Object.keys(get(localHistory)).map(Number))
   return {
-    aniWatching: ani.CURRENT, aniPlanning: ani.PLANNING, aniDropped: ani.DROPPED,
+    aniWatching: new Set([...ani.CURRENT, ...kitsuW, ...simklW]),
+    aniPlanning: new Set([...ani.PLANNING, ...kitsuP, ...simklP]),
+    aniDropped: new Set([...ani.DROPPED, ...kitsuD, ...simklD]),
     malWatching: new Set(malW), malPlanning: new Set(malP), malDropped: new Set(malD),
     local,
   }

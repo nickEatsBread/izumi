@@ -1,9 +1,12 @@
 import { get } from 'svelte/store'
 import { anilist } from '$lib/anilist/client'
 import { gql } from '@urql/core'
-import { anilistToken, malToken, malUser, malClientId } from './config'
+import { anilistToken, kitsuToken, malToken, malUser, malClientId, simklToken } from './config'
 import { malFetch } from './mal-auth'
 import { malHttpFetch } from './mal-http'
+import { pushKitsu, getKitsuProgress } from './kitsu'
+import { pushSimkl, getSimklProgress, invalidateSimklList } from './simkl'
+import { kitsuToAni, malToAni, simklToAni } from './status'
 import { getIndex, lookupAnilistByMal } from '$lib/stremio/idmap'
 import { mapMalAnimeListMedia, type MalAnimeListNode } from './mal-list-media'
 import { recordProgress, localHistory } from '$lib/player/history'
@@ -13,6 +16,7 @@ import {
   type TrackerOp, type TrackerName, type PushResult, type ProgressExtras,
 } from './queue'
 import type { Media, FuzzyDate } from '$lib/anilist/types'
+import { externalIdsOf } from '$lib/catalog/identity'
 
 export type AniStatus = 'CURRENT' | 'PLANNING' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'REPEATING'
 export function malStatus(s: AniStatus): string {
@@ -82,19 +86,20 @@ function aniClassify(error: { networkError?: unknown; response?: unknown }): Pus
 
 async function pushAniList(op: TrackerOp): Promise<PushResult> {
   try {
+    const mediaId = op.idAniList ?? op.mediaId
     let r
     if (op.kind === 'progress') {
       r = await anilist.mutation(SAVE, {
-        mediaId: op.mediaId, progress: op.progress, status: op.status,
+        mediaId, progress: op.progress, status: op.status,
         repeat: op.extras?.repeat, startedAt: op.extras?.startedAt, completedAt: op.extras?.completedAt,
       }).toPromise()
     } else if (op.kind === 'status') {
-      r = await anilist.mutation(SET_STATUS, { mediaId: op.mediaId, status: op.status }).toPromise()
+      r = await anilist.mutation(SET_STATUS, { mediaId, status: op.status }).toPromise()
     } else if (op.kind === 'remove') {
       if (!op.listEntryId) return { ok: false, retryable: false } // no AniList entry to delete
       r = await anilist.mutation(DELETE_ENTRY, { id: op.listEntryId }).toPromise()
     } else {
-      r = await anilist.mutation(SAVE_SCORE, { mediaId: op.mediaId, scoreRaw: aniScore(op.score ?? 0) }).toPromise()
+      r = await anilist.mutation(SAVE_SCORE, { mediaId, scoreRaw: aniScore(op.score ?? 0) }).toPromise()
     }
     if (r.error) return aniClassify(r.error)
     if (op.kind === 'progress') {
@@ -142,38 +147,49 @@ async function pushMal(op: TrackerOp): Promise<PushResult> {
 // Replay a queued op against its tracker. Registered with the queue at module load (the queue owns
 // the store + retry policy; the mutation/HTTP details stay here).
 function replayEntry(op: TrackerOp, tracker: TrackerName): Promise<PushResult> {
-  return tracker === 'AniList' ? pushAniList(op) : pushMal(op)
+  if (tracker === 'AniList') return pushAniList(op)
+  if (tracker === 'MAL') return pushMal(op)
+  if (tracker === 'Kitsu') return pushKitsu(op)
+  return pushSimkl(op)
 }
 registerReplay(replayEntry)
 
 // Run one op against each connected tracker, enqueuing on a transient failure and confirming the
 // progress floor on success. Best-effort; never throws. Returns which trackers took it live.
-async function push(media: Media, op: Omit<TrackerOp, 'mediaId' | 'idMal'>): Promise<string[]> {
+async function push(media: Media, op: Omit<TrackerOp, 'mediaId' | 'idAniList' | 'idMal' | 'idKitsu'>): Promise<string[]> {
   // Incognito: nothing may reach a tracker — not live, and not via the queue (a queued op would
   // outlive the session and sync after incognito ends). Ops queued BEFORE incognito still flush.
   if (get(incognito)) return []
   const results: string[] = []
-  const idMal = media.idMal ?? undefined
+  const ids = externalIdsOf(media)
+  const idAniList = ids.anilist
+  const idMal = ids.mal
+  const idKitsu = ids.kitsu
   const prog = op.kind === 'progress' ? op.progress ?? 0 : undefined
-  if (get(anilistToken)) {
-    const aop: TrackerOp = { ...op, mediaId: media.id }
-    const r = await pushAniList(aop)
-    if (r.ok) {
-      results.push('AniList')
-      if (prog != null) markConfirmed('AniList', media.id, r.echoedProgress ?? prog)
-      dropSuperseded('AniList', media.id, op.kind)
-    }
-    else if (r.retryable) enqueue('AniList', aop)
+  const deliver = async (tracker: TrackerName, trackerOp: TrackerOp, send: (value: TrackerOp) => Promise<PushResult>) => {
+    const result = await send(trackerOp)
+    if (result.ok) {
+      results.push(tracker)
+      if (prog != null) markConfirmed(tracker, media.id, result.echoedProgress ?? prog)
+      dropSuperseded(tracker, media.id, op.kind)
+      if (tracker === 'Simkl') invalidateSimklList()
+    } else if (result.retryable) enqueue(tracker, trackerOp)
+  }
+  if (get(anilistToken) && idAniList) {
+    const aop: TrackerOp = { ...op, mediaId: media.id, idAniList }
+    await deliver('AniList', aop, pushAniList)
   }
   if (get(malToken) && idMal) {
-    const mop: TrackerOp = { ...op, mediaId: media.id, idMal }
-    const r = await pushMal(mop)
-    if (r.ok) {
-      results.push('MAL')
-      if (prog != null) markConfirmed('MAL', media.id, r.echoedProgress ?? prog)
-      dropSuperseded('MAL', media.id, op.kind)
-    }
-    else if (r.retryable) enqueue('MAL', mop)
+    const mop: TrackerOp = { ...op, mediaId: media.id, idAniList, idMal, idKitsu }
+    await deliver('MAL', mop, pushMal)
+  }
+  if (get(kitsuToken) && (idKitsu || idAniList || idMal)) {
+    const kop: TrackerOp = { ...op, mediaId: media.id, idAniList, idMal, idKitsu }
+    await deliver('Kitsu', kop, pushKitsu)
+  }
+  if (get(simklToken) && (idAniList || idMal)) {
+    const sop: TrackerOp = { ...op, mediaId: media.id, idAniList, idMal, idKitsu }
+    await deliver('Simkl', sop, pushSimkl)
   }
   if (results.length) void flushQueue() // connectivity just confirmed → drain any backlog
   return results
@@ -246,7 +262,9 @@ export function removeFromList(media: Media): Promise<string[]> {
 export async function toggleFavourite(media: Media) {
   if (get(incognito)) throw new Error('Incognito mode is on — nothing is sent to AniList')
   if (!get(anilistToken)) throw new Error('AniList not connected')
-  await anilist.mutation(TOGGLE_FAVOURITE, { animeId: media.id }).toPromise()
+  const animeId = externalIdsOf(media).anilist
+  if (!animeId) throw new Error('This title has no AniList mapping')
+  await anilist.mutation(TOGGLE_FAVOURITE, { animeId }).toPromise()
 }
 
 // Read the viewer's watched-episode count + list status + score FROM MAL (v2 API). We already push to
@@ -264,6 +282,32 @@ export async function getMalProgress(idMal?: number): Promise<{ progress: number
     return { progress: s.num_episodes_watched ?? 0, status: s.status ?? '', score: s.score ?? 0 }
   }
   catch { return null }
+}
+
+export interface ExternalTrackerProgress {
+  progress: number
+  status?: AniStatus
+  score: number // canonical 0-100
+}
+
+/** Read back every connected REST tracker and merge their furthest progress for tracker-only users. */
+export async function getExternalTrackerProgress(mediaId: number, idMal?: number): Promise<ExternalTrackerProgress | null> {
+  const [mal, kitsu, simkl] = await Promise.all([
+    getMalProgress(idMal),
+    getKitsuProgress(mediaId, idMal),
+    getSimklProgress(mediaId, idMal),
+  ])
+  const entries: ExternalTrackerProgress[] = []
+  if (mal) entries.push({ progress: mal.progress, status: malToAni(mal.status), score: mal.score * 10 })
+  if (kitsu) entries.push({ progress: kitsu.progress, status: kitsuToAni(kitsu.status), score: kitsu.score })
+  if (simkl) entries.push({ progress: simkl.progress, status: simklToAni(simkl.status), score: simkl.score })
+  if (!entries.length) return null
+  const furthest = entries.reduce((best, entry) => entry.progress > best.progress ? entry : best)
+  return {
+    progress: furthest.progress,
+    status: furthest.status,
+    score: entries.find((entry) => entry.score > 0)?.score ?? 0,
+  }
 }
 
 // One MAL animelist row (shared shape of the OAuth @me and public-username endpoints — MAL
@@ -387,7 +431,7 @@ export async function getMalListProgress(status: string, limit = 20): Promise<Ma
   catch { return [] }
 }
 
-export const anyTrackerConnected = () => !!(get(anilistToken) || get(malToken))
+export const anyTrackerConnected = () => !!(get(anilistToken) || get(malToken) || get(kitsuToken) || get(simklToken))
 
 // Re-exported so callers can check the confirmed-progress floor without importing the queue directly.
 export { confirmedFloor }
