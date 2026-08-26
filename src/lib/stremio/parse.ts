@@ -58,6 +58,8 @@ export interface Stream {
   // Direct streaming source (Seanime onlinestream-provider): plays its `url` straight in libmpv
   // with no debrid. __headers → mpv http-header-fields; __subtitles → external sub tracks.
   __stream?: boolean
+  /** Local provider server known to listen beyond loopback (currently the JVM HttpServer). */
+  __hosted?: boolean
   /** Adaptive manifest identity supplied by an online extension. This must survive the generic
    * Stream mapping: localhost JVM wrappers and signed endpoints often have no useful suffix. */
   __manifest?: 'hls' | 'dash'

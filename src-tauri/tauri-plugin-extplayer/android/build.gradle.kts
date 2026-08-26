@@ -25,6 +25,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.3")
     implementation("androidx.browser:browser:1.10.0")
     implementation("androidx.webkit:webkit:1.17.0")
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
     // The Tauri Android runtime (Plugin, Invoke, annotations). Resolved from the
     // app's included tauri-android build when the plugin is assembled by the CLI.
     implementation(project(":tauri-android"))

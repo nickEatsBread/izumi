@@ -1,10 +1,11 @@
 ## Default Permission
 
-Allow Android playback, sharing, browser authentication, self-update, and power/network checks.
+Allow Android playback, casting, sharing, browser authentication, self-update, and power/network checks.
 
 #### This default permission set includes the following:
 
 - `allow-play-external`
+- `allow-cast-media`
 - `allow-install-apk`
 - `allow-device-status`
 - `allow-download-foreground`
@@ -24,6 +25,32 @@ Allow Android playback, sharing, browser authentication, self-update, and power/
 <th>Description</th>
 </tr>
 
+
+<tr>
+<td>
+
+`extplayer:allow-cast-media`
+
+</td>
+<td>
+
+Enables the cast_media command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`extplayer:deny-cast-media`
+
+</td>
+<td>
+
+Denies the cast_media command without any pre-configured scope.
+
+</td>
+</tr>
 
 <tr>
 <td>

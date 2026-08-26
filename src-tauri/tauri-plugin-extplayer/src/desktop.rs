@@ -2,10 +2,11 @@ use serde::de::DeserializeOwned;
 use tauri::{plugin::PluginApi, AppHandle, Runtime};
 
 use crate::models::{
-    BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
-    DeviceStatus, DownloadForegroundRequest, InstallRequest, LanDiscoveryRequest,
-    NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest, ReactResponse,
-    ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
+    BrowserRequest, CastMediaRequest, DaLoginRequest, DaLoginResponse, DaReactRequest,
+    DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest, InstallRequest,
+    LanDiscoveryRequest, NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest,
+    ReactResponse, ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse,
+    ShareTextRequest,
 };
 
 pub fn init<R: Runtime, C: DeserializeOwned>(
@@ -21,6 +22,10 @@ pub struct ExtPlayer<R: Runtime>(#[allow(dead_code)] AppHandle<R>);
 
 impl<R: Runtime> ExtPlayer<R> {
     pub fn play(&self, _payload: PlayRequest) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn cast_media(&self, _payload: CastMediaRequest) -> crate::Result<()> {
         Ok(())
     }
 

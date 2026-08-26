@@ -499,6 +499,10 @@ export interface MpvTrack {
   title?: string
   lang?: string
   selected: boolean
+  codec?: string
+  codecProfile?: string
+  format?: string
+  externalFilename?: string
 }
 
 /** Read mpv's track-list via sub-property paths — get_property_string on the whole node returns
@@ -515,6 +519,10 @@ export async function getTracks(): Promise<MpvTrack[]> {
       title: (await mpvGet(`track-list/${i}/title`)) || undefined,
       lang: (await mpvGet(`track-list/${i}/lang`)) || undefined,
       selected: (await mpvGet(`track-list/${i}/selected`)) === 'yes',
+      codec: (await mpvGet(`track-list/${i}/codec`)) || undefined,
+      codecProfile: (await mpvGet(`track-list/${i}/codec-profile`)) || undefined,
+      format: (await mpvGet(`track-list/${i}/format-name`)) || undefined,
+      externalFilename: (await mpvGet(`track-list/${i}/external-filename`)) || undefined,
     })
   }
   return out

@@ -7,7 +7,7 @@ import { get } from 'svelte/store'
 import { addonUrls, enabledAddonUrls } from './sources'
 import { getIndex, lookupKitsu } from './idmap'
 import { resolveKitsuMapping } from './kitsu-resolution'
-import { getStreams, fetchAddonStreams, streamId, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
+import { getStreams, fetchAddonStreams, pickBest, pickCandidates, preferDirectStartupCandidates, parseSeasonEp, isWrongSeason, isUncached, isCached, describe, type Stream } from './addon'
 import { refineStreams, type Rejection } from './refine'
 import { buildStreamIds } from './stream-ids'
 import { shouldShowCachingScreen } from './caching-screen'
@@ -42,9 +42,10 @@ const rankOpts = (anilistId?: number): RankOptions => ({
   cacheCheck: get(debridKey) ? cacheCheckMode(get(debridProvider)) : 'none',
   sourcePriority: get(sourcePriority),
 })
-import { getKitsuId, getEpisodeSeasonMap, getExtensionIds } from '$lib/anizip'
+import { getKitsuId, getEpisodeSeasonMap, getExtensionIds, type ExtIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
+import { anilistIdOf, externalIdsOf, kitsuIdOf } from '$lib/catalog/identity'
 import { downloadOf, getDownloadedMedia, type DownloadPreferences } from '$lib/downloads/state'
 import { resolveHash, resolveSidecars, providerName, cacheCheckMode, checkCached, isDebridBlocked, type EpisodeWant } from './debrid'
 import { annotateCache } from './cache-state'
@@ -81,7 +82,7 @@ import {
   updateTorrentDelivery,
 } from '$lib/player/recovery-watchdog'
 import { markDead } from './dead-sources'
-import { shareableSource } from '$lib/watch-together/source'
+import { shareableSourceForDevice } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
@@ -543,7 +544,8 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
     let next = episode + 1
     // Optionally skip past filler episodes (AnimeFillerList).
     if (get(skipFiller)) {
-      const filler = await fillerEpisodes(media.id)
+      const anilistId = anilistIdOf(media)
+      const filler = anilistId ? await fillerEpisodes(anilistId) : []
       while (next <= airedTotal && filler.includes(next)) next++
     }
     // Bail if a newer play has since taken over (this ended-event belongs to a superseded
@@ -594,7 +596,8 @@ function attachAndroid(
     const airedTotal = airedTotalOf(media)
     let next = episode + 1
     if (get(skipFiller)) {
-      const filler = await fillerEpisodes(media.id)
+      const anilistId = anilistIdOf(media)
+      const filler = anilistId ? await fillerEpisodes(anilistId) : []
       while (next <= airedTotal && filler.includes(next)) next++
     }
     if (next <= airedTotal) resolveAndPlayBest(media, next, onState, true)
@@ -757,11 +760,59 @@ function verifySeason(streams: Stream[], want: EpisodeWant): Stream[] {
 // addon query behind a ~6MB bulk download + 30–40k-entry Map build. Keep both independent fallbacks
 // for titles missing from AniZip or when that service is unavailable.
 async function resolveKitsu(media: Media): Promise<number | undefined> {
+  const direct = kitsuIdOf(media)
+  if (direct) return direct
+  const anilistId = anilistIdOf(media)
   return resolveKitsuMapping(
-    () => getKitsuId(media.id),
+    () => anilistId ? getKitsuId(anilistId) : Promise.resolve(undefined),
     () => kitsuIdFromMal(media.idMal),
-    async () => lookupKitsu(await getIndex(), media.id),
+    async () => anilistId ? lookupKitsu(await getIndex(), anilistId) : undefined,
   )
+}
+
+const streamType = (media: Media): 'movie' | 'series' =>
+  media.catalog?.type === 'movie' || media.format === 'MOVIE' ? 'movie' : 'series'
+
+function mediaVideo(media: Media, episode: number | undefined) {
+  if (episode == null) return media.videos?.[0]
+  return media.videos?.find((video) => video.number === episode) ?? media.videos?.[episode - 1]
+}
+
+async function mediaSeasonMap(media: Media): Promise<Record<number, { season?: number; abs?: number }>> {
+  const native: Record<number, { season?: number; abs?: number }> = {}
+  for (const video of media.videos ?? []) {
+    native[video.number] = { season: video.season, abs: video.season == null ? video.number : undefined }
+  }
+  const anilistId = anilistIdOf(media)
+  if (!anilistId) return native
+  const mapped = await getEpisodeSeasonMap(anilistId).catch(() => ({}))
+  return { ...native, ...mapped }
+}
+
+async function mediaExtensionIds(media: Media, episode: number | undefined): Promise<ExtIds> {
+  const anilistId = anilistIdOf(media)
+  const mapped = anilistId ? await getExtensionIds(anilistId, episode).catch(() => ({} as ExtIds)) : {}
+  const external = externalIdsOf(media)
+  const video = mediaVideo(media, episode)
+  return {
+    ...mapped,
+    imdbId: mapped.imdbId ?? external.imdb,
+    tmdbId: mapped.tmdbId ?? (external.tmdb == null ? undefined : String(external.tmdb)),
+    tvdbId: mapped.tvdbId ?? external.tvdb,
+    season: video?.season ?? mapped.season,
+    episodeNumber: video?.episode ?? mapped.episodeNumber,
+  }
+}
+
+function primaryStreamIds(media: Media, episode: number | undefined, kitsu?: number): string[] {
+  const external = externalIdsOf(media)
+  const video = mediaVideo(media, episode)
+  const direct = media.catalog?.provider === 'stremio' ? video?.id : undefined
+  return buildStreamIds({
+    type: streamType(media), direct, kitsu, episode,
+    imdb: external.imdb, tmdb: external.tmdb,
+    season: video?.season, imdbEpisode: video?.episode,
+  })
 }
 
 let activeMetadataPrefetch: { key: string; promise: Promise<boolean> } | null = null
@@ -824,14 +875,14 @@ async function resolveStreams(media: Media, episode: number | undefined): Promis
     throw new Error(sourceInventoryError(bases))
   }
   const kitsu = await resolveKitsu(media)
-  // No Kitsu id ⇒ addons (which index by it) can't be queried. Auto-advance is cached-addon-only,
-  // so return nothing and let the caller fall back to the manual picker (its title/id extension
-  // search can still find a title that isn't in Kitsu).
-  if (!kitsu) return { streams: [], cachedCount: 0 }
+  const requestIds = primaryStreamIds(media, episode, kitsu)
+  // Kitsu is the preferred anime namespace, while general-purpose add-ons commonly index IMDb,
+  // TMDB, or the exact id supplied by a Stremio metadata add-on.
+  if (!requestIds.length) return { streams: [], cachedCount: 0 }
 
   // Fetch streams and the AniZip season map CONCURRENTLY (independent round-trips).
-  const seasonP = episode != null ? getEpisodeSeasonMap(media.id) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
-  const { streams: addonStreams, total, cachedCount } = await getStreams(bases, streamId(kitsu, episode), media.format === 'MOVIE' ? 'movie' : 'series')
+  const seasonP = episode != null ? mediaSeasonMap(media) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
+  const { streams: addonStreams, total, cachedCount } = await getStreams(bases, requestIds, streamType(media))
 
   let streams = refineStreams(media, addonStreams).kept
 
@@ -874,7 +925,7 @@ async function extToStreams(
     // with the season map, so no extra round-trip. Titles include synonyms for string-search
     // providers. This is what lets extensions resolve new/ambiguous anime the kitsu:id:ep addon
     // path misses.
-    const [ids, kitsuResolved] = await Promise.all([getExtensionIds(media.id, episode), Promise.resolve(kitsuLike)])
+    const [ids, kitsuResolved] = await Promise.all([mediaExtensionIds(media, episode), Promise.resolve(kitsuLike)])
     const kitsu = kitsuResolved ?? undefined
     // Titles handed to extensions, shaped for how their search runtimes consume them:
     // - ( ) " | are boolean operators on nyaa-style engines, and the extension runtime joins our
@@ -893,7 +944,7 @@ async function extToStreams(
     const titles = [...new Set([...base.map(sanitize), ...shortVariants.map(sanitize)])]
       .filter((t) => t.length > 3)
     const query = {
-      anilistId: media.id, malId: media.idMal ?? undefined, kitsuId: kitsu,
+      anilistId: anilistIdOf(media), malId: media.idMal ?? undefined, kitsuId: kitsu,
       // Manifest-v2 and older SDK providers use different names for the same ids. Send both
       // aliases so compatible repositories behave consistently.
       ...torrentQueryIdFields({
@@ -1060,9 +1111,10 @@ function pickSameRelease(media: Media, streams: Stream[], want?: EpisodeWant): S
 // match hint. Best-effort — an empty want keeps the legacy behavior.
 async function episodeWant(media: Media, episode: number | undefined, stream?: Stream): Promise<EpisodeWant | undefined> {
   if (episode == null) return undefined
-  const map = await getEpisodeSeasonMap(media.id).catch(() => ({} as Record<number, { season?: number; abs?: number }>))
+  const map = await mediaSeasonMap(media)
   const sm = map[episode]
-  return { episode, abs: sm?.abs, season: sm?.season, filename: stream?.behaviorHints?.filename }
+  const video = mediaVideo(media, episode)
+  return { episode: video?.episode ?? episode, abs: sm?.abs, season: video?.season ?? sm?.season, filename: stream?.behaviorHints?.filename }
 }
 
 // Next episode resolved ahead of time (near the end of the current one) so Next /
@@ -1099,10 +1151,10 @@ export async function resolveDirectPreloadStream(
   // but do not make it a prerequisite: ID-aware extension providers can resolve titles absent from
   // the Kitsu map and were previously excluded from direct-P2P preload entirely.
   const kitsuPromise = resolveKitsu(media)
-  const seasonMap = await getEpisodeSeasonMap(media.id)
-    .catch(() => ({} as Record<number, { season?: number; abs?: number }>))
+  const seasonMap = await mediaSeasonMap(media)
   const mapped = seasonMap[episode]
-  const want: EpisodeWant = { episode, ...(mapped ?? {}) }
+  const video = mediaVideo(media, episode)
+  const want: EpisodeWant = { episode: video?.episode ?? episode, ...(mapped ?? {}), season: video?.season ?? mapped?.season }
   const controller = new AbortController()
   const kind = media.format === 'MOVIE' ? 'movie' : 'series'
   const waitForHedge = (delayMs: number) => new Promise<void>((resolve, reject) => {
@@ -1112,7 +1164,7 @@ export async function resolveDirectPreloadStream(
       reject(new DOMException('Aborted', 'AbortError'))
     }, { once: true })
   })
-  const query = async (base: string, id: string, delayMs = 0) => {
+  const query = async (base: string, id: string | string[], delayMs = 0) => {
     if (delayMs) await waitForHedge(delayMs)
     const provider = `${addonTraceName(base)}${delayMs ? ' (hedge)' : ''}`
     const startedAt = performance.now()
@@ -1140,13 +1192,13 @@ export async function resolveDirectPreloadStream(
   if (bases.length) {
     attempts.push((async () => {
       const kitsu = await kitsuPromise
-      if (!kitsu) throw new Error('addons: no Kitsu mapping')
-      const id = streamId(kitsu, episode)
+      const ids = primaryStreamIds(media, episode, kitsu)
+      if (!ids.length) throw new Error('addons: no compatible metadata id')
       return await Promise.any(bases.flatMap((base) => [
-        query(base, id),
+        query(base, ids.length === 1 ? ids[0] : ids),
         // A delayed duplicate is a standard hedge against a single wedged request. It never runs
         // when the first call is healthy and is aborted with every loser.
-        ...(/torrentio/i.test(base) ? [query(base, id, 1_200)] : []),
+        ...(/torrentio/i.test(base) ? [query(base, ids.length === 1 ? ids[0] : ids, 1_200)] : []),
       ]))
     })())
   }
@@ -1634,15 +1686,15 @@ export async function playEpisode(
       found: kitsu != null,
       kitsuId: kitsu,
     }))
-    // A title with no Kitsu id (e.g. an OVA that isn't in Kitsu) can still be sourced by
-    // extensions, so only hard-fail when there's no Kitsu id AND no extension to fall back on.
-    // Without extensions the addon wave is the only wave — awaiting here loses nothing.
-    const kitsu = hasExt ? undefined : await kitsuP
-    if (!hasExt && kitsu == null) throw new Error('No addon mapping for this title (not in Kitsu). Add a source extension to find it by title.')
+    const primaryIdsP = kitsuP.then((kitsuId) => primaryStreamIds(media, episode, kitsuId))
+    // Without an extension, at least one add-on namespace must be addressable. Anime normally uses
+    // Kitsu; TMDB and Stremio metadata titles use their native/IMDb identifiers instead.
+    const primaryIds = hasExt ? undefined : await primaryIdsP
+    if (!hasExt && !primaryIds?.length) throw new Error('No compatible metadata id is available for the configured stream add-ons. Add a source extension to find it by title.')
 
-    const type = media.format === 'MOVIE' ? 'movie' : 'series'
+    const type = streamType(media)
     const seasonStartedAt = performance.now()
-    const seasonP = episode != null ? getEpisodeSeasonMap(media.id) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
+    const seasonP = episode != null ? mediaSeasonMap(media) : Promise.resolve({} as Record<number, { season?: number; abs?: number }>)
 
     // Fold each addon's streams into the picker AS IT RESPONDS (one
     // origin loads, the rest stream in, the list re-ranks + animated-sorts live)
@@ -1730,7 +1782,7 @@ export async function playEpisode(
       // row is even the right episode, so the confident path stays shut (the same gate the
       // same-release continuation uses).
       const ranked = seasonSettled
-        ? pickCandidates(s, get(preferredQuality), want, undefined, rankOpts(media.id))
+        ? pickCandidates(s, get(preferredQuality), want, undefined, rankOpts(anilistIdOf(media)))
         : []
       const top = directP2pEnabled() ? preferDirectStartupCandidates(ranked)[0] : ranked[0]
       prefetchTopMetadata(top)
@@ -1805,7 +1857,7 @@ export async function playEpisode(
       if (cont && continuationCanStart() && !continuationAttempted && seasonSettled && !get(debridCaching)) {
         const directTorrentContinuation = directP2pEnabled() && !cont.online
         const hit = directTorrentContinuation
-          ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(media.id))
+          ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media)))
           : s.find((x) => matchesRelease(x, cont) && playableNow(x) && !isUncached(x) && !(want && isWrongSeason(x, want)))
         if (hit) tryContinuation(hit)
       }
@@ -1900,17 +1952,16 @@ export async function playEpisode(
       if (!pending) return resolve()
       const done = () => { if (--pending === 0) resolve() }
       if (bases.length) {
-        void kitsuP.then(async (kitsuId) => {
-          if (kitsuId == null || signal.aborted) return
-          const id = streamId(kitsuId, episode)
+        void primaryIdsP.then(async (ids) => {
+          if (!ids.length || signal.aborted) return
           await Promise.all(bases.map(async (base) => {
             const provider = addonTraceName(base)
             const addonStartedAt = performance.now()
-            traceResolve(trace, 'add-on request start', { provider, namespace: 'kitsu' })
+            traceResolve(trace, 'add-on request start', { provider, namespace: 'primary-metadata' })
             // An addon that blows its budget is slow, not wrong: its rows still fold into an open
             // picker whenever they land, instead of being dropped on the floor as they used to be.
             try {
-              const r = await fetchAddonStreams(base, id, type, (late) => {
+              const r = await fetchAddonStreams(base, ids, type, (late) => {
                 if (!stillCurrent()) return
                 traceResolve(trace, 'add-on late batch', {
                   provider,
@@ -1951,9 +2002,12 @@ export async function playEpisode(
         }
         const alignedStartedAt = performance.now()
         traceResolve(trace, 'aligned IMDb/season mapping start')
-        getExtensionIds(media.id, episode)
+        mediaExtensionIds(media, episode)
           .then(async (ids) => {
-            const extra = buildStreamIds({ type, imdb: ids.imdbId, season: ids.season, imdbEpisode: ids.episodeNumber, episode })
+            const extra = buildStreamIds({
+              type, imdb: ids.imdbId, tmdb: ids.tmdbId,
+              season: ids.season, imdbEpisode: ids.episodeNumber, episode,
+            })
             traceResolve(trace, 'aligned IMDb/season mapping finish', {
               durationMs: Math.round(performance.now() - alignedStartedAt),
               requestIds: extra.length,
@@ -2066,7 +2120,7 @@ export async function playEpisode(
       let s = refineStreams(media, acc).kept
       if (want) s = verifySeason(s, want)
       const hit = directP2pEnabled() && !cont.online
-        ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(media.id))
+        ? pickDirectContinuationCandidate(s, cont, want, get(preferredQuality), rankOpts(anilistIdOf(media)))
         : s.find((x) => matchesRelease(x, cont))
       if (hit) {
         tryContinuation(hit)
@@ -2142,12 +2196,14 @@ export function rememberedContinueHint(
 }
 
 async function refreshContinueMedia(media: Media): Promise<Media> {
+  const anilistId = anilistIdOf(media)
+  if (!anilistId) return media
   let timer: ReturnType<typeof setTimeout> | undefined
   const fallback = new Promise<Media>((resolve) => {
     timer = setTimeout(() => resolve(media), CONTINUE_MEDIA_REFRESH_BUDGET_MS)
   })
   try {
-    return await Promise.race([fetchMediaById(media.id).catch(() => media), fallback])
+    return await Promise.race([fetchMediaById(anilistId).catch(() => media), fallback])
   } finally {
     if (timer) clearTimeout(timer)
   }
@@ -2257,7 +2313,7 @@ export async function playStream(
     title: title(media),
     entry: options.recoveryOwner ? 'watchdog source replacement' : 'source selection',
   })
-  traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(media.id)))
+  traceResolve(trace, 'source selected', streamTraceDetails(stream, rankOpts(anilistIdOf(media))))
   const playbackOwner = beginPlaybackOwner(options.recoveryOwner)
   if (!playbackOwner) {
     finishResolveTrace(trace, 'stale source selection')
@@ -2363,7 +2419,7 @@ export async function playStream(
   nowPlayingMedia.set({ media, episode })
   // Provisional room source, so a guest joining mid-resolve still sees what is starting. It is
   // re-captured from the FINAL stream below, once any debrid resolution has happened.
-  nowPlayingPartySource.set(shareableSource(stream))
+  nowPlayingPartySource.set(await shareableSourceForDevice(stream))
   lastSubFilename = stream.behaviorHints?.filename
   onlineSubCandidates.set({ status: 'idle', items: [] })
   subtitleNotice.set('')
@@ -2609,7 +2665,7 @@ export async function playStream(
   // needing a debrid account each. The host is warned about what that means for their account
   // before the room opens (DebridRoomNotice). Direct-P2P resolves to a loopback address, which
   // shareableSource skips in favour of the infohash, so those rooms are unaffected.
-  nowPlayingPartySource.set(shareableSource(stream))
+  nowPlayingPartySource.set(await shareableSourceForDevice(stream))
   // A newly resolved direct torrent replaces the old one in the native engine. Any other source
   // ends the previous torrent's watch phase before the new player load begins.
   if (directPlaybackId == null && currentDirectTorrentPlaybackId() != null) {
@@ -2734,16 +2790,25 @@ export async function playStream(
             url: s.url,
             lang: s.lang,
             title: s.title,
+            isDefault: s.isDefault,
+            kind: s.kind,
+            headers: s.headers,
           })),
           ...directTorrentSubtitles.map((s) => ({
             url: s.url,
             lang: s.lang,
             title: s.title,
+            isDefault: undefined,
+            kind: undefined,
+            headers: undefined,
           })),
           ...addonSubs.filter((s) => !!s.url).map((s) => ({
             url: s.url!,
             lang: normalizeLang(s.lang),
             title: s.release ?? s.lang ?? 'Online subtitles',
+            isDefault: undefined,
+            kind: undefined,
+            headers: undefined,
           })),
         ].map((subtitle) => {
           const lang = normalizeLang(subtitle.lang) ?? subtitle.lang
@@ -2759,6 +2824,22 @@ export async function playStream(
           ...sidecarHeaders,
           ...(stream.__stream ? stream.__headers ?? {} : {}),
         }
+        nowPlayingStream.set({
+          url: stream.url,
+          headers,
+          infoHash: stream.infoHash ?? null,
+          filename: stream.behaviorHints?.filename,
+          manifest: stream.__manifest,
+          startSeconds,
+          subtitles: subs.map((subtitle) => ({
+            url: subtitle.url,
+            lang: subtitle.lang,
+            title: subtitle.title,
+            isDefault: subtitle.isDefault,
+            kind: subtitle.kind,
+            headers: subtitle.headers,
+          })),
+        })
         await startMpvEvents()
         if (await abandonIfStale()) return
         // The reusable Android core emits the outgoing file's teardown while `loadfile` queues the
@@ -3426,7 +3507,7 @@ export async function resolveDownloadUrl(mediaId: number, episode: number, prefe
     const preferred = eligible.filter((stream) => patterns[preferences.codec as 'h264' | 'h265' | 'av1'].test(raw(stream)))
     if (preferred.length) eligible = preferred
   }
-  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(media.id)) ?? eligible[0]
+  const best = pickBest(eligible, preferences?.quality ?? get(preferredQuality), want, rankOpts(anilistIdOf(media))) ?? eligible[0]
   if (!best) throw new Error('No source found to download.')
   const info = describe(best)
   // The saved name follows the release when it has one; otherwise the title/episode. The extension

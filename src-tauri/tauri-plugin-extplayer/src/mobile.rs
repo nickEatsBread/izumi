@@ -5,11 +5,11 @@ use tauri::{
 };
 
 use crate::models::{
-    AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DaLoginRequest, DaLoginResponse,
-    DaReactRequest, DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest,
-    InstallRequest, JsonResponse, LanDiscoveryRequest, NotificationPermissionResponse,
-    OAuthRequest, OAuthResponse, PlayRequest, ReactResponse, ReactionStateResponse,
-    SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
+    AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, CastMediaRequest, DaLoginRequest,
+    DaLoginResponse, DaReactRequest, DaReactionStateRequest, DeviceStatus,
+    DownloadForegroundRequest, InstallRequest, JsonResponse, LanDiscoveryRequest,
+    NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest, ReactResponse,
+    ReactionStateResponse, SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
 };
 
 #[cfg(target_os = "android")]
@@ -31,6 +31,12 @@ impl<R: Runtime> ExtPlayer<R> {
     pub fn play(&self, payload: PlayRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("play", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn cast_media(&self, payload: CastMediaRequest) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("castMedia", payload)
             .map_err(Into::into)
     }
 

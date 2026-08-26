@@ -14,7 +14,7 @@ mod mobile;
 
 pub use error::{Error, Result};
 pub use models::{
-    AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, DeviceStatus,
+    AniyomiCallRequest, AniyomiRuntimeRequest, BrowserRequest, CastMediaRequest, DeviceStatus,
     DownloadForegroundRequest, InstallRequest, JsonResponse, LanDiscoveryRequest,
     NotificationPermissionResponse, OAuthRequest, OAuthResponse, PlayRequest, SaveTextFileRequest,
     SaveTextFileResponse, ShareTextRequest,
@@ -42,6 +42,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("extplayer")
         .invoke_handler(tauri::generate_handler![
             commands::play_external,
+            commands::cast_media,
             commands::install_apk,
             commands::device_status,
             commands::download_foreground,

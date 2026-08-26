@@ -241,6 +241,19 @@ describe('pickEpisode', () => {
 })
 
 describe('videoSourceToStream', () => {
+  it('preserves the explicit JVM host-server marker without inferring it from every localhost URL', () => {
+    const hosted = videoSourceToStream(
+      { url: 'http://127.0.0.1:43123/video', localServer: true },
+      'AnimePahe', {}, 'AnimePahe',
+    )
+    const privateProxy = videoSourceToStream(
+      { url: 'http://127.0.0.1:43124/video' },
+      'Izumi proxy', {}, 'Izumi proxy',
+    )
+    expect(hosted.__hosted).toBe(true)
+    expect(privateProxy.__hosted).toBeUndefined()
+  })
+
   it('preserves per-source headers and split audio tracks', () => {
     const stream = videoSourceToStream(
       {

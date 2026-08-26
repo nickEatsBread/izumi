@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the cast_media command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cast-media",
+          "markdownDescription": "Enables the cast_media command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cast_media command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cast-media",
+          "markdownDescription": "Denies the cast_media command without any pre-configured scope."
+        },
+        {
           "description": "Enables the da_login command without any pre-configured scope.",
           "type": "string",
           "const": "allow-da-login",
@@ -427,10 +439,10 @@
           "markdownDescription": "Denies the share_text command without any pre-configured scope."
         },
         {
-          "description": "Allow Android playback, sharing, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-download-notifications`\n- `allow-open-browser`\n- `allow-share-text`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`\n- `allow-save-text-file`",
+          "description": "Allow Android playback, casting, sharing, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-cast-media`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-download-notifications`\n- `allow-open-browser`\n- `allow-share-text`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`\n- `allow-save-text-file`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow Android playback, sharing, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-download-notifications`\n- `allow-open-browser`\n- `allow-share-text`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`\n- `allow-save-text-file`"
+          "markdownDescription": "Allow Android playback, casting, sharing, browser authentication, self-update, and power/network checks.\n#### This default permission set includes:\n\n- `allow-play-external`\n- `allow-cast-media`\n- `allow-install-apk`\n- `allow-device-status`\n- `allow-download-foreground`\n- `allow-download-notifications`\n- `allow-open-browser`\n- `allow-share-text`\n- `allow-da-reaction-state`\n- `allow-da-react`\n- `allow-da-login`\n- `allow-save-text-file`"
         }
       ]
     }

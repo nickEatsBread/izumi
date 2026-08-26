@@ -27,6 +27,7 @@ import android.widget.FrameLayout
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.FileProvider
 import androidx.core.content.ContextCompat
+import androidx.mediarouter.app.MediaRouteChooserDialog
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import androidx.activity.result.ActivityResult
@@ -39,6 +40,13 @@ import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import com.google.android.gms.cast.MediaInfo
+import com.google.android.gms.cast.MediaLoadRequestData
+import com.google.android.gms.cast.MediaMetadata
+import com.google.android.gms.cast.MediaTrack
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastSession
+import com.google.android.gms.cast.framework.SessionManagerListener
 import dalvik.system.DexClassLoader
 import java.io.File
 import java.io.FileOutputStream
@@ -81,6 +89,15 @@ class AniyomiCallArgs {
 @InvokeArg
 class BrowserArgs {
     var url: String = ""
+}
+
+@InvokeArg
+class CastMediaArgs {
+    var url: String = ""
+    var title: String? = null
+    var contentType: String = ""
+    var positionMs: Long = 0
+    var subtitlesJson: String = "[]"
 }
 
 @InvokeArg
@@ -149,6 +166,149 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     // The app's main WebView, captured in load(); used to reload the in-app Disqus embed iframe after
     // an in-overlay login so it re-boots with the freshly-set session cookie.
     private var appWebView: WebView? = null
+    private var castContext: CastContext? = null
+    private var castChooser: MediaRouteChooserDialog? = null
+    private var pendingCast: CastMediaArgs? = null
+
+    private val castSessionListener = object : SessionManagerListener<CastSession> {
+        override fun onSessionStarting(session: CastSession) = Unit
+
+        override fun onSessionStarted(session: CastSession, sessionId: String) {
+            pendingCast?.let { loadCastMedia(session, it) }
+        }
+
+        override fun onSessionStartFailed(session: CastSession, error: Int) {
+            pendingCast = null
+            emitCast("error", "Could not connect to the Cast device ($error).")
+        }
+
+        override fun onSessionEnding(session: CastSession) = Unit
+
+        override fun onSessionEnded(session: CastSession, error: Int) {
+            emitCast("ended")
+        }
+
+        override fun onSessionResuming(session: CastSession, sessionId: String) = Unit
+
+        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+            pendingCast?.let { loadCastMedia(session, it) }
+        }
+
+        override fun onSessionResumeFailed(session: CastSession, error: Int) {
+            pendingCast = null
+            emitCast("error", "Could not resume the Cast session ($error).")
+        }
+
+        override fun onSessionSuspended(session: CastSession, reason: Int) {
+            emitCast("suspended")
+        }
+    }
+
+    private fun emitCast(action: String, error: String? = null, device: String? = null) {
+        val payload = JSObject().put("action", action)
+        error?.let { payload.put("error", it) }
+        device?.let { payload.put("device", it) }
+        trigger("cast", payload)
+    }
+
+    private fun initCast(): CastContext {
+        castContext?.let { return it }
+        return CastContext.getSharedInstance(activity).also { context ->
+            context.sessionManager.addSessionManagerListener(
+                castSessionListener,
+                CastSession::class.java,
+            )
+            castContext = context
+        }
+    }
+
+    private fun loadCastMedia(session: CastSession, args: CastMediaArgs) {
+        val remote = session.remoteMediaClient
+        if (remote == null) {
+            pendingCast = null
+            emitCast("error", "The selected Cast receiver cannot play media.")
+            return
+        }
+        try {
+            val tracks = mutableListOf<MediaTrack>()
+            val subtitleArray = JSONArray(args.subtitlesJson)
+            for (index in 0 until subtitleArray.length()) {
+                val subtitle = subtitleArray.optJSONObject(index) ?: continue
+                val subtitleUrl = subtitle.optString("url").takeIf { it.isNotBlank() } ?: continue
+                tracks += MediaTrack.Builder((index + 1).toLong(), MediaTrack.TYPE_TEXT)
+                    .setName(subtitle.optString("title", "Subtitles"))
+                    .setLanguage(subtitle.optString("lang", "und"))
+                    .setSubtype(MediaTrack.SUBTYPE_SUBTITLES)
+                    .setContentId(subtitleUrl)
+                    .setContentType(subtitle.optString("contentType", "text/vtt"))
+                    .build()
+            }
+
+            val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
+                putString(MediaMetadata.KEY_TITLE, args.title ?: "Izumi")
+            }
+            val mediaInfo = MediaInfo.Builder(args.url)
+                .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
+                .setContentType(args.contentType)
+                .setMetadata(metadata)
+                .setMediaTracks(tracks)
+                .build()
+            val request = MediaLoadRequestData.Builder()
+                .setMediaInfo(mediaInfo)
+                .setAutoplay(true)
+                .setCurrentTime(args.positionMs.coerceAtLeast(0))
+                .apply {
+                    if (tracks.isNotEmpty()) setActiveTrackIds(longArrayOf(tracks.first().id))
+                }
+                .build()
+
+            remote.load(request).setResultCallback { result ->
+                if (result.status.isSuccess) {
+                    pendingCast = null
+                    emitCast("playing", device = session.castDevice?.friendlyName)
+                } else {
+                    pendingCast = null
+                    emitCast("error", "The Cast receiver rejected this stream (${result.status.statusCode}).")
+                }
+            }
+        } catch (error: Exception) {
+            pendingCast = null
+            Log.e("IzumiCast", "Could not load Cast media", error)
+            emitCast("error", error.message ?: "Could not load media on the Cast device.")
+        }
+    }
+
+    @Command
+    fun castMedia(invoke: Invoke) {
+        val args = invoke.parseArgs(CastMediaArgs::class.java)
+        if (!args.url.startsWith("http://") && !args.url.startsWith("https://")) {
+            invoke.reject("Cast needs an HTTP or HTTPS media URL")
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                val context = initCast()
+                pendingCast = args
+                val current = context.sessionManager.currentCastSession
+                if (current?.isConnected == true) {
+                    loadCastMedia(current, args)
+                } else {
+                    castChooser?.dismiss()
+                    castChooser = MediaRouteChooserDialog(activity).apply {
+                        routeSelector = context.mergedSelector
+                            ?: error("No Cast routes are available")
+                        setOnDismissListener { castChooser = null }
+                        show()
+                    }
+                }
+                invoke.resolve()
+            } catch (error: Exception) {
+                pendingCast = null
+                Log.e("IzumiCast", "Could not open Cast device chooser", error)
+                invoke.reject(error.message ?: "Google Cast is unavailable on this device", error)
+            }
+        }
+    }
 
     private fun loadAniyomiRuntime(runtimePath: String) {
         synchronized(aniyomiLock) {
@@ -455,6 +615,10 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
     // it at the WebView-settings level the moment the webview is created.
     override fun load(webView: WebView) {
         appWebView = webView
+        activity.runOnUiThread {
+            runCatching { initCast() }
+                .onFailure { Log.w("IzumiCast", "Cast SDK initialization deferred: ${it.message}") }
+        }
         webView.settings.setSupportZoom(false)
         webView.settings.builtInZoomControls = false
         webView.settings.displayZoomControls = false

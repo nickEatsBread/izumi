@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseSharedSource, shareableSource, sharedSourceKey, streamFromSharedSource } from './source'
+import { parseSharedSource, selectWatchPartyLanHost, shareableSource, sharedSourceKey, streamFromSharedSource } from './source'
 
 describe('Watch Together source sharing', () => {
   // Izumi deliberately does NOT redact the host's source: guests play the host's exact link so they
@@ -99,6 +99,51 @@ describe('Watch Together source sharing', () => {
     expect(parseSharedSource(source)).toMatchObject({ drm: { keySystem: 'com.widevine.alpha' } })
   })
 
+  it('advertises a wildcard-bound JVM host over LAN and rewrites the full DRM contract', () => {
+    const result = shareableSource({
+      url: 'http://localhost:17871/v/local/manifest.mpd',
+      __hosted: true,
+      __drm: {
+        keySystem: 'com.widevine.alpha',
+        licenseUrl: 'http://127.0.0.1:17871/v/local/license',
+        refreshUrl: 'http://localhost:17871/v/local/source',
+        serverCertificateUrl: 'https://license.example/cert',
+      },
+      __subtitles: [{ url: 'http://localhost:17871/v/local/en.vtt', lang: 'eng' }],
+      __audioTracks: [{ switchUrl: 'http://localhost:17871/v/local/dub.mpd', lang: 'eng' }],
+      __previewUrl: 'http://localhost:17871/v/local/preview.bif',
+    }, '192.168.1.8')
+    expect(result.source).toMatchObject({
+      kind: 'http',
+      url: 'http://192.168.1.8:17871/v/local/manifest.mpd',
+      drm: {
+        licenseUrl: 'http://192.168.1.8:17871/v/local/license',
+        refreshUrl: 'http://192.168.1.8:17871/v/local/source',
+        serverCertificateUrl: 'https://license.example/cert',
+      },
+      subtitles: [{ url: 'http://192.168.1.8:17871/v/local/en.vtt' }],
+      audioTracks: [{ switchUrl: 'http://192.168.1.8:17871/v/local/dub.mpd' }],
+      previewUrl: 'http://192.168.1.8:17871/v/local/preview.bif',
+    })
+  })
+
+  it('never exposes an unmarked loopback proxy or rewrites Direct P2P as HTTP', () => {
+    expect(shareableSource({ url: 'http://127.0.0.1:9000/private' }, '192.168.1.8').source).toBeNull()
+    expect(shareableSource({
+      url: 'http://127.0.0.1:8145/torrents/1/stream/0',
+      infoHash: '0123456789abcdef0123456789abcdef01234567',
+      __hosted: true,
+    }, '192.168.1.8').source).toMatchObject({ kind: 'torrent' })
+  })
+
+  it('picks an ordinary private LAN ahead of VPN, CGNAT, and public adapters', () => {
+    expect(selectWatchPartyLanHost([
+      { ips: ['100.64.2.3'], isUp: true, isVpnLike: true, isDefaultRoute: true },
+      { ips: ['203.0.113.5'], isUp: true, isVpnLike: false, isDefaultRoute: false },
+      { ips: ['192.168.1.8'], isUp: true, isVpnLike: false, isDefaultRoute: true },
+    ])).toBe('192.168.1.8')
+  })
+
   it.each([
     { stream: { url: 'file:///home/user/video.mkv' }, why: 'non-http scheme' },
     { stream: { url: 'not a url' }, why: 'unparseable' },
@@ -115,6 +160,16 @@ describe('Watch Together source sharing', () => {
       .toMatchObject({ kind: 'http', url: 'https://media.example/e1.mkv' })
     expect(parseSharedSource({ version: 99, kind: 'torrent', infoHash: '0123456789abcdef0123456789abcdef01234567' })).toBeNull()
     expect(parseSharedSource({ version: 1, kind: 'http', url: 'file:///etc/passwd' })).toBeNull()
+    expect(parseSharedSource({
+      version: 1,
+      kind: 'http',
+      url: 'https://media.example/e1.mpd',
+      drm: {
+        keySystem: 'com.widevine.alpha',
+        licenseUrl: 'https://license.example/widevine',
+        refreshUrl: 'http://127.0.0.1/private/source',
+      },
+    })).toBeNull()
   })
 
   it('keeps only string header values from an untrusted peer', () => {

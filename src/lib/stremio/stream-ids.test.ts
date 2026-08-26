@@ -38,6 +38,17 @@ describe('buildStreamIds', () => {
       .toEqual(['tt123:2:5'])
   })
 
+  it('supports TMDB movies and mapped TV episodes without a Kitsu id', () => {
+    expect(buildStreamIds({ type: 'movie', tmdb: 550 })).toEqual(['tmdb:550'])
+    expect(buildStreamIds({ type: 'series', tmdb: 1399, season: 2, imdbEpisode: 4 }))
+      .toEqual(['tmdb:1399:2:4'])
+  })
+
+  it('keeps an exact Stremio video id first and removes duplicates', () => {
+    expect(buildStreamIds({ type: 'movie', direct: 'tt0137523', imdb: 'tt0137523' }))
+      .toEqual(['tt0137523'])
+  })
+
   it('produces nothing when there is nothing to ask with', () => {
     expect(buildStreamIds({ type: 'series', episode: 3 })).toEqual([])
   })

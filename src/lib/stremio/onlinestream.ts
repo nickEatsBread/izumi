@@ -83,6 +83,8 @@ export interface SnAudioTrack {
 }
 export interface SnVideoSource {
   url: string
+  /** Internal JVM bridge marker: its HttpServer is wildcard-bound despite advertising localhost. */
+  localServer?: boolean
   type?: string
   quality?: string
   /** Extractor/server identity for this individual source. JVM providers return every server in
@@ -327,6 +329,7 @@ export function videoSourceToStream(
     // and never shows `name`, which is why a language baked into this string was invisible.
     name: `⚡ ${provider}${sourceServer && sourceServer !== 'default' ? ` · ${sourceServer}` : ''} · ${quality}`,
     __stream: true,
+    __hosted: vs.localServer || undefined,
     __manifest: kind === 'HLS' ? 'hls' : /dash|mpd/i.test(vs.type ?? '') ? 'dash' : undefined,
     __headers: vs.headers ?? headers,
     __audio: vs.audio ?? audio,

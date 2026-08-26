@@ -1,5 +1,6 @@
 const COMMANDS: &[&str] = &[
     "play_external",
+    "cast_media",
     "install_apk",
     "device_status",
     "download_foreground",

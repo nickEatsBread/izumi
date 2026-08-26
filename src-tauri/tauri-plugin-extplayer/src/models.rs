@@ -66,6 +66,24 @@ pub struct BrowserRequest {
     pub url: String,
 }
 
+/// Direct-play media handed to the Google Cast Default Media Receiver.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CastMediaRequest {
+    pub url: String,
+    pub title: Option<String>,
+    pub content_type: String,
+    #[serde(default)]
+    pub position_ms: u64,
+    /// JSON array of `{ url, title?, lang?, contentType }` sidecar tracks.
+    #[serde(default = "default_json_array")]
+    pub subtitles_json: String,
+}
+
+fn default_json_array() -> String {
+    "[]".to_string()
+}
+
 /// Plain text handed to Android's system share sheet.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ShareTextRequest {

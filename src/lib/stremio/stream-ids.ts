@@ -13,10 +13,13 @@
 
 export interface StreamIdInput {
   type: 'movie' | 'series'
+  /** Provider-owned ids (notably a Stremio metadata video's exact id). */
+  direct?: string | string[]
   kitsu?: number
   /** The AniList episode being requested. */
   episode?: number
   imdb?: string
+  tmdb?: string | number
   /** Mapped season for THIS episode, from the episode-id mapping. */
   season?: number
   /** Mapped per-season episode number for THIS episode. Not the absolute number. */
@@ -25,6 +28,7 @@ export interface StreamIdInput {
 
 export function buildStreamIds(i: StreamIdInput): string[] {
   const ids: string[] = []
+  if (i.direct) ids.push(...(Array.isArray(i.direct) ? i.direct : [i.direct]))
   // Kitsu first: it is the namespace anime addons actually index, so it stays the primary query
   // and the one whose results arrive on the fast path.
   if (i.kitsu != null) ids.push(i.episode != null && i.type === 'series' ? `kitsu:${i.kitsu}:${i.episode}` : `kitsu:${i.kitsu}`)
@@ -34,5 +38,10 @@ export function buildStreamIds(i: StreamIdInput): string[] {
     // asking produces either nothing or somebody else's episode.
     else if (i.season != null && i.season >= 1 && i.imdbEpisode != null) ids.push(`${i.imdb}:${i.season}:${i.imdbEpisode}`)
   }
-  return ids
+  if (i.tmdb != null) {
+    const base = `tmdb:${i.tmdb}`
+    ids.push(i.type === 'series' && i.season != null && i.imdbEpisode != null
+      ? `${base}:${i.season}:${i.imdbEpisode}` : base)
+  }
+  return [...new Set(ids.filter(Boolean))]
 }

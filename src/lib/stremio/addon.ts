@@ -260,7 +260,7 @@ export function pickBest(
 // mixed-content restrictions and follow http->https redirects.
 export async function getStreams(
   bases: string[],
-  id: string,
+  id: string | string[],
   type = 'series',
   sort: StreamSort = 'quality',
 ): Promise<{ streams: Stream[]; total: number; cachedCount: number }> {

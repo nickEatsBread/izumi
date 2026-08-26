@@ -2,6 +2,7 @@
 #[cfg(target_os = "android")]
 mod android_tls;
 mod cache_gc;
+mod cast_relay;
 mod direct_torrent;
 mod direct_torrent_range;
 mod direct_torrent_select;
@@ -5967,6 +5968,8 @@ pub fn run() {
             extension_package::extension_list,
             extension_package::extension_remove,
             extension_service::extension_service_ensure,
+            extension_service::extension_service_settings,
+            extension_service::extension_service_settings_save,
             extension_service::extension_service_stop,
             jvm_extensions::jvm_extension_set_debug,
             jvm_extensions::jvm_extension_sources,
@@ -6038,6 +6041,7 @@ pub fn run() {
             direct_torrent::torrent_playback_buffer,
             direct_torrent::torrent_playback_first_frame,
             direct_torrent::torrent_playback_stop,
+            cast_relay::cast_prepare_source,
             torrent_download::torrent_download_start,
             torrent_download::torrent_download_cancel,
             net_interfaces::list_network_interfaces,
@@ -6105,6 +6109,7 @@ pub fn run() {
         direct_torrent::torrent_playback_buffer,
         direct_torrent::torrent_playback_first_frame,
         direct_torrent::torrent_playback_stop,
+        cast_relay::cast_prepare_source,
         torrent_download::torrent_download_start,
         torrent_download::torrent_download_cancel,
         net_interfaces::list_network_interfaces,

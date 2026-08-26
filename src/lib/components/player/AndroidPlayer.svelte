@@ -12,7 +12,7 @@
   import { onMount, tick } from 'svelte'
   import { get } from 'svelte/store'
   import { goto } from '$app/navigation'
-  import { invoke } from '@tauri-apps/api/core'
+  import { addPluginListener, invoke, type PluginListener } from '@tauri-apps/api/core'
   import { fade } from 'svelte/transition'
   import {
     mpvState,
@@ -22,6 +22,7 @@
     mpvCommand,
     mpvGet,
     togglePause,
+    setPaused,
     seekAbsolute,
     seekRelative,
     haptic,
@@ -68,7 +69,7 @@
   import { reportWatchPlayback } from '$lib/watch-together/client'
   import {
     autoSkip, seekDuration, scrubThumbnails, openSubtitlesToken,
-    subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
+    subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     gifIncludeSubtitles, androidAutoPip, keepAwakeWhilePlaying,
     preferredAudioLang, preferredSubLang, audioProcessing,
@@ -85,6 +86,7 @@
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
   import { candidateKey, candidateTitle, providerBadge, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import { stopDirectTorrentPlayback } from '$lib/player/direct-torrent'
+  import { castSourceDecision, castSubtitleFormat } from '$lib/player/android-cast'
   import { BUFFER_SPINNER_DELAY_MS } from '$lib/player/overlay-loading'
   import { setAndroidRelatedHandler } from '$lib/player/android-watch-navigation'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
@@ -202,7 +204,9 @@
     void np.id, np.episode
     for (const [property, value] of subtitleStyleProps(effectiveSubtitleStyle($sessionSubtitleStyle, {
       enabled: $subtitleStyleEnabled,
+      scope: $subtitleOverrideScope,
       font: $subtitleFont,
+      bold: $subtitleBold,
       fontSize: $subtitleFontSize,
       textColor: $subtitleTextColor,
       borderColor: $subtitleBorderColor,
@@ -1164,14 +1168,51 @@
     subtitleEditorOpen = true
   }
   async function castToDevice() {
-    const url = get(nowPlayingStream)?.url
-    if (!url || url.startsWith('http://127.0.0.1') || url.startsWith('http://localhost')) {
-      playerNotice.set('Cast needs a remote stream — Direct P2P stays on this device.')
+    const source = get(nowPlayingStream)
+    const [liveTracks, fileFormat] = await Promise.all([getTracks(), mpvGet('file-format')])
+    const decision = castSourceDecision(source, liveTracks, fileFormat)
+    if (!decision.ok) {
+      playerNotice.set(decision.error)
       return
     }
     try {
-      await invoke('plugin:extplayer|play_external', {
-        payload: { url, title: np.animeTitle ?? np.title, isLocal: false },
+      const selectedSubtitle = liveTracks.find((track) => track.type === 'sub' && track.selected)
+      const selectedExternal = selectedSubtitle?.externalFilename
+      const subtitle = (source.subtitles ?? []).find((candidate) => {
+        if (!castSubtitleFormat(candidate.url)) return false
+        if (selectedExternal) return candidate.url === selectedExternal
+        return !!selectedSubtitle && (
+          (!!candidate.title && candidate.title === selectedSubtitle.title)
+          || (!!candidate.lang && candidate.lang === selectedSubtitle.lang)
+        )
+      })
+      const prepared = await invoke<{
+        url: string
+        relayed: boolean
+        subtitles: { url: string; lang?: string; title?: string; contentType: string }[]
+      }>('cast_prepare_source', {
+        request: {
+          url: decision.url,
+          headers: source.headers,
+          manifest: source.manifest,
+          subtitles: subtitle ? [{
+            url: subtitle.url,
+            lang: subtitle.lang,
+            title: subtitle.title,
+            format: castSubtitleFormat(subtitle.url),
+            headers: subtitle.headers ?? {},
+          }] : [],
+        },
+      })
+      playerNotice.set(decision.warnings[0] ?? 'Choose a Cast device…')
+      await invoke('plugin:extplayer|cast_media', {
+        payload: {
+          url: prepared.url,
+          title: np.animeTitle ?? np.title,
+          contentType: decision.contentType,
+          positionMs: Math.round(get(mpvState).pos * 1000),
+          subtitlesJson: JSON.stringify(prepared.subtitles),
+        },
       })
     } catch (error) {
       playerNotice.set(error instanceof Error ? error.message : String(error))
@@ -1590,6 +1631,24 @@
   }
 
   onMount(() => {
+    let destroyed = false
+    let castListener: PluginListener | undefined
+    void addPluginListener('extplayer', 'cast', (event: unknown) => {
+      const { action, error, device } = event as { action?: unknown; error?: unknown; device?: unknown }
+      if (action === 'playing') {
+        void setPaused(true)
+        playerNotice.set(`Playing on ${typeof device === 'string' && device ? device : 'Cast device'}.`)
+      } else if (action === 'error') {
+        playerNotice.set(typeof error === 'string' ? error : 'Could not start Cast playback.')
+      } else if (action === 'suspended') {
+        playerNotice.set('Cast connection interrupted.')
+      } else if (action === 'ended') {
+        playerNotice.set('Cast session ended.')
+      }
+    }).then((listener) => {
+      if (destroyed) void listener.unregister()
+      else castListener = listener
+    }).catch(() => {})
     armHide()
     setAndroidMediaHandler((action) => {
       if (action === 'next') { if (hasNext) void playNext(undefined, !paused) }
@@ -1610,6 +1669,8 @@
     window.addEventListener('resize', scheduleViewportSync)
     scheduleViewportSync()
     return () => {
+      destroyed = true
+      void castListener?.unregister()
       clearTimeout(hideTimer); clearTimeout(pendingToggle); clearTimeout(seekModeTimer)
       clearTimeout(lockToggleTimer); clearTimeout(toastTimer)
       clearTimeout(holdTimer); clearTimeout(thumbDebounce); clearTimeout(sheetCloseTimer)

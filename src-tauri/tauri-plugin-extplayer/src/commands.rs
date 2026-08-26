@@ -2,10 +2,10 @@ use tauri::{command, AppHandle, Runtime};
 
 use crate::{
     models::{
-        BrowserRequest, DaLoginRequest, DaLoginResponse, DaReactRequest, DaReactionStateRequest,
-        DeviceStatus, DownloadForegroundRequest, InstallRequest, NotificationPermissionResponse,
-        PlayRequest, ReactResponse, ReactionStateResponse, SaveTextFileRequest,
-        SaveTextFileResponse, ShareTextRequest,
+        BrowserRequest, CastMediaRequest, DaLoginRequest, DaLoginResponse, DaReactRequest,
+        DaReactionStateRequest, DeviceStatus, DownloadForegroundRequest, InstallRequest,
+        NotificationPermissionResponse, PlayRequest, ReactResponse, ReactionStateResponse,
+        SaveTextFileRequest, SaveTextFileResponse, ShareTextRequest,
     },
     ExtPlayerExt, Result,
 };
@@ -16,6 +16,14 @@ pub(crate) async fn play_external<R: Runtime>(
     payload: PlayRequest,
 ) -> Result<()> {
     app.extplayer().play(payload)
+}
+
+#[command]
+pub(crate) async fn cast_media<R: Runtime>(
+    app: AppHandle<R>,
+    payload: CastMediaRequest,
+) -> Result<()> {
+    app.extplayer().cast_media(payload)
 }
 
 /// Snapshot the Android network metering and charging signals. The frontend checks this at the

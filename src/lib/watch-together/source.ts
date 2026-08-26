@@ -1,5 +1,7 @@
 import type { Stream } from '$lib/stremio/parse'
 import { parseStreamDrm, type StreamDrm } from '$lib/player/drm'
+import { invoke } from '@tauri-apps/api/core'
+import { isLoopbackHttpUrl, replaceLoopbackHost } from '$lib/player/stream-address'
 
 type SharedSubtitle = NonNullable<Stream['__subtitles']>[number]
 type SharedAudioTrack = NonNullable<Stream['__audioTracks']>[number]
@@ -41,8 +43,6 @@ function short(value: string | undefined, limit = 300): string | undefined {
   return clean ? clean.slice(0, limit) : undefined
 }
 
-const LOOPBACK = /^(localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?)$/i
-
 /**
  * Shape-check a URL for the wire. This is parsing sanity ONLY — it does not scrub credentials.
  * `null` means "not a usable http(s) address", not "unsafe to share".
@@ -53,7 +53,7 @@ function wireHttpUrl(raw: string): string | null {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
     // A direct-P2P stream resolves to the local torrent engine's loopback address, which is
     // meaningless on any other device — share the infohash for those instead.
-    if (LOOPBACK.test(url.hostname)) return null
+    if (isLoopbackHttpUrl(url.toString())) return null
     return url.toString()
   } catch {
     return null
@@ -75,8 +75,36 @@ function wireHttpUrl(raw: string): string | null {
  * A resolved http(s) URL wins when present; otherwise the torrent identity is shared so the guest
  * can resolve it locally.
  */
-export function shareableSource(stream: Stream): SharedSourceState {
-  const playback = stream.__party ? { ...stream, ...stream.__party, __party: undefined } : stream
+export function shareableSource(stream: Stream, lanHost?: string): SharedSourceState {
+  let playback = stream.__party ? { ...stream, ...stream.__party, __party: undefined } : stream
+  // A provider-supplied party source is already its own capability-scoped host route. The fallback
+  // below is ONLY for the JVM HttpServer marker: upstream binds it to all interfaces but returns a
+  // localhost URL. Never expose an arbitrary Izumi loopback proxy or the Direct P2P engine.
+  if (!stream.__party && stream.__hosted && !stream.infoHash && lanHost && isLoopbackHttpUrl(playback.url)) {
+    const route = (value: string | undefined) => replaceLoopbackHost(value, lanHost)
+    playback = {
+      ...playback,
+      url: route(playback.url),
+      __drm: playback.__drm ? {
+        ...playback.__drm,
+        licenseUrl: route(playback.__drm.licenseUrl),
+        releaseUrl: route(playback.__drm.releaseUrl),
+        refreshUrl: route(playback.__drm.refreshUrl),
+        serverCertificateUrl: route(playback.__drm.serverCertificateUrl),
+      } : undefined,
+      __subtitles: playback.__subtitles?.map((track) => ({
+        ...track,
+        url: route(track.url) ?? track.url,
+        switchUrl: route(track.switchUrl),
+      })),
+      __audioTracks: playback.__audioTracks?.map((track) => ({
+        ...track,
+        url: route(track.url),
+        switchUrl: route(track.switchUrl),
+      })),
+      __previewUrl: route(playback.__previewUrl),
+    }
+  }
   const filename = short(stream.behaviorHints?.filename, 500)
   const videoSize = Number.isFinite(stream.behaviorHints?.videoSize)
     ? Math.max(0, Math.floor(stream.behaviorHints!.videoSize!))
@@ -121,6 +149,55 @@ export function shareableSource(stream: Stream): SharedSourceState {
   }
 
   return { source: null, error: 'The selected source has no shareable torrent or HTTP address.' }
+}
+
+export interface WatchPartyNetworkInterface {
+  ips: string[]
+  isUp: boolean
+  isVpnLike: boolean
+  isDefaultRoute: boolean
+}
+
+function ipv4Class(value: string): number | null {
+  const parts = value.split('.').map(Number)
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null
+  const [a, b] = parts
+  if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return 0
+  if (a === 100 && b >= 64 && b <= 127) return 1 // Tailscale/other CGNAT overlays
+  if (a === 127 || a === 0 || (a === 169 && b === 254) || a >= 224) return null
+  return 2
+}
+
+/** Prefer an ordinary private LAN over VPN/overlay/public adapters. The JVM server is wildcard-
+ * bound, so the chosen address only changes how the guest reaches the same host process. */
+export function selectWatchPartyLanHost(interfaces: WatchPartyNetworkInterface[]): string | undefined {
+  return interfaces
+    .filter((iface) => iface.isUp)
+    .flatMap((iface) => iface.ips.flatMap((ip) => {
+      const addressClass = ipv4Class(ip)
+      return addressClass == null ? [] : [{ ip, iface, addressClass }]
+    }))
+    .sort((left, right) =>
+      left.addressClass - right.addressClass
+      || Number(left.iface.isVpnLike) - Number(right.iface.isVpnLike)
+      || Number(right.iface.isDefaultRoute) - Number(left.iface.isDefaultRoute),
+    )[0]?.ip
+}
+
+/** Resolve the only source form that cannot be serialized synchronously: a wildcard-bound JVM
+ * localhost server. Remote URLs, torrents, and provider capability routes take no native hop. */
+export async function shareableSourceForDevice(stream: Stream): Promise<SharedSourceState> {
+  const direct = shareableSource(stream)
+  if (direct.source || !stream.__hosted || stream.infoHash || !isLoopbackHttpUrl(stream.url)) return direct
+  try {
+    const interfaces = await invoke<WatchPartyNetworkInterface[]>('list_network_interfaces')
+    const lanHost = selectWatchPartyLanHost(interfaces)
+    if (lanHost) return shareableSource(stream, lanHost)
+  } catch { /* surface one stable source error below */ }
+  return {
+    source: null,
+    error: 'The host provider stream is local and no reachable LAN address is available.',
+  }
 }
 
 export function streamFromSharedSource(source: SharedSource): Stream {
@@ -211,7 +288,13 @@ export function parseSharedSource(value: unknown): SharedSource | null {
         })
       : undefined
     const drm = parseStreamDrm(candidate.drm)
-    if (drm && (!drm.licenseUrl || !wireHttpUrl(drm.licenseUrl) || (drm.releaseUrl && !wireHttpUrl(drm.releaseUrl)))) return null
+    if (drm && (
+      !drm.licenseUrl
+      || !wireHttpUrl(drm.licenseUrl)
+      || (drm.releaseUrl && !wireHttpUrl(drm.releaseUrl))
+      || (drm.refreshUrl && !wireHttpUrl(drm.refreshUrl))
+      || (drm.serverCertificateUrl && !wireHttpUrl(drm.serverCertificateUrl))
+    )) return null
     return shareableSource({
       url: candidate.url,
       __headers: headers,

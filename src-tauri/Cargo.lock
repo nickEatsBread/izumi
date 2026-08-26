@@ -3684,6 +3684,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "gdk",
+ "getrandom 0.3.4",
  "gif",
  "gilrs",
  "gl",
