@@ -29,6 +29,17 @@ strip = true
 lto = true
 codegen-units = 1
 
+# The desktop crate also emits Android-compatible static/cdylib artifacts in dev builds. Full
+# symbols for that entire dependency graph can exceed 10 GiB on Windows before the final archive
+# is written. Keep line tables for useful Izumi stack traces, omit dependency symbols, and avoid a
+# second incremental-object cache; generated target files are also NTFS-compressed locally.
+[profile.dev]
+debug = 1
+incremental = false
+
+[profile.dev.package."*"]
+debug = 0
+
 [features]
 # Optional alias retained for explicit mobile diagnostic builds. Shipped desktop builds enable
 # Tauri's inspector through the target-specific dependency below.
