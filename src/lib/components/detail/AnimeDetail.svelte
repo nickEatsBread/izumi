@@ -18,10 +18,10 @@
   import { focusOnMount } from '$lib/nav'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { anilistToken } from '$lib/anilist/auth'
-  import { malToken } from '$lib/trackers/config'
-  import { getMalProgress } from '$lib/trackers'
+  import { kitsuToken, malToken, simklToken } from '$lib/trackers/config'
+  import { getExternalTrackerProgress } from '$lib/trackers'
   import type { AniStatus } from '$lib/trackers'
-  import { malToAni, mergedProgress, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
+  import { mergedProgress, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
   import ListEditor from '$lib/components/detail/ListEditor.svelte'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
@@ -62,31 +62,35 @@
     $offlineMode ? EMPTY_STORE : queryStore<{ Media: Media }>({ client, query: MEDIA_BY_ID, variables: { id } }),
   )
 
-  // MAL read-back: pull the viewer's watched-episode count from MAL and merge it
-  // into the AniList media, so progress shows even when the user tracks on MAL
-  // (AniList's mediaListEntry is null/0 then). Take whichever tracker is further
+  // REST-tracker read-back: merge MAL, Kitsu, and Simkl into the AniList media so progress shows
+  // even when the user does not use AniList. Take whichever connected tracker is further
   // along. `media` is what the whole page renders — badge, resume, episode marks.
-  let malEntry = $state<{ progress: number; status: string; score: number } | null>(null)
+  let externalEntry = $state<{ progress: number; status?: AniStatus; score: number } | null>(null)
   // NOT $state, and it must stay that way. This is a bookkeeping latch, not UI state: the effect
   // both READS it (the guard) and WRITES it, so as $state the write re-triggered the effect, and
-  // Svelte runs an effect's teardown before re-running it — the teardown cancelled the MAL request
-  // the same pass had just started, so `malEntry` never landed. Symptom: MAL read-back was dead on
-  // every detail page (no status pill, no MAL progress), which reads as "Add to List" on a title
+  // Svelte runs an effect's teardown before re-running it — the teardown cancelled the tracker request
+  // the same pass had just started, so the result never landed. Symptom: tracker read-back was dead on
+  // every detail page (no status pill or progress), which reads as "Add to List" on a title
   // that is already on the user's list.
-  let malEntryFor: number | null = null
+  let externalEntryFor = ''
   $effect(() => {
-    // Guard on `idMal` so an unrelated store emission doesn't refetch: without it a MAL-only user
-    // watched the header badge fall back to "0/12" and the CTA revert from "Continue · Ep 8" to
+    // Guard on title ids + connection set so an unrelated store emission doesn't refetch: without
+    // it a tracker-only user watched the header badge fall back to "0/12" and the CTA revert from "Continue · Ep 8" to
     // "Play" for one MAL round-trip on every emission.
-    const idMal = $store.data?.Media?.idMal
-    if (idMal === malEntryFor) return
-    malEntryFor = idMal ?? null
-    malEntry = null
-    if (!idMal) return
+    const current = $store.data?.Media
+    const key = current
+      ? `${current.id}:${current.idMal ?? ''}:${!!$malToken}:${!!$kitsuToken}:${!!$simklToken}`
+      : ''
+    if (key === externalEntryFor) return
+    externalEntryFor = key
+    externalEntry = null
+    if (!current) return
     // Accept the response only if it is still the title we asked about. Snapshotting the key beats
     // an effect-scoped `cancelled` flag here, because ANY re-run of this effect (urql emits several
     // times per query) would fire that flag's teardown and drop an in-flight request.
-    getMalProgress(idMal).then((e) => { if (malEntryFor === idMal) malEntry = e })
+    getExternalTrackerProgress(current.id, current.idMal ?? undefined).then((entry) => {
+      if (externalEntryFor === key) externalEntry = entry
+    })
   })
   // Offline: build the page's media from the local snapshot (downloadedMedia → localHistory →
   // synthesized from the DownloadItems) with progress folded from local history, so the header
@@ -108,9 +112,9 @@
     if ($offlineMode) return offlineMedia
     const base = $store.data?.Media
     if (!base) return base
-    const malP = malEntry?.progress ?? 0
-    if (malP <= (base.mediaListEntry?.progress ?? 0)) return base
-    return { ...base, mediaListEntry: { ...base.mediaListEntry, progress: malP, status: base.mediaListEntry?.status ?? malEntry?.status } }
+    const externalProgress = externalEntry?.progress ?? 0
+    if (externalProgress <= (base.mediaListEntry?.progress ?? 0)) return base
+    return { ...base, mediaListEntry: { ...base.mediaListEntry, progress: externalProgress, status: base.mediaListEntry?.status ?? externalEntry?.status } }
   })
   const detailHint = $derived($detailHints[id])
   $effect(() => { if (media) rememberDetail(media) })
@@ -155,23 +159,23 @@
   let showMore = $state(false)      // mobile action overflow menu
   let descExpanded = $state(false)  // mobile description clamp toggle
   // List-editor state. `listOpt` is the optimistic patch applied after a save so the status pill +
-  // progress badge reflect instantly (the tracker queue reconciles AniList/MAL in the background).
+  // progress badge reflect instantly (the tracker queue reconciles every connected service).
   let showEditor = $state(false)
   let listOpt = $state<{ status?: AniStatus; progress?: number; score?: number; removed?: boolean }>({})
   const rawEntry = $derived($store.data?.Media?.mediaListEntry) // AniList list entry (has id/status/score)
   const effStatus = $derived.by((): AniStatus | undefined => {
     if (listOpt.removed) return undefined
     if (listOpt.status) return listOpt.status
-    return (rawEntry?.status as AniStatus | undefined) ?? malToAni(malEntry?.status)
+    return (rawEntry?.status as AniStatus | undefined) ?? externalEntry?.status
   })
   // Explicit user actions (optimistic edit, manual override) win outright; between the trackers
-  // take the max — an AniList entry at 0 must not `??`-shadow real MAL progress.
+  // take the max — an AniList entry at 0 must not `??`-shadow real external progress.
   const effProgress = $derived(listOpt.removed ? 0 : (
     listOpt.progress
     ?? $manualProgressOverrides[id]
-    ?? mergedProgress(rawEntry?.progress, malEntry?.progress)
+    ?? mergedProgress(rawEntry?.progress, externalEntry?.progress)
   ))
-  const effScore100 = $derived(listOpt.removed ? 0 : (listOpt.score ?? rawEntry?.score ?? (malEntry?.score ?? 0) * 10))
+  const effScore100 = $derived(listOpt.removed ? 0 : (listOpt.score ?? rawEntry?.score ?? externalEntry?.score ?? 0))
   const hasEntry = $derived(!!effStatus)
 
   const fmtDate = (d?: { year?: number; month?: number; day?: number } | null) =>
@@ -323,7 +327,7 @@
   <div class="p-8 pt-[max(2rem,env(safe-area-inset-top))] text-muted-foreground">Failed to load: {$store.error.message}</div>
 {:else if media}
   {@const m = media}
-  {@const trackerConnected = !!($anilistToken || $malToken)}
+  {@const trackerConnected = !!($anilistToken || $malToken || $kitsuToken || $simklToken)}
   {#if $isMobile}
     <div class="relative pb-8">
       <!-- Floating bar. Transparent over the artwork (with a scrim so the chevron survives light
