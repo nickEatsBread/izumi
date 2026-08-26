@@ -114,6 +114,7 @@ jobs:
     timeout-minutes: 40
     env:
       PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
+      PUBLIC_SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
     strategy:
       fail-fast: false
       matrix:
@@ -317,6 +318,7 @@ jobs:
       options: --privileged
     env:
       PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
+      PUBLIC_SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v7
 
@@ -507,6 +509,7 @@ jobs:
       NDK_VERSION: "29.0.14206865"
       BUILD_TOOLS: "36.0.0"
       PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
+      PUBLIC_SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v7
 
