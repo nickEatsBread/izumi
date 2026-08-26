@@ -5,6 +5,8 @@ import {
   seadexAnnotations,
   androidAutoPip,
   subtitleStyleEnabled,
+  subtitleOverrideScope,
+  subtitleBold,
   secondarySubtitles,
   subtitleLineNavigation,
   subtitleStripSdh,
@@ -49,6 +51,8 @@ describe('episode list defaults', () => {
 describe('subtitle appearance defaults', () => {
   it('leaves embedded subtitle styling untouched', () => {
     expect(get(subtitleStyleEnabled)).toBe(false)
+    expect(get(subtitleOverrideScope)).toBe('dialogue')
+    expect(get(subtitleBold)).toBe(false)
   })
   it('keeps language-learning and cleanup filters opt-in', () => {
     expect(get(secondarySubtitles)).toBe(false)

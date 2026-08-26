@@ -33,6 +33,7 @@ describe('parseAssStyles', () => {
     expect(def.fontsize).toBe(78)
     expect(def.primaryColour).toBe('&H00FFFFFF')
     expect(def.outlineColour).toBe('&H00201213')
+    expect(def.bold).toBe(false)
     expect(def.outline).toBe(3.9)
     expect(def.shadow).toBe(0)
     expect(def.alignment).toBe(2)
@@ -71,6 +72,8 @@ describe('toSubtitleStyle', () => {
   it('maps font name and scales sizes from PlayResY to mpv 720-line space', () => {
     const style = toSubtitleStyle(def, 1080)
     expect(style.font).toBe('Roboto Medium')
+    expect(style.scope).toBe('dialogue')
+    expect(style.bold).toBe(false)
     expect(style.fontSize).toBe(52) // 78 * 720/1080
     expect(style.borderSize).toBe(2.6) // 3.9 * 720/1080, rounded to slider step
     expect(style.shadow).toBe(0)

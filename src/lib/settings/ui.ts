@@ -62,7 +62,11 @@ export const preferredSubLang = persisted<SubLang>('preferred-sub-lang', 'eng')
 // --- Subtitle presentation + synchronization ---
 /** Apply Izumi's subtitle appearance instead of leaving styling entirely to the subtitle file. */
 export const subtitleStyleEnabled = persisted<boolean>('subtitle-style-enabled', false)
+/** Keep ASS signs/typesetting intact where possible, or deliberately restyle every subtitle element. */
+export type SubtitleOverrideScope = 'dialogue' | 'all'
+export const subtitleOverrideScope = persisted<SubtitleOverrideScope>('subtitle-override-scope', 'dialogue')
 export const subtitleFont = persisted<string>('subtitle-font', 'Nunito')
+export const subtitleBold = persisted<boolean>('subtitle-bold', false)
 export const subtitleFontSize = persisted<number>('subtitle-font-size', 42)
 export const subtitleTextColor = persisted<string>('subtitle-text-color', '#ffffff')
 export const subtitleBorderColor = persisted<string>('subtitle-border-color', '#000000')

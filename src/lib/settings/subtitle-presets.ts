@@ -2,7 +2,7 @@ import { persisted } from 'svelte-persisted-store'
 import { writable, get } from 'svelte/store'
 import type { SubtitleStyle } from '$lib/player/subtitle-style'
 import {
-  subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
+  subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
   subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
 } from './ui'
 
@@ -62,7 +62,9 @@ export function deleteSubtitlePreset(id: string): void {
 /** Make a preset the client-wide style: write the persisted stores the existing custom-style
  *  feature reads and switch the override on. From here the settings sliders edit it as usual. */
 export function applyPresetGlobally(preset: SubtitleStylePreset): void {
+  subtitleOverrideScope.set(preset.style.scope ?? 'dialogue')
   subtitleFont.set(preset.style.font)
+  subtitleBold.set(preset.style.bold ?? false)
   subtitleFontSize.set(preset.style.fontSize)
   subtitleTextColor.set(preset.style.textColor)
   subtitleBorderColor.set(preset.style.borderColor)
@@ -75,5 +77,11 @@ export function applyPresetGlobally(preset: SubtitleStylePreset): void {
 /** What the player should push to mpv: the session preset (override implicitly on) when one is
  *  picked, otherwise the user's settings exactly as they are. */
 export function effectiveSubtitleStyle(session: SubtitleStylePreset | null, globals: SubtitleStyle): SubtitleStyle {
-  return session ? { enabled: true, ...session.style } : globals
+  return session ? {
+    ...globals,
+    ...session.style,
+    enabled: true,
+    scope: session.style.scope ?? globals.scope,
+    bold: session.style.bold ?? globals.bold,
+  } : globals
 }

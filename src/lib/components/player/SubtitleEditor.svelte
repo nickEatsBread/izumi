@@ -7,7 +7,7 @@
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
   import X from '@lucide/svelte/icons/x'
   import {
-    subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
+    subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
   } from '$lib/settings/ui'
   import { effectiveSubtitleStyle, sessionSubtitleStyle } from '$lib/settings/subtitle-presets'
@@ -31,7 +31,9 @@
 
   const initial = effectiveSubtitleStyle(get(sessionSubtitleStyle), {
     enabled: get(subtitleStyleEnabled),
+    scope: get(subtitleOverrideScope),
     font: get(subtitleFont),
+    bold: get(subtitleBold),
     fontSize: get(subtitleFontSize),
     textColor: get(subtitleTextColor),
     borderColor: get(subtitleBorderColor),
@@ -137,12 +139,16 @@
     if (save) {
       const style: SubtitleStyle = {
         enabled: true,
+        scope: initial.scope,
         font: font.trim() || 'Nunito',
+        bold: initial.bold,
         fontSize: Math.round(fontSize),
         textColor, borderColor, borderSize, shadow,
         position: clampSubtitlePosition(position),
       }
       subtitleFont.set(style.font)
+      subtitleOverrideScope.set(style.scope)
+      subtitleBold.set(style.bold)
       subtitleFontSize.set(style.fontSize)
       subtitleTextColor.set(style.textColor)
       subtitleBorderColor.set(style.borderColor)

@@ -5,13 +5,13 @@ import {
   applyPresetGlobally, effectiveSubtitleStyle, subtitlePresetSourceName, type SubtitleStylePreset,
 } from './subtitle-presets'
 import {
-  subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
+  subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
   subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
 } from './ui'
 import type { SubtitleStyle } from '$lib/player/subtitle-style'
 
 const STYLE: Omit<SubtitleStyle, 'enabled'> = {
-  font: 'Roboto Medium', fontSize: 52, textColor: '#ffffff', borderColor: '#131220',
+  scope: 'dialogue', font: 'Roboto Medium', bold: true, fontSize: 52, textColor: '#ffffff', borderColor: '#131220',
   borderSize: 2.6, shadow: 0, position: 94,
 }
 
@@ -69,6 +69,8 @@ describe('applyPresetGlobally', () => {
     applyPresetGlobally(preset)
     expect(get(subtitleStyleEnabled)).toBe(true)
     expect(get(subtitleFont)).toBe('Roboto Medium')
+    expect(get(subtitleOverrideScope)).toBe('dialogue')
+    expect(get(subtitleBold)).toBe(true)
     expect(get(subtitleFontSize)).toBe(52)
     expect(get(subtitleTextColor)).toBe('#ffffff')
     expect(get(subtitleBorderColor)).toBe('#131220')
@@ -80,7 +82,7 @@ describe('applyPresetGlobally', () => {
 
 describe('effectiveSubtitleStyle', () => {
   const globals: SubtitleStyle = {
-    enabled: false, font: 'Nunito', fontSize: 42, textColor: '#ffffff',
+    enabled: false, scope: 'all', font: 'Nunito', bold: false, fontSize: 42, textColor: '#ffffff',
     borderColor: '#000000', borderSize: 3, shadow: 1, position: 92,
   }
 
@@ -94,5 +96,17 @@ describe('effectiveSubtitleStyle', () => {
     expect(style.enabled).toBe(true)
     expect(style.font).toBe('Roboto Medium')
     expect(style.position).toBe(94)
+    expect(style.scope).toBe('dialogue')
+    expect(style.bold).toBe(true)
+  })
+
+  it('fills fields missing from an older saved preset from the current global style', () => {
+    const oldStyle = { ...STYLE } as Partial<typeof STYLE>
+    delete oldStyle.scope
+    delete oldStyle.bold
+    const preset = { id: 'old', name: 'Older preset', style: oldStyle as typeof STYLE, savedAt: 1 }
+    const style = effectiveSubtitleStyle(preset, globals)
+    expect(style.scope).toBe('all')
+    expect(style.bold).toBe(false)
   })
 })

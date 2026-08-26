@@ -11,6 +11,7 @@ export interface AssStyle {
   /** Raw ASS colour, e.g. `&H00FFFFFF` (AABBGGRR — alpha first, then BLUE-GREEN-RED). */
   primaryColour: string
   outlineColour: string
+  bold: boolean
   outline: number
   shadow: number
   alignment: number
@@ -56,6 +57,7 @@ export function parseAssStyles(extradata: string): { playResY: number; styles: A
       primaryColour: field('primarycolour') ?? '',
       // SSA (V4) has no OutlineColour; its TertiaryColour is the outline.
       outlineColour: field('outlinecolour') ?? field('tertiarycolour') ?? '',
+      bold: num(field('bold')) !== 0,
       outline: num(field('outline')),
       shadow: num(field('shadow')),
       alignment: num(field('alignment')),
@@ -92,7 +94,9 @@ export function toSubtitleStyle(style: AssStyle, playResY: number): Omit<Subtitl
   // bottom edge", which is what mpv's sub-pos (0 top … 100 bottom) can express.
   const bottom = style.alignment >= 1 && style.alignment <= 3
   return {
+    scope: 'dialogue',
     font: style.fontname.trim(),
+    bold: style.bold,
     fontSize: clamp(Math.round(style.fontsize * scale), 20, 80),
     textColor: assColorToHex(style.primaryColour) ?? '#ffffff',
     borderColor: assColorToHex(style.outlineColour) ?? '#000000',
