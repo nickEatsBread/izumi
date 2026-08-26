@@ -22,16 +22,18 @@
   async function dismiss(item: (typeof items)[number]) {
     const idx = items.findIndex((entry) => entry.media.id === item.media.id)
     const next = items[idx + 1] ?? items[idx - 1]
+    // Hover and keyboard/controller focus both set activeId. Only move focus when the dismissed
+    // card actually held it; focusing after a mouse-hover D shortcut makes Chromium draw a stray
+    // focus-visible outline around the replacement card.
+    const restoreFocus = document.activeElement?.closest(`[data-cw-id="${item.media.id}"]`) != null
     h.warn()
     dismissContinueWatching(item.media, item.progress)
+    activeId = null
+    if (!restoreFocus || !next) return
     await tick()
-    if (next) {
-      activeId = next.media.id
-      const el = document.querySelector(`[data-cw-id="${next.media.id}"] [data-focusable]`) as HTMLElement | null
-      el?.focus()
-    } else {
-      activeId = null
-    }
+    activeId = next.media.id
+    const el = document.querySelector(`[data-cw-id="${next.media.id}"] [data-focusable]`) as HTMLElement | null
+    el?.focus({ preventScroll: true })
   }
   function onKey(e: KeyboardEvent) {
     if ((e.key !== 'd' && e.key !== 'D') || e.ctrlKey || e.metaKey || e.altKey) return

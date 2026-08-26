@@ -73,7 +73,9 @@ describe('Continue Watching dismissal input wiring', () => {
 
     expect(row).toContain('use:longPressDismiss')
     expect(row).toContain('data-cw-id')
-    expect(row).toContain('el?.focus()')
+    expect(row).toContain('const restoreFocus = document.activeElement?.closest')
+    expect(row).toContain('if (!restoreFocus || !next) return')
+    expect(row).toContain('el?.focus({ preventScroll: true })')
     expect(row).not.toContain('title="Remove from Continue Watching"')
     expect(nav).toContain("case 'x': keydown('d')")
     expect(nativePad).toContain('Button::West => "x"')
