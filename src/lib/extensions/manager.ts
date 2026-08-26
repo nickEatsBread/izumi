@@ -7,7 +7,7 @@ import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, isLe
 import type { ExtensionCatalogPackage } from './catalog'
 import { extensionSourceConfigured, liveJvmSources } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
-import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
+import { dedupeJvmSources, isJvmHostedVideoUrl, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
 import { trackFetch, fetchEpoch } from './fetch-registry'
 import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
 import { afterExtensionReady, settleExtensionMethods } from './method-stream'
@@ -688,6 +688,10 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
           })
         return {
           url,
+          // The upstream Aniyomi HttpServer binds all interfaces but reports localhost. Watch
+          // Together may advertise this specific server over the host LAN; do not infer the same
+          // thing later for Izumi's own loopback-only media proxies.
+          localServer: isJvmHostedVideoUrl(url),
           type: mediaType(url, `${String(video.quality ?? '')} ${String(video.title ?? '')}`),
           quality: String(video.quality ?? identity.quality ?? video.title ?? 'auto'),
           server: identity.server,
@@ -746,6 +750,51 @@ export async function jvmExtensionIcons(): Promise<Map<string, string>> {
 
 export async function ensureExtensionService(id: string): Promise<string> {
   return invoke<string>('extension_service_ensure', { id })
+}
+
+export type ServiceSettingValue = string | number | boolean | null
+export interface ServiceSettingOption { value: string; label: string }
+export interface ServiceSettingField {
+  key: string
+  label: string
+  description?: string
+  type: 'text' | 'password' | 'number' | 'boolean' | 'select'
+  required?: boolean
+  placeholder?: string
+  min?: number
+  max?: number
+  step?: number
+  options?: ServiceSettingOption[]
+}
+export interface ServiceSettingsDocument {
+  version: 1
+  title?: string
+  description?: string
+  fields: ServiceSettingField[]
+  values: Record<string, ServiceSettingValue>
+}
+export interface ServiceSettingsSaveResult {
+  ok?: boolean
+  message?: string
+  restartRequired?: boolean
+  version?: 1
+  fields?: ServiceSettingField[]
+  values?: Record<string, ServiceSettingValue>
+}
+
+export async function extensionServiceSettings(id: string): Promise<ServiceSettingsDocument> {
+  const value = await invoke<ServiceSettingsDocument>('extension_service_settings', { id })
+  if (value?.version !== 1 || !Array.isArray(value.fields) || !value.values || typeof value.values !== 'object') {
+    throw new Error('This local service returned an unsupported settings schema.')
+  }
+  return value
+}
+
+export function saveExtensionServiceSettings(
+  id: string,
+  values: Record<string, ServiceSettingValue>,
+): Promise<ServiceSettingsSaveResult> {
+  return invoke<ServiceSettingsSaveResult>('extension_service_settings_save', { id, values })
 }
 
 /** Icons for installed packages: Aniyomi launcher artwork plus the live manifest icon of a

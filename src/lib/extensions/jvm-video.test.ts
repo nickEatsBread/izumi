@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { dedupeJvmSources, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
+import { dedupeJvmSources, isJvmHostedVideoUrl, normalizeJvmSidecarUrl, parseJvmVideoTitle } from './jvm-video'
 
 describe('JVM video metadata', () => {
+  it('marks only JVM localhost servers as host-shareable', () => {
+    expect(isJvmHostedVideoUrl('http://localhost:43123/video')).toBe(true)
+    expect(isJvmHostedVideoUrl('http://127.0.0.1:43123/video')).toBe(true)
+    expect(isJvmHostedVideoUrl('https://cdn.example/video')).toBe(false)
+    expect(isJvmHostedVideoUrl('file:///tmp/video')).toBe(false)
+  })
+
   it('splits Aniyomi server, audio flavour, subtitle mode, and quality', () => {
     expect(parseJvmVideoTitle('HD-1 - Sub - 1080p')).toEqual({
       server: 'HD-1',

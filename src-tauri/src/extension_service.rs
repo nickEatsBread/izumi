@@ -3,7 +3,9 @@
 //! The host knows nothing about individual providers. A service receives an assigned loopback
 //! port and private data directory, then exposes the ordinary Izumi extension manifest at
 //! `/index.json`. From that point on it travels through the same manifest, worker, provider and
-//! picker pipeline as every remote extension.
+//! picker pipeline as every remote extension. A service may also expose `GET/POST
+//! /__izumi/settings`; Tauri proxies that typed schema into Izumi's native settings dialog so the
+//! loopback origin is never user-facing.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -32,6 +34,13 @@ fn allocate_port() -> Result<u16, String> {
 
 fn manifest_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}/index.json")
+}
+
+fn service_endpoint(manifest: &str, path: &str) -> Result<String, String> {
+    let base = manifest
+        .strip_suffix("/index.json")
+        .ok_or("Extension service returned an invalid manifest URL")?;
+    Ok(format!("{base}{path}"))
 }
 
 async fn healthy(port: u16) -> bool {
@@ -160,6 +169,76 @@ pub async fn extension_service_ensure(
     ))
 }
 
+const MAX_SETTINGS_BYTES: usize = 1024 * 1024;
+
+async fn settings_request(
+    manifest: &str,
+    values: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let url = service_endpoint(manifest, "/__izumi/settings")?;
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let request = if let Some(values) = values {
+        client
+            .post(&url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(serde_json::json!({ "values": values }).to_string())
+    } else {
+        client.get(&url)
+    };
+    let response = request.send().await.map_err(|e| e.to_string())?;
+    let status = response.status();
+    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+    if bytes.len() > MAX_SETTINGS_BYTES {
+        return Err("Extension settings response is too large".into());
+    }
+    if !status.is_success() {
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err("This local service does not support Izumi-native settings yet.".into());
+        }
+        let detail = String::from_utf8_lossy(&bytes);
+        let detail = detail.trim();
+        return Err(if detail.is_empty() {
+            format!("Extension settings request failed ({status})")
+        } else {
+            format!("Extension settings request failed ({status}): {detail}")
+        });
+    }
+    serde_json::from_slice(&bytes)
+        .map_err(|_| "Extension settings response is not valid JSON".into())
+}
+
+/// Read a service's versioned settings schema and current values through native IPC. The private
+/// ephemeral loopback address is not returned by this command and never appears in the settings UI.
+#[tauri::command]
+pub async fn extension_service_settings(
+    app: AppHandle,
+    id: String,
+    services: tauri::State<'_, ExtensionServices>,
+) -> Result<serde_json::Value, String> {
+    let manifest = extension_service_ensure(app, id, services).await?;
+    settings_request(&manifest, None).await
+}
+
+/// Persist values using the same private protocol. Services may return a refreshed schema or a
+/// compact `{ ok, message, restartRequired }` result; the native dialog understands both.
+#[tauri::command]
+pub async fn extension_service_settings_save(
+    app: AppHandle,
+    id: String,
+    values: serde_json::Value,
+    services: tauri::State<'_, ExtensionServices>,
+) -> Result<serde_json::Value, String> {
+    if !values.is_object() {
+        return Err("Extension settings values must be an object".into());
+    }
+    let manifest = extension_service_ensure(app, id, services).await?;
+    settings_request(&manifest, Some(values)).await
+}
+
 fn request_shutdown(port: u16) {
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(200)) else {
@@ -217,6 +296,17 @@ mod tests {
     #[test]
     fn manifest_is_always_loopback() {
         assert_eq!(manifest_url(43210), "http://127.0.0.1:43210/index.json");
+    }
+
+    #[test]
+    fn settings_endpoint_stays_on_the_service_origin() {
+        assert_eq!(
+            service_endpoint(&manifest_url(43210), "/__izumi/settings").unwrap(),
+            "http://127.0.0.1:43210/__izumi/settings"
+        );
+        assert!(
+            service_endpoint("https://example.test/not-a-manifest", "/__izumi/settings").is_err()
+        );
     }
 
     #[test]

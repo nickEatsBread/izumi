@@ -2,7 +2,6 @@
   import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
   import {
     fetchExtensionInfo,
-    ensureExtensionService,
     installCatalogPackage,
     installedExtensionPackages,
     installedPackageIcons,
@@ -12,7 +11,6 @@
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { sourceLabel, extensionBackendLabel } from '$lib/extensions/catalog'
-  import { openUrl } from '@tauri-apps/plugin-opener'
   import { langName } from '$lib/player/track-label'
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
@@ -23,6 +21,7 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import SourcePlaceholder from '$lib/components/SourcePlaceholder.svelte'
+  import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
 
   const current = $derived(providerMeta($debridProvider))
   let account = $state<DebridAccountInfo | null>(null)
@@ -47,6 +46,7 @@
   // instead of a page-level banner far from the row that was clicked.
   let packageStatus = $state<{ url: string; text: string; ok: boolean } | null>(null)
   let packageBusy = $state(false)
+  let serviceSettings = $state<{ id: string; name: string } | null>(null)
   const installedById = $derived(new Map(localPackages.map((extension) => [extension.id, extension])))
   // Real launcher icons for INSTALLED Aniyomi extensions, keyed by Android package name — which is
   // the same string a catalog entry uses as its id. The catalog itself ships no icons, so anything
@@ -87,13 +87,8 @@
       packageBusy = false
     }
   }
-  async function openServiceSettings(id: string) {
-    try {
-      const manifestUrl = await ensureExtensionService(id)
-      await openUrl(new URL(manifestUrl).origin + '/')
-    } catch (error) {
-      packageStatus = { url: id, text: String(error), ok: false }
-    }
+  function openServiceSettings(id: string, name: string) {
+    serviceSettings = { id, name }
   }
   $effect(() => { void refreshPackages() })
 
@@ -327,8 +322,8 @@
             </div>
             <div class="flex items-center justify-end gap-2">
               {#if p.backend === 'izumi-service'}
-                <button data-focusable onclick={() => openServiceSettings(p.id)}
-                  class="rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Configure</button>
+                <button data-focusable onclick={() => openServiceSettings(p.id, p.name)}
+                  class="rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Settings</button>
               {/if}
               <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
                 class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
@@ -584,3 +579,11 @@
     </ul>
   </div>
 </div>
+
+{#if serviceSettings}
+  <ExtensionServiceSettings
+    id={serviceSettings.id}
+    name={serviceSettings.name}
+    onclose={() => (serviceSettings = null)}
+  />
+{/if}

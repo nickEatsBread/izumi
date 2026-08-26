@@ -9,6 +9,7 @@
   import { resolveAddonLogo } from '$lib/stremio/addon-logo'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
+  import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
   import {
     OFFICIAL_ANIME_CATALOG,
     fetchExtensionInfo,
@@ -56,6 +57,7 @@
     configureUrl: string
     currentBase?: string
   } | null>(null)
+  let serviceSettings = $state<{ id: string; name: string } | null>(null)
 
   const configuredBases = $derived(new Set($addonUrls.map(normalizeBase)))
   const packageById = $derived(new Map(installedPackages.map((item) => [item.id, item])))
@@ -241,11 +243,11 @@
 
   <div class="mb-5 flex flex-wrap gap-2">
     <button data-focusable onclick={() => (tab = 'addons')}
-            class="rounded-lg px-4 py-2 text-sm font-black {tab === 'addons' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Stremio addons</button>
+            class="rounded-lg px-4 py-2.5 text-sm font-black sm:py-2 {tab === 'addons' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Stremio addons</button>
     <button data-focusable onclick={() => (tab = 'extensions')}
-            class="rounded-lg px-4 py-2 text-sm font-black {tab === 'extensions' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Anime packages</button>
+            class="rounded-lg px-4 py-2.5 text-sm font-black sm:py-2 {tab === 'extensions' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">Anime packages</button>
     <button data-focusable onclick={() => (tab = 'installed')}
-            class="rounded-lg px-4 py-2 text-sm font-black {tab === 'installed' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">
+            class="rounded-lg px-4 py-2.5 text-sm font-black sm:py-2 {tab === 'installed' ? 'bg-primary text-primary-foreground' : 'bg-secondary'}">
       Installed · {$addonUrls.length + installedPackages.length}
     </button>
   </div>
@@ -258,11 +260,11 @@
       <label class="relative min-w-60 flex-1">
         <Search size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input bind:value={query} data-focusable placeholder={tab === 'addons' ? 'Search community addons…' : 'Search anime packages…'}
-               class="w-full rounded-lg bg-input py-2.5 pl-9 pr-3 text-sm" />
+               class="w-full rounded-lg bg-input py-2.5 pl-9 pr-3 text-base sm:text-sm" />
       </label>
       {#if tab === 'addons'}
         <button data-focusable onclick={() => (sort = sort === 'stars' ? 'new' : 'stars')}
-                class="rounded-lg bg-secondary px-4 py-2 text-sm font-bold">
+                class="rounded-lg bg-secondary px-4 py-2.5 text-sm font-bold sm:py-2">
           {sort === 'stars' ? 'Top rated' : 'Recently added'}
         </button>
       {/if}
@@ -298,14 +300,14 @@
               <div class="mt-3 flex flex-wrap gap-2">
                 {#if installed}
                   <button data-focusable onclick={() => toggleAddon(installedBase)}
-                          class="rounded-md px-3 py-1.5 text-xs font-black {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
-                  <button data-focusable onclick={() => removeAddon(installedBase)} class="rounded-md px-3 py-1.5 text-xs font-bold text-destructive">Remove</button>
+                          class="rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
+                  <button data-focusable onclick={() => removeAddon(installedBase)} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 sm:py-1.5 sm:text-xs">Remove</button>
                 {:else if !addon.configureUrl}
-                  <button data-focusable onclick={() => addAddon(addon)} class="rounded-md bg-primary px-3 py-1.5 text-xs font-black text-primary-foreground">Install</button>
+                  <button data-focusable onclick={() => addAddon(addon)} class="rounded-md bg-primary px-3 py-2 text-sm font-black text-primary-foreground sm:py-1.5 sm:text-xs">Install</button>
                 {/if}
                 {#if addon.configureUrl}
                   <button data-focusable onclick={() => configureAddon(addon, installedBase || undefined)}
-                          class="flex items-center gap-1 rounded-md {installed ? 'bg-secondary' : 'bg-primary text-primary-foreground'} px-3 py-1.5 text-xs font-bold">
+                          class="flex items-center gap-1 rounded-md {installed ? 'bg-secondary' : 'bg-primary text-primary-foreground'} px-3 py-2 text-sm font-bold sm:py-1.5 sm:text-xs">
                     {installed ? 'Reconfigure' : 'Configure & install'}
                   </button>
                 {/if}
@@ -339,12 +341,16 @@
           <div class="mt-3 flex gap-2">
             {#if installed}
               <button data-focusable onclick={() => toggleExtension(item.id)}
-                      class="rounded-md px-3 py-1.5 text-xs font-black {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
+                      class="rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
+              {#if installed.backend === 'izumi-service'}
+                <button data-focusable onclick={() => (serviceSettings = { id: installed.id, name: installed.name })}
+                        class="rounded-md bg-secondary px-3 py-2 text-sm font-bold sm:py-1.5 sm:text-xs">Settings</button>
+              {/if}
               <button data-focusable disabled={busyId === item.id} onclick={() => removeExtension(item.id)}
-                      class="rounded-md px-3 py-1.5 text-xs font-bold text-destructive">Remove</button>
+                      class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 sm:py-1.5 sm:text-xs">Remove</button>
             {:else}
               <button data-focusable disabled={!!busyId} onclick={() => installExtension(item)}
-                      class="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs font-black text-primary-foreground disabled:opacity-40">
+                      class="flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm font-black text-primary-foreground sm:py-1.5 sm:text-xs disabled:opacity-40">
                 {#if busyId === item.id}<RefreshCw size={12} class="animate-spin" />{/if} Install
               </button>
             {/if}
@@ -357,12 +363,12 @@
       <section>
         <div class="mb-2 flex items-center justify-between">
           <h3 class="font-black">Stremio addons</h3>
-          <a href="/app/settings/sources" class="text-xs font-bold text-theme">Advanced settings →</a>
+          <a href="/app/settings/sources" class="rounded-md px-2 py-1.5 text-xs font-bold text-theme active:bg-secondary sm:py-1">Advanced settings →</a>
         </div>
         <div class="space-y-2">
           {#each $addonUrls as base (base)}
             {@const off = $disabledSources.includes(base)}
-            <div class="flex items-center gap-3 rounded-lg border border-border p-3" class:opacity-60={off}>
+            <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-60={off}>
               {#await fetchManifest(base)}
                 <span class="skeloader size-9 rounded"></span><span class="flex-1 text-sm text-muted-foreground">Loading manifest…</span>
               {:then manifest}
@@ -372,19 +378,19 @@
                   id={manifest?.id ?? base}
                   size={36}
                 />
-                <span class="min-w-0 flex-1"><span class="block truncate text-sm font-black">{manifest?.name ?? addonLocation(base)}</span><span class="block truncate text-xs text-muted-foreground">{addonLocation(base)}</span></span>
+                <span class="min-w-0 flex-1 basis-40"><span class="block truncate text-sm font-black">{manifest?.name ?? addonLocation(base)}</span><span class="block truncate text-xs text-muted-foreground">{addonLocation(base)}</span></span>
                 {#if manifest}
                   {#await findAddonConfigureUrl(base, manifest, addons) then configureUrl}
                     {#if configureUrl}
                       <button data-focusable onclick={() => beginAddonConfiguration(manifest.name, manifest.id, configureUrl, base)}
-                              class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold">Configure</button>
+                              class="rounded-md bg-secondary px-3 py-2 text-sm font-bold sm:py-1.5 sm:text-xs">Configure</button>
                     {/if}
                   {/await}
                 {/if}
               {/await}
               <button data-focusable onclick={() => toggleAddon(base)}
-                      class="rounded-md px-3 py-1.5 text-xs font-black {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Disabled' : 'Enabled'}</button>
-              <button data-focusable onclick={() => removeAddon(base)} class="text-xs font-bold text-destructive">Remove</button>
+                      class="rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Disabled' : 'Enabled'}</button>
+              <button data-focusable onclick={() => removeAddon(base)} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 sm:px-1 sm:py-1 sm:text-xs">Remove</button>
             </div>
           {/each}
           {#if !$addonUrls.length}<p class="text-sm text-muted-foreground">No Stremio addons installed.</p>{/if}
@@ -393,19 +399,23 @@
       <section>
         <div class="mb-2 flex items-center justify-between">
           <h3 class="font-black">Anime packages</h3>
-          <a href="/app/settings/extensions" class="text-xs font-bold text-theme">Advanced settings →</a>
+          <a href="/app/settings/extensions" class="rounded-md px-2 py-1.5 text-xs font-bold text-theme active:bg-secondary sm:py-1">Advanced settings →</a>
         </div>
         <div class="space-y-2">
           {#each installedPackages as item (item.id)}
             {@const off = $disabledPlugins.includes(item.id)}
-            <div class="flex items-center gap-3 rounded-lg border border-border p-3" class:opacity-60={off}>
+            <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-60={off}>
               <AddonLogo logo={packageIcon(item.id)} name={item.name} id={item.id} size={36} />
-              <span class="min-w-0 flex-1"><span class="block truncate text-sm font-black">{item.name}</span><span class="block text-xs text-muted-foreground">{extensionBackendLabel(item.backend)} · v{item.version}</span></span>
+              <span class="min-w-0 flex-1 basis-40"><span class="block truncate text-sm font-black">{item.name}</span><span class="block text-xs text-muted-foreground">{extensionBackendLabel(item.backend)} · v{item.version}</span></span>
+              {#if item.backend === 'izumi-service'}
+                <button data-focusable onclick={() => (serviceSettings = { id: item.id, name: item.name })}
+                        class="rounded-md bg-secondary px-3 py-2 text-sm font-bold sm:py-1.5 sm:text-xs">Settings</button>
+              {/if}
               <button data-focusable onclick={() => toggleExtension(item.id)}
-                      class="flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-black {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">
+                      class="flex items-center gap-1 rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">
                 {#if !off}<Check size={12} />{/if}{off ? 'Disabled' : 'Enabled'}
               </button>
-              <button data-focusable disabled={busyId === item.id} onclick={() => removeExtension(item.id)} class="text-xs font-bold text-destructive">Remove</button>
+              <button data-focusable disabled={busyId === item.id} onclick={() => removeExtension(item.id)} class="rounded-md px-3 py-2 text-sm font-bold text-destructive active:bg-destructive/10 sm:px-1 sm:py-1 sm:text-xs">Remove</button>
             </div>
           {/each}
           {#if !installedPackages.length}<p class="text-sm text-muted-foreground">No anime packages installed.</p>{/if}
@@ -422,5 +432,13 @@
     configureUrl={configuring.configureUrl}
     onCancel={() => (configuring = null)}
     onConfigured={saveConfiguredAddon}
+  />
+{/if}
+
+{#if serviceSettings}
+  <ExtensionServiceSettings
+    id={serviceSettings.id}
+    name={serviceSettings.name}
+    onclose={() => (serviceSettings = null)}
   />
 {/if}

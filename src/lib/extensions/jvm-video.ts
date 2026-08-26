@@ -8,6 +8,19 @@ export interface JvmVideoIdentity {
   subtitleMode?: JvmSubtitleMode
 }
 
+/** Aniyomi's HttpServer is wildcard-bound but advertises localhost. Mark only those local JVM
+ * URLs as host-shareable; Izumi's own loopback proxies deliberately remain device-private. */
+export function isJvmHostedVideoUrl(value: unknown): boolean {
+  try {
+    const url = new URL(String(value ?? ''))
+    const host = url.hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase()
+    return (url.protocol === 'http:' || url.protocol === 'https:')
+      && (host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host))
+  } catch {
+    return false
+  }
+}
+
 /** The desktop runtime can discover the same factory source through both its generated entry
  * point and its concrete class. Stable source IDs identify those duplicate registrations. */
 export function dedupeJvmSources<T extends { id: string }>(sources: T[]): T[] {
