@@ -9,7 +9,7 @@
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
   import { anilist } from '$lib/anilist/client'
   import { searchQuery, searchVariables } from '$lib/anilist/detail-queries'
-  import { cover, format, season, status, title } from '$lib/anilist/media'
+  import { cover, format, mediaHref, season, status, title } from '$lib/anilist/media'
   import type { Media } from '$lib/anilist/types'
   import * as h from '$lib/haptics'
   import { portal } from '$lib/util/portal'
@@ -26,6 +26,9 @@
   } from '$lib/search/global-search'
   import { incognito } from '$lib/stores/incognito'
   import { get } from 'svelte/store'
+  import { catalogLabel, enabledCatalogProviders } from '$lib/settings/catalog'
+  import { loadCatalogProvider } from '$lib/catalog/registry'
+  import { mediaKey } from '$lib/catalog/identity'
 
   type SearchState = 'idle' | 'typing' | 'loading' | 'done' | 'error'
   type SearchResponse = { Page?: { media?: Media[] } }
@@ -33,6 +36,10 @@
   const guard = createSearchRequestGuard()
   const cache = new Map<string, { expires: number; media: Media[] }>()
   const CACHE_MS = 2 * 60 * 1000
+  const selections = $derived($enabledCatalogProviders)
+  const providerLabel = $derived(selections.length > 1
+    ? `${selections.length} catalogs`
+    : selections[0] === 'auto' ? 'anime' : `${catalogLabel(selections[0])} catalogs`)
 
   let query = $state('')
   let results = $state<Media[]>([])
@@ -73,7 +80,7 @@
     h.tap()
     remember()
     await close()
-    await goto(`/app/anime/${media.id}`)
+    await goto(mediaHref(media))
   }
 
   async function advanced() {
@@ -109,6 +116,9 @@
       return
     }
     const clean = normalizeSearchQuery(query)
+    const activeSelections = selections
+    const searchSelections = activeSelections.filter((selection) =>
+      selection !== 'anilist' || !activeSelections.includes('auto'))
     const request = guard.begin()
     error = ''
 
@@ -118,7 +128,8 @@
       return
     }
 
-    const cached = cache.get(clean.toLocaleLowerCase())
+    const cacheKey = `${searchSelections.join(',')}:${clean.toLocaleLowerCase()}`
+    const cached = cache.get(cacheKey)
     if (cached && cached.expires > Date.now()) {
       results = cached.media
       searchState = 'done'
@@ -130,19 +141,39 @@
     const timer = setTimeout(async () => {
       if (!guard.isCurrent(request)) return
       searchState = 'loading'
-      const response = await anilist
-        .query<SearchResponse>(searchQuery(), { ...searchVariables({ search: clean }), perPage: 10 }, { requestPolicy: 'network-only' })
-        .toPromise()
-      if (!guard.isCurrent(request)) return
-      if (response.error) {
+      try {
+        const batches = await Promise.allSettled(searchSelections.map(async (selection): Promise<Media[]> => {
+          if (selection === 'auto' || selection === 'anilist') {
+            const response = await anilist
+              .query<SearchResponse>(searchQuery(), { ...searchVariables({ search: clean }), perPage: 10 }, { requestPolicy: 'network-only' })
+              .toPromise()
+            if (response.error) throw response.error
+            return response.data?.Page?.media ?? []
+          }
+          const provider = await loadCatalogProvider(selection)
+          return (await provider.search({
+            query: clean, page: 1, type: selection === 'kitsu' ? 'anime' : 'all', sort: 'popular',
+          })).media.slice(0, 10)
+        }))
+        const unique = new Map<string, Media>()
+        for (const batch of batches) {
+          if (batch.status !== 'fulfilled') continue
+          for (const item of batch.value) unique.set(mediaKey(item), item)
+        }
+        if (!batches.some((batch) => batch.status === 'fulfilled')) {
+          const failed = batches.find((batch): batch is PromiseRejectedResult => batch.status === 'rejected')
+          if (failed) throw failed.reason
+        }
+        if (!guard.isCurrent(request)) return
+        const media = rankQuickSearchResults([...unique.values()], clean).slice(0, 12)
+        cache.set(cacheKey, { expires: Date.now() + CACHE_MS, media })
+        results = media
+        searchState = 'done'
+      } catch (reason) {
+        if (!guard.isCurrent(request)) return
         searchState = 'error'
-        error = response.error.message
-        return
+        error = reason instanceof Error ? reason.message : String(reason)
       }
-      const media = rankQuickSearchResults(response.data?.Page?.media ?? [], clean)
-      cache.set(clean.toLocaleLowerCase(), { expires: Date.now() + CACHE_MS, media })
-      results = media
-      searchState = 'done'
     }, 180)
 
     return () => clearTimeout(timer)
@@ -182,12 +213,12 @@
 {#if $globalSearchOpen}
   <div use:portal data-nav-trap class="fixed inset-0 z-[70] isolate flex items-start justify-center px-3 pt-[max(3.5rem,env(safe-area-inset-top))] sm:px-6 sm:pt-[9vh]">
     <button type="button" class="absolute inset-0 bg-black/75 backdrop-blur-md" aria-label="Close search" onclick={() => close()}></button>
-    <div role="dialog" aria-modal="true" aria-label="Search anime"
+    <div role="dialog" aria-modal="true" aria-label="Search catalog"
       class="relative z-10 flex max-h-[min(86vh,52rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-card shadow-2xl">
       <div class="flex items-center gap-3 border-b border-border px-4 transition-colors focus-within:border-theme/70 sm:px-5">
         <Search size={23} class="shrink-0 text-theme" />
         <input bind:this={input} bind:value={query} data-focusable type="search"
-          placeholder="Search anime…" aria-label="Search anime" autocomplete="off" onkeydown={onInputKeydown}
+          placeholder="Search {providerLabel}…" aria-label="Search catalog" autocomplete="off" onkeydown={onInputKeydown}
           class="global-search-input min-w-0 flex-1 bg-transparent py-4 text-lg font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground sm:py-5 sm:text-xl" />
         {#if searchState === 'loading'}<LoaderCircle size={20} class="shrink-0 animate-spin text-muted-foreground" />{/if}
         <span class="hidden rounded-md border border-border bg-background/70 px-2 py-1 font-mono text-[0.65rem] font-bold text-muted-foreground sm:inline">Esc</span>
@@ -221,7 +252,7 @@
                 </div>
               {:else}
                 <p class="rounded-xl border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
-                  Start typing to search AniList. Your recent searches will appear here.
+                  Start typing to search {providerLabel}. Your recent searches will appear here.
                 </p>
               {/if}
             </div>
@@ -276,7 +307,7 @@
               <h2 class="px-1 text-xs font-black uppercase tracking-[0.18em] text-muted-foreground">More results</h2>
             {/if}
             <div class="grid gap-1 lg:grid-cols-2 lg:gap-x-4">
-              {#each results.slice(1) as media (media.id)}
+              {#each results.slice(1) as media (mediaKey(media))}
                 <button type="button" data-focusable onclick={() => choose(media)}
                   class="group flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-secondary">
                   {#if cover(media)}
@@ -295,7 +326,7 @@
           </div>
         {:else}
           <div class="rounded-xl border border-dashed border-border px-4 py-10 text-center">
-            <p class="font-black">No anime found for “{normalizeSearchQuery(query)}”</p>
+            <p class="font-black">No titles found for “{normalizeSearchQuery(query)}”</p>
             <p class="mt-1 text-sm text-muted-foreground">Try another title or use advanced filters.</p>
           </div>
         {/if}

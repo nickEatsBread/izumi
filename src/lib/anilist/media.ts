@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import { titleLanguage } from '$lib/settings/ui'
 import type { Media } from './types'
+import { catalogMediaHref } from '$lib/catalog/identity'
 
 // Title in the user's preferred language (Settings → Interface). Romaji-first or English-first,
 // each falling back to the other (then userPreferred) so a missing variant never shows 'TBA'.
@@ -64,7 +65,7 @@ export const isReadingMedia = (m: Media) =>
   m.type ? m.type === 'MANGA' : READING_FORMATS.has(m.format ?? '')
 
 /** Reading media deliberately uses a separate information-only route. */
-export const mediaHref = (m: Media) => isReadingMedia(m) ? `/app/manga/${m.id}` : `/app/anime/${m.id}`
+export const mediaHref = (m: Media) => m.catalog ? catalogMediaHref(m) : isReadingMedia(m) ? `/app/manga/${m.id}` : `/app/anime/${m.id}`
 
 const STATUS: Record<string, string> = { RELEASING: 'Releasing', NOT_YET_RELEASED: 'Not Yet Released', FINISHED: 'Finished', CANCELLED: 'Cancelled', HIATUS: 'Hiatus' }
 export const status = (m: Media) => (m.status ? STATUS[m.status] ?? m.status : '')

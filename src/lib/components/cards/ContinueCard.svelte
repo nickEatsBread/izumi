@@ -6,7 +6,7 @@
   // resume episode is right regardless of which tracker owns the show.
   import { onMount } from 'svelte'
   import { goto } from '$app/navigation'
-  import { title as mediaTitle, cardCover, resumeEp } from '$lib/anilist/media'
+  import { title as mediaTitle, cardCover, mediaHref, resumeEp } from '$lib/anilist/media'
   import { episodeSummary } from '$lib/anilist/episode-labels'
   import { getEpisodeMeta } from '$lib/anizip'
   import { positionPercent, positions, progressKey } from '$lib/player/progress'
@@ -19,6 +19,7 @@
   import { isAndroid } from '$lib/platform'
   import * as h from '$lib/haptics'
   import { rememberDetail } from '$lib/anilist/detail-hint'
+  import { anilistIdOf } from '$lib/catalog/identity'
 
   let { media, progress }: { media: Media; progress: number } = $props()
 
@@ -31,13 +32,16 @@
   // fallback uses cardCover() too.
   let meta = $state<Record<number, EpMeta>>({})
   onMount(() => {
+    const anilistId = anilistIdOf(media)
+    if (!anilistId) return
     let active = true
     const applyMeta = (value: Record<number, EpMeta>) => { if (active) meta = value }
-    getEpisodeMeta(media.id, undefined, applyMeta).then(applyMeta).catch(() => {})
+    getEpisodeMeta(anilistId, undefined, applyMeta).then(applyMeta).catch(() => {})
     return () => { active = false }
   })
-  const thumb = $derived(meta[ep]?.image || media.bannerImage || cardCover(media))
-  const epTitle = $derived(meta[ep]?.title)
+  const providerVideo = $derived(media.videos?.find((video) => video.number === ep))
+  const thumb = $derived(meta[ep]?.image || providerVideo?.thumbnail || media.bannerImage || cardCover(media))
+  const epTitle = $derived(meta[ep]?.title || providerVideo?.title)
   const episodeLabel = $derived(episodeSummary(ep, epTitle, $hideSpoilers))
 
   // Subscribe to the persisted position map so this bar updates on the existing throttled player
@@ -101,7 +105,7 @@
   </div>
 
   <div class="mt-1.5">
-    <a href={`/app/anime/${media.id}`} onclick={(e) => { e.stopPropagation(); rememberDetail(media); h.tap() }}
+    <a href={mediaHref(media)} onclick={(e) => { e.stopPropagation(); rememberDetail(media); h.tap() }}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
     <span class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
   </div>

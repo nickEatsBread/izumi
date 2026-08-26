@@ -1,0 +1,137 @@
+<script lang="ts">
+  import { goto } from '$app/navigation'
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left'
+  import Play from '@lucide/svelte/icons/play'
+  import ExternalLink from '@lucide/svelte/icons/external-link'
+  import { openUrl } from '@tauri-apps/plugin-opener'
+  import SmallCard from '$lib/components/cards/SmallCard.svelte'
+  import Carousel from '$lib/components/cards/Carousel.svelte'
+  import { loadCatalogProvider } from '$lib/catalog/registry'
+  import type { CatalogContentType, CatalogProviderId, MediaRef } from '$lib/catalog/identity'
+  import { providerExternalUrl } from '$lib/catalog/identity'
+  import { banner, cover, format, season, status, title } from '$lib/anilist/media'
+  import type { Media, MediaVideo } from '$lib/anilist/types'
+  import { playEpisode, type PlayState } from '$lib/stremio/play'
+
+  let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
+  const ref = $derived({ provider, type, id } as MediaRef)
+  let media = $state<Media | null>(null)
+  let loading = $state(true)
+  let error = $state('')
+  let playState = $state<PlayState>({ status: 'idle' })
+  let retry = $state(0)
+
+  $effect(() => {
+    const request = ref
+    void retry
+    if (request.provider === 'anilist') return
+    const abort = new AbortController()
+    loading = true
+    error = ''
+    media = null
+    void loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request, abort.signal)).then((result) => {
+      if (!abort.signal.aborted) media = result
+    }).catch((reason) => {
+      if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
+    }).finally(() => { if (!abort.signal.aborted) loading = false })
+    return () => abort.abort()
+  })
+
+  const videos = $derived.by((): MediaVideo[] => {
+    if (!media) return []
+    if (media.videos?.length) return media.videos
+    return Array.from({ length: media.episodes ?? 0 }, (_, index) => ({ number: index + 1, episode: index + 1 }))
+  })
+  const recommendations = $derived(media?.recommendations?.nodes.flatMap((node) => node.mediaRecommendation ? [node.mediaRecommendation] : []) ?? [])
+  const relations = $derived(media?.relations?.edges.map((edge) => edge.node) ?? [])
+  const cast = $derived(media?.characters?.edges ?? [])
+  const crew = $derived(media?.staff?.edges ?? [])
+  const externalUrl = $derived(media ? providerExternalUrl(media) : null)
+  const isMovie = $derived(media?.catalog?.type === 'movie' || media?.format === 'MOVIE')
+
+  function play(video?: MediaVideo) {
+    if (!media) return
+    const episode = isMovie ? undefined : video?.number ?? 1
+    void playEpisode(media, episode, (state) => (playState = state))
+  }
+</script>
+
+{#if loading}
+  <div class="min-h-screen">
+    <div class="h-[48vh] skeloader"></div>
+    <div class="space-y-4 p-5 sm:p-8"><div class="h-10 w-2/3 rounded skeloader"></div><div class="h-24 rounded skeloader"></div></div>
+  </div>
+{:else if error || !media}
+  <div class="grid min-h-[70vh] place-items-center p-6">
+    <div class="max-w-lg rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-center">
+      <h1 class="text-xl font-black">{error ? 'Couldn’t load this title' : 'Title not found'}</h1>
+      {#if error}<p class="mt-2 text-sm text-muted-foreground">{error}</p>{/if}
+      <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Retry</button>
+    </div>
+  </div>
+{:else}
+  <div class="pb-20">
+    <section class="relative min-h-[52vh] overflow-hidden">
+      <img src={banner(media)} alt="" class="absolute inset-0 h-full w-full object-cover" />
+      <div class="absolute inset-0 bg-gradient-to-r from-background via-background/75 to-background/15"></div>
+      <div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/35"></div>
+      <button data-focusable onclick={() => history.length > 1 ? history.back() : goto('/app/home')} aria-label="Back"
+        class="absolute left-4 top-10 z-10 grid size-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur sm:left-8"><ChevronLeft size={22} /></button>
+      <div class="relative flex min-h-[52vh] max-w-4xl items-end gap-5 px-5 pb-8 pt-24 sm:px-8">
+        <img src={cover(media)} alt="" class="hidden aspect-[2/3] w-40 rounded-lg bg-muted object-cover shadow-2xl sm:block" />
+        <div class="min-w-0">
+          <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">{provider === 'tmdb' ? 'TMDB' : provider === 'kitsu' ? 'Kitsu' : 'Stremio metadata'}</div>
+          <h1 class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
+          <div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm text-foreground/75">
+            {#if format(media)}<span>{format(media)}</span>{/if}
+            {#if season(media)}<span>{season(media)}</span>{/if}
+            {#if status(media)}<span>{status(media)}</span>{/if}
+            {#if media.startDate?.year}<span>{media.startDate.year}</span>{/if}
+            {#if media.averageScore}<span>{media.averageScore}%</span>{/if}
+          </div>
+          <p class="mt-4 line-clamp-5 max-w-3xl text-sm leading-relaxed text-foreground/80 sm:text-base">{(media.description ?? '').replace(/<[^>]+>/g, '')}</p>
+          <div class="mt-5 flex flex-wrap gap-2">
+            <button data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
+            {#if externalUrl}
+              <button data-focusable onclick={() => openUrl(externalUrl)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold"><ExternalLink size={17} /> Open provider</button>
+            {/if}
+          </div>
+          {#if playState.status === 'error'}<p class="mt-3 text-sm text-destructive">{playState.message}</p>{/if}
+        </div>
+      </div>
+    </section>
+
+    {#if media.genres?.length}<div class="flex flex-wrap gap-2 px-5 sm:px-8">{#each media.genres as genre}<span class="rounded-full bg-secondary px-3 py-1 text-xs font-bold">{genre}</span>{/each}</div>{/if}
+
+    {#if !isMovie && videos.length}
+      <section class="mt-8 px-5 sm:px-8">
+        <h2 class="mb-4 text-xl font-black">Episodes <span class="text-sm font-normal text-muted-foreground">{videos.length}</span></h2>
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {#each videos as video (video.id ?? video.number)}
+            <button data-focusable onclick={() => play(video)} class="group flex min-h-16 items-center gap-3 rounded-lg bg-secondary/60 p-2 text-left hover:bg-secondary">
+              {#if video.thumbnail}<img src={video.thumbnail} alt="" loading="lazy" class="aspect-video w-24 rounded-md bg-muted object-cover" />{/if}
+              <span class="min-w-0"><span class="block text-xs text-muted-foreground">{video.season != null && video.episode != null ? `S${video.season} E${video.episode}` : `Episode ${video.number}`}</span><span class="line-clamp-2 text-sm font-bold">{video.title || `Episode ${video.number}`}</span></span>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if relations.length}<div class="mt-8"><Carousel title="Related">{#each relations as item (item.catalog?.id ?? item.id)}<SmallCard media={item} />{/each}</Carousel></div>{/if}
+    {#if recommendations.length}<div class="mt-8"><Carousel title="Recommendations">{#each recommendations as item (item.catalog?.id ?? item.id)}<SmallCard media={item} />{/each}</Carousel></div>{/if}
+
+    {#if cast.length || crew.length}
+      <section class="mt-8 px-5 sm:px-8">
+        <h2 class="mb-4 text-xl font-black">Cast & crew</h2>
+        <div class="flex gap-3 overflow-x-auto pb-2">
+          {#each [...cast.slice(0, 14), ...crew.slice(0, 10)] as credit, index (`${credit.node.id}:${index}`)}
+            <div class="w-28 shrink-0">
+              {#if credit.node.image?.large}<img src={credit.node.image.large} alt="" loading="lazy" class="aspect-[2/3] w-full rounded-lg bg-muted object-cover" />{:else}<div class="grid aspect-[2/3] place-items-center rounded-lg bg-secondary text-3xl font-black text-muted-foreground">{credit.node.name.full?.[0] ?? '?'}</div>{/if}
+              <div class="mt-1 line-clamp-2 text-xs font-bold">{credit.node.name.full}</div><div class="truncate text-[0.65rem] text-muted-foreground">{credit.role}</div>
+            </div>
+          {/each}
+        </div>
+      </section>
+    {/if}
+  </div>
+{/if}

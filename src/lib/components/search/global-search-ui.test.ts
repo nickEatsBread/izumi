@@ -11,4 +11,17 @@ describe('global search focus styling', () => {
     expect(source).toContain('outline: none;')
     expect(source).toContain('focus-within:border-theme/70')
   })
+
+  it('uses the selected catalog adapter and provider-owned detail route', () => {
+    expect(source).toContain('loadCatalogProvider(selection)')
+    expect(source).toContain('await goto(mediaHref(media))')
+    expect(source).not.toContain('await goto(`/app/anime/${media.id}`)')
+  })
+
+  it('queries all enabled catalogs and merges namespaced results', () => {
+    expect(source).toContain('Promise.allSettled(searchSelections.map')
+    expect(source).toContain('const unique = new Map<string, Media>()')
+    expect(source).toContain('unique.set(mediaKey(item), item)')
+    expect(source).toContain("selection !== 'anilist' || !activeSelections.includes('auto')")
+  })
 })

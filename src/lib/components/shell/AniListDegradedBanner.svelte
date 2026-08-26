@@ -2,6 +2,7 @@
   import AlertTriangle from '@lucide/svelte/icons/triangle-alert'
   import X from '@lucide/svelte/icons/x'
   import { anilistDegraded } from '$lib/anilist/degraded'
+  import { catalogProvider, isLegacyAniListCatalog } from '$lib/settings/catalog'
   import { offlineMode } from '$lib/stores/offline'
   import { online } from '$lib/stores/online'
   import { incognito } from '$lib/stores/incognito'
@@ -14,7 +15,7 @@
 
 <svelte:window onkeydown={(event) => { if (detailsOpen && event.key === 'Escape') detailsOpen = false }} />
 
-{#if $anilistDegraded}
+{#if $anilistDegraded && isLegacyAniListCatalog($catalogProvider)}
   <div transition:slide={{ duration: 250 }} role="status" style:--banner-offset={offset}
        class="fixed left-0 right-0 top-[calc(env(safe-area-inset-top)+var(--banner-offset))] z-40 flex min-h-7 items-center justify-center gap-2 bg-amber-700 px-2 py-1 text-center text-xs font-semibold text-white shadow-md sm:left-14 sm:top-[calc(2rem+var(--banner-offset))]">
     <AlertTriangle size={14} class="shrink-0" />

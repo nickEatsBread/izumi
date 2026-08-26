@@ -14,6 +14,8 @@
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
+  import { catalogLabel, catalogProvider, enabledCatalogProviders, nextCatalogProvider } from '$lib/settings/catalog'
+  import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
   const items = [
@@ -26,6 +28,27 @@
   const name = $derived($anilistUserName || $malUserName || $anilistUser || $malUser)
   const avatarUrl = $derived($anilistUserAvatar || $malUserAvatar)
   const initial = $derived((name || '').trim().charAt(0).toUpperCase())
+  const nextCatalog = $derived(nextCatalogProvider($catalogProvider, $enabledCatalogProviders))
+  const canCycleCatalog = $derived($enabledCatalogProviders.length > 1)
+  const onHome = $derived(page.url.pathname.startsWith('/app/home'))
+  const catalogSwitchLabel = $derived(
+    canCycleCatalog
+      ? `Switch catalog from ${catalogLabel($catalogProvider)} to ${catalogLabel(nextCatalog)}`
+      : `Catalog: ${catalogLabel($catalogProvider)}`,
+  )
+  const logoActionLabel = $derived(onHome ? catalogSwitchLabel : m.nav_home())
+
+  function cycleCatalog() {
+    if (!canCycleCatalog) return
+    h.tap()
+    $catalogProvider = nextCatalog
+  }
+
+  function handleLogoClick(event: MouseEvent) {
+    if (!onHome) { h.tap(); return }
+    event.preventDefault()
+    cycleCatalog()
+  }
 
   // Expand the rail to a labelled menu while it holds focus, BUT only for keyboard/gamepad
   // navigation — never a mouse. On the Deck (gameMode) any focus expands it; on desktop only
@@ -73,8 +96,10 @@
 <nav data-nav-sidebar onfocusin={onFocusIn} onfocusout={onFocusOut}
      class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 overflow-hidden py-3 pt-9 transition-[width] duration-200 ease-out
        {open ? 'w-[200px]' : 'w-14'} {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing ? '' : 'drop-shadow-md'}">
-  <!-- Logo: NOT a d-pad/keyboard nav stop (it's just the brand); still mouse-clickable → Home. -->
-  <a href="/app/home" aria-label={m.nav_home()} tabindex={-1} class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3">
+  <!-- The brand mark is the catalog cycle control. It stays out of spatial/d-pad navigation so the
+       primary route rail remains predictable, but remains directly clickable with a pointer. -->
+  <a href="/app/home" onclick={handleLogoClick} aria-label={logoActionLabel} title={logoActionLabel} tabindex={-1}
+     class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3 text-left">
     <span class="grid w-8 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110"><Logo /></span>
     <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
   </a>

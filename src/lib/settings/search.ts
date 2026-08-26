@@ -38,6 +38,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Clear video cache', category: 'Player', href: '/app/settings/player', keywords: 'storage thumbnails', desktopOnly: true },
 
   { title: 'Use custom subtitle style', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'appearance font family size colour color border outline shadow position nunito', anchored: true },
+  { title: 'Subtitle dialogue style overrides', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'ASS signs songs karaoke typesetting preserve font readable dialogue only all elements', anchored: true },
   { title: 'OpenSubtitles', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'provider captions', anchored: true },
   { title: 'SubDL', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'provider captions api key', anchored: true },
   { title: 'OpenSubtitles account', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'login username password quota' },
@@ -45,6 +46,9 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'SubDL API key', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'token provider' },
   { title: 'Jimaku', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'provider captions api key japanese', anchored: true },
   { title: 'Jimaku API key', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'token provider japanese' },
+
+  { title: 'Default catalog platform', category: 'Catalog', href: '/app/settings/catalog', keywords: 'startup home provider anilist kitsu tmdb stremio automatic', anchored: true },
+  { title: 'Catalog platforms', category: 'Catalog', href: '/app/settings/catalog', keywords: 'enable provider logo cycle switch anilist kitsu tmdb stremio automatic' },
 
   { title: 'Auto-play the best source', category: 'Sources', href: '/app/settings/sources', keywords: 'automatic stream cached countdown timer instant', anchored: true },
   { title: 'Preferred quality', category: 'Sources', href: '/app/settings/sources', keywords: '4k 1080p 720p resolution' },
@@ -103,8 +107,12 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Settings and extensions sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'sources setup transfer' },
 
   { title: 'Move to Watching after 90 seconds', category: 'Accounts', href: '/app/settings/accounts', keywords: 'promote planning current tracker auto', anchored: true },
-  { title: 'AniList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'username login tracker connect' },
-  { title: 'MyAnimeList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'mal username login tracker connect' },
+  { title: 'AniList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'oauth login tracker connect', anchored: true },
+  { title: 'MyAnimeList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'mal oauth login tracker connect', anchored: true },
+  { title: 'Kitsu account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'username password login tracker connect', anchored: true },
+  { title: 'Simkl account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'device code browser login tracker connect', anchored: true },
+  { title: 'AniList public profile', category: 'Accounts', href: '/app/settings/accounts', keywords: 'username library read only no login', anchored: true },
+  { title: 'MyAnimeList public profile', category: 'Accounts', href: '/app/settings/accounts', keywords: 'mal username library read only no login', anchored: true },
 
   { title: 'Use DNS over HTTPS', category: 'Network', href: '/app/settings/network', keywords: 'doh privacy resolver', anchored: true },
   { title: 'DNS-over-HTTPS URL', category: 'Network', href: '/app/settings/network', keywords: 'endpoint cloudflare resolver' },

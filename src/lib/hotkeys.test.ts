@@ -23,4 +23,16 @@ describe('hotkeys', () => {
     expect(displayBinding('meta+k', true)).toBe('⌘ + K')
     expect(effectiveBinding('globalSearch', { globalSearch: 'ctrl+k' }, true)).toBe('ctrl+k')
   })
+
+  it('uses Control+Tab in both directions on Home for Windows and macOS', () => {
+    const next = { key: 'Tab', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false } as KeyboardEvent
+    const previous = { key: 'Tab', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false } as KeyboardEvent
+    const commandTab = { key: 'Tab', ctrlKey: false, shiftKey: false, altKey: false, metaKey: true } as KeyboardEvent
+
+    for (const macOS of [false, true]) {
+      expect(findHotkey(next, {}, 'Home', macOS)).toBe('homeNextCatalog')
+      expect(findHotkey(previous, {}, 'Home', macOS)).toBe('homePreviousCatalog')
+    }
+    expect(findHotkey(commandTab, {}, 'Home', true)).toBeNull()
+  })
 })

@@ -9,6 +9,20 @@ import { phttp } from '$lib/net/http'
 // carrying its own accepted types/id-prefixes.
 export type AddonResource = string | { name: string; types?: string[]; idPrefixes?: string[] }
 
+export interface AddonCatalogExtra {
+  name: string
+  isRequired?: boolean
+  options?: string[]
+  optionsLimit?: number
+}
+
+export interface AddonCatalog {
+  type: string
+  id: string
+  name: string
+  extra?: AddonCatalogExtra[]
+}
+
 export interface AddonManifest {
   id: string
   name: string
@@ -20,6 +34,7 @@ export interface AddonManifest {
   resources?: AddonResource[]
   idPrefixes?: string[]
   types?: string[]
+  catalogs?: AddonCatalog[]
   behaviorHints?: {
     configurable?: boolean
     configurationRequired?: boolean

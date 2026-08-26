@@ -18,8 +18,8 @@ describe('featured carousel UX', () => {
   })
 
   it('reveals explicit edge navigation and animates in the requested direction', () => {
-    expect(hero).toContain('aria-label="Previous featured anime"')
-    expect(hero).toContain('aria-label="Next featured anime"')
+    expect(hero).toContain('aria-label="Previous featured title"')
+    expect(hero).toContain('aria-label="Next featured title"')
     expect(hero).toContain('hero-slide-in')
     expect(hero).toContain('--hero-enter-x:{navDirection * 3}%')
   })

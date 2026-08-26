@@ -2,11 +2,12 @@ import { phttp } from '$lib/net/http'
 import { getIndex, lookupAnilistByKitsu } from '$lib/stremio/idmap'
 import type { Media } from './types'
 import type { JikanCatalogRequest } from './jikan'
+import { compatibilityMediaId } from '$lib/catalog/identity'
 
 const API = 'https://kitsu.io/api/edge'
 
 interface KitsuImage { tiny?: string; small?: string; medium?: string; large?: string; original?: string }
-interface KitsuAnime {
+export interface KitsuAnime {
   id?: string
   relationships?: {
     mappings?: { data?: { id?: string; type?: string }[] }
@@ -98,14 +99,18 @@ const STATUS: Record<string, string> = {
   unreleased: 'NOT_YET_RELEASED',
 }
 
-export function mapKitsuMedia(raw: KitsuAnime, anilistId: number): Media {
+export function mapKitsuMedia(raw: KitsuAnime, anilistId?: number): Media {
   const a = raw.attributes ?? {}
   const title = a.titles ?? {}
   const score = n(a.averageRating)
   const start = /^([0-9]{4})-([0-9]{2})-([0-9]{2})/.exec(a.startDate ?? '')
   const subtype = a.subtype ?? ''
+  const kitsuId = n(raw.id)
+  const ref = { provider: 'kitsu' as const, type: 'anime' as const, id: String(raw.id ?? '') }
   return {
-    __typename: 'Media', id: anilistId, idMal: null, type: 'ANIME',
+    __typename: 'Media', id: anilistId ?? compatibilityMediaId(ref), idMal: null, type: 'ANIME',
+    catalog: ref,
+    externalIds: { kitsu: kitsuId, anilist: anilistId },
     title: {
       __typename: 'MediaTitle',
       romaji: title.en_jp ?? a.canonicalTitle ?? null,
@@ -184,8 +189,8 @@ function animeUrl(request: JikanCatalogRequest): string {
   return url.toString()
 }
 
-async function json<T>(url: string): Promise<T> {
-  const response = await phttp(url, { timeoutMs: 15_000, maxBytes: 2 * 1024 * 1024 })
+export async function kitsuJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await phttp(url, { signal, timeoutMs: 15_000, maxBytes: 2 * 1024 * 1024 })
   if (!response.ok) throw new Error(`Kitsu returned HTTP ${response.status}`)
   return response.json() as Promise<T>
 }
@@ -207,7 +212,7 @@ export async function fetchKitsuScheduleIndex(
   }
   // Schedule is already in a degraded path. Keep every successful page if a later page is
   // throttled instead of turning useful partial metadata into a total failure.
-  const safePage = (url: string) => json<KitsuPage>(url).catch(() => null)
+  const safePage = (url: string) => kitsuJson<KitsuPage>(url).catch(() => null)
   if (includeSeason) {
     const seasonal = new URL(`${API}/anime`)
     seasonal.searchParams.set('filter[season]', season.toLowerCase())
@@ -264,11 +269,11 @@ export async function fetchKitsuScheduleIndex(
 
 export async function fetchKitsuCatalog(request: JikanCatalogRequest): Promise<Response> {
   if (request.operation === 'GenreCollection') {
-    const result = await json<{ data?: { attributes?: { title?: string } }[] }>(`${API}/categories?page%5Blimit%5D=100&sort=title`)
+    const result = await kitsuJson<{ data?: { attributes?: { title?: string } }[] }>(`${API}/categories?page%5Blimit%5D=100&sort=title`)
     const genres = (result.data ?? []).flatMap((item) => item.attributes?.title ? [item.attributes.title] : [])
     return Response.json({ data: { GenreCollection: genres } })
   }
-  const result = await json<KitsuPage>(animeUrl(request))
+  const result = await kitsuJson<KitsuPage>(animeUrl(request))
   const direct = directAniListIds(result)
   const needsFallback = (result.data ?? []).some((item) => {
     const kitsuId = n(item.id)
@@ -310,14 +315,14 @@ export async function fetchKitsuDetail(request: KitsuDetailRequest): Promise<Res
   mappingUrl.searchParams.set('filter[externalId]', String(request.variables.id))
   // Kitsu only materializes the polymorphic `item.data` relationship when it is included.
   mappingUrl.searchParams.set('include', 'item')
-  const mapping = await json<KitsuMappingPage>(mappingUrl.toString())
+  const mapping = await kitsuJson<KitsuMappingPage>(mappingUrl.toString())
   const kitsuId = mapping.data?.find((item) => item.relationships?.item?.data?.type === 'anime')
     ?.relationships?.item?.data?.id
   if (!kitsuId) return Response.json({ data: { Media: null } })
 
   const detailUrl = new URL(`${API}/anime/${encodeURIComponent(kitsuId)}`)
   detailUrl.searchParams.set('include', 'mappings,categories')
-  const detail = await json<KitsuDetailPage>(detailUrl.toString())
+  const detail = await kitsuJson<KitsuDetailPage>(detailUrl.toString())
   if (!detail.data) return Response.json({ data: { Media: null } })
 
   const included = detail.included ?? []

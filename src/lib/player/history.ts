@@ -56,6 +56,9 @@ export function mediaSnapshot(m: Media): Media {
   return {
     id: m.id,
     idMal: m.idMal,
+    type: m.type,
+    catalog: m.catalog,
+    externalIds: m.externalIds,
     title: m.title,
     // Auto-incognito keys off isAdult at play time; without it in the snapshot, resuming an adult
     // title from a Continue Watching card (snapshot media, not the detail query) would skip the gate.
@@ -77,6 +80,13 @@ export function mediaSnapshot(m: Media): Media {
     // hides and its resume badge reads one past the finale (e.g. "Ep 5" of a 4-ep title).
     // Tiny (≤100 {episode,airingAt} nodes, capped by the query).
     airingSchedule: m.airingSchedule,
+    // Provider-owned episode ids/season coordinates are required to ask a Stremio/TMDB stream
+    // add-on for the same item after a restart. Drop artwork/synopses to keep long series compact.
+    videos: m.videos?.map((video) => ({
+      id: video.id, number: video.number, season: video.season,
+      episode: video.episode, title: video.title,
+    })),
+    synonyms: m.synonyms,
   } as Media
 }
 

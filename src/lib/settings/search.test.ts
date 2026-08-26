@@ -33,6 +33,10 @@ describe('settings search', () => {
     expect(searchSettings('discord rpc')[0]?.title).toBe('Discord Rich Presence')
   })
 
+  it('finds dialogue-only subtitle styling from typesetting terminology', () => {
+    expect(searchSettings('preserve subtitle signs')[0]?.title).toBe('Subtitle dialogue style overrides')
+  })
+
   it('finds the Game-mode player animation toggle by progress and motion terms', () => {
     expect(searchSettings('animate player progress')[0]?.title).toBe('Animate player progress controls')
     expect(searchSettings('vacuumtube')[0]?.title).toBe('Animate player progress controls')

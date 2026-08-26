@@ -35,6 +35,7 @@
   import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
+  import { catalogDefaultProvider, catalogProvider, enabledCatalogProviders } from '$lib/settings/catalog'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
@@ -82,6 +83,18 @@
   $effect(() => {
     if ($globalSearchOpen) globalSearchMounted = true
     if ($trailerPopup) trailerDialogMounted = true
+  })
+
+  // Catalog navigation is logo-driven, so there is no longer a tab component around to repair an
+  // unavailable active value. Keep both the session selection and persisted default inside the
+  // enabled set here in the always-mounted shell.
+  $effect(() => {
+    const enabled = $enabledCatalogProviders
+    if (!enabled.length) return
+    if (!enabled.includes($catalogDefaultProvider)) $catalogDefaultProvider = enabled[0]
+    if (!enabled.includes($catalogProvider)) {
+      $catalogProvider = enabled.includes($catalogDefaultProvider) ? $catalogDefaultProvider : enabled[0]
+    }
   })
 
   function handleShellKeydown(event: KeyboardEvent) {
@@ -144,7 +157,7 @@
     attachDownloadEvents() // wire download progress/done events + resume interrupted jobs (guarded, once)
     initTrackerQueue() // wire the online-reconnect flush + boot-flush any tracker writes that failed offline
     initAutoIncognito() // adult play → incognito (setting-gated); exits + purges when playback closes
-    initDeviceSync() // account-free Iroh watch sync (automatically gated off by AniList/MAL)
+    initDeviceSync() // account-free Iroh watch sync (automatically gated off by connected trackers)
     const stopAutoDownloads = initAutoDownloads()
     const stopWatchTogether = initWatchTogether()
     const stopAiringNotifications = initAiringNotifications()
@@ -173,10 +186,11 @@
     // stay out of the shell path and yield to any interaction through BootWorkQueue.
     void scheduleBootWork('profiles', async () => {
       if (skipSpeculativeNetwork()) return
-      const [{ refreshAniListAvatar }, { refreshMalViewer }] = await Promise.all([
+      const [{ refreshAniListAvatar }, { refreshMalViewer }, { refreshKitsuViewer }, { refreshSimklViewer }] = await Promise.all([
         import('$lib/trackers/anilist-auth'), import('$lib/trackers/mal-auth'),
+        import('$lib/trackers/kitsu-auth'), import('$lib/trackers/simkl-auth'),
       ])
-      await Promise.allSettled([refreshAniListAvatar(), refreshMalViewer()])
+      await Promise.allSettled([refreshAniListAvatar(), refreshMalViewer(), refreshKitsuViewer(), refreshSimklViewer()])
     }, 4500)
     // Worker creation and a possible JVM/JRE setup are the heaviest speculative jobs. The manager
     // itself is dynamically imported and its JS/JVM warmers run sequentially.

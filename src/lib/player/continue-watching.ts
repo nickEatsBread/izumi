@@ -216,6 +216,8 @@ async function refreshContinueMedia(
   const candidates = new Map<number, number>()
   for (const item of malItems) candidates.set(item.media.id, item.updatedAt)
   for (const item of historyEntries(get(durableHistory))) {
+    if (item.media.catalog && item.media.catalog.provider !== 'anilist') continue
+    if (item.media.id < 0) continue
     candidates.set(item.media.id, Math.max(candidates.get(item.media.id) ?? 0, item.updatedAt))
   }
   const ids = [...candidates]

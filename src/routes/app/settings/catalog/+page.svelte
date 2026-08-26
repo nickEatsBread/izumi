@@ -1,0 +1,114 @@
+<script lang="ts">
+  import {
+    catalogDefaultProvider,
+    catalogProvider,
+    catalogProviders,
+    normalizeCatalogProviders,
+    tmdbReadToken,
+    type CatalogSelection,
+  } from '$lib/settings/catalog'
+  import { addonUrls } from '$lib/stremio/sources'
+  import SettingsGroup from '$lib/components/settings/SettingsGroup.svelte'
+  import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
+  import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import CatalogPlatformRow from '$lib/components/catalog/CatalogPlatformRow.svelte'
+  import LibraryBig from '@lucide/svelte/icons/library-big'
+  import KeyRound from '@lucide/svelte/icons/key-round'
+  import Boxes from '@lucide/svelte/icons/boxes'
+
+  const platforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
+    { id: 'auto', label: 'Automatic anime', description: 'AniList with automatic Kitsu and Jikan fallbacks.' },
+    { id: 'anilist', label: 'AniList', description: 'Anime browsing, schedules, rich details, and search.' },
+    { id: 'kitsu', label: 'Kitsu', description: 'Independent anime and manga catalogs.' },
+    { id: 'tmdb', label: 'TMDB', description: 'Movies, television, and cross-database anime metadata.' },
+    { id: 'stremio', label: 'Stremio metadata add-ons', description: 'Catalogs exposed by your enabled add-ons.' },
+  ]
+
+  const enabled = $derived(normalizeCatalogProviders($catalogProviders, $catalogDefaultProvider))
+  const defaultOptions = $derived(enabled.map((id) => ({
+    value: id,
+    label: platforms.find((platform) => platform.id === id)?.label ?? id,
+  })))
+  const hasPlatform = (id: CatalogSelection) => enabled.includes(id)
+
+  function setDefaultPlatform(value: string) {
+    if (!enabled.includes(value as CatalogSelection)) return
+    $catalogDefaultProvider = value as CatalogSelection
+    $catalogProvider = value as CatalogSelection
+  }
+
+  function togglePlatform(id: CatalogSelection) {
+    const current = normalizeCatalogProviders($catalogProviders, $catalogDefaultProvider)
+    const turningOff = current.includes(id)
+    if (turningOff && current.length === 1) return
+    const next = turningOff ? current.filter((provider) => provider !== id) : [...current, id]
+    $catalogProviders = next
+    const nextDefault = next.includes($catalogDefaultProvider) ? $catalogDefaultProvider : next[0]
+    $catalogDefaultProvider = nextDefault
+    if (!next.includes($catalogProvider)) $catalogProvider = nextDefault
+  }
+</script>
+
+{#snippet defaultControl()}
+  <SelectMenu
+    className="w-full sm:w-48"
+    value={$catalogDefaultProvider}
+    options={defaultOptions}
+    onChange={setDefaultPlatform}
+    ariaLabel="Default catalog platform"
+  />
+{/snippet}
+
+<div class="p-4 sm:p-8">
+  <h2 class="mb-1 text-xl font-black">Catalog</h2>
+  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms. Click the app logo to cycle through them; quick search checks all enabled platforms.</p>
+
+  <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose what the logo cycles through and which platform opens first.">
+    <SettingsRow
+      settingKey="default-catalog-platform"
+      title="Default platform"
+      description="Used whenever a new app session starts. Changing it also switches the current session."
+      control={defaultControl}
+      controlLayout="stack"
+    />
+    {#each platforms as platform (platform.id)}
+      <CatalogPlatformRow
+        platform={platform.id}
+        label={platform.label}
+        description={platform.description}
+        enabled={hasPlatform(platform.id)}
+        active={$catalogProvider === platform.id}
+        defaultPlatform={$catalogDefaultProvider === platform.id}
+        locked={hasPlatform(platform.id) && enabled.length === 1}
+        settingKey={platform.id === 'auto' ? 'catalog-provider' : undefined}
+        onToggle={() => togglePlatform(platform.id)}
+      />
+    {/each}
+  </SettingsGroup>
+
+  {#if hasPlatform('tmdb')}
+    <SettingsGroup icon={KeyRound} title="TMDB access">
+      <SettingsRow title="Read access token" description="A personal free non-commercial credential; stored only on this device.">
+        <p class="mb-2 text-xs text-muted-foreground">
+          Create one in your
+          <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer" data-focusable class="font-bold text-theme underline underline-offset-2 hover:no-underline">TMDB API settings</a>.
+        </p>
+        <input bind:value={$tmdbReadToken} type="password" autocomplete="off" spellcheck="false" data-focusable
+          placeholder="eyJhbGciOiJIUzI1NiJ9…" aria-label="TMDB read access token"
+          class="h-11 w-full rounded-md bg-input px-3 font-mono text-base sm:h-10 sm:text-sm" />
+        <p class="mt-2 text-[11px] text-muted-foreground">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+      </SettingsRow>
+    </SettingsGroup>
+  {/if}
+
+  {#if hasPlatform('stremio')}
+    <SettingsGroup icon={Boxes} title="Stremio metadata">
+      <SettingsRow title="Configured add-ons" description="Only add-ons declaring catalog and meta resources are used.">
+        <p class="text-xs text-muted-foreground">{$addonUrls.length ? `${$addonUrls.length} configured add-on${$addonUrls.length === 1 ? '' : 's'} will be checked.` : 'No add-ons are configured yet.'}</p>
+        {#if !$addonUrls.length}<a href="/app/settings/sources" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add a source</a>{/if}
+      </SettingsRow>
+    </SettingsGroup>
+  {/if}
+
+  <p class="max-w-2xl px-1 text-xs text-muted-foreground">Catalog choices do not disconnect tracker accounts. Progress updates continue using mapped IDs when available.</p>
+</div>

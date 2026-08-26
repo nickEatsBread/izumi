@@ -10,9 +10,12 @@
   import { page } from '$app/state'
   import { replaceState } from '$app/navigation'
   import type { Snapshot } from './$types'
+  import { catalogProvider, isLegacyAniListCatalog } from '$lib/settings/catalog'
+  import CatalogSearchPage from '$lib/components/catalog/CatalogSearchPage.svelte'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
   heroMedia.set(null)
+  const legacyCatalog = $derived(isLegacyAniListCatalog($catalogProvider))
 
   // Seed filters from URL params (home-row "View more" links carry sort/genre/season/year).
   // Seed BOTH filters and debounced with the SAME value so the initial render already
@@ -92,6 +95,8 @@
 
 {#if $offlineMode}
   <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
+{:else if !legacyCatalog}
+  <CatalogSearchPage />
 {:else}
   <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
        its 1.75rem height as well so it cannot cover the browse controls. -->

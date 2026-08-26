@@ -11,17 +11,31 @@
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
-  import { isMobile } from '$lib/platform'
+  import { isMacOS, isMobile } from '$lib/platform'
   import { offlineMode } from '$lib/stores/offline'
   import DownloadedLibrary from '$lib/components/offline/DownloadedLibrary.svelte'
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META } from '$lib/settings/nav'
   import type { Media } from '$lib/anilist/types'
   import { anilistDegraded } from '$lib/anilist/degraded'
-  import { DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, type HomeRowId } from '$lib/settings/ui'
+  import { DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, hotkeyBindings, type HomeRowId } from '$lib/settings/ui'
   import { markClientPerformance } from '$lib/performance/client'
+  import {
+    catalogLabel,
+    catalogProvider,
+    enabledCatalogProviders,
+    isLegacyAniListCatalog,
+    nextCatalogProvider,
+    previousCatalogProvider,
+  } from '$lib/settings/catalog'
+  import CatalogHome from '$lib/components/catalog/CatalogHome.svelte'
+  import { mediaHref } from '$lib/anilist/media'
+  import { playing } from '$lib/player/session'
+  import { androidMpvActive } from '$lib/player/android-mpv'
+  import { findHotkey, isTypingTarget } from '$lib/hotkeys'
 
   const client = getContextClient()
+  const legacyCatalog = $derived(isLegacyAniListCatalog($catalogProvider))
   const sections = homeSections(new Date())
 
   // Top-bar icons come from the nav config (items the user placed 'top').
@@ -44,24 +58,60 @@
   // public hero, never replace Continue Watching / MAL / local rows with a full-page error.
   type HeroResult = { fetching: boolean; error?: { message: string }; data?: { Page: { media: Media[] } } }
 
-  let heroStore = $state(makeHeroStore())
+  let heroStore = $state<ReturnType<typeof makeHeroStore> | null>(null)
   let hero = $state<HeroResult>({ fetching: true })
 
-  function makeHeroStore() {
+  function makeHeroStore(pause: boolean) {
     return queryStore<{ Page: { media: Media[] } }>({
       client,
       query: heroQuery(),
       variables: heroVars(new Date()),
+      pause,
     })
   }
 
-  // Re-subscribe whenever the hero store is recreated (on retry). The subscribe's
+  // Switching away from anime creates a paused query; switching back must create a fresh live
+  // store. Keeping the first paused store forever is why the anime platform had no hero carousel
+  // after TMDB had been active at startup.
+  $effect(() => {
+    const active = legacyCatalog
+    hero = { fetching: active }
+    heroStore = makeHeroStore(!active)
+  })
+
+  // Re-subscribe whenever a platform change recreates the hero store. The subscribe's
   // unsubscriber becomes the effect's teardown, so the old store is dropped first.
   // Skip the trending query entirely in offline mode (the offline branch never renders the hero).
   $effect(() => {
-    if ($offlineMode) return
+    if ($offlineMode || !heroStore) return
     return heroStore.subscribe((v) => (hero = v as HeroResult))
   })
+
+  const nextCatalog = $derived(nextCatalogProvider($catalogProvider, $enabledCatalogProviders))
+  const canCycleCatalog = $derived($enabledCatalogProviders.length > 1)
+  const catalogSwitchLabel = $derived(
+    canCycleCatalog
+      ? `Switch catalog from ${catalogLabel($catalogProvider)} to ${catalogLabel(nextCatalog)}`
+      : `Catalog: ${catalogLabel($catalogProvider)}`,
+  )
+
+  function cycleCatalog() {
+    if (!canCycleCatalog) return
+    h.tap()
+    $catalogProvider = nextCatalog
+  }
+
+  function handleCatalogKeydown(event: KeyboardEvent) {
+    if (event.defaultPrevented) return
+    const action = findHotkey(event, $hotkeyBindings, 'Home', $isMacOS)
+    if (action !== 'homeNextCatalog' && action !== 'homePreviousCatalog') return
+    if (!canCycleCatalog || $playing || $androidMpvActive || isTypingTarget(event.target)) return
+    event.preventDefault()
+    h.tap()
+    $catalogProvider = action === 'homePreviousCatalog'
+      ? previousCatalogProvider($catalogProvider, $enabledCatalogProviders)
+      : nextCatalogProvider($catalogProvider, $enabledCatalogProviders)
+  }
 
   // Only titles that have real landscape art: a bannerImage, or a YouTube trailer whose maxres
   // thumbnail banner() falls back to. Everything else would paint a stretched portrait cover.
@@ -78,7 +128,7 @@
       .sort((a, b) => ((a.id * 2654435761) >>> 0) - ((b.id * 2654435761) >>> 0))
       .slice(0, 7)
   })
-  const homeNeedsAlertInset = $derived(!!$anilistDegraded && heroMedias.length === 0)
+  const homeNeedsAlertInset = $derived(legacyCatalog && !!$anilistDegraded && heroMedias.length === 0)
   let homePaintMarked = false
   $effect(() => {
     const contentReady = $offlineMode || !hero.fetching || catalogUnavailable
@@ -92,6 +142,8 @@
 
 </script>
 
+<svelte:window onkeydown={handleCatalogKeydown} />
+
 {#if $isMobile}
   <!-- Top app bar: brand mark + wordmark on the left, configured top icons on the right. In-flow
        (NOT pinned) so it only shows at the very top and scrolls away with the page. Kept ABOVE the
@@ -100,11 +152,11 @@
        double-counted the status-bar inset and left a big black gap above the logo. -->
   <!-- The degraded strip is fixed at the same safe-area edge as this in-flow toolbar. Reserve its
        height while visible so the logo and top actions remain fully tappable on Android. -->
-  <div class="flex items-center justify-between px-4 pb-3 pt-3 {$anilistDegraded ? 'mt-7' : ''}">
-    <a href="/app/home" aria-label="Home" class="flex items-center gap-2">
+  <div class="flex items-center justify-between px-4 pb-3 pt-3 {legacyCatalog && $anilistDegraded ? 'mt-7' : ''}">
+    <button type="button" data-focusable onclick={cycleCatalog} aria-label={catalogSwitchLabel} title={catalogSwitchLabel} class="flex items-center gap-2">
       <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
       <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
-    </a>
+    </button>
     {#if topNav.length}
       <div class="flex items-center gap-1">
         {#each topNav as c (c.id)}
@@ -134,12 +186,14 @@
     {/key}
     <DownloadedLibrary />
   </div>
+{:else if !legacyCatalog}
+  <CatalogHome />
 {:else}
   <!-- With no hero, the first row must clear the fixed desktop titlebar + degraded strip. Mobile's
        toolbar above already reserves the alert height, so this extra inset is desktop-only. -->
   <div class="pb-16 {homeNeedsAlertInset ? 'sm:pt-[3.75rem]' : ''}">
     {#if !catalogUnavailable && heroMedias.length}
-      <Hero medias={heroMedias} onplay={(m) => goto(`/app/anime/${m.id}`)} oninfo={(m) => goto(`/app/anime/${m.id}`)} />
+      <Hero medias={heroMedias} onplay={(m) => goto(mediaHref(m))} oninfo={(m) => goto(mediaHref(m))} />
     {:else if !catalogUnavailable && hero.fetching}
       {#if $isMobile}
         <div class="relative mx-4 mb-6 h-[46vh] overflow-hidden rounded-2xl bg-muted shadow-xl">

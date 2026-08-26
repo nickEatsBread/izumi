@@ -1,6 +1,8 @@
-export type HotkeyScope = 'Global' | 'Player'
+export type HotkeyScope = 'Global' | 'Home' | 'Player'
 export type HotkeyId =
   | 'globalSearch'
+  | 'homeNextCatalog'
+  | 'homePreviousCatalog'
   | 'playerPlayPause'
   | 'playerClose'
   | 'playerSeekBack'
@@ -36,6 +38,8 @@ export type HotkeyDefinition = {
 
 export const HOTKEYS: HotkeyDefinition[] = [
   { id: 'globalSearch', scope: 'Global', group: 'Navigation', label: 'Quick search', description: 'Open the quick-search overlay from anywhere.', defaultBinding: 'ctrl+k' },
+  { id: 'homeNextCatalog', scope: 'Home', group: 'Catalog platforms', label: 'Next platform', description: 'Switch to the next enabled catalog platform on Home.', defaultBinding: 'ctrl+Tab' },
+  { id: 'homePreviousCatalog', scope: 'Home', group: 'Catalog platforms', label: 'Previous platform', description: 'Switch to the previous enabled catalog platform on Home.', defaultBinding: 'ctrl+shift+Tab' },
   { id: 'playerPlayPause', scope: 'Player', group: 'Playback', label: 'Play / pause', description: 'Toggle playback.', defaultBinding: 'Space' },
   { id: 'playerClose', scope: 'Player', group: 'Playback', label: 'Exit fullscreen', description: 'Leave fullscreen playback.', defaultBinding: 'Escape' },
   { id: 'playerFullscreen', scope: 'Player', group: 'Playback', label: 'Toggle fullscreen', description: 'Enter or leave fullscreen.', defaultBinding: 'f' },
