@@ -23,9 +23,7 @@ use objc2::exception::catch as catch_objc;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Sel};
 use objc2::{msg_send, AnyThread, ClassType, MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::{
-    NSOpenGLPixelFormat, NSOpenGLView, NSView, NSWindow, NSWindowOrderingMode,
-};
+use objc2_app_kit::{NSOpenGLPixelFormat, NSOpenGLView, NSView, NSWindow, NSWindowOrderingMode};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 use std::ffi::{c_char, c_void, CString};
 use std::io::Write;
@@ -233,9 +231,7 @@ fn attach_on_main(mpv_usize: usize, window: &WebviewWindow) -> Result<(), String
         schedule_redraw();
     });
 
-    *EMBED
-        .lock()
-        .map_err(|e| e.to_string())? = Some(Embed {
+    *EMBED.lock().map_err(|e| e.to_string())? = Some(Embed {
         view,
         render: render_ctx,
     });
@@ -304,7 +300,8 @@ fn create_gl_view(
     let (pf, edr) = match make_pixel_format(true) {
         Some(pf) => (pf, true),
         None => (
-            make_pixel_format(false).ok_or_else(|| "NSOpenGLPixelFormat init failed".to_string())?,
+            make_pixel_format(false)
+                .ok_or_else(|| "NSOpenGLPixelFormat init failed".to_string())?,
             false,
         ),
     };

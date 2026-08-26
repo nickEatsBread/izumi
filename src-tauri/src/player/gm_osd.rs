@@ -222,7 +222,9 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
                 draw_state.episode_x = last.episode_x;
                 draw_state.episode_y = last.episode_y;
                 draw_state.control_items.clone_from(&last.control_items);
-                draw_state.timeline_segments.clone_from(&last.timeline_segments);
+                draw_state
+                    .timeline_segments
+                    .clone_from(&last.timeline_segments);
                 draw_state.chapter_marks.clone_from(&last.chapter_marks);
             }
         }
@@ -391,9 +393,13 @@ fn sanitize_state(mut state: GmDynamicOverlay) -> GmDynamicOverlay {
         segment.start = segment.start.clamp(0.0, state.dur.max(0.0));
         segment.end = segment.end.clamp(0.0, state.dur.max(0.0));
     }
-    state.timeline_segments.retain(|segment| segment.end > segment.start);
+    state
+        .timeline_segments
+        .retain(|segment| segment.end > segment.start);
     state.chapter_marks.truncate(256);
-    state.chapter_marks.retain(|time| time.is_finite() && *time > 0.0 && *time < state.dur);
+    state
+        .chapter_marks
+        .retain(|time| time.is_finite() && *time > 0.0 && *time < state.dur);
     state
 }
 
@@ -598,15 +604,7 @@ fn scrub_static_ass(
         let by = fade_top + band_h * i as f64;
         push(
             &mut lines,
-            rect_blur(
-                0.0,
-                by,
-                w,
-                band_h + 2.0,
-                "000000",
-                &a,
-                band_h,
-            ),
+            rect_blur(0.0, by, w, band_h + 2.0, "000000", &a, band_h),
         );
     }
     // Track (white/25) · buffered (white/40) — the same fills the HTML seek bar uses.
@@ -649,7 +647,10 @@ fn scrub_dynamic_ass(
 
     // Played to the scrub point (opaque).
     let alpha = alpha_hex(master_opacity);
-    push(&mut lines, rect(x, top, bw * scrub_pct, bh, "FFFFFF", &alpha));
+    push(
+        &mut lines,
+        rect(x, top, bw * scrub_pct, bh, "FFFFFF", &alpha),
+    );
     // Handle (matches the HTML ~22px knob) + the scrubbed time floating just above it.
     let knob_x = x + bw * scrub_pct;
     push(&mut lines, circle(knob_x, y, 11.0, "FFFFFF", &alpha));
@@ -790,14 +791,7 @@ fn controls_background_ass(w: f64, h: f64, opacity: f64) -> String {
     // libass clips this at the framebuffer edge, so the overdraw cannot change layout.
     push(
         &mut lines,
-        rect(
-            0.0,
-            h - 12.0,
-            w,
-            28.0,
-            "000000",
-            &alpha_hex(0.82 * opacity),
-        ),
+        rect(0.0, h - 12.0, w, 28.0, "000000", &alpha_hex(0.82 * opacity)),
     );
     lines.join("\n")
 }
@@ -841,7 +835,11 @@ fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -
 
 fn control_item_ass(item: &GmControlItem, opacity: f64, y_offset: f64, lines: &mut Vec<String>) {
     let scale = if item.focused {
-        if item.primary { 1.12 } else { 1.08 }
+        if item.primary {
+            1.12
+        } else {
+            1.08
+        }
     } else {
         1.0
     };
@@ -849,7 +847,11 @@ fn control_item_ass(item: &GmControlItem, opacity: f64, y_offset: f64, lines: &m
     let cy = item.y + item.h / 2.0 + y_offset;
     let radius = item.w.min(item.h) * 0.5 * scale;
     let focused_fill = item.focused && !item.primary;
-    let fill_opacity = if item.primary || focused_fill { 0.96 } else { 0.12 };
+    let fill_opacity = if item.primary || focused_fill {
+        0.96
+    } else {
+        0.12
+    };
     push(
         lines,
         circle(cx, cy, radius, "FFFFFF", &alpha_hex(fill_opacity * opacity)),
@@ -897,25 +899,126 @@ fn control_icon_ass(
 ) {
     let a = alpha_hex(opacity);
     if label == "play" {
-        push(lines, polygon(&[(cx - size * 0.28, cy - size * 0.48), (cx + size * 0.5, cy), (cx - size * 0.28, cy + size * 0.48)], color, &a));
+        push(
+            lines,
+            polygon(
+                &[
+                    (cx - size * 0.28, cy - size * 0.48),
+                    (cx + size * 0.5, cy),
+                    (cx - size * 0.28, cy + size * 0.48),
+                ],
+                color,
+                &a,
+            ),
+        );
     } else if label == "pause" {
-        push(lines, rect(cx - size * 0.38, cy - size * 0.48, size * 0.25, size * 0.96, color, &a));
-        push(lines, rect(cx + size * 0.13, cy - size * 0.48, size * 0.25, size * 0.96, color, &a));
+        push(
+            lines,
+            rect(
+                cx - size * 0.38,
+                cy - size * 0.48,
+                size * 0.25,
+                size * 0.96,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            rect(
+                cx + size * 0.13,
+                cy - size * 0.48,
+                size * 0.25,
+                size * 0.96,
+                color,
+                &a,
+            ),
+        );
     } else if label.starts_with("previous episode") {
-        push(lines, rect(cx - size * 0.5, cy - size * 0.48, size * 0.12, size * 0.96, color, &a));
-        push(lines, polygon(&[(cx + size * 0.45, cy - size * 0.5), (cx - size * 0.3, cy), (cx + size * 0.45, cy + size * 0.5)], color, &a));
+        push(
+            lines,
+            rect(
+                cx - size * 0.5,
+                cy - size * 0.48,
+                size * 0.12,
+                size * 0.96,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            polygon(
+                &[
+                    (cx + size * 0.45, cy - size * 0.5),
+                    (cx - size * 0.3, cy),
+                    (cx + size * 0.45, cy + size * 0.5),
+                ],
+                color,
+                &a,
+            ),
+        );
     } else if label.starts_with("next episode") {
-        push(lines, rect(cx + size * 0.38, cy - size * 0.48, size * 0.12, size * 0.96, color, &a));
-        push(lines, polygon(&[(cx - size * 0.45, cy - size * 0.5), (cx + size * 0.3, cy), (cx - size * 0.45, cy + size * 0.5)], color, &a));
+        push(
+            lines,
+            rect(
+                cx + size * 0.38,
+                cy - size * 0.48,
+                size * 0.12,
+                size * 0.96,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            polygon(
+                &[
+                    (cx - size * 0.45, cy - size * 0.5),
+                    (cx + size * 0.3, cy),
+                    (cx - size * 0.45, cy + size * 0.5),
+                ],
+                color,
+                &a,
+            ),
+        );
     } else if label == "playback options" {
         // Exact settings-2 geometry used by the HTML Lucide icon (24x24 viewBox), translated to
         // the ASS canvas. The previous three filled sliders were a different icon altogether.
         let u = size / 24.0;
         let stroke = 2.0 * u;
-        push(lines, round_line(cx - 2.0 * u, cy - 5.0 * u, cx + 7.0 * u, cy - 5.0 * u, stroke, color, &a));
-        push(lines, round_line(cx - 7.0 * u, cy + 5.0 * u, cx + 2.0 * u, cy + 5.0 * u, stroke, color, &a));
-        push(lines, circle_ring(cx - 5.0 * u, cy - 5.0 * u, 2.0 * u, 4.0 * u, color, &a));
-        push(lines, circle_ring(cx + 5.0 * u, cy + 5.0 * u, 2.0 * u, 4.0 * u, color, &a));
+        push(
+            lines,
+            round_line(
+                cx - 2.0 * u,
+                cy - 5.0 * u,
+                cx + 7.0 * u,
+                cy - 5.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            round_line(
+                cx - 7.0 * u,
+                cy + 5.0 * u,
+                cx + 2.0 * u,
+                cy + 5.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            circle_ring(cx - 5.0 * u, cy - 5.0 * u, 2.0 * u, 4.0 * u, color, &a),
+        );
+        push(
+            lines,
+            circle_ring(cx + 5.0 * u, cy + 5.0 * u, 2.0 * u, 4.0 * u, color, &a),
+        );
     } else if label == "discussion" {
         // Lucide MessageCircleMore. Build the outline from real strokes instead of a compound ASS
         // fill: libass did not consistently honour the inner winding of the old ring, turning the
@@ -924,11 +1027,24 @@ fn control_icon_ass(
         let stroke = 2.0 * u;
         let point = |x: f64, y: f64| (cx + (x - 12.0) * u, cy + (y - 12.0) * u);
         let outline = [
-            point(3.0, 16.0), point(2.0, 21.0), point(7.0, 19.0), point(9.0, 21.0),
-            point(12.0, 22.0), point(16.0, 21.0), point(19.0, 19.0), point(21.0, 16.0),
-            point(22.0, 12.0), point(21.0, 8.0), point(19.0, 5.0), point(16.0, 3.0),
-            point(12.0, 2.0), point(8.0, 3.0), point(5.0, 5.0), point(3.0, 8.0),
-            point(2.0, 12.0), point(3.0, 16.0),
+            point(3.0, 16.0),
+            point(2.0, 21.0),
+            point(7.0, 19.0),
+            point(9.0, 21.0),
+            point(12.0, 22.0),
+            point(16.0, 21.0),
+            point(19.0, 19.0),
+            point(21.0, 16.0),
+            point(22.0, 12.0),
+            point(21.0, 8.0),
+            point(19.0, 5.0),
+            point(16.0, 3.0),
+            point(12.0, 2.0),
+            point(8.0, 3.0),
+            point(5.0, 5.0),
+            point(3.0, 8.0),
+            point(2.0, 12.0),
+            point(3.0, 16.0),
         ];
         push(lines, stroke_polyline(&outline, stroke, color, &a));
         for x in [8.0, 12.0, 16.0] {
@@ -938,12 +1054,78 @@ fn control_icon_ass(
     } else if label == "switch server" {
         let u = size / 24.0;
         let stroke = 2.0 * u;
-        push(lines, round_line(cx - 8.0 * u, cy - 5.0 * u, cx + 8.0 * u, cy - 5.0 * u, stroke, color, &a));
-        push(lines, round_line(cx + 4.0 * u, cy - 9.0 * u, cx + 8.0 * u, cy - 5.0 * u, stroke, color, &a));
-        push(lines, round_line(cx + 8.0 * u, cy - 5.0 * u, cx + 4.0 * u, cy - 1.0 * u, stroke, color, &a));
-        push(lines, round_line(cx - 8.0 * u, cy + 5.0 * u, cx + 8.0 * u, cy + 5.0 * u, stroke, color, &a));
-        push(lines, round_line(cx - 4.0 * u, cy + 1.0 * u, cx - 8.0 * u, cy + 5.0 * u, stroke, color, &a));
-        push(lines, round_line(cx - 8.0 * u, cy + 5.0 * u, cx - 4.0 * u, cy + 9.0 * u, stroke, color, &a));
+        push(
+            lines,
+            round_line(
+                cx - 8.0 * u,
+                cy - 5.0 * u,
+                cx + 8.0 * u,
+                cy - 5.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            round_line(
+                cx + 4.0 * u,
+                cy - 9.0 * u,
+                cx + 8.0 * u,
+                cy - 5.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            round_line(
+                cx + 8.0 * u,
+                cy - 5.0 * u,
+                cx + 4.0 * u,
+                cy - 1.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            round_line(
+                cx - 8.0 * u,
+                cy + 5.0 * u,
+                cx + 8.0 * u,
+                cy + 5.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            round_line(
+                cx - 4.0 * u,
+                cy + 1.0 * u,
+                cx - 8.0 * u,
+                cy + 5.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
+        push(
+            lines,
+            round_line(
+                cx - 8.0 * u,
+                cy + 5.0 * u,
+                cx - 4.0 * u,
+                cy + 9.0 * u,
+                stroke,
+                color,
+                &a,
+            ),
+        );
     } else if label == "subtitle and audio tracks" {
         // Lucide Languages: this communicates the combined audio/subtitle picker without the
         // anonymous empty rectangle users mistook for a broken subtitle icon.
@@ -951,9 +1133,14 @@ fn control_icon_ass(
         let stroke = 2.0 * u;
         let point = |x: f64, y: f64| (cx + (x - 12.0) * u, cy + (y - 12.0) * u);
         for (x0, y0, x1, y1) in [
-            (5.0, 8.0, 11.0, 14.0), (4.0, 14.0, 10.0, 8.0), (10.0, 8.0, 12.0, 5.0),
-            (2.0, 5.0, 14.0, 5.0), (7.0, 2.0, 8.0, 2.0), (22.0, 22.0, 17.0, 12.0),
-            (17.0, 12.0, 12.0, 22.0), (14.0, 18.0, 20.0, 18.0),
+            (5.0, 8.0, 11.0, 14.0),
+            (4.0, 14.0, 10.0, 8.0),
+            (10.0, 8.0, 12.0, 5.0),
+            (2.0, 5.0, 14.0, 5.0),
+            (7.0, 2.0, 8.0, 2.0),
+            (22.0, 22.0, 17.0, 12.0),
+            (17.0, 12.0, 12.0, 22.0),
+            (14.0, 18.0, 20.0, 18.0),
         ] {
             let (x0, y0) = point(x0, y0);
             let (x1, y1) = point(x1, y1);
@@ -965,15 +1152,35 @@ fn control_icon_ass(
         let u = size / 24.0;
         let stroke = 2.0 * u;
         let outline = [
-            (cx - 7.0 * u, cy - 7.0 * u), (cx + 7.0 * u, cy - 7.0 * u),
-            (cx + 9.0 * u, cy - 5.0 * u), (cx + 9.0 * u, cy + 5.0 * u),
-            (cx + 7.0 * u, cy + 7.0 * u), (cx - 7.0 * u, cy + 7.0 * u),
-            (cx - 9.0 * u, cy + 5.0 * u), (cx - 9.0 * u, cy - 5.0 * u),
+            (cx - 7.0 * u, cy - 7.0 * u),
+            (cx + 7.0 * u, cy - 7.0 * u),
+            (cx + 9.0 * u, cy - 5.0 * u),
+            (cx + 9.0 * u, cy + 5.0 * u),
+            (cx + 7.0 * u, cy + 7.0 * u),
+            (cx - 7.0 * u, cy + 7.0 * u),
+            (cx - 9.0 * u, cy + 5.0 * u),
+            (cx - 9.0 * u, cy - 5.0 * u),
             (cx - 7.0 * u, cy - 7.0 * u),
         ];
         push(lines, stroke_polyline(&outline, stroke, color, &a));
-        for (x0, x1, y) in [(-5.0, -1.0, 3.0), (3.0, 5.0, 3.0), (-5.0, -3.0, -1.0), (1.0, 5.0, -1.0)] {
-            push(lines, round_line(cx + x0 * u, cy + y * u, cx + x1 * u, cy + y * u, stroke, color, &a));
+        for (x0, x1, y) in [
+            (-5.0, -1.0, 3.0),
+            (3.0, 5.0, 3.0),
+            (-5.0, -3.0, -1.0),
+            (1.0, 5.0, -1.0),
+        ] {
+            push(
+                lines,
+                round_line(
+                    cx + x0 * u,
+                    cy + y * u,
+                    cx + x1 * u,
+                    cy + y * u,
+                    stroke,
+                    color,
+                    &a,
+                ),
+            );
         }
     } else {
         let initials: String = label
@@ -982,22 +1189,21 @@ fn control_icon_ass(
             .take(2)
             .collect::<String>()
             .to_uppercase();
-        push(lines, text_color_opacity(cx, cy, size * 0.62, &initials, color, opacity, 5));
+        push(
+            lines,
+            text_color_opacity(cx, cy, size * 0.62, &initials, color, opacity, 5),
+        );
     }
 }
 
 fn alpha_hex(opacity: f64) -> String {
-    format!("{:02X}", ((1.0 - opacity.clamp(0.0, 1.0)) * 255.0).round() as u8)
+    format!(
+        "{:02X}",
+        ((1.0 - opacity.clamp(0.0, 1.0)) * 255.0).round() as u8
+    )
 }
 
-fn text_opacity(
-    x: f64,
-    y: f64,
-    size: f64,
-    body: &str,
-    opacity: f64,
-    align: u8,
-) -> String {
+fn text_opacity(x: f64, y: f64, size: f64, body: &str, opacity: f64, align: u8) -> String {
     text_weight_opacity(x, y, size, body, opacity, align, 400)
 }
 
@@ -1102,7 +1308,12 @@ fn line_shape(
     let px = -dy / len * thickness / 2.0;
     let py = dx / len * thickness / 2.0;
     polygon(
-        &[(x0 + px, y0 + py), (x1 + px, y1 + py), (x1 - px, y1 - py), (x0 - px, y0 - py)],
+        &[
+            (x0 + px, y0 + py),
+            (x1 + px, y1 + py),
+            (x1 - px, y1 - py),
+            (x0 - px, y0 - py),
+        ],
         color,
         alpha,
     )
@@ -1125,27 +1336,19 @@ fn round_line(
     .join("\n")
 }
 
-fn stroke_polyline(
-    points: &[(f64, f64)],
-    thickness: f64,
-    color: &str,
-    alpha: &str,
-) -> String {
+fn stroke_polyline(points: &[(f64, f64)], thickness: f64, color: &str, alpha: &str) -> String {
     points
         .windows(2)
-        .map(|pair| round_line(pair[0].0, pair[0].1, pair[1].0, pair[1].1, thickness, color, alpha))
+        .map(|pair| {
+            round_line(
+                pair[0].0, pair[0].1, pair[1].0, pair[1].1, thickness, color, alpha,
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-fn circle_ring(
-    cx: f64,
-    cy: f64,
-    inner: f64,
-    outer: f64,
-    color: &str,
-    alpha: &str,
-) -> String {
+fn circle_ring(cx: f64, cy: f64, inner: f64, outer: f64, color: &str, alpha: &str) -> String {
     if inner <= 0.0 || outer <= inner {
         return String::new();
     }

@@ -1247,8 +1247,7 @@ fn validate_gamescope_native_globals(globals: &[String]) -> Result<(), String> {
     let has_video_layer = globals.iter().any(|g| g == "zwlr_layer_shell_v1");
     if !has_video_parent && !has_video_layer {
         return Err(
-            "Gamescope Wayland socket has neither wl_subcompositor nor zwlr_layer_shell_v1"
-                .into(),
+            "Gamescope Wayland socket has neither wl_subcompositor nor zwlr_layer_shell_v1".into(),
         );
     }
     Ok(())
@@ -1291,9 +1290,7 @@ mod native_gamescope_tests {
     #[test]
     fn accepts_subsurface_or_layer_shell_video_contract() {
         assert!(validate_gamescope_native_globals(&globals(&["wl_subcompositor"])).is_ok());
-        assert!(
-            validate_gamescope_native_globals(&globals(&["zwlr_layer_shell_v1"])).is_ok()
-        );
+        assert!(validate_gamescope_native_globals(&globals(&["zwlr_layer_shell_v1"])).is_ok());
     }
 
     #[test]

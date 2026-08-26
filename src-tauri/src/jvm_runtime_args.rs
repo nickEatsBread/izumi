@@ -67,11 +67,12 @@ mod tests {
     #[test]
     fn macos_java_runtime_prefers_ipv4() {
         let args = java_runtime_jvm_args("macos", None);
-        assert!(args.iter().any(|arg| arg == "-Djava.net.preferIPv4Stack=true"));
-        assert!(
-            args.iter()
-                .any(|arg| arg == "-Djava.net.preferIPv6Addresses=false")
-        );
+        assert!(args
+            .iter()
+            .any(|arg| arg == "-Djava.net.preferIPv4Stack=true"));
+        assert!(args
+            .iter()
+            .any(|arg| arg == "-Djava.net.preferIPv6Addresses=false"));
         assert_eq!(args.last().map(String::as_str), Some("-jar"));
         assert!(!args.iter().any(|arg| arg.contains("bootclasspath")));
     }
@@ -97,9 +98,7 @@ mod tests {
             Some("security.provider.1=org.conscrypt.OpenSSLProvider")
         );
         assert!(
-            lines
-                .iter()
-                .any(|line| *line == "security.provider.2=SUN"),
+            lines.iter().any(|line| *line == "security.provider.2=SUN"),
             "SUN must stay registered so SHA-1/SecureRandom keep working"
         );
         assert!(lines.iter().any(|line| line.contains("=Apple")));

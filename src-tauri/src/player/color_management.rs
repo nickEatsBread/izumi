@@ -27,20 +27,15 @@ mod tests {
     use super::COLOR_OPTS;
 
     fn get(key: &str) -> Option<&'static str> {
-        COLOR_OPTS
-            .iter()
-            .find(|(k, _)| *k == key)
-            .map(|(_, v)| *v)
+        COLOR_OPTS.iter().find(|(k, _)| *k == key).map(|(_, v)| *v)
     }
 
     #[test]
     fn tone_mapping_is_auto_not_forced_bt2390() {
         assert_eq!(get("tone-mapping"), Some("auto"));
-        assert!(
-            COLOR_OPTS
-                .iter()
-                .all(|(k, v)| !(*k == "tone-mapping" && *v == "bt.2390"))
-        );
+        assert!(COLOR_OPTS
+            .iter()
+            .all(|(k, v)| !(*k == "tone-mapping" && *v == "bt.2390")));
     }
 
     #[test]

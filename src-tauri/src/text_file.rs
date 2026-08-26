@@ -47,9 +47,7 @@ mod tests {
         // is the "os error 2" backup-save failure: the URI is a relative path whose
         // `content:` parent does not exist.
         assert_eq!(
-            write_target(
-                "content://com.android.providers.downloads.documents/document/msf%3A24"
-            ),
+            write_target("content://com.android.providers.downloads.documents/document/msf%3A24"),
             WriteTarget::AndroidContentUri(
                 "content://com.android.providers.downloads.documents/document/msf%3A24"
             )

@@ -91,7 +91,12 @@ extern "C" {
 #[allow(non_snake_case)]
 #[link(name = "Xtst")]
 extern "C" {
-    fn XTestFakeButtonEvent(dpy: *mut c_void, button: u32, is_press: c_int, delay: c_ulong) -> c_int;
+    fn XTestFakeButtonEvent(
+        dpy: *mut c_void,
+        button: u32,
+        is_press: c_int,
+        delay: c_ulong,
+    ) -> c_int;
 }
 
 // Xlib IO-error plumbing (see install_io_guard). The classic handler is PROCESS-GLOBAL; the
@@ -147,7 +152,11 @@ impl X11 {
         let top = (self.h as f64 * self.top).round() as i32;
         let bottom = (self.h as f64 * self.bottom).round() as u32;
         let right = (self.w as f64 * self.right).round() as u32;
-        let vh = self.h.saturating_sub(bottom).saturating_sub(top as u32).max(1);
+        let vh = self
+            .h
+            .saturating_sub(bottom)
+            .saturating_sub(top as u32)
+            .max(1);
         let vw = self.w.saturating_sub(right).max(1);
         (0, top, vw, vh)
     }

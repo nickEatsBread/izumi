@@ -670,9 +670,7 @@ impl DirectTorrentState {
                         // binding is supported consistently across desktop and Android.
                         listen,
                         peer_limit: crate::gm_perf::torrent_peer_limit(game_mode),
-                        runtime_worker_threads: crate::gm_perf::torrent_runtime_threads(
-                            game_mode,
-                        ),
+                        runtime_worker_threads: crate::gm_perf::torrent_runtime_threads(game_mode),
                         // Do not silently create a home-router mapping on Android: it can bypass a
                         // system VPN's tunnel and cellular CGNAT cannot benefit. The TCP listener
                         // still works with VPN/manual port forwarding. Desktop retains its existing

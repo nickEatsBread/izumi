@@ -870,12 +870,7 @@ impl PlayerHandle {
                     break 0;
                 }
                 if UI_LITE_HOLDERS
-                    .compare_exchange(
-                        cur,
-                        cur - 1,
-                        AtomicOrdering::SeqCst,
-                        AtomicOrdering::SeqCst,
-                    )
+                    .compare_exchange(cur, cur - 1, AtomicOrdering::SeqCst, AtomicOrdering::SeqCst)
                     .is_ok()
                 {
                     break cur - 1;
