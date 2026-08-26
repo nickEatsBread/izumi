@@ -4,7 +4,7 @@
   import {
     preferredAudioLang, preferredSubLang, videoFit,
     gifScale, gifMaxSeconds,
-    subtitleStyleEnabled, subtitleFont as savedSubtitleFont, subtitleFontSize as savedSubtitleFontSize,
+    subtitleStyleEnabled, subtitleOverrideScope, subtitleFont as savedSubtitleFont, subtitleBold as savedSubtitleBold, subtitleFontSize as savedSubtitleFontSize,
     subtitleTextColor, subtitleBorderColor as savedSubtitleBorderColor,
     subtitleBorderSize as savedSubtitleBorderSize, subtitleShadow as savedSubtitleShadow,
     subtitlePosition as savedSubtitlePosition,
@@ -101,6 +101,7 @@
   let subtitleScale = $state(1)
   let subtitleOverride = $state(false)
   let subtitleFont = $state('Nunito')
+  let subtitleBold = $state(false)
   let subtitleFontSize = $state(42)
   let subtitleColor = $state('#ffffffff')
   let subtitleBorderColor = $state('#000000ff')
@@ -138,7 +139,9 @@
   $effect(() => {
     const style = effectiveSubtitleStyle($sessionSubtitleStyle, {
       enabled: $subtitleStyleEnabled,
+      scope: $subtitleOverrideScope,
       font: $savedSubtitleFont,
+      bold: $savedSubtitleBold,
       fontSize: $savedSubtitleFontSize,
       textColor: $subtitleTextColor,
       borderColor: $savedSubtitleBorderColor,
@@ -148,6 +151,7 @@
     })
     subtitleOverride = style.enabled
     subtitleFont = style.font || 'Nunito'
+    subtitleBold = style.bold
     subtitleFontSize = Math.min(120, Math.max(8, style.fontSize))
     subtitleColor = mpvColorToCss(style.textColor)
     subtitleBorderColor = mpvColorToCss(style.borderColor, '#000000ff')
@@ -1190,6 +1194,7 @@
         return
       }
       if (name === 'set' && args[0] === 'sub-font') { subtitleFont = args[1] || 'Nunito'; return }
+      if (name === 'set' && args[0] === 'sub-bold') { subtitleBold = args[1] === 'yes'; return }
       if (name === 'set' && args[0] === 'sub-font-size') {
         const value = Number(args[1]); if (Number.isFinite(value)) subtitleFontSize = Math.min(120, Math.max(8, value))
         return
@@ -1532,6 +1537,7 @@
   class="drm-text pointer-events-none absolute inset-0 overflow-hidden text-center leading-snug"
   class:drm-text-override={subtitleOverride}
   style:font-family={subtitleOverride ? subtitleFont : undefined}
+  style:font-weight={subtitleOverride && subtitleBold ? '700' : undefined}
   style:font-size={subtitleOverride ? `${subtitleFontSize / 13.125 * subtitleScale}vmin` : `${3.2 * subtitleScale}vmin`}
   style:color={subtitleOverride ? subtitleColor : undefined}
   style:padding-bottom={subtitleOverride ? `${100 - subtitlePosition}%` : undefined}
@@ -1544,6 +1550,7 @@
   .drm-text:not(.drm-text-override) { color: white; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
   .drm-text-override :global(*) {
     font-family: inherit !important;
+    font-weight: inherit !important;
     font-size: inherit !important;
     color: inherit !important;
     -webkit-text-stroke: var(--drm-sub-border) !important;

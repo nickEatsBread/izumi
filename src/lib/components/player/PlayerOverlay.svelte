@@ -30,7 +30,7 @@
   } from '$lib/player/recovery-watchdog'
   import {
     autoSkip, seekDuration, videoFit, uiScale, keepAwakeWhilePlaying,
-    subtitleStyleEnabled, subtitleFont, subtitleFontSize, subtitleTextColor,
+    subtitleStyleEnabled, subtitleOverrideScope, subtitleFont, subtitleBold, subtitleFontSize, subtitleTextColor,
     subtitleBorderColor, subtitleBorderSize, subtitleShadow, subtitlePosition,
     subtitleAutoSync, gifIncludeSubtitles,
     hotkeyBindings, systemMediaControls, discordRichPresence, p2pStatusVisibility, playerProgressAnimations,
@@ -345,7 +345,9 @@
     if (!$playing) return
     for (const [property, value] of subtitleStyleProps(effectiveSubtitleStyle($sessionSubtitleStyle, {
       enabled: $subtitleStyleEnabled,
+      scope: $subtitleOverrideScope,
       font: $subtitleFont,
+      bold: $subtitleBold,
       fontSize: $subtitleFontSize,
       textColor: $subtitleTextColor,
       borderColor: $subtitleBorderColor,
