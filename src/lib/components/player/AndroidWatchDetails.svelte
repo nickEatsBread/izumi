@@ -14,7 +14,7 @@
   import { isDiscussAnimeEmbed, loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
-  import { getMalProgress } from '$lib/trackers'
+  import { getExternalTrackerProgress } from '$lib/trackers'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import MessageSquare from '@lucide/svelte/icons/message-square'
   import ListVideo from '@lucide/svelte/icons/list-video'
@@ -222,24 +222,23 @@
     if (scroll) requestAnimationFrame(() => tabsEl?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
-  let malProgress = $state(0)
-  let malKey = ''
+  let trackerProgress = $state(0)
+  let trackerKey = ''
   $effect(() => {
     const idMal = media.idMal
-    const key = String(idMal ?? '')
-    if (key === malKey) return
-    malKey = key
-    malProgress = 0
-    if (!idMal) return
-    getMalProgress(idMal).then((entry) => {
-      if (key === malKey) malProgress = entry?.progress ?? 0
+    const key = `${media.id}:${idMal ?? ''}`
+    if (key === trackerKey) return
+    trackerKey = key
+    trackerProgress = 0
+    getExternalTrackerProgress(media.id, idMal ?? undefined).then((entry) => {
+      if (key === trackerKey) trackerProgress = entry?.progress ?? 0
     }).catch(() => {})
   })
   const watchedThrough = $derived(Math.max(
     media.mediaListEntry?.progress ?? 0,
     $localHistory[media.id]?.progress ?? 0,
     $sessionProgress[media.id] ?? 0,
-    malProgress,
+    trackerProgress,
   ))
   let metaKey = ''
   $effect(() => {
