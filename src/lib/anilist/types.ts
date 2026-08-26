@@ -9,10 +9,50 @@ export interface MediaTag {
   isMediaSpoiler?: boolean
 }
 
+/** The catalogue record that owns this media item. AniList records created before catalogue
+ * switching intentionally omit this field and are treated as `anilist` by the identity helpers. */
+export interface MediaCatalogIdentity {
+  provider: 'anilist' | 'kitsu' | 'tmdb' | 'stremio'
+  /** Provider-native id. Stremio ids include the add-on fingerprint and content type. */
+  id: string
+  type: 'anime' | 'manga' | 'movie' | 'series'
+  /** Opaque fingerprint of the configured add-on that owns a Stremio meta item. Never a URL. */
+  addonId?: string
+}
+
+/** Cross-database ids are optional capabilities, not the identity of the object. Consumers use
+ * whichever namespace they understand (trackers, AniZip, Stremio stream add-ons, etc.). */
+export interface ExternalMediaIds {
+  anilist?: number
+  mal?: number
+  kitsu?: number
+  tmdb?: number
+  imdb?: string
+  tvdb?: number
+}
+
+/** Provider-neutral playable unit. `number` is Izumi's stable, sequential episode number while
+ * season/episode and id preserve the provider's addressing scheme for Stremio requests. */
+export interface MediaVideo {
+  id?: string
+  number: number
+  season?: number
+  episode?: number
+  title?: string
+  overview?: string
+  thumbnail?: string
+  released?: string
+}
+
 export interface Media {
+  /** Legacy numeric compatibility key used by existing persisted stores. For non-AniList media it
+   * is a deterministic negative hash; `catalog` is always the authoritative identity. */
   id: number
   idMal?: number
-  type?: 'ANIME' | 'MANGA'
+  catalog?: MediaCatalogIdentity
+  externalIds?: ExternalMediaIds
+  videos?: MediaVideo[]
+  type?: 'ANIME' | 'MANGA' | 'MOVIE' | 'SERIES'
   title: { romaji?: string; english?: string; native?: string; userPreferred?: string }
   description?: string
   season?: string
