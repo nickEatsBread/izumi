@@ -89,3 +89,11 @@ describe('mobile source picker layout', () => {
     expect(source).not.toContain('class="android-prepare fixed inset-x-4')
   })
 })
+
+describe('release routes', () => {
+  it('uses opaque route ids for row keys and keeps alternate routes expandable', () => {
+    expect(source).toContain('i.stream.__candidate?.routeId')
+    expect(source).toContain('candidate.routeCount > 1')
+    expect(source).toContain("'routes'} for this release")
+  })
+})

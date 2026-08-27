@@ -136,7 +136,7 @@
         ].filter(Boolean).join(' ').toLowerCase().includes(filter.trim().toLowerCase()))
       : visible,
   )
-  const keyOf = (i: StreamInfo) => i.stream.url ?? i.stream.infoHash ?? i.label
+  const keyOf = (i: StreamInfo) => i.stream.__candidate?.routeId ?? i.stream.url ?? i.stream.infoHash ?? i.label
 
   // The auto-pick order. This MUST go through the same ranking the non-interactive paths use
   // (play.ts), or the pill labelled "Auto" ignores the Quality setting entirely and just takes the
@@ -203,16 +203,19 @@
   const renderedMain = $derived(showAll ? shown : shown.slice(0, RENDER_CAP))
   const hiddenCount = $derived(shown.length - renderedMain.length)
 
-  // Online-provider variants grouped per site: every server/quality/flavour of one site is one
-  // expandable card headed by its best-ranked variant. Torrent/debrid rows stay flat.
-  const originKey = (i: StreamInfo) =>
-    i.stream.__stream ? (i.stream.__origin?.id ?? i.stream.__origin?.name ?? i.addon ?? '') : ''
+  // Online-provider variants remain grouped per site. Torrent/addon variants now group by release:
+  // alternate offers/routes stay selectable without painting the same release as unrelated rows.
+  const variantGroupKey = (i: StreamInfo) => {
+    if (i.stream.__stream) return `online:${i.stream.__origin?.id ?? i.stream.__origin?.name ?? i.addon ?? ''}`
+    const candidate = i.stream.__candidate
+    return candidate && candidate.routeCount > 1 ? `release:${candidate.releaseId}` : ''
+  }
   interface RowGroup { head: StreamInfo; rest: StreamInfo[] }
   const groupedMain = $derived.by(() => {
     const groups = new Map<string, RowGroup>()
     const out: (StreamInfo | RowGroup)[] = []
     for (const i of renderedMain) {
-      const key = originKey(i)
+      const key = variantGroupKey(i)
       if (!key) { out.push(i); continue }
       const g = groups.get(key)
       if (!g) { const ng = { head: i, rest: [] as StreamInfo[] }; groups.set(key, ng); out.push(ng) }
@@ -221,7 +224,7 @@
     return out
   })
   const isGroup = (e: StreamInfo | RowGroup): e is RowGroup => 'head' in e
-  const entryKey = (e: StreamInfo | RowGroup) => (isGroup(e) ? keyOf(e.head) : keyOf(e))
+  const entryKey = (e: StreamInfo | RowGroup) => (isGroup(e) ? variantGroupKey(e.head) : keyOf(e))
   let expandedGroups = $state<Set<string>>(new Set())
   function toggleGroup(key: string) {
     // Expanding a group IS interacting with the list — the countdown must not pick over the
@@ -979,13 +982,17 @@
           {@const grouped = isGroup(entry) && entry.rest.length > 0 ? entry : null}
           <div animate:flip={{ duration: resolving ? 0 : 220 }} in:fade={{ duration: 150 }}>
             {#if grouped}
-              {@const gk = originKey(grouped.head)}
+              {@const gk = variantGroupKey(grouped.head)}
               {@const open = forceExpand || expandedGroups.has(gk) || groupHasBest(grouped)}
               <div class="space-y-1 rounded-xl border border-border/60 bg-secondary/20 p-1">
                 {@render sourceRow(grouped.head, false)}
                 <button data-focusable aria-expanded={open} onclick={() => toggleGroup(gk)} onfocus={cancelAuto}
                         class="flex w-full items-center justify-center gap-1.5 rounded-lg text-center font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:bg-accent {$isMobile ? 'min-h-10 py-2 text-sm' : 'py-1.5 text-xs'}">
-                  {grouped.rest.length} more from {grouped.head.addon ?? grouped.head.provider ?? 'this site'}
+                  {#if grouped.head.stream.__stream}
+                    {grouped.rest.length} more from {grouped.head.addon ?? grouped.head.provider ?? 'this site'}
+                  {:else}
+                    {grouped.rest.length} more {grouped.rest.length === 1 ? 'route' : 'routes'} for this release
+                  {/if}
                   <span aria-hidden="true">{open ? '▴' : '▾'}</span>
                 </button>
                 {#if open}

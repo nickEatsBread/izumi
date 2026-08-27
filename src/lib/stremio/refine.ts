@@ -1,7 +1,8 @@
 import type { Media } from '$lib/anilist/types'
 import { title, totalEpisodes } from '$lib/anilist/media'
 import { relevant, likelyOtherProduction, isEpisodeExtra, isStandaloneMovie, wrongFranchiseSeason } from './relevance'
-import { dedupeStreams, dedupeBy } from './dedupe'
+import { dedupeStreams } from './dedupe'
+import { candidateIds } from './candidate-model'
 import { describe, type Stream } from './parse'
 
 // Season/title refinement shared by addon + extension streams. Pure (no Tauri/stores beyond the
@@ -34,25 +35,29 @@ export const rejectLabel: Record<RejectReason, string> = {
   'wrong-franchise-season': 'different season',
 }
 
-// Collapse the per-file batch explosion: any infoHash contributing 2+ file rows is a
-// season/complete pack (a single-episode torrent yields exactly one row), so keep one row per
-// packed hash. A 458-file dub pack becomes one row. Runs BEFORE dedupeStreams (which keys
-// url-first), so this infoHash pass is the first — and for same-hash extension duplicates the
-// ONLY — place a live-seeded copy can win over a 0/unknown-seeder copy of the same torrent;
-// dedupeBy carries that tiebreak. Batch packs are addon rows (not torrent-ext), so they collapse
-// first-wins exactly as before.
+// Detect a per-file batch expansion without discarding its routes. The former hash-only collapse
+// silently selected whichever file/provider arrived first; retaining the rows lets verifySeason
+// choose the requested episode and lets recovery try a distinct offer for the same release.
 export function collapseBatches(streams: Stream[]): Stream[] {
-  const rowsPerHash = new Map<string, number>()
+  const filesPerOffer = new Map<string, Set<string>>()
   for (const stream of streams) {
-    if (stream.infoHash) rowsPerHash.set(stream.infoHash, (rowsPerHash.get(stream.infoHash) ?? 0) + 1)
+    if (!stream.infoHash) continue
+    const ids = candidateIds(stream)
+    const key = `${ids.releaseId}:${ids.offerId}`
+    const files = filesPerOffer.get(key) ?? new Set<string>()
+    files.add(`${stream.fileIdx ?? ''}:${stream.url ?? ''}:${stream.behaviorHints?.filename ?? ''}`)
+    filesPerOffer.set(key, files)
   }
-  return dedupeBy(streams, (s) => s.infoHash ?? '').map((stream) =>
-    stream.infoHash && (rowsPerHash.get(stream.infoHash) ?? 0) > 1
+  return streams.map((stream) => {
+    if (!stream.infoHash) return stream
+    const ids = candidateIds(stream)
+    return (filesPerOffer.get(`${ids.releaseId}:${ids.offerId}`)?.size ?? 0) > 1
       ? { ...stream, __batch: true }
-      : stream)
+      : stream
+  })
 }
 
-const rowKey = (s: Stream) => s.url ?? s.infoHash ?? s.behaviorHints?.filename ?? s.name ?? ''
+const rowKey = (s: Stream) => candidateIds(s).routeId
 
 export function refineStreams(media: Media, raw: Stream[]): Refined {
   const wantedTitles = [title(media), media.title.romaji, media.title.english].filter((t): t is string => !!t)

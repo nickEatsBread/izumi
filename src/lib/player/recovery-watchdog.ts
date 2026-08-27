@@ -114,7 +114,8 @@ export function resetRecoveryWatch(now: number): RecoveryWatchState {
 }
 
 export function recoveryStreamKey(stream: Stream): string {
-  return stream.url
+  return stream.__candidate?.routeId
+    ?? stream.url
     ?? stream.infoHash?.toLocaleLowerCase()
     ?? `${stream.__origin?.kind ?? ''}:${stream.__origin?.id ?? ''}:${stream.behaviorHints?.filename ?? stream.title ?? stream.name ?? ''}`
 }

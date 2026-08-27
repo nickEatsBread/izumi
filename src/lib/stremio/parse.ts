@@ -30,6 +30,14 @@ export interface StreamEvidence {
   requestId?: string
 }
 
+export interface StreamCandidateRef {
+  releaseId: string
+  offerId: string
+  routeId: string
+  offerCount: number
+  routeCount: number
+}
+
 export interface StremioStreamSubtitle {
   id?: string
   url: string
@@ -75,6 +83,8 @@ export interface Stream {
   __origin?: StreamOrigin
   /** Source-native claims retained structurally for grouping/ranking and diagnostics. */
   __evidence?: StreamEvidence
+  /** Opaque Release → Offer → Route identity assigned at normalization. */
+  __candidate?: StreamCandidateRef
   /** Validated lower-case ISO 3166-1 alpha-3 availability hints from Stremio. */
   __countryWhitelist?: string[]
   // Source-declared match confidence (extension SDK `accuracy`). 'high' = the source verified

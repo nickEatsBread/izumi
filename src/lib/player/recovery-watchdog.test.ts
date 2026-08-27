@@ -7,11 +7,24 @@ import {
   STALL_TIMEOUT_MS,
   implausiblyShortEpisode,
   prematureEof,
+  recoveryStreamKey,
   recoveryWatchDecision,
   resetRecoveryWatch,
   resetTorrentDelivery,
   updateTorrentDelivery,
 } from './recovery-watchdog'
+
+describe('recoveryStreamKey', () => {
+  it('distinguishes retained routes for the same torrent release', () => {
+    const base = { infoHash: 'a'.repeat(40) }
+    expect(recoveryStreamKey({ ...base, __candidate: {
+      releaseId: 'same-release', offerId: 'offer-a', routeId: 'route-a', offerCount: 2, routeCount: 2,
+    } })).toBe('route-a')
+    expect(recoveryStreamKey({ ...base, __candidate: {
+      releaseId: 'same-release', offerId: 'offer-b', routeId: 'route-b', offerCount: 2, routeCount: 2,
+    } })).toBe('route-b')
+  })
+})
 
 describe('implausiblyShortEpisode', () => {
   it('flags a two-minute mini-episode returned for a 24-minute show', () => {

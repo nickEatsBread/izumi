@@ -133,10 +133,13 @@ describe('refineStreams', () => {
     expect(r.rejected).toHaveLength(1)
   })
 
-  it('collapses a multi-file batch pack to one row before filtering', () => {
+  it('marks a multi-file batch while retaining its distinct file routes', () => {
     const pack = (n: number) => ({ infoHash: 'deadbeef', behaviorHints: { filename: `Dr Stone S01E${n} 1080p` } })
     const r = refineStreams(media, [pack(1), pack(2), pack(3)] as never)
-    expect(r.kept).toHaveLength(1)
+    expect(r.kept).toHaveLength(3)
+    expect(r.kept.every((stream) => stream.__batch)).toBe(true)
+    expect(new Set(r.kept.map((stream) => stream.__candidate?.releaseId))).toHaveLength(1)
+    expect(new Set(r.kept.map((stream) => stream.__candidate?.routeId))).toHaveLength(3)
   })
 
   // Reported: "One Piece Episode 1 chooses One Piece Fan Letter or one of the other OVAs."
@@ -259,7 +262,10 @@ describe('refineStreams', () => {
       behaviorHints: { filename: '[smol] Dr Stone (BD 1080p HEVC Opus)' },
     })
     const r = refineStreams(media, [pack('https://host/ep1'), pack('https://host/ep2')] as never)
-    expect(r.kept).toHaveLength(1)
+    expect(r.kept).toHaveLength(2)
+    expect(r.kept.every((stream) => stream.__batch)).toBe(true)
+    expect(new Set(r.kept.map((stream) => stream.__candidate?.releaseId))).toHaveLength(1)
+    expect(new Set(r.kept.map((stream) => stream.__candidate?.routeId))).toHaveLength(2)
     expect(r.rejected).toHaveLength(0)
   })
 })
