@@ -6,7 +6,6 @@ vi.mock('./simkl-auth', () => ({ simklFetch: mocks.simklFetch }))
 import {
   clearSimklListCache,
   getSimklAnimeIds,
-  getSimklAnimeRefs,
   invalidateSimklList,
   pushSimkl,
 } from './simkl'
@@ -53,15 +52,12 @@ describe('SIMKL activity-gated anime list cache', () => {
         }] })
       : json({ anime: { all: 'activity-1' } }))
 
-    await expect(getSimklAnimeRefs('watching')).resolves.toEqual([{
-      anilistId: 10,
-      simklUrl: 'https://simkl.com/anime/1885096/anime-10',
-    }])
+    await expect(getSimklAnimeIds('watching')).resolves.toEqual([10])
   })
 
   it('does not misreport a failed SIMKL library request as an empty list', async () => {
     mocks.simklFetch.mockResolvedValue(json({ error: 'temporary' }, 503))
-    await expect(getSimklAnimeRefs('watching')).rejects.toThrow('HTTP 503')
+    await expect(getSimklAnimeIds('watching')).rejects.toThrow('HTTP 503')
   })
 
   it('checks activities after the user-data cache expires and skips an unchanged list pull', async () => {
@@ -137,17 +133,6 @@ describe('SIMKL activity-gated anime list cache', () => {
       '/sync/all-items/anime?date_from=activity-1',
       '/sync/all-items/anime?extended=simkl_ids_only',
     ])
-  })
-
-  it('carries each SIMKL item’s stable id and slug into a direct attribution link', async () => {
-    mocks.simklFetch.mockImplementation(async (path: string) => path === '/sync/all-items/anime'
-      ? json([anime(10, 1885096, 'watching', 'tongari-boushi-no-atelier')])
-      : json({ anime: { all: 'activity-1' } }))
-
-    await expect(getSimklAnimeRefs('watching')).resolves.toEqual([{
-      anilistId: 10,
-      simklUrl: 'https://simkl.com/anime/1885096/tongari-boushi-no-atelier',
-    }])
   })
 
   it('retries SIMKL’s documented sync-lock 400 through the durable queue policy', async () => {

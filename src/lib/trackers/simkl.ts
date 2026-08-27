@@ -82,7 +82,6 @@ interface SimklListItem {
 interface SimklIds {
   simkl?: number
   simkl_id?: number
-  slug?: string
   // SIMKL documents every external response ID as a string, even when it is numeric-looking.
   anilist?: string | number
   mal?: string | number
@@ -265,21 +264,11 @@ simklToken.subscribe((token) => {
 
 /** Canonical AniList ids from one Simkl anime-library status. */
 export async function getSimklAnimeIds(status: string, limit = 30): Promise<number[]> {
-  return (await getSimklAnimeRefs(status, limit)).map((item) => item.anilistId)
-}
-
-export interface SimklAnimeRef {
-  anilistId: number
-  simklUrl?: string
-}
-
-/** AniList ids for rendering plus the mandatory per-title Simkl attribution target. */
-export async function getSimklAnimeRefs(status: string, limit = 30): Promise<SimklAnimeRef[]> {
   const entries = await listEntries()
   if (!entries) return []
   const matching = entries.filter((entry) => entry.status === status)
   const index = matching.some((entry) => !itemIds(entry).anilist) ? await getIndex() : null
-  const refs: SimklAnimeRef[] = []
+  const ids: number[] = []
   for (const entry of matching) {
     const values = itemIds(entry)
     const direct = Number(values.anilist)
@@ -288,15 +277,8 @@ export async function getSimklAnimeRefs(status: string, limit = 30): Promise<Sim
       ? direct
       : Number.isFinite(mal) && index ? lookupAnilistByMal(index, mal) : undefined
     if (anilistId == null) continue
-    const simkl = Number(values.simkl ?? values.simkl_id)
-    const slug = typeof values.slug === 'string' ? values.slug.trim() : ''
-    refs.push({
-      anilistId,
-      simklUrl: Number.isFinite(simkl) && simkl > 0
-        ? `https://simkl.com/anime/${simkl}/${encodeURIComponent(slug)}`
-        : undefined,
-    })
-    if (refs.length >= Math.max(1, Math.round(limit))) break
+    ids.push(anilistId)
+    if (ids.length >= Math.max(1, Math.round(limit))) break
   }
-  return refs
+  return ids
 }

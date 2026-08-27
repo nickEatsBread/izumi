@@ -9,7 +9,7 @@
 
   const labels = {
     schedule: m.nav_schedule, downloads: m.nav_downloads, watch: m.nav_watch_together,
-    settings: m.nav_settings, mylist: () => 'My List', search: m.nav_search,
+    settings: m.nav_settings, search: m.nav_search,
   }
 
   const bottom = $derived($effectiveNav.filter((c) => c.placement === 'bottom'))

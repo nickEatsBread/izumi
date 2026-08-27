@@ -8,7 +8,6 @@ import Calendar from '@lucide/svelte/icons/calendar'
 import Download from '@lucide/svelte/icons/download'
 import Settings from '@lucide/svelte/icons/settings'
 import Search from '@lucide/svelte/icons/search'
-import Bookmark from '@lucide/svelte/icons/bookmark'
 import Users from '@lucide/svelte/icons/users'
 
 // Lucide icons are Svelte 5 function components. Taken off an icon we already import rather than
@@ -17,7 +16,7 @@ import Users from '@lucide/svelte/icons/users'
 type LucideIcon = typeof Home
 
 export type NavPlacement = 'bottom' | 'top' | 'hidden'
-export type NavItemId = 'schedule' | 'downloads' | 'watch' | 'settings' | 'mylist' | 'search'
+export type NavItemId = 'schedule' | 'downloads' | 'watch' | 'settings' | 'search'
 
 export interface NavMeta { label: string; href: string; icon: LucideIcon }
 
@@ -26,7 +25,6 @@ export const NAV_META: Record<NavItemId, NavMeta> = {
   schedule: { label: 'Schedule', href: '/app/schedule', icon: Calendar },
   downloads: { label: 'Downloads', href: '/app/downloads', icon: Download },
   watch: { label: 'Together', href: '/app/watch', icon: Users },
-  mylist: { label: 'My List', href: '/app/mylist', icon: Bookmark },
   search: { label: 'Search', href: '/app/search', icon: Search },
   settings: { label: 'Settings', href: '/app/settings', icon: Settings },
 }
@@ -36,12 +34,11 @@ export const HOME_META: NavMeta = { label: 'Home', href: '/app/home', icon: Home
 
 export interface NavItemConfig { id: NavItemId; placement: NavPlacement }
 
-/** Default mobile layout: the four primary destinations share the bottom bar with fixed Home;
+/** Default mobile layout: the three primary destinations share the bottom bar with fixed Home;
  * Search and Together remain compact Home-header actions. */
 export const DEFAULT_NAV: NavItemConfig[] = [
   { id: 'schedule', placement: 'bottom' },
   { id: 'downloads', placement: 'bottom' },
-  { id: 'mylist', placement: 'bottom' },
   { id: 'settings', placement: 'bottom' },
   { id: 'search', placement: 'top' },
   { id: 'watch', placement: 'top' },

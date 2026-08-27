@@ -141,7 +141,7 @@ export async function getKitsuProgress(mediaId: number, idMal?: number): Promise
   } catch { return null }
 }
 
-/** Canonical AniList ids from one Kitsu anime-library status, for My List and schedule filters. */
+/** Canonical AniList ids from one Kitsu anime-library status, for schedule filters. */
 export async function getKitsuAnimeIds(status: string, limit = 20): Promise<number[]> {
   if (!get(kitsuToken)) return []
   let userId = get(kitsuUserId)
