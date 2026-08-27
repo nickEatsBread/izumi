@@ -373,7 +373,7 @@ export const realdebrid: DebridProvider = {
     return rdAccountInfo(await rd('GET', '/user', key))
   },
   async resolveHash(key, hashOrMagnet, opts) {
-    if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Sources → Playback.')
     // Reuse an already-DOWNLOADED torrent for this hash instead of re-adding. A fresh addMagnet
     // makes RD re-cache from scratch, which is why replaying a finished episode showed
     // "downloading" again even though it completed before. If a completed entry exists, skip
@@ -452,7 +452,7 @@ export const realdebrid: DebridProvider = {
     if (!un || isArchiveName(servedName(un))) {
       throw new Error(opts?.noAdd
         ? "Real-Debrid needs to re-select this release, which background prefetch isn't allowed to do."
-        : 'Real-Debrid only offers this release as an archive, so the episode cannot be streamed. Play it with Direct P2P (Settings → Extensions → Torrent playback).')
+        : 'Real-Debrid only offers this release as an archive, so the episode cannot be streamed. Play it with Direct P2P (Settings → Sources → Playback → Torrent playback).')
     }
     // Copyright decoy guard: when a release is taken down, RD serves a tiny placeholder clip
     // ("removed by copyright holder") in place of the real file — which otherwise just PLAYS.
@@ -496,7 +496,7 @@ export const realdebrid: DebridProvider = {
     return out
   },
   async listItems(key) {
-    if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No Real-Debrid API key set — add it in Settings → Sources → Playback.')
     const list = await rd('GET', '/torrents?limit=100', key) as RdListEntry[]
     return (Array.isArray(list) ? list : []).map(rdListItem)
   },

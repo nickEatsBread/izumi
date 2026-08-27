@@ -45,7 +45,7 @@
     // Nested routes come FIRST: the lookup below takes the first prefix that matches, so listing
     // /sources ahead of /sources/priority would title the reorder screen "Sources".
     '/app/settings/sources/priority': 'Source priority',
-    '/app/settings/sources': 'Sources', '/app/settings/extensions': 'Extensions',
+    '/app/settings/sources': 'Sources',
     '/app/settings/downloads': 'Downloads', '/app/settings/interface': 'Interface',
     '/app/settings/history': 'History', '/app/settings/sync': 'Device sync',
     '/app/settings/backup': 'Backup & restore',
@@ -62,6 +62,8 @@
   // Back goes one level up, not straight to the index: a sub-screen like the source reorder is
   // reached FROM its category, and dropping the user two levels loses their place in that page.
   const backHref = $derived.by(() => {
+    if ($page.url.pathname === '/app/settings/sources/priority') return '/app/settings/sources?tab=ordering'
+    if ($page.url.pathname === '/app/settings/store') return '/app/settings/sources?tab=manage'
     const parts = $page.url.pathname.replace(/\/+$/, '').split('/')
     return parts.length > 4 ? parts.slice(0, -1).join('/') : '/app/settings'
   })

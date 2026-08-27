@@ -68,7 +68,7 @@ describe('authError', () => {
     const m = authError('Real-Debrid', { status: 401 })!
     expect(m).toContain('Real-Debrid')
     expect(m).toContain('API key')
-    expect(m).toContain('Settings → Extensions')
+    expect(m).toContain('Settings → Sources → Playback')
   })
   it('subscription message tells the user to renew', () => {
     const m = authError('AllDebrid', { code: 'MUST_BE_PREMIUM' })!
@@ -92,7 +92,7 @@ describe('authError', () => {
     expect(m).toContain('limit reached')
     expect(m).toContain('20/day')
     expect(m).toContain('Settings → Subtitles')
-    expect(m).not.toContain('Settings → Extensions')
+    expect(m).not.toContain('Settings → Sources → Playback')
   })
   it('returns undefined for a non-auth failure so the caller keeps its own message', () => {
     expect(authError('Real-Debrid', { status: 451 })).toBeUndefined()

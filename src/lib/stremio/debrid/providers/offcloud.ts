@@ -99,7 +99,7 @@ export const offcloud: DebridProvider = {
   // layered on top of it — shipping it now would just relabel a request that's already broken.
   cacheCheck: 'none',
   async resolveHash(key, hashOrMagnet, opts) {
-    if (!key) throw new Error('No Offcloud API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No Offcloud API key set — add it in Settings → Sources → Playback.')
     // POST /cloud creates a cloud download on the account. /cloud/history does list past
     // requests, but nothing in it is documented or verified to carry the source magnet's hash,
     // so matching a prefetch against it would be guesswork — and guessing wrong here either adds

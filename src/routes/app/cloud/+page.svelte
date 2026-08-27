@@ -36,7 +36,7 @@
   async function load() {
     loading = true; error = ''
     try {
-      if (!$debridKey) { error = `Add a ${providerName(prov)} key in Settings → Extensions to browse your account.`; items = []; return }
+      if (!$debridKey) { error = `Add a ${providerName(prov)} key in Settings → Sources → Playback to browse your account.`; items = []; return }
       if (!supported) { error = `${providerName(prov)} doesn't support browsing your account.`; items = []; return }
       items = await listItems(prov, $debridKey)
     }

@@ -24,7 +24,7 @@ const PROVIDERS: DebridProvider[] = [
 // instead of a bare "Unknown debrid provider".
 const RETIRED: Record<string, string> = {
   linksnappy:
-    'LinkSnappy support was removed: its torrent API only hands back a generated ZIP of the finished torrent, which cannot be streamed. Pick another debrid service in Settings → Extensions.',
+    'LinkSnappy support was removed: its torrent API only hands back a generated ZIP of the finished torrent, which cannot be streamed. Pick another debrid service in Settings → Sources → Playback.',
 }
 
 export const providers = new Map(PROVIDERS.map((p) => [p.id, p]))

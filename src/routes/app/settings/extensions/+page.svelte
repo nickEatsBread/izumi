@@ -1,4 +1,6 @@
 <script lang="ts">
+  let { section = 'manage' }: { section?: 'manage' | 'playback' } = $props()
+
   import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
   import {
     fetchExtensionInfo,
@@ -191,14 +193,12 @@
   }
 </script>
 
-<div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Extensions</h2>
-  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">
-    Community source extensions can stream episodes directly, or play through your debrid service / Izumi's built-in torrent engine. Their results appear in the source picker alongside your addons.
-    <span class="text-amber-400">Experimental — extensions run as untrusted third-party code in an isolated worker. Only add manifests you trust.</span>
-  </p>
-
+{#if section === 'playback'}
   <div class="max-w-2xl">
+    <div class="mb-4">
+      <h3 class="text-base font-black">Torrent & debrid</h3>
+      <p class="mt-1 text-xs text-muted-foreground">Choose how torrent results play and connect an optional debrid account.</p>
+    </div>
     <div class="mb-4 grid gap-x-4 gap-y-1 sm:grid-cols-2">
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Torrent playback</span>
@@ -228,7 +228,7 @@
     <label class="mb-6 flex flex-col gap-1">
       <span class="text-sm font-bold">{current?.name ?? 'Debrid'} {current?.credential === 'userpass' ? 'login' : 'API key'}</span>
       <input type="password" bind:value={$debridKey} data-focusable placeholder={current?.credential === 'userpass' ? 'username:password' : `Your ${current?.name ?? 'debrid'} token`} class="rounded-md bg-input px-3 py-2 text-sm" />
-      <span class="text-xs text-muted-foreground">From {current?.keyHint ?? 'your debrid account'}. Turns extension torrent results into cached streams.</span>
+      <span class="text-xs text-muted-foreground">From {current?.keyHint ?? 'your debrid account'}. Turns torrent results into cached streams.</span>
     </label>
 
     {#if $debridKey}
@@ -265,7 +265,12 @@
       </section>
     {/if}
 
-    <div class="mb-6 grid items-start gap-x-4 gap-y-4 sm:grid-cols-2">
+    <div class="mb-3 mt-8">
+      <h3 class="text-base font-black">Community source results</h3>
+      <p class="mt-1 text-xs text-muted-foreground">Limit the audio variants and languages requested from community sources.</p>
+    </div>
+
+    <div class="grid items-start gap-x-4 gap-y-4 sm:grid-cols-2">
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">Audio</span>
         <SelectMenu bind:value={$providerAudio} ariaLabel="Audio" options={[
@@ -302,9 +307,17 @@
         </span>
       </div>
     </div>
+  </div>
+{/if}
+
+{#if section === 'manage'}
+  <div class="max-w-2xl">
+    <div class="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-muted-foreground">
+      Community sources run third-party code in an isolated worker. Add repositories and manifests you trust.
+    </div>
 
     {#if localPackages.length}
-      <h3 class="mb-2 text-sm font-black">Installed packages</h3>
+      <h3 class="mb-2 text-base font-black">Installed sources</h3>
       <ul class="mb-6 space-y-2">
         {#each [...localPackages].sort((a, b) => Number(pluginOff(a.id)) - Number(pluginOff(b.id)) || a.name.localeCompare(b.name)) as p (p.id)}
           {@const pOff = pluginOff(p.id)}
@@ -339,7 +352,8 @@
       </ul>
     {/if}
 
-    <p class="mb-2 text-sm text-muted-foreground">Extension sources — a GitHub repo (<code class="rounded bg-secondary px-1 text-xs">gh:owner/repo</code> or <code class="rounded bg-secondary px-1 text-xs">owner/repo/folder</code>), a manifest URL, or a package catalog URL. A catalog lists installable packages instead of live plugins; open it to install them.</p>
+    <h3 class="mb-1 text-base font-black">Source repositories</h3>
+    <p class="mb-3 text-xs text-muted-foreground">Add a GitHub repository, manifest URL, or package catalog. Catalogs open into an installable list.</p>
     <div class="flex gap-2">
       <input bind:value={extInput} data-focusable placeholder="gh:owner/anime-extensions  ·  or  https://…/manifest.json" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" onkeydown={(e) => e.key === 'Enter' && addExt()} />
       <button onclick={addExt} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Add</button>
@@ -383,7 +397,7 @@
                 {#if pkgs}
                   <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{pkgs.length} {pkgs.length === 1 ? 'Package' : 'Packages'}</span>
                 {:else if metas.length}
-                  <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{metas.length} {metas.length === 1 ? 'Extension' : 'Extensions'}</span>
+                  <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{metas.length} {metas.length === 1 ? 'Source' : 'Sources'}</span>
                 {/if}
                 {#if m?.version && metas.length === 1}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{m.version}</span>{/if}
               </div>
@@ -398,7 +412,7 @@
                 </p>
               {:else if metas.length > 1}
                 {@const on = enabledCount(metas.map((x) => x.id))}
-                <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{on} of {metas.length} plugins on · {metas.filter((x) => !pluginOff(x.id)).map((x) => x.name).join(' · ') || 'none'}</p>
+                <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{on} of {metas.length} sources on · {metas.filter((x) => !pluginOff(x.id)).map((x) => x.name).join(' · ') || 'none'}</p>
               {:else if info.problem}
                 <!-- Loudly, rather than an empty list that reads as "izumi is broken". -->
                 <p class="mt-0.5 text-xs text-amber-400">{info.problem}</p>
@@ -409,7 +423,7 @@
             {#if pkgs || metas.length > 1}
               <button data-focusable onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
                 class="shrink-0 rounded-md bg-secondary px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-1">
-                {isExpanded(url) ? 'Hide' : pkgs ? 'Packages' : 'Plugins'}
+                {isExpanded(url) ? 'Hide' : pkgs ? 'Packages' : 'Sources'}
               </button>
             {/if}
             <!-- No source-level switch for a catalog: nothing of it runs, so it would toggle
@@ -549,7 +563,7 @@
                 {@const ids = metas.map((x) => x.id)}
                 <div class="mt-3 border-t border-border pt-3">
                   <div class="mb-2 flex items-center justify-between">
-                    <span class="text-xs font-bold text-muted-foreground">Plugins in this source</span>
+                    <span class="text-xs font-bold text-muted-foreground">Sources in this repository</span>
                     <span class="flex gap-1">
                       <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All on</button>
                       <button data-focusable onclick={() => setAllPlugins(ids, false)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All off</button>
@@ -577,10 +591,10 @@
           {/if}
         </li>
       {/each}
-      {#if !$extensionUrls.length}<li class="text-sm text-muted-foreground">No extensions added.</li>{/if}
+      {#if !$extensionUrls.length}<li class="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">No community sources added.</li>{/if}
     </ul>
   </div>
-</div>
+{/if}
 
 {#if serviceSettings}
   <ExtensionServiceSettings

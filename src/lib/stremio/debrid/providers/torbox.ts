@@ -130,7 +130,7 @@ export const torbox: DebridProvider = {
     return tbAccountInfo(await tb('GET', '/user/me', key) ?? {})
   },
   async resolveHash(key, hashOrMagnet, opts) {
-    if (!key) throw new Error('No TorBox API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No TorBox API key set — add it in Settings → Sources → Playback.')
     let id: string | number
     if (opts?.noAdd) {
       // createtorrent adds a permanent entry to the account, so a background prefetch may only
@@ -187,7 +187,7 @@ export const torbox: DebridProvider = {
     return tbCacheMap(json?.data, hashes)
   },
   async listItems(key) {
-    if (!key) throw new Error('No TorBox API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No TorBox API key set — add it in Settings → Sources → Playback.')
     const r = await tb('GET', '/torrents/mylist?bypass_cache=true', key)
     const arr = Array.isArray(r) ? r : (r ? [r] : [])
     return arr.map(tbListItem)

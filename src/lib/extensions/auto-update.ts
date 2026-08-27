@@ -73,7 +73,7 @@ export async function checkExtensionUpdates(): Promise<void> {
     }
   }
   if (updated.length === 1) showNotice(`Updated ${updated[0].name} to v${updated[0].version}.`)
-  else if (updated.length) showNotice(`Updated ${updated.length} source extensions.`)
+  else if (updated.length) showNotice(`Updated ${updated.length} sources.`)
 }
 
 const FIRST_DELAY = 15_000 // after the app-update check's 5s, so boot network isn't all at once

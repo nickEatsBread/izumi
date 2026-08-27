@@ -101,7 +101,7 @@ export const premiumize: DebridProvider = {
     return pmAccountInfo(await pm('GET', '/account/info', key))
   },
   async resolveHash(key, hashOrMagnet, opts) {
-    if (!key) throw new Error('No Premiumize API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No Premiumize API key set — add it in Settings → Sources → Playback.')
     const magnet = magnetOf(hashOrMagnet)
     // Fast path — instant for cached torrents.
     const fd = new FormData(); fd.set('src', magnet)
@@ -146,7 +146,7 @@ export const premiumize: DebridProvider = {
     }
   },
   async listItems(key) {
-    if (!key) throw new Error('No Premiumize API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No Premiumize API key set — add it in Settings → Sources → Playback.')
     const r = await pm('GET', '/transfer/list', key)
     return (r?.transfers ?? []).map(pmListItem)
   },

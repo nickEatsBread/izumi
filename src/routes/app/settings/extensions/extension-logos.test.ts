@@ -33,7 +33,7 @@ describe('extension list logos', () => {
   })
 
   it('renders installed packages even when no source URL is on the list', () => {
-    expect(page).toContain('Installed packages')
+    expect(page).toContain('Installed sources')
     expect(page).toContain('<AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={40} />')
   })
 

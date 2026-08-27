@@ -124,7 +124,7 @@ export const alldebrid: DebridProvider = {
     return adAccountInfo((await ad('/v4/user', key, '')).user ?? {})
   },
   async resolveHash(key, hashOrMagnet, opts) {
-    if (!key) throw new Error('No AllDebrid API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No AllDebrid API key set — add it in Settings → Sources → Playback.')
     let id: string
     if (opts?.noAdd) {
       // Background prefetch may only serve what the account already holds: magnet/upload creates
@@ -156,7 +156,7 @@ export const alldebrid: DebridProvider = {
     return unlocked.link ?? unlocked.download
   },
   async listItems(key) {
-    if (!key) throw new Error('No AllDebrid API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No AllDebrid API key set — add it in Settings → Sources → Playback.')
     const data = await ad('/v4.1/magnet/status', key, form({}))
     const arr = Array.isArray(data?.magnets) ? data.magnets : (data?.magnets ? [data.magnets] : [])
     return arr.map(adListItem)

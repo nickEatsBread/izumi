@@ -57,7 +57,7 @@
       </p>
       <p class="text-foreground">
         Lower-risk options: have each guest add their own debrid key, or switch Torrent playback to
-        <strong>Direct</strong> in Settings → Extensions so the room shares an infohash instead of
+        <strong>Direct</strong> in Settings → Sources → Playback so the room shares an infohash instead of
         your link.
       </p>
       <p class="text-xs">

@@ -118,7 +118,7 @@ export const easydebrid: DebridProvider = {
     return edCacheMap(await ed('POST', '/link/lookup', key, { urls }), hashes)
   },
   async resolveHash(key, hashOrMagnet, opts) {
-    if (!key) throw new Error('No EasyDebrid API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No EasyDebrid API key set — add it in Settings → Sources → Playback.')
     const magnet = magnetOf(hashOrMagnet)
     // /link/generate is the only route to a playable URL, and on an uncached release it is
     // believed to be what makes the service start caching it — the vendor docs only show the

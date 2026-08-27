@@ -6,7 +6,6 @@
   import Play from '@lucide/svelte/icons/play'
   import LayoutGrid from '@lucide/svelte/icons/layout-grid'
   import Rss from '@lucide/svelte/icons/rss'
-  import Puzzle from '@lucide/svelte/icons/puzzle'
   import User from '@lucide/svelte/icons/user'
   import Globe from '@lucide/svelte/icons/globe'
   import Download from '@lucide/svelte/icons/download'
@@ -31,8 +30,7 @@
     ] },
     { label: 'Content', items: [
       { title: 'Catalog', href: '/app/settings/catalog', icon: Library, subtitle: 'AniList, Kitsu, TMDB or Stremio metadata' },
-      { title: 'Sources', href: '/app/settings/sources', icon: Rss, subtitle: 'Addons, providers, priority' },
-      { title: 'Extensions', href: '/app/settings/extensions', icon: Puzzle, subtitle: 'Installed source extensions' },
+      { title: 'Sources', href: '/app/settings/sources', icon: Rss, subtitle: 'Add, configure and prioritise sources' },
       { title: 'Downloads', href: '/app/settings/downloads', icon: Download, subtitle: 'Offline library and storage' },
       { title: 'Storage', href: '/app/settings/storage', icon: HardDrive, subtitle: 'Disk caches and space used' },
     ] },
@@ -67,6 +65,7 @@
   const active = (href: string) =>
     $page.url.pathname === href ||
     $page.url.pathname.startsWith(href + '/') ||
+    (href === '/app/settings/sources' && $page.url.pathname === '/app/settings/store') ||
     // The bare /app/settings landing renders the Player pane (desktop passthrough), so highlight
     // Player there too — otherwise the default Settings screen has no active rail item.
     (href === '/app/settings/player' && $page.url.pathname === '/app/settings')

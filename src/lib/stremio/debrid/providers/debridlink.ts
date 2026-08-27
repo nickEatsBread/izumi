@@ -81,7 +81,7 @@ export const debridlink: DebridProvider = {
   // Shipping an unverified endpoint would fabricate badges. Promote to 'native' once confirmed.
   cacheCheck: 'none',
   async resolveHash(key, hashOrMagnet, opts) {
-    if (!key) throw new Error('No Debrid-Link API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No Debrid-Link API key set — add it in Settings → Sources → Playback.')
     const want = hashOf(hashOrMagnet)
     let addedId: string | undefined
     if (opts?.noAdd) {
@@ -113,7 +113,7 @@ export const debridlink: DebridProvider = {
     return best.downloadUrl
   },
   async listItems(key) {
-    if (!key) throw new Error('No Debrid-Link API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No Debrid-Link API key set — add it in Settings → Sources → Playback.')
     const r = await dl('GET', '/seedbox/list', key)
     return (r.value ?? []).map(dlListItem)
   },

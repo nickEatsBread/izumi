@@ -18,12 +18,18 @@ describe('SettingsNav', () => {
   it('groups Subtitles under Playback, ahead of the Content entries', () => {
     const player = src.indexOf("href: '/app/settings/player'")
     const subs = src.indexOf("href: '/app/settings/subtitles'")
-    const ext = src.indexOf("href: '/app/settings/extensions'")
+    const sources = src.indexOf("href: '/app/settings/sources'")
     const dl = src.indexOf("href: '/app/settings/downloads'")
     expect(player).toBeGreaterThan(-1)
     expect(subs).toBeGreaterThan(player)
-    expect(ext).toBeGreaterThan(subs)
-    expect(dl).toBeGreaterThan(ext)
+    expect(sources).toBeGreaterThan(subs)
+    expect(dl).toBeGreaterThan(sources)
+  })
+
+  it('presents addons and community providers as one Sources destination', () => {
+    expect(src.match(/title: 'Sources'/g)).toHaveLength(1)
+    expect(src).not.toContain("title: 'Extensions'")
+    expect(src).not.toContain("href: '/app/settings/extensions'")
   })
 
   it('keeps the Source Store inside Sources instead of as a separate navigation item', () => {

@@ -131,7 +131,7 @@ describe('easydebrid.resolveHash file selection', () => {
 
   it('declines before any request when no key is set', async () => {
     serveJson(httpFetch, [])
-    await expect(easydebrid.resolveHash('', HASH)).rejects.toThrow(/Settings → Extensions/)
+    await expect(easydebrid.resolveHash('', HASH)).rejects.toThrow(/Settings → Sources → Playback/)
     expect(httpFetch).not.toHaveBeenCalled()
   })
 

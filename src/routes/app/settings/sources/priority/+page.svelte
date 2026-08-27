@@ -43,7 +43,7 @@
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Source priority</h2>
   <p class="mb-6 max-w-2xl text-sm text-muted-foreground">
-    The order to trust your addons and extensions in, most trusted first. It settles ties the ranking
+    The order to trust your sources in, most trusted first. It settles ties the ranking
     already makes — a listed source is preferred within its quality tier, never ahead of a cached copy
     or your audio language.
   </p>
@@ -83,7 +83,7 @@
 
               {#if !source}
                 <p class="mt-2 text-xs text-muted-foreground">
-                  Switch it back on under Sources or Extensions to use it again, or drop it from the order.
+                  Switch it back on under Sources to use it again, or drop it from the order.
                 </p>
               {/if}
 
@@ -165,7 +165,7 @@
         {/each}
         {#if !unchosenSources.length}
           <li class="rounded-xl border border-dashed border-border p-3 text-sm text-muted-foreground">
-            {#if !$priorityCandidates.length}Nothing to order yet — add an addon under Sources, or an extension under Extensions.
+            {#if !$priorityCandidates.length}Nothing to order yet — add a source under Sources.
             {:else}Every source you have is already in the order.{/if}
           </li>
         {/if}

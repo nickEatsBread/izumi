@@ -1,17 +1,23 @@
 <script lang="ts">
+  import { goto } from '$app/navigation'
+  import { page } from '$app/stores'
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import {
     autoSelectSource, autoSelectCountdown, preferredQuality, seadexAnnotations,
-    sourcePriority, sourcePriorityMode, adaptiveSourceMode,
+    sourcePriority, sourcePriorityMode, adaptiveSourceMode, extensionUrls,
   } from '$lib/settings/ui'
   import { priorityCandidates } from '$lib/settings/source-origins'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
   import { defaultDiscussionPlatform } from '$lib/comments'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
+  import CommunitySources from '../extensions/+page.svelte'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import Globe from '@lucide/svelte/icons/globe'
   import Store from '@lucide/svelte/icons/store'
+  import Layers3 from '@lucide/svelte/icons/layers-3'
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
+  import ListOrdered from '@lucide/svelte/icons/list-ordered'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
@@ -69,17 +75,79 @@
     const rest = named.length - PREVIEW_ROWS
     return rest > 0 ? `${shown}  ·  +${rest} more` : shown
   })
+
+  type SourcesTab = 'manage' | 'playback' | 'ordering'
+  const tabs: { id: SourcesTab; label: string; icon: typeof Layers3 }[] = [
+    { id: 'manage', label: 'My sources', icon: Layers3 },
+    { id: 'playback', label: 'Playback', icon: SlidersHorizontal },
+    { id: 'ordering', label: 'Ordering', icon: ListOrdered },
+  ]
+  const activeTab = $derived.by((): SourcesTab => {
+    const requested = $page.url.searchParams.get('tab')
+    if (requested === 'manage' || requested === 'playback' || requested === 'ordering') return requested
+    const setting = $page.url.searchParams.get('setting')
+    if (setting === 'source-priority' || setting === 'default-discussion-source') return 'ordering'
+    if (setting) return 'playback'
+    return 'manage'
+  })
+  function selectTab(tab: SourcesTab) {
+    const params = new URLSearchParams($page.url.searchParams)
+    params.set('tab', tab)
+    params.delete('setting')
+    void goto(`${$page.url.pathname}?${params}`, { keepFocus: true, noScroll: true, replaceState: true })
+  }
+  function moveTab(event: KeyboardEvent) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    const target = event.currentTarget as HTMLButtonElement | null
+    if (!target) return
+    const buttons = [...target.closest<HTMLElement>('[role="tablist"]')?.querySelectorAll<HTMLButtonElement>('[role="tab"]') ?? []]
+    const current = buttons.indexOf(target)
+    if (current < 0 || !buttons.length) return
+    event.preventDefault()
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? buttons.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length
+    buttons[next].focus()
+    buttons[next].click()
+  }
+  const configuredCount = $derived($addonUrls.length + $extensionUrls.length)
 </script>
 
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Sources</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Stremio addons backed by your debrid, and how sources are chosen. Installed anime packages are listed under Extensions and the Source Store.</p>
-  <a href="/app/settings/store" data-focusable
-     class="mb-6 inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-3 text-sm font-black transition-colors active:bg-accent sm:py-2.5 sm:hover:bg-accent">
-    <Store size={16} />
-    Open Source Store
-  </a>
+  <div class="mb-5 flex max-w-3xl flex-wrap items-start justify-between gap-3">
+    <div>
+      <p class="max-w-2xl text-sm text-muted-foreground">Add, configure, and prioritise every place Izumi finds an episode.</p>
+      <p class="mt-1 text-xs text-muted-foreground">{configuredCount} {configuredCount === 1 ? 'source connection' : 'source connections'} configured</p>
+    </div>
+    <a href="/app/settings/store" data-focusable
+       class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity active:opacity-80 sm:hover:opacity-90">
+      <Store size={16} />
+      Add from Store
+    </a>
+  </div>
 
+  <div role="tablist" aria-label="Source settings" class="mb-7 grid max-w-2xl grid-cols-3 gap-1 rounded-xl bg-secondary/60 p-1">
+    {#each tabs as tab (tab.id)}
+      {@const Icon = tab.icon}
+      <button type="button" role="tab" id="sources-tab-{tab.id}" aria-controls="sources-panel-{tab.id}"
+        data-focusable aria-selected={activeTab === tab.id} tabindex={activeTab === tab.id ? 0 : -1}
+        onclick={() => selectTab(tab.id)} onkeydown={moveTab}
+        class="flex min-w-0 items-center justify-center gap-2 rounded-lg px-2 py-2.5 text-xs font-black transition-colors sm:text-sm
+          {activeTab === tab.id ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}">
+        <Icon size={16} class="hidden shrink-0 sm:block" />
+        <span class="truncate">{tab.label}</span>
+      </button>
+    {/each}
+  </div>
+
+  {#if activeTab === 'playback'}
+  <div id="sources-panel-playback" role="tabpanel" aria-labelledby="sources-tab-playback">
+  <section aria-labelledby="automatic-selection-heading">
+    <div class="mb-4">
+      <h3 id="automatic-selection-heading" class="text-base font-black">Automatic selection</h3>
+      <p class="mt-1 text-xs text-muted-foreground">Control whether Izumi chooses for you and what makes a result the best match.</p>
+    </div>
   <div class="mb-6 max-w-2xl space-y-3">
     <label data-setting-key="auto-play-the-best-source" class="flex flex-col gap-1">
       <span class="text-sm font-bold">Auto-play the best source</span>
@@ -142,9 +210,21 @@
       onToggle={() => ($seadexAnnotations = !$seadexAnnotations)}
     />
   </div>
+  </section>
+
+  <div class="mt-10"><CommunitySources section="playback" /></div>
+  </div>
+  {/if}
+
+  {#if activeTab === 'manage'}
+  <div id="sources-panel-manage" role="tabpanel" aria-labelledby="sources-tab-manage">
+  <CommunitySources section="manage" />
 
   <div class="max-w-2xl">
-    <p class="mb-2 text-sm text-muted-foreground">Paste a debrid-configured addon manifest URL.</p>
+    <div class="mb-3 mt-8">
+      <h3 class="text-base font-black">Stremio add-ons</h3>
+      <p class="mt-1 text-xs text-muted-foreground">Paste a configured add-on manifest URL. Add-ons and community sources appear together in the player.</p>
+    </div>
     <div class="flex gap-2">
       <input bind:value={input} data-focusable placeholder="https://…/manifest.json" class="flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" onkeydown={(event) => { if (event.key === 'Enter') add() }} />
       <button onclick={add} data-focusable class="rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground sm:py-2">Add</button>
@@ -191,10 +271,14 @@
       {#if !$addonUrls.length}<li class="text-sm text-muted-foreground">No sources yet.</li>{/if}
     </ul>
   </div>
+  </div>
+  {/if}
 
+  {#if activeTab === 'ordering'}
+  <div id="sources-panel-ordering" role="tabpanel" aria-labelledby="sources-tab-ordering">
   <div class="mt-8 max-w-2xl" data-setting-key="source-priority">
     <h3 class="mb-1 text-sm font-black">Source priority</h3>
-    <p class="mb-3 text-xs text-muted-foreground">The order to trust your addons and extensions in, most trusted first. It settles ties the ranking already makes — a listed source is preferred within its quality tier, never ahead of a cached copy or your audio language.</p>
+    <p class="mb-3 text-xs text-muted-foreground">The order to trust your sources in, most trusted first. It settles ties the ranking already makes — a listed source is preferred within its quality tier, never ahead of a cached copy or your audio language.</p>
 
     <a href="/app/settings/sources/priority" data-focusable
        class="flex items-center gap-3 rounded-lg border border-border p-4 transition-colors active:bg-secondary sm:p-3 sm:hover:bg-secondary">
@@ -235,6 +319,8 @@
       />
     </label>
   </div>
+  </div>
+  {/if}
 </div>
 
 {#if configuring}

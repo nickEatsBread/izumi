@@ -1053,7 +1053,7 @@ async function extToStreams(
     // Both extension flavours resolve to TorrentResult and share the RD resolve path: the legacy
     // torrent extensions (single/batch/movie) plus the anime-torrent-provider extensions
     // (search/smartSearch). Query both concurrently; each source's batch folds in as it lands.
-    const fold = (rs: TorrentResult[]) => onBatch(rs.map((r) => extToStream(r, r.provider ?? 'Extension')))
+    const fold = (rs: TorrentResult[]) => onBatch(rs.map((r) => extToStream(r, r.provider ?? 'Community source')))
     await Promise.all([
       queryExtensions(query, fold, onlyOriginId, signal),
       queryTorrentProviders(query, toProviderMedia(media), fold, onlyOriginId, signal),
@@ -1309,7 +1309,7 @@ export async function resolveDirectPreloadStream(
         if (stream) finish({
           stream,
           want,
-          provider: stream.__origin?.name ?? stream.__addonName ?? 'Extension',
+          provider: stream.__origin?.name ?? stream.__addonName ?? 'Community source',
           rows,
         })
       }, hint.originId, controller.signal).then(() => {
@@ -1769,7 +1769,7 @@ export async function playEpisode(
     // Without an extension, at least one add-on namespace must be addressable. Anime normally uses
     // Kitsu; TMDB and Stremio metadata titles use their native/IMDb identifiers instead.
     const primaryIds = hasExt ? undefined : await primaryIdsP
-    if (!hasExt && !primaryIds?.length) throw new Error('No compatible metadata id is available for the configured stream add-ons. Add a source extension to find it by title.')
+    if (!hasExt && !primaryIds?.length) throw new Error('No compatible metadata id is available for the configured stream add-ons. Add a community source to find it by title.')
 
     const type = streamType(media)
     const seasonStartedAt = performance.now()

@@ -95,7 +95,7 @@ export const deepbrid: DebridProvider = {
   cacheCheck: 'none',
   experimental: true,
   async resolveHash(key, hashOrMagnet, opts) {
-    if (!key) throw new Error('No Deepbrid API key set — add it in Settings → Extensions.')
+    if (!key) throw new Error('No Deepbrid API key set — add it in Settings → Sources → Playback.')
     // /torrents/add creates an entry on the account and Deepbrid exposes no verified by-hash
     // listing to reuse one from, so a background prefetch can only decline. Bailing is the whole
     // point of noAdd: never a speculative entry the user didn't ask for.

@@ -399,7 +399,7 @@
       <section>
         <div class="mb-2 flex items-center justify-between">
           <h3 class="font-black">Anime packages</h3>
-          <a href="/app/settings/extensions" class="rounded-md px-2 py-1.5 text-xs font-bold text-theme active:bg-secondary sm:py-1">Advanced settings →</a>
+          <a href="/app/settings/sources?tab=manage" class="rounded-md px-2 py-1.5 text-xs font-bold text-theme active:bg-secondary sm:py-1">Manage sources →</a>
         </div>
         <div class="space-y-2">
           {#each installedPackages as item (item.id)}

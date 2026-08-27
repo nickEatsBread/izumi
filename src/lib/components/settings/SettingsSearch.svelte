@@ -41,7 +41,8 @@
 
   async function choose(item: SettingSearchItem) {
     h.tap()
-    const search = item.anchored ? `?setting=${encodeURIComponent(settingKey(item.title))}` : ''
+    const separator = item.href.includes('?') ? '&' : '?'
+    const search = item.anchored ? `${separator}setting=${encodeURIComponent(settingKey(item.title))}` : ''
     await close()
     await goto(item.href + search)
   }

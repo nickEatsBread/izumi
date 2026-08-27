@@ -332,6 +332,6 @@ export function authError(
   if (kind === 'subscription')
     return `${provider}: access denied — your subscription looks inactive or expired. Renew it and try again.`
   if (kind === 'token')
-    return `${provider}: access denied — your ${credNoun} looks wrong or expired. Re-check it in Settings → Extensions.`
-  return `${provider}: access denied — check that your subscription is active and your ${credNoun} is correct (Settings → Extensions).`
+    return `${provider}: access denied — your ${credNoun} looks wrong or expired. Re-check it in Settings → Sources → Playback.`
+  return `${provider}: access denied — check that your subscription is active and your ${credNoun} is correct (Settings → Sources → Playback).`
 }

@@ -71,7 +71,7 @@
   <h2 class="mb-1 text-xl font-black">Storage</h2>
   <p class="mb-6 max-w-2xl text-sm text-muted-foreground">
     What izumi keeps on disk to avoid re-fetching it. All of it regenerates on demand, so clearing
-    any of it costs time, never data. Your downloads, extensions and watch history are not caches and
+    any of it costs time, never data. Your downloads, source packages and watch history are not caches and
     are not listed here.
   </p>
 
