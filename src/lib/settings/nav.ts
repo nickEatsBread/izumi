@@ -36,15 +36,15 @@ export const HOME_META: NavMeta = { label: 'Home', href: '/app/home', icon: Home
 
 export interface NavItemConfig { id: NavItemId; placement: NavPlacement }
 
-/** Defaults reproduce today's layout: Schedule/Downloads/Settings on the bottom bar, Search as a
- *  top icon, My List hidden (opt-in). Array order = display order within each placement. */
+/** Default mobile layout: the four primary destinations share the bottom bar with fixed Home;
+ * Search and Together remain compact Home-header actions. */
 export const DEFAULT_NAV: NavItemConfig[] = [
   { id: 'schedule', placement: 'bottom' },
   { id: 'downloads', placement: 'bottom' },
+  { id: 'mylist', placement: 'bottom' },
   { id: 'settings', placement: 'bottom' },
   { id: 'search', placement: 'top' },
   { id: 'watch', placement: 'top' },
-  { id: 'mylist', placement: 'hidden' },
 ]
 
 /** Raw persisted config — the Settings → Navigation page reads and writes this directly. */
