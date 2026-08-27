@@ -241,6 +241,9 @@
   // The banner is a large image over a network the phone may be struggling with; popping it in at
   // full opacity reads as a glitch. Fade on decode instead.
   let artLoaded = $state(false)
+  // The loading branch records only artwork that actually painted. If the detail response wins
+  // first, the loaded Hero keeps its ordinary entrance rather than assuming the hint was visible.
+  let loadedHintBanner = $state('')
   // `wasSolid` is deliberately a plain `let`, NOT $state: the scroll handler both reads and writes
   // it to resolve the hysteresis, and a reactive latch read+written by its own effect is a cycle
   // Svelte resolves as an update loop, not a settled value (same trap as malEntryFor above).
@@ -285,7 +288,7 @@
          re-lay-out the instant data lands. -->
     <div class="relative pb-8 pt-[max(2.5rem,env(safe-area-inset-top))]">
       {#if detailHint && banner(detailHint)}
-        <img src={banner(detailHint)} alt="" class="h-[26vh] max-h-72 min-h-44 w-full object-cover opacity-35" />
+        <img src={banner(detailHint)} alt="" onload={() => (loadedHintBanner = banner(detailHint))} class="h-[26vh] max-h-72 min-h-44 w-full object-cover opacity-35" />
       {:else}
         <div class="h-[26vh] max-h-72 min-h-44 w-full skeloader"></div>
       {/if}
@@ -318,7 +321,7 @@
     <div class="relative mb-6 h-[40vh] {$gameMode ? 'sm:h-[42vh]' : 'sm:h-[48vh]'}">
       <div class="absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
         {#if detailHint && banner(detailHint)}
-          <img src={banner(detailHint)} alt="" class="absolute inset-0 h-full w-full object-cover opacity-30" style="object-position:center 20%" />
+          <img src={banner(detailHint)} alt="" onload={() => (loadedHintBanner = banner(detailHint))} class="absolute inset-0 h-full w-full object-cover opacity-30" style="object-position:center 20%" />
         {:else}
           <div class="absolute inset-0 skeloader opacity-60"></div>
         {/if}
@@ -581,7 +584,7 @@
     </div>
   {:else}
   <!-- Title-less banner backdrop; the info panel below overlaps its lower fade. -->
-  <Hero medias={[m]} showOverlay={false} />
+  <Hero medias={[m]} showOverlay={false} initialArtworkVisible={loadedHintBanner === banner(m)} />
   <div class="relative {$gameMode ? '-mt-[16vh]' : '-mt-[18vh]'} px-4 pb-16 sm:px-8">
     {#if heroPlay.status === 'error'}
       <p class="mb-3 text-sm text-destructive">{heroPlay.message}</p>

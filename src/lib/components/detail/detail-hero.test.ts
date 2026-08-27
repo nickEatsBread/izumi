@@ -69,6 +69,14 @@ describe('mobile series hero', () => {
     expect(detail.match(/\$gameMode \? '-mt-\[16vh\]' : '-mt-\[18vh\]'/g)?.length).toBeGreaterThanOrEqual(2)
   })
 
+  it('settles artwork already painted by the skeleton without replaying a directional slide', () => {
+    expect(detail).toContain('let loadedHintBanner = $state')
+    expect(detail).toContain('onload={() => (loadedHintBanner = banner(detailHint))}')
+    expect(detail).toContain('initialArtworkVisible={loadedHintBanner === banner(m)}')
+    expect(hero).toContain("initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'")
+    expect(hero).toMatch(/@keyframes detail-hero-reveal\s*\{\s*from \{ opacity: \.5; \}\s*to \{ opacity:/)
+  })
+
   it('carries known titles into loading without a fake alternate-title shimmer', () => {
     expect(detail).not.toContain('Loading title…')
     expect(detail.match(/detailHint\?\.title\.native \|\| detailHint\?\.title\.romaji/g)?.length).toBe(2)

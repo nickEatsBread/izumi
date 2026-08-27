@@ -33,7 +33,7 @@
       <h1 class="text-3xl font-black leading-tight tracking-tight text-white drop-shadow-[0_10px_30px_rgba(0,0,0,0.6)] sm:text-4xl">{label}</h1>
     {/if}
     <div class="grid h-28 w-52 place-items-center" aria-hidden="true">
-      <div class="bar-loader h-1.5 w-40 rounded-full bg-white/20"></div>
+      <div class="bar-loader h-1 w-40 rounded-full bg-white/20"></div>
     </div>
     <p class="text-xs font-bold uppercase tracking-[0.36em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)]">{caption}</p>
   </div>

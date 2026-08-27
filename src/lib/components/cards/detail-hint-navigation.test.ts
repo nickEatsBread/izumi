@@ -9,6 +9,7 @@ describe('homepage detail navigation hints', () => {
     expect(read('./SmallCard.svelte')).toContain('rememberDetail(media)')
     const continued = read('./ContinueCard.svelte')
     expect(continued).toContain("import { rememberDetail } from '$lib/anilist/detail-hint'")
-    expect(continued).toContain('e.stopPropagation(); rememberDetail(media); h.tap()')
+    expect(continued).toContain('onpointerdown={() => rememberDetail(media, name)}')
+    expect(continued).toContain('e.stopPropagation(); rememberDetail(media, name); h.tap()')
   })
 })

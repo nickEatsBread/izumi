@@ -8,6 +8,7 @@
   import Wifi from '@lucide/svelte/icons/wifi'
   import { online } from '$lib/stores/online'
   import { offlineMode, enterOfflineMode, exitOfflineMode } from '$lib/stores/offline'
+  import { isMacOS } from '$lib/platform'
   import { slide } from 'svelte/transition'
 
   let showBack = $state(false)
@@ -28,21 +29,22 @@
   })
 
   const barCls =
-    'fixed left-0 right-0 top-[env(safe-area-inset-top)] z-40 flex h-7 items-center justify-center gap-2 text-xs font-semibold text-white shadow-md sm:left-14 sm:top-8'
+    'fixed left-0 right-0 top-[env(safe-area-inset-top)] z-[60] flex h-7 items-center justify-center gap-2 text-xs font-semibold text-white shadow-md sm:top-0'
+  const desktopInset = $derived($isMacOS ? 'sm:left-28 sm:right-0' : 'sm:left-14 sm:right-[8.25rem]')
 </script>
 
 {#if $offlineMode}
-  <div transition:slide={{ duration: 250 }} class="{barCls} bg-neutral-900">
+  <div data-tauri-drag-region transition:slide={{ duration: 250 }} class="{barCls} {desktopInset} bg-neutral-900">
     <CloudOff size={14} /> Offline — showing your downloads
     <button onclick={exitOfflineMode} class="ml-1 underline underline-offset-2 hover:text-white/80">Go online</button>
   </div>
 {:else if !$online}
-  <div transition:slide={{ duration: 250 }} class="{barCls} bg-neutral-900">
+  <div data-tauri-drag-region transition:slide={{ duration: 250 }} class="{barCls} {desktopInset} bg-neutral-900">
     <CloudOff size={14} /> Offline — check your connection
     <button onclick={enterOfflineMode} class="ml-1 underline underline-offset-2 hover:text-white/80">Switch to offline mode</button>
   </div>
 {:else if showBack}
-  <div transition:slide={{ duration: 250 }} class="{barCls} bg-green-600">
+  <div data-tauri-drag-region transition:slide={{ duration: 250 }} class="{barCls} {desktopInset} bg-green-600">
     <Wifi size={14} /> Back online
   </div>
 {/if}

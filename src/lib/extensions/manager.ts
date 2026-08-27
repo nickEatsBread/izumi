@@ -757,12 +757,26 @@ export async function ensureExtensionService(id: string): Promise<string> {
 }
 
 export type ServiceSettingValue = string | number | boolean | null
-export interface ServiceSettingOption { value: string; label: string }
+export interface ServiceSettingCondition {
+  key: string
+  equals: ServiceSettingValue | ServiceSettingValue[]
+}
+export interface ServiceSettingOption {
+  value: string
+  label: string
+  description?: string
+  submitLabel?: string
+  submittingLabel?: string
+  intent?: 'primary' | 'danger'
+  hideSubmit?: boolean
+}
 export interface ServiceSettingField {
   key: string
   label: string
   description?: string
   type: 'text' | 'password' | 'number' | 'boolean' | 'select'
+  role?: 'action'
+  visibleWhen?: ServiceSettingCondition
   required?: boolean
   placeholder?: string
   min?: number
@@ -770,10 +784,22 @@ export interface ServiceSettingField {
   step?: number
   options?: ServiceSettingOption[]
 }
+export interface ServiceSettingsNotice {
+  tone: 'info' | 'success' | 'warning' | 'error'
+  title?: string
+  message: string
+  code?: string
+  action?: { label: string; url: string }
+  visibleWhen?: ServiceSettingCondition
+}
 export interface ServiceSettingsDocument {
   version: 1
   title?: string
   description?: string
+  submitLabel?: string
+  submittingLabel?: string
+  notice?: ServiceSettingsNotice
+  refreshAfterMs?: number
   fields: ServiceSettingField[]
   values: Record<string, ServiceSettingValue>
 }
@@ -782,6 +808,12 @@ export interface ServiceSettingsSaveResult {
   message?: string
   restartRequired?: boolean
   version?: 1
+  title?: string
+  description?: string
+  submitLabel?: string
+  submittingLabel?: string
+  notice?: ServiceSettingsNotice
+  refreshAfterMs?: number
   fields?: ServiceSettingField[]
   values?: Record<string, ServiceSettingValue>
 }

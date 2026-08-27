@@ -146,7 +146,7 @@ html.gamemode .group:hover .group-hover\:scale-105 {
    segment composites without repainting the track, so it's as cheap as the stepped ring it
    replaces while finally looking like the loader it stands in for. */
 @keyframes bar-sweep { from { transform: translateX(-100%); } to { transform: translateX(400%); } }
-.bar-loader { position: relative; overflow: hidden; }
+.bar-loader { position: relative; overflow: hidden; contain: paint; }
 .bar-loader::before {
   content: '';
   position: absolute;
@@ -154,6 +154,7 @@ html.gamemode .group:hover .group-hover\:scale-105 {
   width: 25%;
   border-radius: 9999px;
   background: white;
+  will-change: transform;
   animation: bar-sweep 1.2s ease-in-out infinite;
 }
 /* Hover-preview card fade/scale-in (smooth crossfade between adjacent cards). */

@@ -208,6 +208,41 @@ describe('resolve cost', () => {
     expect(c.counts.findEpisodeServer).toBe((afterFirst.findEpisodeServer ?? 0) + 1)
   })
 
+  it('refreshes a cached airing-show list when the requested next episode is missing', async () => {
+    let episodeLists = 0
+    const airing = {
+      id: 'airing', name: 'AiringProvider', lang: 'en',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      call: async (method: string): Promise<any> => {
+        if (method === 'getSettings') return { episodeServers: ['srv'], supportsDub: false }
+        if (method === 'search') return [{ id: 'show', title: 'Frieren' }]
+        if (method === 'findEpisodes') {
+          episodeLists++
+          const latest = episodeLists === 1 ? 1 : 2
+          return Array.from({ length: latest }, (_, index) => ({
+            id: `ep-${index + 1}`, number: index + 1, title: `Episode ${index + 1}`,
+          }))
+        }
+        if (method === 'findEpisodeServer') {
+          return { server: 'srv', videoSources: [{ url: 'https://cdn/new-episode.m3u8', type: 'm3u8' }] }
+        }
+        return null
+      },
+    }
+    runningStreamExtensions.mockResolvedValue([airing])
+
+    await expect(resolveOnlineStreams(media, 1)).resolves.toHaveLength(1)
+    await expect(resolveOnlineStreams(media, 2)).resolves.toMatchObject([
+      { url: 'https://cdn/new-episode.m3u8' },
+    ])
+    expect(episodeLists).toBe(2)
+
+    // The short missing-episode memo is shared too; repeated progress events do not hammer the
+    // provider while the background preloader is waiting.
+    await resolveOnlineStreams(media, 2)
+    expect(episodeLists).toBe(2)
+  })
+
   it('shares one getSettings across the dub and sub passes', async () => {
     const c = counting('p', true)
     runningStreamExtensions.mockResolvedValue([c.ext])

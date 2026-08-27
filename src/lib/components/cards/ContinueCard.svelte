@@ -105,7 +105,7 @@
   </div>
 
   <div class="mt-1.5">
-    <a href={mediaHref(media)} onclick={(e) => { e.stopPropagation(); rememberDetail(media); h.tap() }}
+    <a href={mediaHref(media)} onpointerdown={() => rememberDetail(media, name)} onclick={(e) => { e.stopPropagation(); rememberDetail(media, name); h.tap() }}
        class="block truncate text-sm font-bold hover:text-theme">{name}</a>
     <span class="block truncate text-[0.7rem] text-muted-foreground">{episodeLabel}</span>
   </div>

@@ -33,7 +33,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Player cache size', category: 'Player', href: '/app/settings/player', keywords: 'buffer ram memory', desktopOnly: true },
   { title: 'Seek duration', category: 'Player', href: '/app/settings/player', keywords: 'skip seconds arrows', desktopOnly: true },
   { title: 'Enable external player', category: 'Player', href: '/app/settings/player', keywords: 'mpv vlc', anchored: true, desktopOnly: true },
-  { title: 'Title language', category: 'Player', href: '/app/settings/player', keywords: 'romaji English anime names' },
+  { title: 'Title language', category: 'Interface', href: '/app/settings/interface', keywords: 'romaji English anime names', anchored: true },
   { title: 'Title at top of player (Game mode)', category: 'Player', href: '/app/settings/player', keywords: 'Steam Deck now playing', anchored: true, desktopOnly: true },
 
   { title: 'Use custom subtitle style', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'appearance font family size colour color border outline shadow position nunito', anchored: true },

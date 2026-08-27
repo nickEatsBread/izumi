@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchesSourceFilters, matchesSourceQuery } from './source-filters'
+import { matchesSourceFilters, matchesSourceQuery, sortManagedSources } from './source-filters'
 
 describe('My sources filters', () => {
   it('filters ordinary sources by their switch state', () => {
@@ -32,5 +32,19 @@ describe('My sources filters', () => {
     expect(matchesSourceQuery('torrentio', 'https://torrentio.strem.fun')).toBe(true)
     expect(matchesSourceQuery('missing', 'AniDB', 'https://example.test')).toBe(false)
     expect(matchesSourceQuery('   ', undefined)).toBe(true)
+  })
+
+  it('sorts enabled sources first by default and supports explicit name ordering', () => {
+    const rows = [
+      { id: 'b', label: 'Beta', enabled: false, disabled: true },
+      { id: 'z', label: 'Zulu', enabled: true, disabled: false },
+      { id: 'a', label: 'Alpha', enabled: true, disabled: false },
+    ]
+
+    expect(sortManagedSources(rows, 'enabled').map((row) => row.id)).toEqual(['a', 'z', 'b'])
+    expect(sortManagedSources(rows, 'disabled').map((row) => row.id)).toEqual(['b', 'a', 'z'])
+    expect(sortManagedSources(rows, 'name-asc').map((row) => row.id)).toEqual(['a', 'b', 'z'])
+    expect(sortManagedSources(rows, 'name-desc').map((row) => row.id)).toEqual(['z', 'b', 'a'])
+    expect(sortManagedSources(rows, 'added').map((row) => row.id)).toEqual(['b', 'z', 'a'])
   })
 })

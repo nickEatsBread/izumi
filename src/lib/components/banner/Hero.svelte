@@ -15,6 +15,7 @@
   import { androidMpvActive } from '$lib/player/android-mpv'
   import { airingCountdown } from '$lib/anime/airing-labels'
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
+  import { untrack } from 'svelte'
 
   // Bottom-left content column + clean linear scrims. Discovery facts stay deliberately compact:
   // format/runtime/production/score, then one context line for next-airing + genres. Detail pages
@@ -25,16 +26,19 @@
     oninfo,
     onfav,
     showOverlay = true,
+    initialArtworkVisible = false,
   }: {
     medias: Media[]
     onplay?: (m: Media) => void
     oninfo?: (m: Media) => void
     onfav?: (m: Media) => void
     showOverlay?: boolean
+    /** The detail skeleton already painted this exact banner; settle it without replaying a slide. */
+    initialArtworkVisible?: boolean
   } = $props()
 
   let i = $state(0)
-  let loadedArtworkId = $state<number | null>(null)
+  let loadedArtworkId = $state<number | null>(untrack(() => initialArtworkVisible ? (medias[0]?.id ?? null) : null))
   let cycle = $state(0)
   let scrolled = $state(false)
   let navDirection = $state<1 | -1>(1)
@@ -340,7 +344,7 @@
          otherwise leave a black band on the right. Keyed for a crossfade. -->
     <div class="pointer-events-none absolute left-0 top-0 h-[calc(100%+2rem)] w-screen overflow-hidden sm:-left-14 sm:-top-8">
       {#key current.id}
-        <div class="hero-slide-in absolute inset-0" style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:.7">
+        <div class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:.7">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
           <img src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
                onload={artworkSettled} onerror={artworkSettled}
@@ -480,10 +484,16 @@
     to { opacity: 1; transform: translate3d(0, 0, 0); }
   }
   .hero-slide-in { animation: hero-slide-in 480ms cubic-bezier(.22, 1, .36, 1) both; }
+  @keyframes detail-hero-reveal {
+    from { opacity: .5; }
+    to { opacity: var(--hero-final-opacity, .7); }
+  }
+  .detail-hero-reveal { animation: detail-hero-reveal 220ms ease-out both; }
   .hero-copy { animation: hero-copy-in 360ms cubic-bezier(.22, 1, .36, 1) both; }
   @media (min-width: 640px) {
     .game-home-hero { height: 54vh; }
   }
   :global(html[data-motion='reduced']) .hero-slide-in,
+  :global(html[data-motion='reduced']) .detail-hero-reveal,
   :global(html[data-motion='reduced']) .hero-copy { animation-duration: 1ms; }
 </style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -85,6 +85,15 @@
       <SelectMenu value={locale} onChange={changeLocale} ariaLabel={m.settings_language()} options={[
         { value: 'en', label: m.language_english() }, { value: 'ja', label: m.language_japanese() },
       ]} />
+    </label>
+
+    <label data-setting-key="title-language" class="mb-5 flex flex-col gap-1">
+      <span class="text-sm font-bold">Title language</span>
+      <SelectMenu bind:value={$titleLanguage} className="sm:max-w-xs" ariaLabel="Title language" options={[
+        { value: 'romaji', label: 'Romaji' },
+        { value: 'english', label: 'English' },
+      ]} />
+      <span class="text-xs text-muted-foreground">Show anime titles in Romaji (e.g. Shingeki no Kyojin) or English (Attack on Titan). Falls back to the other when a title has only one.</span>
     </label>
 
     <h3 class="mb-1 text-sm font-black">{m.settings_theme()}</h3>

@@ -11,6 +11,9 @@
   import {
     matchesSourceFilters,
     matchesSourceQuery,
+    sortManagedSources,
+    type ManagedSourceSortEntry,
+    type SourceSortMode,
     type SourceStatusFilter,
     type SourceTypeFilter,
   } from '$lib/settings/source-filters'
@@ -27,6 +30,7 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ListOrdered from '@lucide/svelte/icons/list-ordered'
   import Search from '@lucide/svelte/icons/search'
+  import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down'
   import X from '@lucide/svelte/icons/x'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -49,9 +53,13 @@
   let manageFiltersReady = $state(false)
   let manageStatusFilter = $state<SourceStatusFilter>('all')
   let manageTypeFilter = $state<SourceTypeFilter>('all')
+  let manageSortMode = $state<SourceSortMode>('enabled')
   let manageQuery = $state('')
   let filterOpen = $state(false)
   let filterRoot = $state<HTMLDivElement>()
+  let sortOpen = $state(false)
+  let sortRoot = $state<HTMLDivElement>()
+  let communitySortEntries = $state<ManagedSourceSortEntry[]>([])
   const manageStatusOptions: { value: SourceStatusFilter; label: string }[] = [
     { value: 'all', label: 'Any status' },
     { value: 'enabled', label: 'Enabled' },
@@ -63,6 +71,13 @@
     { value: 'community', label: 'Community sources' },
     { value: 'catalog', label: 'Package catalogs' },
     { value: 'package', label: 'Installed packages' },
+  ]
+  const manageSortOptions: { value: SourceSortMode; label: string }[] = [
+    { value: 'enabled', label: 'Enabled first' },
+    { value: 'disabled', label: 'Disabled first' },
+    { value: 'name-asc', label: 'Name A–Z' },
+    { value: 'name-desc', label: 'Name Z–A' },
+    { value: 'added', label: 'Added order' },
   ]
   let configuring = $state<{
     name: string
@@ -147,6 +162,16 @@
         manageStatusFilter,
         manageTypeFilter,
       ) && matchesSourceQuery(manageQuery, addonNames.get(url), host(url), url)))
+  const addonSortEntries = $derived(visibleAddonRows.map(({ url, disabled }) => ({
+    id: `addon:${url}`,
+    label: addonNames.get(url) ?? host(url),
+    enabled: !disabled,
+    disabled,
+  })))
+  const manageSortRanks = $derived(new Map(
+    sortManagedSources([...addonSortEntries, ...communitySortEntries], manageSortMode)
+      .map((entry, index) => [entry.id, index] as const),
+  ))
   const manageFiltersActive = $derived(manageStatusFilter !== 'all' || manageTypeFilter !== 'all')
   const manageFilterCount = $derived(Number(manageStatusFilter !== 'all') + Number(manageTypeFilter !== 'all'))
   const manageStatusLabel = $derived(manageStatusOptions.find((option) => option.value === manageStatusFilter)?.label)
@@ -161,9 +186,10 @@
     resetManageFilters()
   }
   $effect(() => {
-    if (!filterOpen) return
+    if (!filterOpen && !sortOpen) return
     const closeOutside = (event: PointerEvent) => {
       if (event.target instanceof Node && !filterRoot?.contains(event.target)) filterOpen = false
+      if (event.target instanceof Node && !sortRoot?.contains(event.target)) sortOpen = false
     }
     document.addEventListener('pointerdown', closeOutside, true)
     return () => document.removeEventListener('pointerdown', closeOutside, true)
@@ -220,9 +246,10 @@
 </script>
 
 <svelte:window onkeydown={(event) => {
-  if (filterOpen && event.key === 'Escape') {
+  if ((filterOpen || sortOpen) && event.key === 'Escape') {
     event.preventDefault()
     filterOpen = false
+    sortOpen = false
   }
 }} />
 
@@ -231,7 +258,7 @@
     <div class="mb-1 flex items-center justify-between gap-3">
       <h2 class="text-xl font-black max-sm:hidden">Sources</h2>
       <a href="/app/settings/store" data-focusable
-         class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity max-sm:ml-auto active:opacity-80 sm:hover:opacity-90">
+         class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity max-sm:ml-auto active:opacity-80 sm:translate-y-3 sm:hover:opacity-90">
         <Store size={16} />
         Add from Store
       </a>
@@ -343,7 +370,42 @@
     </div>
     {#if addError}<p role="alert" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
     <div class="mt-2 flex flex-wrap items-center gap-2">
-      <div class="relative" bind:this={filterRoot}>
+      <div class="relative min-w-52 flex-1">
+        <Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="search" data-focusable bind:value={manageQuery} aria-label="Search sources" placeholder="Search sources…"
+          class="w-full rounded-md border border-border bg-transparent py-2 pl-9 pr-8 text-xs outline-none placeholder:text-muted-foreground focus:border-theme" />
+        {#if manageQuery}
+          <button type="button" data-focusable aria-label="Clear source search" onclick={() => (manageQuery = '')}
+            class="absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
+            <X size={13} />
+          </button>
+        {/if}
+      </div>
+
+      <div class="relative shrink-0" bind:this={sortRoot}>
+        <button type="button" data-focusable aria-label="Sort sources" aria-haspopup="menu" aria-expanded={sortOpen}
+          onclick={() => (sortOpen = !sortOpen)}
+          class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+          <ArrowUpDown size={14} />
+          Sort
+        </button>
+
+        {#if sortOpen}
+          <div role="menu" aria-label="Source sort order"
+            class="absolute left-0 top-[calc(100%+0.35rem)] z-50 w-44 rounded-xl border border-border bg-card p-1.5 shadow-xl sm:left-auto sm:right-0">
+            {#each manageSortOptions as option (option.value)}
+              <button type="button" role="menuitemradio" aria-checked={manageSortMode === option.value} data-focusable
+                onclick={() => { manageSortMode = option.value; sortOpen = false }}
+                class="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs font-bold transition-colors {manageSortMode === option.value ? 'bg-theme/15 text-theme' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}">
+                {option.label}
+                {#if manageSortMode === option.value}<span class="size-1.5 rounded-full bg-theme" aria-hidden="true"></span>{/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <div class="relative shrink-0" bind:this={filterRoot}>
         <button type="button" data-focusable aria-label="Filter sources" aria-haspopup="dialog" aria-expanded={filterOpen}
           onclick={() => (filterOpen = !filterOpen)}
           class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
@@ -354,7 +416,7 @@
 
         {#if filterOpen}
           <div role="dialog" aria-label="Source filters"
-            class="absolute left-0 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-3 shadow-xl">
+            class="absolute left-0 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-3 shadow-xl sm:left-auto sm:right-0">
             <div>
               <p class="mb-1.5 text-[0.68rem] font-black uppercase tracking-wide text-muted-foreground">Status</p>
               <div class="grid grid-cols-3 gap-1 rounded-lg bg-secondary/60 p-1">
@@ -389,18 +451,6 @@
         {/if}
       </div>
 
-      <div class="relative min-w-40 flex-1 sm:max-w-64">
-        <Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input type="search" data-focusable bind:value={manageQuery} aria-label="Search sources" placeholder="Search sources…"
-          class="w-full rounded-md border border-border bg-transparent py-2 pl-9 pr-8 text-xs outline-none placeholder:text-muted-foreground focus:border-theme" />
-        {#if manageQuery}
-          <button type="button" data-focusable aria-label="Clear source search" onclick={() => (manageQuery = '')}
-            class="absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
-            <X size={13} />
-          </button>
-        {/if}
-      </div>
-
       {#if manageFiltersReady}
         <span class="ml-auto shrink-0 text-[0.68rem] font-bold tabular-nums text-muted-foreground">
           {visibleAddonRows.length + filteredCommunityCount} of {configuredCount}
@@ -429,10 +479,11 @@
         <p class="mt-1 text-xs text-muted-foreground">Paste a Stremio add-on, GitHub repo, or catalog. Or add one from the Store.</p>
       </div>
     {/if}
+    <div class="mt-3 grid gap-2 2xl:grid-cols-2">
     {#if visibleAddonRows.length}
-    <ul class="mt-3 space-y-2">
+    <ul class="contents">
       {#each visibleAddonRows as { url, i, disabled: off } (url)}
-        <li class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
+        <li style:order={manageSortRanks.get(`addon:${url}`) ?? 0} class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
           {#await addonMetaByUrl.get(url)!}
             <div class="skeloader size-10 shrink-0 rounded-md"></div>
             <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
@@ -471,17 +522,21 @@
     </ul>
     {/if}
 
-  <div class="{visibleAddonRows.length ? 'mt-2' : 'mt-3'}">
+  <div class="contents">
     <CommunitySources
       section="manage"
       query={manageQuery}
       statusFilter={manageStatusFilter}
       typeFilter={manageTypeFilter}
+      sortMode={manageSortMode}
+      sortRanks={manageSortRanks}
       bind:hasManageRows
       bind:orphanCount
       bind:visibleManageRows={filteredCommunityCount}
       bind:manageFiltersReady
+      bind:manageSortEntries={communitySortEntries}
     />
+  </div>
   </div>
   {#if manageFiltersReady && configuredCount > 0 && visibleAddonRows.length + filteredCommunityCount === 0}
     <div class="mt-3 rounded-xl border border-dashed border-border p-4 text-center">

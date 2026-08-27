@@ -2,7 +2,7 @@
   import {
     autoSkip, skipFiller, preferredAudioLang, preferredSubLang,
     autoplayNext, bingePreload, seekDuration, enableExternalPlayer, externalPlayerPath,
-    scrubThumbnails, playerProgressAnimations, titleLanguage, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
+    scrubThumbnails, playerProgressAnimations, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
     p2pStatusVisibility,
@@ -277,24 +277,12 @@
   </div>
   {/if}
 
-  <h2 class="mb-1 mt-8 text-xl font-black">Interface</h2>
-  <p class="mb-4 text-sm text-muted-foreground">How titles and lists are shown.</p>
-
-  <div class="max-w-2xl">
-    <label class="flex flex-col gap-1">
-      <span class="text-sm font-bold">Title language</span>
-      <SelectMenu bind:value={$titleLanguage} className="sm:max-w-xs" ariaLabel="Title language" options={[
-        { value: 'romaji', label: 'Romaji' },
-        { value: 'english', label: 'English' },
-      ]} />
-      <span class="text-xs text-muted-foreground">Show anime titles in Romaji (e.g. Shingeki no Kyojin) or English (Attack on Titan). Falls back to the other when a title has only one.</span>
-    </label>
-
-    {#if !$isAndroid}
-    <div class="mt-3">
+  {#if !$isAndroid}
+    <h2 class="mb-1 mt-8 text-xl font-black">Game mode</h2>
+    <p class="mb-4 text-sm text-muted-foreground">Player layout in Steam Deck Game Mode.</p>
+    <div class="max-w-2xl">
       <Toggle label="Title at top of player (Game mode)" desc="On the Deck, show the now-playing title at the top of the screen instead of just above the seek bar." value={$playerTitleTop} onToggle={() => ($playerTitleTop = !$playerTitleTop)} />
     </div>
-    {/if}
-  </div>
+  {/if}
 
 </div>

@@ -54,14 +54,37 @@ describe('unified Sources settings', () => {
     expect(communitySources).toContain('matchesSourceQuery(query')
   })
 
+  it('uses a search, sort, filter toolbar and a merged two-column layout on wide displays', () => {
+    const search = page.indexOf('aria-label="Search sources"')
+    const sort = page.indexOf('aria-label="Sort sources"')
+    const filter = page.indexOf('aria-label="Filter sources"')
+    expect(search).toBeLessThan(sort)
+    expect(sort).toBeLessThan(filter)
+    expect(page).toContain('class="relative min-w-52 flex-1"')
+    expect(page).toContain('<div class="mt-3 grid gap-2 2xl:grid-cols-2">')
+    expect(page).toContain('<ul class="contents">')
+    expect(communitySources).toContain('<ul class="contents">')
+  })
+
+  it('sorts enabled sources first by default without redundant state badges', () => {
+    expect(page).toContain("let manageSortMode = $state<SourceSortMode>('enabled')")
+    expect(page).toContain("{ value: 'enabled', label: 'Enabled first' }")
+    expect(page).toContain('sortManagedSources([...addonSortEntries, ...communitySortEntries], manageSortMode)')
+    expect(page).toContain('bind:manageSortEntries={communitySortEntries}')
+    expect(communitySources).toContain('style:order={sortRanks.get(`extension:${url}`) ?? 0}')
+    expect(communitySources).toContain('style:order={sortRanks.get(`package:${p.id}`) ?? 0}')
+    expect(communitySources).not.toContain("{pOff ? 'OFF' : 'ENABLED'}")
+  })
+
   it('uses the wider desktop canvas for source management', () => {
     expect(page).toMatch(/role="tablist"[^>]*max-w-7xl/)
     expect(page).toMatch(/sources-panel-manage[\s\S]{0,160}<div class="max-w-7xl">/)
-    expect(communitySources).toMatch(/section === 'manage'[\s\S]{0,100}<div class="max-w-7xl">/)
+    expect(communitySources).toMatch(/section === 'manage'[\s\S]{0,100}<div class="contents"/)
   })
 
   it('puts Add from Store on the Sources heading row', () => {
     expect(page).toMatch(/<h2 class="[^"]*max-sm:hidden[^"]*">Sources<\/h2>[\s\S]{0,400}Add from Store[\s\S]{0,800}<div role="tablist"/)
+    expect(page).toMatch(/href="\/app\/settings\/store"[^>]*class="[^"]*sm:translate-y-3/)
   })
 
   it('keeps old Extensions bookmarks working without retaining a second destination', () => {

@@ -8,6 +8,9 @@
     query = '',
     statusFilter = 'all',
     typeFilter = 'all',
+    sortMode = 'enabled',
+    sortRanks = new Map<string, number>(),
+    manageSortEntries = $bindable([]),
   }: {
     section?: 'manage' | 'community-results' | 'torrent-debrid'
     hasManageRows?: boolean
@@ -17,6 +20,9 @@
     query?: string
     statusFilter?: SourceStatusFilter
     typeFilter?: SourceTypeFilter
+    sortMode?: SourceSortMode
+    sortRanks?: ReadonlyMap<string, number>
+    manageSortEntries?: ManagedSourceSortEntry[]
   } = $props()
 
   import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
@@ -34,7 +40,9 @@
   import {
     matchesSourceFilters,
     matchesSourceQuery,
+    type ManagedSourceSortEntry,
     type ManagedSourceType,
+    type SourceSortMode,
     type SourceStatusFilter,
     type SourceTypeFilter,
   } from '$lib/settings/source-filters'
@@ -230,6 +238,20 @@
     hasManageRows = $extensionUrls.length > 0 || localPackages.length > 0
     visibleManageRows = visibleExtensionRows.length + visibleOrphans.length
     manageFiltersReady = catalogsReady
+    manageSortEntries = [
+      ...visibleExtensionRows.map(({ url, facts }) => ({
+        id: `extension:${url}`,
+        label: sourceLabel(url),
+        enabled: facts.enabled,
+        disabled: facts.disabled,
+      })),
+      ...visibleOrphans.map((extension) => ({
+        id: `package:${extension.id}`,
+        label: extension.name,
+        enabled: !pluginOff(extension.id),
+        disabled: pluginOff(extension.id),
+      })),
+    ]
   })
   // Installed languages first (alphabetically within each group), then the rest.
   const langOptions = $derived(
@@ -435,15 +457,15 @@
 {/if}
 
 {#if section === 'manage'}
-  <div class="max-w-7xl">
-    <ul class="space-y-2">
+  <div class="contents" data-sort-mode={sortMode}>
+    <ul class="contents">
       {#each visibleExtensionRows as { url, i } (url)}
         {@const ext = metaByUrl.get(url)!}
         {@const gh = isGh(url)}
         {@const label = sourceLabel(url)}
         {@const cat = catalogUrls.includes(url)}
         {@const off = $disabledExtensions.includes(url)}
-        <li class="rounded-lg border border-border p-3" class:opacity-50={off && !cat}>
+        <li style:order={sortRanks.get(`extension:${url}`) ?? 0} class="rounded-lg border border-border p-3" class:opacity-50={off && !cat}>
           <div class="flex items-center gap-3">
           {#await ext}
             <div class="skeloader size-10 shrink-0 rounded-md"></div>
@@ -595,9 +617,6 @@
                               {/if}
                               {#if inst}
                                 <span class="rounded bg-secondary px-1 py-0.5 text-[0.65rem] font-bold text-muted-foreground sm:text-[0.55rem]">v{inst.version}</span>
-                                <span class="rounded px-1 py-0.5 text-[0.65rem] font-bold sm:text-[0.55rem] {pOff ? 'bg-white/10 text-muted-foreground' : 'bg-emerald-500/15 text-emerald-400'}">
-                                  {pOff ? 'OFF' : 'ENABLED'}
-                                </span>
                               {/if}
                             </div>
                             <p class="truncate text-xs text-muted-foreground sm:text-[0.65rem]">{(p.sources ?? []).map((source) => source.name).join(' · ') || p.id}</p>
@@ -672,7 +691,7 @@
       {/each}
       {#each visibleOrphans as p (p.id)}
         {@const pOff = pluginOff(p.id)}
-        <li class="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={pOff}>
+        <li style:order={sortRanks.get(`package:${p.id}`) ?? 0} class="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={pOff}>
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={40} />
             <div class="min-w-0 flex-1">
@@ -681,7 +700,6 @@
                 <span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{extensionBackendLabel(p.backend)}</span>
                 {#if p.lang}<span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}
                 <span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{p.version}</span>
-                <span class="rounded px-1.5 py-0.5 text-[0.6rem] font-bold {pOff ? 'bg-white/10 text-muted-foreground' : 'bg-emerald-500/15 text-emerald-400'}">{pOff ? 'OFF' : 'ENABLED'}</span>
               </div>
               {#if p.description}<p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{p.description}</p>{/if}
             </div>

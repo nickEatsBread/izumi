@@ -13,6 +13,12 @@ import { currentResolveTrace, traceResolve, traceResolveError } from '$lib/debug
 // synonym only multiplies a dead provider's timeout, and it used to do so per episode.
 const MAX_SEARCH_ALIASES = 5
 const SEARCH_FAILURE_COOLDOWN_MS = 90_000
+// Episode lists are normally stable enough for the shared ten-minute memo, but an airing show's
+// cached list can end at last week's episode. When the requested episode is absent, re-check the
+// provider on a short cooldown instead of treating that stale absence as authoritative. This is
+// especially important for background next-episode preload: it otherwise fails silently until the
+// original memo expires.
+const MISSING_EPISODE_REFRESH_MS = 60_000
 // Capped: one entry per (provider, title) the user browsed, and entries are only useful for their
 // 90s window — an uncapped Map would accumulate for the life of the process. Evicting the oldest
 // half at the ceiling keeps this O(1)-amortized and needs no timers.
@@ -496,11 +502,14 @@ export async function resolveOnlineStreams(
     searchFailures.delete(failKey)
     const episodesStartedAt = performance.now()
     traceResolve(trace, 'online provider episode list start', { provider: ext.name })
-    const eps = await memo(
-      `episodes|${ext.id}|${best.id}`,
+    const episodeCacheKey = `episodes|${ext.id}|${best.id}`
+    const loadEpisodes = () =>
       // Where a login-gated source fails: the detail page is what fetches the episode list, so this
       // is the catch that carries "please log in to google drive through webview".
-      () => ext.call('findEpisodes', best.id).catch((error: unknown) => { noteProblem(ext, error); return null }),
+      ext.call('findEpisodes', best.id).catch((error: unknown) => { noteProblem(ext, error); return null })
+    let eps = await memo(
+      episodeCacheKey,
+      loadEpisodes,
       cacheableList,
     ) as SnEpisode[] | null
     traceResolve(trace, 'online provider episode list finish', {
@@ -509,7 +518,23 @@ export async function resolveOnlineStreams(
       episodes: eps?.length ?? 0,
       failed: eps === null,
     })
-    const matchedEpisode = pickEpisode(eps ?? [], episode)
+    let matchedEpisode = pickEpisode(eps ?? [], episode)
+    if (!matchedEpisode && eps !== null && !signal?.aborted) {
+      traceResolve(trace, 'online provider episode list refresh', {
+        provider: ext.name,
+        missingEpisode: episode,
+      })
+      // Keep this separate from the normal memo: replacing the complete list with a transient
+      // provider miss would make earlier episodes disappear too. Dub/sub passes share this refresh
+      // key, so only one worker/network call is made for the missing episode.
+      eps = await memo(
+        `${episodeCacheKey}|missing:${episode}`,
+        loadEpisodes,
+        cacheableList,
+        MISSING_EPISODE_REFRESH_MS,
+      ) as SnEpisode[] | null
+      matchedEpisode = pickEpisode(eps ?? [], episode)
+    }
     if (!matchedEpisode) return null
     // JVM detail pages expose their canonical title. Validate that too: a fuzzy search result can
     // redirect, and resolving video after that redirect would bind the right episode NUMBER to the

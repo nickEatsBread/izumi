@@ -22,7 +22,12 @@ describe('settings search', () => {
   it('hides controls that do not exist in the Android UI', () => {
     expect(searchSettings('player cache', true)).toHaveLength(0)
     expect(searchSettings('discord rpc', true)).toHaveLength(0)
-    expect(searchSettings('title language', true)[0]?.title).toBe('Title language')
+    expect(searchSettings('title language', true)[0]).toMatchObject({
+      title: 'Title language',
+      category: 'Interface',
+      href: '/app/settings/interface',
+      anchored: true,
+    })
   })
 
   it('finds video quality on Android now that embedded libmpv consumes the presets', () => {

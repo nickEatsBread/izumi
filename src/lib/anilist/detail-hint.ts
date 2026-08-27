@@ -6,6 +6,12 @@ import type { Media } from './types'
  * anonymous grey blocks. This is intentionally session-only. */
 export const detailHints = writable<Record<number, Media>>({})
 
-export function rememberDetail(media: Media) {
-  detailHints.update((hints) => hints[media.id] === media ? hints : { ...hints, [media.id]: media })
+export function rememberDetail(media: Media, displayedTitle?: string) {
+  // Continue Watching may be rendering a provider-normalized title from an older trimmed snapshot.
+  // Carry that exact visible label as userPreferred so the destination skeleton never becomes
+  // anonymous while the richer detail query is in flight.
+  const hint = displayedTitle && media.title.userPreferred !== displayedTitle
+    ? { ...media, title: { ...media.title, userPreferred: displayedTitle } }
+    : media
+  detailHints.update((hints) => hints[media.id] === hint ? hints : { ...hints, [media.id]: hint })
 }

@@ -128,6 +128,7 @@ import {
   androidStreamInfo, waitForMpvFirstFrame,
 } from '$lib/player/android-mpv'
 import { waitForRecoveryFirstFrame, type RecoveryFirstFrameResult } from '$lib/player/recovery-first-frame'
+import { shouldBeginNextEpisodePreload } from '$lib/player/preload-policy'
 import type { Media } from '$lib/anilist/types'
 import {
   activateDirectTorrentPlayback, cancelDirectTorrentStartup, currentDirectTorrentPlaybackId, directTorrentHealth,
@@ -530,7 +531,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
     // auto-advance starts instantly, then warm the debrid/CDN edge in the final
     // seconds (kept late + small so it can't starve the current episode's tail).
     if ((get(bingePreload) || get(autoplayNext)) && dur > 0) {
-      if (pos / dur > 0.85) prefetchNext(media, episode)
+      if (shouldBeginNextEpisodePreload(pos, dur)) prefetchNext(media, episode)
       if (!warmed && dur - pos < 20 && prefetched?.mediaId === media.id && prefetched.episode === episode + 1 && prefetched.stream.url) {
         warmed = true
         invoke('player_prefetch', { url: prefetched.stream.url }).catch(() => {})
@@ -697,7 +698,7 @@ function attachAndroid(
     }
     maybePromoteToWatching(media, pos, promote)
     // Preload the next episode's stream near the end so auto-advance / Next starts instantly.
-    if ((get(bingePreload) || get(autoplayNext)) && dur > 0 && pos / dur > 0.85) prefetchNext(media, episode)
+    if ((get(bingePreload) || get(autoplayNext)) && shouldBeginNextEpisodePreload(pos, dur)) prefetchNext(media, episode)
     if (eof && !ended) {
       ended = true
       if (prematureEof(pos, dur, media.duration)) {
@@ -1202,7 +1203,7 @@ let prefetched: { mediaId: number; episode: number; stream: Stream; at?: number 
 let prefetching = false
 // Negative cache for prefetchNext. `prefetched` is only ever assigned on SUCCESS, so a miss (no
 // cached same-release, or a throw) left every guard below false — and the progress handler calls
-// this at 4Hz for the whole last 15% of an episode. A miss therefore re-ran the complete multi-addon
+// this at 4Hz throughout the preload window. A miss therefore re-ran the complete multi-addon
 // fan-out plus refineStreams over every returned row, hundreds of times per episode, on the same
 // core that is decoding video. That is guaranteed for anyone without debrid, since pickSameRelease
 // only ever matches a debrid-cached release.
@@ -1353,7 +1354,7 @@ async function prefetchNext(media: Media, episode: number) {
     // (resolveStreams is addon-only), so the next episode used to start COLD every time — a full
     // picker resolve per transition. Same-origin pre-resolve instead: search + episode list are
     // memo hits from THIS episode, so this is one background video-list call against the provider
-    // already playing. Generated at 85%, consumed at the episode cut — comfortably inside the
+    // already playing. Generated at most eight minutes before the cut — comfortably inside the
     // lifetime of these tokenized URLs; takePrefetched enforces a max age regardless.
     const b = get(bingeSource)
     if (b && b.mediaId === media.id && b.online && b.originId) {
@@ -2252,6 +2253,23 @@ const DAY_MS = 24 * 60 * 60 * 1000
 export const REMEMBERED_SOURCE_MAX_AGE_MS = 30 * DAY_MS
 export const REMEMBERED_SOURCE_PRIORITY_MS = 1500
 
+/** Let Svelte commit and paint the connecting loader before source/native setup continues. Two
+ * frames guarantee a paint between callbacks; the timeout keeps backgrounded windows moving. */
+async function paintConnectingLoader(): Promise<void> {
+  if (typeof requestAnimationFrame !== 'function') return
+  await new Promise<void>((resolve) => {
+    let finished = false
+    const finish = () => {
+      if (finished) return
+      finished = true
+      clearTimeout(timeout)
+      resolve()
+    }
+    const timeout = setTimeout(finish, 50)
+    requestAnimationFrame(() => requestAnimationFrame(finish))
+  })
+}
+
 function continueRememberedSource(mediaId: number, episode: number): RememberedSource | undefined {
   const preference = get(continueSourcePreference)
   if (preference === 'never') return undefined
@@ -2416,6 +2434,7 @@ export async function playStream(
     : null
   markSourceObservation(observation, 'resolving')
   const directStartupId = nextDirectTorrentStartupId()
+  let directPlaybackId: number | null = null
   const cancelPlaybackStart = () => {
     if (!cancelPlaybackOwner(playbackOwner)) return
     void cancelDirectTorrentStartup(directStartupId)
@@ -2484,7 +2503,8 @@ export async function playStream(
     episode,
     cancel: cancelPlaybackStart,
   })
-  let directPlaybackId: number | null = null
+  await paintConnectingLoader()
+  if (!stillOwnsPlayback()) return
   const abandonIfStale = async () => {
     if (stillOwnsPlayback()) return false
     cancelSourceObservation(observation)
