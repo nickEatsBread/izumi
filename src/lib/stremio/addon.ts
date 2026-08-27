@@ -350,12 +350,13 @@ export async function fetchAddonStreams(
           return ((await r.json()) as { streams?: Stream[] }).streams ?? []
         } catch { return [] }
       }))
-      const all = responses.flat().map((s) => normalizeStreamBehavior({
+      const all = responses.flatMap((streams, requestIndex) => streams.map((s, upstreamRank) => normalizeStreamBehavior({
         ...s,
         __logo: resolveAddonLogo(manifest?.logo, b),
         __addonName: manifest?.name,
         __origin: { kind: 'addon' as const, id: addonOriginId(b), name: manifest?.name },
-      }))
+        __evidence: { upstreamRank, requestId: ask[requestIndex] },
+      })))
       const usable = dedupeStreams(all.filter((s) => (!!s.url || !!s.infoHash) && !isNotice(s)))
       return { streams: usable, total: all.length }
     } catch { return { streams: [], total: 0 } }

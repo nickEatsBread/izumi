@@ -53,9 +53,25 @@ export function normalizeStreamBehavior(stream: Stream): Stream {
   if (!magnet && stream.infoHash) magnet = `magnet:?xt=urn:btih:${stream.infoHash}`
   if (magnet) magnet = appendMagnetTrackers(magnet, trackers)
 
+  const standardSubtitles = (Array.isArray(stream.subtitles) ? stream.subtitles : [])
+    .filter((subtitle) => subtitle && typeof subtitle.url === 'string' && !!subtitle.url.trim())
+    .map((subtitle) => ({
+      id: typeof subtitle.id === 'string' ? subtitle.id : undefined,
+      url: subtitle.url.trim(),
+      lang: typeof subtitle.lang === 'string' && subtitle.lang.trim() ? subtitle.lang.trim() : undefined,
+    }))
+  const countryWhitelist = (Array.isArray(stream.behaviorHints?.countryWhitelist)
+    ? stream.behaviorHints.countryWhitelist
+    : [])
+    .filter((country): country is string => typeof country === 'string')
+    .map((country) => country.trim().toLowerCase())
+    .filter((country, index, countries) => /^[a-z]{3}$/.test(country) && countries.indexOf(country) === index)
+
   return {
     ...stream,
     __magnet: magnet ?? stream.__magnet,
     __headers: { ...(proxyHeaders ?? {}), ...(stream.__headers ?? {}) },
+    __subtitles: [...(stream.__subtitles ?? []), ...standardSubtitles],
+    __countryWhitelist: countryWhitelist.length ? countryWhitelist : undefined,
   }
 }

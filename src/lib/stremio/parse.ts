@@ -17,12 +17,37 @@ export interface StreamOrigin {
   name?: string
 }
 
+export interface StreamEvidence {
+  confirmedMatch?: boolean
+  bestRelease?: boolean
+  episodeNumber?: number
+  resolution?: string
+  releaseGroup?: string
+  publishedAt?: string
+  /** Zero-based order within one upstream source response. Never use this as release identity. */
+  upstreamRank?: number
+  /** Media id used for the addon request whose local rank is recorded above. */
+  requestId?: string
+}
+
+export interface StremioStreamSubtitle {
+  id?: string
+  url: string
+  lang?: string
+}
+
 export interface Stream {
   url?: string
+  ytId?: string
+  externalUrl?: string
   name?: string
   title?: string
   description?: string // Comet/MediaFusion carry metadata here (Torrentio uses `title`)
   infoHash?: string
+  /** Standard Stremio zero-based file index inside an infoHash torrent. */
+  fileIdx?: number
+  /** Standard per-stream Stremio subtitle objects. Normalized into __subtitles on ingestion. */
+  subtitles?: StremioStreamSubtitle[]
   /** Stremio `sources` entries, most commonly `tracker:<announce-url>` hints. */
   sources?: string[]
   // Full magnet URI (with trackers) when the source provided one — preferred over a bare-hash
@@ -37,6 +62,7 @@ export interface Stream {
     bingeGroup?: string
     videoHash?: string // OpenSubtitles moviehash, when supplied by the addon
     proxyHeaders?: { request?: Record<string, string>; response?: Record<string, string> }
+    countryWhitelist?: string[]
     notWebReady?: boolean
     [k: string]: unknown
   }
@@ -47,6 +73,10 @@ export interface Stream {
   // Stable origin used by Continue Watching to query only the source that last succeeded.
   // Deliberately contains no resolved URL, auth header, magnet, or debrid credential.
   __origin?: StreamOrigin
+  /** Source-native claims retained structurally for grouping/ranking and diagnostics. */
+  __evidence?: StreamEvidence
+  /** Validated lower-case ISO 3166-1 alpha-3 availability hints from Stremio. */
+  __countryWhitelist?: string[]
   // Source-declared match confidence (extension SDK `accuracy`). 'high' = the source verified
   // this result against the episode's PRODUCTION id (e.g. TVDB episode id), so title heuristics
   // must not second-guess it — foreign-language release names carry no romaji/english tokens
@@ -74,6 +104,7 @@ export interface Stream {
   // `lang` is a normalized ISO code (mpv matches `slang` on codes); `title` is the provider's own
   // label for the track menu; `headers` covers Referer-gated sidecar URLs.
   __subtitles?: {
+    id?: string
     url: string
     lang?: string
     title?: string

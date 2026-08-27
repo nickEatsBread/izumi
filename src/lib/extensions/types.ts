@@ -1,7 +1,24 @@
 // Contracts shared with source extensions.
 
+/** Structured facts reported by a source. Keep these separate from the release title: the
+ *  auto-player can use an explicit provider claim without pretending a filename parse is fact. */
+export interface TorrentEvidence {
+  /** The provider used a production id (for example AniDB AID/EID) to verify the match. */
+  confirmedMatch?: boolean
+  /** The provider explicitly rates this as a best release; false is meaningful, not unknown. */
+  bestRelease?: boolean
+  /** Source-declared episode number. Seanime uses -1 for unknown, which is normalized away. */
+  episodeNumber?: number
+  resolution?: string
+  releaseGroup?: string
+  /** RFC3339 timestamp supplied by the provider. */
+  publishedAt?: string
+  /** Zero-based order within the provider response. It is weak ranking evidence, not identity. */
+  upstreamRank?: number
+}
+
 /** A torrent result returned by an extension's single()/batch()/movie(). The only
- *  load-bearing field for us is `hash` — we resolve it through Real-Debrid. */
+ *  load-bearing field for playback is `hash` — the remaining fields are candidate evidence. */
 export interface TorrentResult {
   title: string
   link?: string // magnet: URI or .torrent URL
@@ -12,6 +29,7 @@ export interface TorrentResult {
   size?: number // bytes
   accuracy?: 'high' | 'medium' | 'low'
   type?: 'batch' | 'best' | 'alt'
+  evidence?: TorrentEvidence
   provider?: string // display name of the source extension that returned it (for the picker label)
   providerId?: string // stable extension id used for direct Continue Watching resolution
   logo?: string // icon URL/data of the source extension (for the picker logo)

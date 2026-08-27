@@ -13,7 +13,8 @@ export interface SnMedia {
 export interface AnimeTorrent {
   name?: string; size?: number; seeders?: number | string; leechers?: number | string; downloadCount?: number | string
   link?: string; downloadUrl?: string; magnetLink?: string; infoHash?: string
-  resolution?: string; isBatch?: boolean; episodeNumber?: number
+  date?: string; resolution?: string; isBatch?: boolean; episodeNumber?: number; releaseGroup?: string
+  isBestRelease?: boolean; confirmed?: boolean
 }
 export interface AtpSettings { canSmartSearch?: boolean; smartSearchFilters?: string[]; type?: string }
 
@@ -37,9 +38,22 @@ export function toProviderMedia(m: Media): SnMedia {
 
 /** Map one AnimeTorrent (+ its already-resolved infohash) to izumi's TorrentResult. Returns null
  *  when there is no valid 40-hex infohash — hash is load-bearing (Real-Debrid resolves it). */
-export function atorrentToResult(t: AnimeTorrent, hash: string): TorrentResult | null {
+export function atorrentToResult(t: AnimeTorrent, hash: string, upstreamRank?: number): TorrentResult | null {
   const h = (hash || '').toLowerCase()
   if (!/^[a-f0-9]{40}$/.test(h)) return null
+  const episodeNumber = Number.isFinite(t.episodeNumber) && (t.episodeNumber ?? -1) >= 0
+    ? Math.floor(t.episodeNumber as number)
+    : undefined
+  const evidence = {
+    confirmedMatch: typeof t.confirmed === 'boolean' ? t.confirmed : undefined,
+    bestRelease: typeof t.isBestRelease === 'boolean' ? t.isBestRelease : undefined,
+    episodeNumber,
+    resolution: t.resolution?.trim() || undefined,
+    releaseGroup: t.releaseGroup?.trim() || undefined,
+    publishedAt: t.date?.trim() || undefined,
+    upstreamRank,
+  }
+  const hasEvidence = Object.values(evidence).some((value) => value !== undefined)
   return {
     title: t.name ?? 'Torrent',
     link: t.magnetLink || t.downloadUrl || t.link,
@@ -48,7 +62,11 @@ export function atorrentToResult(t: AnimeTorrent, hash: string): TorrentResult |
     leechers: normalizeTorrentCount(t.leechers),
     downloads: normalizeTorrentCount(t.downloadCount),
     size: t.size,
-    type: t.isBatch ? 'batch' : 'best',
+    // `isBatch` and `isBestRelease` are independent Seanime claims. The old fallback marked every
+    // non-batch result as "best", manufacturing a strong signal the provider never made.
+    ...(t.isBatch ? { type: 'batch' as const } : t.isBestRelease ? { type: 'best' as const } : {}),
+    ...(t.confirmed ? { accuracy: 'high' as const } : {}),
+    ...(hasEvidence ? { evidence } : {}),
   }
 }
 
@@ -119,7 +137,7 @@ export async function queryTorrentProviders(query: TorrentQuery, media: SnMedia,
               const t = list[index]
               let hash = (t.infoHash ?? '').toLowerCase()
               if (!hash) hash = (((await p.call('getTorrentInfoHash', t).catch(() => '')) as string) ?? '').toLowerCase()
-              const r = atorrentToResult(t, hash)
+              const r = atorrentToResult(t, hash, index)
               if (r) slots[index] = { ...r, provider: p.name, providerId: p.id, logo: p.icon }
             }
           }

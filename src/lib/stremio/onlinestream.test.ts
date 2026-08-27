@@ -241,6 +241,14 @@ describe('pickEpisode', () => {
 })
 
 describe('videoSourceToStream', () => {
+  it('retains upstream order as weak evidence', () => {
+    const stream = videoSourceToStream(
+      { url: 'https://s/v.m3u8', type: 'm3u8', quality: '1080p' },
+      'srv', {}, 'Provider', 'Episode 1', 'sub', 'provider-id', 'en', false, 'eng', 'Show', 4,
+    )
+    expect(stream.__evidence).toEqual({ upstreamRank: 4 })
+  })
+
   it('preserves the explicit JVM host-server marker without inferring it from every localhost URL', () => {
     const hosted = videoSourceToStream(
       { url: 'http://127.0.0.1:43123/video', localServer: true },

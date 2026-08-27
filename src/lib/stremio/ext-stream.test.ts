@@ -59,4 +59,11 @@ describe('extToStream', () => {
     expect(s.__torrentUrl).toBe(url)
     expect(s.__magnet).toBeUndefined()
   })
+
+  it('carries source-native evidence separately from the display title', () => {
+    const evidence = { confirmedMatch: true, bestRelease: false, episodeNumber: 3, upstreamRank: 2 }
+    const s = extToStream({ ...base, evidence }, 'Example')
+    expect(s.__evidence).toEqual(evidence)
+    expect(s.__evidence).not.toBe(evidence)
+  })
 })

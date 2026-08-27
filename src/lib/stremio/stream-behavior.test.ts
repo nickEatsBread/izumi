@@ -28,6 +28,25 @@ describe('normalizeStreamBehavior', () => {
     // reports a healthy `xt` even when the stored magnet has been mangled.
     expect(out.__magnet).toBe(`magnet:?xt=urn:btih:${'a'.repeat(40)}&tr=udp%3A%2F%2Ftracker.example%3A80`)
   })
+
+  it('normalizes standard per-stream subtitles without dropping ids', () => {
+    const out = normalizeStreamBehavior({
+      url: 'https://video',
+      subtitles: [
+        { id: 'eng-1', url: ' https://example.com/en.vtt ', lang: 'eng' },
+        { id: 'bad', url: '  ', lang: 'eng' },
+      ],
+    })
+    expect(out.__subtitles).toEqual([{ id: 'eng-1', url: 'https://example.com/en.vtt', lang: 'eng' }])
+  })
+
+  it('retains validated country availability hints in normalized form', () => {
+    const out = normalizeStreamBehavior({
+      url: 'https://video',
+      behaviorHints: { countryWhitelist: ['USA', 'gbr', 'USA', 'not-a-country'] },
+    })
+    expect(out.__countryWhitelist).toEqual(['usa', 'gbr'])
+  })
 })
 
 const HASH = 'c'.repeat(40)

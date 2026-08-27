@@ -283,7 +283,7 @@ export function pickEpisode(eps: SnEpisode[], episode: number): SnEpisode | unde
 export function videoSourceToStream(
   vs: SnVideoSource, server: string, headers: Record<string, string>, provider: string,
   epTitle?: string, audio?: 'sub' | 'dub', originId?: string, lang?: string, langMismatch?: boolean,
-  preferredSubtitle?: string, sourceTitle?: string,
+  preferredSubtitle?: string, sourceTitle?: string, upstreamRank?: number,
 ): Stream {
   const quality = vs.quality || 'auto'
   const kind = /m3u8|hls/i.test(vs.type ?? '') ? 'HLS' : 'MP4'
@@ -313,7 +313,7 @@ export function videoSourceToStream(
   const party = vs.share
     ? videoSourceToStream(
         { ...vs.share, share: undefined }, server, headers, provider, epTitle, audio, originId,
-        lang, langMismatch, preferredSubtitle, sourceTitle,
+        lang, langMismatch, preferredSubtitle, sourceTitle, upstreamRank,
       )
     : undefined
   return {
@@ -358,6 +358,7 @@ export function videoSourceToStream(
     __addonName: provider,
     __sourceTitle: sourceTitle?.trim() || undefined,
     __origin: originId ? { kind: 'online-extension', id: originId, name: provider } : undefined,
+    __evidence: upstreamRank == null ? undefined : { upstreamRank },
     __drm: parseStreamDrm(vs.drm),
     __previewUrl: vs.previewUrl,
     __party: party ? {
@@ -591,6 +592,7 @@ export async function resolveOnlineStreams(
             !matchesPreferredLang(ext.lang, prefLang) && !!ext.lang,
             subLang,
             matchedTitle,
+            out.length,
           ))
         }
       }

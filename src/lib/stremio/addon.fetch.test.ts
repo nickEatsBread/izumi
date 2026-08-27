@@ -69,6 +69,22 @@ describe('manifest is decoupled from the stream fetch', () => {
     expect(streams[0].__addonName).toBe('Addon')
   })
 
+  it('retains the request-scoped order supplied by an upstream addon', async () => {
+    mocks.phttp.mockResolvedValue(streamResponse([
+      { url: 'u1', name: 'first' },
+      { url: 'u2', name: 'second' },
+    ]))
+
+    const p = fetchAddonStreams('https://plain.example.org', 'kitsu:1:1')
+    await vi.advanceTimersByTimeAsync(50)
+    const { streams } = await p
+
+    expect(streams.map((stream) => stream.__evidence)).toEqual([
+      { upstreamRank: 0, requestId: 'kitsu:1:1' },
+      { upstreamRank: 1, requestId: 'kitsu:1:1' },
+    ])
+  })
+
   it('still yields streams when the manifest fetch rejects', async () => {
     mocks.phttp.mockResolvedValue(streamResponse([{ url: 'u1', name: 'x' }]))
     mocks.fetchManifest.mockRejectedValue(new Error('boom'))

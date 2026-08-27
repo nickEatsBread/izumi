@@ -486,8 +486,12 @@ export async function queryExtensions(query: TorrentQuery, onBatch?: (rs: Torren
             durationMs: Math.round(performance.now() - methodStartedAt),
             rows: results.length,
           })
-          return results.map((result) => ({
+          return results.map((result, upstreamRank) => ({
             ...(method === 'batch' && result.type == null ? { ...result, type: 'batch' as const } : result),
+            evidence: {
+              ...(result.evidence ?? {}),
+              upstreamRank: result.evidence?.upstreamRank ?? upstreamRank,
+            },
             provider: result.provider ?? e.cfg.name,
             providerId: e.cfg.id,
             logo: result.logo ?? e.cfg.icon,
