@@ -96,7 +96,9 @@ export function dropSuperseded(tracker: TrackerName, mediaId: number, justPushed
 /** Classify an HTTP status into retryable (transient — keep) vs permanent (drop). */
 export function classifyStatus(status: number): 'retry' | 'drop' {
   if (status === 408 || status === 429 || status >= 500) return 'retry'
-  if (status === 400 || status === 401 || status === 403 || status === 404) return 'drop'
+  // Deterministic client/auth/conflict failures do not improve when replayed unchanged. SIMKL in
+  // particular uses 412 for a missing/invalid/suspended client_id and documents it as non-retryable.
+  if ([400, 401, 403, 404, 409, 412].includes(status)) return 'drop'
   return 'retry' // unknown → keep rather than silently lose the update
 }
 

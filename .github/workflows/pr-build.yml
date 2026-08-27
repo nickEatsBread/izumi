@@ -24,6 +24,15 @@ concurrency:
 permissions:
   contents: read
 
+# Public identifiers are repository variables so preview artifacts match release authentication
+# without committing each developer/deployment application's values to the source tree.
+env:
+  PUBLIC_ANILIST_CLIENT_ID: ${{ vars.ANILIST_CLIENT_ID }}
+  PUBLIC_MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
+  PUBLIC_SIMKL_CLIENT_ID: ${{ vars.SIMKL_CLIENT_ID }}
+  PUBLIC_OAUTH_REDIRECT_URI: ${{ vars.OAUTH_REDIRECT_URI }}
+  PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
+
 jobs:
   windows:
     # `labeled` fires once per label add; the `contains` check is what actually gates every other

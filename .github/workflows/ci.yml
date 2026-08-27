@@ -12,6 +12,15 @@ on:
 permissions:
   contents: read
 
+# OAuth client IDs are public desktop-app identifiers. Keep deployment values out of Git while
+# still compiling every platform with the same registered applications.
+env:
+  PUBLIC_ANILIST_CLIENT_ID: ${{ vars.ANILIST_CLIENT_ID }}
+  PUBLIC_MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
+  PUBLIC_SIMKL_CLIENT_ID: ${{ vars.SIMKL_CLIENT_ID }}
+  PUBLIC_OAUTH_REDIRECT_URI: ${{ vars.OAUTH_REDIRECT_URI }}
+  PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
+
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -158,8 +167,6 @@ jobs:
       # r28+ emits 16 KiB-aligned ELF LOAD segments by default. Match the pinned libmpv build.
       NDK_VERSION: "29.0.14206865"
       BUILD_TOOLS: "36.0.0"
-      PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
-      PUBLIC_SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v7
 

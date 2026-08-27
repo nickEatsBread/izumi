@@ -118,10 +118,12 @@ modules:
       append-path: /run/build/izumi/cargo/bin:/usr/lib/sdk/node22/bin
       build-args:
         - --share=network
-      # flatpak-builder deliberately strips the host environment. This public build-time key is
-      # supplied by CI and must be forwarded into the isolated npm/SvelteKit build.
+      # flatpak-builder deliberately strips the host environment. These build-time identifiers
+      # are supplied by CI and must be forwarded into the isolated npm/SvelteKit build. Despite
+      # flatpak-builder's field name, the SIMKL client ID is a public desktop-app identifier.
       secret-env:
         - PUBLIC_DISCUSS_ANIME_API_KEY
+        - PUBLIC_SIMKL_CLIENT_ID
       env:
         CARGO_HOME: /run/build/izumi/cargo
         RUSTUP_HOME: /run/build/izumi/rustup

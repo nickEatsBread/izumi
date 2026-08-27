@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fetchMediaByIds } from '$lib/anilist/fetch-media'
   import { getKitsuAnimeIds } from '$lib/trackers/kitsu'
-  import { getSimklAnimeIds } from '$lib/trackers/simkl'
+  import { getSimklAnimeRefs } from '$lib/trackers/simkl'
   import type { Media } from '$lib/anilist/types'
   import { nearViewport } from '$lib/util/near-viewport'
   import Carousel from './Carousel.svelte'
@@ -12,6 +12,7 @@
   let loading = $state(true)
   let error = $state('')
   let requested = $state(false)
+  let sourceUrls = $state(new Map<number, string>())
 
   function reveal() {
     if (requested) return
@@ -23,9 +24,11 @@
     loading = true
     error = ''
     try {
+      const refs = tracker === 'Simkl' ? await getSimklAnimeRefs(status, 30) : []
       const ids = tracker === 'Kitsu'
         ? await getKitsuAnimeIds(status, 20)
-        : await getSimklAnimeIds(status, 30)
+        : refs.map((item) => item.anilistId)
+      sourceUrls = new Map(refs.flatMap((item) => item.simklUrl ? [[item.anilistId, item.simklUrl] as const] : []))
       if (!ids.length) { medias = []; return }
       const mapped = await fetchMediaByIds(ids)
       medias = ids.flatMap((id) => mapped.get(id) ? [mapped.get(id)!] : [])
@@ -53,7 +56,9 @@
     </section>
   {:else if medias.length}
     <Carousel {title}>
-      {#each medias as media (media.id)}<SmallCard {media} />{/each}
+      {#each medias as media (media.id)}
+        <SmallCard {media} sourceHref={sourceUrls.get(media.id)} sourceLabel={tracker === 'Simkl' ? 'Simkl' : undefined} />
+      {/each}
     </Carousel>
   {/if}
 </div>

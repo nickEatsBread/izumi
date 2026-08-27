@@ -5,7 +5,7 @@ import { anilistUser } from '$lib/anilist/account'
 import { captureLogin, redirectUri } from './oauth'
 
 export async function connectAniList() {
-  if (!anilistClientId) throw new Error('Missing AniList Client ID (set PUBLIC_ANILIST_CLIENT_ID in .env).')
+  if (!anilistClientId) throw new Error('Missing AniList Client ID (set PUBLIC_ANILIST_CLIENT_ID in .env.local).')
   const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${anilistClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token`
   const u = await captureLogin(authUrl, 'AniList')
   const frag = new URLSearchParams(u.hash.replace(/^#/, ''))

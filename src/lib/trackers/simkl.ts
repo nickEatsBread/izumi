@@ -1,6 +1,9 @@
 import { simklFetch } from './simkl-auth'
 import { classifyStatus, type PushResult, type TrackerOp } from './queue'
 import { getIndex, lookupAnilistByMal } from '$lib/stremio/idmap'
+import { simklToken } from './config'
+import { persisted } from 'svelte-persisted-store'
+import { get } from 'svelte/store'
 
 export function simklStatus(status = 'CURRENT'): string {
   return ({
@@ -27,15 +30,21 @@ async function post(path: string, body: unknown): Promise<PushResult> {
       body: JSON.stringify(body),
     })
     if (!response) return { ok: false, retryable: false }
-    return response.ok
-      ? { ok: true }
-      : { ok: false, retryable: classifyStatus(response.status) === 'retry' }
+    if (response.ok) return { ok: true }
+    // A second sync write can occasionally meet SIMKL's per-user sync lock even though Izumi
+    // serializes requests. This is the one documented 400 that should be retried unchanged.
+    const error = response.status === 400
+      ? (await response.clone().json().catch(() => ({})) as { error?: unknown }).error
+      : undefined
+    return { ok: false, retryable: error === 'rate_limit' || classifyStatus(response.status) === 'retry' }
   } catch { return { ok: false, retryable: true } }
 }
 
 export async function pushSimkl(op: TrackerOp): Promise<PushResult> {
   const animeIds = ids(op)
-  if (op.kind === 'remove') return post('/sync/history/remove', { anime: [{ ids: animeIds }] })
+  // SIMKL's removal endpoint silently ignores a top-level anime[] array; anime titles must use
+  // shows[] there even though the corresponding add endpoint accepts either spelling.
+  if (op.kind === 'remove') return post('/sync/history/remove', { shows: [{ ids: animeIds }] })
   if (op.kind === 'score') {
     const rating = simklScore(op.score ?? 0)
     return rating === 0
@@ -45,10 +54,15 @@ export async function pushSimkl(op: TrackerOp): Promise<PushResult> {
   if (op.kind === 'progress') {
     const progress = Math.max(0, Math.round(op.progress ?? 0))
     if (progress > 0) {
-      const history = await post('/sync/history', {
-        anime: [{ ids: animeIds, episodes: Array.from({ length: progress }, (_, index) => ({ number: index + 1 })) }],
+      // History accepts the target status on the same item and already moves the watchlist row.
+      // Chaining add-to-list would be redundant and would consume a second scarce POST slot.
+      return post('/sync/history', {
+        anime: [{
+          ids: animeIds,
+          status: simklStatus(op.status),
+          episodes: Array.from({ length: progress }, (_, index) => ({ number: index + 1 })),
+        }],
       })
-      if (!history.ok) return history
     }
   }
   return post('/sync/add-to-list', { anime: [{ to: simklStatus(op.status), ids: animeIds }] })
@@ -58,25 +72,144 @@ interface SimklListItem {
   status?: string
   watched_episodes_count?: number
   user_rating?: number
-  anime?: { ids?: { anilist?: number; mal?: number } }
-  ids?: { anilist?: number; mal?: number }
+  anime?: { ids?: SimklIds }
+  ids?: SimklIds
 }
 
-let listCache: { at: number; entries: SimklListItem[] } | null = null
+interface SimklIds {
+  simkl?: number
+  slug?: string
+  anilist?: number
+  mal?: number
+}
+
+interface SimklAnimeCache {
+  activityAll?: string
+  removedFromList?: string
+  entries: SimklListItem[]
+}
+
+// Keep the initial anime-list baseline across launches. SIMKL explicitly asks clients to perform
+// one full pull, then gate later reads through /sync/activities instead of downloading the whole
+// watchlist every time the app starts or a detail page opens.
+const storedListCache = persisted<SimklAnimeCache | null>('simkl-anime-list-cache-v1', null)
+let listCache = get(storedListCache)
+let listCheckedAt = 0
 let listPending: Promise<SimklListItem[] | null> | null = null
-async function listEntries(): Promise<SimklListItem[] | null> {
-  if (listCache && Date.now() - listCache.at < 60_000) return listCache.entries
-  if (listPending) return listPending
-  const pending = (async () => {
-    const response = await simklFetch('/sync/all-items/anime')
+let cacheGeneration = 0
+const ACTIVITY_CHECK_TTL_MS = 15 * 60 * 1_000
+
+interface SimklAnimeActivity {
+  all?: string
+  removedFromList?: string
+}
+
+async function currentAnimeActivity(): Promise<SimklAnimeActivity | null> {
+  try {
+    const response = await simklFetch('/sync/activities')
     if (!response?.ok) return null
-    const json = await response.json() as { anime?: SimklListItem[] } | SimklListItem[]
-    const entries = Array.isArray(json) ? json : json.anime ?? []
-    listCache = { at: Date.now(), entries }
+    const json = await response.json().catch(() => ({})) as {
+      anime?: { all?: unknown; removed_from_list?: unknown }
+    }
+    return {
+      all: typeof json.anime?.all === 'string' ? json.anime.all : undefined,
+      removedFromList: typeof json.anime?.removed_from_list === 'string'
+        ? json.anime.removed_from_list
+        : undefined,
+    }
+  } catch { return null }
+}
+
+async function fetchAnimeItems(path: string): Promise<SimklListItem[] | null> {
+  const response = await simklFetch(path).catch(() => null)
+  if (!response?.ok) return null
+  const json = await response.json().catch(() => null) as { anime?: SimklListItem[] } | SimklListItem[] | null
+  if (!json) return null
+  return Array.isArray(json) ? json : json.anime ?? []
+}
+
+function itemIds(item: SimklListItem): SimklIds {
+  return item.anime?.ids ?? item.ids ?? {}
+}
+
+function itemKey(item: SimklListItem): string | undefined {
+  const value = itemIds(item)
+  if (value.simkl) return `simkl:${value.simkl}`
+  if (value.anilist) return `anilist:${value.anilist}`
+  if (value.mal) return `mal:${value.mal}`
+  return undefined
+}
+
+function mergeItems(current: SimklListItem[], delta: SimklListItem[]): SimklListItem[] {
+  const merged = new Map<string, SimklListItem>()
+  const unkeyed: SimklListItem[] = []
+  for (const item of [...current, ...delta]) {
+    const key = itemKey(item)
+    if (key) merged.set(key, item)
+    else unkeyed.push(item)
+  }
+  return [...merged.values(), ...unkeyed]
+}
+
+async function listEntries(): Promise<SimklListItem[] | null> {
+  if (listCache && Date.now() - listCheckedAt < ACTIVITY_CHECK_TTL_MS) return listCache.entries
+  if (listPending) return listPending
+  const generation = cacheGeneration
+  const pending = (async () => {
+    if (listCache?.activityAll) {
+      const activity = await currentAnimeActivity()
+      if (generation !== cacheGeneration) return null
+      listCheckedAt = Date.now()
+      // A failed activity check should not trigger a large full-library request. Keep the last
+      // known-good baseline and try the cheap check again on the next user-visible refresh.
+      if (!activity?.all || activity.all === listCache.activityAll) return listCache.entries
+
+      const deltaPath = `/sync/all-items/anime?date_from=${encodeURIComponent(listCache.activityAll)}`
+      const delta = await fetchAnimeItems(deltaPath)
+      if (generation !== cacheGeneration || !delta) return listCache.entries
+      let entries = mergeItems(listCache.entries, delta)
+
+      // date_from does not include removals. SIMKL recommends a cheap ID-only snapshot when the
+      // deletion timestamp moves, then diffing it against the local cache.
+      if (activity.removedFromList && activity.removedFromList !== listCache.removedFromList) {
+        const currentIds = await fetchAnimeItems('/sync/all-items/anime?extended=simkl_ids_only')
+        if (generation !== cacheGeneration || !currentIds) return listCache.entries
+        const retained = new Set(currentIds.map(itemKey).filter((key): key is string => Boolean(key)))
+        entries = entries.filter((entry) => {
+          const key = itemKey(entry)
+          return !key || retained.has(key)
+        })
+      }
+
+      listCache = {
+        activityAll: activity.all,
+        removedFromList: activity.removedFromList,
+        entries,
+      }
+      storedListCache.set(listCache)
+      return entries
+    }
+
+    const entries = await fetchAnimeItems('/sync/all-items/anime')
+    if (generation !== cacheGeneration) return null
+    if (!entries) return listCache?.entries ?? null
+    // The initial sync baseline is the activity timestamp fetched immediately after the full pull.
+    const activity = await currentAnimeActivity()
+    if (generation !== cacheGeneration) return null
+    listCache = {
+      activityAll: activity?.all,
+      removedFromList: activity?.removedFromList,
+      entries,
+    }
+    storedListCache.set(listCache)
+    listCheckedAt = Date.now()
     return entries
   })()
   listPending = pending
-  pending.finally(() => { if (listPending === pending) listPending = null })
+  pending.then(
+    () => { if (listPending === pending) listPending = null },
+    () => { if (listPending === pending) listPending = null },
+  )
   return pending
 }
 
@@ -102,29 +235,61 @@ export async function getSimklProgress(mediaId: number, idMal?: number): Promise
   } catch { return null }
 }
 
-export function invalidateSimklList() { listCache = null }
+export function invalidateSimklList() {
+  cacheGeneration += 1
+  listCheckedAt = 0
+  listPending = null
+}
+
+export function clearSimklListCache() {
+  cacheGeneration += 1
+  listCache = null
+  storedListCache.set(null)
+  listCheckedAt = 0
+  listPending = null
+}
+
+// Never show one connected account the previous account's durable list baseline.
+let observedToken = get(simklToken)
+simklToken.subscribe((token) => {
+  if (token !== observedToken) clearSimklListCache()
+  observedToken = token
+})
 
 /** Canonical AniList ids from one Simkl anime-library status. */
 export async function getSimklAnimeIds(status: string, limit = 30): Promise<number[]> {
+  return (await getSimklAnimeRefs(status, limit)).map((item) => item.anilistId)
+}
+
+export interface SimklAnimeRef {
+  anilistId: number
+  simklUrl?: string
+}
+
+/** AniList ids for rendering plus the mandatory per-title Simkl attribution target. */
+export async function getSimklAnimeRefs(status: string, limit = 30): Promise<SimklAnimeRef[]> {
   const entries = await listEntries()
   if (!entries) return []
   const matching = entries.filter((entry) => entry.status === status)
-  const direct = matching.flatMap((entry) => {
-    const anilistId = Number((entry.anime?.ids ?? entry.ids)?.anilist)
-    return Number.isFinite(anilistId) && anilistId > 0 ? [anilistId] : []
-  })
-  const unresolved = matching.filter((entry) => {
-    const anilistId = Number((entry.anime?.ids ?? entry.ids)?.anilist)
-    return !Number.isFinite(anilistId) || anilistId <= 0
-  })
-  const fallback: number[] = []
-  if (unresolved.length) {
-    const index = await getIndex()
-    for (const entry of unresolved) {
-      const malId = Number((entry.anime?.ids ?? entry.ids)?.mal)
-      const mapped = Number.isFinite(malId) ? lookupAnilistByMal(index, malId) : undefined
-      if (mapped != null) fallback.push(mapped)
-    }
+  const index = matching.some((entry) => !itemIds(entry).anilist) ? await getIndex() : null
+  const refs: SimklAnimeRef[] = []
+  for (const entry of matching) {
+    const values = itemIds(entry)
+    const direct = Number(values.anilist)
+    const mal = Number(values.mal)
+    const anilistId = Number.isFinite(direct) && direct > 0
+      ? direct
+      : Number.isFinite(mal) && index ? lookupAnilistByMal(index, mal) : undefined
+    if (anilistId == null) continue
+    const simkl = Number(values.simkl)
+    const slug = typeof values.slug === 'string' ? values.slug.trim() : ''
+    refs.push({
+      anilistId,
+      simklUrl: Number.isFinite(simkl) && simkl > 0
+        ? `https://simkl.com/anime/${simkl}/${encodeURIComponent(slug)}`
+        : undefined,
+    })
+    if (refs.length >= Math.max(1, Math.round(limit))) break
   }
-  return [...direct, ...fallback].slice(0, Math.max(1, Math.round(limit)))
+  return refs
 }

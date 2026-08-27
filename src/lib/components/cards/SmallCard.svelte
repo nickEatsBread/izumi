@@ -19,13 +19,14 @@
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { isAndroid, isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
+  import { openUrl } from '@tauri-apps/plugin-opener'
   import Play from '@lucide/svelte/icons/play'
   import PreviewCard from './PreviewCard.svelte'
   import { previewPos, rootZoom } from './preview-pos'
   import { portal } from '$lib/util/portal'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
-  let { media, fill = false, badge, subline, simpleHover = false }: {
+  let { media, fill = false, badge, subline, simpleHover = false, sourceHref, sourceLabel }: {
     media: Media
     fill?: boolean
     /** Optional context owned by a specialized row (for example, the released episode number). */
@@ -34,6 +35,9 @@
     subline?: string
     /** Replace the desktop trailer popup with a quiet, Miruro-style play affordance. */
     simpleHover?: boolean
+    /** Optional item-level attribution link for a provider-backed list row. */
+    sourceHref?: string
+    sourceLabel?: string
   } = $props()
 
   let hovered = $state(false)
@@ -116,7 +120,7 @@
   $effect(() => () => clearTimeout(closeT))
 </script>
 
-<div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
+<div bind:this={el} class="relative {fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'}" onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
   <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
      class="group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
@@ -150,6 +154,13 @@
       </div>
     {/if}
   </a>
+  {#if sourceHref && sourceLabel}
+    <button type="button" data-focusable title={`View on ${sourceLabel}`} aria-label={`View ${title(media)} on ${sourceLabel}`}
+      onclick={() => { h.tap(); void openUrl(sourceHref) }}
+      class="absolute right-1.5 top-1.5 z-10 rounded-md bg-black/80 px-2 py-1 text-[0.62rem] font-black text-white shadow-md backdrop-blur-sm transition-colors hover:bg-black">
+      {sourceLabel} ↗
+    </button>
+  {/if}
 </div>
 
 {#if hovered && !simpleHover}

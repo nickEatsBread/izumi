@@ -8,7 +8,7 @@ import * as publicEnv from '$env/static/public'
 
 export { anilistToken } from '$lib/anilist/auth'
 
-// App OAuth config from .env — public client IDs + the redirect URI. Not secrets
+// App OAuth config from ignored .env.local / CI — public client IDs + the redirect URI. Not secrets
 // (AniList uses implicit grant, MAL uses PKCE). Baked in, never asked from the user.
 export const anilistClientId = PUBLIC_ANILIST_CLIENT_ID
 export const malClientId = PUBLIC_MAL_CLIENT_ID

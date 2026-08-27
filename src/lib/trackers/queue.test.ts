@@ -93,6 +93,8 @@ describe('tracker retry queue', () => {
     expect(classifyStatus(401)).toBe('drop')
     expect(classifyStatus(404)).toBe('drop')
     expect(classifyStatus(400)).toBe('drop')
+    expect(classifyStatus(409)).toBe('drop')
+    expect(classifyStatus(412)).toBe('drop')
   })
 })
 

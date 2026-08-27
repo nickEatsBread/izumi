@@ -27,6 +27,15 @@ concurrency:
 permissions:
   contents: write
 
+# These OAuth values identify public desktop applications; no client secret is shipped. GitHub
+# variables keep deployment values centralized and out of both the repository and build scripts.
+env:
+  PUBLIC_ANILIST_CLIENT_ID: ${{ vars.ANILIST_CLIENT_ID }}
+  PUBLIC_MAL_CLIENT_ID: ${{ vars.MAL_CLIENT_ID }}
+  PUBLIC_SIMKL_CLIENT_ID: ${{ vars.SIMKL_CLIENT_ID }}
+  PUBLIC_OAUTH_REDIRECT_URI: ${{ vars.OAUTH_REDIRECT_URI }}
+  PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -112,9 +121,6 @@ jobs:
   build:
     needs: create-release
     timeout-minutes: 40
-    env:
-      PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
-      PUBLIC_SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
     strategy:
       fail-fast: false
       matrix:
@@ -316,9 +322,6 @@ jobs:
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
       options: --privileged
-    env:
-      PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
-      PUBLIC_SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v7
 
@@ -508,8 +511,6 @@ jobs:
     env:
       NDK_VERSION: "29.0.14206865"
       BUILD_TOOLS: "36.0.0"
-      PUBLIC_DISCUSS_ANIME_API_KEY: ${{ secrets.DISCUSS_ANIME_API_KEY }}
-      PUBLIC_SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
     steps:
       - uses: actions/checkout@v7
 
