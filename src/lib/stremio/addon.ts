@@ -322,16 +322,11 @@ export async function fetchAddonStreams(
   const manifestReady = fetchManifest(b).then((m) => { manifest = m }).catch(() => {})
   void manifestReady
 
-  const routedIds = () => {
-    // With no synchronously-known declaration, preserve the non-blocking compatibility path and
-    // ask everything. A known manifest supplies the efficient first wave, while rejected ids are
-    // retained for one bounded fallback: live addons sometimes add namespace support before they
-    // update their manifest (Torrentio serves TMDB ids despite advertising only tt/kitsu).
-    if (!manifest) return { accepted: ids, fallback: [] as string[] }
-    return {
-      accepted: ids.filter((i) => acceptsStreamId(manifest ?? null, type, i)),
-      fallback: ids.filter((i) => !acceptsStreamId(manifest ?? null, type, i)),
-    }
+  const askable = () => {
+    const usable = ids.filter((i) => acceptsStreamId(manifest ?? null, type, i))
+    // Every id rejected while the manifest IS known means this addon genuinely serves none of
+    // them. Asking anyway would only add a request whose empty answer we already predicted.
+    return usable
   }
 
   // The JS race below only decides when izumi STOPS WAITING; without a native deadline the
@@ -344,28 +339,23 @@ export async function fetchAddonStreams(
 
   const work = (async (): Promise<AddonStreams> => {
     try {
-      const routed = routedIds()
-      const request = async (one: string) => {
-        try {
-          const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(one)}.json`, { signal, timeoutMs: deadlineMs })
-          if (!r.ok) return { id: one, streams: [] as Stream[] }
-          return { id: one, streams: ((await r.json()) as { streams?: Stream[] }).streams ?? [] }
-        } catch { return { id: one, streams: [] as Stream[] } }
-      }
+      const ask = askable()
+      if (!ask.length) return { streams: [], total: 0 }
       // One request per accepted id, in parallel. A title with both an anime id and an aligned
       // imdb triple reaches addons in either namespace instead of only the anime-aware ones.
-      let responses = await Promise.all(routed.accepted.map(request))
-      const playable = responses.some(({ streams }) => streams.some((stream) =>
-        (!!stream.url || !!stream.infoHash) && !isNotice(stream)))
-      if (!playable && routed.fallback.length) {
-        responses = [...responses, ...await Promise.all(routed.fallback.map(request))]
-      }
-      const all = responses.flatMap(({ id: requestId, streams }) => streams.map((s, upstreamRank) => normalizeStreamBehavior({
+      const responses = await Promise.all(ask.map(async (one) => {
+        try {
+          const r = await phttp(`${b}/stream/${type}/${encodeURIComponent(one)}.json`, { signal, timeoutMs: deadlineMs })
+          if (!r.ok) return []
+          return ((await r.json()) as { streams?: Stream[] }).streams ?? []
+        } catch { return [] }
+      }))
+      const all = responses.flatMap((streams, requestIndex) => streams.map((s, upstreamRank) => normalizeStreamBehavior({
         ...s,
         __logo: resolveAddonLogo(manifest?.logo, b),
         __addonName: manifest?.name,
         __origin: { kind: 'addon' as const, id: addonOriginId(b), name: manifest?.name },
-        __evidence: { upstreamRank, requestId },
+        __evidence: { upstreamRank, requestId: ask[requestIndex] },
       })))
       const usable = dedupeStreams(all.filter((s) => (!!s.url || !!s.infoHash) && !isNotice(s)))
       return { streams: usable, total: all.length }

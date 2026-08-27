@@ -91,7 +91,7 @@ describe('manifest is decoupled from the stream fetch', () => {
     ])
   })
 
-  it('uses an already-warmed manifest to avoid unnecessary unsupported id requests', async () => {
+  it('uses an already-warmed manifest to avoid unsupported id requests', async () => {
     mocks.peekManifest.mockReturnValue({
       id: 'imdb-only', name: 'IMDb only', version: '1',
       resources: [{ name: 'stream', types: ['series'], idPrefixes: ['tt'] }],
@@ -105,27 +105,6 @@ describe('manifest is decoupled from the stream fetch', () => {
     expect(streams).toHaveLength(1)
     expect(mocks.phttp).toHaveBeenCalledTimes(1)
     expect(mocks.phttp.mock.calls[0][0]).toContain('/stream/series/tt123%3A1%3A1.json')
-  })
-
-  it('tries an under-declared id once when every advertised identity is empty', async () => {
-    mocks.peekManifest.mockReturnValue({
-      id: 'stale-prefixes', name: 'Stale prefixes', version: '1',
-      resources: [{ name: 'stream', types: ['series'], idPrefixes: ['tt'] }],
-    })
-    mocks.phttp.mockImplementation(async (url: string) =>
-      url.includes('tmdb%3A123') ? streamResponse([{ url: 'tmdb-result', name: 'x' }]) : streamResponse([]))
-
-    const p = fetchAddonStreams('https://plain.example.org', ['tt123:1:1', 'tmdb:123:1:1'])
-    await vi.advanceTimersByTimeAsync(50)
-    const { streams } = await p
-
-    expect(mocks.phttp).toHaveBeenCalledTimes(2)
-    expect(mocks.phttp.mock.calls.map(([url]) => url)).toEqual([
-      expect.stringContaining('/stream/series/tt123%3A1%3A1.json'),
-      expect.stringContaining('/stream/series/tmdb%3A123%3A1%3A1.json'),
-    ])
-    expect(streams[0].url).toBe('tmdb-result')
-    expect(streams[0].__evidence?.requestId).toBe('tmdb:123:1:1')
   })
 
   it('still yields streams when the manifest fetch rejects', async () => {
