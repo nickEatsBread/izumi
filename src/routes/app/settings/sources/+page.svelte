@@ -218,10 +218,8 @@
 
   {#if activeTab === 'manage'}
   <div id="sources-panel-manage" role="tabpanel" aria-labelledby="sources-tab-manage">
-  <CommunitySources section="manage" />
-
   <div class="max-w-2xl">
-    <div class="mb-3 mt-8">
+    <div class="mb-3">
       <h3 class="text-base font-black">Stremio add-ons</h3>
       <p class="mt-1 text-xs text-muted-foreground">Paste a configured add-on manifest URL. Add-ons and community sources appear together in the player.</p>
     </div>
@@ -271,6 +269,8 @@
       {#if !$addonUrls.length}<li class="text-sm text-muted-foreground">No sources yet.</li>{/if}
     </ul>
   </div>
+
+  <div class="mt-8"><CommunitySources section="manage" /></div>
   </div>
   {/if}
 

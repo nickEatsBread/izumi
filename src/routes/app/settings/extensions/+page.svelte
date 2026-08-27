@@ -312,10 +312,6 @@
 
 {#if section === 'manage'}
   <div class="max-w-2xl">
-    <div class="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-muted-foreground">
-      Community sources run third-party code in an isolated worker. Add repositories and manifests you trust.
-    </div>
-
     {#if localPackages.length}
       <h3 class="mb-2 text-base font-black">Installed sources</h3>
       <ul class="mb-6 space-y-2">

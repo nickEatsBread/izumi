@@ -236,7 +236,7 @@
   <div class="mb-5 max-w-5xl">
     <h2 class="text-xl font-black">Source Store</h2>
     <p class="mt-1 text-sm text-muted-foreground">
-      Discover Stremio addons and Izumi anime packages, then see exactly what is installed and enabled.
+      Discover Stremio addons and Izumi anime packages.
       Community sources are third-party services; review their configuration and privacy terms before use.
     </p>
   </div>
