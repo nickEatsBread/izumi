@@ -1,11 +1,17 @@
 <script lang="ts">
   import {
     catalogDefaultProvider,
+    catalogLastProvider,
     catalogProvider,
     catalogProviders,
+    continueWatchingCatalogScope,
     normalizeCatalogProviders,
+    resolveCatalogStartup,
+    selectCatalogProvider,
     tmdbReadToken,
+    type CatalogDefaultSelection,
     type CatalogSelection,
+    type ContinueWatchingCatalogScope,
   } from '$lib/settings/catalog'
   import { addonUrls } from '$lib/stremio/sources'
   import SettingsGroup from '$lib/components/settings/SettingsGroup.svelte'
@@ -24,28 +30,49 @@
     { id: 'stremio', label: 'Stremio metadata add-ons', description: 'Catalogs exposed by your enabled add-ons.' },
   ]
 
-  const enabled = $derived(normalizeCatalogProviders($catalogProviders, $catalogDefaultProvider))
-  const defaultOptions = $derived(enabled.map((id) => ({
-    value: id,
-    label: platforms.find((platform) => platform.id === id)?.label ?? id,
-  })))
+  const enabled = $derived(normalizeCatalogProviders($catalogProviders, $catalogProvider))
+  const defaultOptions = $derived([
+    { value: 'adaptive', label: 'Adaptive · last selected' },
+    ...enabled.map((id) => ({
+      value: id,
+      label: platforms.find((platform) => platform.id === id)?.label ?? id,
+    })),
+  ])
+  const continueWatchingOptions = [
+    { value: 'provider', label: 'Current platform only' },
+    { value: 'all', label: 'All platforms' },
+  ]
   const hasPlatform = (id: CatalogSelection) => enabled.includes(id)
 
   function setDefaultPlatform(value: string) {
+    if (value === 'adaptive') {
+      $catalogDefaultProvider = 'adaptive'
+      selectCatalogProvider(resolveCatalogStartup('adaptive', $catalogLastProvider, enabled))
+      return
+    }
     if (!enabled.includes(value as CatalogSelection)) return
     $catalogDefaultProvider = value as CatalogSelection
-    $catalogProvider = value as CatalogSelection
+    selectCatalogProvider(value as CatalogSelection)
+  }
+
+  function setContinueWatchingScope(value: string) {
+    if (value === 'provider' || value === 'all') {
+      $continueWatchingCatalogScope = value as ContinueWatchingCatalogScope
+    }
   }
 
   function togglePlatform(id: CatalogSelection) {
-    const current = normalizeCatalogProviders($catalogProviders, $catalogDefaultProvider)
+    const current = normalizeCatalogProviders($catalogProviders, $catalogProvider)
     const turningOff = current.includes(id)
     if (turningOff && current.length === 1) return
     const next = turningOff ? current.filter((provider) => provider !== id) : [...current, id]
     $catalogProviders = next
-    const nextDefault = next.includes($catalogDefaultProvider) ? $catalogDefaultProvider : next[0]
+    const nextDefault: CatalogDefaultSelection = $catalogDefaultProvider === 'adaptive'
+      || next.includes($catalogDefaultProvider) ? $catalogDefaultProvider : next[0]
     $catalogDefaultProvider = nextDefault
-    if (!next.includes($catalogProvider)) $catalogProvider = nextDefault
+    if (!next.includes($catalogProvider)) {
+      selectCatalogProvider(resolveCatalogStartup(nextDefault, $catalogLastProvider, next))
+    }
   }
 </script>
 
@@ -59,6 +86,16 @@
   />
 {/snippet}
 
+{#snippet continueWatchingControl()}
+  <SelectMenu
+    className="w-full sm:w-48"
+    value={$continueWatchingCatalogScope}
+    options={continueWatchingOptions}
+    onChange={setContinueWatchingScope}
+    ariaLabel="Continue Watching catalog scope"
+  />
+{/snippet}
+
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Catalog</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms. Click the app logo to cycle through them; quick search checks all enabled platforms.</p>
@@ -67,8 +104,15 @@
     <SettingsRow
       settingKey="default-catalog-platform"
       title="Default platform"
-      description="Used whenever a new app session starts. Changing it also switches the current session."
+      description="Choose a fixed startup platform, or Adaptive to reopen the last platform you selected."
       control={defaultControl}
+      controlLayout="stack"
+    />
+    <SettingsRow
+      settingKey="continue-watching"
+      title="Continue Watching"
+      description="Keep progress specific to the active catalog platform, or combine titles from every platform."
+      control={continueWatchingControl}
       controlLayout="stack"
     />
     {#each platforms as platform (platform.id)}

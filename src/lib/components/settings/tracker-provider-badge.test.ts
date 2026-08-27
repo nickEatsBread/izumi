@@ -16,7 +16,12 @@ describe('tracker provider badges', () => {
   })
 
   it('does not layer fallback text beneath transparent artwork', () => {
-    expect(source.match(/\{#if imageFailed\}/g)).toHaveLength(2)
-    expect(source.match(/onerror=\{\(\) => \(imageFailed = true\)\}/g)).toHaveLength(2)
+    expect(source.match(/\{#if imageFailed\}/g)).toHaveLength(3)
+    expect(source.match(/onerror=\{\(\) => \(imageFailed = true\)\}/g)).toHaveLength(3)
+  })
+
+  it('uses the official bundled MyAnimeList mark instead of imitation text', () => {
+    expect(source).toContain('src="/brand/myanimelist.svg"')
+    expect(source).toMatch(/src="\/brand\/myanimelist\.svg"[\s\S]*?class="size-8 object-contain"/)
   })
 })

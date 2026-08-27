@@ -114,6 +114,26 @@ describe('watch history import merge', () => {
     })
   })
 
+  it('preserves a valid catalog selection when importing provider-specific history', () => {
+    const incoming = JSON.stringify({
+      app: 'izumi', kind: 'watch-history', version: 1, exportedAt: 20,
+      history: {
+        2: {
+          media: { id: 2, title: { romaji: 'Imported' } },
+          episode: 2,
+          progress: 1,
+          updatedAt: 20,
+          catalogSelection: 'tmdb',
+        },
+      },
+      positions: {},
+    })
+
+    importJson(incoming)
+
+    expect(get(localHistory)[2].catalogSelection).toBe('tmdb')
+  })
+
   it('syncs an exact episode source origin', () => {
     const incoming = JSON.stringify({
       app: 'izumi', kind: 'watch-history', version: 1, exportedAt: 20,

@@ -20,6 +20,7 @@
   let error = $state('')
   let playState = $state<PlayState>({ status: 'idle' })
   let retry = $state(0)
+  let failedLogo = $state('')
 
   $effect(() => {
     const request = ref
@@ -48,11 +49,16 @@
   const crew = $derived(media?.staff?.edges ?? [])
   const externalUrl = $derived(media ? providerExternalUrl(media) : null)
   const isMovie = $derived(media?.catalog?.type === 'movie' || media?.format === 'MOVIE')
+  const titleLogo = $derived(media?.logoImage && media.logoImage !== failedLogo ? media.logoImage : '')
 
   function play(video?: MediaVideo) {
     if (!media) return
     const episode = isMovie ? undefined : video?.number ?? 1
     void playEpisode(media, episode, (state) => (playState = state))
+  }
+
+  function titleLogoFailed(event: Event) {
+    failedLogo = (event.currentTarget as HTMLImageElement).src
   }
 </script>
 
@@ -80,8 +86,18 @@
       <div class="relative flex min-h-[52vh] max-w-4xl items-end gap-5 px-5 pb-8 pt-24 sm:px-8">
         <img src={cover(media)} alt="" class="hidden aspect-[2/3] w-40 rounded-lg bg-muted object-cover shadow-2xl sm:block" />
         <div class="min-w-0">
-          <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">{provider === 'tmdb' ? 'TMDB' : provider === 'kitsu' ? 'Kitsu' : 'Stremio metadata'}</div>
-          <h1 class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
+          {#if provider !== 'tmdb'}
+            <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">{provider === 'kitsu' ? 'Kitsu' : 'Stremio metadata'}</div>
+          {/if}
+          {#if titleLogo}
+            <h1 aria-label={title(media)} class="h-28 w-[min(34rem,82vw)]">
+              <img src={titleLogo} alt="" loading="eager" decoding="async"
+                   onerror={titleLogoFailed}
+                   class="h-full w-full object-contain object-left drop-shadow-[2px_2px_6px_rgba(0,0,0,.85)]" />
+            </h1>
+          {:else}
+            <h1 class="text-3xl font-black leading-tight sm:text-5xl">{title(media)}</h1>
+          {/if}
           <div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-sm text-foreground/75">
             {#if format(media)}<span>{format(media)}</span>{/if}
             {#if season(media)}<span>{season(media)}</span>{/if}
@@ -93,7 +109,7 @@
           <div class="mt-5 flex flex-wrap gap-2">
             <button data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
             {#if externalUrl}
-              <button data-focusable onclick={() => openUrl(externalUrl)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold"><ExternalLink size={17} /> Open provider</button>
+              <button data-focusable onclick={() => openUrl(externalUrl)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold"><ExternalLink size={17} /> {provider === 'tmdb' ? 'TMDB' : 'Open provider'}</button>
             {/if}
           </div>
           {#if playState.status === 'error'}<p class="mt-3 text-sm text-destructive">{playState.message}</p>{/if}

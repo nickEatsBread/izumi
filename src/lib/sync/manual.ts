@@ -33,6 +33,7 @@ export const SYNCED_SETTING_KEYS = [
   "player-cache-mb",
   "video-fit",
   "save-local-history",
+  "continue-watching-catalog-scope",
   "hide-spoilers",
   "carousel-wheel-scroll",
   "show-adult",

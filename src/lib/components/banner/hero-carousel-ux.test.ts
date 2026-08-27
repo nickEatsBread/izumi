@@ -17,6 +17,15 @@ describe('featured carousel UX', () => {
     expect(hero).toContain('{totalEpisodes(current)} episodes')
   })
 
+  it('uses provider title artwork with a readable text fallback', () => {
+    expect(hero).toContain('const currentLogo = $derived(current?.logoImage')
+    expect(hero.match(/src=\{currentLogo\}/g)?.length).toBe(2)
+    expect(hero.match(/\{:else\}\s*<h1/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(hero).toContain('onerror={logoFailed}')
+    expect(hero).toContain('(event.currentTarget as HTMLImageElement).src')
+    expect(hero.match(/<h1 aria-label=\{title\(current\)\}/g)?.length).toBe(2)
+  })
+
   it('reveals explicit edge navigation and animates in the requested direction', () => {
     expect(hero).toContain('aria-label="Previous featured title"')
     expect(hero).toContain('aria-label="Next featured title"')
@@ -36,7 +45,7 @@ describe('featured carousel UX', () => {
   })
 
   it('makes Watch Now the row entry target and reveals the complete hero', () => {
-    expect(hero).toContain('<div\n    data-nav-row')
+    expect(hero).toMatch(/<div\s+data-nav-row/)
     expect(hero).toContain('<div data-nav-row-items class="mt-4 flex items-center gap-2">')
     expect(hero).toContain('<button data-focusable data-nav-row-default data-nav-scroll-top')
   })

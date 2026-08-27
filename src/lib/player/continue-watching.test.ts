@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({ malList: vi.fn() }))
 vi.mock('$lib/trackers', () => ({ getMalAnimeListMediaOrThrow: mocks.malList }))
 
 import {
-  mergeInstant, buildSnapshot, reconcileContinueWatching,
+  mergeInstant, buildSnapshot, reconcileContinueWatching, filterContinueWatching,
   cwSnapshot, reconciling, reconciledOnce, CAP, type CwEntry,
 } from './continue-watching'
 import { LIST_QUERY, MEDIA_BY_IDS_QUERY } from '$lib/anilist/lists'
@@ -94,6 +94,48 @@ describe('mergeInstant (instant paint)', () => {
     expect(mergeInstant(snapshot, {}, {}, { 1: 3 }).map((e) => e.media.id)).toEqual([2])
     // A newer episode watched (session lifts progress to 4 > floor 3) -> it reappears.
     expect(mergeInstant(snapshot, {}, { 1: 4 }, { 1: 3 }).map((e) => e.media.id)).toEqual([1, 2])
+  })
+
+  it('uses the latest local catalog selection over an older cached selection', () => {
+    const snapshot = [{ ...entry(1, 3, 200), catalogSelection: 'auto' as const }]
+    const history = { 1: hist(1, { catalogSelection: 'anilist' }) }
+    expect(mergeInstant(snapshot, history, {})[0].catalogSelection).toBe('anilist')
+  })
+})
+
+describe('provider-specific Continue Watching', () => {
+  const providerEntry = (
+    id: number,
+    provider: 'kitsu' | 'tmdb',
+    catalogSelection?: 'auto' | 'kitsu' | 'tmdb',
+  ): CwEntry => ({
+    ...entry(id, 1, 100),
+    media: media(id, { catalog: { provider, type: provider === 'tmdb' ? 'series' : 'anime', id: String(-id) } }),
+    catalogSelection,
+  })
+
+  it('keeps newly watched titles under the exact platform used to play them', () => {
+    const entries = [
+      { ...entry(1, 1, 300), catalogSelection: 'auto' as const },
+      providerEntry(-2, 'kitsu', 'kitsu'),
+      providerEntry(-3, 'tmdb', 'tmdb'),
+    ]
+    expect(filterContinueWatching(entries, 'auto', 'provider').map((item) => item.media.id)).toEqual([1])
+    expect(filterContinueWatching(entries, 'kitsu', 'provider').map((item) => item.media.id)).toEqual([-2])
+    expect(filterContinueWatching(entries, 'tmdb', 'provider').map((item) => item.media.id)).toEqual([-3])
+    expect(filterContinueWatching(entries, 'auto', 'all')).toBe(entries)
+  })
+
+  it('keeps tracker-only and legacy history visible through provider ownership', () => {
+    const anilistLegacy = entry(1, 1, 300)
+    const kitsuLegacy = providerEntry(-2, 'kitsu')
+    const tmdbLegacy = providerEntry(-3, 'tmdb')
+    const entries = [anilistLegacy, kitsuLegacy, tmdbLegacy]
+
+    expect(filterContinueWatching(entries, 'auto', 'provider').map((item) => item.media.id)).toEqual([1, -2])
+    expect(filterContinueWatching(entries, 'anilist', 'provider').map((item) => item.media.id)).toEqual([1])
+    expect(filterContinueWatching(entries, 'kitsu', 'provider').map((item) => item.media.id)).toEqual([-2])
+    expect(filterContinueWatching(entries, 'tmdb', 'provider').map((item) => item.media.id)).toEqual([-3])
   })
 })
 
@@ -190,6 +232,16 @@ describe('reconcileContinueWatching', () => {
     expect(snap[0].progress).toBe(5)
     expect(snap[0].updatedAt).toBe(1234)
     expect(get(reconciledOnce)).toBe(true)
+  })
+
+  it('preserves the local catalog selection through reconciliation', () => {
+    const out = buildSnapshot({
+      ani: [{ media: media(1), progress: 2, updatedAt: 200 }],
+      mal: [], refreshedMedia: {},
+      history: { 1: hist(1, { progress: 2, catalogSelection: 'anilist' }) },
+      session: {}, prior: [{ ...entry(1, 1, 100), catalogSelection: 'auto' }],
+    })
+    expect(out[0].catalogSelection).toBe('anilist')
   })
 
   it('refreshes MAL airing metadata before advertising its next episode', async () => {

@@ -211,7 +211,7 @@ function languageInText(text?: string): string | undefined {
 // This is the exact language order used by the current Crunchyroll multi-subtitle MeGusta mux.
 // Affected files carry no language or title tags at all and incorrectly flag the full English
 // dialogue track as forced. Never infer from position unless every structural fingerprint below
-// matches, so a random untagged ten-track file is left as honest "Subtitle (n)" labels.
+// matches, so a random untagged ten-track file is left as honest numbered unlabelled tracks.
 const MEGUSTA_CR_ASS_10 = [
   'eng', 'ara', 'pt-BR', 'es-ES', 'fra', 'deu', 'ita', 'es-419', 'pol', 'rus',
 ] as const
@@ -231,10 +231,34 @@ function isMeGustaCrunchyrollProfile(group: Track[], context?: TrackLabelContext
     && group.slice(1).every((track) => !track.default && !track.forced)
 }
 
+// This YTS Matrix encode contains one correctly tagged English SRT followed by 26 PGS
+// streams whose Matroska language/title fields were stripped. The first PGS stream was
+// verified from its rendered payload to be English. Recover only that one fact, and only
+// for the exact filename + stream layout; assigning the remaining languages by position
+// would be guesswork because their mux metadata is genuinely absent.
+function isMatrixYtsPgsProfile(group: Track[], context?: TrackLabelContext): boolean {
+  const filename = context?.filename ?? ''
+  const taggedSrt = group[0]
+  return /(?:^|[\\/])the\.matrix\.1999\.2160p\.4k\.bluray\.x265\.10bit\.aac5\.1-\[yts\.mx\]\.mkv$/i.test(filename)
+    && group.length === 27
+    && taggedSrt?.type === 'sub'
+    && ['subrip', 'srt'].includes(taggedSrt.codec?.toLowerCase() ?? '')
+    && langName(taggedSrt.lang) === 'English'
+    && group.slice(1).every((track) =>
+      track.type === 'sub'
+      && track.codec?.toLowerCase() === 'hdmv_pgs_subtitle'
+      && !langName(track.lang)
+      && !distinctiveTitle(track.title, track.lang)
+      && !track.external)
+}
+
 function recoveredProfileLang(t: Track, group: Track[], context?: TrackLabelContext): string | undefined {
-  if (!isMeGustaCrunchyrollProfile(group, context)) return undefined
   const index = group.findIndex((track) => track.id === t.id)
-  return index >= 0 ? MEGUSTA_CR_ASS_10[index] : undefined
+  if (isMeGustaCrunchyrollProfile(group, context)) {
+    return index >= 0 ? MEGUSTA_CR_ASS_10[index] : undefined
+  }
+  if (isMatrixYtsPgsProfile(group, context) && index === 1) return 'eng'
+  return undefined
 }
 
 export type SubtitleKind = 'signs' | 'forced' | 'sdh' | 'full' | 'other'
@@ -283,7 +307,10 @@ function baseLabel(t: Track, group: Track[], context?: TrackLabelContext): strin
   const effective = effectiveLang(t, group, context)
   const lang = langName(effective)
   const title = distinctiveTitle(t.title, effective)
-  const primary = lang ?? title ?? (t.type === 'sub' ? 'Subtitle' : `Track ${t.id}`)
+  const unlabelledSubtitle = t.codec?.toLowerCase() === 'hdmv_pgs_subtitle'
+    ? 'Unlabelled Blu-ray subtitle'
+    : 'Unlabelled subtitle'
+  const primary = lang ?? title ?? (t.type === 'sub' ? unlabelledSubtitle : `Track ${t.id}`)
   const bits: string[] = []
   // A distinctive title becomes a qualifier when the language already leads.
   if (lang && title) bits.push(title)
@@ -314,8 +341,9 @@ export function trackLabel(t: Track, group: Track[], context?: TrackLabelContext
   const tagged = withCodec(t, base)
   if (group.filter((o) => withCodec(o, baseLabel(o, group, context)) === tagged).length <= 1) return tagged
 
-  // Still identical (same lang + codec, or codec-less subtitles) → number them so a pick is
-  // always possible. Index is 1-based within the colliding subset.
+  // Still identical (same lang + codec, or codec-less subtitles) → give each row an explicit
+  // track number so a pick is always possible. `· Track 2` communicates what the number means;
+  // the old bare `(2)` looked like a broken or duplicate subtitle name.
   const peers = group.filter((o) => baseLabel(o, group, context) === base)
-  return `${tagged} (${peers.findIndex((o) => o.id === t.id) + 1})`
+  return `${tagged} · Track ${peers.findIndex((o) => o.id === t.id) + 1}`
 }

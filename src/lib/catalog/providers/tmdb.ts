@@ -56,6 +56,18 @@ interface TmdbSeason {
   air_date?: string | null
 }
 
+interface TmdbImageFile {
+  file_path?: string | null
+  iso_639_1?: string | null
+  vote_average?: number
+  vote_count?: number
+  width?: number
+}
+
+interface TmdbImages {
+  logos?: TmdbImageFile[]
+}
+
 interface TmdbDetail extends TmdbListItem {
   status?: string
   runtime?: number
@@ -72,6 +84,7 @@ interface TmdbDetail extends TmdbListItem {
   aggregate_credits?: { cast?: TmdbCredit[]; crew?: TmdbCredit[] }
   recommendations?: TmdbPage
   similar?: TmdbPage
+  images?: TmdbImages
 }
 
 interface TmdbSeasonDetail {
@@ -110,6 +123,47 @@ async function tmdb<T>(path: string, params: Record<string, string | number | bo
 
 const image = (path: string | null | undefined, size: string) => path ? `${IMAGE}/${size}${path}` : undefined
 const yearOf = (date?: string) => /^\d{4}/.exec(date ?? '')?.[0]
+
+/** Prefer an English title treatment, then language-neutral clear art. TMDB normally returns
+ * results by popularity, but ranking explicitly keeps the choice deterministic across responses. */
+export function pickTmdbLogo(images?: TmdbImages): string | undefined {
+  const languageRank = (language?: string | null) => language === 'en' ? 2 : language == null ? 1 : 0
+  const logo = [...(images?.logos ?? [])].filter((candidate) => !!candidate.file_path).sort((left, right) =>
+    languageRank(right.iso_639_1) - languageRank(left.iso_639_1)
+    || (right.vote_average ?? 0) - (left.vote_average ?? 0)
+    || (right.vote_count ?? 0) - (left.vote_count ?? 0)
+    || (right.width ?? 0) - (left.width ?? 0))[0]
+  return image(logo?.file_path, 'w500')
+}
+
+const logoRequests = new Map<string, Promise<string | undefined>>()
+
+function tmdbLogo(kind: TmdbKind, id: string, signal?: AbortSignal): Promise<string | undefined> {
+  const key = `${kind}:${id}`
+  const existing = logoRequests.get(key)
+  if (existing) return existing
+  const request = tmdb<TmdbImages>(`/${kind}/${encodeURIComponent(id)}/images`, {
+    language: 'en-GB', include_image_language: 'en,null',
+  }, signal).then(pickTmdbLogo).catch((error) => {
+    logoRequests.delete(key)
+    throw error
+  })
+  logoRequests.set(key, request)
+  return request
+}
+
+async function withTmdbLogo(media: Media, signal?: AbortSignal): Promise<Media> {
+  const ref = media.catalog
+  if (ref?.provider !== 'tmdb' || (ref.type !== 'movie' && ref.type !== 'series')) return media
+  const kind: TmdbKind = ref.type === 'movie' ? 'movie' : 'tv'
+  try {
+    const logoImage = await tmdbLogo(kind, ref.id, signal)
+    return logoImage ? { ...media, logoImage } : media
+  } catch {
+    // Logos are enhancement artwork. A missing/failed image request must never remove the hero.
+    return media
+  }
+}
 
 function status(value?: string): string | undefined {
   return ({
@@ -176,9 +230,11 @@ async function home(signal?: AbortSignal): Promise<CatalogHome> {
     list('/tv/top_rated', 'tv', signal),
     list('/movie/upcoming', 'movie', signal),
   ])
-  const hero = trending.filter((media) => media.bannerImage)
+  const heroCandidates = trending.filter((media) => media.bannerImage)
+  const hero = await mapConcurrent((heroCandidates.length ? heroCandidates : trending).slice(0, 10), 4,
+    (media) => withTmdbLogo(media, signal))
   return {
-    hero: (hero.length ? hero : trending).slice(0, 10),
+    hero: hero,
     sections: ([
       { id: 'trending', title: 'Trending', media: trending, more: { sort: 'trending', type: 'all' } },
       { id: 'anime-series', title: 'Popular Anime Series', media: animeSeries, more: { sort: 'popular', type: 'anime' } },
@@ -354,6 +410,7 @@ function detailedMedia(raw: TmdbDetail, kind: TmdbKind): Media | null {
   }] : []) }
   const recommendations = mapList(raw.recommendations ?? raw.similar ?? {}, kind)
   media.recommendations = { nodes: recommendations.map((item) => ({ mediaRecommendation: item })) }
+  media.logoImage = pickTmdbLogo(raw.images)
   return media
 }
 
@@ -361,10 +418,10 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   if (ref.provider !== 'tmdb' || (ref.type !== 'movie' && ref.type !== 'series')) return null
   const kind: TmdbKind = ref.type === 'movie' ? 'movie' : 'tv'
   const append = kind === 'movie'
-    ? 'videos,credits,recommendations,similar,external_ids'
-    : 'videos,aggregate_credits,recommendations,similar,external_ids'
+    ? 'videos,credits,recommendations,similar,external_ids,images'
+    : 'videos,aggregate_credits,recommendations,similar,external_ids,images'
   const raw = await tmdb<TmdbDetail>(`/${kind}/${encodeURIComponent(ref.id)}`, {
-    language: 'en-GB', append_to_response: append,
+    language: 'en-GB', include_image_language: 'en,null', append_to_response: append,
   }, signal)
   const media = detailedMedia(raw, kind)
   if (!media) return null

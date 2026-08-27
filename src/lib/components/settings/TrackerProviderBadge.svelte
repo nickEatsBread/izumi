@@ -19,8 +19,17 @@
     {/if}
   </span>
 {:else if provider === 'mal'}
-  <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-[#2e51a2]" aria-hidden="true">
-    <span class="text-[10px] font-black tracking-[-0.04em] text-white">MAL</span>
+  <span class="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#2f52a2]" aria-hidden="true">
+    {#if imageFailed}
+      <span class="text-[10px] font-black tracking-[-0.04em] text-white">MAL</span>
+    {:else}
+      <img
+        src="/brand/myanimelist.svg"
+        alt=""
+        class="size-8 object-contain"
+        onerror={() => (imageFailed = true)}
+      />
+    {/if}
   </span>
 {:else if provider === 'kitsu'}
   <span class="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#443544]" aria-hidden="true">

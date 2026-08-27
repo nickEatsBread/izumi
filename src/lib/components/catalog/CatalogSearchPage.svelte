@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { page } from '$app/state'
   import { replaceState } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
@@ -27,6 +27,7 @@
   let hasNext = true
   let pageNumber = 1
   let requestGeneration = 0
+  let requestAbort: AbortController | null = null
   const seen = new Set<string>()
 
   const typeOptions = $derived($catalogProvider === 'kitsu'
@@ -64,14 +65,22 @@
   const requestKey = $derived(JSON.stringify([$catalogProvider, settled, type, genre, year, sort]))
   $effect(() => {
     void requestKey
-    media = []
-    seen.clear()
-    loading = false
-    pageNumber = 1
-    hasNext = true
-    error = ''
-    requestGeneration++
-    void loadMore()
+    const abort = new AbortController()
+    // loadMore reads and writes loading/hasNext. Keep those reads outside this effect's dependency
+    // graph or the initial request invalidates itself, repeatedly discarding slower TMDB results.
+    untrack(() => {
+      requestAbort?.abort()
+      requestAbort = abort
+      media = []
+      seen.clear()
+      loading = false
+      pageNumber = 1
+      hasNext = true
+      error = ''
+      requestGeneration++
+      void loadMore()
+    })
+    return () => abort.abort()
   })
 
   $effect(() => {
@@ -92,6 +101,7 @@
     const selection = $catalogProvider
     if (selection === 'auto' || selection === 'anilist') return
     const generation = requestGeneration
+    const abort = requestAbort
     loading = true
     try {
       const provider = await loadCatalogProvider(selection)
@@ -102,6 +112,7 @@
         year: Number(year) || undefined,
         sort,
         page: pageNumber,
+        signal: abort?.signal,
       })
       if (generation !== requestGeneration) return
       let added = 0
@@ -115,7 +126,7 @@
       hasNext = result.hasNextPage && added > 0
       pageNumber++
     } catch (reason) {
-      if (generation === requestGeneration) {
+      if (generation === requestGeneration && !abort?.signal.aborted) {
         error = reason instanceof Error ? reason.message : String(reason)
         hasNext = false
       }

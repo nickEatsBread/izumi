@@ -27,6 +27,7 @@
     isLegacyAniListCatalog,
     nextCatalogProvider,
     previousCatalogProvider,
+    selectCatalogProvider,
   } from '$lib/settings/catalog'
   import CatalogHome from '$lib/components/catalog/CatalogHome.svelte'
   import { mediaHref } from '$lib/anilist/media'
@@ -98,7 +99,7 @@
   function cycleCatalog() {
     if (!canCycleCatalog) return
     h.tap()
-    $catalogProvider = nextCatalog
+    selectCatalogProvider(nextCatalog)
   }
 
   function handleCatalogKeydown(event: KeyboardEvent) {
@@ -108,9 +109,9 @@
     if (!canCycleCatalog || $playing || $androidMpvActive || isTypingTarget(event.target)) return
     event.preventDefault()
     h.tap()
-    $catalogProvider = action === 'homePreviousCatalog'
+    selectCatalogProvider(action === 'homePreviousCatalog'
       ? previousCatalogProvider($catalogProvider, $enabledCatalogProviders)
-      : nextCatalogProvider($catalogProvider, $enabledCatalogProviders)
+      : nextCatalogProvider($catalogProvider, $enabledCatalogProviders))
   }
 
   // Only titles that have real landscape art: a bannerImage, or a YouTube trailer whose maxres

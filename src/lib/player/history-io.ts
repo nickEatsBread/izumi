@@ -3,6 +3,7 @@ import { save } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { isAndroid } from '$lib/platform'
 import { title } from '$lib/anilist/media'
+import { CATALOG_SELECTIONS, type CatalogSelection } from '$lib/settings/catalog'
 // durableHistory/durablePositions, NOT the merged views: an export or device-sync push must never
 // carry this session's incognito entries; an import writes straight to the persisted stores.
 import { durableHistory, historyEntries, type HistoryEntry } from './history'
@@ -84,6 +85,10 @@ ${items}
 
 const num = (v: unknown, fallback = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback)
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
+const validCatalogSelection = (value: unknown): CatalogSelection | undefined =>
+  typeof value === 'string' && CATALOG_SELECTIONS.includes(value as CatalogSelection)
+    ? value as CatalogSelection
+    : undefined
 // Carry a well-shaped release hint through import (string group/bingeGroup only), else drop it.
 function validRelease(r: unknown): HistoryEntry['release'] {
   if (!r || typeof r !== 'object') return undefined
@@ -119,6 +124,7 @@ export function importJson(text: string, options: WatchJsonOptions = {}): {
         episode: Math.max(0, Math.trunc(num((raw as HistoryEntry).episode))),
         progress: Math.max(0, Math.trunc(num((raw as HistoryEntry).progress))),
         updatedAt: num((raw as HistoryEntry).updatedAt),
+        catalogSelection: validCatalogSelection((raw as HistoryEntry).catalogSelection),
         release: validRelease((raw as HistoryEntry).release),
       }
       const cur = next[id]

@@ -35,7 +35,7 @@
   import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
-  import { catalogDefaultProvider, catalogProvider, enabledCatalogProviders } from '$lib/settings/catalog'
+  import { catalogDefaultProvider, catalogLastProvider, catalogProvider, enabledCatalogProviders, resolveCatalogStartup, selectCatalogProvider } from '$lib/settings/catalog'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
@@ -86,14 +86,16 @@
   })
 
   // Catalog navigation is logo-driven, so there is no longer a tab component around to repair an
-  // unavailable active value. Keep both the session selection and persisted default inside the
-  // enabled set here in the always-mounted shell.
+  // unavailable active value. Keep fixed defaults inside the enabled set; Adaptive remains a
+  // startup policy rather than a provider and resolves through the last explicitly selected one.
   $effect(() => {
     const enabled = $enabledCatalogProviders
     if (!enabled.length) return
-    if (!enabled.includes($catalogDefaultProvider)) $catalogDefaultProvider = enabled[0]
+    if ($catalogDefaultProvider !== 'adaptive' && !enabled.includes($catalogDefaultProvider)) {
+      $catalogDefaultProvider = enabled[0]
+    }
     if (!enabled.includes($catalogProvider)) {
-      $catalogProvider = enabled.includes($catalogDefaultProvider) ? $catalogDefaultProvider : enabled[0]
+      selectCatalogProvider(resolveCatalogStartup($catalogDefaultProvider, $catalogLastProvider, enabled))
     }
   })
 

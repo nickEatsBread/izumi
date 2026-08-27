@@ -40,6 +40,7 @@
   let navDirection = $state<1 | -1>(1)
   let clock = $state(Date.now())
   let countdownOrigin = $state(Date.now())
+  let failedLogos = $state<string[]>([])
   const DURATION = 15000 // a 15s cadence
 
   function go(n: number, direction?: 1 | -1) {
@@ -210,6 +211,11 @@
   })
 
   const current = $derived(medias[Math.min(i, Math.max(0, medias.length - 1))])
+  const currentLogo = $derived(current?.logoImage && !failedLogos.includes(current.logoImage) ? current.logoImage : '')
+  function logoFailed(event: Event) {
+    const src = (event.currentTarget as HTMLImageElement).src
+    if (!failedLogos.includes(src)) failedLogos = [...failedLogos, src]
+  }
   const artworkReady = $derived(loadedArtworkId === current?.id)
   const artworkSettled = () => (loadedArtworkId = current.id)
   // Accent: tint everything off the cover's dominant color; theme fallback.
@@ -260,7 +266,15 @@
                 onclick={openCurrent} aria-label={`View details for ${title(current)}`}></button>
       {/if}
       <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col gap-2 p-4">
-        <h1 class="line-clamp-2 text-2xl font-black leading-tight text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
+        {#if currentLogo}
+          <h1 aria-label={title(current)} class="h-16 w-[82%]">
+            <img src={currentLogo} alt="" loading="eager" decoding="async"
+                 onerror={logoFailed}
+                 class="h-full w-full object-contain object-left drop-shadow-[2px_2px_5px_rgba(0,0,0,.9)]" />
+          </h1>
+        {:else}
+          <h1 class="line-clamp-2 text-2xl font-black leading-tight text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)]">{title(current)}</h1>
+        {/if}
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-white/90
                     [&>span:not(:first-child)]:before:mr-2 [&>span:not(:first-child)]:before:text-white/40 [&>span:not(:first-child)]:before:content-['•']">
           {#if format(current)}<span>{format(current)}</span>{/if}
@@ -362,7 +376,15 @@
       <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-6 sm:px-8 sm:pb-8">
         {#key current.id}
         <div class="hero-copy max-w-2xl" style="--hero-enter-x:{navDirection * 1.5}%">
-          <h1 class="truncate text-2xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)] sm:text-4xl">{title(current)}</h1>
+          {#if currentLogo}
+            <h1 aria-label={title(current)} class="h-24 w-[min(34rem,70vw)]">
+              <img src={currentLogo} alt="" loading="eager" decoding="async"
+                   onerror={logoFailed}
+                   class="h-full w-full object-contain object-left drop-shadow-[2px_2px_6px_rgba(0,0,0,.9)]" />
+            </h1>
+          {:else}
+            <h1 class="truncate text-2xl font-black text-white drop-shadow-[2px_2px_4px_rgba(0,0,0,.9)] sm:text-4xl">{title(current)}</h1>
+          {/if}
 
           <!-- High-signal discovery facts only. Airing context and genres share the next line. -->
           <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-white/90

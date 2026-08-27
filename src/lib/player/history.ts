@@ -1,6 +1,7 @@
 import { persisted } from 'svelte-persisted-store'
 import { derived, get, writable, type Readable } from 'svelte/store'
 import { saveLocalHistory } from '$lib/settings/ui'
+import { catalogProvider, type CatalogSelection } from '$lib/settings/catalog'
 import { incognito, onIncognitoPurge } from '$lib/stores/incognito'
 import type { Media } from '$lib/anilist/types'
 import { clearSourceOrigins, forgetSourceOrigin } from './source-origin'
@@ -17,6 +18,9 @@ export interface HistoryEntry {
   episode: number
   progress: number
   updatedAt: number
+  /** Catalog platform from which this title was played. Unlike `media.catalog.provider`, this can
+   * be `auto`, whose fallback chain may have supplied a Kitsu-owned record. */
+  catalogSelection?: CatalogSelection
   // Release identity of the last source played for this show (parsed group + Stremio bingeGroup),
   // so Continue Watching can resume the SAME release without re-opening the picker.
   release?: { group?: string; bingeGroup?: string }
@@ -48,6 +52,15 @@ export const sessionProgress = writable<Record<number, number>>({})
 /** Exact progress chosen from the episode tools. Unlike normal playback progress, this may move
  * backwards, so it must override the detail query's stale tracker snapshot until a refetch. */
 export const manualProgressOverrides = writable<Record<number, number>>({})
+
+/** Resolve the platform a play belongs to. The current selection is authoritative when it can own
+ * the item. If a cross-platform result is opened while another platform is active, retain the
+ * media owner's platform rather than filing (for example) a TMDB title under Kitsu. */
+export function historyCatalogSelection(media: Pick<Media, 'catalog'>, current: CatalogSelection): CatalogSelection {
+  const owner = media.catalog?.provider ?? 'anilist'
+  if (current === 'auto' && (owner === 'anilist' || owner === 'kitsu')) return 'auto'
+  return owner
+}
 
 // Only the fields the cards / resume / MAL export actually read — NOT description/relations/etc,
 // which the detail-page media object carries and would bloat localStorage (quota + per-play rewrite).
@@ -107,6 +120,7 @@ export function recordPlay(media: Media, episode: number | undefined, release?: 
       episode,
       progress: prev?.progress ?? 0,
       updatedAt: Date.now(),
+      catalogSelection: historyCatalogSelection(media, get(catalogProvider)),
       release: rel ?? prev?.release,
     } }
   })
@@ -124,6 +138,7 @@ export function recordProgress(media: Media, episode: number) {
         episode: Math.max(prev?.episode ?? 0, episode),
         progress: Math.max(prev?.progress ?? 0, episode),
         updatedAt: Date.now(),
+        catalogSelection: prev?.catalogSelection ?? historyCatalogSelection(media, get(catalogProvider)),
         release: prev?.release,
       } }
     })
@@ -141,6 +156,7 @@ export function recordProgress(media: Media, episode: number) {
       episode: Math.max(prev?.episode ?? 0, episode),
       progress: Math.max(prev?.progress ?? 0, episode),
       updatedAt: Date.now(),
+      catalogSelection: prev?.catalogSelection ?? historyCatalogSelection(media, get(catalogProvider)),
       release: prev?.release, // keep the remembered release across a progress bump
     } }
   })
@@ -158,6 +174,7 @@ export function setLocalProgress(media: Media, progress: number) {
         episode: value > 0 ? value : previous?.episode ?? 1,
         progress: value,
         updatedAt: Date.now(),
+        catalogSelection: previous?.catalogSelection ?? historyCatalogSelection(media, get(catalogProvider)),
         release: previous?.release,
       } }
     })
@@ -175,6 +192,7 @@ export function setLocalProgress(media: Media, progress: number) {
         episode: value > 0 ? value : previous?.episode ?? 1,
         progress: value,
         updatedAt: Date.now(),
+        catalogSelection: previous?.catalogSelection ?? historyCatalogSelection(media, get(catalogProvider)),
         release: previous?.release,
       },
     }

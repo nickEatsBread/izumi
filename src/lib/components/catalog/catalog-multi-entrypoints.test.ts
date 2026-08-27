@@ -18,7 +18,7 @@ describe('multi-platform catalog entry points', () => {
     for (const source of [home, sidebar]) {
       expect(source).toContain('nextCatalogProvider')
       expect(source).toContain('function cycleCatalog()')
-      expect(source).toContain('$catalogProvider = nextCatalog')
+      expect(source).toContain('selectCatalogProvider(nextCatalog)')
     }
   })
 
@@ -43,5 +43,25 @@ describe('multi-platform catalog entry points', () => {
     for (const provider of ['kitsu', 'tmdb', 'stremio']) {
       expect(read(`../../catalog/providers/${provider}.ts`)).toContain('hero:')
     }
+  })
+
+  it('renders TMDB title artwork on detail pages and keeps a text fallback', () => {
+    const detail = read('./CatalogMediaDetail.svelte')
+    const tmdb = read('../../catalog/providers/tmdb.ts')
+    expect(detail).toContain('{#if titleLogo}')
+    expect(detail).toContain('src={titleLogo}')
+    expect(detail).toContain('{title(media)}</h1>')
+    expect(detail).toContain("{#if provider !== 'tmdb'}")
+    expect(detail).toContain("{provider === 'tmdb' ? 'TMDB' : 'Open provider'}")
+    expect(tmdb).toContain("include_image_language: 'en,null'")
+    expect(tmdb).toContain('append_to_response: append')
+  })
+
+  it('does not let Browse invalidate its own provider request', () => {
+    const browse = read('./CatalogSearchPage.svelte')
+    expect(browse).toContain("import { onMount, untrack } from 'svelte'")
+    expect(browse).toContain('untrack(() => {')
+    expect(browse).toContain('requestAbort?.abort()')
+    expect(browse).toContain('signal: abort?.signal')
   })
 })

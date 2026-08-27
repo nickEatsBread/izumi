@@ -74,6 +74,8 @@ export interface Media {
   studios?: { nodes?: { id?: number; name: string }[] } | null
   coverImage?: { extraLarge?: string; large?: string; medium?: string; color?: string }
   bannerImage?: string
+  /** Transparent title treatment/clear-logo supplied by the owning metadata provider. */
+  logoImage?: string
   trailer?: { id?: string; site?: string } | null
   nextAiringEpisode?: { episode: number; airingAt?: number; timeUntilAiring: number } | null
   // Per-episode air schedule. AniList populates this on many OVAs/ONAs and adult titles

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Media } from '$lib/anilist/types'
-import { mediaSnapshot } from './history'
+import { historyCatalogSelection, mediaSnapshot } from './history'
 
 describe('provider media history snapshot', () => {
   it('retains the native identity and compact episode coordinates needed after restart', () => {
@@ -25,5 +25,23 @@ describe('provider media history snapshot', () => {
     })
     expect(mediaSnapshot(media).videos?.[0].overview).toBeUndefined()
     expect(mediaSnapshot(media).videos?.[0].thumbnail).toBeUndefined()
+  })
+
+  it('records the platform used for playback without misfiling cross-platform results', () => {
+    const kitsu = {
+      id: -10,
+      title: { romaji: 'Kitsu title' },
+      catalog: { provider: 'kitsu', type: 'anime', id: '10' },
+    } as Media
+    const tmdb = {
+      id: -20,
+      title: { romaji: 'TMDB title' },
+      catalog: { provider: 'tmdb', type: 'series', id: '20' },
+    } as Media
+
+    expect(historyCatalogSelection(kitsu, 'auto')).toBe('auto')
+    expect(historyCatalogSelection(kitsu, 'kitsu')).toBe('kitsu')
+    expect(historyCatalogSelection(tmdb, 'kitsu')).toBe('tmdb')
+    expect(historyCatalogSelection({ id: 1, title: { romaji: 'Legacy' } } as Media, 'anilist')).toBe('anilist')
   })
 })

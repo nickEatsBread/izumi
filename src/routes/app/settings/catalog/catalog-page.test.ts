@@ -14,8 +14,8 @@ describe('catalog settings', () => {
 
   it('keeps at least one platform enabled and repairs the default and active platforms', () => {
     expect(source).toContain('if (turningOff && current.length === 1) return')
-    expect(source).toContain('const nextDefault = next.includes($catalogDefaultProvider)')
-    expect(source).toContain('if (!next.includes($catalogProvider)) $catalogProvider = nextDefault')
+    expect(source).toContain("$catalogDefaultProvider === 'adaptive'")
+    expect(source).toContain('selectCatalogProvider(resolveCatalogStartup(nextDefault')
   })
 
   it('offers a mobile-friendly default platform selector from enabled choices', () => {
@@ -23,6 +23,16 @@ describe('catalog settings', () => {
     expect(source).toContain('options={defaultOptions}')
     expect(source).toContain('onChange={setDefaultPlatform}')
     expect(source).toContain('controlLayout="stack"')
+    expect(source).toContain("{ value: 'adaptive', label: 'Adaptive · last selected' }")
+    expect(source).toContain("if (value === 'adaptive')")
+  })
+
+  it('lets Continue Watching stay provider-specific or combine every platform', () => {
+    expect(source).toContain('title="Continue Watching"')
+    expect(source).toContain("{ value: 'provider', label: 'Current platform only' }")
+    expect(source).toContain("{ value: 'all', label: 'All platforms' }")
+    expect(source).toContain('value={$continueWatchingCatalogScope}')
+    expect(source).toContain('onChange={setContinueWatchingScope}')
   })
 
   it('shows provider-specific configuration whenever that provider is enabled', () => {

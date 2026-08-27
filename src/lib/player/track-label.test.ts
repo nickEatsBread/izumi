@@ -68,11 +68,21 @@ describe('trackLabel — the "Your Name" case', () => {
 describe('trackLabel — subtitles', () => {
   it('numbers same-language tracks so no two rows are identical', () => {
     const g = [sub({ id: 1, lang: 'eng' }), sub({ id: 2, lang: 'eng' })]
-    expect(labels(g)).toEqual(['English (1)', 'English (2)'])
+    expect(labels(g)).toEqual(['English · Track 1', 'English · Track 2'])
   })
-  it('numbers untitled/untagged tracks instead of leaving them blank', () => {
+  it('makes untitled/untagged tracks explicit instead of showing ambiguous Subtitle (n) labels', () => {
     const g = [sub({ id: 1 }), sub({ id: 2, title: 'Full Subtitles' })]
-    expect(labels(g)).toEqual(['Subtitle (1)', 'Subtitle (2)'])
+    expect(labels(g)).toEqual(['Unlabelled subtitle · Track 1', 'Unlabelled subtitle · Track 2'])
+  })
+  it('identifies untagged Blu-ray image subtitles by their format', () => {
+    const g = [
+      sub({ id: 1, codec: 'hdmv_pgs_subtitle' }),
+      sub({ id: 2, codec: 'hdmv_pgs_subtitle' }),
+    ]
+    expect(labels(g)).toEqual([
+      'Unlabelled Blu-ray subtitle · Track 1',
+      'Unlabelled Blu-ray subtitle · Track 2',
+    ])
   })
   it('surfaces Forced (flag or title) and SDH', () => {
     expect(trackLabel(sub({ id: 1, lang: 'eng', forced: true }), [sub({ id: 1, lang: 'eng', forced: true })])).toBe('English · Forced')
@@ -102,6 +112,36 @@ describe('trackLabel — subtitles', () => {
       'English · Signs & Songs (Coalgirls)',
       'English · Full Subtitles (Coalgirls)',
     ])
+  })
+})
+
+describe('trackLabel — malformed YTS Matrix mux', () => {
+  const brokenMux: Track[] = [
+    sub({ id: 2, lang: 'eng', title: 'English-SRT', codec: 'subrip', default: true }),
+    ...Array.from({ length: 26 }, (_, index) => sub({
+      id: index + 3,
+      codec: 'hdmv_pgs_subtitle',
+      external: false,
+    })),
+  ]
+  const context = {
+    filename: 'The.Matrix.1999.2160p.4K.BluRay.x265.10bit.AAC5.1-[YTS.MX].mkv',
+  }
+
+  it('recovers the verified English PGS track and gives the unknown tracks honest useful labels', () => {
+    const out = brokenMux.map((track) => trackLabel(track, brokenMux, context))
+    expect(out[0]).toBe('English · English-SRT')
+    expect(out[1]).toBe('English')
+    expect(out[2]).toBe('Unlabelled Blu-ray subtitle · Track 1')
+    expect(out[26]).toBe('Unlabelled Blu-ray subtitle · Track 25')
+    expect(new Set(out).size).toBe(out.length)
+  })
+
+  it('does not guess English when the release filename or stream layout differs', () => {
+    expect(trackLabel(brokenMux[1], brokenMux, { filename: 'Different.Movie.mkv' }))
+      .toBe('Unlabelled Blu-ray subtitle · Track 1')
+    expect(trackLabel(brokenMux[1], brokenMux.slice(0, 26), context))
+      .toBe('Unlabelled Blu-ray subtitle · Track 1')
   })
 })
 
@@ -136,8 +176,8 @@ describe('trackLabel — malformed MeGusta Crunchyroll mux', () => {
   })
 
   it('does not guess for an unrelated release or a layout that differs', () => {
-    expect(trackLabel(brokenMux[0], brokenMux, { filename: 'Unknown.Group.mkv' })).toBe('Subtitle · Forced')
-    expect(trackLabel(brokenMux[0], brokenMux.slice(0, 9), context)).toBe('Subtitle · Forced')
+    expect(trackLabel(brokenMux[0], brokenMux, { filename: 'Unknown.Group.mkv' })).toBe('Unlabelled subtitle · Forced')
+    expect(trackLabel(brokenMux[0], brokenMux.slice(0, 9), context)).toBe('Unlabelled subtitle · Forced')
   })
 })
 

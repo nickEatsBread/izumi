@@ -5,7 +5,8 @@
   // resume-aware, most-recent first. All merge/sync logic lives in $lib/player/continue-watching.
   import { onMount, tick } from 'svelte'
   import { getContextClient } from '@urql/svelte'
-  import { continueWatching, reconciling, reconciledOnce, reconcileContinueWatching, dismissContinueWatching } from '$lib/player/continue-watching'
+  import { continueWatching, reconciling, reconciledOnce, reconcileContinueWatching, dismissContinueWatching, filterContinueWatching } from '$lib/player/continue-watching'
+  import { catalogProvider, continueWatchingCatalogScope } from '$lib/settings/catalog'
   import { longPressDismiss } from './continue-dismiss'
   import Carousel from './Carousel.svelte'
   import ContinueCard from './ContinueCard.svelte'
@@ -14,7 +15,11 @@
   let { title, userName, malActive }: { title: string; userName?: string; malActive: boolean } = $props()
   const client = getContextClient()
 
-  const items = $derived($continueWatching)
+  const items = $derived(filterContinueWatching(
+    $continueWatching,
+    $catalogProvider,
+    $continueWatchingCatalogScope,
+  ))
 
   // D on a keyboard and X on a controller remove the active card. The controller translator maps
   // X to the same D event, keeping one dismissal path and the same tracker side effect.

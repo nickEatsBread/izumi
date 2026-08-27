@@ -14,7 +14,7 @@
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
-  import { catalogLabel, catalogProvider, enabledCatalogProviders, nextCatalogProvider } from '$lib/settings/catalog'
+  import { catalogLabel, catalogProvider, enabledCatalogProviders, nextCatalogProvider, selectCatalogProvider } from '$lib/settings/catalog'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
@@ -41,7 +41,7 @@
   function cycleCatalog() {
     if (!canCycleCatalog) return
     h.tap()
-    $catalogProvider = nextCatalog
+    selectCatalogProvider(nextCatalog)
   }
 
   function handleLogoClick(event: MouseEvent) {

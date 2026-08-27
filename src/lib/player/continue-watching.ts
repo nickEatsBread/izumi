@@ -4,6 +4,7 @@ import type { Client } from '@urql/svelte'
 import { LIST_QUERY, MEDIA_BY_IDS_QUERY, flattenEntries } from '$lib/anilist/lists'
 import { getMalAnimeListMediaOrThrow, setStatus } from '$lib/trackers'
 import { cwDismissAction } from '$lib/settings/ui'
+import type { CatalogSelection, ContinueWatchingCatalogScope } from '$lib/settings/catalog'
 import { hasAiredEpisodeToWatch } from '$lib/anilist/media'
 import { localHistory, durableHistory, sessionProgress, historyEntries, mediaSnapshot, type HistoryEntry } from './history'
 import { incognito, onIncognitoPurge } from '$lib/stores/incognito'
@@ -21,6 +22,24 @@ export interface CwEntry {
   progress: number    // watched-episode count, maxed across sources
   updatedAt: number   // ms epoch, recency ordering
   source: 'tracker' | 'local'
+  /** Exact app catalog used for a local play. Missing on tracker-only and pre-migration entries. */
+  catalogSelection?: CatalogSelection
+}
+
+/** Provider-specific row membership. New local plays use their exact catalog selection. Older
+ * entries fall back to media ownership; Automatic anime accepts its AniList/Kitsu fallback chain
+ * so legacy Kitsu-backed automatic results do not disappear during migration. */
+export function filterContinueWatching(
+  entries: CwEntry[],
+  active: CatalogSelection,
+  scope: ContinueWatchingCatalogScope,
+): CwEntry[] {
+  if (scope === 'all') return entries
+  return entries.filter((entry) => {
+    if (entry.catalogSelection) return entry.catalogSelection === active
+    const owner = entry.media.catalog?.provider ?? 'anilist'
+    return active === 'auto' ? owner === 'anilist' || owner === 'kitsu' : owner === active
+  })
 }
 
 /** Persisted view cache of the last merged Continue Watching list. NOT localHistory. */
@@ -53,6 +72,7 @@ function upsert(map: Map<number, CwEntry>, e: CwEntry) {
   if (!cur) { map.set(e.media.id, { ...e }); return }
   cur.progress = Math.max(cur.progress, e.progress)
   cur.updatedAt = Math.max(cur.updatedAt, e.updatedAt)
+  if (e.catalogSelection) cur.catalogSelection = e.catalogSelection
   // Keep the media already in the map: snapshot entries are inserted first and carry the
   // reconciled (fresher) media, so we prefer them over a stale local snapshot on collision.
 }
@@ -71,7 +91,13 @@ export function mergeInstant(
   const map = new Map<number, CwEntry>()
   for (const e of snapshot) upsert(map, e)
   for (const h of historyEntries(history)) {
-    upsert(map, { media: h.media, progress: localProgress(h), updatedAt: h.updatedAt, source: 'local' })
+    upsert(map, {
+      media: h.media,
+      progress: localProgress(h),
+      updatedAt: h.updatedAt,
+      source: 'local',
+      catalogSelection: h.catalogSelection,
+    })
   }
   for (const e of map.values()) {
     const s = session[e.media.id]
@@ -127,11 +153,19 @@ export interface BuildInput {
  */
 export function buildSnapshot(inp: BuildInput): CwEntry[] {
   const priorProgress = new Map(inp.prior.map((e) => [e.media.id, e.progress]))
+  const priorCatalogSelection = new Map(inp.prior.map((e) => [e.media.id, e.catalogSelection]))
   const map = new Map<number, CwEntry>()
 
-  const add = (media: Media, progress: number, updatedAt: number, source: 'tracker' | 'local') => {
+  const add = (
+    media: Media,
+    progress: number,
+    updatedAt: number,
+    source: 'tracker' | 'local',
+    catalogSelection?: CatalogSelection,
+  ) => {
     const id = media.id
     const fresh = inp.refreshedMedia[id] ?? media
+    const resolvedCatalogSelection = catalogSelection ?? priorCatalogSelection.get(id)
     const floor = Math.max(
       progress,
       priorProgress.get(id) ?? 0,
@@ -140,17 +174,23 @@ export function buildSnapshot(inp: BuildInput): CwEntry[] {
     )
     const cur = map.get(id)
     if (!cur) {
-      map.set(id, { media: mediaSnapshot(fresh), progress: floor, updatedAt, source })
+      map.set(id, {
+        media: mediaSnapshot(fresh), progress: floor, updatedAt, source,
+        catalogSelection: resolvedCatalogSelection,
+      })
     } else {
       cur.progress = Math.max(cur.progress, floor)
       cur.updatedAt = Math.max(cur.updatedAt, updatedAt)
+      if (resolvedCatalogSelection) cur.catalogSelection = resolvedCatalogSelection
       if (inp.refreshedMedia[id]) cur.media = mediaSnapshot(fresh) // adopt the refreshed airing info
     }
   }
 
   for (const e of inp.ani) add(e.media, e.progress, e.updatedAt, 'tracker')
   for (const e of inp.mal) add(e.media, e.progress, e.updatedAt, 'tracker')
-  for (const h of historyEntries(inp.history)) add(h.media, localProgress(h), h.updatedAt, 'local')
+  for (const h of historyEntries(inp.history)) {
+    add(h.media, localProgress(h), h.updatedAt, 'local', h.catalogSelection)
+  }
 
   return [...map.values()]
     .sort((a, b) => b.updatedAt - a.updatedAt)
