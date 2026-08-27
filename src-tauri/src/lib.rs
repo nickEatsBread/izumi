@@ -746,7 +746,7 @@ fn steam_show_osk(_app: AppHandle, x: i32, y: i32, w: i32, h: i32, mode: i32) ->
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (app, x, y, w, h, mode);
+        let _ = (_app, x, y, w, h, mode);
         false
     }
 }
