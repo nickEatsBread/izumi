@@ -49,14 +49,14 @@
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">History</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">
-    izumi keeps your watch history and progress on this device, so Continue Watching and resume work
-    even without an AniList or MyAnimeList account. It never leaves your machine unless you export it.
+    izumi keeps your watch history, progress, and aggregate source reliability on this device, so
+    Continue Watching, resume, and source selection improve locally. It never leaves your machine.
   </p>
 
   <div class="max-w-2xl space-y-6">
     <Toggle
       label="Save watch history on this device"
-      desc="Record what you watch and how far you got, locally. Turn off to stop recording (existing history is kept until you clear it)."
+      desc="Record what you watch and how well source families perform, locally. Turn off to stop recording (existing data is kept until you clear it)."
       value={$saveLocalHistory}
       onToggle={() => ($saveLocalHistory = !$saveLocalHistory)}
     />

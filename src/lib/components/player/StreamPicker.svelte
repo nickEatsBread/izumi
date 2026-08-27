@@ -486,6 +486,7 @@
       else if (s.status === 'idle') { busy = false } // caching canceled — re-enable the list
     }, {
       autoplay: pick.autoplay,
+      automatic,
       directStartupTimeoutMs: automatic && directP2p ? AUTO_DIRECT_STARTUP_TIMEOUT_MS : undefined,
     })
   }

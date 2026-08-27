@@ -5,6 +5,7 @@ import { catalogProvider, type CatalogSelection } from '$lib/settings/catalog'
 import { incognito, onIncognitoPurge } from '$lib/stores/incognito'
 import type { Media } from '$lib/anilist/types'
 import { clearSourceOrigins, forgetSourceOrigin } from './source-origin'
+import { forgetSourceOutcomes } from './source-outcomes'
 
 // Local watch history — saved on-device regardless of whether AniList/MyAnimeList is linked, so
 // Continue Watching (and resume) work with no account. One entry per anime, keyed by AniList media
@@ -211,6 +212,7 @@ export function clearHistory() {
   durableHistory.set({})
   incognitoHistory.set({})
   clearSourceOrigins()
+  forgetSourceOutcomes()
 }
 
 /** History entries as a most-recently-updated-first array (for Continue Watching / the settings list). */

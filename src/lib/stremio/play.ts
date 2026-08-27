@@ -119,6 +119,11 @@ import {
 } from '$lib/player/direct-torrent'
 import { torrentioResolverInfoHash } from './resolver-url'
 import {
+  advancePlaybackStability, beginSourceObservation, cancelSourceObservation, failObservedSource,
+  failSourceObservation, markSourceObservation,
+  type PlaybackObservation, type PlaybackStabilityState, type PlaybackTransport,
+} from '$lib/player/source-outcomes'
+import {
   beginResolveTrace,
   currentResolveTrace,
   finishResolveTrace,
@@ -154,9 +159,23 @@ export type PlayStreamOptions = {
   /** Automatic picks get a bounded native metadata/initialization attempt so one dead hash cannot
    * consume the full manual-source allowance before the picker advances to its next candidate. */
   directStartupTimeoutMs?: number
+  /** Whether the planner/picker chose this route without a user click. Observation only. */
+  automatic?: boolean
   /** Internal: a watchdog replacement may retain ownership, but can never claim it after a newer
    * episode/source request has taken over. */
   recoveryOwner?: PlaybackOwner
+}
+
+function observationTransport(stream: Stream, options: PlayStreamOptions): PlaybackTransport {
+  const resolverHash = torrentioResolverInfoHash(stream.url, stream.__addonName ?? stream.name)
+  if ((!stream.url && stream.infoHash) || resolverHash) {
+    return options.forceDirect || directP2pEnabled() ? 'direct-p2p' : 'debrid'
+  }
+  if (stream.__drm) return 'drm'
+  if (stream.__manifest === 'dash' || /\.mpd(?:[?#]|$)/i.test(stream.url ?? '')) return 'dash'
+  if (stream.__manifest === 'hls' || /\.m3u8(?:[?#]|$)/i.test(stream.url ?? '')) return 'hls'
+  if (stream.url) return 'http'
+  return 'unknown'
 }
 
 function addonTraceName(base: string): string {
@@ -442,7 +461,7 @@ function maybePromoteToWatching(media: Media, pos: number, already: { promoted: 
 
 // Wire the mpv event stream (emitted from Rust) to progress tracking, resume,
 // and auto next-episode. Called once per play, after playback has started.
-function attach(media: Media, episode: number, onState: (s: PlayState) => void) {
+function attach(media: Media, episode: number, onState: (s: PlayState) => void, observation: PlaybackObservation | null) {
   // Tear down the previous play's listeners, then register the new set ATOMICALLY — this whole
   // body runs with no `await`, so a second play cannot interleave between teardown and
   // registration. `pushListen` stores each unlisten synchronously; `gen` guards the async
@@ -454,9 +473,21 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
   let lastSave = 0
   let warmed = false
   let wrongDurationHandled = false
+  let stability: PlaybackStabilityState = { advancedSeconds: 0 }
+  let lastPosition = 0
+  let lastDuration = 0
   const onProgress = (pos: number, dur: number) => {
+    lastPosition = pos
+    lastDuration = dur
+    if (dur > 0) {
+      markSourceObservation(observation, 'first-frame')
+      const next = advancePlaybackStability(stability, pos)
+      stability = next.state
+      if (next.stable) markSourceObservation(observation, 'stable')
+    }
     if (!wrongDurationHandled && implausiblyShortEpisode(media.duration, dur)) {
       wrongDurationHandled = true
+      failSourceObservation(observation, 'Wrong short video detected', 'wrong-content')
       clearPosition(media.id, episode)
       void recoverPlaybackSource(0, true, 'Wrong short video detected — trying a full episode…')
       return
@@ -524,6 +555,13 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
   const onEnded = async () => {
     if (endHandled) return
     endHandled = true
+    if (lastDuration <= 0) {
+      failSourceObservation(observation, 'Player ended without readable media', 'player')
+    } else if (prematureEof(lastPosition, lastDuration, media.duration)) {
+      failSourceObservation(observation, 'Source ended before the episode finished', 'wrong-content')
+    } else {
+      markSourceObservation(observation, 'completed')
+    }
     // Finished: forget the resume point, then auto-advance if there's a next episode (bounded by
     // the known total). Fires when EITHER "Auto-play next" OR "Binge (preload)" is on — preload
     // warms the next episode near the end precisely so it continues automatically, so having it on
@@ -557,6 +595,7 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void) 
   const onDrmEnded = () => { void onEnded() }
   window.addEventListener(DRM_ENDED_EVENT, onDrmEnded)
   stop.push(() => window.removeEventListener(DRM_ENDED_EVENT, onDrmEnded))
+  stop.push(() => cancelSourceObservation(observation))
 }
 
 // Android embedded-player tracking: mirrors attach() but driven by the mpv plugin's observed-
@@ -572,6 +611,7 @@ function attachAndroid(
   episode: number,
   onState: (s: PlayState) => void,
   directP2p: boolean,
+  observation: PlaybackObservation | null,
 ) {
   detachAndroid()
   resetPrefetchMiss()
@@ -587,7 +627,9 @@ function attachAndroid(
   let selectedSize = 0
   let healthBusy = false
   let recoveryBusy = false
+  let stability: PlaybackStabilityState = { advancedSeconds: 0 }
   const onEnded = async () => {
+    markSourceObservation(observation, 'completed')
     clearPosition(media.id, episode)
     if (!get(autoplayNext) && !get(bingePreload)) return
     // Same guard as the desktop handler: an open picker means the user is mid-choice (Change
@@ -607,9 +649,16 @@ function attachAndroid(
   const unsub = mpvState.subscribe((s) => {
     latest = s
     const { pos, dur, eof, cacheEnd } = s
+    if (dur > 0 && s.frameReady) {
+      markSourceObservation(observation, 'first-frame')
+      const next = advancePlaybackStability(stability, pos)
+      stability = next.state
+      if (next.stable) markSourceObservation(observation, 'stable')
+    }
     reportDirectTorrentBuffer(pos, cacheEnd)
     if (!wrongDurationHandled && implausiblyShortEpisode(media.duration, dur)) {
       wrongDurationHandled = true
+      failSourceObservation(observation, 'Wrong short video detected', 'wrong-content')
       clearPosition(media.id, episode)
       void recoverPlaybackSource(0, !s.paused, 'Wrong short video detected — trying a full episode…')
       return
@@ -628,6 +677,11 @@ function attachAndroid(
     if (eof && !ended) {
       ended = true
       if (prematureEof(pos, dur, media.duration)) {
+        failSourceObservation(
+          observation,
+          dur > 0 ? 'Source ended before the episode finished' : 'Player ended without readable media',
+          dur > 0 ? 'wrong-content' : 'player',
+        )
         recoveryBusy = true
         void recoverPlaybackSource(
           pos,
@@ -702,6 +756,7 @@ function attachAndroid(
   stopAndroid = () => {
     unsub()
     clearInterval(recoveryTimer)
+    cancelSourceObservation(observation)
   }
 }
 
@@ -1654,7 +1709,7 @@ export async function playEpisode(
       const pre = takePrefetched(media.id, episode)
       if (pre) {
         streamPicker.set(null)
-        return await playStream(media, episode, pre, onState, { autoplay })
+        return await playStream(media, episode, pre, onState, { autoplay, automatic: true })
       }
     }
 
@@ -1732,7 +1787,7 @@ export async function playEpisode(
           const result = applyContinuationState(state, () => streamPicker.set(null), onState)
           played ||= result.played
           continuationError ||= result.error
-        }, { autoplay })
+        }, { autoplay, automatic: true })
         return played
       })().finally(() => {
         continuationPending = false
@@ -2267,7 +2322,7 @@ async function resolveAndPlayBest(
   // Instant path: use the stream prefetched near the end of the previous episode.
   if (episode != null) {
     const pre = takePrefetched(media.id, episode)
-    if (pre) return await playStream(media, episode, pre, onState, { autoplay })
+    if (pre) return await playStream(media, episode, pre, onState, { autoplay, automatic: true })
   }
   // Seamless continuity: if the addons already have a CACHED source from the same release
   // we were watching, play it straight away — no picker between back-to-back episodes.
@@ -2278,7 +2333,7 @@ async function resolveAndPlayBest(
       const { streams, want } = await resolveStreams(media, episode)
       if (generation !== advanceGeneration) return onState({ status: 'idle' })
       const same = pickSameRelease(media, streams, want)
-      if (same) return await playStream(media, episode, same, onState, { autoplay })
+      if (same) return await playStream(media, episode, same, onState, { autoplay, automatic: true })
     }
     catch { /* no addons / nothing yet — the full picker below still queries extensions */ }
   }
@@ -2329,6 +2384,10 @@ export async function playStream(
   // Before ANY history/tracker write below: an adult title flips incognito on (setting-gated), so
   // the whole play — recordPlay, positions, markWatched — lands in the session overlay.
   maybeAutoEnterIncognito(media)
+  const observation = stream.__origin || stream.__candidate
+    ? beginSourceObservation(stream, observationTransport(stream, options), options.automatic ?? !!options.recoveryOwner)
+    : null
+  markSourceObservation(observation, 'resolving')
   const directStartupId = nextDirectTorrentStartupId()
   const cancelPlaybackStart = () => {
     if (!cancelPlaybackOwner(playbackOwner)) return
@@ -2337,6 +2396,7 @@ export async function playStream(
     activeDebridResolve = null
     debridCaching.set(null)
     connecting.set(null)
+    cancelSourceObservation(observation)
     cancelResolve()
     // The owner is deliberately invalid now, so onState would suppress this as stale. Notify the
     // caller directly to re-enable a source picker that was waiting on this exact request.
@@ -2371,6 +2431,9 @@ export async function playStream(
     if (!stillOwnsPlayback()) return
     if (s.status !== 'resolving') connecting.set(null)
     traceResolve(trace, `playback state: ${s.status}`, s.message ? { message: s.message } : {})
+    if (s.status === 'playing') markSourceObservation(observation, 'player-ready')
+    else if (s.status === 'error') failSourceObservation(observation, s.message)
+    else if (s.status === 'idle') cancelSourceObservation(observation)
     report(s)
     // For local P2P, player_embed only means mpv accepted the loopback URL. Keep the trace alive
     // until an actual duration/progress event so the headline timing is click-to-first-frame,
@@ -2397,6 +2460,7 @@ export async function playStream(
   let directPlaybackId: number | null = null
   const abandonIfStale = async () => {
     if (stillOwnsPlayback()) return false
+    cancelSourceObservation(observation)
     if (directPlaybackId != null) {
       await discardDirectTorrentPlayback(directPlaybackId)
       directPlaybackId = null
@@ -2624,6 +2688,7 @@ export async function playStream(
   }
   if (!stillOwnsPlayback()) return
   if (!stream?.url) return onState({ status: 'error', message: 'That source has no playable link.' })
+  markSourceObservation(observation, 'resolved')
   // Wait until the final byte-addressable URL is known. Direct P2P is the exception: probing its
   // loopback stream for an exact subtitle hash would compete with mpv's startup reads, so search by
   // episode/filename instead and attach the results after player_embed.
@@ -2758,7 +2823,7 @@ export async function playStream(
       playing.set(true)
       onState({ status: 'playing' })
       void invoke('close_player').catch(() => {})
-      if (episode != null) attach(media, episode, onState)
+      if (episode != null) attach(media, episode, onState, observation)
       return
     }
 
@@ -2867,7 +2932,7 @@ export async function playStream(
         rememberSuccess()
         androidFrameTracePending = directPlaybackId != null
         onState({ status: 'playing' })
-        if (episode != null) attachAndroid(media, episode, onState, directPlaybackId != null)
+        if (episode != null) attachAndroid(media, episode, onState, directPlaybackId != null, observation)
         if (directPlaybackId != null) {
           const playbackId = directPlaybackId
           traceResolve(trace, 'waiting for Android first video frame')
@@ -2877,6 +2942,7 @@ export async function playStream(
             // fallback for players/platform events that reached a frame without the notification.
             void directTorrentPlayerAttached(playbackId)
             androidFrameTracePending = false
+            if (ready) markSourceObservation(observation, 'first-frame')
             finishResolveTrace(
               trace,
               ready ? 'Android first video frame' : 'Android first video frame timeout',
@@ -3076,7 +3142,7 @@ export async function playStream(
     playing.set(true)
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
-    if (episode != null) attach(media, episode, onState)
+    if (episode != null) attach(media, episode, onState, observation)
     if (directPlaybackId != null) {
       const playbackId = directPlaybackId
       traceResolve(trace, 'waiting for first video frame')
@@ -3086,6 +3152,8 @@ export async function playStream(
         // first real HTTP request. A first frame is the safe fallback; player_embed merely accepting
         // a URL is too early and used to leave a gap with no active range priority at all.
         void directTorrentPlayerAttached(playbackId)
+        if (result === 'ready') markSourceObservation(observation, 'first-frame')
+        else if (result === 'load-error') failSourceObservation(observation, 'Player load error', 'player')
         finishResolveTrace(
           trace,
           result === 'ready' ? 'first video frame'
@@ -3226,6 +3294,7 @@ export async function recoverPlaybackSource(
   const attempted = new Set(context.attempted)
   if (failed && stillOwnsPlayback()) {
     attempted.add(recoveryStreamKey(failed))
+    failObservedSource(failed, notice)
     markDead(failed)
   }
   if (!stillOwnsPlayback()) return false
