@@ -205,6 +205,10 @@ function baseContext(context: SourceOutcomeContext): SourceOutcomeContext {
 
 function contextHierarchy(context: SourceOutcomeContext): SourceOutcomeContext[] {
   const detailed = context
+  // A direct torrent provider discovers a swarm; it does not operate that swarm. Folding one dead
+  // release into an addon-wide prior would make a title-specific peer outage poison every torrent
+  // returned by that addon. Keep P2P evidence on the route profile only.
+  if (context.transport === 'direct-p2p') return [detailed]
   const base = baseContext(context)
   return contextKey(detailed) === contextKey(base) ? [detailed] : [detailed, base]
 }
@@ -434,8 +438,20 @@ export function sourceOutcomeContext(
     : stream.infoHash ? 'hash-only'
       : stream.__manifest ?? (stream.__drm ? 'drm' : stream.url ? 'http' : '')
   const releaseGroup = stream.__evidence?.releaseGroup ?? info.group
-  const profile = [releaseGroup?.trim().toLowerCase() ?? '', readiness, size].filter(Boolean).join('|')
+  // Stremio defines bingeGroup specifically as cross-episode stream continuity. Prefer that
+  // source-native identity to reconstructing a family from inconsistent display filenames.
+  const continuity = stream.behaviorHints?.bingeGroup?.trim().toLowerCase()
+    || releaseGroup?.trim().toLowerCase()
+    || ''
+  const swarm = transport !== 'direct-p2p' || info.seeders == null ? ''
+    : info.seeders < 5 ? 'swarm-tiny'
+      : info.seeders < 20 ? 'swarm-small'
+        : info.seeders < 100 ? 'swarm-medium'
+          : 'swarm-large'
+  const profile = [continuity, readiness, size, swarm].filter(Boolean).join('|')
   const resolver = transport === 'debrid' ? get(debridProvider).trim().toLowerCase() : ''
+  const language = stream.__lang?.trim().toLowerCase()
+    || (info.audioLanguages.length ? [...info.audioLanguages].sort().join('+') : '')
   return {
     family: stream.__origin?.kind ?? (stream.__stream ? 'online-extension' : stream.infoHash ? 'torrent' : 'direct'),
     sourceId: stream.__origin?.id ?? 'unknown',
@@ -443,7 +459,7 @@ export function sourceOutcomeContext(
     serverId: server ? `srv-${digest(server)}` : undefined,
     serviceId: resolver ? `svc-${digest(resolver)}` : undefined,
     profileId: profile ? `prf-${digest(profile)}` : undefined,
-    language: stream.__lang?.trim().toLowerCase() || undefined,
+    language: language || undefined,
   }
 }
 
@@ -484,9 +500,12 @@ export const sourceOutcomeSummary = (stream: Stream, transport: PlaybackTranspor
   if (get(incognito) || !get(saveLocalHistory)) return undefined
   const context = sourceOutcomeContext(stream, transport)
   const detailed = journal.summary(context)
+  // Older v2 journals may contain broad P2P aggregates from before swarms were isolated. Never
+  // read those entries: an addon discovers a torrent but does not control that torrent's peers.
+  if (transport === 'direct-p2p') return detailed
   // A profile/server arm has to earn enough of its own evidence before replacing its provider
-  // prior. Until then, share the broader provider+transport experience instead of treating every
-  // unseen release group as a cold start.
+  // prior for operated HTTP/debrid routes. Until then, share broader provider+transport experience
+  // instead of treating every unseen endpoint or release group as a cold start.
   if (detailed && effectiveOutcomeTrials(detailed) >= 4) return detailed
   return journal.summary(baseContext(context)) ?? detailed
 }

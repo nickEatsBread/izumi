@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { PlaybackTransport, SourceOutcomeCounts, SourceOutcomeSummary } from '$lib/player/source-outcomes'
+import {
+  sourceOutcomeContext,
+  type PlaybackTransport,
+  type SourceOutcomeCounts,
+  type SourceOutcomeSummary,
+} from '$lib/player/source-outcomes'
 import { dedupeStreams } from './dedupe'
 import { normalizeCandidates } from './candidate-model'
 import { describe as describeStream, languageMismatch, rankStreams } from './addon'
@@ -86,6 +91,16 @@ live('adaptive source planner against live Stremio P2P results', () => {
       expect(result.streams.every((stream) => !!stream.behaviorHints)).toBe(true)
       expect(result.streams.every((stream) => stream.__evidence?.requestId === result.id)).toBe(true)
       expect(result.streams.every((stream) => stream.__origin?.id === 'live-torrentio')).toBe(true)
+
+      const contexts = result.streams.map((stream) => sourceOutcomeContext(stream, 'direct-p2p'))
+      expect(
+        new Set(contexts.map((context) => context.profileId)).size,
+        `${result.title} collapsed independent swarms into one learning profile`,
+      ).toBeGreaterThan(1)
+      const serializedContexts = JSON.stringify(contexts)
+      for (const stream of result.streams) {
+        expect(serializedContexts).not.toContain(stream.infoHash)
+      }
     }
   }, 45_000)
 

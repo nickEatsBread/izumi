@@ -200,6 +200,20 @@ describe('adaptive source planner', () => {
     }).planned).toEqual([reliable, fastButFlaky])
   })
 
+  it('never lets conditional stability rescue poor startup reliability', () => {
+    const usual = stream('usual')
+    const rarelyStarts = stream('rarely-starts')
+    const summaries = new Map<Stream, SourceOutcomeSummary>([
+      [rarelyStarts, outcome(4, 16)],
+    ])
+    const plan = planSources([usual, rarelyStarts], {
+      directP2p: false,
+      outcomeOf: lookup(summaries),
+    })
+    expect(plan.planned).toEqual([usual, rarelyStarts])
+    expect(plan.candidates.find((candidate) => candidate.stream === rarelyStarts)?.adaptiveScore).toBeLessThan(0.28)
+  })
+
   it('preserves the candidate set and two-place bound across generated evidence histories', () => {
     let random = 0x5eed1234
     const next = () => {
@@ -252,8 +266,8 @@ describe('adaptive source planner', () => {
     expect(planSources([steady, oldWinner], { directP2p: false, outcomeOf }).planned[0]).toBe(oldWinner)
 
     now = 4 * OUTCOME_HALF_LIFE_MS
-    observe('old-winner', 4, 16)
-    observe('steady', 14, 6)
+    observe('old-winner', 2, 18)
+    observe('steady', 16, 4)
     expect(planSources([oldWinner, steady], { directP2p: false, outcomeOf }).planned[0]).toBe(steady)
   })
 
@@ -306,6 +320,69 @@ describe('diagnosis-aware recovery plan', () => {
     const sameProvider = stream('provider-a', 1080, { url: 'https://backup.example/video.mkv' })
     const independent = stream('provider-b')
     expect(planRecoveryCandidates([sameProvider, independent], failed, 'auth', { directP2p: false })).toEqual([independent, sameProvider])
+  })
+
+  it('does not blame the source addon or retry the same release for a debrid resolver failure', () => {
+    const failed = {
+      ...torrent('addon-a', 'a'),
+      __candidate: { releaseId: 'release-a', offerId: 'failed', routeId: 'failed', offerCount: 2, routeCount: 2 },
+    }
+    const sameReleaseOtherAddon = {
+      ...torrent('addon-b', 'a'),
+      __candidate: { releaseId: 'release-a', offerId: 'same', routeId: 'same', offerCount: 2, routeCount: 2 },
+    }
+    const otherReleaseSameAddon = {
+      ...torrent('addon-a', 'b'),
+      __candidate: { releaseId: 'release-b', offerId: 'other', routeId: 'other', offerCount: 1, routeCount: 1 },
+    }
+    expect(planRecoveryCandidates(
+      [sameReleaseOtherAddon, otherReleaseSameAddon],
+      failed,
+      'resolver',
+      { directP2p: false },
+    )).toEqual([otherReleaseSameAddon, sameReleaseOtherAddon])
+  })
+
+  it('does not retry rejected debrid credentials on another hash', () => {
+    const failed = torrent('addon-a', 'a')
+    const anotherHash = torrent('addon-b', 'b')
+    const direct = stream('direct-http')
+    expect(planRecoveryCandidates(
+      [anotherHash, direct],
+      failed,
+      'auth',
+      { directP2p: false },
+    )).toEqual([direct])
+  })
+
+  it('changes bytes before retrying the same release after a player failure', () => {
+    const failed = {
+      ...torrent('addon-a', 'a'),
+      __candidate: { releaseId: 'release-a', offerId: 'failed', routeId: 'failed', offerCount: 2, routeCount: 2 },
+    }
+    const sameRelease = {
+      ...torrent('addon-b', 'a'),
+      __candidate: { releaseId: 'release-a', offerId: 'same', routeId: 'same', offerCount: 2, routeCount: 2 },
+    }
+    const otherRelease = {
+      ...torrent('addon-a', 'b'),
+      __candidate: { releaseId: 'release-b', offerId: 'other', routeId: 'other', offerCount: 1, routeCount: 1 },
+    }
+    expect(planRecoveryCandidates(
+      [sameRelease, otherRelease],
+      failed,
+      'player',
+      { directP2p: true },
+    )).toEqual([otherRelease, sameRelease])
+  })
+
+  it('never retries the same bytes when the release is unsupported', () => {
+    const [failed, sameBytes, different] = normalizeCandidates([
+      torrent('one', 'a'),
+      torrent('two', 'a'),
+      torrent('one', 'b'),
+    ])
+    expect(planRecoveryCandidates([sameBytes, different], failed, 'unsupported', { directP2p: true })).toEqual([different])
   })
 
   it('does not promote a lower-quality alternate while diversifying recovery', () => {

@@ -16,6 +16,7 @@ export interface PlannedSource {
   stream: Stream
   baselineIndex: number
   plannedIndex: number
+  /** Posterior reliability minus the bounded startup-latency penalty. */
   adaptiveScore: number
   confidence: SourcePlanConfidence
   signals: SourcePlanSignal[]
@@ -43,7 +44,7 @@ export interface SourcePlannerOptions {
 const MIN_PREVIEW_OBSERVATIONS = 3
 const MIN_ACTIVE_OBSERVATIONS = 8
 const MAX_BUCKET_SHIFT = 2
-const ONE_SIDED_80_Z = 1.281551565545
+const ONE_SIDED_95_Z = 1.644853626951
 const ACTIVE_MARGIN = 0.015
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
@@ -98,7 +99,7 @@ function betaEstimate(successes: number, failures: number): { mean: number; lowe
   const beta = 2 + failures
   const total = alpha + beta
   const mean = alpha / total
-  const deviation = Math.sqrt((alpha * beta) / (total * total * (total + 1))) * ONE_SIDED_80_Z
+  const deviation = Math.sqrt((alpha * beta) / (total * total * (total + 1))) * ONE_SIDED_95_Z
   return { mean, lower: clamp(mean - deviation, 0, 1), upper: clamp(mean + deviation, 0, 1) }
 }
 
@@ -118,7 +119,11 @@ function reliabilityEstimate(summary: SourceOutcomeSummary | undefined, stream: 
   // Starting at all dominates the decision. Sustained playback becomes a second independent
   // objective only after it has real observations; censored/short sessions add no negative label.
   const mix = sustainedTrials >= 2 ? 0.2 : 0
-  const blend = (startupValue: number, sustainedValue: number) => startupValue * (1 - mix) + sustainedValue * mix
+  // Stability is conditional on startup, not an alternative success path. Its posterior may
+  // discount startup reliability but must never lift a route which rarely starts in the first
+  // place (which a weighted arithmetic mean incorrectly allowed).
+  const composite = (startupValue: number, sustainedValue: number) =>
+    startupValue * ((1 - mix) + sustainedValue * mix)
   const automaticLatencySamples = summary.automatic.firstFrameSamples
   const manualLatencySamples = summary.manual.firstFrameSamples * MANUAL_OUTCOME_WEIGHT
   const latencySamples = automaticLatencySamples + manualLatencySamples
@@ -130,9 +135,9 @@ function reliabilityEstimate(summary: SourceOutcomeSummary | undefined, stream: 
     : undefined
   return {
     effective: effectiveOutcomeTrials(summary),
-    mean: blend(startup.mean, sustained.mean),
-    lower: blend(startup.lower, sustained.lower),
-    upper: blend(startup.upper, sustained.upper),
+    mean: composite(startup.mean, sustained.mean),
+    lower: composite(startup.lower, sustained.lower),
+    upper: composite(startup.upper, sustained.upper),
     latencyMs,
     latencySamples,
     providerPrior,
@@ -301,7 +306,7 @@ export function planSources(baseline: Stream[], options: SourcePlannerOptions): 
       stream: candidate.stream,
       baselineIndex: details.baselineIndex,
       plannedIndex,
-      adaptiveScore: Math.round((details.score - 0.5) * 1_000) / 100,
+      adaptiveScore: Math.round(details.score * 1_000) / 1_000,
       confidence: details.confidence,
       signals: details.signals,
     }
@@ -376,13 +381,33 @@ export function planRecoveryCandidates(
   if (!failed) return withinConstraintBuckets(candidates, options, diversifyReleases)
   const failedRelease = releaseIdOf(failed)
   const failedSource = sourceIdOf(failed)
+  const failedTransport = plannedTransport(failed, options.directP2p)
 
-  if (failureClass === 'wrong-content') {
+  if (failureClass === 'wrong-content' || failureClass === 'unsupported') {
     return withinConstraintBuckets(
       candidates.filter((candidate) => releaseIdOf(candidate) !== failedRelease),
       options,
       diversifyReleases,
     )
+  }
+
+  // A debrid credential failure applies to the configured service, not the addon which happened to
+  // discover a hash. Retrying more hashes through the same rejected credential only burns the
+  // bounded retry budget; retain any independently playable HTTP/P2P alternatives.
+  if (failureClass === 'auth' && failedTransport === 'debrid') {
+    return withinConstraintBuckets(
+      candidates.filter((candidate) => plannedTransport(candidate, options.directP2p) !== 'debrid'),
+      options,
+      diversifyReleases,
+    )
+  }
+
+  if (failureClass === 'resolver' && failedTransport === 'debrid') {
+    return withinConstraintBuckets(candidates, options, (bucket) => {
+      const otherReleases = bucket.filter((candidate) => releaseIdOf(candidate) !== failedRelease)
+      const sameRelease = bucket.filter((candidate) => releaseIdOf(candidate) === failedRelease)
+      return [...diversifyReleases(otherReleases), ...sameRelease]
+    })
   }
 
   if (failureClass === 'auth' || failureClass === 'geo' || failureClass === 'policy' || failureClass === 'resolver') {
@@ -393,7 +418,18 @@ export function planRecoveryCandidates(
     })
   }
 
-  if (failureClass === 'transport' || failureClass === 'stalled' || failureClass === 'metadata' || failureClass === 'player') {
+  if (failureClass === 'player') {
+    return withinConstraintBuckets(candidates, options, (bucket) => {
+      const otherReleases = bucket.filter((candidate) => releaseIdOf(candidate) !== failedRelease)
+      const sameRelease = bucket.filter((candidate) => releaseIdOf(candidate) === failedRelease)
+      // A decoder/container failure usually follows the bytes. Change encode before retrying an
+      // alternate route to the same file, while retaining that route as a last resort for generic
+      // player load errors which were really transport failures.
+      return [...diversifyReleases(otherReleases), ...sameRelease]
+    })
+  }
+
+  if (failureClass === 'transport' || failureClass === 'stalled' || failureClass === 'metadata') {
     return withinConstraintBuckets(candidates, options, (bucket) => {
       const sameRelease = bucket.filter((candidate) => releaseIdOf(candidate) === failedRelease)
       const otherReleases = bucket.filter((candidate) => releaseIdOf(candidate) !== failedRelease)

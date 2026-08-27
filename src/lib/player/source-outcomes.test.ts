@@ -59,9 +59,7 @@ describe('SourceOutcomeJournal', () => {
     expect(journal.sessionEvents().map((event) => event.stage)).toEqual([
       'selected', 'resolving', 'resolved', 'player-ready', 'first-frame', 'stable', 'completed',
     ])
-    const summaries = journal.allSummaries()
-    expect(summaries).toHaveLength(2)
-    expect(summaries.find((summary) => !summary.context.serverId)?.automatic.startupSuccesses).toBeCloseTo(1, 4)
+    expect(journal.allSummaries()).toHaveLength(1)
     expect(storage.data.size).toBe(1)
   })
 
@@ -108,8 +106,8 @@ describe('SourceOutcomeJournal', () => {
     const attempt = journal.begin(context, true)
     journal.mark(attempt, 'stable')
     expect(journal.summary(context)?.automatic).toMatchObject({
-      startupSuccesses: 1,
-      stableSuccesses: 1,
+      startupSuccesses: expect.closeTo(1, 4),
+      stableSuccesses: expect.closeTo(1, 4),
     })
   })
 
@@ -148,9 +146,20 @@ describe('SourceOutcomeJournal', () => {
     const manual = journal.begin(context, false)
     journal.fail(manual, 'metadata')
     expect(journal.summary(context)).toMatchObject({
-      automatic: { startupSuccesses: 1, startupFailures: 0 },
-      manual: { startupSuccesses: 0, startupFailures: 1 },
+      automatic: { startupSuccesses: expect.closeTo(1, 4), startupFailures: 0 },
+      manual: { startupSuccesses: 0, startupFailures: expect.closeTo(1, 4) },
     })
+  })
+
+  it('shares HTTP evidence with a provider fallback but keeps P2P swarm evidence local', () => {
+    const journal = new SourceOutcomeJournal(new MemoryStorage())
+    const http = { ...context, transport: 'http' as const }
+    journal.mark(journal.begin(http, true), 'stable')
+    expect(journal.allSummaries()).toHaveLength(2)
+
+    const p2p = { ...context, sourceId: 'another-source', transport: 'direct-p2p' as const }
+    journal.mark(journal.begin(p2p, true), 'stable')
+    expect(journal.allSummaries().filter((summary) => summary.context.sourceId === 'another-source')).toHaveLength(1)
   })
 
   it('records nothing when privacy policy disables observation', () => {
@@ -223,6 +232,47 @@ describe('source outcome privacy', () => {
       expect(JSON.stringify([first, second])).not.toMatch(/realdebrid|torbox|group a|group b/i)
     } finally {
       debridProvider.set(previous)
+    }
+  })
+
+  it('prefers Stremio bingeGroup continuity and separates materially different swarms', () => {
+    const base = {
+      infoHash: 'a'.repeat(40),
+      __origin: { kind: 'addon' as const, id: 'stremio-addon' },
+      behaviorHints: { bingeGroup: 'same-show-1080p' },
+    }
+    const first = sourceOutcomeContext({
+      ...base,
+      __seeders: 2,
+      __evidence: { releaseGroup: 'Conflicting A' },
+    }, 'direct-p2p')
+    const sameContinuity = sourceOutcomeContext({
+      ...base,
+      infoHash: 'b'.repeat(40),
+      __seeders: 3,
+      __evidence: { releaseGroup: 'Conflicting B' },
+    }, 'direct-p2p')
+    const healthierSwarm = sourceOutcomeContext({
+      ...base,
+      infoHash: 'c'.repeat(40),
+      __seeders: 40,
+    }, 'direct-p2p')
+    expect(first.profileId).toBe(sameContinuity.profileId)
+    expect(first.profileId).not.toBe(healthierSwarm.profileId)
+  })
+
+  it('does not read a broad P2P aggregate left by an older v2 journal', () => {
+    const previousHistory = get(saveLocalHistory)
+    const broad = { __origin: { kind: 'addon' as const, id: 'legacy-p2p-provider' } }
+    try {
+      incognito.set(false)
+      saveLocalHistory.set(true)
+      forgetSourceOutcomes()
+      markSourceObservation(beginSourceObservation(broad, 'direct-p2p'), 'stable')
+      expect(sourceOutcomeSummary({ ...broad, infoHash: 'd'.repeat(40) }, 'direct-p2p')).toBeUndefined()
+    } finally {
+      saveLocalHistory.set(previousHistory)
+      forgetSourceOutcomes()
     }
   })
 
