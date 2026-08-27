@@ -47,6 +47,7 @@
   import { getKitsuId } from '$lib/anizip'
   import { kitsuIdOf } from '$lib/catalog/identity'
   import { detailTrackerLinks } from './tracker-links'
+  import TrackerProviderBadge from '$lib/components/settings/TrackerProviderBadge.svelte'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -662,9 +663,9 @@
           {/if}
 
           {#each externalTrackerLinks as tracker (tracker.id)}
-            <button data-focusable onclick={() => openUrl(tracker.url)} title={tracker.title}
-                    class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
-              {tracker.label}<ExternalLink size={14} />
+            <button data-focusable onclick={() => openUrl(tracker.url)} title={tracker.title} aria-label={tracker.title}
+                    class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent">
+              <TrackerProviderBadge provider={tracker.id} compact />
             </button>
           {/each}
         </div>

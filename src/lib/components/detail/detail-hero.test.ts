@@ -83,6 +83,13 @@ describe('mobile series hero', () => {
     expect(detail.match(/h-auto w-44 shrink-0 self-start rounded-lg/g)?.length).toBeGreaterThanOrEqual(2)
     expect(detail).toContain('class="mb-4 flex flex-col gap-5 md:flex-row"')
   })
+
+  it('keeps desktop tracker actions compact and even', () => {
+    expect(detail).toContain('<TrackerProviderBadge provider={tracker.id} compact />')
+    expect(detail).toContain('class="grid h-10 w-10 place-items-center rounded-md bg-secondary transition-colors hover:bg-accent"')
+    expect(detail).not.toContain('{tracker.label}<ExternalLink')
+  })
+
   it('keeps the poster above the artwork band', () => {
     // The band is positioned, so it paints over static in-flow content - and the poster row is
     // pulled up into it. Without its own stacking context the band covered the poster's top the

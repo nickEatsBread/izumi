@@ -111,7 +111,7 @@
     <SettingsRow
       settingKey="continue-watching"
       title="Continue Watching"
-      description="Keep progress specific to the active catalog platform, or combine titles from every platform."
+      description="Show progress for the active catalog or combine all platforms."
       control={continueWatchingControl}
       controlLayout="stack"
     />
