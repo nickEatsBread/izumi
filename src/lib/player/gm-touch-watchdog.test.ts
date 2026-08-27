@@ -22,10 +22,12 @@ describe('Game-mode touch watchdog', () => {
     expect(clear).not.toContain("invoke('gm_touch_unstick')")
   })
 
-  it('aborts a pending controller animation when a finger takes over', () => {
+  it('aborts a pending controller scroll outside playback without flushing hidden Home during playback', () => {
     const down = src.slice(src.indexOf('const down ='), src.indexOf('const move ='))
     expect(down).toContain("behavior: 'instant'")
     expect(down).toContain('e.composedPath()')
+    expect(down).toContain("target.classList.contains('izumi-player-root')")
+    expect(down).toContain('if (!inPlayer)')
   })
 
   it('gives transient focus wobbles a quiet window before recovery', () => {

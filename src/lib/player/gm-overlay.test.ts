@@ -147,6 +147,14 @@ describe('PlayerOverlay Game-mode wiring', () => {
     expect(overlay).toContain('loading || get(scrub).active || controlsVisible || showSkip')
     expect(overlay).toContain('if (picker && !picker.hidden) return')
     expect(overlay).not.toContain('class:gm-chrome-in')
+    expect(overlay).toContain('onpointerdown={onOverlayPointerDown}')
+    expect(overlay).toContain("if (!gmMode || e.button !== 0 || !e.isPrimary) return")
+    expect(overlay).toContain('ontouchstart={onOverlayTouchStart}')
+    expect(overlay).toContain('onclickcapture={captureOverlayClick}')
+    expect(overlay).toContain("listenSafe('gm-native-touch-begin'")
+    expect(overlay).toContain('function revealFromTouchBegin(): boolean')
+    expect(overlay).toContain('suppressTouchRevealClickUntil = performance.now() + 900')
+    expect(overlay).toContain('e.stopImmediatePropagation()')
   })
 
   it('re-focuses the overlay after fullscreen so player hotkeys keep working', () => {

@@ -47,12 +47,19 @@ export function initGmTouchWatchdog(): () => void {
   const down = (e: PointerEvent) => {
     // Controller focus reveal is deliberately smooth, but SteamOS's WebKit can retain its old
     // target when touch interrupts that animation. An instant no-distance scroll aborts the old
-    // programmatic animation before native panning owns the same scrolling boxes.
-    window.scrollTo({ left: window.scrollX, top: window.scrollY, behavior: 'instant' })
-    for (const target of e.composedPath()) {
-      if (!(target instanceof HTMLElement)) continue
-      if (target.scrollHeight <= target.clientHeight && target.scrollWidth <= target.clientWidth) continue
-      target.scrollTo({ left: target.scrollLeft, top: target.scrollTop, behavior: 'instant' })
+    // programmatic animation before native panning owns the same scrolling boxes. The fullscreen
+    // player has no page-scroll handoff at all, though: touching it used to synchronously flush the
+    // large, hidden Home document's scroll/layout immediately before its native chrome reveal.
+    const path = e.composedPath()
+    const inPlayer = path.some((target) =>
+      target instanceof HTMLElement && target.classList.contains('izumi-player-root'))
+    if (!inPlayer) {
+      window.scrollTo({ left: window.scrollX, top: window.scrollY, behavior: 'instant' })
+      for (const target of path) {
+        if (!(target instanceof HTMLElement)) continue
+        if (target.scrollHeight <= target.clientHeight && target.scrollWidth <= target.clientWidth) continue
+        target.scrollTo({ left: target.scrollLeft, top: target.scrollTop, behavior: 'instant' })
+      }
     }
     // Track EVERY pointer type. WebKitGTK 2.48-2.50 (the shipped Deck runtime) compiles touch
     // pointer events out entirely — every finger arrives as a synthesized MOUSE pointer (id 1) —

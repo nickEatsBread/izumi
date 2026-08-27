@@ -154,6 +154,16 @@ fn gamescope_mpv_work_never_blocks_the_gtk_producer() {
 }
 
 #[test]
+fn gamescope_touch_reveals_controls_from_the_native_begin_edge() {
+    let commands = include_str!("../src/lib.rs");
+    assert!(commands.contains("connect_touch_event"));
+    assert!(commands.contains("gdk::EventType::TouchBegin"));
+    assert!(commands.contains("gm-native-touch-begin"));
+    // Observing the edge must not consume it: WebKit still owns the actual touch gesture.
+    assert!(commands.contains("glib::Propagation::Proceed"));
+}
+
+#[test]
 fn idle_overlay_does_not_raster_unless_forced() {
     assert_eq!(OVERLAY_IDLE_FPS, 0);
     assert!(!overlay_should_snapshot(false, false, false));

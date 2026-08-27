@@ -105,6 +105,7 @@
   let quietPadSeekT: ReturnType<typeof setTimeout>
   let dpadVisualPos = $state<number | null>(null)
   let dpadVisualT: ReturnType<typeof setTimeout>
+  let suppressTouchRevealClickUntil = 0
 
   // Game mode (Gamescope / Steam Deck) always uses the fullscreen Deck layout. Native Wayland
   // composites this webview live over the layer-shell video; XWayland keeps the established
@@ -121,6 +122,43 @@
     if (pipDragged) { pipDragged = false; return }
     if (gmMode) poke()
     else cmd('cycle', ['pause'])
+  }
+
+  function onOverlayPointerDown(e: PointerEvent) {
+    pipDragDown(e)
+    // Deck WebKit exposes a physical finger as a synthesized primary mouse pointer. Reveal on the
+    // down edge regardless of pointerType so native chrome starts in the same frame as an A press;
+    // waiting for the compatibility click added WebKit/Gamescope's release latency first.
+    if (!gmMode || e.button !== 0 || !e.isPrimary) return
+    if ((e.target as HTMLElement)?.closest?.('[data-comments-panel]')) return
+    poke()
+  }
+
+  function revealFromTouchBegin(): boolean {
+    // Gamescope's GTK touch-begin event reaches this listener before old WebKitGTK synthesizes
+    // its DOM mouse event. Only reveal bare video here: visible controls, menus, and comments must
+    // retain their ordinary touch/click behaviour.
+    if (!gmMode || controlsVisible || get(commentsOpen) || get(playerMenuOpen) || get(trackMenuOpen) || subtitleEditorOpen) return false
+    suppressTouchRevealClickUntil = performance.now() + 900
+    poke()
+    return true
+  }
+
+  function onOverlayTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) return
+    if ((e.target as HTMLElement)?.closest?.('[data-comments-panel]')) return
+    // WebKitGTK on SteamOS exposes touch PointerEvents as compatibility mouse events, which can
+    // arrive only after the finger lifts. Native TouchEvent starts are immediate. Preventing this
+    // bare-video sequence's compatibility click also stops it being re-hit-tested against the Play
+    // button that the same touch just caused Svelte to mount.
+    if (revealFromTouchBegin()) e.preventDefault()
+  }
+
+  function captureOverlayClick(e: MouseEvent) {
+    if (!gmMode || performance.now() >= suppressTouchRevealClickUntil) return
+    suppressTouchRevealClickUntil = 0
+    e.preventDefault()
+    e.stopImmediatePropagation()
   }
 
   // Desktop miniplayer: picture-in-picture unmounts the whole app chrome, including the
@@ -1048,6 +1086,13 @@
 
   $effect(() => {
     if (!gmMode || !$playing) return
+    return listenSafe('gm-native-touch-begin', () => {
+      revealFromTouchBegin()
+    })
+  })
+
+  $effect(() => {
+    if (!gmMode || !$playing) return
     return listenSafe<{ name: string; pressed: boolean }>('gamepad-input', (e) => {
       if (get(deckKeyboardWarning)) return
       if (e.payload.name === 'l4') {
@@ -1399,7 +1444,9 @@
   class:left-14={!$fullscreen && !gmMode && !$pictureInPicture}
   class:left-0={$fullscreen || gmMode || $pictureInPicture}
   onclick={onOverlayTap}
-  onpointerdown={pipDragDown}
+  onclickcapture={captureOverlayClick}
+  ontouchstart={onOverlayTouchStart}
+  onpointerdown={onOverlayPointerDown}
   onpointermove={pipDragMove}
   onpointerup={endPipDrag}
   onpointercancel={endPipDrag}

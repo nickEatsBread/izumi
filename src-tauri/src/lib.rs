@@ -5902,7 +5902,8 @@ pub fn run() {
                         }
                     }
                 });
-                let _ = win.with_webview(|pw| {
+                let native_touch_app = app.handle().clone();
+                let _ = win.with_webview(move |pw| {
                     use glib::object::ObjectType;
                     use webkit2gtk::{
                         CookieAcceptPolicy, CookieManagerExt, SettingsExt,
@@ -5912,6 +5913,23 @@ pub fn run() {
                     };
                     let wv = pw.inner();
                     wv.set_background_color(&gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
+                    if x11_game_mode {
+                        // SteamOS's WebKitGTK can defer its DOM compatibility mouse event until a
+                        // finger lifts. Start only the hidden-player reveal from GTK's physical
+                        // touch edge instead; returning Proceed preserves WebKit's normal touch,
+                        // click, seekbar, and discussion-frame handling.
+                        gtk::prelude::WidgetExtManual::add_events(
+                            &wv,
+                            gdk::EventMask::TOUCH_MASK,
+                        );
+                        let touch_app = native_touch_app.clone();
+                        gtk::prelude::WidgetExt::connect_touch_event(&wv, move |_wv, event| {
+                            if event.event_type() == gdk::EventType::TouchBegin {
+                                let _ = touch_app.emit("gm-native-touch-begin", ());
+                            }
+                            glib::Propagation::Proceed
+                        });
+                    }
                     if std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some() {
                         // The comments iframe is created well after setup, so one all-frame user
                         // script reaches its cross-origin document without polling or DOM overlays.
