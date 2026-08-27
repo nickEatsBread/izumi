@@ -22,6 +22,14 @@ import type {
   SyncRecord,
   SyncStatus,
 } from "./types";
+import {
+  collectSyncMembers,
+  fallbackDeviceName,
+  presenceName,
+  type SyncMember,
+} from "./members";
+
+export type { SyncMember }
 
 export const syncDeviceName = persisted<string>("sync-device-name", "");
 
@@ -53,12 +61,49 @@ export async function joinNearbyDevice(endpointId: string): Promise<void> {
   });
 }
 
-async function write(category: "watch" | "manual", payload: string) {
+async function write(category: "watch" | "manual" | "presence", payload: string) {
   await invoke("sync_write", { category, payload });
 }
 
-async function read(category: "watch" | "manual") {
+async function read(category: "watch" | "manual" | "presence") {
   return invoke<SyncRecord[]>("sync_read", { category });
+}
+
+export async function publishPresence(): Promise<void> {
+  const status = await getSyncStatus()
+  if (status.state !== 'ready' || !status.paired) return
+  const name = get(syncDeviceName).trim() || fallbackDeviceName(status.endpointId)
+  await write('presence', JSON.stringify({
+    app: 'izumi',
+    kind: 'presence',
+    version: 1,
+    deviceId: status.endpointId,
+    deviceName: name,
+    updatedAt: Date.now(),
+  }))
+}
+
+export async function listSyncMembers(): Promise<SyncMember[]> {
+  const status = await getSyncStatus()
+  if (status.state !== 'ready' || !status.paired) return []
+  const named: Array<{ deviceId: string; name: string }> = []
+  try {
+    for (const record of await read('presence')) {
+      const name = presenceName(record.payload)
+      if (name) named.push({ deviceId: record.deviceId, name })
+    }
+  } catch { /* document still empty */ }
+  try {
+    for (const record of await read('manual')) {
+      const snapshot = parseManualSnapshot(record.payload)
+      if (snapshot?.deviceName) named.push({ deviceId: record.deviceId, name: snapshot.deviceName })
+    }
+  } catch { /* optional */ }
+  return collectSyncMembers(
+    status.endpointId,
+    get(syncDeviceName).trim() || fallbackDeviceName(status.endpointId),
+    named,
+  )
 }
 
 export async function pushWatchProgress(): Promise<boolean> {

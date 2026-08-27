@@ -735,10 +735,10 @@ let jvmSourcesPending: { revision: number; value: Promise<JvmSource[]> } | null 
 
 /** Installed Aniyomi extension icons, keyed by ANDROID PACKAGE NAME — which is exactly the `id` a
  *  catalog entry carries for an aniyomi-jvm package, so the settings list can match them directly.
- *  Android-only and best-effort: any failure (no JVM runtime, no sources, a slow bridge) yields an
- *  empty map and the UI falls back to the shared placeholder. Never spins the runtime on its own — it
- *  reuses the enumeration cache when one exists and otherwise pays the same capped call a resolve
- *  would. */
+ *  Android reads the launcher icon through its bridge; desktop recovers it from the packaged APK.
+ *  Any failure (no JVM runtime, no sources, a slow bridge) yields an empty map and the UI falls back
+ *  to the shared placeholder. Never spins the runtime on its own — it reuses the enumeration cache
+ *  when one exists and otherwise pays the same capped call a resolve would. */
 export async function jvmExtensionIcons(): Promise<Map<string, string>> {
   const icons = new Map<string, string>()
   try {

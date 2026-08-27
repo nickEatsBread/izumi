@@ -8,6 +8,7 @@
   import ListOrdered from '@lucide/svelte/icons/list-ordered'
   import Plus from '@lucide/svelte/icons/plus'
   import X from '@lucide/svelte/icons/x'
+  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import * as h from '$lib/haptics'
 
   const candidateById = $derived(new Map($priorityCandidates.map((c) => [c.id, c])))
@@ -69,6 +70,7 @@
             <li class="rounded-xl border border-border bg-card p-3">
               <div class="flex items-center gap-3">
                 <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-sm font-black tabular-nums">{i + 1}</span>
+                <AddonLogo logo={source?.logo} name={source?.name ?? 'Unavailable source'} id={id} size={32} />
                 <div class="min-w-0 flex-1">
                   <span class="block truncate font-bold">{source?.name ?? 'Unavailable source'}</span>
                   <span class="text-xs text-muted-foreground">
@@ -155,6 +157,7 @@
           <li>
             <button data-focusable onclick={() => addPriority(source.id)}
               class="flex w-full items-center gap-3 rounded-xl border border-border p-3 text-left transition-colors hover:bg-secondary active:bg-secondary">
+              <AddonLogo logo={source.logo} name={source.name} id={source.id} size={36} />
               <div class="min-w-0 flex-1">
                 <span class="block truncate font-bold">{source.name}</span>
                 <span class="text-xs text-muted-foreground">{source.kind}</span>

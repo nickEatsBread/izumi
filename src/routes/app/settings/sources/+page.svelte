@@ -5,7 +5,15 @@
   import {
     autoSelectSource, autoSelectCountdown, preferredQuality, seadexAnnotations,
     sourcePriority, sourcePriorityMode, adaptiveSourceMode, extensionUrls,
+    disabledExtensions,
   } from '$lib/settings/ui'
+  import { classifySourceSpec } from '$lib/settings/classify-source-spec'
+  import {
+    matchesSourceFilters,
+    matchesSourceQuery,
+    type SourceStatusFilter,
+    type SourceTypeFilter,
+  } from '$lib/settings/source-filters'
   import { priorityCandidates } from '$lib/settings/source-origins'
   import { fetchManifest } from '$lib/stremio/manifest'
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
@@ -18,6 +26,8 @@
   import Layers3 from '@lucide/svelte/icons/layers-3'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import ListOrdered from '@lucide/svelte/icons/list-ordered'
+  import Search from '@lucide/svelte/icons/search'
+  import X from '@lucide/svelte/icons/x'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
 
@@ -32,22 +42,74 @@
 
   let input = $state('')
   let addError = $state('')
+  let adding = $state(false)
+  let hasManageRows = $state(true)
+  let orphanCount = $state(0)
+  let filteredCommunityCount = $state(0)
+  let manageFiltersReady = $state(false)
+  let manageStatusFilter = $state<SourceStatusFilter>('all')
+  let manageTypeFilter = $state<SourceTypeFilter>('all')
+  let manageQuery = $state('')
+  let filterOpen = $state(false)
+  let filterRoot = $state<HTMLDivElement>()
+  const manageStatusOptions: { value: SourceStatusFilter; label: string }[] = [
+    { value: 'all', label: 'Any status' },
+    { value: 'enabled', label: 'Enabled' },
+    { value: 'disabled', label: 'Disabled' },
+  ]
+  const manageTypeOptions: { value: SourceTypeFilter; label: string }[] = [
+    { value: 'all', label: 'Any type' },
+    { value: 'addon', label: 'Stremio add-ons' },
+    { value: 'community', label: 'Community sources' },
+    { value: 'catalog', label: 'Package catalogs' },
+    { value: 'package', label: 'Installed packages' },
+  ]
   let configuring = $state<{
     name: string
     id: string
     configureUrl: string
     currentBase: string
   } | null>(null)
-  function add() {
-    const base = normalizeBase(input)
-    if (!base) {
-      addError = 'Enter a valid add-on manifest URL.'
-      return
-    }
+  async function add() {
+    if (adding) return
+    adding = true
     addError = ''
-    if (!$addonUrls.some((url) => normalizeBase(url) === base)) $addonUrls = [...$addonUrls, base]
-    $disabledSources = $disabledSources.filter((url) => normalizeBase(url) !== base)
-    input = ''
+    try {
+      const result = await classifySourceSpec(input)
+      if ('error' in result) {
+        addError = result.error
+        return
+      }
+      if (result.kind === 'addon') {
+        const alreadyCommunity = $extensionUrls.some((url) =>
+          url === result.spec || normalizeBase(url) === result.spec)
+        if (alreadyCommunity) {
+          addError = "That's already added as a community source."
+          return
+        }
+        if (!$addonUrls.some((url) => normalizeBase(url) === result.spec)) {
+          $addonUrls = [...$addonUrls, result.spec]
+        }
+        $disabledSources = $disabledSources.filter((url) =>
+          url !== result.spec && normalizeBase(url) !== result.spec)
+        input = ''
+        return
+      }
+      const alreadyAddon = $addonUrls.some((url) =>
+        url === result.spec || normalizeBase(url) === normalizeBase(result.spec))
+      if (alreadyAddon) {
+        addError = "That's already added as an add-on."
+        return
+      }
+      if ($extensionUrls.includes(result.spec)) {
+        $disabledExtensions = $disabledExtensions.filter((url) => url !== result.spec)
+      } else {
+        $extensionUrls = [...$extensionUrls, result.spec]
+      }
+      input = ''
+    } finally {
+      adding = false
+    }
   }
   function toggle(url: string) { $disabledSources = $disabledSources.includes(url) ? $disabledSources.filter((u) => u !== url) : [...$disabledSources, url] }
   function remove(i: number) { const url = $addonUrls[i]; $addonUrls = $addonUrls.filter((_, j) => j !== i); $disabledSources = $disabledSources.filter((u) => u !== url) }
@@ -62,6 +124,50 @@
     configuring = null
   }
   const host = (u: string) => { try { return new URL(/^https?:/.test(u) ? u : `https://${u}`).hostname } catch { return u } }
+  const addonMetaByUrl = $derived(new Map($addonUrls.map((url) => [url, fetchManifest(url)] as const)))
+  let addonNames = $state(new Map<string, string>())
+  $effect(() => {
+    let stale = false
+    const pending = [...addonMetaByUrl]
+    if (!pending.length) {
+      addonNames = new Map()
+      return
+    }
+    void Promise.all(pending.map(async ([url, manifest]) => [url, (await manifest)?.name] as const))
+      .then((entries) => {
+        if (!stale) addonNames = new Map(entries.filter((entry): entry is readonly [string, string] => !!entry[1]))
+      })
+    return () => { stale = true }
+  })
+  const visibleAddonRows = $derived($addonUrls
+    .map((url, i) => ({ url, i, disabled: $disabledSources.includes(url) }))
+    .filter(({ url, disabled }) =>
+      matchesSourceFilters(
+        { types: ['addon'], enabled: !disabled, disabled },
+        manageStatusFilter,
+        manageTypeFilter,
+      ) && matchesSourceQuery(manageQuery, addonNames.get(url), host(url), url)))
+  const manageFiltersActive = $derived(manageStatusFilter !== 'all' || manageTypeFilter !== 'all')
+  const manageFilterCount = $derived(Number(manageStatusFilter !== 'all') + Number(manageTypeFilter !== 'all'))
+  const manageStatusLabel = $derived(manageStatusOptions.find((option) => option.value === manageStatusFilter)?.label)
+  const manageTypeLabel = $derived(manageTypeOptions.find((option) => option.value === manageTypeFilter)?.label)
+  function resetManageFilters() {
+    manageStatusFilter = 'all'
+    manageTypeFilter = 'all'
+    filterOpen = false
+  }
+  function clearManageView() {
+    manageQuery = ''
+    resetManageFilters()
+  }
+  $effect(() => {
+    if (!filterOpen) return
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !filterRoot?.contains(event.target)) filterOpen = false
+    }
+    document.addEventListener('pointerdown', closeOutside, true)
+    return () => document.removeEventListener('pointerdown', closeOutside, true)
+  })
 
   // --- Source priority -----------------------------------------------------------------------
   // Editing the order needs a screen of its own (see ./priority): reorder controls only stay
@@ -110,24 +216,34 @@
     buttons[next].focus()
     buttons[next].click()
   }
-  const configuredCount = $derived($addonUrls.length + $extensionUrls.length)
+  const configuredCount = $derived($addonUrls.length + $extensionUrls.length + orphanCount)
 </script>
 
+<svelte:window onkeydown={(event) => {
+  if (filterOpen && event.key === 'Escape') {
+    event.preventDefault()
+    filterOpen = false
+  }
+}} />
+
 <div class="p-4 sm:p-8">
-  <h2 class="mb-1 text-xl font-black">Sources</h2>
-  <div class="mb-5 flex max-w-3xl flex-wrap items-start justify-between gap-3">
-    <div>
-      <p class="max-w-2xl text-sm text-muted-foreground">Add, configure, and prioritise every place Izumi finds an episode.</p>
-      <p class="mt-1 text-xs text-muted-foreground">{configuredCount} {configuredCount === 1 ? 'source connection' : 'source connections'} configured</p>
+  <div class="mb-5 max-w-7xl">
+    <div class="mb-1 flex items-center justify-between gap-3">
+      <h2 class="text-xl font-black max-sm:hidden">Sources</h2>
+      <a href="/app/settings/store" data-focusable
+         class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity max-sm:ml-auto active:opacity-80 sm:hover:opacity-90">
+        <Store size={16} />
+        Add from Store
+      </a>
     </div>
-    <a href="/app/settings/store" data-focusable
-       class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity active:opacity-80 sm:hover:opacity-90">
-      <Store size={16} />
-      Add from Store
-    </a>
+    <p class="max-w-2xl text-sm text-muted-foreground">Add, configure, and prioritise every place Izumi finds an episode.</p>
+    <p class="mt-1 text-xs text-muted-foreground">
+      {#if configuredCount === 0}No sources yet
+      {:else}{configuredCount} {configuredCount === 1 ? 'source' : 'sources'}{/if}
+    </p>
   </div>
 
-  <div role="tablist" aria-label="Source settings" class="mb-7 grid max-w-2xl grid-cols-3 gap-1 rounded-xl bg-secondary/60 p-1">
+  <div role="tablist" aria-label="Source settings" class="mb-3 grid max-w-7xl grid-cols-3 gap-1 rounded-xl bg-secondary/60 p-1">
     {#each tabs as tab (tab.id)}
       {@const Icon = tab.icon}
       <button type="button" role="tab" id="sources-tab-{tab.id}" aria-controls="sources-panel-{tab.id}"
@@ -143,7 +259,11 @@
 
   {#if activeTab === 'playback'}
   <div id="sources-panel-playback" role="tabpanel" aria-labelledby="sources-tab-playback">
-  <section aria-labelledby="automatic-selection-heading">
+  <CommunitySources section="community-results" />
+
+  <div class="mt-6"><CommunitySources section="torrent-debrid" /></div>
+
+  <section class="mt-10" aria-labelledby="automatic-selection-heading">
     <div class="mb-4">
       <h3 id="automatic-selection-heading" class="text-base font-black">Automatic selection</h3>
       <p class="mt-1 text-xs text-muted-foreground">Control whether Izumi chooses for you and what makes a result the best match.</p>
@@ -211,28 +331,109 @@
     />
   </div>
   </section>
-
-  <div class="mt-10"><CommunitySources section="playback" /></div>
   </div>
   {/if}
 
   {#if activeTab === 'manage'}
   <div id="sources-panel-manage" role="tabpanel" aria-labelledby="sources-tab-manage">
-  <div class="max-w-2xl">
-    <div class="mb-3">
-      <h3 class="text-base font-black">Stremio add-ons</h3>
-      <p class="mt-1 text-xs text-muted-foreground">Paste a configured add-on manifest URL. Add-ons and community sources appear together in the player.</p>
-    </div>
+  <div class="max-w-7xl">
     <div class="flex gap-2">
-      <input bind:value={input} data-focusable placeholder="https://…/manifest.json" class="flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" onkeydown={(event) => { if (event.key === 'Enter') add() }} />
-      <button onclick={add} data-focusable class="rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground sm:py-2">Add</button>
+      <input bind:value={input} data-focusable placeholder="URL, GitHub repo, or catalog…" class="flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" onkeydown={(event) => { if (event.key === 'Enter') void add() }} />
+      <button onclick={() => void add()} data-focusable disabled={adding} class="rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:py-2">{adding ? 'Adding…' : 'Add'}</button>
     </div>
     {#if addError}<p role="alert" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <div class="relative" bind:this={filterRoot}>
+        <button type="button" data-focusable aria-label="Filter sources" aria-haspopup="dialog" aria-expanded={filterOpen}
+          onclick={() => (filterOpen = !filterOpen)}
+          class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+          <SlidersHorizontal size={14} />
+          Filter
+          {#if manageFilterCount}<span class="grid size-4 place-items-center rounded-full bg-theme text-[0.6rem] text-white">{manageFilterCount}</span>{/if}
+        </button>
+
+        {#if filterOpen}
+          <div role="dialog" aria-label="Source filters"
+            class="absolute left-0 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-3 shadow-xl">
+            <div>
+              <p class="mb-1.5 text-[0.68rem] font-black uppercase tracking-wide text-muted-foreground">Status</p>
+              <div class="grid grid-cols-3 gap-1 rounded-lg bg-secondary/60 p-1">
+                {#each manageStatusOptions as option (option.value)}
+                  <button type="button" data-focusable aria-pressed={manageStatusFilter === option.value}
+                    onclick={() => (manageStatusFilter = option.value)}
+                    class="rounded-md px-2 py-1.5 text-xs font-bold transition-colors {manageStatusFilter === option.value ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}">
+                    {option.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+            <div class="mt-3">
+              <p class="mb-1.5 text-[0.68rem] font-black uppercase tracking-wide text-muted-foreground">Type</p>
+              <div class="grid grid-cols-2 gap-1">
+                {#each manageTypeOptions as option (option.value)}
+                  <button type="button" data-focusable aria-pressed={manageTypeFilter === option.value}
+                    onclick={() => (manageTypeFilter = option.value)}
+                    class="rounded-md px-2.5 py-2 text-left text-xs font-bold transition-colors {manageTypeFilter === option.value ? 'bg-theme/15 text-theme' : 'text-muted-foreground hover:bg-accent hover:text-foreground'}">
+                    {option.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
+            <div class="mt-3 flex items-center justify-between border-t border-border pt-2">
+              <button type="button" data-focusable disabled={!manageFiltersActive} onclick={resetManageFilters}
+                class="rounded-md px-2 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent disabled:invisible">Clear</button>
+              <button type="button" data-focusable onclick={() => (filterOpen = false)}
+                class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent">Done</button>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <div class="relative min-w-40 flex-1 sm:max-w-64">
+        <Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input type="search" data-focusable bind:value={manageQuery} aria-label="Search sources" placeholder="Search sources…"
+          class="w-full rounded-md border border-border bg-transparent py-2 pl-9 pr-8 text-xs outline-none placeholder:text-muted-foreground focus:border-theme" />
+        {#if manageQuery}
+          <button type="button" data-focusable aria-label="Clear source search" onclick={() => (manageQuery = '')}
+            class="absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
+            <X size={13} />
+          </button>
+        {/if}
+      </div>
+
+      {#if manageFiltersReady}
+        <span class="ml-auto shrink-0 text-[0.68rem] font-bold tabular-nums text-muted-foreground">
+          {visibleAddonRows.length + filteredCommunityCount} of {configuredCount}
+        </span>
+      {/if}
+    </div>
+    {#if manageFiltersActive}
+      <div class="mt-2 flex flex-wrap items-center gap-1.5">
+        {#if manageStatusFilter !== 'all'}
+          <button type="button" data-focusable aria-label="Clear status filter" onclick={() => (manageStatusFilter = 'all')}
+            class="inline-flex items-center gap-1 rounded-full bg-theme/15 px-2.5 py-1.5 text-xs font-bold text-theme hover:bg-theme/25">
+            {manageStatusLabel}<X size={12} />
+          </button>
+        {/if}
+        {#if manageTypeFilter !== 'all'}
+          <button type="button" data-focusable aria-label="Clear type filter" onclick={() => (manageTypeFilter = 'all')}
+            class="inline-flex items-center gap-1 rounded-full bg-theme/15 px-2.5 py-1.5 text-xs font-bold text-theme hover:bg-theme/25">
+            {manageTypeLabel}<X size={12} />
+          </button>
+        {/if}
+      </div>
+    {/if}
+    {#if !$addonUrls.length && !hasManageRows}
+      <div class="mt-3 rounded-xl border border-dashed border-border p-4 text-center">
+        <p class="text-sm font-bold">Nothing here yet</p>
+        <p class="mt-1 text-xs text-muted-foreground">Paste a Stremio add-on, GitHub repo, or catalog. Or add one from the Store.</p>
+      </div>
+    {/if}
+    {#if visibleAddonRows.length}
     <ul class="mt-3 space-y-2">
-      {#each $addonUrls as url, i (url)}
-        {@const off = $disabledSources.includes(url)}
+      {#each visibleAddonRows as { url, i, disabled: off } (url)}
         <li class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
-          {#await fetchManifest(url)}
+          {#await addonMetaByUrl.get(url)!}
             <div class="skeloader size-10 shrink-0 rounded-md"></div>
             <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
           {:then m}
@@ -244,6 +445,7 @@
             <div class="min-w-0 flex-1 basis-48">
               <div class="flex items-center gap-2">
                 <span class="truncate font-bold">{m?.name ?? host(url)}</span>
+                <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">ADD-ON</span>
                 {#if m?.version}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{m.version}</span>{/if}
               </div>
               <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{m?.description ?? url}</p>
@@ -266,11 +468,29 @@
           <button onclick={() => remove(i)} data-focusable class="shrink-0 rounded-md px-3 py-2 text-sm text-destructive active:bg-destructive/10 sm:px-1 sm:py-1">Remove</button>
         </li>
       {/each}
-      {#if !$addonUrls.length}<li class="text-sm text-muted-foreground">No sources yet.</li>{/if}
     </ul>
-  </div>
+    {/if}
 
-  <div class="mt-8"><CommunitySources section="manage" /></div>
+  <div class="{visibleAddonRows.length ? 'mt-2' : 'mt-3'}">
+    <CommunitySources
+      section="manage"
+      query={manageQuery}
+      statusFilter={manageStatusFilter}
+      typeFilter={manageTypeFilter}
+      bind:hasManageRows
+      bind:orphanCount
+      bind:visibleManageRows={filteredCommunityCount}
+      bind:manageFiltersReady
+    />
+  </div>
+  {#if manageFiltersReady && configuredCount > 0 && visibleAddonRows.length + filteredCommunityCount === 0}
+    <div class="mt-3 rounded-xl border border-dashed border-border p-4 text-center">
+      <p class="text-sm font-bold">No matching sources</p>
+      <button type="button" data-focusable onclick={clearManageView}
+        class="mt-2 rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Clear search and filters</button>
+    </div>
+  {/if}
+  </div>
   </div>
   {/if}
 

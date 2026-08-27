@@ -1,8 +1,10 @@
+use base64::Engine;
 use futures_util::StreamExt;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::io::{Cursor, Read};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -26,6 +28,8 @@ const MAX_JRE_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 const CONSCRYPT_VERSION: &str = "2.6.2";
 const CONSCRYPT_URL: &str = "https://repo1.maven.org/maven2/org/conscrypt/conscrypt-openjdk-uber/2.6.2/conscrypt-openjdk-uber-2.6.2.jar";
 const CONSCRYPT_SHA256: &str = "f8a8f5020c66abc53a3d33cbc855ef8fc06187fa652fb3c0eda6c94e4335b2e9";
+const MAX_EXTENSION_APK_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_EXTENSION_ICON_BYTES: u64 = 512 * 1024;
 
 #[path = "jvm_runtime_args.rs"]
 mod jvm_runtime_args;
@@ -144,6 +148,133 @@ fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn extension_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(data_dir(app)?.join("extensions").join("jvm"))
+}
+
+fn safe_package_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 200
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+}
+
+fn image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        Some("image/jpeg")
+    } else {
+        None
+    }
+}
+
+fn png_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 24 || image_mime(bytes) != Some("image/png") || &bytes[12..16] != b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+    let height = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+    (width > 0 && height > 0 && width <= 4096 && height <= 4096).then_some((width, height))
+}
+
+/// Aniyomi's desktop runtime loads the converted JAR and therefore cannot expose the APK launcher
+/// icon like the Android bridge does. The original APK is still inside the installed package,
+/// though. Its density variants are ordinary images under `res/`; choose the largest square PNG
+/// (or the largest recognised image when an extension uses WebP/JPEG) and return a webview-safe URL.
+fn apk_icon_data_url(apk_bytes: &[u8]) -> Option<String> {
+    let mut apk = zip::ZipArchive::new(Cursor::new(apk_bytes)).ok()?;
+    let mut best: Option<((bool, u64, usize), &'static str, Vec<u8>)> = None;
+
+    for index in 0..apk.len() {
+        let mut entry = apk.by_index(index).ok()?;
+        if entry.is_dir()
+            || !entry.name().starts_with("res/")
+            || entry.size() == 0
+            || entry.size() > MAX_EXTENSION_ICON_BYTES
+        {
+            continue;
+        }
+        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        (&mut entry)
+            .take(MAX_EXTENSION_ICON_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .ok()?;
+        if bytes.len() as u64 > MAX_EXTENSION_ICON_BYTES {
+            continue;
+        }
+        let Some(mime) = image_mime(&bytes) else {
+            continue;
+        };
+        let dimensions = png_dimensions(&bytes);
+        let score = (
+            dimensions.is_some_and(|(width, height)| width == height),
+            dimensions
+                .map(|(width, height)| u64::from(width) * u64::from(height))
+                .unwrap_or_default(),
+            bytes.len(),
+        );
+        if best.as_ref().is_none_or(|(current, _, _)| score > *current) {
+            best = Some((score, mime, bytes));
+        }
+    }
+
+    let (_, mime, bytes) = best?;
+    Some(format!(
+        "data:{mime};base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+fn packaged_extension_icon(app: &AppHandle, package_id: &str) -> Option<String> {
+    if !safe_package_id(package_id) {
+        return None;
+    }
+    let path = data_dir(app)
+        .ok()?
+        .join("extensions")
+        .join(format!("{package_id}.izumi-ext"));
+    let file = std::fs::File::open(path).ok()?;
+    let mut package = zip::ZipArchive::new(file).ok()?;
+    let mut apk = package.by_name("extension.apk").ok()?;
+    if apk.is_dir() || apk.size() == 0 || apk.size() > MAX_EXTENSION_APK_BYTES {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(apk.size() as usize);
+    (&mut apk)
+        .take(MAX_EXTENSION_APK_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > MAX_EXTENSION_APK_BYTES {
+        return None;
+    }
+    apk_icon_data_url(&bytes)
+}
+
+fn inline_desktop_source_icons(app: &AppHandle, sources: &mut Value) {
+    let Some(sources) = sources.as_array_mut() else {
+        return;
+    };
+    for source in sources {
+        if source
+            .get("iconUrl")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+        {
+            continue;
+        }
+        let Some(package_id) = source
+            .get("pkgName")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        if let Some(icon) = packaged_extension_icon(app, &package_id) {
+            source["iconUrl"] = Value::String(icon);
+        }
+    }
 }
 
 fn runtime_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -853,12 +984,14 @@ pub async fn jvm_extension_sources(
     runtime: tauri::State<'_, Runtime>,
 ) -> Result<Value, String> {
     runtime.ensure_started(&app).await?;
-    Ok(runtime
+    let mut sources = runtime
         .sources
         .read()
         .await
         .clone()
-        .unwrap_or_else(|| Value::Array(Vec::new())))
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+    inline_desktop_source_icons(&app, &mut sources);
+    Ok(sources)
 }
 
 #[tauri::command]
@@ -884,11 +1017,61 @@ pub async fn jvm_extension_reload(runtime: tauri::State<'_, Runtime>) -> Result<
 #[cfg(test)]
 mod tests {
     use super::{
-        java_home_from_executable, macos_homebrew_java_candidates, parse_java_major,
-        runtime_jvm_args,
+        apk_icon_data_url, java_home_from_executable, macos_homebrew_java_candidates,
+        parse_java_major, runtime_jvm_args,
     };
+    use base64::Engine;
+    use std::io::{Cursor, Write};
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::path::{Path, PathBuf};
+    use zip::write::SimpleFileOptions;
+
+    fn png_header(width: u32, height: u32, marker: u8) -> Vec<u8> {
+        let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        bytes.extend_from_slice(&width.to_be_bytes());
+        bytes.extend_from_slice(&height.to_be_bytes());
+        bytes.push(marker);
+        bytes
+    }
+
+    fn apk_fixture(entries: &[(&str, &[u8])]) -> Vec<u8> {
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = zip::ZipWriter::new(cursor);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, bytes) in entries {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn recovers_largest_launcher_icon_from_obfuscated_apk_resources() {
+        let small = png_header(48, 48, 1);
+        let large = png_header(192, 192, 2);
+        let unrelated = png_header(512, 256, 3);
+        let apk = apk_fixture(&[
+            ("res/9w.png", &small),
+            ("res/o-.png", &large),
+            ("res/banner.png", &unrelated),
+            ("assets/not-an-icon.png", &unrelated),
+        ]);
+
+        assert_eq!(
+            apk_icon_data_url(&apk),
+            Some(format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(large)
+            ))
+        );
+    }
+
+    #[test]
+    fn ignores_apks_without_a_renderable_resource_icon() {
+        let apk = apk_fixture(&[("res/icon.xml", b"binary android xml")]);
+        assert_eq!(apk_icon_data_url(&apk), None);
+    }
 
     #[test]
     fn parses_modern_and_legacy_java_versions() {

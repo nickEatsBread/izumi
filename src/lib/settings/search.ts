@@ -35,7 +35,6 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Enable external player', category: 'Player', href: '/app/settings/player', keywords: 'mpv vlc', anchored: true, desktopOnly: true },
   { title: 'Title language', category: 'Player', href: '/app/settings/player', keywords: 'romaji English anime names' },
   { title: 'Title at top of player (Game mode)', category: 'Player', href: '/app/settings/player', keywords: 'Steam Deck now playing', anchored: true, desktopOnly: true },
-  { title: 'Clear video cache', category: 'Player', href: '/app/settings/player', keywords: 'storage thumbnails', desktopOnly: true },
 
   { title: 'Use custom subtitle style', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'appearance font family size colour color border outline shadow position nunito', anchored: true },
   { title: 'Subtitle dialogue style overrides', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'ASS signs songs karaoke typesetting preserve font readable dialogue only all elements', anchored: true },
@@ -104,9 +103,9 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Clear watch history', category: 'History', href: '/app/settings/history', keywords: 'delete forget watched' },
 
   { title: 'Device sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'pair transfer another device local network' },
-  { title: 'Device name', category: 'Device sync', href: '/app/settings/sync', keywords: 'sync identity' },
-  { title: 'Watch progress sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'history positions' },
-  { title: 'Settings and extensions sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'sources setup transfer' },
+  { title: 'Device name', category: 'Device sync', href: '/app/settings/sync', keywords: 'sync identity', anchored: true },
+  { title: 'Watch progress sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'history positions', anchored: true },
+  { title: 'Settings and sources sync', category: 'Device sync', href: '/app/settings/sync', keywords: 'extensions addons source setup transfer', anchored: true },
 
   { title: 'Move to Watching after 90 seconds', category: 'Accounts', href: '/app/settings/accounts', keywords: 'promote planning current tracker auto', anchored: true },
   { title: 'AniList account', category: 'Accounts', href: '/app/settings/accounts', keywords: 'oauth login tracker connect', anchored: true },

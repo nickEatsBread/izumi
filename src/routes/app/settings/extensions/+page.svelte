@@ -1,5 +1,23 @@
 <script lang="ts">
-  let { section = 'manage' }: { section?: 'manage' | 'playback' } = $props()
+  let {
+    section = 'manage',
+    hasManageRows = $bindable(false),
+    orphanCount = $bindable(0),
+    visibleManageRows = $bindable(0),
+    manageFiltersReady = $bindable(false),
+    query = '',
+    statusFilter = 'all',
+    typeFilter = 'all',
+  }: {
+    section?: 'manage' | 'community-results' | 'torrent-debrid'
+    hasManageRows?: boolean
+    orphanCount?: number
+    visibleManageRows?: number
+    manageFiltersReady?: boolean
+    query?: string
+    statusFilter?: SourceStatusFilter
+    typeFilter?: SourceTypeFilter
+  } = $props()
 
   import { debridKey, debridProvider, extensionUrls, disabledExtensions, disabledPlugins, torrentPlaybackMode, providerLanguages, providerAudio } from '$lib/settings/ui'
   import {
@@ -13,6 +31,13 @@
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
   import { sourceLabel, extensionBackendLabel } from '$lib/extensions/catalog'
+  import {
+    matchesSourceFilters,
+    matchesSourceQuery,
+    type ManagedSourceType,
+    type SourceStatusFilter,
+    type SourceTypeFilter,
+  } from '$lib/settings/source-filters'
   import { langName } from '$lib/player/track-label'
   import { SOURCE_LANGUAGES } from '$lib/stremio/sublang'
   import MultiSelect from '$lib/components/search/MultiSelect.svelte'
@@ -43,7 +68,6 @@
     : ''
   $effect(() => { void $debridProvider; void $debridKey; account = null; accountError = '' })
 
-  let extInput = $state('')
   let localPackages = $state<InstalledExtensionPackage[]>([])
   // Keyed by the source that raised it, so an install result lands under the catalog it came from
   // instead of a page-level banner far from the row that was clicked.
@@ -95,7 +119,6 @@
   }
   $effect(() => { void refreshPackages() })
 
-  function addExt() { const u = extInput.trim(); if (u) { $extensionUrls = [...$extensionUrls, u]; extInput = '' } }
   function toggleExt(url: string) { $disabledExtensions = $disabledExtensions.includes(url) ? $disabledExtensions.filter((u) => u !== url) : [...$disabledExtensions, url] }
   function removeExt(i: number) { const url = $extensionUrls[i]; $extensionUrls = $extensionUrls.filter((_, j) => j !== i); $disabledExtensions = $disabledExtensions.filter((u) => u !== url) }
   // A GitHub spec (gh:owner/repo or bare owner/repo/sub) — shown with a GitHub icon +
@@ -115,17 +138,98 @@
   // the row-level enable switch and the dimming live: a catalog runs nothing itself, so switching
   // its URL off would have no effect and must not be offered.
   let catalogUrls = $state<string[]>([])
+  let catalogPackageIds = $state(new Set<string>())
+  let catalogPackagesByUrl = $state(new Map<string, ExtensionCatalogPackage[]>())
+  let sourceSearchTextByUrl = $state(new Map<string, string>())
+  let catalogsReady = $state(false)
   $effect(() => {
     let stale = false
-    void Promise.all([...metaByUrl].map(async ([url, info]) => [url, await info] as const)).then((entries) => {
+    const pending = [...metaByUrl]
+    if (!pending.length) {
+      catalogUrls = []
+      catalogPackageIds = new Set()
+      catalogPackagesByUrl = new Map()
+      sourceSearchTextByUrl = new Map()
+      catalogsReady = true
+      installedLangs = [...new Set(localPackages.map((extension) => extension.lang).filter((lang): lang is string => !!lang))]
+      return
+    }
+    catalogsReady = false
+    void Promise.all(pending.map(async ([url, info]) => [url, await info] as const)).then((entries) => {
       if (stale) return
       catalogUrls = entries.filter(([, info]) => !!info.packages).map(([url]) => url)
+      catalogPackageIds = new Set(entries.flatMap(([, info]) => info.packages?.map((item) => item.id) ?? []))
+      catalogPackagesByUrl = new Map(entries.flatMap(([url, info]) =>
+        info.packages ? [[url, info.packages] as const] : []))
+      sourceSearchTextByUrl = new Map(entries.map(([url, info]) => [url, [
+        sourceLabel(url),
+        ...info.configs.flatMap((source) => [source.name, source.id, source.lang]),
+        ...(info.packages ?? []).flatMap((extension) => [
+          extension.name,
+          extension.id,
+          extension.language,
+          ...(extension.sources ?? []).flatMap((source) => [source.name, source.id, source.language]),
+        ]),
+      ].filter(Boolean).join(' ')]))
+      catalogsReady = true
       installedLangs = [...new Set([
         ...entries.flatMap(([, info]) => info.configs).map((m) => m.lang).filter((l): l is string => !!l),
         ...localPackages.map((extension) => extension.lang).filter((lang): lang is string => !!lang),
       ])]
     })
     return () => { stale = true }
+  })
+  const orphans = $derived(catalogsReady
+    ? localPackages.filter((extension) => !catalogPackageIds.has(extension.id))
+    : [])
+  const visibleExtensionRows = $derived.by(() => {
+    if (!catalogsReady && (statusFilter !== 'all' || typeFilter !== 'all')) return []
+    return $extensionUrls
+      .map((url, i) => {
+        const catalog = catalogUrls.includes(url)
+        const packages = catalogPackagesByUrl.get(url) ?? []
+        const installed = installedIn(packages)
+        const types: ManagedSourceType[] = catalog
+          ? installed.length ? ['catalog', 'package'] : ['catalog']
+          : ['community']
+        const sourceDisabled = $disabledExtensions.includes(url)
+        return {
+          url,
+          i,
+          facts: catalog
+            ? {
+                types,
+                enabled: installed.some((extension) => !pluginOff(extension.id)),
+                disabled: installed.some((extension) => pluginOff(extension.id)),
+              }
+            : { types, enabled: !sourceDisabled, disabled: sourceDisabled },
+        }
+      })
+      .filter(({ url, facts }) =>
+        matchesSourceFilters(facts, statusFilter, typeFilter)
+        && matchesSourceQuery(query, url, sourceSearchTextByUrl.get(url)))
+  })
+  const visibleOrphans = $derived(orphans.filter((extension) => {
+    const disabled = pluginOff(extension.id)
+    return matchesSourceFilters(
+      { types: ['package'], enabled: !disabled, disabled },
+      statusFilter,
+      typeFilter,
+    ) && matchesSourceQuery(
+      query,
+      extension.name,
+      extension.id,
+      extension.description,
+      extension.lang,
+      extension.backend,
+    )
+  }))
+  $effect(() => {
+    if (section !== 'manage') return
+    orphanCount = orphans.length
+    hasManageRows = $extensionUrls.length > 0 || localPackages.length > 0
+    visibleManageRows = visibleExtensionRows.length + visibleOrphans.length
+    manageFiltersReady = catalogsReady
   })
   // Installed languages first (alphabetically within each group), then the rest.
   const langOptions = $derived(
@@ -176,6 +280,21 @@
     const query = (catalogQuery[url] ?? '').trim().toLocaleLowerCase()
     return packages.filter((extension) => {
       if (extension.nsfw && !showNsfw) return false
+      if (section === 'manage') {
+        const installed = installedById.has(extension.id)
+        const disabled = installed && pluginOff(extension.id)
+        if (typeFilter === 'package' && !installed) return false
+        if (statusFilter === 'enabled' && (!installed || disabled)) return false
+        if (statusFilter === 'disabled' && (!installed || !disabled)) return false
+        if (!matchesSourceQuery(query, url, sourceLabel(url)) && !matchesSourceQuery(
+          query,
+          extension.name,
+          extension.id,
+          extension.language,
+          extension.backend,
+          ...(extension.sources ?? []).flatMap((source) => [source.name, source.id, source.language]),
+        )) return false
+      }
       if (!query) return true
       return [
         extension.name,
@@ -193,7 +312,7 @@
   }
 </script>
 
-{#if section === 'playback'}
+{#if section === 'torrent-debrid'}
   <div class="max-w-2xl">
     <div class="mb-4">
       <h3 class="text-base font-black">Torrent & debrid</h3>
@@ -265,7 +384,12 @@
       </section>
     {/if}
 
-    <div class="mb-3 mt-8">
+  </div>
+{/if}
+
+{#if section === 'community-results'}
+  <div class="max-w-2xl">
+    <div class="mb-3">
       <h3 class="text-base font-black">Community source results</h3>
       <p class="mt-1 text-xs text-muted-foreground">Limit the audio variants and languages requested from community sources.</p>
     </div>
@@ -311,51 +435,9 @@
 {/if}
 
 {#if section === 'manage'}
-  <div class="max-w-2xl">
-    {#if localPackages.length}
-      <h3 class="mb-2 text-base font-black">Installed sources</h3>
-      <ul class="mb-6 space-y-2">
-        {#each [...localPackages].sort((a, b) => Number(pluginOff(a.id)) - Number(pluginOff(b.id)) || a.name.localeCompare(b.name)) as p (p.id)}
-          {@const pOff = pluginOff(p.id)}
-          <li class="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={pOff}>
-            <div class="flex min-w-0 flex-1 items-center gap-3">
-              <AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={40} />
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-1.5">
-                  <span class="truncate font-bold">{p.name}</span>
-                  <span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{extensionBackendLabel(p.backend)}</span>
-                  {#if p.lang}<span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}
-                  <span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{p.version}</span>
-                  <span class="rounded px-1.5 py-0.5 text-[0.6rem] font-bold {pOff ? 'bg-white/10 text-muted-foreground' : 'bg-emerald-500/15 text-emerald-400'}">{pOff ? 'OFF' : 'ENABLED'}</span>
-                </div>
-                {#if p.description}<p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{p.description}</p>{/if}
-              </div>
-            </div>
-            <div class="flex items-center justify-end gap-2">
-              {#if p.backend === 'izumi-service'}
-                <button data-focusable onclick={() => openServiceSettings(p.id, p.name)}
-                  class="rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Settings</button>
-              {/if}
-              <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
-                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
-                <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
-              </button>
-              <button data-focusable disabled={packageBusy} onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
-                class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-8"><Trash2 size={16} /></button>
-            </div>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-
-    <h3 class="mb-1 text-base font-black">Source repositories</h3>
-    <p class="mb-3 text-xs text-muted-foreground">Add a GitHub repository, manifest URL, or package catalog. Catalogs open into an installable list.</p>
-    <div class="flex gap-2">
-      <input bind:value={extInput} data-focusable placeholder="gh:owner/anime-extensions  ·  or  https://…/manifest.json" class="flex-1 rounded-md bg-input px-3 py-2 text-sm" onkeydown={(e) => e.key === 'Enter' && addExt()} />
-      <button onclick={addExt} data-focusable class="rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Add</button>
-    </div>
-    <ul class="mt-3 space-y-2">
-      {#each $extensionUrls as url, i (url)}
+  <div class="max-w-7xl">
+    <ul class="space-y-2">
+      {#each visibleExtensionRows as { url, i } (url)}
         {@const ext = metaByUrl.get(url)!}
         {@const gh = isGh(url)}
         {@const label = sourceLabel(url)}
@@ -390,6 +472,7 @@
                 <!-- A manifest with several plugins has no single name of its own, so the source is
                      named after where it came from — owner/repo, not the raw URL. -->
                 <span class="truncate font-bold">{pkgs || gh || metas.length > 1 ? label : (m?.name ?? label)}</span>
+                <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{pkgs ? 'CATALOG' : 'SOURCE'}</span>
                 {#if pkgs}
                   <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{pkgs.length} {pkgs.length === 1 ? 'Package' : 'Packages'}</span>
                 {:else if metas.length}
@@ -587,7 +670,36 @@
           {/if}
         </li>
       {/each}
-      {#if !$extensionUrls.length}<li class="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">No community sources added.</li>{/if}
+      {#each visibleOrphans as p (p.id)}
+        {@const pOff = pluginOff(p.id)}
+        <li class="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={pOff}>
+          <div class="flex min-w-0 flex-1 items-center gap-3">
+            <AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={40} />
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="truncate font-bold">{p.name}</span>
+                <span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{extensionBackendLabel(p.backend)}</span>
+                {#if p.lang}<span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{langLabel(p.lang)}</span>{/if}
+                <span class="rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{p.version}</span>
+                <span class="rounded px-1.5 py-0.5 text-[0.6rem] font-bold {pOff ? 'bg-white/10 text-muted-foreground' : 'bg-emerald-500/15 text-emerald-400'}">{pOff ? 'OFF' : 'ENABLED'}</span>
+              </div>
+              {#if p.description}<p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{p.description}</p>{/if}
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-2">
+            {#if p.backend === 'izumi-service'}
+              <button data-focusable onclick={() => openServiceSettings(p.id, p.name)}
+                class="rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Settings</button>
+            {/if}
+            <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff} title={pOff ? 'Enable' : 'Disable'}
+              class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+              <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {pOff ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+            </button>
+            <button data-focusable disabled={packageBusy} onclick={() => removePackage(p.id, p.id)} title="Uninstall" aria-label="Uninstall {p.name}"
+              class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent disabled:opacity-50 sm:size-8"><Trash2 size={16} /></button>
+          </div>
+        </li>
+      {/each}
     </ul>
   </div>
 {/if}

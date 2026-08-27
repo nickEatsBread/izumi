@@ -11,7 +11,6 @@
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
-  import { invoke } from '@tauri-apps/api/core'
   import { isAndroid } from '$lib/platform'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
@@ -29,23 +28,6 @@
   let cacheCustomMode = $state(false)
   const cacheIsUncapped = $derived($playerCacheMb === CACHE_UNCAPPED)
   const cacheIsCustom = $derived(!cacheIsUncapped && !cachePresets.some((p) => p.mb === $playerCacheMb))
-
-  // Clear the on-disk scrub-thumbnail cache (frees space; regenerates on demand).
-  let clearing = $state(false)
-  let cacheMsg = $state('')
-  async function clearCache() {
-    clearing = true
-    try {
-      const freed = await invoke<number>('clear_video_cache')
-      cacheMsg = freed > 0
-        ? `Freed ${freed >= 1_000_000 ? (freed / 1_000_000).toFixed(1) + ' MB' : Math.max(1, Math.round(freed / 1000)) + ' KB'}.`
-        : 'Cache was already empty.'
-    } catch (e) {
-      cacheMsg = 'Failed to clear: ' + (e instanceof Error ? e.message : String(e))
-    } finally {
-      clearing = false
-    }
-  }
 
   // Native file picker for the external-player executable.
   async function browsePlayer() {
@@ -315,23 +297,4 @@
     {/if}
   </div>
 
-  {#if !$isAndroid}
-  <h2 class="mb-1 mt-8 text-xl font-black">Storage</h2>
-  <p class="mb-4 text-sm text-muted-foreground">Local playback caches.</p>
-
-  <div class="max-w-2xl">
-    <label class="flex items-center justify-between gap-3 rounded-md border border-border p-3">
-      <div>
-        <div class="font-bold">Clear video cache</div>
-        <p class="mt-1 text-xs text-muted-foreground">
-          Removes cached scrub-preview thumbnails (they regenerate on demand).{cacheMsg ? ` ${cacheMsg}` : ''}
-        </p>
-      </div>
-      <button data-focusable onclick={clearCache} disabled={clearing}
-              class="shrink-0 rounded-md bg-secondary px-4 py-2 text-sm font-bold transition-colors hover:bg-accent disabled:opacity-50">
-        {clearing ? 'Clearing…' : 'Clear'}
-      </button>
-    </label>
-  </div>
-  {/if}
 </div>

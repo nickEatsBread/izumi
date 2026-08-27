@@ -32,8 +32,9 @@ describe('extension list logos', () => {
     expect(page).toContain('void installedPackageIcons(localPackages).then(')
   })
 
-  it('renders installed packages even when no source URL is on the list', () => {
-    expect(page).toContain('Installed sources')
+  it('renders orphan installed packages even when no catalog URL is on the list', () => {
+    expect(page).not.toContain('Installed sources')
+    expect(page).toContain('orphans')
     expect(page).toContain('<AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={40} />')
   })
 

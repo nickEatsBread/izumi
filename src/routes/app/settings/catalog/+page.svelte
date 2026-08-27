@@ -121,8 +121,6 @@
         label={platform.label}
         description={platform.description}
         enabled={hasPlatform(platform.id)}
-        active={$catalogProvider === platform.id}
-        defaultPlatform={$catalogDefaultProvider === platform.id}
         locked={hasPlatform(platform.id) && enabled.length === 1}
         settingKey={platform.id === 'auto' ? 'catalog-provider' : undefined}
         onToggle={() => togglePlatform(platform.id)}

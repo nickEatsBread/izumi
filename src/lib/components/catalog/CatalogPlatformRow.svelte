@@ -9,8 +9,6 @@
     platform,
     description,
     enabled,
-    active,
-    defaultPlatform = false,
     locked = false,
     settingKey,
     onToggle,
@@ -19,8 +17,6 @@
     platform: CatalogSelection
     description: string
     enabled: boolean
-    active: boolean
-    defaultPlatform?: boolean
     locked?: boolean
     settingKey?: string
     onToggle: () => void
@@ -28,7 +24,7 @@
 </script>
 
 {#snippet meta()}
-  <span>{description}{defaultPlatform ? ' · Default' : ''}{active ? ' · Active now' : ''}{locked ? ' · Keep at least one platform enabled' : ''}</span>
+  <span>{description}{locked ? ' · Keep at least one platform enabled' : ''}</span>
 {/snippet}
 
 {#snippet control()}
