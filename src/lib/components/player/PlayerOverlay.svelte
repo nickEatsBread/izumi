@@ -1409,8 +1409,9 @@
        spinner over the frozen frame. Stall-show is debounced in DrmSurface
        (~150ms); do not add a second fade delay here or unbuffered seeks feel idle. -->
   {#if loading && !gmBitmapMode}
+    <!-- Keep teardown synchronous. WKWebView reports hidden behind macOS's native mpv surface,
+         which suspends transition frames and can leave an outro spinner mounted forever. -->
     <div
-      transition:fade={{ duration: 120 }}
       class="izumi-hud pointer-events-none absolute inset-0 flex items-center justify-center"
       class:bg-black={!firstFrame}
     >

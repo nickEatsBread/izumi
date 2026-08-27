@@ -10,6 +10,16 @@ describe('shared P2P status overlay', () => {
     expect(read('./AndroidPlayer.svelte')).toContain('<P2PStatusOverlay buffering={loading || recovering} {firstFrameSeen} />')
   })
 
+  it('removes startup surfaces synchronously when native video makes WebKit hidden', () => {
+    const player = read('./PlayerOverlay.svelte')
+    const loadingSurface = player.slice(
+      player.indexOf('{#if loading && !gmBitmapMode}'),
+      player.indexOf('<div class="izumi-hud"><P2PStatusOverlay'),
+    )
+    expect(loadingSurface).not.toContain('transition:fade')
+    expect(read('./P2PStatusOverlay.svelte')).not.toContain('transition:fade')
+  })
+
   it('shows live transfer and swarm health rather than generic playback stats', () => {
     const overlay = read('./P2PStatusOverlay.svelte')
     for (const field of ['downloadMbps', 'uploadMbps', 'livePeers', 'downloadedBytes', 'selectedSize']) {
