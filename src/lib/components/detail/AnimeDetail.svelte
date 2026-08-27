@@ -44,6 +44,9 @@
   import { acquireEdgeToEdge } from '$lib/actions/edge-to-edge'
   import { openTrailerPopup } from '$lib/stores/trailer'
   import { gameMode } from '$lib/player/session'
+  import { getKitsuId } from '$lib/anizip'
+  import { kitsuIdOf } from '$lib/catalog/identity'
+  import { detailTrackerLinks } from './tracker-links'
 
   // `id` is a prop (the +page keys this component on it), so navigating anime→relation
   // remounts with the new id and the query re-fetches — a same-route param change alone
@@ -116,6 +119,29 @@
     if (externalProgress <= (base.mediaListEntry?.progress ?? 0)) return base
     return { ...base, mediaListEntry: { ...base.mediaListEntry, progress: externalProgress, status: base.mediaListEntry?.status ?? externalEntry?.status } }
   })
+  // AniList does not expose Kitsu IDs. AniZip is already the detail page's episode-metadata
+  // mapping source, so reuse its cached per-title mapping to make the Kitsu destination exact.
+  let externalKitsuId = $state<number | undefined>()
+  $effect(() => {
+    const current = media
+    if (!current) { externalKitsuId = undefined; return }
+    const direct = kitsuIdOf(current)
+    if (direct) { externalKitsuId = direct; return }
+    const requestedId = current.id
+    externalKitsuId = undefined
+    if (requestedId <= 0) return
+    let cancelled = false
+    void getKitsuId(requestedId).then((value) => {
+      if (!cancelled && media?.id === requestedId) externalKitsuId = value
+    })
+    return () => { cancelled = true }
+  })
+  const externalTrackerLinks = $derived.by(() => media ? detailTrackerLinks(media, {
+    anilist: Boolean($anilistToken),
+    mal: Boolean($malToken),
+    kitsu: Boolean($kitsuToken),
+    simkl: Boolean($simklToken),
+  }, externalKitsuId) : [])
   const detailHint = $derived($detailHints[id])
   $effect(() => { if (media) rememberDetail(media) })
   // Reset the fade latch when the media changes, so navigating between series does not show the
@@ -476,16 +502,12 @@
             <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
                     class="fixed inset-0 z-40 cursor-default"></button>
             <div class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
-              <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://anilist.co/anime/${m.id}`) }}
-                      class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
-                <ExternalLink size={15} /> Open on AniList
-              </button>
-              {#if m.idMal}
-                <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(`https://myanimelist.net/anime/${m.idMal}`) }}
+              {#each externalTrackerLinks as tracker (tracker.id)}
+                <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(tracker.url) }}
                         class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
-                  <ExternalLink size={15} /> Open on MyAnimeList
+                  <ExternalLink size={15} /> {tracker.title}
                 </button>
-              {/if}
+              {/each}
             </div>
           {/if}
         </div>
@@ -639,17 +661,12 @@
             </button>
           {/if}
 
-          <button data-focusable onclick={() => openUrl(`https://anilist.co/anime/${m.id}`)} title="Open on AniList"
-                  class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
-            AniList<ExternalLink size={14} />
-          </button>
-
-          {#if m.idMal}
-            <button data-focusable onclick={() => openUrl(`https://myanimelist.net/anime/${m.idMal}`)} title="Open on MyAnimeList"
+          {#each externalTrackerLinks as tracker (tracker.id)}
+            <button data-focusable onclick={() => openUrl(tracker.url)} title={tracker.title}
                     class="inline-flex items-center gap-1.5 rounded-md bg-secondary px-3 py-2 text-sm font-bold transition-colors hover:bg-accent">
-              MAL<ExternalLink size={14} />
+              {tracker.label}<ExternalLink size={14} />
             </button>
-          {/if}
+          {/each}
         </div>
       </div>
     </div>
