@@ -1174,7 +1174,10 @@ function continueHint(media: Media): ContinueHint | undefined {
 }
 // A stream mpv can start without a multi-minute debrid cache: a direct online stream, an
 // already-resolved url, or a debrid-cached torrent (⚡ — resolves in ~1s).
-const playableNow = (s: Stream) => !!(s.__stream || s.url || isCached(s))
+// `isCached` only reads add-on glyphs. Native/library cache checks stamp `__cache`, which is folded
+// by describe(); ignoring it made a provider-confirmed cached torrent look unplayable everywhere
+// release continuity used this predicate, including next-episode preload.
+const playableNow = (s: Stream) => !!(s.__stream || s.url || describe(s).cached === 'instant')
 // The SAME-release source for this episode, ready-to-play only (never a debrid download or
 // a wrong-season file). undefined when continuity is off or nothing matches — the caller
 // then opens the picker instead of auto-playing an unrelated best-quality file.
@@ -1182,6 +1185,34 @@ function pickSameRelease(media: Media, streams: Stream[], want?: EpisodeWant): S
   const c = continueHint(media)
   if (!c) return undefined
   return streams.find((s) => matchesRelease(s, c) && playableNow(s) && !isUncached(s) && !(want && isWrongSeason(s, want)))
+}
+
+/** Pick the next episode without ever starting a debrid download. Release continuity is the first
+ * choice, but it is not a reason to abandon preloading altogether: per-episode torrents commonly
+ * change hash and release group between episodes. In that case the best already-cached source is
+ * still a safe, instant fallback and is much better than leaving Next cold. */
+export function pickCachedPreloadCandidate(
+  streams: Stream[],
+  hint: ContinueHint | undefined,
+  want?: EpisodeWant,
+  quality = 'any',
+  opts: RankOptions = { cacheCheck: 'native' },
+): Stream | undefined {
+  const ready = streams.filter((stream) =>
+    playableNow(stream)
+    && !isUncached(stream)
+    && !(want && isWrongSeason(stream, want)))
+  const sameRelease = hint
+    ? ready.find((stream) => matchesRelease(stream, hint))
+    : undefined
+  return sameRelease ?? pickBest(ready, quality, want, opts)
+}
+
+/** A native cache answer proves the provider can serve this torrent instantly. Preload may create
+ * the provider's small account entry in that case so it can mint the CDN URL; every weaker signal
+ * remains reuse-only and therefore cannot start a speculative debrid download. */
+export function preloadResolveNoAdd(stream: Stream): boolean {
+  return describe(stream).cacheSource !== 'native'
 }
 
 // Episode-selection context for debrid: tells the provider WHICH file of a (possibly
@@ -1393,9 +1424,33 @@ async function prefetchNext(media: Media, episode: number) {
     const resolved = directP2p
       ? { streams: directResult ? [directResult.stream] : [], want: directResult?.want }
       : await resolveStreams(media, next)
-    const { streams, want } = resolved
-    const best = directP2p ? streams[0] : pickSameRelease(media, streams, want)
-    if (!best) return // no cached same-release — leave it to the picker rather than force a download
+    let { streams } = resolved
+    const { want } = resolved
+    if (!directP2p && get(debridKey)) {
+      // The foreground picker annotates plain torrent rows with the active debrid provider's cache
+      // answers. resolveStreams() does not: it only knows cache glyphs an add-on supplied itself.
+      // Consequently TorBox could report every next-episode hash cached in the picker while this
+      // path saw every row as "unknown" and returned MISS in under 200ms. Ask the same cache API
+      // here, stamp the answers, and retain the cached-only guarantee below.
+      const hashes = [...new Set(streams
+        .filter((stream) => stream.infoHash && describe(stream).cached === 'unknown')
+        .map((stream) => stream.infoHash!.toLowerCase()))]
+      if (hashes.length) {
+        const cacheMode = cacheCheckMode(get(debridProvider))
+        const answers = await checkCached(get(debridProvider), get(debridKey), hashes)
+        streams = annotateCache(streams, answers, cacheMode === 'library' ? 'library' : 'native')
+      }
+    }
+    const best = directP2p
+      ? streams[0]
+      : pickCachedPreloadCandidate(
+          streams,
+          directHint,
+          want,
+          get(preferredQuality),
+          rankOpts(anilistIdOf(media)),
+        )
+    if (!best) return // no cached source — leave it to the picker rather than force a download
     // Recover the hash from a debrid resolver URL exactly as playStream does. Without this the
     // prefetch stored the resolver URL untouched, playStream then discarded it at play time and
     // ran the whole debrid resolve anyway — so for these rows the preload did nothing at all
@@ -1433,7 +1488,7 @@ async function prefetchNext(media: Media, episode: number) {
     if (!s.url && s.infoHash) {
       s = { ...s, url: await resolveHash(get(debridProvider), get(debridKey), s.__magnet ?? s.infoHash, {
         want: { episode: next, abs: want?.abs, season: want?.season, filename: s.behaviorHints?.filename },
-        noAdd: true,
+        noAdd: preloadResolveNoAdd(s),
       }) }
     }
     if (s.url) {

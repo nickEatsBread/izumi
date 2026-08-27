@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   matchesRelease,
+  pickCachedPreloadCandidate,
   pickDirectContinuationCandidate,
   pickDirectPreloadCandidate,
+  preloadResolveNoAdd,
   REMEMBERED_SOURCE_MAX_AGE_MS,
   rememberedContinueHint,
   type ContinueHint,
@@ -165,6 +167,64 @@ describe('safe direct-P2P continuation', () => {
       infoHash: 'previous',
       group: 'Group',
     })).toBeUndefined()
+  })
+})
+
+describe('cached debrid preload fallback', () => {
+  const torrent = (group: string, hash: string, quality: number, cache: 'cached' | 'uncached') => ({
+    name: `Torrentio\n${quality}p`,
+    infoHash: hash,
+    __cache: cache,
+    __seeders: group === 'Fallback' ? 500 : 20,
+    behaviorHints: { filename: `[${group}] Show - 04 [${quality}p].mkv` },
+  } as Stream)
+
+  it('keeps the same cached release ahead of a better-ranked fallback', () => {
+    const same = torrent('Current', 'next-current', 720, 'cached')
+    const fallback = torrent('Fallback', 'next-fallback', 1080, 'cached')
+
+    expect(pickCachedPreloadCandidate(
+      [fallback, same],
+      { infoHash: 'previous-current', group: 'Current' },
+      { season: 1, episode: 4, abs: 4 },
+      '1080',
+      { cacheCheck: 'native' },
+    )).toBe(same)
+  })
+
+  it('uses the best cached source when the current release has no next episode', () => {
+    const uncachedSame = torrent('Current', 'next-current', 1080, 'uncached')
+    const cachedFallback = torrent('Fallback', 'next-fallback', 1080, 'cached')
+
+    expect(pickCachedPreloadCandidate(
+      [uncachedSame, cachedFallback],
+      { infoHash: 'previous-current', group: 'Current' },
+      { season: 1, episode: 4, abs: 4 },
+      '1080',
+      { cacheCheck: 'native' },
+    )).toBe(cachedFallback)
+  })
+
+  it('never turns an uncached torrent into an automatic preload', () => {
+    const uncached = torrent('Fallback', 'next-fallback', 1080, 'uncached')
+
+    expect(pickCachedPreloadCandidate(
+      [uncached],
+      undefined,
+      { season: 1, episode: 4, abs: 4 },
+      '1080',
+      { cacheCheck: 'native' },
+    )).toBeUndefined()
+  })
+
+  it('only allows an account entry after the active provider confirms native cache', () => {
+    const nativeCached = torrent('Fallback', 'native-cached', 1080, 'cached')
+    const libraryCached = { ...nativeCached, infoHash: 'library-cached', __cacheSource: 'library' as const }
+    const providerCached = { ...nativeCached, infoHash: 'provider-cached', __cacheSource: 'native' as const }
+
+    expect(preloadResolveNoAdd(providerCached)).toBe(false)
+    expect(preloadResolveNoAdd(libraryCached)).toBe(true)
+    expect(preloadResolveNoAdd(nativeCached)).toBe(false)
   })
 })
 
