@@ -120,10 +120,13 @@ modules:
         - --share=network
       # flatpak-builder deliberately strips the host environment. These build-time identifiers
       # are supplied by CI and must be forwarded into the isolated npm/SvelteKit build. Despite
-      # flatpak-builder's field name, the SIMKL client ID is a public desktop-app identifier.
+      # flatpak-builder's field name, the OAuth values are public desktop-app identifiers.
       secret-env:
         - PUBLIC_DISCUSS_ANIME_API_KEY
+        - PUBLIC_ANILIST_CLIENT_ID
+        - PUBLIC_MAL_CLIENT_ID
         - PUBLIC_SIMKL_CLIENT_ID
+        - PUBLIC_OAUTH_REDIRECT_URI
       env:
         CARGO_HOME: /run/build/izumi/cargo
         RUSTUP_HOME: /run/build/izumi/rustup
