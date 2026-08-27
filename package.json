@@ -60,6 +60,7 @@
     "@types/crypto-js": "^4.2.2",
     "@types/node": "^24.13.3",
     "autoprefixer": "^10.5.4",
+    "jsdom": "^29.1.1",
     "postcss": "^8.5.26",
     "svelte": "^5.56.9",
     "svelte-check": "^4.7.6",
