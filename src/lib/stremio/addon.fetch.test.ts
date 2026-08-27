@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ phttp: vi.fn(), fetchManifest: vi.fn() }))
+const mocks = vi.hoisted(() => ({ phttp: vi.fn(), fetchManifest: vi.fn(), peekManifest: vi.fn() }))
 
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 // Keep the real acceptsStreamId: stubbing the whole module would silently disable the
 // id gate that the fetch path now depends on.
-vi.mock('./manifest', async (actual) => ({ ...(await actual() as object), fetchManifest: mocks.fetchManifest }))
+vi.mock('./manifest', async (actual) => ({
+  ...(await actual() as object),
+  fetchManifest: mocks.fetchManifest,
+  peekManifest: mocks.peekManifest,
+}))
 
 import { fetchAddonStreams, streamBudgetMs } from './addon'
 
@@ -16,6 +20,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   mocks.phttp.mockReset()
   mocks.fetchManifest.mockReset()
+  mocks.peekManifest.mockReset()
+  mocks.peekManifest.mockReturnValue(undefined)
   mocks.fetchManifest.mockResolvedValue({ id: 'a', name: 'Addon', version: '1', logo: 'https://logo' })
 })
 afterEach(() => vi.useRealTimers())
@@ -83,6 +89,22 @@ describe('manifest is decoupled from the stream fetch', () => {
       { upstreamRank: 0, requestId: 'kitsu:1:1' },
       { upstreamRank: 1, requestId: 'kitsu:1:1' },
     ])
+  })
+
+  it('uses an already-warmed manifest to avoid unsupported id requests', async () => {
+    mocks.peekManifest.mockReturnValue({
+      id: 'imdb-only', name: 'IMDb only', version: '1',
+      resources: [{ name: 'stream', types: ['series'], idPrefixes: ['tt'] }],
+    })
+    mocks.phttp.mockResolvedValue(streamResponse([{ url: 'u1', name: 'x' }]))
+
+    const p = fetchAddonStreams('https://plain.example.org', ['tt123:1:1', 'tmdb:123:1:1'])
+    await vi.advanceTimersByTimeAsync(50)
+    const { streams } = await p
+
+    expect(streams).toHaveLength(1)
+    expect(mocks.phttp).toHaveBeenCalledTimes(1)
+    expect(mocks.phttp.mock.calls[0][0]).toContain('/stream/series/tt123%3A1%3A1.json')
   })
 
   it('still yields streams when the manifest fetch rejects', async () => {

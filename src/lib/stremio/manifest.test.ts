@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({ phttp: vi.fn() }))
 
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 
-import { fetchManifest } from './manifest'
+import { fetchManifest, peekManifest } from './manifest'
 
 describe('addon manifest cache', () => {
   beforeEach(() => mocks.phttp.mockReset())
@@ -16,6 +16,7 @@ describe('addon manifest cache', () => {
     })
 
     await fetchManifest('cached-manifest.test')
+    expect(peekManifest('https://cached-manifest.test/manifest.json')).toMatchObject({ id: 'cached' })
     await fetchManifest('https://cached-manifest.test/manifest.json')
 
     expect(mocks.phttp).toHaveBeenCalledTimes(1)

@@ -64,11 +64,23 @@ export function acceptsStreamId(m: AddonManifest | null, type: string, id: strin
 }
 
 const cache = new Map<string, Promise<AddonManifest | null>>()
+const resolved = new Map<string, AddonManifest>()
 
-export function fetchManifest(base: string): Promise<AddonManifest | null> {
+function manifestBase(base: string): string {
   let b = base.trim().replace(/^http:\/\//i, 'https://')
   if (!/^https?:\/\//i.test(b)) b = 'https://' + b
-  b = b.replace(/\/manifest\.json\/?$/i, '').replace(/\/$/, '')
+  return b.replace(/\/manifest\.json\/?$/i, '').replace(/\/$/, '')
+}
+
+/** Synchronous view of a successfully fetched manifest. Stream dispatch must not await an unknown
+ * manifest, but when boot/settings already warmed it this lets the declared id prefixes gate the
+ * request fan-out before the cached Promise's callback gets its next microtask. */
+export function peekManifest(base: string): AddonManifest | undefined {
+  return resolved.get(manifestBase(base))
+}
+
+export function fetchManifest(base: string): Promise<AddonManifest | null> {
+  const b = manifestBase(base)
   if (!cache.has(b)) {
     const request = (async () => {
       try {
@@ -81,7 +93,11 @@ export function fetchManifest(base: string): Promise<AddonManifest | null> {
     // Coalesce concurrent requests, but do not turn a transient network/parse failure into a
     // session-long miss. Successful manifests remain cached for the session as before.
     void request.then((manifest) => {
-      if (manifest === null && cache.get(b) === request) cache.delete(b)
+      if (manifest) resolved.set(b, manifest)
+      else if (cache.get(b) === request) {
+        cache.delete(b)
+        resolved.delete(b)
+      }
     })
   }
   return cache.get(b)!

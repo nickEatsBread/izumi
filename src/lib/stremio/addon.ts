@@ -1,6 +1,6 @@
 import { phttp } from '$lib/net/http'
 import { describe, isNotice, isUncached, isWrongSeason, type Stream, type StreamInfo, type CacheState, type StreamSort } from './parse'
-import { fetchManifest, acceptsStreamId } from './manifest'
+import { fetchManifest, acceptsStreamId, peekManifest } from './manifest'
 import { addonOriginId } from './sources'
 import { dedupeStreams } from './dedupe'
 import { scoreInfo, type ScoreOptions } from './score'
@@ -318,7 +318,7 @@ export async function fetchAddonStreams(
   // It is ALSO what tells us which ids this addon accepts. That gate is only applied when the
   // manifest is already known: waiting for it to decide whether to ask would put the identity
   // fetch back on the critical path, and an unnecessary request costs far less than a missed one.
-  let manifest: Awaited<ReturnType<typeof fetchManifest>> | undefined
+  let manifest: Awaited<ReturnType<typeof fetchManifest>> | undefined = peekManifest(b)
   const manifestReady = fetchManifest(b).then((m) => { manifest = m }).catch(() => {})
   void manifestReady
 
