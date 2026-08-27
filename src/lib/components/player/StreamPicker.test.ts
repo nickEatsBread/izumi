@@ -97,3 +97,13 @@ describe('release routes', () => {
     expect(source).toContain("'routes'} for this release")
   })
 })
+
+describe('adaptive source preview', () => {
+  it('runs the planner without changing the source Auto actually selects', () => {
+    expect(source).toContain("$adaptiveSourceMode === 'shadow'")
+    expect(source).toContain('const bestStream = $derived(candidates[autoIdx])')
+    expect(source).toContain('adaptivePlan?.headChanged ? adaptivePlan.planned[0]')
+    expect(source).toContain('Preview only; Auto still uses the established Best source.')
+    expect(source).not.toContain('bestStream = $derived(adaptivePlan')
+  })
+})

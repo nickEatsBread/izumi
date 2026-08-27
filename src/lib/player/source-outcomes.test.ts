@@ -6,9 +6,12 @@ import {
   advancePlaybackStability,
   beginSourceObservation,
   classifyPlaybackFailure,
+  forgetSourceOutcomes,
+  markSourceObservation,
   SourceOutcomeJournal,
   sourceOutcomeContext,
   sourceOutcomeEvents,
+  sourceOutcomeSummary,
   type OutcomeStorage,
   type SourceOutcomeContext,
 } from './source-outcomes'
@@ -124,17 +127,26 @@ describe('source outcome privacy', () => {
 
   it('enforces the real incognito and local-history gates', () => {
     const previousHistory = get(saveLocalHistory)
+    const candidate = { __origin: { kind: 'online-extension' as const, id: 'privacy-read-gate' } }
     try {
+      incognito.set(false)
+      saveLocalHistory.set(true)
+      const attempt = beginSourceObservation(candidate, 'http')
+      markSourceObservation(attempt, 'stable')
+      expect(sourceOutcomeSummary(candidate, 'http')).toBeDefined()
       incognito.set(true)
       expect(beginSourceObservation({}, 'http')).toBeNull()
+      expect(sourceOutcomeSummary(candidate, 'http')).toBeUndefined()
       expect(sourceOutcomeEvents()).toEqual([])
       incognito.set(false)
       saveLocalHistory.set(false)
       expect(beginSourceObservation({}, 'http')).toBeNull()
+      expect(sourceOutcomeSummary(candidate, 'http')).toBeUndefined()
       expect(sourceOutcomeEvents()).toEqual([])
     } finally {
       incognito.set(false)
       saveLocalHistory.set(previousHistory)
+      forgetSourceOutcomes()
     }
   })
 })

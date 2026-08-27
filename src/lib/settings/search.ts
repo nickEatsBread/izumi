@@ -53,6 +53,7 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
 
   { title: 'Auto-play the best source', category: 'Sources', href: '/app/settings/sources', keywords: 'automatic stream cached countdown timer instant', anchored: true },
   { title: 'Preferred quality', category: 'Sources', href: '/app/settings/sources', keywords: '4k 1080p 720p resolution' },
+  { title: 'Adaptive source planner', category: 'Sources', href: '/app/settings/sources', keywords: 'learn local reliability preview shadow agent automatic ranking', anchored: true },
   { title: 'Stremio addon sources', category: 'Sources', href: '/app/settings/sources', keywords: 'manifest url torrent debrid' },
   { title: 'Mark best releases', category: 'Sources', href: '/app/settings/sources', keywords: 'seadex releases.moe curated encode quality badge recommended', anchored: true },
   { title: 'Source priority', category: 'Sources', href: '/app/settings/sources/priority', keywords: 'order trust prefer strict addon extension provider first reorder' },

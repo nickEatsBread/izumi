@@ -2,7 +2,7 @@
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import {
     autoSelectSource, autoSelectCountdown, preferredQuality, seadexAnnotations,
-    sourcePriority, sourcePriorityMode,
+    sourcePriority, sourcePriorityMode, adaptiveSourceMode,
   } from '$lib/settings/ui'
   import { priorityCandidates } from '$lib/settings/source-origins'
   import { fetchManifest } from '$lib/stremio/manifest'
@@ -116,6 +116,22 @@
         />
       </label>
     {/if}
+
+    <label data-setting-key="adaptive-source-planner" class="flex flex-col gap-1">
+      <span class="text-sm font-bold">Adaptive source planner</span>
+      <SelectMenu
+        bind:value={$adaptiveSourceMode}
+        ariaLabel="Adaptive source planner"
+        options={[
+          { value: 'shadow', label: 'Preview — learn without changing playback' },
+          { value: 'off', label: 'Off' },
+        ]}
+      />
+      <span class="text-xs text-muted-foreground">
+        {#if $adaptiveSourceMode === 'shadow'}Uses repeated, recent playback outcomes stored only on this device to preview a safer first source. It cannot override cache, quality, audio language, or your source order, and it does not change what Auto plays yet.
+        {:else}Only the established source ranking is used. Existing local outcome summaries stay private on this device and can be cleared with local history.{/if}
+      </span>
+    </label>
 
     <Toggle
       label="Mark best releases"

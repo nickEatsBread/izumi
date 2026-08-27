@@ -6,6 +6,7 @@ import {
   debridProvider,
   disabledExtensions,
   extensionUrls,
+  adaptiveSourceMode,
   preferredQuality,
 } from "$lib/settings/ui";
 import {
@@ -33,6 +34,7 @@ describe("manual device sync snapshots", () => {
     debridProvider.set("realdebrid");
     debridKey.set("");
     preferredQuality.set("1080");
+    adaptiveSourceMode.set("shadow");
   });
 
   it("round-trips sources, extension configuration, secrets, and portable settings", () => {
@@ -43,6 +45,7 @@ describe("manual device sync snapshots", () => {
     debridProvider.set("alldebrid");
     debridKey.set("secret");
     localStorage.setItem("preferred-quality", JSON.stringify("2160"));
+    localStorage.setItem("adaptive-source-mode", JSON.stringify("off"));
 
     const parsed = parseManualSnapshot(
       JSON.stringify(createManualSnapshot("device-a", "Deck")),
@@ -58,6 +61,7 @@ describe("manual device sync snapshots", () => {
     expect(get(debridProvider)).toBe("alldebrid");
     expect(get(debridKey)).toBe("secret");
     expect(get(preferredQuality)).toBe("2160");
+    expect(get(adaptiveSourceMode)).toBe("off");
     expect(JSON.parse(localStorage.getItem("preferred-quality")!)).toBe("2160");
   });
 

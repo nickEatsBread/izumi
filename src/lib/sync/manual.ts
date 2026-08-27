@@ -22,6 +22,7 @@ export const SYNCED_SETTING_KEYS = [
   "autoplay-best",
   "auto-select-animate",
   "preferred-quality",
+  "adaptive-source-mode",
   "show-dead-sources",
   "preferred-stream-sort",
   "player-autoplay-next",

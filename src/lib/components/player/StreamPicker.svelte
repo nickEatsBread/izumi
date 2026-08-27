@@ -17,7 +17,7 @@
   import SourceLoader from './SourceLoader.svelte'
   import { scoreInfo } from '$lib/stremio/score'
   import { playStream, cancelResolve, commitResolveSelection, prefetchSourceMetadata, type PlayState } from '$lib/stremio/play'
-  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority } from '$lib/settings/ui'
+  import { showDeadSources, preferredStreamSort, preferredQuality, preferredAudioLang, autoSelectSource, autoSelectCountdown, torrentPlaybackMode, debridKey, fullStreamDescription, seadexAnnotations, sourcePriority, adaptiveSourceMode } from '$lib/settings/ui'
   import { debridProvider } from '$lib/settings/ui'
   import { cacheCheckMode } from '$lib/stremio/debrid'
   import { getSeadexEntry, bestHashes, isWebLink, matchSeadexStreams, type SeadexEntry, type SeadexRelease } from '$lib/stremio/seadex'
@@ -38,6 +38,8 @@
   import Database from '@lucide/svelte/icons/database'
   import BadgeCheck from '@lucide/svelte/icons/badge-check'
   import { copyToClipboard } from '$lib/util/clipboard'
+  import { sourceOutcomeSummary } from '$lib/player/source-outcomes'
+  import { planSources } from '$lib/stremio/source-planner'
 
   const pick = $derived($streamPicker)
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
@@ -167,6 +169,21 @@
   const candidates = $derived(directP2p
     ? preferDirectStartupCandidates(rankedCandidates)
     : rankedCandidates)
+  // Shadow mode runs the real deterministic planner over the exact auto-pick candidates, but the
+  // actual `bestStream` below deliberately remains on `candidates`. This makes the counterfactual
+  // visible and testable before it is allowed to alter playback.
+  const adaptivePlan = $derived($adaptiveSourceMode === 'shadow'
+    ? planSources(candidates, {
+        directP2p,
+        audioLang: $preferredAudioLang,
+        sourcePriority: $sourcePriority,
+        outcomeOf: sourceOutcomeSummary,
+      })
+    : null)
+  const adaptivePreviewStream = $derived(adaptivePlan?.headChanged ? adaptivePlan.planned[0] : undefined)
+  const adaptivePreview = $derived(adaptivePreviewStream
+    ? visible.find((info) => info.stream === adaptivePreviewStream)
+    : undefined)
   // Cap the chain: each attempt is a real resolve, and walking twenty broken sources in a row is
   // indistinguishable from a hang. Higher when the user opted out of choosing — a whole page of
   // releases blocked for the same legal reason is common, and giving up after three hands them
@@ -653,6 +670,7 @@
   {@const knownBad = hasFailed(info.stream)}
   {@const body = descriptionOf(info)}
   {@const curated = curatedOf(info)}
+  {@const isAdaptivePreview = info === adaptivePreview}
   <!-- The row body and the copy action are SIBLINGS, not nested: a <button> inside a
        role="button" is ambiguous to a screen reader, and on a phone the 14px copy icon sat
        inline in the heading row — directly under the thumb aiming at the row, so a mis-tap
@@ -697,6 +715,9 @@
           <span class="shrink-0 rounded bg-theme px-1.5 text-[0.6rem] font-black uppercase text-white" title={whyBest}>Best</span>
           {#if autoState === 'counting'}<span class="shrink-0 font-black tabular-nums text-theme" class:text-red-400={autoProgress > 0.4}>[{Math.ceil((1 - autoProgress) * AUTO_MS / 1000)}]</span>{/if}
         {/if}
+        {#if isAdaptivePreview && !isBest}
+          <span class="shrink-0 rounded bg-violet-400/20 px-1.5 text-[0.6rem] font-black uppercase text-violet-300" title="Adaptive preview only — playback still uses Best">Preview</span>
+        {/if}
         {#if !$isMobile}
           {@render qualifiers(curated, filteredAs, knownBad, !!info.batch)}
           <span class="ml-auto flex shrink-0 items-center gap-2">
@@ -715,6 +736,10 @@
            `title`; on touch that reasoning was simply unreachable. One row carries it. -->
       {#if isBest && $isMobile && whyBest}
         <span class="mt-1 block text-[0.75rem] font-semibold leading-snug text-theme">{whyBest}</span>
+      {/if}
+
+      {#if isAdaptivePreview && $isMobile && adaptivePlan?.explanation}
+        <span class="mt-1 block text-[0.75rem] font-semibold leading-snug text-violet-300">Adaptive preview: {adaptivePlan.explanation}</span>
       {/if}
 
       <!-- The addon's OWN text, verbatim. It writes real detail in here — tracker, languages,
@@ -902,6 +927,14 @@
           </label>
         {/if}
       </div>
+      {/if}
+
+      {#if adaptivePreview && adaptivePlan?.explanation}
+        <div class="sp-inset shrink-0 border-b border-border bg-violet-500/[0.07] px-4 py-2 text-xs text-violet-200" role="status">
+          <span class="font-bold">Adaptive preview:</span>
+          would try {adaptivePreview.server ?? adaptivePreview.group ?? adaptivePreview.addon ?? adaptivePreview.provider ?? 'this source'} first — {adaptivePlan.explanation}.
+          <span class="text-muted-foreground">Preview only; Auto still uses the established Best source.</span>
+        </div>
       {/if}
 
       <!-- What the curators actually said. Collapsed by default and scroll-capped when open: these

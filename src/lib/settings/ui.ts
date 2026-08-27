@@ -115,6 +115,10 @@ export const sourcePriority = persisted<string[]>('source-priority', [])
 /** `prefer` ranks the trusted sources first but still uses the others; `strict` uses ONLY them and
  *  reports an empty result rather than quietly playing a source that was excluded on purpose. */
 export const sourcePriorityMode = persisted<SourcePriorityMode>('source-priority-mode', 'prefer')
+/** Adaptive ranking rollout. `shadow` computes and explains a bounded local plan but leaves the
+ * established auto-play order untouched. Active selection is enabled separately after validation. */
+export type AdaptiveSourceMode = 'off' | 'shadow'
+export const adaptiveSourceMode = persisted<AdaptiveSourceMode>('adaptive-source-mode', 'shadow')
 /** How Continue Watching uses recent source memory. `resumed` is episode-specific and only applies
  * when that episode has saved progress; `always` applies the title's latest source to new episodes. */
 export type ContinueSourcePreference = 'resumed' | 'always' | 'never'

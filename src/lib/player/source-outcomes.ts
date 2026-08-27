@@ -327,6 +327,7 @@ export const failSourceObservation = (attempt: PlaybackObservation | null, messa
 export const failObservedSource = (stream: Stream, message: unknown, failureClass = classifyPlaybackFailure(message)) =>
   journal.fail(observedStreams.get(stream) ?? null, failureClass)
 export const cancelSourceObservation = (attempt: PlaybackObservation | null) => journal.cancel(attempt)
-export const sourceOutcomeSummary = (stream: Stream, transport: PlaybackTransport) => journal.summary(sourceOutcomeContext(stream, transport))
+export const sourceOutcomeSummary = (stream: Stream, transport: PlaybackTransport) =>
+  get(incognito) || !get(saveLocalHistory) ? undefined : journal.summary(sourceOutcomeContext(stream, transport))
 export const sourceOutcomeEvents = () => journal.sessionEvents()
 export const forgetSourceOutcomes = () => journal.clear()
