@@ -60,6 +60,15 @@ describe('buildWatchlist', () => {
     const items = buildWatchlist([], [{ idMal: 20, progress: 4, updatedAt: 0 }], [m])
     expect(items.map((i) => i.media.id)).toEqual([2])
   })
+  it('merges canonical tracker entries for the same title without losing progress', () => {
+    const m = media(3, { episodes: 12, status: 'FINISHED' })
+    const items = buildWatchlist([
+      { media: m, progress: 2, updatedAt: 100 },
+      { media: m, progress: 7, updatedAt: 200 },
+    ], [], [])
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ progress: 7, updatedAt: 200_000, behind: 5 })
+  })
   it('puts behind shows first, newest-aired first, then caught-up by soonest next episode', () => {
     const behindOld = media(1, { episodes: 12, nextAiringEpisode: { episode: 6, timeUntilAiring: 60 },
       airingSchedule: { nodes: [{ episode: 5, airingAt: 100 }] } })

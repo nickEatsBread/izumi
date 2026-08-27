@@ -6,6 +6,7 @@ vi.mock('./simkl-auth', () => ({ simklFetch: mocks.simklFetch }))
 import {
   clearSimklListCache,
   getSimklAnimeIds,
+  getSimklAnimeListEntries,
   invalidateSimklList,
   pushSimkl,
 } from './simkl'
@@ -48,10 +49,17 @@ describe('SIMKL activity-gated anime list cache', () => {
     mocks.simklFetch.mockImplementation(async (path: string) => path === '/sync/all-items/anime'
       ? json({ anime: [{
           status: 'watching',
+          watched_episodes_count: 3,
+          last_watched_at: '2026-08-27T10:30:00Z',
           show: { ids: { anilist: '10', simkl_id: 1885096, slug: 'anime-10' } },
         }] })
       : json({ anime: { all: 'activity-1' } }))
 
+    await expect(getSimklAnimeListEntries('watching')).resolves.toEqual([{
+      anilistId: 10,
+      progress: 3,
+      updatedAt: 1_787_826_600,
+    }])
     await expect(getSimklAnimeIds('watching')).resolves.toEqual([10])
   })
 

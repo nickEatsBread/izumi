@@ -72,6 +72,9 @@ interface SimklListItem {
   status?: string
   watched_episodes_count?: number
   user_rating?: number
+  added_to_watchlist_at?: string
+  last_watched_at?: string
+  user_rated_at?: string
   anime?: { ids?: SimklIds }
   // GET /sync/all-items/anime currently returns the standard anime/show object here. SIMKL
   // documents anime as sharing the Show shape and supporting both wrapper names across endpoints.
@@ -262,13 +265,27 @@ simklToken.subscribe((token) => {
   observedToken = token
 })
 
-/** Canonical AniList ids from one Simkl anime-library status. */
-export async function getSimklAnimeIds(status: string, limit = 30): Promise<number[]> {
+export interface SimklAnimeListEntry {
+  anilistId: number
+  progress: number
+  /** Unix seconds, matching AniList list-entry timestamps. */
+  updatedAt: number
+}
+
+function listTimestamp(entry: SimklListItem): number {
+  const timestamp = Date.parse(
+    entry.last_watched_at ?? entry.added_to_watchlist_at ?? entry.user_rated_at ?? '',
+  )
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1_000) : 0
+}
+
+/** Renderable state from one SIMKL anime-library status, resolved to canonical AniList ids. */
+export async function getSimklAnimeListEntries(status: string, limit = 30): Promise<SimklAnimeListEntry[]> {
   const entries = await listEntries()
   if (!entries) return []
   const matching = entries.filter((entry) => entry.status === status)
   const index = matching.some((entry) => !itemIds(entry).anilist) ? await getIndex() : null
-  const ids: number[] = []
+  const resolved: SimklAnimeListEntry[] = []
   for (const entry of matching) {
     const values = itemIds(entry)
     const direct = Number(values.anilist)
@@ -277,8 +294,17 @@ export async function getSimklAnimeIds(status: string, limit = 30): Promise<numb
       ? direct
       : Number.isFinite(mal) && index ? lookupAnilistByMal(index, mal) : undefined
     if (anilistId == null) continue
-    ids.push(anilistId)
-    if (ids.length >= Math.max(1, Math.round(limit))) break
+    resolved.push({
+      anilistId,
+      progress: Math.max(0, Math.round(entry.watched_episodes_count ?? 0)),
+      updatedAt: listTimestamp(entry),
+    })
+    if (resolved.length >= Math.max(1, Math.round(limit))) break
   }
-  return ids
+  return resolved
+}
+
+/** Canonical AniList ids from one Simkl anime-library status, for schedule filters. */
+export async function getSimklAnimeIds(status: string, limit = 30): Promise<number[]> {
+  return (await getSimklAnimeListEntries(status, limit)).map((entry) => entry.anilistId)
 }

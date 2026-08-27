@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The Schedule page's Watchlist tab: the viewer's watching list (AniList CURRENT+REPEATING
-  // merged with MAL watching), behind-first — shows with aired-but-unwatched episodes on top,
+  // The Schedule page's Watchlist tab: the viewer's watching list (AniList CURRENT+REPEATING,
+  // MAL watching, and SIMKL watching), behind-first — shows with aired-but-unwatched episodes on top,
   // caught-up shows dimmed below with a next-episode countdown.
   //
   // Presentation is MAL-Sync-style: a toolbar (filter box, sort, layout switch) over three
@@ -9,9 +9,11 @@
   // +1 "watched an episode" bump, the two actions this page exists for.
   import { getContextClient } from '@urql/svelte'
   import { LIST_STATUSES_QUERY, MEDIA_BY_MAL_QUERY, flattenEntries, type Entry } from '$lib/anilist/lists'
+  import { fetchMediaByIds } from '$lib/anilist/fetch-media'
   import { getMalAnimeListMediaOrThrow, updateProgress, type MalListEntry } from '$lib/trackers'
+  import { getSimklAnimeListEntries } from '$lib/trackers/simkl'
   import { anilistUser } from '$lib/anilist/account'
-  import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
+  import { anilistUserName, malToken, malUser, simklToken } from '$lib/trackers/config'
   import { title as mediaTitle, cardCover, mediaHref, resumeEp, totalEpisodes } from '$lib/anilist/media'
   import { until } from '$lib/anilist/schedule'
   import { buildWatchlist, type WatchlistItem } from './watchlist'
@@ -31,6 +33,7 @@
   const client = getContextClient()
   const listUser = $derived($anilistUserName || $anilistUser)
   const malActive = $derived(!!$malToken || !!$malUser)
+  const simklActive = $derived(!!$simklToken)
 
   let items = $state<WatchlistItem[]>([])
   let loading = $state(true)
@@ -73,15 +76,33 @@
     catch { return { entries: [], media: [] } }
   }
 
+  async function simklSide(): Promise<Entry[]> {
+    try {
+      const list = await getSimklAnimeListEntries('watching', 100)
+      if (!list.length) return []
+      // SIMKL supplies user state and cross-database IDs, not the catalogue cards. Resolve those
+      // IDs through Izumi's normal anime catalogue path and keep the resulting cards unlabelled.
+      const media = await fetchMediaByIds(list.map((entry) => entry.anilistId))
+      return list.flatMap((entry) => {
+        const matched = media.get(entry.anilistId)
+        return matched ? [{ media: matched, progress: entry.progress, updatedAt: entry.updatedAt }] : []
+      })
+    }
+    catch { return [] }
+  }
+
   $effect(() => {
     const user = listUser
+    const useSimkl = simklActive
     let cancelled = false
+    loading = true
     void Promise.all([
       user ? aniEntries(user) : Promise.resolve([]),
       malSide(),
-    ]).then(([ani, mal]) => {
+      useSimkl ? simklSide() : Promise.resolve([]),
+    ]).then(([ani, mal, simkl]) => {
       if (cancelled) return
-      items = buildWatchlist(ani, mal.entries, mal.media)
+      items = buildWatchlist([...ani, ...simkl], mal.entries, mal.media)
       loading = false
     })
     return () => { cancelled = true }
@@ -180,10 +201,10 @@
       {/each}
     </div>
   {/if}
-{:else if !listUser && !malActive}
+{:else if !listUser && !malActive && !simklActive}
   <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
     <p class="font-bold text-foreground">No tracker linked</p>
-    <p class="mt-1">Link AniList or MyAnimeList in Settings → Trackers to see your watching list here.</p>
+    <p class="mt-1">Link AniList, MyAnimeList, or Simkl in Settings → Accounts to see your watching list here.</p>
   </div>
 {:else if !items.length}
   <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">

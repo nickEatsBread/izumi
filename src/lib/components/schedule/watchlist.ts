@@ -4,7 +4,7 @@ import type { Entry } from '$lib/anilist/lists'
 import type { MalListEntry } from '$lib/trackers'
 
 // One Watchlist row: a watching-list entry plus the derived "how far behind" data the
-// behind-first ordering needs. progress merges AniList and MAL (max wins — tolerates a
+// behind-first ordering needs. progress merges connected trackers (max wins — tolerates a
 // stale sync on either side); updatedAt is in ms.
 export interface WatchlistItem {
   media: Media
@@ -39,7 +39,14 @@ export function buildWatchlist(
 ): WatchlistItem[] {
   const byId = new Map<number, { media: Media; progress: number; updatedAt: number }>()
   for (const e of ani) {
-    byId.set(e.media.id, { media: e.media, progress: e.progress, updatedAt: (e.updatedAt ?? 0) * 1000 })
+    const updatedAt = (e.updatedAt ?? 0) * 1000
+    const previous = byId.get(e.media.id)
+    if (previous) {
+      previous.progress = Math.max(previous.progress, e.progress)
+      previous.updatedAt = Math.max(previous.updatedAt, updatedAt)
+    } else {
+      byId.set(e.media.id, { media: e.media, progress: e.progress, updatedAt })
+    }
   }
   const malByIdMal = new Map(malMedia.map((m) => [m.idMal, m]))
   for (const e of mal) {
