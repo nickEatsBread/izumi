@@ -89,32 +89,48 @@ export function fingerprint(s: Stream): string {
   return origin && label ? `t:${origin}:${label}` : ''
 }
 
-export function markDead(s: Stream, now = Date.now()): void {
-  const key = fingerprint(s)
+/** Route-scoped identity for failures that may be specific to one offer, resolver or CDN. Falls
+ * back to the release fingerprint for legacy/unmodelled streams. Candidate ids are already opaque. */
+export function routeFingerprint(s: Stream): string {
+  return s.__candidate?.routeId ? `r:${s.__candidate.routeId}` : fingerprint(s)
+}
+
+function remember(key: string, now: number): void {
   if (!key) return
   const all = load()
   const prior = all[key]
-  // Still inside its window ⇒ this is a repeat, not a fresh piece of bad luck.
   const repeat = !!prior && prior.until > now
   all[key] = { until: now + (repeat ? DEAD_REPEAT_MS : DEAD_MS), hits: (prior?.hits ?? 0) + 1 }
   save(now)
 }
 
+export function markDead(s: Stream, now = Date.now()): void {
+  remember(fingerprint(s), now)
+}
+
+/** Remember only the failed route, leaving another offer for the same release eligible. */
+export function markRouteDead(s: Stream, now = Date.now()): void {
+  remember(routeFingerprint(s), now)
+}
+
 /** A real first frame is stronger evidence than a prior startup failure. Rehabilitate the source
  * immediately so a transient error cannot keep it labelled/sorted as Failed for hours or days. */
 export function markAlive(s: Stream, now = Date.now()): void {
-  const key = fingerprint(s)
-  if (!key) return
   const all = load()
-  if (!all[key]) return
-  delete all[key]
+  let changed = false
+  for (const key of new Set([fingerprint(s), routeFingerprint(s)])) {
+    if (!key || !all[key]) continue
+    delete all[key]
+    changed = true
+  }
+  if (!changed) return
   save(now)
 }
 
 export function isDead(s: Stream, now = Date.now()): boolean {
-  const key = fingerprint(s)
-  if (!key) return false
-  return (load()[key]?.until ?? 0) > now
+  const all = load()
+  return [...new Set([fingerprint(s), routeFingerprint(s)])]
+    .some((key) => !!key && (all[key]?.until ?? 0) > now)
 }
 
 /** Test seam, and the hook behind a future "forget failed sources" settings action. */

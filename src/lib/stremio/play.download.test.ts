@@ -87,6 +87,7 @@ vi.mock('$lib/settings/ui', () => ({
   torrentProxyUrl: readable(''),
   sourcePriority: readable([]),
   sourcePriorityMode: readable('prefer'),
+  adaptiveSourceMode: readable('shadow'),
   promoteToWatching: readable(false),
 }))
 vi.mock('$lib/player/session', () => ({

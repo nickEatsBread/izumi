@@ -301,7 +301,7 @@ export function sourceOutcomeContext(
 
 export function classifyPlaybackFailure(message: unknown): PlaybackFailureClass {
   const text = String(message ?? '').toLowerCase()
-  if (/wrong short|wrong (?:episode|season|video)|different production|premature/.test(text)) return 'wrong-content'
+  if (/wrong short|wrong (?:episode|season|video)|different production|premature|ended before/.test(text)) return 'wrong-content'
   if (/dmca|copyright|content (?:filter|blocked)|infringement/.test(text)) return 'policy'
   if (/geo|country|region|not available in your location/.test(text)) return 'geo'
   if (/\b(?:401|403)\b|unauthori[sz]ed|forbidden|api.?key|token|log.?in|credential/.test(text)) return 'auth'

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { markDead, markAlive, isDead, forgetDead, fingerprint, DEAD_MS, DEAD_REPEAT_MS } from './dead-sources'
+import { markDead, markRouteDead, markAlive, isDead, forgetDead, fingerprint, routeFingerprint, DEAD_MS, DEAD_REPEAT_MS } from './dead-sources'
 
 const t0 = 1_700_000_000_000
 const KEY = 'SUPERSECRETAPIKEY123'
@@ -72,6 +72,36 @@ describe('failed-source memory', () => {
     // failure is torrent-level, so keying on the URL would let every other copy fail in turn.
     markDead({ infoHash: 'ABC123', url: 'https://one/resolve' }, t0)
     expect(isDead({ infoHash: 'abc123', url: 'https://two/resolve' }, t0)).toBe(true)
+  })
+
+  it('can remember one opaque route without tarring another offer of the release', () => {
+    const first = {
+      infoHash: 'ABC123',
+      __candidate: { releaseId: 'release', offerId: 'one', routeId: 'route-one', offerCount: 2, routeCount: 2 },
+    }
+    const alternate = {
+      infoHash: 'ABC123',
+      __candidate: { releaseId: 'release', offerId: 'two', routeId: 'route-two', offerCount: 2, routeCount: 2 },
+    }
+    expect(routeFingerprint(first)).toBe('r:route-one')
+    markRouteDead(first, t0)
+    expect(isDead(first, t0)).toBe(true)
+    expect(isDead(alternate, t0)).toBe(false)
+    markAlive(first, t0 + 1)
+    expect(isDead(first, t0 + 2)).toBe(false)
+  })
+
+  it('still marks every route when the release itself is wrong', () => {
+    const first = {
+      infoHash: 'ABC123',
+      __candidate: { releaseId: 'release', offerId: 'one', routeId: 'route-one', offerCount: 2, routeCount: 2 },
+    }
+    const alternate = {
+      infoHash: 'ABC123',
+      __candidate: { releaseId: 'release', offerId: 'two', routeId: 'route-two', offerCount: 2, routeCount: 2 },
+    }
+    markDead(first, t0)
+    expect(isDead(alternate, t0)).toBe(true)
   })
 
   it('keys a source with neither hash nor url by its origin and label', () => {

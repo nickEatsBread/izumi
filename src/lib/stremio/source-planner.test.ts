@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PlaybackTransport, SourceOutcomeSummary } from '$lib/player/source-outcomes'
-import { planSources, plannedTransport } from './source-planner'
+import { planRecoveryCandidates, planSources, plannedTransport } from './source-planner'
+import { normalizeCandidates } from './candidate-model'
 import type { Stream } from './parse'
 
 const NOW = Date.UTC(2026, 7, 27)
@@ -139,5 +140,70 @@ describe('adaptive source planner', () => {
     expect(plannedTransport({ url: 'https://cdn.example/master.m3u8' }, false)).toBe('hls')
     expect(plannedTransport({ url: 'https://cdn.example/manifest.mpd' }, false)).toBe('dash')
     expect(plannedTransport({ url: 'https://cdn.example/video.mp4', __drm: {} as never }, false)).toBe('drm')
+  })
+})
+
+describe('diagnosis-aware recovery plan', () => {
+  const torrent = (origin: string, hash: string): Stream => ({
+    infoHash: hash.repeat(40),
+    title: 'Show - 01 1080p',
+    __origin: { kind: 'torrent-extension', id: origin, name: origin },
+  })
+
+  it('never retries the same release after wrong-content evidence', () => {
+    const [failed, sameBytes, different] = normalizeCandidates([
+      torrent('nyaa', 'a'),
+      torrent('animetosho', 'a'),
+      torrent('nyaa', 'b'),
+    ])
+    expect(planRecoveryCandidates([sameBytes, different], failed, 'wrong-content', { directP2p: true })).toEqual([different])
+  })
+
+  it('tries one alternate route, then diversifies releases after a transport failure', () => {
+    const [failed, sameOne, sameTwo, releaseBOne, releaseBTwo, releaseC] = normalizeCandidates([
+      torrent('one', 'a'),
+      torrent('two', 'a'),
+      torrent('three', 'a'),
+      torrent('one', 'b'),
+      torrent('two', 'b'),
+      torrent('one', 'c'),
+    ])
+    const planned = planRecoveryCandidates(
+      [sameOne, sameTwo, releaseBOne, releaseBTwo, releaseC],
+      failed,
+      'stalled',
+      { directP2p: true },
+    )
+    expect(planned.slice(0, 3)).toEqual([sameOne, releaseBOne, releaseC])
+    expect(planned).toEqual([sameOne, releaseBOne, releaseC, releaseBTwo, sameTwo])
+  })
+
+  it('demotes the failed provider for provider-wide faults', () => {
+    const failed = stream('provider-a')
+    const sameProvider = stream('provider-a', 1080, { url: 'https://backup.example/video.mkv' })
+    const independent = stream('provider-b')
+    expect(planRecoveryCandidates([sameProvider, independent], failed, 'auth', { directP2p: false })).toEqual([independent, sameProvider])
+  })
+
+  it('does not promote a lower-quality alternate while diversifying recovery', () => {
+    const failed = stream('failed')
+    const preferred = stream('preferred')
+    const lowerSameRelease = stream('lower', 720, {
+      __candidate: { releaseId: 'same', offerId: 'lower', routeId: 'lower', offerCount: 2, routeCount: 2 },
+    })
+    const preferredWithRelease = {
+      ...preferred,
+      __candidate: { releaseId: 'other', offerId: 'preferred', routeId: 'preferred', offerCount: 1, routeCount: 1 },
+    }
+    const failedWithRelease = {
+      ...failed,
+      __candidate: { releaseId: 'same', offerId: 'failed', routeId: 'failed', offerCount: 2, routeCount: 2 },
+    }
+    expect(planRecoveryCandidates(
+      [preferredWithRelease, lowerSameRelease],
+      failedWithRelease,
+      'stalled',
+      { directP2p: false },
+    )).toEqual([preferredWithRelease, lowerSameRelease])
   })
 })

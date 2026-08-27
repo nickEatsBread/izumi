@@ -98,12 +98,21 @@ describe('release routes', () => {
   })
 })
 
-describe('adaptive source preview', () => {
-  it('runs the planner without changing the source Auto actually selects', () => {
-    expect(source).toContain("$adaptiveSourceMode === 'shadow'")
-    expect(source).toContain('const bestStream = $derived(candidates[autoIdx])')
-    expect(source).toContain('adaptivePlan?.headChanged ? adaptivePlan.planned[0]')
+describe('adaptive source rollout', () => {
+  it('keeps shadow as a preview and gates planned selection on active mode', () => {
+    expect(source).toContain("$adaptiveSourceMode !== 'off'")
+    expect(source).toContain("$adaptiveSourceMode === 'shadow' && adaptivePlan?.headChanged")
+    expect(source).toContain("$adaptiveSourceMode === 'active' && adaptivePlan")
+    expect(source).toContain('recoveryOrder.find((stream) => candidates.includes(stream) && !hasFailed(stream))')
     expect(source).toContain('Preview only; Auto still uses the established Best source.')
     expect(source).not.toContain('bestStream = $derived(adaptivePlan')
+  })
+
+  it('advances to the first unfailed candidate without skipping one after reactive re-ranking', () => {
+    expect(source).toContain('const failed = new Set([...failedKeys, keyOf(info)])')
+    expect(source).toContain('const remaining = candidates.filter((candidate) => !failed.has(keyOf(describe(candidate)))')
+    expect(source).toContain('if (!next || !pick) return false')
+    expect(source).toContain('planRecoveryCandidates(remaining, info.stream, failureClass')
+    expect(source).not.toContain('autoIdx += 1')
   })
 })

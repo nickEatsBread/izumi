@@ -159,6 +159,7 @@ describe('classifyPlaybackFailure', () => {
     ['HTTP 403 Forbidden', 'auth'],
     ['Not available in your region', 'geo'],
     ['Wrong short video detected', 'wrong-content'],
+    ['Source ended before the episode finished', 'wrong-content'],
     ['mpv player load error', 'player'],
   ])('classifies %s', (message, expected) => {
     expect(classifyPlaybackFailure(message)).toBe(expected)

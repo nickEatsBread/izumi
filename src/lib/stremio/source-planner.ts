@@ -1,5 +1,6 @@
-import type { PlaybackTransport, SourceOutcomeSummary } from '$lib/player/source-outcomes'
+import type { PlaybackFailureClass, PlaybackTransport, SourceOutcomeSummary } from '$lib/player/source-outcomes'
 import { describe, languageMismatch, type Stream } from './addon'
+import { candidateIds } from './candidate-model'
 import { priorityIndexOf } from './source-priority'
 import { torrentioResolverInfoHash } from './resolver-url'
 
@@ -217,4 +218,93 @@ export function planSources(baseline: Stream[], options: SourcePlannerOptions): 
       ? planExplanation(byStream.get(plannedScored[0].stream)!, scored[0])
       : '',
   }
+}
+
+const releaseIdOf = (stream: Stream) => stream.__candidate?.releaseId ?? candidateIds(stream).releaseId
+const sourceIdOf = (stream: Stream) => stream.__origin?.id ?? ''
+
+function diversifyReleases(candidates: Stream[]): Stream[] {
+  const groups = new Map<string, Stream[]>()
+  for (const candidate of candidates) {
+    const key = releaseIdOf(candidate)
+    const group = groups.get(key) ?? []
+    group.push(candidate)
+    groups.set(key, group)
+  }
+  const out: Stream[] = []
+  let depth = 0
+  while (out.length < candidates.length) {
+    for (const group of groups.values()) {
+      if (group[depth]) out.push(group[depth])
+    }
+    depth++
+  }
+  return out
+}
+
+function withinConstraintBuckets(
+  candidates: Stream[],
+  options: SourcePlannerOptions,
+  order: (bucket: Stream[]) => Stream[],
+): Stream[] {
+  const buckets = new Map<string, Stream[]>()
+  for (const candidate of candidates) {
+    const key = hardConstraintKey(candidate, options)
+    const bucket = buckets.get(key) ?? []
+    bucket.push(candidate)
+    buckets.set(key, bucket)
+  }
+  const ordered = new Map([...buckets].map(([key, bucket]) => [key, order(bucket)]))
+  const cursors = new Map<string, number>()
+  return candidates.map((candidate) => {
+    const key = hardConstraintKey(candidate, options)
+    const cursor = cursors.get(key) ?? 0
+    cursors.set(key, cursor + 1)
+    return ordered.get(key)![cursor]
+  })
+}
+
+/**
+ * Turn a ranked candidate list into a diagnosis-aware recovery list. Wrong bytes require another
+ * release; a route/transport failure gets one alternate route before release diversity; a
+ * provider-wide auth/geo/policy fault moves that provider behind independent alternatives.
+ */
+export function planRecoveryCandidates(
+  candidates: Stream[],
+  failed: Stream | undefined,
+  failureClass: PlaybackFailureClass,
+  options: SourcePlannerOptions,
+): Stream[] {
+  if (!failed) return withinConstraintBuckets(candidates, options, diversifyReleases)
+  const failedRelease = releaseIdOf(failed)
+  const failedSource = sourceIdOf(failed)
+
+  if (failureClass === 'wrong-content') {
+    return withinConstraintBuckets(
+      candidates.filter((candidate) => releaseIdOf(candidate) !== failedRelease),
+      options,
+      diversifyReleases,
+    )
+  }
+
+  if (failureClass === 'auth' || failureClass === 'geo' || failureClass === 'policy' || failureClass === 'resolver') {
+    return withinConstraintBuckets(candidates, options, (bucket) => {
+      const independent = bucket.filter((candidate) => !failedSource || sourceIdOf(candidate) !== failedSource)
+      const sameSource = bucket.filter((candidate) => !!failedSource && sourceIdOf(candidate) === failedSource)
+      return [...diversifyReleases(independent), ...diversifyReleases(sameSource)]
+    })
+  }
+
+  if (failureClass === 'transport' || failureClass === 'stalled' || failureClass === 'metadata' || failureClass === 'player') {
+    return withinConstraintBuckets(candidates, options, (bucket) => {
+      const sameRelease = bucket.filter((candidate) => releaseIdOf(candidate) === failedRelease)
+      const otherReleases = bucket.filter((candidate) => releaseIdOf(candidate) !== failedRelease)
+      // One alternate route can preserve the chosen encode/subtitles while escaping a dead CDN,
+      // tracker or offer. More than one before another release would spend the whole retry budget
+      // on the same underlying bytes.
+      return [...sameRelease.slice(0, 1), ...diversifyReleases(otherReleases), ...sameRelease.slice(1)]
+    })
+  }
+
+  return withinConstraintBuckets(candidates, options, diversifyReleases)
 }

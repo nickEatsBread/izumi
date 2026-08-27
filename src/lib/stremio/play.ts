@@ -42,6 +42,23 @@ const rankOpts = (anilistId?: number): RankOptions => ({
   cacheCheck: get(debridKey) ? cacheCheckMode(get(debridProvider)) : 'none',
   sourcePriority: get(sourcePriority),
 })
+
+/** Apply local adaptive evidence only to automatic decisions. Manual list ordering remains the
+ * stable, inspectable baseline, and shadow mode computes previews in the picker without entering
+ * this path. */
+function activeSourceCandidates(
+  baseline: Stream[],
+  directP2p: boolean,
+  options: RankOptions,
+): Stream[] {
+  if (get(adaptiveSourceMode) !== 'active') return baseline
+  return planSources(baseline, {
+    directP2p,
+    audioLang: options.audioLang,
+    sourcePriority: options.sourcePriority,
+    outcomeOf: sourceOutcomeSummary,
+  }).planned
+}
 import { getKitsuId, getEpisodeSeasonMap, getExtensionIds, type ExtIds } from '$lib/anizip'
 import { kitsuIdFromMal } from './kitsu'
 import { fetchMediaById } from '$lib/anilist/fetch-media'
@@ -81,13 +98,13 @@ import {
   resetTorrentDelivery,
   updateTorrentDelivery,
 } from '$lib/player/recovery-watchdog'
-import { markDead } from './dead-sources'
+import { markAlive, markDead, markRouteDead } from './dead-sources'
 import { shareableSourceForDevice } from '$lib/watch-together/source'
 import {
   preferredAudioLang, preferredSubLang, autoSelectSource, preferredQuality, skipFiller, seadexAnnotations,
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
-  sourcePriority, sourcePriorityMode, continueSourcePreference, promoteToWatching,
+  sourcePriority, sourcePriorityMode, continueSourcePreference, promoteToWatching, adaptiveSourceMode,
 } from '$lib/settings/ui'
 import { applyPriorityFilter } from './source-priority'
 import { fillerEpisodes } from '$lib/anime/filler'
@@ -119,10 +136,12 @@ import {
 } from '$lib/player/direct-torrent'
 import { torrentioResolverInfoHash } from './resolver-url'
 import {
-  advancePlaybackStability, beginSourceObservation, cancelSourceObservation, failObservedSource,
+  advancePlaybackStability, beginSourceObservation, cancelSourceObservation, classifyPlaybackFailure, failObservedSource,
   failSourceObservation, markSourceObservation,
+  sourceOutcomeSummary,
   type PlaybackObservation, type PlaybackStabilityState, type PlaybackTransport,
 } from '$lib/player/source-outcomes'
+import { planRecoveryCandidates, planSources } from './source-planner'
 import {
   beginResolveTrace,
   currentResolveTrace,
@@ -461,7 +480,7 @@ function maybePromoteToWatching(media: Media, pos: number, already: { promoted: 
 
 // Wire the mpv event stream (emitted from Rust) to progress tracking, resume,
 // and auto next-episode. Called once per play, after playback has started.
-function attach(media: Media, episode: number, onState: (s: PlayState) => void, observation: PlaybackObservation | null) {
+function attach(media: Media, episode: number, onState: (s: PlayState) => void, observation: PlaybackObservation | null, stream: Stream) {
   // Tear down the previous play's listeners, then register the new set ATOMICALLY — this whole
   // body runs with no `await`, so a second play cannot interleave between teardown and
   // registration. `pushListen` stores each unlisten synchronously; `gen` guards the async
@@ -476,10 +495,12 @@ function attach(media: Media, episode: number, onState: (s: PlayState) => void, 
   let stability: PlaybackStabilityState = { advancedSeconds: 0 }
   let lastPosition = 0
   let lastDuration = 0
+  let sourceAlive = false
   const onProgress = (pos: number, dur: number) => {
     lastPosition = pos
     lastDuration = dur
     if (dur > 0) {
+      if (!sourceAlive) { sourceAlive = true; markAlive(stream) }
       markSourceObservation(observation, 'first-frame')
       const next = advancePlaybackStability(stability, pos)
       stability = next.state
@@ -612,6 +633,7 @@ function attachAndroid(
   onState: (s: PlayState) => void,
   directP2p: boolean,
   observation: PlaybackObservation | null,
+  stream: Stream,
 ) {
   detachAndroid()
   resetPrefetchMiss()
@@ -628,6 +650,7 @@ function attachAndroid(
   let healthBusy = false
   let recoveryBusy = false
   let stability: PlaybackStabilityState = { advancedSeconds: 0 }
+  let sourceAlive = false
   const onEnded = async () => {
     markSourceObservation(observation, 'completed')
     clearPosition(media.id, episode)
@@ -650,6 +673,7 @@ function attachAndroid(
     latest = s
     const { pos, dur, eof, cacheEnd } = s
     if (dur > 0 && s.frameReady) {
+      if (!sourceAlive) { sourceAlive = true; markAlive(stream) }
       markSourceObservation(observation, 'first-frame')
       const next = advancePlaybackStability(stability, pos)
       stability = next.state
@@ -1836,10 +1860,13 @@ export async function playEpisode(
       // Season correctness outranks speed: until AniZip has answered we cannot know that the top
       // row is even the right episode, so the confident path stays shut (the same gate the
       // same-release continuation uses).
+      const directP2p = directP2pEnabled()
+      const options = rankOpts(anilistIdOf(media))
       const ranked = seasonSettled
-        ? pickCandidates(s, get(preferredQuality), want, undefined, rankOpts(anilistIdOf(media)))
+        ? pickCandidates(s, get(preferredQuality), want, undefined, options)
         : []
-      const top = directP2pEnabled() ? preferDirectStartupCandidates(ranked)[0] : ranked[0]
+      const baseline = directP2p ? preferDirectStartupCandidates(ranked) : ranked
+      const top = activeSourceCandidates(baseline, directP2p, options)[0]
       prefetchTopMetadata(top)
       let deadline: number
       if (top) {
@@ -2823,7 +2850,7 @@ export async function playStream(
       playing.set(true)
       onState({ status: 'playing' })
       void invoke('close_player').catch(() => {})
-      if (episode != null) attach(media, episode, onState, observation)
+      if (episode != null) attach(media, episode, onState, observation, recoveryOriginal)
       return
     }
 
@@ -2932,7 +2959,7 @@ export async function playStream(
         rememberSuccess()
         androidFrameTracePending = directPlaybackId != null
         onState({ status: 'playing' })
-        if (episode != null) attachAndroid(media, episode, onState, directPlaybackId != null, observation)
+        if (episode != null) attachAndroid(media, episode, onState, directPlaybackId != null, observation, recoveryOriginal)
         if (directPlaybackId != null) {
           const playbackId = directPlaybackId
           traceResolve(trace, 'waiting for Android first video frame')
@@ -3142,7 +3169,7 @@ export async function playStream(
     playing.set(true)
     onState({ status: 'playing' })
     // Progress now fires on *actual watch* (~85%), not on play — see attach().
-    if (episode != null) attach(media, episode, onState, observation)
+    if (episode != null) attach(media, episode, onState, observation, recoveryOriginal)
     if (directPlaybackId != null) {
       const playbackId = directPlaybackId
       traceResolve(trace, 'waiting for first video frame')
@@ -3292,10 +3319,12 @@ export async function recoverPlaybackSource(
 
   const failed = context.current
   const attempted = new Set(context.attempted)
+  const failureClass = classifyPlaybackFailure(notice)
   if (failed && stillOwnsPlayback()) {
     attempted.add(recoveryStreamKey(failed))
     failObservedSource(failed, notice)
-    markDead(failed)
+    if (failureClass === 'wrong-content') markDead(failed)
+    else markRouteDead(failed)
   }
   if (!stillOwnsPlayback()) return false
   playbackRecovery.set({ ...context, attempted: [...attempted], recovering: true })
@@ -3331,14 +3360,25 @@ export async function recoverPlaybackSource(
   }
 
   const directP2p = directP2pEnabled()
-  const candidates = pickCandidates(
-    streams,
+  const options = { ...rankOpts(context.media.id), allowUncached: true }
+  const allowedStreams = applyPriorityFilter(streams, get(sourcePriority), get(sourcePriorityMode))
+  const ranked = pickCandidates(
+    allowedStreams,
     get(preferredQuality),
     undefined,
     (stream) => attempted.has(recoveryStreamKey(stream)),
-    { ...rankOpts(context.media.id), allowUncached: true },
+    options,
   )
     .filter((stream) => !attempted.has(recoveryStreamKey(stream)))
+  const startupRanked = directP2p ? preferDirectStartupCandidates(ranked) : ranked
+  const adaptiveRanked = activeSourceCandidates(startupRanked, directP2p, options)
+  const candidates = (get(adaptiveSourceMode) === 'active'
+    ? planRecoveryCandidates(adaptiveRanked, failed ?? undefined, failureClass, {
+        directP2p,
+        audioLang: options.audioLang,
+        sourcePriority: options.sourcePriority,
+      })
+    : adaptiveRanked)
     .slice(0, directP2p ? 2 : 3)
 
   const subDelay = await invoke<string>('player_get_property', { name: 'sub-delay' }).catch(() => '')
@@ -3388,7 +3428,8 @@ export async function recoverPlaybackSource(
       playerNotice.set('Switched to a working source')
       return true
     }
-    markDead(candidate)
+    if (classifyPlaybackFailure(lastError) === 'wrong-content') markDead(candidate)
+    else markRouteDead(candidate)
   }
 
   if (!stillOwnsPlayback()) return false

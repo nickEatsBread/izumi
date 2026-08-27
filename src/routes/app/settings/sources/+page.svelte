@@ -123,12 +123,14 @@
         bind:value={$adaptiveSourceMode}
         ariaLabel="Adaptive source planner"
         options={[
+          { value: 'active', label: 'On — adapt automatic choices' },
           { value: 'shadow', label: 'Preview — learn without changing playback' },
           { value: 'off', label: 'Off' },
         ]}
       />
       <span class="text-xs text-muted-foreground">
-        {#if $adaptiveSourceMode === 'shadow'}Uses repeated, recent playback outcomes stored only on this device to preview a safer first source. It cannot override cache, quality, audio language, or your source order, and it does not change what Auto plays yet.
+        {#if $adaptiveSourceMode === 'active'}Adapts automatic choices and bounded recovery using repeated, recent outcomes stored only on this device. A bad route can trigger another route; wrong content always triggers another release. It cannot override cache, quality, audio language, or your source order.
+        {:else if $adaptiveSourceMode === 'shadow'}Uses repeated, recent playback outcomes stored only on this device to preview a safer first source. It cannot override cache, quality, audio language, or your source order, and it does not change what Auto plays yet.
         {:else}Only the established source ranking is used. Existing local outcome summaries stay private on this device and can be cleared with local history.{/if}
       </span>
     </label>

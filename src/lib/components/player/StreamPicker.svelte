@@ -11,7 +11,7 @@
   import { pushState } from '$app/navigation'
   import { streamPicker, gameMode, bingeSource, debridCaching, connecting, bumpPlayerOverlay } from '$lib/player/session'
   import { rankInfos, pickCandidates, preferDirectStartupCandidates, describe, qualityLabel, type StreamInfo } from '$lib/stremio/addon'
-  import { isDead, markDead } from '$lib/stremio/dead-sources'
+  import { isDead, markDead, markRouteDead } from '$lib/stremio/dead-sources'
   import AddonLogo from './AddonLogo.svelte'
   import AndroidConnectionStatus from './AndroidConnectionStatus.svelte'
   import SourceLoader from './SourceLoader.svelte'
@@ -38,8 +38,8 @@
   import Database from '@lucide/svelte/icons/database'
   import BadgeCheck from '@lucide/svelte/icons/badge-check'
   import { copyToClipboard } from '$lib/util/clipboard'
-  import { sourceOutcomeSummary } from '$lib/player/source-outcomes'
-  import { planSources } from '$lib/stremio/source-planner'
+  import { classifyPlaybackFailure, sourceOutcomeSummary, type PlaybackFailureClass } from '$lib/player/source-outcomes'
+  import { planRecoveryCandidates, planSources } from '$lib/stremio/source-planner'
 
   const pick = $derived($streamPicker)
   const directP2p = $derived($torrentPlaybackMode === 'direct' || !$debridKey)
@@ -166,21 +166,26 @@
     visible.map((i) => i.stream), $preferredQuality, undefined, hasFailed,
     { ...rankOpts, allowUncached: autoImmediate },
   ))
-  const candidates = $derived(directP2p
+  const baselineCandidates = $derived(directP2p
     ? preferDirectStartupCandidates(rankedCandidates)
     : rankedCandidates)
-  // Shadow mode runs the real deterministic planner over the exact auto-pick candidates, but the
-  // actual `bestStream` below deliberately remains on `candidates`. This makes the counterfactual
-  // visible and testable before it is allowed to alter playback.
-  const adaptivePlan = $derived($adaptiveSourceMode === 'shadow'
-    ? planSources(candidates, {
+  // Both rollout modes run the real deterministic planner over the exact auto-pick candidates.
+  // Shadow keeps `baselineCandidates` authoritative and exposes only the counterfactual; Active
+  // feeds the bounded plan into automatic playback while the manually browsed list stays stable.
+  const adaptivePlan = $derived($adaptiveSourceMode !== 'off'
+    ? planSources(baselineCandidates, {
         directP2p,
         audioLang: $preferredAudioLang,
         sourcePriority: $sourcePriority,
         outcomeOf: sourceOutcomeSummary,
       })
     : null)
-  const adaptivePreviewStream = $derived(adaptivePlan?.headChanged ? adaptivePlan.planned[0] : undefined)
+  const candidates = $derived($adaptiveSourceMode === 'active' && adaptivePlan
+    ? adaptivePlan.planned
+    : baselineCandidates)
+  const adaptivePreviewStream = $derived($adaptiveSourceMode === 'shadow' && adaptivePlan?.headChanged
+    ? adaptivePlan.planned[0]
+    : undefined)
   const adaptivePreview = $derived(adaptivePreviewStream
     ? visible.find((info) => info.stream === adaptivePreviewStream)
     : undefined)
@@ -189,8 +194,12 @@
   // releases blocked for the same legal reason is common, and giving up after three hands them
   // back the list they asked not to see.
   const AUTO_MAX_TRIES = $derived(autoImmediate ? (directP2p ? 4 : 8) : 3)
-  let autoIdx = $state(0)
-  const bestStream = $derived(candidates[autoIdx])
+  let autoTries = $state(0)
+  let recoveryOrder = $state<StreamInfo['stream'][]>([])
+  const bestStream = $derived(
+    recoveryOrder.find((stream) => candidates.includes(stream) && !hasFailed(stream))
+      ?? candidates.find((stream) => !hasFailed(stream)),
+  )
   const best = $derived(bestStream ? visible.find((i) => i.stream === bestStream) : undefined)
   // A pick that can't explain itself is indistinguishable from a random one. Strongest signals
   // first, and only the ones that actually moved it. Curation is named first and without a number:
@@ -202,6 +211,9 @@
           // The ranking input, not the badge: an incomplete entry still badges its rows and still
           // must not claim to have decided anything.
           ...(seadexHashes.has((best.stream.infoHash ?? '').toLowerCase()) ? ['curated best release'] : []),
+          ...($adaptiveSourceMode === 'active' && adaptivePlan?.headChanged
+            ? [`adaptive evidence: ${adaptivePlan.explanation}`]
+            : []),
           ...scoreInfo(best, rankOpts).reasons
             .slice()
             .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
@@ -324,7 +336,7 @@
       busy = false; error = ''; blockedRetry = null; filter = ''; chosenLabel = ''; showAll = false; showFiltered = false; seadexOpen = false
       expandedGroups = new Set()
       stopAutoTimer(); autoState = 'idle'; autoProgress = 0
-      autoIdx = 0; failedKeys = []
+      autoTries = 0; failedKeys = []; recoveryOrder = []
     }
   })
 
@@ -496,7 +508,7 @@
         // Only the AUTOMATIC path walks on. A source the user picked by hand deserves its error
         // shown, not a silent substitution — and must never be remembered as failed on their
         // behalf, since they may well want to retry it.
-        if (fromAuto && advanceAuto(info)) return
+        if (fromAuto && advanceAuto(info, classifyPlaybackFailure(s.message))) return
         error = s.message ?? 'Playback failed.'
         blockedRetry = s.debridBlocked ? info : null
       }
@@ -523,25 +535,34 @@
     }, { autoplay: pick.autoplay, forceDirect: true })
   }
   /** Remember the failure and move to the next candidate. False when the chain is exhausted. */
-  function advanceAuto(info: StreamInfo): boolean {
-    markDead(info.stream)
-    failedKeys = [...failedKeys, keyOf(info)]
-    if (autoIdx + 1 >= Math.min(candidates.length, AUTO_MAX_TRIES)) return false
-    autoIdx += 1
+  function advanceAuto(info: StreamInfo, failureClass: PlaybackFailureClass): boolean {
+    if (failureClass === 'wrong-content') markDead(info.stream)
+    else markRouteDead(info.stream)
+    const failed = new Set([...failedKeys, keyOf(info)])
+    failedKeys = [...failed]
+    autoTries += 1
+    if (autoTries >= AUTO_MAX_TRIES) return false
     // Same tick as the failure that cleared it, so Svelte coalesces both into one update and the
     // screen never blinks back to the list between two attempts.
-    const next = candidates[autoIdx]
-    if (next && pick) {
-      const info = describe(next)
-      connecting.set({
-        title: title(pick.media),
-        detail: info.filename ?? info.label,
-        art: backdrop,
-        media: pick.media,
-        episode: pick.episode,
-        cancel: () => { connecting.set(null); cancelResolve() },
-      })
-    }
+    const remaining = candidates.filter((candidate) => !failed.has(keyOf(describe(candidate))) && !isDead(candidate))
+    recoveryOrder = $adaptiveSourceMode === 'active'
+      ? planRecoveryCandidates(remaining, info.stream, failureClass, {
+          directP2p,
+          audioLang: $preferredAudioLang,
+          sourcePriority: $sourcePriority,
+        })
+      : remaining
+    const next = recoveryOrder[0]
+    if (!next || !pick) return false
+    const nextInfo = describe(next)
+    connecting.set({
+      title: title(pick.media),
+      detail: nextInfo.filename ?? nextInfo.label,
+      art: backdrop,
+      media: pick.media,
+      episode: pick.episode,
+      cancel: () => { connecting.set(null); cancelResolve() },
+    })
     autoProgress = 0
     autoState = 'idle' // re-arms the countdown effect on the new best
     return true
@@ -934,6 +955,14 @@
           <span class="font-bold">Adaptive preview:</span>
           would try {adaptivePreview.server ?? adaptivePreview.group ?? adaptivePreview.addon ?? adaptivePreview.provider ?? 'this source'} first — {adaptivePlan.explanation}.
           <span class="text-muted-foreground">Preview only; Auto still uses the established Best source.</span>
+        </div>
+      {/if}
+
+      {#if $adaptiveSourceMode === 'active' && adaptivePlan?.headChanged && best && adaptivePlan.explanation}
+        <div class="sp-inset shrink-0 border-b border-border bg-violet-500/[0.07] px-4 py-2 text-xs text-violet-200" role="status">
+          <span class="font-bold">Adaptive choice:</span>
+          {best.server ?? best.group ?? best.addon ?? best.provider ?? 'this source'} is first — {adaptivePlan.explanation}.
+          <span class="text-muted-foreground">Hard cache, quality, language, and source-order rules still apply.</span>
         </div>
       {/if}
 

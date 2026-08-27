@@ -72,6 +72,7 @@ vi.mock('$lib/settings/ui', () => ({
   torrentUpstreamCapacityMbps: readable(0),
   sourcePriority: readable([]),
   sourcePriorityMode: readable('prefer'),
+  adaptiveSourceMode: readable('shadow'),
   continueSourcePreference,
   seadexAnnotations: readable(false),
   promoteToWatching: readable(false),
