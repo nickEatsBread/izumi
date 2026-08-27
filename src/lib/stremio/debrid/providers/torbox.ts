@@ -1,6 +1,6 @@
 import { jfetch, magnetOf, hashOf, poll, VIDEO, JUNK, authError, debridHttpError } from '../http'
 import { pickVideoFile } from '../episode-file'
-import type { DebridProvider, DebridInfo, DebridItem, DebridFile } from '../types'
+import type { DebridProvider, DebridInfo, DebridItem, DebridFile, DebridAccountInfo } from '../types'
 
 // TorBox. Auto-selects; readiness via booleans; per-file link via requestdl (which
 // takes the key as a QUERY param, unlike the Bearer-header calls). Envelope:
@@ -92,12 +92,43 @@ export function tbCacheMap(data: any, asked: string[]): Map<string, 'cached' | '
   return out
 }
 
+/** Pure map of TorBox's authenticated /user/me payload to the shared account card. */
+export function tbAccountInfo(user: {
+  email?: string
+  base_email?: string
+  customer?: string
+  id?: number | string
+  is_subscribed?: boolean
+  plan?: number | string
+  premium_expires_at?: string
+  total_downloaded?: number | string
+}): DebridAccountInfo {
+  // TorBox documents these numeric ids as Free, Essential, Pro, and Standard respectively.
+  const plans: Record<number, string> = { 0: 'free', 1: 'essential', 2: 'pro', 3: 'standard' }
+  const planId = Number(user.plan)
+  const expiry = user.premium_expires_at ? Date.parse(user.premium_expires_at) : NaN
+  const downloaded = Number(user.total_downloaded)
+  const fallbackAccount = user.customer ?? (user.id != null ? String(user.id) : undefined)
+  return {
+    username: user.email ?? user.base_email ?? fallbackAccount,
+    plan: Number.isInteger(planId)
+      ? (plans[planId] ?? `plan ${planId}`)
+      : user.is_subscribed === true ? 'premium' : user.is_subscribed === false ? 'free' : undefined,
+    premiumUntil: Number.isFinite(expiry) ? expiry : undefined,
+    downloadedBytes: Number.isFinite(downloaded) && downloaded >= 0 ? downloaded : undefined,
+  }
+}
+
 export const torbox: DebridProvider = {
   id: 'torbox',
   name: 'TorBox',
   keyHint: 'torbox.app/settings',
   credential: 'apikey',
   cacheCheck: 'native',
+  async accountInfo(key) {
+    if (!key) throw new Error('No TorBox API key set.')
+    return tbAccountInfo(await tb('GET', '/user/me', key) ?? {})
+  },
   async resolveHash(key, hashOrMagnet, opts) {
     if (!key) throw new Error('No TorBox API key set — add it in Settings → Extensions.')
     let id: string | number

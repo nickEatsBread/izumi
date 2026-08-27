@@ -93,6 +93,7 @@ export interface DebridAccountInfo {
   premiumUntil?: number // epoch milliseconds
   quotaUsed?: number // 0..1 fair-use fraction
   points?: number
+  downloadedBytes?: number // all-time transfer total, when exposed
 }
 
 export interface DebridProvider extends DebridProviderMeta {

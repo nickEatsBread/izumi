@@ -22,6 +22,7 @@
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import SourcePlaceholder from '$lib/components/SourcePlaceholder.svelte'
   import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
+  import { formatBytes } from '$lib/util/format'
 
   const current = $derived(providerMeta($debridProvider))
   let account = $state<DebridAccountInfo | null>(null)
@@ -248,6 +249,7 @@
             {#if account.plan}<div><dt class="text-xs text-muted-foreground">Plan</dt><dd class="font-bold capitalize">{account.plan}</dd></div>{/if}
             {#if account.premiumUntil}<div><dt class="text-xs text-muted-foreground">Premium until</dt><dd class="font-bold">{accountDate(account.premiumUntil)}</dd></div>{/if}
             {#if account.points != null}<div><dt class="text-xs text-muted-foreground">Points</dt><dd class="font-bold">{account.points}</dd></div>{/if}
+            {#if account.downloadedBytes != null}<div><dt class="text-xs text-muted-foreground">Downloaded</dt><dd class="font-bold tabular-nums">{formatBytes(account.downloadedBytes)}</dd></div>{/if}
           </dl>
           {#if account.quotaUsed != null}
             <div class="mt-3">
