@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { PlaybackTransport, SourceOutcomeSummary } from '$lib/player/source-outcomes'
+import type { PlaybackTransport, SourceOutcomeCounts, SourceOutcomeSummary } from '$lib/player/source-outcomes'
 import { dedupeStreams } from './dedupe'
 import { normalizeCandidates } from './candidate-model'
 import { describe as describeStream, languageMismatch, rankStreams } from './addon'
@@ -41,17 +41,33 @@ function hardKey(stream: Stream): string {
 }
 
 function observed(stable: boolean): SourceOutcomeSummary {
+  const counts: SourceOutcomeCounts = {
+    attempts: 12,
+    startupSuccesses: stable ? 12 : 0,
+    startupFailures: stable ? 0 : 12,
+    stableSuccesses: stable ? 12 : 0,
+    playbackFailures: 0,
+    cancellations: 0,
+    failureClasses: stable ? {} : { stalled: 12 },
+    resolveSamples: 0,
+    firstFrameSamples: stable ? 12 : 0,
+    firstFrameMs: stable ? 2_500 : undefined,
+  }
   return {
     context: { family: 'addon', sourceId: 'live-torrentio', transport: 'direct-p2p' },
-    attempts: 8,
-    resolved: stable ? 8 : 0,
-    firstFrames: stable ? 8 : 0,
-    stable: stable ? 8 : 0,
-    completed: 0,
-    failures: stable ? 0 : 8,
-    cancellations: 0,
-    failureClasses: stable ? {} : { stalled: 8 },
-    firstFrameMs: stable ? 2_500 : undefined,
+    automatic: counts,
+    manual: {
+      attempts: 0,
+      startupSuccesses: 0,
+      startupFailures: 0,
+      stableSuccesses: 0,
+      playbackFailures: 0,
+      cancellations: 0,
+      failureClasses: {},
+      resolveSamples: 0,
+      firstFrameSamples: 0,
+    },
+    evidenceAt: Date.now(),
     lastAt: Date.now(),
   }
 }

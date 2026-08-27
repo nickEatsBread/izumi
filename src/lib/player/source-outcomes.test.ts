@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
-import { saveLocalHistory } from '$lib/settings/ui'
+import { debridProvider, saveLocalHistory } from '$lib/settings/ui'
 import { incognito } from '$lib/stores/incognito'
 import {
   advancePlaybackStability,
@@ -8,6 +8,7 @@ import {
   classifyPlaybackFailure,
   forgetSourceOutcomes,
   markSourceObservation,
+  OUTCOME_HALF_LIFE_MS,
   SourceOutcomeJournal,
   sourceOutcomeContext,
   sourceOutcomeEvents,
@@ -44,19 +45,23 @@ describe('SourceOutcomeJournal', () => {
     now = 35_000; journal.mark(attempt, 'stable')
     now = 80_000; journal.mark(attempt, 'completed')
 
-    expect(journal.summary(context)).toMatchObject({
-      attempts: 1,
-      resolved: 1,
-      firstFrames: 1,
-      stable: 1,
-      completed: 1,
-      failures: 0,
+    expect(journal.summary(context)?.automatic).toMatchObject({
+      attempts: expect.closeTo(1, 4),
+      startupSuccesses: expect.closeTo(1, 4),
+      startupFailures: 0,
+      stableSuccesses: expect.closeTo(1, 4),
+      playbackFailures: 0,
+      resolveSamples: expect.closeTo(1, 4),
+      firstFrameSamples: expect.closeTo(1, 4),
       resolveMs: 700,
       firstFrameMs: 2_000,
     })
     expect(journal.sessionEvents().map((event) => event.stage)).toEqual([
       'selected', 'resolving', 'resolved', 'player-ready', 'first-frame', 'stable', 'completed',
     ])
+    const summaries = journal.allSummaries()
+    expect(summaries).toHaveLength(2)
+    expect(summaries.find((summary) => !summary.context.serverId)?.automatic.startupSuccesses).toBeCloseTo(1, 4)
     expect(storage.data.size).toBe(1)
   })
 
@@ -68,13 +73,83 @@ describe('SourceOutcomeJournal', () => {
     const canceled = journal.begin(context)
     journal.cancel(canceled)
 
-    expect(journal.summary(context)).toMatchObject({ attempts: 2, failures: 1, cancellations: 1 })
-    expect(journal.summary(context)?.failureClasses).toEqual({ metadata: 1 })
+    expect(journal.summary(context)?.manual).toMatchObject({
+      attempts: expect.closeTo(2, 4),
+      startupFailures: expect.closeTo(1, 4),
+      playbackFailures: 0,
+      cancellations: expect.closeTo(1, 4),
+    })
+    expect(journal.summary(context)?.manual.failureClasses.metadata).toBeCloseTo(1, 6)
     expect(journal.sessionEvents().at(-2)).toMatchObject({
       stage: 'selected',
     })
     expect(journal.sessionEvents().find((event) => event.stage === 'failed')).toMatchObject({
       failureClass: 'metadata', failedAt: 'resolving',
+    })
+  })
+
+  it('counts a late failure as one sustained outcome rather than success plus failure', () => {
+    let now = 1_000
+    const journal = new SourceOutcomeJournal(new MemoryStorage(), () => true, () => now)
+    const attempt = journal.begin(context, true)
+    now += 2_000; journal.mark(attempt, 'first-frame')
+    now += 30_000; journal.mark(attempt, 'stable')
+    now += 10_000; journal.fail(attempt, 'stalled')
+
+    expect(journal.summary(context)?.automatic).toMatchObject({
+      startupSuccesses: expect.closeTo(1, 4),
+      stableSuccesses: 0,
+      playbackFailures: expect.closeTo(1, 4),
+    })
+  })
+
+  it('treats stable playback as startup evidence when a backend omits first-frame', () => {
+    const journal = new SourceOutcomeJournal(new MemoryStorage())
+    const attempt = journal.begin(context, true)
+    journal.mark(attempt, 'stable')
+    expect(journal.summary(context)?.automatic).toMatchObject({
+      startupSuccesses: 1,
+      stableSuccesses: 1,
+    })
+  })
+
+  it('discounts old evidence before adding a new result instead of reviving it', () => {
+    let now = 0
+    const journal = new SourceOutcomeJournal(new MemoryStorage(), () => true, () => now)
+    const old = journal.begin(context, true)
+    journal.mark(old, 'first-frame')
+    journal.mark(old, 'stable')
+
+    now = OUTCOME_HALF_LIFE_MS
+    expect(journal.summary(context)?.automatic.startupSuccesses).toBeCloseTo(0.5, 6)
+    const recent = journal.begin(context, true)
+    journal.fail(recent, 'stalled')
+    expect(journal.summary(context)?.automatic).toMatchObject({
+      startupSuccesses: expect.closeTo(0.5, 6),
+      startupFailures: 1,
+      attempts: 1.5,
+    })
+  })
+
+  it('does not double-discount evidence when the wall clock moves backwards', () => {
+    let now = OUTCOME_HALF_LIFE_MS
+    const journal = new SourceOutcomeJournal(new MemoryStorage(), () => true, () => now)
+    journal.mark(journal.begin(context, true), 'stable')
+    now = 0
+    expect(journal.summary(context)?.automatic.startupSuccesses).toBe(1)
+    now = 2 * OUTCOME_HALF_LIFE_MS
+    expect(journal.summary(context)?.automatic.startupSuccesses).toBeCloseTo(0.5, 6)
+  })
+
+  it('keeps automatic and manually selected evidence in separate channels', () => {
+    const journal = new SourceOutcomeJournal(new MemoryStorage())
+    const automatic = journal.begin(context, true)
+    journal.mark(automatic, 'stable')
+    const manual = journal.begin(context, false)
+    journal.fail(manual, 'metadata')
+    expect(journal.summary(context)).toMatchObject({
+      automatic: { startupSuccesses: 1, startupFailures: 0 },
+      manual: { startupSuccesses: 0, startupFailures: 1 },
     })
   })
 
@@ -123,6 +198,32 @@ describe('source outcome privacy', () => {
     expect(JSON.stringify(derived)).not.toContain('cdn.example')
     expect(derived).toMatchObject({ family: 'addon', sourceId: 'opaque-addon', transport: 'http' })
     expect(derived.serverId).toMatch(/^srv-[a-f0-9]{16}$/)
+    expect(derived.profileId).toMatch(/^prf-[a-f0-9]{16}$/)
+  })
+
+  it('separates release profiles and debrid services without persisting their names', () => {
+    const previous = get(debridProvider)
+    try {
+      debridProvider.set('realdebrid')
+      const first = sourceOutcomeContext({
+        infoHash: 'a'.repeat(40),
+        title: '[Group A] Show - 01 [1080p] [1.2 GB]',
+        __evidence: { releaseGroup: 'Group A' },
+        __origin: { kind: 'addon', id: 'torrentio' },
+      }, 'debrid')
+      debridProvider.set('torbox')
+      const second = sourceOutcomeContext({
+        infoHash: 'b'.repeat(40),
+        title: '[Group B] Show - 01 [1080p] [1.2 GB]',
+        __evidence: { releaseGroup: 'Group B' },
+        __origin: { kind: 'addon', id: 'torrentio' },
+      }, 'debrid')
+      expect(first.profileId).not.toBe(second.profileId)
+      expect(first.serviceId).not.toBe(second.serviceId)
+      expect(JSON.stringify([first, second])).not.toMatch(/realdebrid|torbox|group a|group b/i)
+    } finally {
+      debridProvider.set(previous)
+    }
   })
 
   it('enforces the real incognito and local-history gates', () => {

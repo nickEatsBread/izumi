@@ -175,6 +175,7 @@
   const adaptivePlan = $derived($adaptiveSourceMode !== 'off'
     ? planSources(baselineCandidates, {
         directP2p,
+        policy: $adaptiveSourceMode === 'shadow' ? 'preview' : 'active',
         audioLang: $preferredAudioLang,
         sourcePriority: $sourcePriority,
         outcomeOf: sourceOutcomeSummary,

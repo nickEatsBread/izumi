@@ -1,4 +1,4 @@
-import type { PlaybackFailureClass, PlaybackTransport, SourceOutcomeSummary } from '$lib/player/source-outcomes'
+import { effectiveOutcomeTrials, MANUAL_OUTCOME_WEIGHT, type PlaybackFailureClass, type PlaybackTransport, type SourceOutcomeCounts, type SourceOutcomeSummary } from '$lib/player/source-outcomes'
 import { describe, languageMismatch, type Stream } from './addon'
 import { candidateIds } from './candidate-model'
 import { priorityIndexOf } from './source-priority'
@@ -32,15 +32,19 @@ export interface SourcePlan {
 
 export interface SourcePlannerOptions {
   directP2p: boolean
+  /** Shadow may expose a promising uncertain challenger; active requires conservative confidence. */
+  policy?: 'preview' | 'active'
   audioLang?: string
   sourcePriority?: readonly string[]
   outcomeOf?: (stream: Stream, transport: PlaybackTransport) => SourceOutcomeSummary | undefined
   now?: number
 }
 
-const MIN_LOCAL_OBSERVATIONS = 3
+const MIN_PREVIEW_OBSERVATIONS = 3
+const MIN_ACTIVE_OBSERVATIONS = 8
 const MAX_BUCKET_SHIFT = 2
-const LOCAL_HALF_LIFE_MS = 45 * 24 * 60 * 60 * 1_000
+const ONE_SIDED_80_Z = 1.281551565545
+const ACTIVE_MARGIN = 0.015
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -66,42 +70,107 @@ function hardConstraintKey(stream: Stream, options: SourcePlannerOptions): strin
   return [info.cached, info.quality, languageMismatch(info, options.audioLang), priority].join('|')
 }
 
-function localSignals(summary: SourceOutcomeSummary | undefined, now: number): SourcePlanSignal[] {
-  if (!summary) return []
-  const observations = summary.stable + summary.failures
-  if (observations < MIN_LOCAL_OBSERVATIONS) return []
+const weighted = (automatic: SourceOutcomeCounts, manual: SourceOutcomeCounts, field: keyof Pick<
+  SourceOutcomeCounts,
+  'startupSuccesses' | 'startupFailures' | 'stableSuccesses' | 'playbackFailures' | 'firstFrameSamples'
+>) => automatic[field] + manual[field] * MANUAL_OUTCOME_WEIGHT
 
-  // Beta(2,2) smoothing stops a tiny history becoming certainty. Recent evidence matters more;
-  // after 45 days without another attempt its influence halves instead of becoming a permanent
-  // provider blacklist.
-  const stableRate = (summary.stable + 2) / (observations + 4)
-  const age = Math.max(0, now - summary.lastAt)
-  const recency = 0.5 ** (age / LOCAL_HALF_LIFE_MS)
-  const reliability = clamp((stableRate - 0.5) * 16 * recency, -6, 6)
+function providerPseudoSuccesses(stream: Stream): number {
+  const evidence = stream.__evidence
+  if (!evidence) return 0
+  return (evidence.confirmedMatch === true ? 0.25 : 0)
+    + (evidence.bestRelease === true ? 0.35 : 0)
+    + (evidence.upstreamRank === 0 ? 0.1 : 0)
+}
+
+interface ReliabilityEstimate {
+  effective: number
+  mean: number
+  lower: number
+  upper: number
+  latencyMs?: number
+  latencySamples: number
+  providerPrior: number
+}
+
+function betaEstimate(successes: number, failures: number): { mean: number; lower: number; upper: number } {
+  const alpha = 2 + successes
+  const beta = 2 + failures
+  const total = alpha + beta
+  const mean = alpha / total
+  const deviation = Math.sqrt((alpha * beta) / (total * total * (total + 1))) * ONE_SIDED_80_Z
+  return { mean, lower: clamp(mean - deviation, 0, 1), upper: clamp(mean + deviation, 0, 1) }
+}
+
+function reliabilityEstimate(summary: SourceOutcomeSummary | undefined, stream: Stream): ReliabilityEstimate {
+  const providerPrior = providerPseudoSuccesses(stream)
+  if (!summary) {
+    const startup = betaEstimate(providerPrior, 0)
+    return { ...startup, effective: 0, latencySamples: 0, providerPrior }
+  }
+  const startupSuccesses = weighted(summary.automatic, summary.manual, 'startupSuccesses')
+  const startupFailures = weighted(summary.automatic, summary.manual, 'startupFailures')
+  const stableSuccesses = weighted(summary.automatic, summary.manual, 'stableSuccesses')
+  const playbackFailures = weighted(summary.automatic, summary.manual, 'playbackFailures')
+  const startup = betaEstimate(startupSuccesses + providerPrior, startupFailures)
+  const sustainedTrials = stableSuccesses + playbackFailures
+  const sustained = betaEstimate(stableSuccesses, playbackFailures)
+  // Starting at all dominates the decision. Sustained playback becomes a second independent
+  // objective only after it has real observations; censored/short sessions add no negative label.
+  const mix = sustainedTrials >= 2 ? 0.2 : 0
+  const blend = (startupValue: number, sustainedValue: number) => startupValue * (1 - mix) + sustainedValue * mix
+  const automaticLatencySamples = summary.automatic.firstFrameSamples
+  const manualLatencySamples = summary.manual.firstFrameSamples * MANUAL_OUTCOME_WEIGHT
+  const latencySamples = automaticLatencySamples + manualLatencySamples
+  const latencyMs = latencySamples > 0
+    ? Math.round(
+        ((summary.automatic.firstFrameMs ?? 0) * automaticLatencySamples
+          + (summary.manual.firstFrameMs ?? 0) * manualLatencySamples) / latencySamples,
+      )
+    : undefined
+  return {
+    effective: effectiveOutcomeTrials(summary),
+    mean: blend(startup.mean, sustained.mean),
+    lower: blend(startup.lower, sustained.lower),
+    upper: blend(startup.upper, sustained.upper),
+    latencyMs,
+    latencySamples,
+    providerPrior,
+  }
+}
+
+function latencyPenalty(estimate: ReliabilityEstimate): number {
+  if (estimate.latencyMs == null || estimate.latencySamples < MIN_PREVIEW_OBSERVATIONS) return 0
+  // Roughly ±6 percentage points around a five-second neutral point. Reliability remains primary;
+  // latency settles choices that are otherwise close, as in peak-EWMA endpoint balancing.
+  return clamp(Math.log2(estimate.latencyMs / 5_000) * 0.04, -0.06, 0.12)
+}
+
+function localSignals(summary: SourceOutcomeSummary | undefined, estimate: ReliabilityEstimate): SourcePlanSignal[] {
+  if (!summary || estimate.effective < MIN_PREVIEW_OBSERVATIONS) return []
+  const reliability = clamp((estimate.mean - 0.5) * 12, -5, 5)
   const signals: SourcePlanSignal[] = []
   if (Math.abs(reliability) >= 0.25) {
     signals.push({
       label: reliability >= 0
-        ? `${summary.stable}/${observations} locally observed starts became stable`
-        : `${summary.failures}/${observations} locally observed starts failed`,
+        ? `about ${Math.round(estimate.mean * 100)}% reliable across ${estimate.effective.toFixed(1)} recent weighted starts`
+        : `only about ${Math.round(estimate.mean * 100)}% reliable across ${estimate.effective.toFixed(1)} recent weighted starts`,
       delta: reliability,
     })
   }
 
-  // Startup speed is considered only after three measured first frames and is deliberately much
-  // weaker than reliability. A fast source that often fails is still a bad first choice.
-  if (summary.firstFrames >= MIN_LOCAL_OBSERVATIONS && summary.firstFrameMs != null) {
-    const speed = summary.firstFrameMs <= 3_000 ? 1.5
-      : summary.firstFrameMs <= 7_000 ? 0.75
-        : summary.firstFrameMs >= 20_000 ? -1.5
-          : summary.firstFrameMs >= 12_000 ? -0.75
+  if (estimate.latencySamples >= MIN_PREVIEW_OBSERVATIONS && estimate.latencyMs != null) {
+    const speed = estimate.latencyMs <= 3_000 ? 0.75
+      : estimate.latencyMs <= 7_000 ? 0.35
+        : estimate.latencyMs >= 20_000 ? -0.75
+          : estimate.latencyMs >= 12_000 ? -0.35
             : 0
     if (speed) {
       signals.push({
         label: speed > 0
-          ? `usually starts in about ${(summary.firstFrameMs / 1_000).toFixed(1)}s`
-          : `usually takes about ${Math.round(summary.firstFrameMs / 1_000)}s to start`,
-        delta: speed * recency,
+          ? `recent starts take about ${(estimate.latencyMs / 1_000).toFixed(1)}s`
+          : `recent starts take about ${Math.round(estimate.latencyMs / 1_000)}s`,
+        delta: speed,
       })
     }
   }
@@ -114,35 +183,61 @@ function providerSignals(stream: Stream): SourcePlanSignal[] {
   const signals: SourcePlanSignal[] = []
   // These are source-native claims, useful but weak: a provider can know its own match/release,
   // while independent local playback evidence and human curation remain stronger.
-  if (evidence.confirmedMatch === true) signals.push({ label: 'provider confirmed the episode match', delta: 0.75 })
-  if (evidence.bestRelease === true) signals.push({ label: 'provider marked it as a best release', delta: 1 })
-  if (evidence.upstreamRank === 0) signals.push({ label: 'provider returned it first', delta: 0.25 })
+  if (evidence.confirmedMatch === true) signals.push({ label: 'provider confirmed the episode match', delta: 0.25 })
+  if (evidence.bestRelease === true) signals.push({ label: 'provider marked it as a best release', delta: 0.35 })
+  if (evidence.upstreamRank === 0) signals.push({ label: 'provider returned it first', delta: 0.1 })
   return signals
 }
 
 function confidenceOf(summary?: SourceOutcomeSummary): SourcePlanConfidence {
-  const observations = (summary?.stable ?? 0) + (summary?.failures ?? 0)
-  return observations >= 8 ? 'high' : observations >= MIN_LOCAL_OBSERVATIONS ? 'medium' : 'low'
+  const observations = summary ? effectiveOutcomeTrials(summary) : 0
+  return observations >= 16 ? 'high' : observations >= MIN_ACTIVE_OBSERVATIONS ? 'medium' : 'low'
 }
 
 interface ScoredSource {
   stream: Stream
+  baselineIndex: number
+  /** Position inside the safety-equivalent bucket used by the movement bound. */
   original: number
   score: number
+  estimate: ReliabilityEstimate
   confidence: SourcePlanConfidence
   signals: SourcePlanSignal[]
 }
 
-/** Sort one safety-equivalent bucket while limiting every source to two bucket positions. */
-function boundedOrder(input: ScoredSource[]): ScoredSource[] {
+function canPromote(challenger: ScoredSource, incumbent: ScoredSource, policy: 'preview' | 'active'): boolean {
+  if (policy === 'active') {
+    // Conservative-bandit gate: the challenger must have real local evidence and its pessimistic
+    // value must beat the incumbent's optimistic value. Provider self-claims can shape the prior,
+    // but can never activate a source by themselves.
+    return challenger.estimate.effective >= MIN_ACTIVE_OBSERVATIONS
+      && challenger.estimate.lower - latencyPenalty(challenger.estimate)
+        > incumbent.estimate.upper - latencyPenalty(incumbent.estimate) + ACTIVE_MARGIN
+  }
+  // Shadow is the evaluation surface: show a plausible counterfactual after a few observations,
+  // or a weak provider-prior challenger, without changing playback.
+  const challengerValue = challenger.estimate.mean - latencyPenalty(challenger.estimate)
+  const incumbentValue = incumbent.estimate.mean - latencyPenalty(incumbent.estimate)
+  return (challenger.estimate.effective >= MIN_PREVIEW_OBSERVATIONS
+      && challengerValue > incumbentValue + ACTIVE_MARGIN)
+    || (challenger.estimate.providerPrior > incumbent.estimate.providerPrior
+      && challengerValue > incumbentValue)
+}
+
+/** Conservative interleaving inside one safety-equivalent bucket, capped at two positions. */
+function boundedOrder(input: ScoredSource[], policy: 'preview' | 'active'): ScoredSource[] {
   const remaining = [...input]
   const out: ScoredSource[] = []
   for (let position = 0; position < input.length; position++) {
     const eligible = remaining.filter((candidate) => candidate.original <= position + MAX_BUCKET_SHIFT)
     const due = eligible.filter((candidate) => candidate.original + MAX_BUCKET_SHIFT <= position)
-    const pool = due.length ? due : eligible
-    pool.sort((a, b) => b.score - a.score || a.original - b.original)
-    const chosen = pool[0]
+    const incumbent = remaining.reduce((first, candidate) => candidate.original < first.original ? candidate : first)
+    const challengers = eligible
+      .filter((candidate) => candidate !== incumbent && canPromote(candidate, incumbent, policy))
+      .sort((a, b) => b.score - a.score || a.original - b.original)
+    // The due arm preserves the movement bound. Otherwise retain the baseline unless a challenger
+    // cleared the confidence gate; this avoids bandit exploration at the user's expense.
+    const chosen = due[0] ?? challengers[0] ?? incumbent
     out.push(chosen)
     remaining.splice(remaining.indexOf(chosen), 1)
   }
@@ -164,15 +259,18 @@ function planExplanation(planned: ScoredSource, baseline: ScoredSource): string 
  * preview or active policy; this function has no side effects and never performs network/LLM work.
  */
 export function planSources(baseline: Stream[], options: SourcePlannerOptions): SourcePlan {
-  const now = options.now ?? Date.now()
+  const policy = options.policy ?? 'active'
   const scored = baseline.map((stream, original): ScoredSource => {
     const transport = plannedTransport(stream, options.directP2p)
     const summary = options.outcomeOf?.(stream, transport)
-    const signals = [...localSignals(summary, now), ...providerSignals(stream)]
+    const estimate = reliabilityEstimate(summary, stream)
+    const signals = [...localSignals(summary, estimate), ...providerSignals(stream)]
     return {
       stream,
+      baselineIndex: original,
       original,
-      score: clamp(signals.reduce((sum, signal) => sum + signal.delta, 0), -8, 8),
+      score: estimate.mean - latencyPenalty(estimate),
+      estimate,
       confidence: confidenceOf(summary),
       signals,
     }
@@ -185,7 +283,7 @@ export function planSources(baseline: Stream[], options: SourcePlannerOptions): 
     bucket.push({ ...candidate, original: bucket.length })
     buckets.set(key, bucket)
   })
-  const orderedBuckets = new Map([...buckets].map(([key, bucket]) => [key, boundedOrder(bucket)]))
+  const orderedBuckets = new Map([...buckets].map(([key, bucket]) => [key, boundedOrder(bucket, policy)]))
   const cursors = new Map<string, number>()
   const plannedScored = scored.map((candidate) => {
     const key = hardConstraintKey(candidate.stream, options)
@@ -201,9 +299,9 @@ export function planSources(baseline: Stream[], options: SourcePlannerOptions): 
     const details = byStream.get(candidate.stream)!
     return {
       stream: candidate.stream,
-      baselineIndex: details.original,
+      baselineIndex: details.baselineIndex,
       plannedIndex,
-      adaptiveScore: details.score,
+      adaptiveScore: Math.round((details.score - 0.5) * 1_000) / 100,
       confidence: details.confidence,
       signals: details.signals,
     }

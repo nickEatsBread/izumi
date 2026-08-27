@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { PlaybackTransport, SourceOutcomeSummary } from '$lib/player/source-outcomes'
+import {
+  OUTCOME_HALF_LIFE_MS,
+  SourceOutcomeJournal,
+  type PlaybackTransport,
+  type SourceOutcomeContext,
+  type SourceOutcomeCounts,
+  type SourceOutcomeSummary,
+} from '$lib/player/source-outcomes'
 import { planRecoveryCandidates, planSources, plannedTransport } from './source-planner'
 import { normalizeCandidates } from './candidate-model'
 import type { Stream } from './parse'
@@ -13,20 +20,36 @@ const stream = (id: string, quality = 1080, extra: Partial<Stream> = {}): Stream
   ...extra,
 })
 
-function outcome(stable: number, failures: number, extra: Partial<SourceOutcomeSummary> = {}): SourceOutcomeSummary {
+const emptyCounts = (): SourceOutcomeCounts => ({
+  attempts: 0,
+  startupSuccesses: 0,
+  startupFailures: 0,
+  stableSuccesses: 0,
+  playbackFailures: 0,
+  cancellations: 0,
+  failureClasses: {},
+  resolveSamples: 0,
+  firstFrameSamples: 0,
+})
+
+function outcome(stable: number, failures: number, extra: { firstFrameMs?: number; manual?: boolean } = {}): SourceOutcomeSummary {
   const attempts = stable + failures
+  const counts: SourceOutcomeCounts = {
+    ...emptyCounts(),
+    attempts,
+    startupSuccesses: stable,
+    startupFailures: failures,
+    stableSuccesses: stable,
+    firstFrameSamples: extra.firstFrameMs == null ? 0 : stable,
+    firstFrameMs: extra.firstFrameMs,
+    failureClasses: failures ? { stalled: failures } : {},
+  }
   return {
     context: { family: 'online-extension', sourceId: 'test', transport: 'http' },
-    attempts,
-    resolved: stable,
-    firstFrames: stable,
-    stable,
-    completed: 0,
-    failures,
-    cancellations: 0,
-    failureClasses: {},
+    automatic: extra.manual ? emptyCounts() : counts,
+    manual: extra.manual ? counts : emptyCounts(),
+    evidenceAt: NOW,
     lastAt: NOW,
-    ...extra,
   }
 }
 
@@ -46,20 +69,32 @@ describe('adaptive source planner', () => {
     expect(plan.changed).toBe(false)
   })
 
-  it('previews a proven route and explains the evidence', () => {
+  it('treats the active observation minimum as a floor, not proof by itself', () => {
+    const usual = stream('usual')
+    const perfectButSparse = stream('perfect-but-sparse')
+    const summaries = new Map<Stream, SourceOutcomeSummary>([
+      [perfectButSparse, outcome(8, 0)],
+    ])
+    expect(planSources([usual, perfectButSparse], {
+      directP2p: false,
+      outcomeOf: lookup(summaries),
+    }).planned).toEqual([usual, perfectButSparse])
+  })
+
+  it('promotes a proven route only after conservative confidence clears the baseline', () => {
     const usual = stream('usual')
     const proven = stream('proven')
     const summaries = new Map<Stream, SourceOutcomeSummary>([
-      [usual, outcome(0, 4)],
-      [proven, outcome(4, 0, { firstFrames: 4, firstFrameMs: 2_100 })],
+      [usual, outcome(0, 12)],
+      [proven, outcome(12, 0, { firstFrameMs: 2_100 })],
     ])
     const plan = planSources([usual, proven], { directP2p: false, outcomeOf: lookup(summaries), now: NOW })
     expect(plan.planned).toEqual([proven, usual])
     expect(plan.changed).toBe(true)
     expect(plan.headChanged).toBe(true)
-    expect(plan.explanation).toContain('4/4 locally observed starts became stable')
+    expect(plan.explanation).toContain('recent weighted starts')
     expect(plan.explanation).toContain('2.1s')
-    expect(plan.explanation).toContain('usual first source 4/4 locally observed starts failed')
+    expect(plan.explanation).toContain('usual first source')
     expect(plan.candidates[0].confidence).toBe('medium')
   })
 
@@ -91,10 +126,16 @@ describe('adaptive source planner', () => {
     const claimed = stream('claimed', 1080, {
       __evidence: { confirmedMatch: true, bestRelease: true, upstreamRank: 0 },
     })
-    const plan = planSources([usual, claimed], { directP2p: false, now: NOW })
+    const plan = planSources([usual, claimed], { directP2p: false, policy: 'preview', now: NOW })
     expect(plan.planned[0]).toBe(claimed)
     expect(plan.explanation).toContain('provider marked it as a best release')
     expect(plan.candidates[0].confidence).toBe('low')
+  })
+
+  it('never activates a provider self-claim without local evidence', () => {
+    const usual = stream('usual')
+    const claimed = stream('claimed', 1080, { __evidence: { confirmedMatch: true, bestRelease: true } })
+    expect(planSources([usual, claimed], { directP2p: false, policy: 'active' }).planned).toEqual([usual, claimed])
   })
 
   it('caps movement to two positions within an equivalent bucket', () => {
@@ -112,8 +153,8 @@ describe('adaptive source planner', () => {
     const weak = stream('weak')
     const proven = stream('proven')
     const summaries = new Map<Stream, SourceOutcomeSummary>([
-      [weak, outcome(0, 4)],
-      [proven, outcome(4, 0)],
+      [weak, outcome(0, 12)],
+      [proven, outcome(12, 0)],
     ])
     const plan = planSources([first, weak, proven], { directP2p: false, outcomeOf: lookup(summaries), now: NOW })
     expect(plan.planned).toEqual([first, proven, weak])
@@ -122,16 +163,98 @@ describe('adaptive source planner', () => {
     expect(plan.explanation).toBe('')
   })
 
-  it('decays stale local history instead of making a permanent blacklist', () => {
+  it('ignores already-decayed evidence below the effective observation floor', () => {
     const usual = stream('usual')
     const oldWinner = stream('old-winner')
-    const stale = NOW - 365 * 24 * 60 * 60 * 1_000
     const summaries = new Map<Stream, SourceOutcomeSummary>([
-      [usual, outcome(0, 20, { lastAt: stale })],
-      [oldWinner, outcome(20, 0, { lastAt: stale })],
+      [usual, outcome(0, 0.05)],
+      [oldWinner, outcome(0.05, 0)],
     ])
     const plan = planSources([usual, oldWinner], { directP2p: false, outcomeOf: lookup(summaries), now: NOW })
     expect(plan.changed).toBe(false)
+  })
+
+  it('downweights manually selected evidence so it cannot quickly steer autoplay', () => {
+    const usual = stream('usual')
+    const manuallyTried = stream('manual')
+    const summaries = new Map<Stream, SourceOutcomeSummary>([
+      [usual, outcome(0, 8)],
+      [manuallyTried, outcome(12, 0, { manual: true })],
+    ])
+    expect(planSources([usual, manuallyTried], {
+      directP2p: false,
+      outcomeOf: lookup(summaries),
+    }).planned).toEqual([usual, manuallyTried])
+  })
+
+  it('does not let startup speed override clearly worse reliability', () => {
+    const reliable = stream('reliable')
+    const fastButFlaky = stream('fast-but-flaky')
+    const summaries = new Map<Stream, SourceOutcomeSummary>([
+      [reliable, outcome(18, 2, { firstFrameMs: 12_000 })],
+      [fastButFlaky, outcome(12, 8, { firstFrameMs: 900 })],
+    ])
+    expect(planSources([reliable, fastButFlaky], {
+      directP2p: false,
+      outcomeOf: lookup(summaries),
+    }).planned).toEqual([reliable, fastButFlaky])
+  })
+
+  it('preserves the candidate set and two-place bound across generated evidence histories', () => {
+    let random = 0x5eed1234
+    const next = () => {
+      random ^= random << 13
+      random ^= random >>> 17
+      random ^= random << 5
+      return random >>> 0
+    }
+    for (let scenario = 0; scenario < 200; scenario++) {
+      const count = 2 + next() % 11
+      const sources = Array.from({ length: count }, (_, index) => stream(`generated-${scenario}-${index}`))
+      const summaries = new Map<Stream, SourceOutcomeSummary>(sources.map((candidate) => {
+        const trials = next() % 31
+        const successes = trials ? next() % (trials + 1) : 0
+        return [candidate, outcome(successes, trials - successes)]
+      }))
+      const plan = planSources(sources, { directP2p: false, outcomeOf: lookup(summaries) })
+      expect(plan.planned).toHaveLength(sources.length)
+      expect(new Set(plan.planned).size).toBe(sources.length)
+      expect(plan.planned.every((candidate) => sources.includes(candidate))).toBe(true)
+      for (const candidate of sources) {
+        expect(Math.abs(plan.planned.indexOf(candidate) - sources.indexOf(candidate))).toBeLessThanOrEqual(2)
+      }
+      for (const candidate of plan.candidates) {
+        expect(candidate.baselineIndex).toBe(sources.indexOf(candidate.stream))
+      }
+    }
+  })
+
+  it('adapts after a provider regime shift instead of preserving an old winner forever', () => {
+    let now = 0
+    const contextOf = (id: string): SourceOutcomeContext => ({
+      family: 'online-extension', sourceId: id, transport: 'http',
+    })
+    const journals = new Map([
+      ['old-winner', new SourceOutcomeJournal(undefined, () => true, () => now)],
+      ['steady', new SourceOutcomeJournal(undefined, () => true, () => now)],
+    ])
+    const observe = (id: string, successes: number, failures: number) => {
+      const journal = journals.get(id)!
+      for (let index = 0; index < successes; index++) journal.mark(journal.begin(contextOf(id), true), 'stable')
+      for (let index = 0; index < failures; index++) journal.fail(journal.begin(contextOf(id), true), 'stalled')
+    }
+    const oldWinner = stream('old-winner')
+    const steady = stream('steady')
+    const outcomeOf = (candidate: Stream) => journals.get(candidate.__origin!.id)?.summary(contextOf(candidate.__origin!.id))
+
+    observe('old-winner', 38, 2)
+    observe('steady', 26, 14)
+    expect(planSources([steady, oldWinner], { directP2p: false, outcomeOf }).planned[0]).toBe(oldWinner)
+
+    now = 4 * OUTCOME_HALF_LIFE_MS
+    observe('old-winner', 4, 16)
+    observe('steady', 14, 6)
+    expect(planSources([oldWinner, steady], { directP2p: false, outcomeOf }).planned[0]).toBe(steady)
   })
 
   it('derives the same transport families used by playback observations', () => {
