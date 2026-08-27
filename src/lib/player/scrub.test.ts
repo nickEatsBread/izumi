@@ -32,8 +32,17 @@ describe('scrub store', () => {
     expect(get(scrub).time).toBe(60)
   })
 
+  it('updates direct-manipulation moves immediately without a browser frame queue', () => {
+    const requestFrame = vi.fn()
+    vi.stubGlobal('requestAnimationFrame', requestFrame)
+    beginScrub(30, 'touch')
+    moveScrub(60, true)
+    expect(get(scrub).time).toBe(60)
+    expect(requestFrame).not.toHaveBeenCalled()
+  })
+
   it('end commits the current time via the wired seek and deactivates', () => {
-    const seek = vi.fn()
+    const seek = vi.fn(() => expect(get(scrub).active).toBe(true))
     initScrub(seek)
     beginScrub(30, 'pad')
     moveScrub(50)

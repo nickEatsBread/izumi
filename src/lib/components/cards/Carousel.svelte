@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { dragScroll } from '$lib/nav/actions'
+  import { dragScroll, gameModeCarouselTouch } from '$lib/nav/actions'
   import { wheelScrollAcross } from '$lib/settings/ui'
   import { gameMode } from '$lib/player/session'
   import { isMobile } from '$lib/platform'
@@ -75,7 +75,7 @@
     {/if}
   </div>
   <div class="relative">
-    <div bind:this={scroller} data-carousel-scroller data-nav-row-items use:dragScroll onwheel={onWheel} onscroll={update}
+    <div bind:this={scroller} data-carousel-scroller data-nav-row-items use:dragScroll use:gameModeCarouselTouch onwheel={onWheel} onscroll={update}
          class="flex gap-3 overflow-x-scroll pb-2" class:px-8={!mob} class:px-4={mob} class:pt-3={gm}>
       {@render children()}
     </div>

@@ -205,14 +205,9 @@ export function bumpPlayerOverlay() {
   playerOverlayRev.update((n) => n + 1)
 }
 
-// In-player discussion/comments panel (comment button → side panel). Keyed on nowPlaying.{id,malId,
-// episode}. Desktop-first; Game-mode (mpv-snapshot) rendering of a scrollable panel is a later phase.
+// In-player discussion/comments panel, keyed on nowPlaying.{id,malId,episode}. Gamescope presents
+// it as an opaque live WebKit surface; desktop keeps the docked/expanded panel layouts.
 export const commentsOpen = writable(false)
-
-// The Gamescope XWayland compositor only needs continuous WebKit snapshots while comments are
-// actually moving. Keeping this separate from `commentsOpen` lets an idle discussion settle to one
-// bitmap instead of burning a full-WebView readback 30 times per second.
-export const commentsOverlayMoving = writable(false)
 
 // Active debrid caching session: set while an UNCACHED torrent downloads at the debrid
 // service, drives the full-screen DebridCaching progress screen. `cancel` aborts the poll

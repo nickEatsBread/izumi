@@ -70,6 +70,7 @@
     native = false,
     ontoggleplay,
     oneditsubtitles,
+    onscrubinput,
   }: {
     pos: number
     dur: number
@@ -87,6 +88,7 @@
     native?: boolean
     ontoggleplay?: () => void
     oneditsubtitles?: () => void
+    onscrubinput?: () => void
   } = $props()
   const togglePlay = () => (ontoggleplay ? ontoggleplay() : cmd('cycle', ['pause']))
   function toggleComments() {
@@ -788,11 +790,11 @@
         <!-- XWayland's visible time/bar pixels come from mpv's live OSD, so these HTML elements
              become transparent measurement/hit targets there. Native Wayland paints them live. -->
         <span class="w-16 shrink-0 select-none text-right font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(pos)}</span>
-        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} /></div>
+        <div class="min-w-0 flex-1"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
         <span class="w-16 shrink-0 select-none font-mono text-base tabular-nums" class:opacity-0={native}>{fmt(dur)}</span>
       </div>
     {:else}
-      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} /></div>
+      <div class="pointer-events-auto"><Seekbar {pos} {dur} {buffer} {segments} chapters={$chapterStore} {gm} {native} onseek={seekTo} {onscrubinput} /></div>
     {/if}
 
     <div class="pointer-events-auto mt-1 flex items-center gap-3 text-white {gm ? 'gap-4' : ''}">

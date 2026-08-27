@@ -28,10 +28,11 @@ export function gameModeBitmapOverlayActive(input: {
   subtitleEditorOpen?: boolean
 }): boolean {
   if (!input.gameMode || !input.playing) return false
-  // Menus/comments are also painted into mpv: leaving them as live HTML requires unmapping the
-  // opaque Gamescope video window, which made the output go black. Discrete menus re-snapshot on
-  // focus changes; comments use the native self-paced refresh loop while scrolling.
-  if (input.commentsOpen || input.trackMenuOpen || input.playerMenuOpen || input.statsOpen || input.sourcePickerOpen || input.connectingOpen || input.subtitleEditorOpen) return true
+  // Comments are a full-viewport, opaque live WebKit surface on Gamescope. Capturing Disqus into
+  // mpv made late iframe loads invisible and forced every scroll frame through GPU readback.
+  if (input.commentsOpen) return false
+  // Discrete menus only change on focus/selection, so a settled bitmap remains appropriate.
+  if (input.trackMenuOpen || input.playerMenuOpen || input.statsOpen || input.sourcePickerOpen || input.connectingOpen || input.subtitleEditorOpen) return true
   // Keep the polished HTML Skip pill. The native progress/controls continue independently below
   // its transparent bitmap; PlayerOverlay must never disable gmNativeControls just because this
   // chip is visible (that coupling was the disappearing-seekbar bug).
@@ -121,6 +122,9 @@ export function gameModeDock(input: {
   void input.subtitleEditorOpen
   void input.loading
   void input.controlsVisible
+  // Disqus is both late-loading and continuously interactive. Give it the live WebKit surface
+  // while its opaque full-screen panel is open instead of snapshotting it over the X11 child.
+  if (input.commentsOpen) return { bottom: 0, right: 0, top: 0, hide: true }
   return { bottom: 0, right: 0, top: 0, hide: false }
 }
 

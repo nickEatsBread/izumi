@@ -27,9 +27,9 @@ use tauri::{AppHandle, Manager};
 use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt};
 
 use crate::gm_perf::{
-    clip_to_strip, overlay_fade_step, overlay_loop_fps, overlay_should_snapshot, scale_premult_bgra,
-    OVERLAY_ACTIVE_POLL_MS, OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL, OVERLAY_FADE_MS,
-    OVERLAY_MOTION_PX, OVERLAY_SHEET_MOTION_PX,
+    clip_to_strip, overlay_fade_step, overlay_loop_fps, overlay_should_snapshot,
+    scale_premult_bgra, OVERLAY_ACTIVE_POLL_MS, OVERLAY_FADE_FRAME_MS, OVERLAY_FADE_FULL,
+    OVERLAY_FADE_MS, OVERLAY_MOTION_PX, OVERLAY_SHEET_MOTION_PX,
 };
 use crate::player::PlayerHandle;
 
@@ -231,15 +231,14 @@ fn kick_fade(app: AppHandle, fade_in: bool) {
     });
 }
 
-/// Upload one native animation frame. mpv's raw-address form is an input convenience, not
-/// shared memory: `cmd_overlay_add` copies the pixels before returning. Reissuing the command
-/// here is the critical difference between a visible 60fps fade and a frozen first frame.
+/// Upload one native animation frame. The finished pixels move into the mpv dispatcher so GTK's
+/// timer never waits for `overlay-add`; that worker keeps them alive until mpv has copied them.
 fn present(app: &AppHandle, hidden_millis: u32) {
     let Some(geom) = GEOM.lock().ok().and_then(|g| *g) else {
         return;
     };
     let alpha = ALPHA.load(Ordering::Relaxed);
-    let addr = {
+    let pixels = {
         let Ok(base) = BASE.lock() else {
             return;
         };
@@ -251,7 +250,7 @@ fn present(app: &AppHandle, hidden_millis: u32) {
             return;
         }
         scale_premult_bgra(&base, &mut buf, alpha);
-        buf.as_ptr() as usize
+        buf.clone()
     };
     if let Some(ph) = app.try_state::<PlayerHandle>() {
         let hidden = hidden_millis as i64;
@@ -270,7 +269,7 @@ fn present(app: &AppHandle, hidden_millis: u32) {
             OVERLAY_ID,
             geom.0.saturating_add(x_offset),
             geom.1.saturating_add(y_offset),
-            addr,
+            pixels,
             geom.2,
             geom.3,
             geom.4,
@@ -305,13 +304,7 @@ fn present_sheet_backdrop(app: &AppHandle, alpha_millis: u32) {
     let ass = format!(
         "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H000000&\\1a&H{ass_alpha:02X}&\\p1}}m 0 0 l {width} 0 l {width} {height} l 0 {height}{{\\p0}}"
     );
-    let _ = ph.osd_overlay_ass(
-        SHEET_BACKDROP_OSD_ID,
-        &ass,
-        width,
-        height,
-        SHEET_BACKDROP_Z,
-    );
+    let _ = ph.osd_overlay_ass(SHEET_BACKDROP_OSD_ID, &ass, width, height, SHEET_BACKDROP_Z);
 }
 
 fn alpha_bounds(
@@ -447,19 +440,16 @@ fn snapshot_once(
                 let geom = (x as i64, y as i64, cw as i64, ch as i64, row_bytes as i64);
                 let geom_changed = GEOM.lock().ok().map(|g| *g != Some(geom)).unwrap_or(true);
 
-                // Keep replacement allocations alive until the synchronous overlay-add below has
-                // copied the frame. This also makes the ownership contract explicit if mpv changes
-                // how it handles raw-address input in a future build.
-                let mut retired_buf: Option<Vec<u8>> = None;
-                let mut retired_base: Option<Vec<u8>> = None;
-                let addr = {
+                // Move an owned snapshot into the dispatcher. The GTK callback may return and
+                // reuse BUF immediately; mpv still receives immutable pixels for this frame.
+                let pixels = {
                     let mut base = BASE.lock().ok()?;
                     let mut buf = BUF.lock().ok()?;
                     if base.len() != need_crop {
-                        retired_base = Some(std::mem::replace(&mut *base, vec![0u8; need_crop]));
+                        base.resize(need_crop, 0);
                     }
                     if buf.len() != need_crop {
-                        retired_buf = Some(std::mem::replace(&mut *buf, vec![0u8; need_crop]));
+                        buf.resize(need_crop, 0);
                     }
 
                     for row in 0..ch {
@@ -477,7 +467,7 @@ fn snapshot_once(
                         ALPHA.store(OVERLAY_FADE_FULL, Ordering::Relaxed);
                     }
                     scale_premult_bgra(&base, &mut buf, ALPHA.load(Ordering::Relaxed));
-                    buf.as_ptr() as usize
+                    buf.clone()
                 };
 
                 if let Ok(mut g) = GEOM.lock() {
@@ -492,7 +482,7 @@ fn snapshot_once(
                 if geom_changed || force || fade_in || FAST.load(Ordering::Relaxed) {
                     let ph = app.try_state::<PlayerHandle>()?;
                     let _ =
-                        ph.overlay_add(OVERLAY_ID, geom.0, geom.1, addr, geom.2, geom.3, geom.4);
+                        ph.overlay_add(OVERLAY_ID, geom.0, geom.1, pixels, geom.2, geom.3, geom.4);
                     if SHEET.load(Ordering::Relaxed) {
                         present_sheet_backdrop(&app, ALPHA.load(Ordering::Relaxed));
                     }
@@ -500,8 +490,6 @@ fn snapshot_once(
                 if fade_in && ALPHA.load(Ordering::Relaxed) < OVERLAY_FADE_FULL {
                     kick_fade(app.clone(), true);
                 }
-                drop(retired_buf);
-                drop(retired_base);
                 Some(())
             };
 

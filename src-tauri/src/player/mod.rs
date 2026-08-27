@@ -62,6 +62,8 @@ pub mod linux_overlay;
 // fast-moving states do not require WebKit snapshots/readbacks.
 #[cfg(target_os = "linux")]
 pub mod gm_osd;
+#[cfg(target_os = "linux")]
+mod mpv_dispatch;
 // Steam Deck L2/R2 seek: read the (Steam-virtual) gamepad via evdev in the backend and forward
 // the trigger state to the webview — webkit2gtk's own Gamepad API doesn't see it. See gamepad_linux.rs.
 #[cfg(target_os = "linux")]
@@ -190,6 +192,10 @@ pub struct ThumbInfo {
 /// its window, so we must retain it in state.
 pub struct PlayerHandle {
     mpv: Mutex<Option<Mpv>>,
+    /// Commands originating in Game-mode UI must never synchronously enter libmpv from GTK's
+    /// main thread. The dispatcher owns a separate client and coalesces seek/overlay bursts.
+    #[cfg(target_os = "linux")]
+    mpv_dispatch: Mutex<Option<mpv_dispatch::MpvDispatcher>>,
     /// Active GIF capture. Frames come from the existing mpv core, so recording
     /// does not depend on ffmpeg being able to reopen the source URL.
     gif_session: Mutex<Option<GifSession>>,
@@ -214,6 +220,8 @@ impl PlayerHandle {
     pub fn new() -> Self {
         PlayerHandle {
             mpv: Mutex::new(None),
+            #[cfg(target_os = "linux")]
+            mpv_dispatch: Mutex::new(None),
             gif_session: Mutex::new(None),
             current_url: Mutex::new(None),
             pending_external_tracks: Arc::new(Mutex::new(None)),
@@ -221,6 +229,23 @@ impl PlayerHandle {
             thumb_inflight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             headless: Arc::new(HeadlessMpv::new()),
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn start_mpv_dispatch(&self, mpv: &Mpv) -> Result<(), String> {
+        let dispatch = mpv_dispatch::MpvDispatcher::start(mpv)?;
+        *self.mpv_dispatch.lock().map_err(|e| e.to_string())? = Some(dispatch);
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn with_mpv_dispatch<T>(
+        &self,
+        run: impl FnOnce(&mpv_dispatch::MpvDispatcher) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let guard = self.mpv_dispatch.lock().map_err(|e| e.to_string())?;
+        let dispatch = guard.as_ref().ok_or("no player command dispatcher")?;
+        run(dispatch)
     }
 
     /// Open (or reuse) an mpv instance that manages its own window and start
@@ -264,6 +289,8 @@ impl PlayerHandle {
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
             .map_err(|e| e.to_string())?;
+        #[cfg(target_os = "linux")]
+        self.start_mpv_dispatch(&mpv)?;
 
         load_file(
             &mpv,
@@ -351,6 +378,8 @@ impl PlayerHandle {
         // Spawn the event loop ONCE, on first mpv creation, before loading.
         spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
             .map_err(|e| e.to_string())?;
+        #[cfg(target_os = "linux")]
+        self.start_mpv_dispatch(&mpv)?;
 
         set_langs(&mpv, &alang, &slang);
         load_file(
@@ -431,6 +460,8 @@ impl PlayerHandle {
         let mpv = new_mpv_libmpv(game_mode_wayland).map_err(|e| e.to_string())?;
         spawn_event_loop(&mpv, app, self.pending_external_tracks.clone())
             .map_err(|e| e.to_string())?;
+        #[cfg(target_os = "linux")]
+        self.start_mpv_dispatch(&mpv)?;
         set_langs(&mpv, &alang, &slang);
         // Bind the render context to this core BEFORE it moves into the mutex.
         // `attach` borrows `&mpv` only for the (blocking) duration of the call.
@@ -464,6 +495,13 @@ impl PlayerHandle {
     /// `close_player`.
     pub fn stop(&self) -> Result<(), String> {
         self.gif_abort()?;
+
+        #[cfg(target_os = "linux")]
+        if let Some(dispatch) = self.mpv_dispatch.lock().map_err(|e| e.to_string())?.take() {
+            // Discard animation/seek work before tearing down the video output. The worker drops
+            // its client as soon as an in-progress libmpv command returns; never join it here.
+            dispatch.shutdown();
+        }
 
         // Free the render context (which references the core) BEFORE the core is
         // quit/dropped — required for the `'static` lifetime extension in
@@ -697,6 +735,21 @@ impl PlayerHandle {
             }
         }
         Ok(())
+    }
+
+    /// Queue commands coming from the webview on Linux. Tauri dispatches synchronous IPC through
+    /// WebKit's custom URI handler on GTK's main thread, so even one slow exact seek used to freeze
+    /// controller delivery, the spinner, and the controls outro. Other platforms keep the existing
+    /// synchronous path until they need the Gamescope-specific dispatcher.
+    pub fn command_from_ui(&self, name: &str, args: &[&str]) -> Result<(), String> {
+        #[cfg(target_os = "linux")]
+        {
+            return self.with_mpv_dispatch(|dispatch| dispatch.control(name, args));
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            self.command(name, args)
+        }
     }
 
     /// Start a bounded GIF frame capture from the already-playing mpv core.
@@ -951,41 +1004,27 @@ impl PlayerHandle {
             .map_err(|e| e.to_string())
     }
 
-    /// Add/replace a raw-memory OSD overlay on the video (Game-mode controls). `addr` is the
-    /// address of a premultiplied-BGRA buffer of `w`×`h` (bytes = `stride`×`h`). mpv copies the
-    /// pixels synchronously while `overlay-add` runs, so animation frames must reissue this
-    /// command; mutating the source buffer alone cannot update the displayed overlay.
+    /// Add/replace a raw-memory OSD overlay on the video (Game-mode controls). `pixels` is an owned
+    /// premultiplied-BGRA buffer of `w`×`h` (bytes = `stride`×`h`). The dispatcher keeps it alive
+    /// while mpv copies the frame, without making GTK wait for `overlay-add`.
     #[cfg(target_os = "linux")]
     pub fn overlay_add(
         &self,
         id: i64,
         x: i64,
         y: i64,
-        addr: usize,
+        pixels: Vec<u8>,
         w: i64,
         h: i64,
         stride: i64,
     ) -> Result<(), String> {
-        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
-        let mpv = guard.as_ref().ok_or("no player")?;
-        let (ids, xs, ys) = (id.to_string(), x.to_string(), y.to_string());
-        let file = format!("&{addr}");
-        let (ws, hs, ss) = (w.to_string(), h.to_string(), stride.to_string());
-        // overlay-add <id> <x> <y> <file> <offset> <fmt> <w> <h> <stride>
-        mpv.command(
-            "overlay-add",
-            &[&ids, &xs, &ys, &file, "0", "bgra", &ws, &hs, &ss],
-        )
-        .map_err(|e| e.to_string())
+        self.with_mpv_dispatch(|dispatch| dispatch.bitmap_add(id, x, y, pixels, w, h, stride))
     }
 
     /// Remove the OSD overlay with the given `id` (Game-mode controls hidden).
     #[cfg(target_os = "linux")]
     pub fn overlay_remove(&self, id: i64) -> Result<(), String> {
-        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
-        let mpv = guard.as_ref().ok_or("no player")?;
-        mpv.command("overlay-remove", &[&id.to_string()])
-            .map_err(|e| e.to_string())
+        self.with_mpv_dispatch(|dispatch| dispatch.bitmap_remove(id))
     }
 
     /// Add/update/remove an ASS OSD overlay. This uses mpv's named-argument command API
@@ -1018,82 +1057,14 @@ impl PlayerHandle {
         res_y: i64,
         z: i64,
     ) -> Result<(), String> {
-        use std::ffi::{CStr, CString};
-        use std::os::raw::c_char;
-        use std::ptr;
-
-        use libmpv2_sys as sys;
-
-        fn node_string(s: &CString) -> sys::mpv_node {
-            sys::mpv_node {
-                u: sys::mpv_node__bindgen_ty_1 {
-                    string: s.as_ptr() as *mut c_char,
-                },
-                format: sys::mpv_format_MPV_FORMAT_STRING,
-            }
-        }
-
-        fn node_i64(v: i64) -> sys::mpv_node {
-            sys::mpv_node {
-                u: sys::mpv_node__bindgen_ty_1 { int64: v },
-                format: sys::mpv_format_MPV_FORMAT_INT64,
-            }
-        }
-
-        fn mpv_err(code: i32) -> String {
-            unsafe {
-                let ptr = sys::mpv_error_string(code);
-                if ptr.is_null() {
-                    return format!("mpv error {code}");
-                }
-                format!(
-                    "mpv error {code}: {}",
-                    CStr::from_ptr(ptr).to_string_lossy()
-                )
-            }
-        }
-
-        let guard = self.mpv.lock().map_err(|e| e.to_string())?;
-        let mpv = guard.as_ref().ok_or("no player")?;
-
-        let key_names = ["name", "id", "format", "data", "res_x", "res_y", "z"];
-        let keys: Vec<CString> = key_names
-            .iter()
-            .map(|k| CString::new(*k))
-            .collect::<Result<_, _>>()
-            .map_err(|e| e.to_string())?;
-        let mut key_ptrs: Vec<*mut c_char> =
-            keys.iter().map(|k| k.as_ptr() as *mut c_char).collect();
-
-        let name = CString::new("osd-overlay").map_err(|e| e.to_string())?;
-        let format = CString::new(format).map_err(|e| e.to_string())?;
-        let data = CString::new(data).map_err(|e| e.to_string())?;
-
-        let mut values = vec![
-            node_string(&name),
-            node_i64(id),
-            node_string(&format),
-            node_string(&data),
-            node_i64(res_x),
-            node_i64(res_y),
-            node_i64(z),
-        ];
-        let mut list = sys::mpv_node_list {
-            num: values.len() as i32,
-            values: values.as_mut_ptr(),
-            keys: key_ptrs.as_mut_ptr(),
+        let format = match format {
+            "ass-events" => "ass-events",
+            "none" => "none",
+            _ => return Err("unsupported OSD overlay format".into()),
         };
-        let mut root = sys::mpv_node {
-            u: sys::mpv_node__bindgen_ty_1 { list: &mut list },
-            format: sys::mpv_format_MPV_FORMAT_NODE_MAP,
-        };
-
-        let code = unsafe { sys::mpv_command_node(mpv.ctx.as_ptr(), &mut root, ptr::null_mut()) };
-        if code < 0 {
-            Err(mpv_err(code))
-        } else {
-            Ok(())
-        }
+        self.with_mpv_dispatch(|dispatch| {
+            dispatch.ass(id, format, data.to_owned(), res_x, res_y, z)
+        })
     }
 
     /// Save a screenshot of the current frame (with subtitles) into `dir`. The

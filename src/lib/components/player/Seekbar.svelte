@@ -21,6 +21,7 @@
     segments,
     chapters,
     onseek,
+    onscrubinput,
     gm = false,
     native = false,
   }: {
@@ -30,6 +31,7 @@
     segments: Segment[]
     chapters: { time: number; title: string }[]
     onseek: (t: number) => void
+    onscrubinput?: () => void
     gm?: boolean
     native?: boolean
   } = $props()
@@ -288,7 +290,8 @@
     const t = timeAt(clientX)
     requestTile(t)
     if (gm && $scrub.active) {
-      moveScrub(t)
+      moveScrub(t, true)
+      onscrubinput?.()
       return
     }
     hoverT = t
@@ -301,7 +304,10 @@
     // Capture can fail for a pointer that died between hit-test and here; a failed capture must
     // not abort starting the scrub.
     try { el?.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
-    if (gm) beginScrub(t, 'touch')
+    if (gm) {
+      beginScrub(t, 'touch')
+      onscrubinput?.()
+    }
     else seeking = true
   }
   function onup(e: PointerEvent) {
@@ -309,7 +315,10 @@
     // own pointerId that dies with the sequence) — releasing is best-effort.
     try { el?.releasePointerCapture(e.pointerId) } catch { /* already released */ }
     if (gm) {
-      if ($scrub.active) endScrub()
+      if ($scrub.active) {
+        endScrub()
+        onscrubinput?.()
+      }
     } else if (seeking) {
       seeking = false
       onseek(hoverT)

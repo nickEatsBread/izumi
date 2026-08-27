@@ -15,31 +15,26 @@ use gtk::glib;
 use tauri::{AppHandle, Manager};
 
 use crate::gm_perf::{
-    chrome_ass, css_ease, NATIVE_CONTROLS_CONTENT_MS, NATIVE_CONTROLS_FADE_MS,
-    NATIVE_CONTROLS_MOTION_PX, OSD_FPS,
+    chrome_ass, css_ease, quantize_animation_unit, NATIVE_CONTROLS_FADE_MS,
+    NATIVE_CONTROLS_MOTION_PX, NATIVE_SEEKBAR_ACTIVE_PX, NATIVE_SEEKBAR_IDLE_PX,
+    NATIVE_SEEKBAR_TWEEN_MS, OSD_FPS,
 };
 use crate::{player::PlayerHandle, GmControlItem, GmDynamicOverlay};
 
-// Separate osd-overlay ids so the STATIC parts of the scrub bar (dim gradient, empty track,
-// buffered range) are pushed ONCE and only the MOVING parts (played fill, knob, time text) are
+// Separate osd-overlay ids so the STATIC parts of the scrub bar (empty track and buffered range)
+// are pushed ONCE and only the MOVING parts (played fill, knob, time text) are
 // re-pushed each frame. Each id is its own libass ASS_Track in mpv (sub/osd_libass.c), so
 // re-pushing the dynamic id never re-parses/re-rasters the static gradient — per-frame ASS work
 // on the Deck iGPU drops from ~30 vector shapes to ~4. (Re-pushing identical ASS every frame is
 // NOT free — mpv#7615 — so the static layer is content-gated and pushed only when it changes.)
 const OSD_SCRUB_DYN_ID: i64 = 2; // played fill + knob + time text (per frame while animating)
-const OSD_SCRUB_STATIC_ID: i64 = 3; // dim gradient + empty track + buffered range (on change)
+const OSD_SCRUB_STATIC_ID: i64 = 3; // empty track + buffered range (on change)
 const OSD_LOADING_ID: i64 = 4; // pre-first-frame black + buffering spinner (per frame)
 const OSD_CHROME_ID: i64 = 5; // skip / P2P / toast (on change)
 const OSD_CONTROLS_BG_ID: i64 = 6; // native bottom wash (60Hz only during reveal/hide)
 const OSD_CONTROLS_CONTENT_ID: i64 = 7; // title + buttons/focus (60Hz during reveal/hide)
 const OSD_TIMELINE_MARKS_ID: i64 = 8; // OP/ED/recap + chapter cuts (content-gated)
 static LITE: AtomicBool = AtomicBool::new(false);
-// Tween time-constants (seconds) for the native scrub bar, chosen per input source. A trigger
-// (pad) steps in 5s jumps and is indirect, so a longer tween smooths the steps; a finger is
-// direct manipulation and must feel attached, so it gets ~1 frame of catch-up. Tune on-device.
-const PAD_SCRUB_TAU: f64 = 0.012;
-const TOUCH_SCRUB_TAU: f64 = 0.025;
-const SCRUB_EPSILON: f64 = 0.02;
 /// Normal playback progress needs to feel live, but a few vector shapes do not need a 60fps ASS
 /// reparse. Ten updates per second is smooth at seekbar scale and keeps ample video-render headroom.
 const PROGRESS_FRAME_MS: u64 = 100;
@@ -93,10 +88,8 @@ struct ControlMotion {
 
 struct ControlTween {
     target: bool,
-    main: f64,
-    content: f64,
-    start_main: f64,
-    start_content: f64,
+    opacity: f64,
+    start_opacity: f64,
     started: Instant,
 }
 
@@ -104,10 +97,8 @@ impl ControlTween {
     fn new(now: Instant) -> Self {
         Self {
             target: false,
-            main: 0.0,
-            content: 0.0,
-            start_main: 0.0,
-            start_content: 0.0,
+            opacity: 0.0,
+            start_opacity: 0.0,
             started: now,
         }
     }
@@ -115,29 +106,68 @@ impl ControlTween {
     fn step(&mut self, target: bool, animate: bool, now: Instant) -> ControlMotion {
         if target != self.target {
             self.target = target;
-            self.start_main = self.main;
-            self.start_content = self.content;
+            self.start_opacity = self.opacity;
             self.started = now;
         }
         let end = if target { 1.0 } else { 0.0 };
         if !animate {
-            self.main = end;
-            self.content = end;
+            self.opacity = end;
         } else {
             let elapsed = now.duration_since(self.started).as_secs_f64() * 1000.0;
-            let main_t = (elapsed / NATIVE_CONTROLS_FADE_MS as f64).clamp(0.0, 1.0);
-            let content_t = (elapsed / NATIVE_CONTROLS_CONTENT_MS as f64).clamp(0.0, 1.0);
-            self.main = self.start_main + (end - self.start_main) * css_ease(main_t);
-            self.content = self.start_content + (end - self.start_content) * css_ease(content_t);
+            let t = (elapsed / NATIVE_CONTROLS_FADE_MS as f64).clamp(0.0, 1.0);
+            self.opacity = self.start_opacity + (end - self.start_opacity) * css_ease(t);
         }
-        let animating = (self.main - end).abs() > 0.0005 || (self.content - end).abs() > 0.0005;
+        let opacity = self.opacity.clamp(0.0, 1.0);
+        // Keep the easing and full 300ms duration, but feed libass deterministic frame values.
+        // Timer-jitter-derived alpha strings made its blurred-bitmap cache grow on every reveal.
+        let rendered_opacity = quantize_animation_unit(opacity);
+        let animating = (self.opacity - end).abs() > 0.0005;
         ControlMotion {
-            main: self.main.clamp(0.0, 1.0),
-            // VacuumTube's 200ms content transition is nested inside the 500ms parent fade.
-            content: (self.main * self.content).clamp(0.0, 1.0),
-            y: (1.0 - self.content).clamp(0.0, 1.0) * NATIVE_CONTROLS_MOTION_PX,
+            // CrunchyDeck fades the full chrome under one parent opacity. Keep every native layer
+            // on that same interrupted tween so the title cannot trail the bar or button row.
+            main: rendered_opacity,
+            content: rendered_opacity,
+            y: (1.0 - rendered_opacity) * NATIVE_CONTROLS_MOTION_PX,
             animating,
         }
+    }
+}
+
+struct SeekbarTween {
+    active: bool,
+    height: f64,
+    start_height: f64,
+    started: Instant,
+}
+
+impl SeekbarTween {
+    fn new(now: Instant) -> Self {
+        Self {
+            active: false,
+            height: NATIVE_SEEKBAR_IDLE_PX,
+            start_height: NATIVE_SEEKBAR_IDLE_PX,
+            started: now,
+        }
+    }
+
+    fn step(&mut self, active: bool, now: Instant) -> (f64, bool) {
+        if active != self.active {
+            self.active = active;
+            self.start_height = self.height;
+            self.started = now;
+        }
+        let end = if active {
+            NATIVE_SEEKBAR_ACTIVE_PX
+        } else {
+            NATIVE_SEEKBAR_IDLE_PX
+        };
+        let elapsed = now.duration_since(self.started).as_secs_f64() * 1000.0;
+        let t = (elapsed / NATIVE_SEEKBAR_TWEEN_MS.max(1) as f64).clamp(0.0, 1.0);
+        self.height = self.start_height + (end - self.start_height) * css_ease(t);
+        let span = NATIVE_SEEKBAR_ACTIVE_PX - NATIVE_SEEKBAR_IDLE_PX;
+        let unit = (self.height - NATIVE_SEEKBAR_IDLE_PX) / span;
+        let rendered = NATIVE_SEEKBAR_IDLE_PX + span * quantize_animation_unit(unit);
+        (rendered, (self.height - end).abs() > 0.01)
     }
 }
 
@@ -168,7 +198,6 @@ fn start_loop(app: AppHandle) {
 
 fn start_loop_on_main(app: AppHandle, my_gen: u64) {
     let t0 = Instant::now();
-    let mut last_tick = t0;
     let mut last_drawn_version = u64::MAX;
     let mut shown_scrub_time: Option<f64> = None;
     let mut progress_anchor_pos = 0.0;
@@ -178,13 +207,11 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
         .unwrap_or(t0);
     let mut shown = Shown::default();
     let mut control_tween = ControlTween::new(t0);
+    let mut seekbar_tween = SeekbarTween::new(t0);
     let mut last_control_state: Option<GmDynamicOverlay> = None;
 
     glib::timeout_add_local(Duration::from_millis(1000 / OSD_FPS), move || {
         let now = Instant::now();
-        let dt = now.duration_since(last_tick).as_secs_f64().clamp(0.0, 0.1);
-        last_tick = now;
-
         if GEN.load(Ordering::SeqCst) != my_gen {
             RUNNING.store(false, Ordering::SeqCst);
             return glib::ControlFlow::Break;
@@ -218,9 +245,13 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
                 draw_state.title.clone_from(&last.title);
                 draw_state.title_x = last.title_x;
                 draw_state.title_y = last.title_y;
+                draw_state.title_size = last.title_size;
+                draw_state.title_weight = last.title_weight;
                 draw_state.episode_text.clone_from(&last.episode_text);
                 draw_state.episode_x = last.episode_x;
                 draw_state.episode_y = last.episode_y;
+                draw_state.episode_size = last.episode_size;
+                draw_state.episode_weight = last.episode_weight;
                 draw_state.control_items.clone_from(&last.control_items);
                 draw_state
                     .timeline_segments
@@ -228,6 +259,8 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
                 draw_state.chapter_marks.clone_from(&last.chapter_marks);
             }
         }
+        let (bar_height, bar_animating) = seekbar_tween.step(draw_state.scrubbing, now);
+        draw_state.bar_h = bar_height;
         if !state.visible && motion.main <= 0.0 && !motion.animating {
             remove(&app);
             RUNNING.store(false, Ordering::SeqCst);
@@ -237,7 +270,7 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
             progress_anchor_pos = state.pos;
             progress_anchor_at = now;
         }
-        let scrub_animating = prepare_scrub_display(&mut draw_state, &mut shown_scrub_time, dt);
+        let scrub_animating = prepare_scrub_display(&mut draw_state, &mut shown_scrub_time);
         if draw_state.controls && !draw_state.paused && !draw_state.scrubbing && !draw_state.loading
         {
             draw_state.pos = (progress_anchor_pos
@@ -259,6 +292,7 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
             && (!draw_state.scrubbing || !scrub_animating)
             && !progress_due
             && !motion.animating
+            && !bar_animating
             && version == last_drawn_version
         {
             return glib::ControlFlow::Continue;
@@ -273,62 +307,19 @@ fn start_loop_on_main(app: AppHandle, my_gen: u64) {
     });
 }
 
-fn prepare_scrub_display(
-    state: &mut GmDynamicOverlay,
-    shown_scrub_time: &mut Option<f64>,
-    dt: f64,
-) -> bool {
+fn prepare_scrub_display(state: &mut GmDynamicOverlay, shown_scrub_time: &mut Option<f64>) -> bool {
     if !state.scrubbing || state.dur <= 0.0 {
         *shown_scrub_time = None;
         return false;
     }
 
     let target = state.scrub_time.clamp(0.0, state.dur);
-    if !state.smooth_scrub {
-        *shown_scrub_time = Some(target);
-        state.scrub_time = target;
-        return false;
-    }
-
-    let tau = if state.pad_scrub {
-        PAD_SCRUB_TAU
-    } else {
-        TOUCH_SCRUB_TAU
-    };
-    // First frame of the gesture: a trigger scrub begins at the playhead and steps away from it,
-    // but a finger lands directly on a point — so touch starts AT the target (no visible slide
-    // from the current playback position on the very first touch).
-    let current = shown_scrub_time.unwrap_or_else(|| {
-        if state.pad_scrub {
-            state.pos.clamp(0.0, state.dur)
-        } else {
-            target
-        }
-    });
-    let next = smooth_scrub_time(current, target, dt, tau).clamp(0.0, state.dur);
-    let animating = (next - target).abs() > SCRUB_EPSILON;
-    *shown_scrub_time = Some(next);
-    state.scrub_time = next;
-    animating
-}
-
-fn smooth_scrub_time(current: f64, target: f64, dt: f64, tau: f64) -> f64 {
-    let delta = target - current;
-    if delta.abs() <= SCRUB_EPSILON {
-        return target;
-    }
-
-    // Frame-rate-independent exponential approach: alpha = 1 - e^(-dt/tau). Driving it from the
-    // OSD loop's real dt (not a fixed per-frame alpha) keeps a given tau's wall-clock smoothing
-    // constant even though IPC samples arrive at a jittery 20-40Hz.
-    let alpha = if dt <= 0.0 {
-        0.0
-    } else if tau <= 0.0 {
-        1.0
-    } else {
-        1.0 - (-dt / tau).exp()
-    };
-    current + delta * alpha.clamp(0.0, 1.0)
+    // Direct manipulation must remain attached to the newest input sample. The previous
+    // exponential catch-up deliberately trailed pad targets by ~55ms and touch by ~12ms; combined
+    // with IPC/frame pacing that became visible latency at press, drag, and release.
+    *shown_scrub_time = Some(target);
+    state.scrub_time = target;
+    false
 }
 
 fn latest_state() -> Option<(GmDynamicOverlay, u64)> {
@@ -356,6 +347,26 @@ fn sanitize_state(mut state: GmDynamicOverlay) -> GmDynamicOverlay {
     }
     state.title = state.title.chars().take(180).collect();
     state.episode_text = state.episode_text.chars().take(80).collect();
+    state.title_size = if state.title_size.is_finite() && state.title_size > 0.0 {
+        state.title_size.clamp(10.0, 96.0)
+    } else {
+        30.0
+    };
+    state.episode_size = if state.episode_size.is_finite() && state.episode_size > 0.0 {
+        state.episode_size.clamp(8.0, 72.0)
+    } else {
+        18.0
+    };
+    state.title_weight = if state.title_weight == 0 {
+        900
+    } else {
+        state.title_weight.clamp(100, 900)
+    };
+    state.episode_weight = if state.episode_weight == 0 {
+        600
+    } else {
+        state.episode_weight.clamp(100, 900)
+    };
     for value in [
         &mut state.title_x,
         &mut state.title_y,
@@ -575,12 +586,12 @@ fn scrub_geometry(state: &GmDynamicOverlay, w: f64, h: f64) -> (f64, f64, f64, f
     }
 }
 
-/// STATIC scrub layer: a short fade above the track, the empty track, and the buffered range.
-/// None of these move while a finger drags, so the string is byte-stable across a gesture and
-/// pushed only once (the loop content-gates it).
+/// STATIC scrub layer: the empty track and buffered range. The surrounding bottom gradient is
+/// owned by the complete control chrome; adding another fade here creates a visible dark halo
+/// behind the seekbar that CrunchyDeck does not have.
 fn scrub_static_ass(
     state: &GmDynamicOverlay,
-    w: f64,
+    _w: f64,
     _h: f64,
     x: f64,
     y: f64,
@@ -591,22 +602,6 @@ fn scrub_static_ass(
     let mut lines = Vec::new();
 
     let top = y - bh / 2.0;
-    // Short fade immediately above the track so the bar stays readable. A full-height
-    // 20-band wash to the bottom of the screen read as a shadow under the controls.
-    let fade_h = 40.0;
-    let fade_top = (top - fade_h).max(0.0);
-    let bands = 6usize;
-    let band_h = fade_h / bands as f64;
-    for i in 0..bands {
-        let f = (i as f64 + 0.5) / bands as f64;
-        let opacity = 0.28 * f * master_opacity;
-        let a = alpha_hex(opacity);
-        let by = fade_top + band_h * i as f64;
-        push(
-            &mut lines,
-            rect_blur(0.0, by, w, band_h + 2.0, "000000", &a, band_h),
-        );
-    }
     // Track (white/25) · buffered (white/40) — the same fills the HTML seek bar uses.
     push(
         &mut lines,
@@ -651,13 +646,25 @@ fn scrub_dynamic_ass(
         &mut lines,
         rect(x, top, bw * scrub_pct, bh, "FFFFFF", &alpha),
     );
-    // Handle (matches the HTML ~22px knob) + the scrubbed time floating just above it.
+    // Chromium reference: a 16px thumb that appears with the 6px -> 10px track expansion.
     let knob_x = x + bw * scrub_pct;
-    push(&mut lines, circle(knob_x, y, 11.0, "FFFFFF", &alpha));
+    let interaction = ((bh - NATIVE_SEEKBAR_IDLE_PX)
+        / (NATIVE_SEEKBAR_ACTIVE_PX - NATIVE_SEEKBAR_IDLE_PX))
+        .clamp(0.0, 1.0);
+    push(
+        &mut lines,
+        circle(
+            knob_x,
+            y,
+            8.0,
+            "FFFFFF",
+            &alpha_hex(master_opacity * interaction),
+        ),
+    );
     let time = fmt_time(state.scrub_time);
     push(
         &mut lines,
-        text_opacity(
+        time_text_opacity(
             knob_x.clamp(60.0, w - 60.0),
             y - 42.0,
             32.0,
@@ -694,11 +701,11 @@ fn progress_dynamic_ass(
     );
     push(
         &mut lines,
-        text_opacity(x - 44.0, y, 20.0, &fmt_time(state.pos), master_opacity, 5),
+        time_text_opacity(x - 44.0, y, 20.0, &fmt_time(state.pos), master_opacity, 5),
     );
     push(
         &mut lines,
-        text_opacity(
+        time_text_opacity(
             x + bw + 44.0,
             y,
             20.0,
@@ -766,23 +773,27 @@ fn timeline_marks_ass(
 
 fn controls_background_ass(w: f64, h: f64, opacity: f64) -> String {
     let mut lines = Vec::new();
+    // CrunchyDeck: `from-black/90 via-black/60 to-transparent`. Three overlapping feathered
+    // surfaces approximate those stops without re-rastering sixteen full-width blurred bands on
+    // every 60Hz fade frame. Extending them sideways keeps their horizontal edges fully opaque.
     let height = (h * 0.34).clamp(180.0, 300.0);
     let top = h - height;
-    let bands = 14usize;
-    let band_h = height / bands as f64;
-    for i in 0..bands {
-        let f = (i as f64 + 0.5) / bands as f64;
-        let band_opacity = 0.82 * f.powf(1.45) * opacity;
+    let blur = 28.0;
+    for (offset, surface_height, surface_opacity) in [
+        (32.0, height - 20.0, 0.34),
+        (height * 0.36, height * 0.68, 0.42),
+        (height * 0.68, height * 0.36, 0.58),
+    ] {
         push(
             &mut lines,
-            rect_blur(
-                0.0,
-                top + i as f64 * band_h,
-                w,
-                band_h + 3.0,
+            soft_rect(
+                -blur * 2.0,
+                top + offset,
+                w + blur * 4.0,
+                surface_height,
                 "000000",
-                &alpha_hex(band_opacity),
-                7.0,
+                &alpha_hex(surface_opacity * opacity),
+                blur,
             ),
         );
     }
@@ -791,7 +802,7 @@ fn controls_background_ass(w: f64, h: f64, opacity: f64) -> String {
     // libass clips this at the framebuffer edge, so the overdraw cannot change layout.
     push(
         &mut lines,
-        rect(0.0, h - 12.0, w, 28.0, "000000", &alpha_hex(0.82 * opacity)),
+        rect(0.0, h - 12.0, w, 28.0, "000000", &alpha_hex(0.90 * opacity)),
     );
     lines.join("\n")
 }
@@ -805,11 +816,11 @@ fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -
             player_title_text(
                 state.title_x,
                 state.title_y + y_offset,
-                if title_at_top { 32.0 } else { 28.0 },
+                state.title_size,
                 state.title.trim(),
                 opacity,
                 4,
-                if title_at_top { 900 } else { 400 },
+                state.title_weight,
             ),
         );
     }
@@ -819,11 +830,11 @@ fn controls_content_ass(state: &GmDynamicOverlay, opacity: f64, y_offset: f64) -
             player_title_text(
                 state.episode_x,
                 state.episode_y + y_offset,
-                if title_at_top { 20.0 } else { 18.0 },
+                state.episode_size,
                 state.episode_text.trim(),
                 opacity * if title_at_top { 0.7 } else { 0.72 },
                 4,
-                if title_at_top { 600 } else { 400 },
+                state.episode_weight,
             ),
         );
     }
@@ -850,12 +861,14 @@ fn control_item_ass(item: &GmControlItem, opacity: f64, y_offset: f64, lines: &m
     let fill_opacity = if item.primary || focused_fill {
         0.96
     } else {
-        0.12
+        0.0
     };
-    push(
-        lines,
-        circle(cx, cy, radius, "FFFFFF", &alpha_hex(fill_opacity * opacity)),
-    );
+    if fill_opacity > 0.0 {
+        push(
+            lines,
+            circle(cx, cy, radius, "FFFFFF", &alpha_hex(fill_opacity * opacity)),
+        );
+    }
     if item.focused && !focused_fill {
         push(
             lines,
@@ -983,74 +996,46 @@ fn control_icon_ass(
             ),
         );
     } else if label == "playback options" {
-        // Exact settings-2 geometry used by the HTML Lucide icon (24x24 viewBox), translated to
-        // the ASS canvas. The previous three filled sliders were a different icon altogether.
+        // Lucide Settings silhouette. The HTML button is a gear, not the Settings-2 sliders that
+        // were previously substituted in the native HUD.
         let u = size / 24.0;
         let stroke = 2.0 * u;
-        push(
-            lines,
-            round_line(
-                cx - 2.0 * u,
-                cy - 5.0 * u,
-                cx + 7.0 * u,
-                cy - 5.0 * u,
-                stroke,
-                color,
-                &a,
-            ),
-        );
-        push(
-            lines,
-            round_line(
-                cx - 7.0 * u,
-                cy + 5.0 * u,
-                cx + 2.0 * u,
-                cy + 5.0 * u,
-                stroke,
-                color,
-                &a,
-            ),
-        );
-        push(
-            lines,
-            circle_ring(cx - 5.0 * u, cy - 5.0 * u, 2.0 * u, 4.0 * u, color, &a),
-        );
-        push(
-            lines,
-            circle_ring(cx + 5.0 * u, cy + 5.0 * u, 2.0 * u, 4.0 * u, color, &a),
-        );
+        let point = |angle: f64, radius: f64| {
+            (cx + angle.cos() * radius * u, cy + angle.sin() * radius * u)
+        };
+        let mut outline = Vec::with_capacity(33);
+        for i in 0..32 {
+            let angle = -PI / 2.0 + i as f64 * PI / 16.0;
+            let radius = match i % 4 {
+                0 | 1 => 10.0,
+                _ => 8.0,
+            };
+            outline.push(point(angle, radius));
+        }
+        outline.push(outline[0]);
+        push(lines, stroke_polyline(&outline, stroke, color, &a));
+        push(lines, circle_ring(cx, cy, 2.0 * u, 4.0 * u, color, &a));
     } else if label == "discussion" {
-        // Lucide MessageCircleMore. Build the outline from real strokes instead of a compound ASS
-        // fill: libass did not consistently honour the inner winding of the old ring, turning the
-        // comments glyph into a bold filled blob on the Deck.
+        // Lucide MessageSquare, matching the HTML control. Real strokes keep the speech bubble
+        // hollow and crisp under libass instead of collapsing into a filled low-resolution blob.
         let u = size / 24.0;
         let stroke = 2.0 * u;
         let point = |x: f64, y: f64| (cx + (x - 12.0) * u, cy + (y - 12.0) * u);
         let outline = [
-            point(3.0, 16.0),
-            point(2.0, 21.0),
-            point(7.0, 19.0),
-            point(9.0, 21.0),
-            point(12.0, 22.0),
-            point(16.0, 21.0),
-            point(19.0, 19.0),
-            point(21.0, 16.0),
-            point(22.0, 12.0),
-            point(21.0, 8.0),
-            point(19.0, 5.0),
-            point(16.0, 3.0),
-            point(12.0, 2.0),
-            point(8.0, 3.0),
-            point(5.0, 5.0),
-            point(3.0, 8.0),
-            point(2.0, 12.0),
-            point(3.0, 16.0),
+            point(4.0, 3.0),
+            point(20.0, 3.0),
+            point(21.4, 3.6),
+            point(22.0, 5.0),
+            point(22.0, 17.0),
+            point(21.4, 18.4),
+            point(20.0, 19.0),
+            point(6.8, 19.0),
+            point(2.0, 22.0),
+            point(2.0, 5.0),
+            point(2.6, 3.6),
+            point(4.0, 3.0),
         ];
         push(lines, stroke_polyline(&outline, stroke, color, &a));
-        for x in [8.0, 12.0, 16.0] {
-            let (x, y) = point(x, 12.0);
-            push(lines, circle(x, y, stroke * 0.62, color, &a));
-        }
     } else if label == "switch server" {
         let u = size / 24.0;
         let stroke = 2.0 * u;
@@ -1203,20 +1188,18 @@ fn alpha_hex(opacity: f64) -> String {
     )
 }
 
-fn text_opacity(x: f64, y: f64, size: f64, body: &str, opacity: f64, align: u8) -> String {
-    text_weight_opacity(x, y, size, body, opacity, align, 400)
-}
-
-fn text_weight_opacity(
-    x: f64,
-    y: f64,
-    size: f64,
-    body: &str,
-    opacity: f64,
-    align: u8,
-    weight: u16,
-) -> String {
-    text_color_weight_opacity(x, y, size, body, "FFFFFF", opacity, align, weight)
+/// Seek times are application labels, not subtitle text. Use a real mono face with no artificial
+/// outline so the Deck rendering matches Chromium's clean Geist Mono duration labels.
+fn time_text_opacity(x: f64, y: f64, size: f64, body: &str, opacity: f64, align: u8) -> String {
+    format!(
+        "{{\\an{}\\pos({},{})\\fnDejaVu Sans Mono\\b400\\i0\\fs{}\\bord0\\shad1\\1c&HFFFFFF&\\4c&H000000&\\1a&H{}&\\4a&H90&}}{}",
+        align,
+        ir(x),
+        ir(y),
+        ir(size),
+        alpha_hex(opacity),
+        ass_escape(body)
+    )
 }
 
 /// Player metadata should read like application chrome, not a subtitle. Nunito matches the HTML
@@ -1231,13 +1214,14 @@ fn player_title_text(
     weight: u16,
 ) -> String {
     format!(
-        "{{\\an{}\\pos({},{})\\fnNunito\\b{}\\fs{}\\bord0\\shad1\\1c&HFFFFFF&\\4c&H000000&\\1a&H{}&\\4a&H80&}}{}",
+        "{{\\an{}\\pos({},{})\\fnNunito\\b{}\\i0\\fs{}\\bord0\\shad1\\1c&HFFFFFF&\\4c&H000000&\\1a&H{}&\\4a&H{}&}}{}",
         align,
         ir(x),
         ir(y),
         weight,
         ir(size),
         alpha_hex(opacity),
+        alpha_hex(opacity * 0.50),
         ass_escape(body)
     )
 }
@@ -1286,11 +1270,11 @@ fn polygon(points: &[(f64, f64)], color: &str, alpha: &str) -> String {
     if rest.len() < 2 {
         return String::new();
     }
-    let mut path = format!("m {} {}", ir(first.0), ir(first.1));
+    let mut path = format!("m {} {}", dr(first.0), dr(first.1));
     for point in rest {
-        path.push_str(&format!(" l {} {}", ir(point.0), ir(point.1)));
+        path.push_str(&format!(" l {} {}", dr(point.0), dr(point.1)));
     }
-    format!("{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p1}}{path}{{\\p0}}")
+    format!("{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p4}}{path}{{\\p0}}")
 }
 
 fn line_shape(
@@ -1354,7 +1338,7 @@ fn circle_ring(cx: f64, cy: f64, inner: f64, outer: f64, color: &str, alpha: &st
     }
     let path = |r: f64, clockwise: bool| {
         let k = r * 0.552_284_749_8;
-        let (cx, cy, r, k) = (ir(cx), ir(cy), ir(r), ir(k));
+        let (cx, cy, r, k) = (dr(cx), dr(cy), dr(r), dr(k));
         if clockwise {
             format!(
                 "m {cx} {} b {} {} {} {} {} {cy} b {} {} {} {} {cx} {} b {} {} {} {} {} {cy} b {} {} {} {} {cx} {}",
@@ -1376,7 +1360,7 @@ fn circle_ring(cx: f64, cy: f64, inner: f64, outer: f64, color: &str, alpha: &st
         }
     };
     format!(
-        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p1}}{} {}{{\\p0}}",
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{color}&\\1a&H{alpha}&\\p4}}{} {}{{\\p0}}",
         path(outer, true),
         path(inner, false),
     )
@@ -1462,40 +1446,47 @@ fn rect(x: f64, y: f64, w: f64, h: f64, color: &str, alpha: &str) -> String {
         return String::new();
     }
 
-    let x0 = ir(x);
-    let y0 = ir(y);
-    let x1 = ir(x + w);
-    let y1 = ir(y + h);
+    let x0 = dr(x);
+    let y0 = dr(y);
+    let x1 = dr(x + w);
+    let y1 = dr(y + h);
     if x1 <= x0 || y1 <= y0 {
         return String::new();
     }
 
     format!(
-        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{}&\\1a&H{}&\\p1}}m {} {} l {} {} l {} {} l {} {}{{\\p0}}",
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{}&\\1a&H{}&\\p4}}m {} {} l {} {} l {} {} l {} {}{{\\p0}}",
         color, alpha, x0, y0, x1, y0, x1, y1, x0, y1
     )
 }
 
-/// A filled rect with a Gaussian `\blur` (soft edges). Used for the legibility gradient bands so
-/// their alpha steps blend instead of showing as hard horizontal lines. `blur` is the ASS blur
-/// strength (~pixels).
-fn rect_blur(x: f64, y: f64, w: f64, h: f64, color: &str, alpha: &str, blur: f64) -> String {
+/// A subpixel ASS rectangle whose edge is blended by libass. Used only for adjacent gradient
+/// bands: the blur overlaps their boundaries, eliminating visible stripes without adding another
+/// seekbar-specific shadow surface.
+fn soft_rect(x: f64, y: f64, w: f64, h: f64, color: &str, alpha: &str, blur: f64) -> String {
     if w <= 0.0 || h <= 0.0 || blur <= 0.0 {
         return rect(x, y, w, h, color, alpha);
     }
-    let x0 = ir(x);
-    let y0 = ir(y);
-    let x1 = ir(x + w);
-    let y1 = ir(y + h);
+    let x0 = dr(x);
+    let y0 = dr(y);
+    let x1 = dr(x + w);
+    let y1 = dr(y + h);
     if x1 <= x0 || y1 <= y0 {
         return String::new();
     }
     format!(
-        "{{\\an7\\pos(0,0)\\bord0\\shad0\\blur{}\\1c&H{}&\\1a&H{}&\\p1}}m {} {} l {} {} l {} {} l {} {}{{\\p0}}",
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\blur{}\\1c&H{}&\\1a&H{}&\\p4}}m {} {} l {} {} l {} {} l {} {}{{\\p0}}",
         ir(blur).max(1),
         color,
         alpha,
-        x0, y0, x1, y0, x1, y1, x0, y1
+        x0,
+        y0,
+        x1,
+        y0,
+        x1,
+        y1,
+        x0,
+        y1
     )
 }
 
@@ -1505,13 +1496,13 @@ fn circle(cx: f64, cy: f64, r: f64, color: &str, alpha: &str) -> String {
     }
 
     let k = r * 0.552_284_749_8;
-    let cx = ir(cx);
-    let cy = ir(cy);
-    let r = ir(r) as i64;
-    let k = ir(k) as i64;
+    let cx = dr(cx);
+    let cy = dr(cy);
+    let r = dr(r);
+    let k = dr(k);
 
     format!(
-        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{}&\\1a&H{}&\\p1}}m {} {} b {} {} {} {} {} {} b {} {} {} {} {} {} b {} {} {} {} {} {} b {} {} {} {} {} {}{{\\p0}}",
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{}&\\1a&H{}&\\p4}}m {} {} b {} {} {} {} {} {} b {} {} {} {} {} {} b {} {} {} {} {} {} b {} {} {} {} {} {}{{\\p0}}",
         color,
         alpha,
         cx,
@@ -1557,14 +1548,14 @@ fn ring_segment(
         return String::new();
     }
 
-    let p = |r: f64, a: f64| (ir(cx + a.cos() * r), ir(cy + a.sin() * r));
+    let p = |r: f64, a: f64| (dr(cx + a.cos() * r), dr(cy + a.sin() * r));
     let (x0, y0) = p(outer, a0);
     let (x1, y1) = p(outer, a1);
     let (x2, y2) = p(inner, a1);
     let (x3, y3) = p(inner, a0);
 
     format!(
-        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{}&\\1a&H{}&\\p1}}m {} {} l {} {} l {} {} l {} {}{{\\p0}}",
+        "{{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H{}&\\1a&H{}&\\p4}}m {} {} l {} {} l {} {} l {} {}{{\\p0}}",
         color, alpha, x0, y0, x1, y1, x2, y2, x3, y3
     )
 }
@@ -1577,4 +1568,10 @@ fn ass_escape(s: &str) -> String {
 
 fn ir(v: f64) -> i64 {
     v.round() as i64
+}
+
+/// ASS `\p4` drawing coordinates have 1/8px units. Keeping the subpixel geometry through to
+/// libass avoids the jagged, uneven 20px icon strokes produced by the old `\p1` integer paths.
+fn dr(v: f64) -> i64 {
+    (v * 8.0).round() as i64
 }

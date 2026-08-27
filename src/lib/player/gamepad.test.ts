@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { ButtonPressLatch, TriggerScrubber, SEEK } from './gamepad'
+import { ButtonPressLatch, TriggerScrubber, SEEK, DPAD_SEEK } from './gamepad'
 
 function deps(pos = 100, dur = 1000) {
   return {
@@ -72,12 +72,26 @@ describe('TriggerScrubber', () => {
     expect(d.seek).toHaveBeenCalledTimes(1)
   })
 
+  it('chains rapid d-pad taps from the requested target even while mpv position is stale', () => {
+    const d = deps(100, 1000)
+    const s = new TriggerScrubber(+1, d, 'dpad')
+    s.update(true, 0)
+    s.update(false, 30)
+    s.update(true, 60)
+    s.update(false, 90)
+    s.update(true, 120)
+    expect(d.seek).toHaveBeenNthCalledWith(1, 110, 'dpad')
+    expect(d.seek).toHaveBeenNthCalledWith(2, 120, 'dpad')
+    expect(d.seek).toHaveBeenNthCalledWith(3, 130, 'dpad')
+  })
+
   it('keeps held d-pad scrubbing quiet while retaining its scrub preview', () => {
     const d = deps(100, 1000)
     const s = new TriggerScrubber(+1, d, 'dpad')
     s.update(true, 0)
-    s.update(true, SEEK.initialDelay)
-    expect(d.beginScrub).toHaveBeenCalledWith(100, 'dpad')
+    s.update(true, DPAD_SEEK.initialDelay)
+    expect(d.beginScrub).toHaveBeenCalledWith(110, 'dpad')
+    expect(d.moveScrub).toHaveBeenCalledWith(115)
     expect(d.onActivity).not.toHaveBeenCalled()
   })
 })

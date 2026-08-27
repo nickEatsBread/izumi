@@ -144,11 +144,6 @@ pub(crate) struct GmDynamicOverlay {
     pub(crate) dur: f64,
     pub(crate) buffer: f64,
     pub(crate) scrub_time: f64,
-    pub(crate) smooth_scrub: bool,
-    // True when the scrub is driven by the L2/R2 trigger (stepped, indirect) rather than a
-    // finger on the touchscreen (direct). Picks the tween time-constant in gm_osd: a longer
-    // one smooths the trigger's 5s steps, a short one keeps the touch knob glued to the finger.
-    pub(crate) pad_scrub: bool,
     pub(crate) width: f64,
     pub(crate) height: f64,
     // The HTML seek bar's on-screen geometry (CSS px, same space as width/height) so the
@@ -168,11 +163,19 @@ pub(crate) struct GmDynamicOverlay {
     #[serde(default)]
     pub(crate) title_y: f64,
     #[serde(default)]
+    pub(crate) title_size: f64,
+    #[serde(default)]
+    pub(crate) title_weight: u16,
+    #[serde(default)]
     pub(crate) episode_text: String,
     #[serde(default)]
     pub(crate) episode_x: f64,
     #[serde(default)]
     pub(crate) episode_y: f64,
+    #[serde(default)]
+    pub(crate) episode_size: f64,
+    #[serde(default)]
+    pub(crate) episode_weight: u16,
     #[serde(default)]
     pub(crate) control_items: Vec<GmControlItem>,
     #[serde(default)]
@@ -347,7 +350,7 @@ async fn player_embed(
 /// torn down by the frontend (`playing = false`).
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn close_player(player: tauri::State<'_, player::PlayerHandle>) -> Result<(), String> {
+async fn close_player(player: tauri::State<'_, player::PlayerHandle>) -> Result<(), String> {
     // Stop the mpv core. On Linux this also tears down the embed subsurface +
     // render context (via `PlayerHandle::stop` → `linux_embed::detach`) before the
     // core is quit. On Windows it destroys mpv's child inside the container (which
@@ -728,22 +731,18 @@ fn gm_log(message: String) {
 /// `mode`: 0 single-line, 1 multi-line, 2 email, 3 numeric.
 #[cfg(not(target_os = "android"))]
 #[tauri::command]
-fn steam_show_osk(app: AppHandle, x: i32, y: i32, w: i32, h: i32, mode: i32) -> bool {
+fn steam_show_osk(_app: AppHandle, x: i32, y: i32, w: i32, h: i32, mode: i32) -> bool {
     #[cfg(target_os = "linux")]
     {
         if steam_osk::show(x, y, w, h, mode) {
             return true;
         }
-        // SteamOS's own GTK input module uses this URI to summon the overlay keyboard. It is the
-        // reliable Flatpak fallback when the host Steamworks shim cannot be dlopened in the GNOME
-        // runtime. A successful portal request suppresses izumi's HTML keyboard.
-        use tauri_plugin_opener::OpenerExt;
-        let requested = app
-            .opener()
-            .open_url("steam://open/keyboard", None::<String>)
-            .is_ok();
-        player::linux_embed::elog(&format!("steam_osk: overlay URI requested={requested}"));
-        requested
+        // `steam://open/keyboard` being accepted by the URI portal does not mean Steam displayed
+        // anything (Gaming Mode currently consumes it without opening a keyboard). Returning true
+        // here suppressed the HTML fallback and made every field appear dead. Report the real
+        // Steamworks result only; the frontend can then open its working local/remote keyboard.
+        player::linux_embed::elog("steam_osk: unavailable — using HTML fallback");
+        false
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -2178,11 +2177,55 @@ function stripTitles(root){if(!root)return;if(root.nodeType===1)stripTitle(root)
 stripTitles(document.documentElement);
 document.addEventListener('pointerover',function(ev){var el=ev.target&&ev.target.closest?ev.target.closest('[title]'):null;stripTitle(el);},true);
 new MutationObserver(function(mutations){for(var i=0;i<mutations.length;i++){var m=mutations[i];if(m.type==='attributes'){stripTitle(m.target);continue;}for(var j=0;j<m.addedNodes.length;j++)stripTitles(m.addedNodes[j]);}}).observe(document,{childList:true,subtree:true,attributes:true,attributeFilter:['title']});
-var active=false,moved=false,startY=0,lastY=0,lastAt=0,suppressClickUntil=0,target=null;
+var active=false,moved=false,startY=0,lastY=0,lastAt=0,suppressClickUntil=0,target=null,lastTouchAt=-1e9;
 var inputKind=null,pointerId=null;
 var velocity=0,momentumFrame=0;
-var activityFrame=0;
-function activity(){if(!tac||activityFrame)return;activityFrame=requestAnimationFrame(function(){activityFrame=0;try{window.top.postMessage({type:'izumi-comments-scroll-activity'},'*')}catch(_e){}});}
+var tapTarget=null,redispatching=false,lastKeyboardAt=-1e9,composerEl=null;
+var EDITABLE='textarea,input,[contenteditable]:not([contenteditable="false"]),[role="textbox"]';
+function interactiveTarget(node){return node&&node.closest?node.closest('button,a,[role="button"],'+EDITABLE):null;}
+function labelOf(el){return ((el&&el.textContent)||'')+' '+((el&&el.getAttribute&&el.getAttribute('aria-label'))||'')+' '+((el&&el.getAttribute&&el.getAttribute('placeholder'))||'');}
+function isSeeMore(el){return /(^|\s)see\s+more(\s|$)/i.test(labelOf(el).trim());}
+function isComposerTrigger(el){return !!(disqus&&el&&/join\s+the\s+discussion|write\s+a\s+comment|start\s+the\s+discussion/i.test(labelOf(el)));}
+function editableTarget(node){var el=node&&node.closest?node.closest(EDITABLE):null;if(!el)return null;var type=(el.type||'text').toLowerCase();return ['checkbox','radio','range','button','submit','color'].indexOf(type)<0?el:null;}
+function visibleComposer(){var nodes=document.querySelectorAll(EDITABLE);for(var i=0;i<nodes.length;i++){var el=editableTarget(nodes[i]),r=el&&el.getBoundingClientRect();if(el&&!el.disabled&&r&&r.width>4&&r.height>4&&getComputedStyle(el).visibility!=='hidden')return el;}return null;}
+function requestKeyboard(el){
+  if(!disqus||!el||performance.now()-lastKeyboardAt<600)return;lastKeyboardAt=performance.now();
+  composerEl=el;
+  var r=el.getBoundingClientRect(),type=(el.type||'text').toLowerCase();
+  var mode=el.tagName==='TEXTAREA'||el.isContentEditable||el.getAttribute('role')==='textbox'?1:type==='email'?2:(type==='number'||el.inputMode==='numeric'||el.inputMode==='tel')?3:0;
+  try{window.top.postMessage({type:'izumi-comments-focus-input',rect:{left:r.left,top:r.top,width:r.width,height:r.height},mode:mode},'*')}catch(_e){}
+}
+function focusComposer(hit,activate){
+  if(!disqus)return;
+  if(activate&&hit){redispatching=true;try{hit.click()}catch(_e){}finally{redispatching=false;}}
+  var tries=0,delays=[0,35,90,180,360,700];
+  function attempt(){
+    var el=editableTarget(document.activeElement)||editableTarget(hit)||visibleComposer();
+    if(el){composerEl=el;try{el.focus({preventScroll:true})}catch(_e){try{el.focus()}catch(_e2){}}requestKeyboard(el);return;}
+    tries++;if(tries<delays.length)setTimeout(attempt,delays[tries]);
+  }
+  setTimeout(attempt,delays[0]);
+}
+function activateExact(ev,exact){
+  if(!exact)return;if(ev.cancelable)ev.preventDefault();ev.stopPropagation();
+  if(editableTarget(exact)||isComposerTrigger(exact)){focusComposer(exact,true);return;}
+  suppressClickUntil=performance.now()+700;
+  redispatching=true;try{exact.click()}catch(_e){}finally{redispatching=false;}
+}
+function emitInput(el,inputType,data){try{el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:inputType,data:data||null}))}catch(_e){el.dispatchEvent(new Event('input',{bubbles:true}))}}
+function setNativeValue(el,value){var proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;var desc=Object.getOwnPropertyDescriptor(proto,'value');if(desc&&desc.set)desc.set.call(el,value);else el.value=value;}
+function editComposer(action,text){
+  var el=editableTarget(composerEl)||visibleComposer();if(!el)return;composerEl=el;
+  try{el.focus({preventScroll:true})}catch(_e){try{el.focus()}catch(_e2){}}
+  if(action==='close'){try{el.blur()}catch(_e){}return;}
+  if(action==='submit'){el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true,cancelable:true}));el.dispatchEvent(new KeyboardEvent('keyup',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));return;}
+  if(el.isContentEditable){document.execCommand(action==='backspace'?'delete':'insertText',false,action==='insert'?(text||''):null);emitInput(el,action==='backspace'?'deleteContentBackward':'insertText',text||null);return;}
+  var value=el.value||'',start=el.selectionStart==null?value.length:el.selectionStart,end=el.selectionEnd==null?start:el.selectionEnd,next,pos;
+  if(action==='backspace'){if(start===end&&start>0){next=value.slice(0,start-1)+value.slice(end);pos=start-1;}else{next=value.slice(0,start)+value.slice(end);pos=start;}}
+  else{var insert=text||'';next=value.slice(0,start)+insert+value.slice(end);pos=start+insert.length;}
+  setNativeValue(el,next);try{el.setSelectionRange(pos,pos)}catch(_e){}emitInput(el,action==='backspace'?'deleteContentBackward':'insertText',action==='insert'?(text||''):null);
+}
+window.addEventListener('message',function(ev){var m=ev.data;if(ev.source!==window.top||!m||m.type!=='izumi-comments-key')return;if(['insert','backspace','submit','close'].indexOf(m.action)<0)return;editComposer(m.action,typeof m.text==='string'?m.text:'');});
 function relay(phase,dy,dt){try{window.parent.postMessage({type:disqus?'izumi-disqus-touch-scroll':'izumi-comments-touch-scroll',phase:phase,dy:dy||0,dt:dt||0},'*')}catch(_e){}}
 function scrollableFrom(ev){
   var nodes=ev.composedPath?ev.composedPath():[],i,n,s;
@@ -2191,40 +2234,49 @@ function scrollableFrom(ev){
   return null;
 }
 function stopMomentum(){if(momentumFrame)cancelAnimationFrame(momentumFrame);momentumFrame=0;}
-function localScroll(dy){if(target){target.scrollTop+=dy;activity();}}
+function localScroll(dy){if(target)target.scrollTop+=dy;}
 function addVelocity(dy,dt){var next=Math.max(-3,Math.min(3,dy/dt));velocity=(velocity&&next&&Math.sign(velocity)!==Math.sign(next))?next:velocity*0.6+next*0.4;}
 function startMomentum(){
   if(!target||Math.abs(velocity)<0.15)return;stopMomentum();var started=performance.now(),last=started;
   function step(now){var dt=Math.min(32,Math.max(1,now-last)),before=target.scrollTop;last=now;velocity*=Math.pow(0.92,dt/16.67);if(now-started>420||Math.abs(velocity)<0.15){momentumFrame=0;return;}localScroll(velocity*dt);if(target.scrollTop===before){momentumFrame=0;return;}momentumFrame=requestAnimationFrame(step);}
   momentumFrame=requestAnimationFrame(step);
 }
-function begin(y,now,ev,kind,id){active=true;inputKind=kind;pointerId=id;moved=false;startY=lastY=y;lastAt=now;target=tac?scrollableFrom(ev):null;velocity=0;stopMomentum();activity();if(!target&&(disqus||archive))relay('start',0,0);}
+function begin(y,now,ev,kind,id){active=true;inputKind=kind;pointerId=id;moved=false;startY=lastY=y;lastAt=now;target=tac?scrollableFrom(ev):null;velocity=0;stopMomentum();if(!target&&(disqus||archive))relay('start',0,0);}
 function move(y,now,ev,kind,id){
   if(!active||inputKind!==kind||(kind==='pointer'&&pointerId!==id))return;
   var total=startY-y,dy=lastY-y,dt=Math.max(1,now-lastAt);lastY=y;lastAt=now;
-  if(!moved&&Math.abs(total)<6)return;
-  moved=true;suppressClickUntil=now+450;
+  if(!moved&&Math.abs(total)<10)return;
+  moved=true;suppressClickUntil=now+120;
   if(ev.cancelable)ev.preventDefault();ev.stopPropagation();
   if(target){localScroll(dy);addVelocity(dy,dt);}else relay('move',dy,dt);
 }
 function end(kind,id){if(!active||inputKind!==kind||(kind==='pointer'&&pointerId!==id))return;active=false;inputKind=null;pointerId=null;if(moved){if(target)startMomentum();else relay('end',0,0);}moved=false;}
 document.addEventListener('touchstart',function(ev){
-  if(ev.touches.length!==1)return;begin(ev.touches[0].clientY,performance.now(),ev,'touch',null);
+  if(ev.touches.length!==1)return;lastTouchAt=performance.now();tapTarget=interactiveTarget(ev.target)||ev.target;var t=ev.touches[0];begin(Number.isFinite(t.screenY)?t.screenY:t.clientY,lastTouchAt,ev,'touch',null);
 },{capture:true,passive:true});
 document.addEventListener('touchmove',function(ev){
-  if(ev.touches.length!==1)return;move(ev.touches[0].clientY,performance.now(),ev,'touch',null);
+  if(ev.touches.length!==1)return;lastTouchAt=performance.now();var t=ev.touches[0];move(Number.isFinite(t.screenY)?t.screenY:t.clientY,lastTouchAt,ev,'touch',null);
 },{capture:true,passive:false});
-document.addEventListener('touchend',function(){end('touch',null);},{capture:true,passive:true});
-document.addEventListener('touchcancel',function(){end('touch',null);},{capture:true,passive:true});
+document.addEventListener('touchend',function(ev){
+  var exact=tapTarget,activate=!moved&&(isSeeMore(exact)||isComposerTrigger(exact)||!!editableTarget(exact));lastTouchAt=performance.now();end('touch',null);tapTarget=null;
+  if(activate)activateExact(ev,exact);
+},{capture:true,passive:false});
+document.addEventListener('touchcancel',function(){lastTouchAt=performance.now();tapTarget=null;end('touch',null);},{capture:true,passive:true});
 document.addEventListener('pointerdown',function(ev){
-  if(ev.button!==0||ev.pointerType==='touch'||inputKind==='touch')return;begin(ev.clientY,performance.now(),ev,'pointer',ev.pointerId);
+  var now=performance.now();if(ev.button!==0||ev.pointerType==='touch'||inputKind==='touch'||now-lastTouchAt<700)return;tapTarget=interactiveTarget(ev.target)||ev.target;begin(Number.isFinite(ev.screenY)?ev.screenY:ev.clientY,now,ev,'pointer',ev.pointerId);
 },true);
 document.addEventListener('pointermove',function(ev){
-  move(ev.clientY,performance.now(),ev,'pointer',ev.pointerId);
+  move(Number.isFinite(ev.screenY)?ev.screenY:ev.clientY,performance.now(),ev,'pointer',ev.pointerId);
 },{capture:true,passive:false});
-document.addEventListener('pointerup',function(ev){end('pointer',ev.pointerId);},true);document.addEventListener('pointercancel',function(ev){end('pointer',ev.pointerId);},true);
-document.addEventListener('scroll',activity,true);
-document.addEventListener('click',function(ev){if(performance.now()<suppressClickUntil){ev.preventDefault();ev.stopImmediatePropagation();}},true);
+document.addEventListener('pointerup',function(ev){var exact=tapTarget,activate=!moved&&(isSeeMore(exact)||isComposerTrigger(exact)||!!editableTarget(exact));end('pointer',ev.pointerId);tapTarget=null;if(activate)activateExact(ev,exact);},true);
+document.addEventListener('pointercancel',function(ev){tapTarget=null;end('pointer',ev.pointerId);},true);
+document.addEventListener('focusin',function(ev){requestKeyboard(editableTarget(ev.target));},true);
+document.addEventListener('click',function(ev){
+  if(redispatching)return;
+  var editable=editableTarget(ev.target);if(editable){try{editable.focus({preventScroll:true})}catch(_e){}requestKeyboard(editable);}
+  else{var hit=interactiveTarget(ev.target);if(isComposerTrigger(hit))focusComposer(hit,false);}
+  if(performance.now()<suppressClickUntil){ev.preventDefault();ev.stopImmediatePropagation();}
+},true);
 }catch(e){}})();"#;
 
 #[cfg(windows)]
@@ -4278,7 +4330,7 @@ fn player_command(
     player: tauri::State<'_, player::PlayerHandle>,
 ) -> Result<(), String> {
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    player.command(&name, &arg_refs)
+    player.command_from_ui(&name, &arg_refs)
 }
 
 #[cfg(not(target_os = "android"))]

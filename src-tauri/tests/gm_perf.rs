@@ -79,31 +79,78 @@ fn overlay_cpu_fade_scales_premultiplied_bgra() {
 }
 
 #[test]
-fn native_controls_match_vacuumtube_motion_curve() {
-    assert_eq!(NATIVE_CONTROLS_FADE_MS, 160);
-    assert_eq!(NATIVE_CONTROLS_CONTENT_MS, 120);
-    assert_eq!(NATIVE_CONTROLS_MOTION_PX, 18.0);
+fn native_controls_match_crunchy_deck_motion_and_seekbar() {
+    assert_eq!(NATIVE_CONTROLS_FADE_MS, 300);
+    assert_eq!(NATIVE_CONTROLS_MOTION_PX, 0.0);
+    assert_eq!(NATIVE_SEEKBAR_IDLE_PX, 6.0);
+    assert_eq!(NATIVE_SEEKBAR_ACTIVE_PX, 10.0);
+    assert_eq!(NATIVE_SEEKBAR_TWEEN_MS, 150);
     assert_eq!(OVERLAY_SHEET_MOTION_PX, 40);
     assert_eq!(css_ease(0.0), 0.0);
     assert_eq!(css_ease(1.0), 1.0);
-    assert!((css_ease(0.5) - 0.8024).abs() < 0.001);
+    assert!((css_ease(0.5) - 0.7756).abs() < 0.001);
+    assert_eq!(NATIVE_ASS_TWEEN_STEPS, 30.0);
+    assert_eq!(quantize_animation_unit(0.0), 0.0);
+    assert_eq!(quantize_animation_unit(1.0), 1.0);
+    assert_eq!(quantize_animation_unit(0.501), 0.5);
 
     let osd = include_str!("../src/player/gm_osd.rs");
     assert!(osd.contains("ControlTween"));
+    assert!(osd.contains("quantize_animation_unit"));
     assert!(osd.contains("controls_background_ass"));
     assert!(osd.contains("controls_content_ass"));
     assert!(osd.contains("1000 / OSD_FPS"));
     assert!(osd.contains("\\fnNunito"));
+    assert!(osd.contains("\\fnDejaVu Sans Mono"));
+    assert!(osd.contains("SeekbarTween"));
+    assert!(osd.contains("state.title_size"));
     assert!(osd.contains("player_title_text"));
-    // The current Lucide controls use real strokes; the obsolete compound ASS ring produced
-    // filled/garbled icons and is explicitly forbidden by the matching frontend contract test.
+    // The player uses one interrupted opacity tween just like CrunchyDeck's parent chrome layer.
+    assert!(osd.contains("start_opacity"));
+    assert!(!osd.contains("start_content"));
+    // Native shapes keep 1/8px ASS coordinates and use the same icon identities as the HTML HUD.
+    assert!(osd.contains(r"\\p4"));
+    assert!(!osd.contains(r"\\p1"));
+    assert!(osd.contains("Lucide Settings silhouette"));
+    assert!(osd.contains("Lucide MessageSquare"));
     assert!(!osd.contains("rounded_rect_ring"));
+    // The seek track has no independent shadow; the one bottom wash uses the reference's stops.
+    assert!(!osd.contains("rect_blur"));
+    assert!(!osd.contains("fade_h"));
+    assert!(osd.contains("soft_rect"));
+    assert!(osd.contains("surface_opacity"));
+    assert!(osd.contains("height * 0.68"));
+    assert!(!osd.contains("let bands = 16usize"));
+    assert!(osd.contains("0.90 * opacity"));
+    assert!(!osd.contains("PAD_SCRUB_TAU"));
+    assert!(!osd.contains("smooth_scrub_time"));
+    assert!(osd.contains("alpha_hex(opacity * 0.50)"));
     assert!(osd.contains("h - 12.0"));
     assert!(osd.contains("timeline_marks_ass"));
     assert!(osd.contains("timeline_segments"));
     assert!(osd.contains("chapter_marks"));
     assert!(osd.contains("OSD_TIMELINE_MARKS_ID"));
     assert!(osd.contains("&mut shown.marks_ass"));
+}
+
+#[test]
+fn gamescope_mpv_work_never_blocks_the_gtk_producer() {
+    let player = include_str!("../src/player/mod.rs");
+    let dispatch = include_str!("../src/player/mpv_dispatch.rs");
+    let overlay = include_str!("../src/player/linux_overlay.rs");
+
+    assert!(player.contains("command_from_ui"));
+    assert!(player.contains("dispatch.bitmap_add"));
+    assert!(player.contains("dispatch.ass"));
+    assert!(dispatch.contains("izumi-mpv-ui"));
+    assert!(dispatch.contains("MAX_PENDING"));
+    assert!(dispatch.contains("CoalesceKey::Seek"));
+    assert!(dispatch.contains(".retain(|pending|"));
+    assert!(overlay.contains("let pixels ="));
+    assert!(!overlay.contains("buf.as_ptr() as usize"));
+    let commands = include_str!("../src/lib.rs");
+    assert!(commands.contains("async fn close_player"));
+    assert!(commands.contains("player.command_from_ui"));
 }
 
 #[test]
@@ -159,8 +206,9 @@ fn transient_chrome_sits_above_the_loading_backdrop() {
 #[test]
 fn p2p_text_fallback_is_removed() {
     assert!(!include_str!("../src/lib.rs").contains("p2p_text"));
-    assert!(!include_str!("../../src/lib/components/player/PlayerOverlay.svelte")
-        .contains("p2pText"));
+    assert!(
+        !include_str!("../../src/lib/components/player/PlayerOverlay.svelte").contains("p2pText")
+    );
 }
 
 #[test]

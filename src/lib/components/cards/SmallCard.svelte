@@ -117,7 +117,7 @@
 </script>
 
 <div bind:this={el} class={fill ? 'w-full' : 'w-36 shrink-0 sm:w-[152px]'} onpointerenter={open} onpointermove={openAfterPointerMove} onpointerleave={scheduleClose} role="presentation">
-  <a href={mediaHref(media)} data-focusable onclick={() => { rememberDetail(media); h.tap() }}
+  <a href={mediaHref(media)} data-focusable draggable="false" onclick={() => { rememberDetail(media); h.tap() }}
      class="group block {fill ? 'w-full' : 'w-36 sm:w-[152px]'} {$isAndroid ? 'android-card-press' : ''}">
     <div class="focus-cover relative aspect-[2/3] w-full overflow-hidden rounded-md bg-muted">
       <!-- No `transform-gpu`/`will-change`: those permanently promote EVERY cover to its own
@@ -126,7 +126,7 @@
       {#if !coverReady}<div class="absolute inset-0 skeloader"></div>{/if}
       <!-- Keep image loading lazy: large browse grids and several library rows can still put many
            cards in the DOM, even though each AniList preview query is now capped to thirty. -->
-      <img use:reliableImage={coverSrc} alt={title(media)} loading="lazy" decoding="async" onload={() => (coverReady = true)}
+      <img use:reliableImage={coverSrc} alt={title(media)} draggable="false" loading="lazy" decoding="async" onload={() => (coverReady = true)}
            class="relative h-full w-full object-cover transition-[opacity,transform] duration-150 ease-out {coverReady ? 'opacity-100' : 'opacity-0'} group-hover:scale-105" />
       {#if simpleHover}
         <span class="pointer-events-none absolute inset-0 grid place-items-center bg-black/0 transition-colors duration-150 group-hover:bg-black/40 group-focus-visible:bg-black/40">

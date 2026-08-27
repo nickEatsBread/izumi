@@ -28,6 +28,7 @@ describe('Carousel edge arrows', () => {
   it('exposes row boundaries for low-cost controller navigation', () => {
     expect(src).toContain('<section data-nav-row')
     expect(src).toContain('data-carousel-scroller data-nav-row-items')
+    expect(src).toContain('use:gameModeCarouselTouch')
   })
 
   it('guards both arrows', () => {
@@ -67,6 +68,11 @@ describe('Carousel edge arrows', () => {
     expect(card).toContain("window.addEventListener('carousel-nav', close)")
     expect(card).toContain('onpointermove={openAfterPointerMove}')
     expect(card).not.toContain('suppressedUntil')
+  })
+
+  it('prevents poster-native drag from stealing Deck pan gestures', () => {
+    expect(card).toContain('data-focusable draggable="false"')
+    expect(card).toMatch(/<img[^>]+draggable="false"/)
   })
 
   it('forwards wheel input received by the portalled preview to its originating row', () => {

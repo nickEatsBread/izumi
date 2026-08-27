@@ -48,6 +48,115 @@ export function dragScroll(node: HTMLElement) {
   }
 }
 
+/** Steam Deck carousel arbitration. WebKitGTK otherwise lets an overflow-x row (or one of its
+ * draggable poster links) claim an ambiguous finger gesture before the document can begin its
+ * vertical pan. Advertise native pan-y up front, then own only a clearly-horizontal drag here.
+ * Gamescope exposes Deck touch as a synthesized mouse pointer on the shipped GTK port, so this is
+ * intentionally pointer-type agnostic while remaining strictly Game-mode gated. */
+export function gameModeCarouselTouch(node: HTMLElement) {
+  const previousTouchAction = node.style.touchAction
+  const stopMode = gameMode.subscribe((enabled) => {
+    node.style.touchAction = enabled ? 'pan-y' : previousTouchAction
+  })
+  let pointer = -1
+  let axis: 'pending' | 'horizontal' | 'vertical' = 'pending'
+  let startX = 0, startY = 0, startLeft = 0, lastX = 0, lastAt = 0, velocity = 0
+  let momentumFrame = 0
+  let suppressClickUntil = 0
+
+  const stopMomentum = () => {
+    if (momentumFrame) cancelAnimationFrame(momentumFrame)
+    momentumFrame = 0
+  }
+  const coast = () => {
+    if (Math.abs(velocity) < 0.05) return
+    let previous = performance.now()
+    const frame = (now: number) => {
+      const dt = Math.min(32, Math.max(1, now - previous))
+      previous = now
+      velocity *= Math.pow(0.91, dt / 16.67)
+      if (Math.abs(velocity) < 0.05) { momentumFrame = 0; return }
+      const before = node.scrollLeft
+      node.scrollLeft += velocity * dt
+      if (Math.abs(node.scrollLeft - before) < 0.1) { momentumFrame = 0; return }
+      momentumFrame = requestAnimationFrame(frame)
+    }
+    momentumFrame = requestAnimationFrame(frame)
+  }
+  const onDown = (event: PointerEvent) => {
+    if (!get(gameMode) || get(playing) || event.button !== 0) return
+    stopMomentum()
+    pointer = event.pointerId
+    axis = 'pending'
+    startX = lastX = event.clientX
+    startY = event.clientY
+    startLeft = node.scrollLeft
+    lastAt = performance.now()
+    velocity = 0
+  }
+  const onMove = (event: PointerEvent) => {
+    if (pointer !== event.pointerId) return
+    const dx = event.clientX - startX
+    const dy = event.clientY - startY
+    if (axis === 'pending') {
+      if (Math.hypot(dx, dy) < 8) return
+      // Bias a diagonal gesture toward the document. A row starts moving only when horizontal
+      // intent is unambiguous; vertical movement never calls preventDefault.
+      axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'horizontal' : 'vertical'
+      if (axis === 'horizontal') {
+        suppressClickUntil = performance.now() + 450
+        window.dispatchEvent(new Event('carousel-nav'))
+        try { node.setPointerCapture(event.pointerId) } catch { /* capture is optional */ }
+      }
+    }
+    if (axis !== 'horizontal') return
+    event.preventDefault()
+    const now = performance.now()
+    const dt = Math.max(1, now - lastAt)
+    const sample = Math.max(-3, Math.min(3, (lastX - event.clientX) / dt))
+    velocity = velocity * 0.55 + sample * 0.45
+    lastX = event.clientX
+    lastAt = now
+    node.scrollLeft = startLeft - dx
+  }
+  const onEnd = (event: PointerEvent) => {
+    if (pointer !== event.pointerId) return
+    const horizontal = axis === 'horizontal'
+    pointer = -1
+    axis = 'pending'
+    try { node.releasePointerCapture(event.pointerId) } catch { /* wasn't captured */ }
+    if (horizontal) coast()
+  }
+  const onClick = (event: MouseEvent) => {
+    if (performance.now() >= suppressClickUntil) return
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  const onDragStart = (event: DragEvent) => {
+    if (get(gameMode)) event.preventDefault()
+  }
+
+  node.addEventListener('pointerdown', onDown)
+  node.addEventListener('pointermove', onMove)
+  node.addEventListener('pointerup', onEnd)
+  node.addEventListener('pointercancel', onEnd)
+  node.addEventListener('click', onClick, true)
+  node.addEventListener('dragstart', onDragStart)
+  return {
+    destroy() {
+      stopMomentum()
+      stopMode()
+      node.style.touchAction = previousTouchAction
+      node.removeEventListener('pointerdown', onDown)
+      node.removeEventListener('pointermove', onMove)
+      node.removeEventListener('pointerup', onEnd)
+      node.removeEventListener('pointercancel', onEnd)
+      node.removeEventListener('click', onClick, true)
+      node.removeEventListener('dragstart', onDragStart)
+    },
+  }
+}
+
 // Game mode: kill the native `title` hover tooltips (the little accessibility popups). With a
 // controller the emulated pointer hovers everything and pops them up over the UI. We strip the
 // title on pointer-enter (stashing it in data-title so nothing is lost) so the tooltip's delay

@@ -14,6 +14,23 @@ export const SEEK = {
   ramp: 1600,
 } as const
 
+// Digital D-pad input should start repeating sooner than an analogue trigger. More importantly,
+// separate presses share their requested target for a short burst: mpv may emit an older
+// time-pos while an exact seek is settling, and rebasing the next press on that event made the
+// second/third press appear delayed or move the bar backwards.
+export const DPAD_SEEK = {
+  initialDelay: 120,
+  startInterval: 100,
+  minInterval: 45,
+  ramp: 900,
+  chainMs: 800,
+} as const
+
+export interface DpadSeekChain {
+  target: number
+  updatedAt: number
+}
+
 /** One logical press per physical button cycle, with a short bounce guard for Steam's duplicate
  * virtual-controller edges. Used by View/Select so one press cannot close then reopen comments. */
 export class ButtonPressLatch {
@@ -53,18 +70,21 @@ const clamp = (t: number, dur: number) =>
 
 // One trigger (dir = -1 rewind / +1 forward). Fed one frame at a time.
 export class TriggerScrubber {
-  private timer = new RepeatTimer({
-    initialDelay: SEEK.initialDelay,
-    startInterval: SEEK.startInterval,
-    minInterval: SEEK.minInterval,
-    ramp: SEEK.ramp,
-  })
+  private timer: RepeatTimer
   private wasPressed = false
   private scrubbing = false
   private preview = 0
   private tapFired = false
 
-  constructor(private dir: 1 | -1, private d: SeekDeps, private source: 'trigger' | 'dpad' = 'trigger') {}
+  constructor(
+    private dir: 1 | -1,
+    private d: SeekDeps,
+    private source: 'trigger' | 'dpad' = 'trigger',
+    private dpadChain: DpadSeekChain = { target: 0, updatedAt: Number.NEGATIVE_INFINITY },
+  ) {
+    const timing = source === 'dpad' ? DPAD_SEEK : SEEK
+    this.timer = new RepeatTimer(timing)
+  }
 
   update(pressed: boolean, now: number): void {
     if (pressed && !this.wasPressed) {
@@ -77,18 +97,30 @@ export class TriggerScrubber {
       // D-pad seeking is digital and should update on press, like Leanback. Triggers retain the
       // release-to-tap distinction so a trigger hold can become a scrub without a surprise jump.
       if (this.source === 'dpad') {
-        this.d.seek(clamp(this.d.getPos() + SEEK.tap * this.dir, this.d.getDur()), this.source)
+        const base = now - this.dpadChain.updatedAt <= DPAD_SEEK.chainMs
+          ? this.dpadChain.target
+          : this.d.getPos()
+        this.preview = clamp(base + SEEK.tap * this.dir, this.d.getDur())
+        this.dpadChain.target = this.preview
+        this.dpadChain.updatedAt = now
+        this.d.seek(this.preview, this.source)
         this.tapFired = true
       }
     } else if (pressed && this.wasPressed) {
       if (this.timer.tick(now)) {
         if (!this.scrubbing) {
           this.scrubbing = true
-          this.preview = this.d.getPos()
+          this.preview = this.source === 'dpad' && now - this.dpadChain.updatedAt <= DPAD_SEEK.chainMs
+            ? this.dpadChain.target
+            : this.d.getPos()
           if (this.source === 'trigger') this.d.onActivity()
           this.d.beginScrub(this.preview, this.source)
         }
         this.preview = clamp(this.preview + SEEK.step * this.dir, this.d.getDur())
+        if (this.source === 'dpad') {
+          this.dpadChain.target = this.preview
+          this.dpadChain.updatedAt = now
+        }
         this.d.moveScrub(this.preview)
       }
     } else if (!pressed && this.wasPressed) {
@@ -145,8 +177,9 @@ export function startGamepadSeek(d: SeekDeps, debug = false): () => void {
 export function startNativeGamepadSeek(d: SeekDeps): () => void {
   const l2 = new TriggerScrubber(-1, d)
   const r2 = new TriggerScrubber(+1, d)
-  const dpadLeft = new TriggerScrubber(-1, d, 'dpad')
-  const dpadRight = new TriggerScrubber(+1, d, 'dpad')
+  const dpadChain: DpadSeekChain = { target: 0, updatedAt: Number.NEGATIVE_INFINITY }
+  const dpadLeft = new TriggerScrubber(-1, d, 'dpad', dpadChain)
+  const dpadRight = new TriggerScrubber(+1, d, 'dpad', dpadChain)
   const held = { L: false, R: false, left: false, right: false }
   let unlisten: (() => void) | null = null
   let disposed = false

@@ -16,3 +16,20 @@ describe('Game-mode native tooltip suppression', () => {
     expect(source).toContain("el.setAttribute('aria-label', title)")
   })
 })
+
+describe('Game-mode carousel touch arbitration', () => {
+  it('gives vertical gestures to the document and owns only clear horizontal intent', () => {
+    expect(source).toContain('export function gameModeCarouselTouch')
+    expect(source).toContain("node.style.touchAction = enabled ? 'pan-y'")
+    expect(source).toContain("Math.abs(dx) > Math.abs(dy) * 1.2 ? 'horizontal' : 'vertical'")
+    expect(source).toContain("if (axis !== 'horizontal') return")
+    expect(source).toContain('event.preventDefault()')
+  })
+
+  it('keeps horizontal swipes attached and carries their momentum without opening a card', () => {
+    expect(source).toContain('node.scrollLeft = startLeft - dx')
+    expect(source).toContain('velocity *= Math.pow(0.91')
+    expect(source).toContain('suppressClickUntil = performance.now() + 450')
+    expect(source).toContain("node.addEventListener('click', onClick, true)")
+  })
+})

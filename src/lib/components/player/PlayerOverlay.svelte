@@ -15,7 +15,7 @@
   import { overlayIsLoading } from '$lib/player/overlay-loading'
   import { getSkipSegments, SKIP_RETRY_MS, type Segment } from '$lib/stremio/aniskip'
   import { mergeSkipSegments, segmentsFromChapters } from '$lib/player/chapter-skip'
-  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, commentsOverlayMoving, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
+  import { playing, playerLoadId, nowPlaying, nowPlayingMedia, nowPlayingStream, fullscreen, toggleFullscreen, exitFullscreen, pictureInPicture, togglePictureInPicture, exitPictureInPicture, playerNotice, spriteKey, bingeSource, gameMode, playerCompositorPath, trackMenuOpen, playerMenuOpen, playerSideSheetOpen, playerOverlayRev, commentsOpen, playerSleep, playerStatsOpen, playerAbLoop, gifRecordingStart, directTorrentStats, chapters as chapterStore, nextEpisodeReady, bumpPlayerOverlay, streamPicker, streamPickerDismissedAt, connecting } from '$lib/player/session'
   import { sortChapters, prevChapterTarget, nextChapterTarget } from '$lib/player/chapters'
   import { playPrev, playNext, recoverPlaybackSource } from '$lib/stremio/play'
   import { markAlive } from '$lib/stremio/dead-sources'
@@ -103,6 +103,8 @@
   let hideT: ReturnType<typeof setTimeout>
   let quietPadSeek = $state(false)
   let quietPadSeekT: ReturnType<typeof setTimeout>
+  let dpadVisualPos = $state<number | null>(null)
+  let dpadVisualT: ReturnType<typeof setTimeout>
 
   // Game mode (Gamescope / Steam Deck) always uses the fullscreen Deck layout. Native Wayland
   // composites this webview live over the layer-shell video; XWayland keeps the established
@@ -199,7 +201,8 @@
   function poke() {
     visible = true
     clearTimeout(hideT)
-    hideT = setTimeout(() => (visible = false), 3000)
+    // Match Crunchy Deck's breathing room: the chrome itself fades for 300ms after this hold.
+    hideT = setTimeout(() => (visible = false), 3500)
   }
   const drmActive = $derived(!!$nowPlayingStream.drm)
   let overlayRoot = $state<HTMLDivElement | undefined>(undefined)
@@ -362,8 +365,7 @@
     const previous = pos
     const next = Math.max(0, Number.isFinite(dur) && dur > 0 ? Math.min(dur, t) : t)
     pos = next
-    const request = Promise.resolve()
-      .then(() => playerCommand('seek', [next.toFixed(3), 'absolute+exact']))
+    const request = playerCommand('seek', [next.toFixed(3), 'absolute+exact'])
       .then(() => true)
       .catch((error) => {
         if (pos === next) pos = previous
@@ -380,13 +382,19 @@
   // this latch those native events satisfy `loading` and momentarily reveal the complete chrome
   // even though the input path itself no longer calls poke(). Existing visible/paused controls are
   // left alone; only a seek that began while hidden gets this suppression window.
-  const quietDpadSeekTo = (t: number) => {
+  const quietDpadSeekTo = (t: number): Promise<boolean> => {
     if (!controlsVisible) {
       quietPadSeek = true
       clearTimeout(quietPadSeekT)
       quietPadSeekT = setTimeout(() => (quietPadSeek = false), 900)
     }
-    seekTo(t)
+    // Keep the native bar on the newest requested target while mpv flushes the old exact seek.
+    // Its time-pos event can briefly describe the previous request; accepting that as the visual
+    // position is what made rapid D-pad presses look as though only the first one registered.
+    dpadVisualPos = t
+    clearTimeout(dpadVisualT)
+    dpadVisualT = setTimeout(() => (dpadVisualPos = null), 1200)
+    return seekTo(t)
   }
 
   // The shared scrub store commits through the same absolute seek as touch/skip.
@@ -400,9 +408,12 @@
       getPos: () => pos,
       getDur: () => dur,
       seek: (t, source) => source === 'dpad' ? quietDpadSeekTo(t) : seekTo(t),
-      beginScrub: (t, source) => beginScrub(t, source === 'dpad' ? 'dpad' : 'pad'),
-      moveScrub: (t) => moveScrub(t),
-      endScrub: () => endScrub(),
+      beginScrub: (t, source) => {
+        beginScrub(t, source === 'dpad' ? 'dpad' : 'pad')
+        scheduleGmDynamicOverlay()
+      },
+      moveScrub: (t) => { moveScrub(t, true); scheduleGmDynamicOverlay() },
+      endScrub: () => { endScrub(); scheduleGmDynamicOverlay() },
       onActivity: () => poke(),
       blocked: () => subtitleEditorOpen || get(commentsOpen) || get(trackMenuOpen) || get(playerMenuOpen),
     })
@@ -541,6 +552,7 @@
     if (key === loadedKey) return
     loadedKey = key
     pos = 0; dur = 0; buffer = 0; paused = false; segments = []; chapters = []; metaLoaded = false
+    dpadVisualPos = null; clearTimeout(dpadVisualT)
     chapterStore.set([])
     coreIdle = true; seeking = false; eof = false; firstFrame = false; loadedUrl = ''
     recoveryWatch = resetRecoveryWatch(Date.now())
@@ -622,9 +634,6 @@
   const noticeVisible = $derived(!!$playerNotice)
   const sourcePickerVisible = $derived(!!$streamPicker && !$streamPicker.hidden)
   const sourceConnectingVisible = $derived(!!$connecting)
-  // Comments scroll continuously. Source resolution now explicitly bumps the bitmap for each
-  // progressive result and stepped spinner frame, avoiding a wasteful full-screen 30fps loop.
-  const overlayFast = $derived($commentsOpen && $commentsOverlayMoving)
   const overlayFull = $derived($trackMenuOpen || $playerMenuOpen || subtitleEditorOpen || $commentsOpen || $playerStatsOpen || p2pVisible || noticeVisible || sourcePickerVisible || sourceConnectingVisible)
   // Ordinary controls are drawn by the 60Hz native OSD. Complex/persistent HTML surfaces still
   // take the bitmap path; that bitmap sits above ASS and includes the controls underneath it.
@@ -678,22 +687,9 @@
       : null
     const sheetRect = sheetElement?.getBoundingClientRect() ?? null
     const sheetMotion = !!sheetRect && $playerSideSheetOpen
-    const commentsElement = $commentsOpen
-      ? document.querySelector<HTMLElement>('[data-gm-comments-surface]')
-      : null
-    const commentsRect = commentsElement?.getBoundingClientRect() ?? null
-    // The Disqus iframe is the heaviest continuously-changing surface in the player. Publish just
-    // its exact panel bounds. Unlike settings sheets it has no Game-mode shadow, so a crop margin
-    // captures the transparent player hole's browse page underneath (including chopped card-title
-    // text) and Gamescope composites that strip as a fake shadow around the comments.
-    const commentsCrop = commentsRect
-      ? gameModeSideSheetCrop(viewportWidth, viewportHeight, commentsRect, 0)
-      : null
     const nativeSheet = sheetMotion
     const crop = sheetMotion
       ? gameModeSideSheetCrop(viewportWidth, viewportHeight, sheetRect)
-      : commentsCrop
-        ? commentsCrop
       : gameModeSnapshotCrop(viewportWidth, viewportHeight, overlayFull)
     if (!overlayActive) {
       invoke('player_gm_overlay', { visible: false, fast: false, animate: $playerProgressAnimations, crop: null }).catch(() => {})
@@ -701,23 +697,17 @@
     }
     // Snapshot now (so tap/pause is not stuck behind a cancellable timer) and once more
     // after paint so Controls/toasts are in the tree.
-    invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop, sheet: nativeSheet, exactCrop: !!commentsCrop }).catch(() => {})
+    invoke('player_gm_overlay', { visible: true, fast: false, animate: $playerProgressAnimations, crop, sheet: nativeSheet, exactCrop: false }).catch(() => {})
     return scheduleGameModeOverlay(() => {
       const paintedSheet = $playerSideSheetOpen
         ? document.querySelector<HTMLElement>('[data-gm-side-sheet]')?.getBoundingClientRect() ?? null
         : null
       const paintedSheetMotion = !!paintedSheet && $playerSideSheetOpen
-      const paintedComments = $commentsOpen
-        ? document.querySelector<HTMLElement>('[data-gm-comments-surface]')?.getBoundingClientRect() ?? null
-        : null
-      const paintedCommentsCrop = paintedComments
-        ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedComments, 0)
-        : null
       const paintedCrop = paintedSheetMotion
         ? gameModeSideSheetCrop(window.innerWidth || 0, window.innerHeight || 0, paintedSheet)
-        : paintedCommentsCrop ?? crop
+        : crop
       const paintedNativeSheet = paintedSheetMotion
-      invoke('player_gm_overlay', { visible: true, fast: overlayFast, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedNativeSheet, exactCrop: !!paintedCommentsCrop }).catch(() => {})
+      invoke('player_gm_overlay', { visible: true, fast: false, animate: $playerProgressAnimations, crop: paintedCrop, sheet: paintedNativeSheet, exactCrop: false }).catch(() => {})
     })
   })
 
@@ -727,7 +717,6 @@
     bumpPlayerOverlay()
   })
 
-  let gmDynRaf = 0
   let gmDynInFlight = false
   let gmDynDirty = false
   let gmDynDisposed = false
@@ -736,6 +725,13 @@
   // Last known seek bar geometry (CSS px), so the native scrub bar keeps its place if the
   // element is momentarily unmeasurable.
   let lastBar = { x: 0, y: 0, w: 0 }
+  let lastBarLayoutKey = ''
+  let lastChromeLayoutKey = ''
+  let lastChrome = {
+    title: '', titleX: 0, titleY: 0, titleSize: 0, titleWeight: 0,
+    episodeText: '', episodeX: 0, episodeY: 0, episodeSize: 0, episodeWeight: 0,
+    controlItems: [] as { x: number; y: number; w: number; h: number; label: string; focused: boolean; primary: boolean }[],
+  }
   let gmScrubBasePos = $state(0)
   let gmScrubBaseBuffer = $state(0)
   let gmScrubWasActive = false
@@ -773,9 +769,9 @@
   })
 
   const gmScrubFreezesProgress = $derived(gmMode && $scrub.active)
-  const gmDynamicPos = $derived(gmScrubFreezesProgress ? gmScrubBasePos : pos)
+  const gmDynamicPos = $derived(gmScrubFreezesProgress ? gmScrubBasePos : (dpadVisualPos ?? pos))
   const gmDynamicBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
-  const controlsPos = $derived(gmScrubFreezesProgress ? $scrub.time : pos)
+  const controlsPos = $derived(gmScrubFreezesProgress ? $scrub.time : (dpadVisualPos ?? pos))
   const controlsBuffer = $derived(gmScrubFreezesProgress ? gmScrubBaseBuffer : buffer)
 
   const hiddenGmDynamicState = () => ({
@@ -789,8 +785,6 @@
     dur: 0,
     buffer: 0,
     scrubTime: 0,
-    smoothScrub: false,
-    padScrub: false,
     width: 1,
     height: 1,
     barX: 0,
@@ -803,9 +797,13 @@
     title: '',
     titleX: 0,
     titleY: 0,
+    titleSize: 0,
+    titleWeight: 0,
     episodeText: '',
     episodeX: 0,
     episodeY: 0,
+    episodeSize: 0,
+    episodeWeight: 0,
     controlItems: [],
     timelineSegments: [],
     chapterMarks: [],
@@ -821,9 +819,24 @@
     const label = (selector: string) => {
       const element = root?.querySelector<HTMLElement>(selector)
       const rect = element?.getBoundingClientRect()
-      return element && rect && rect.width > 0 && rect.height > 0
-        ? { text: element.textContent?.trim() ?? '', x: rect.left, y: rect.top + rect.height / 2 }
-        : { text: '', x: 0, y: 0 }
+      if (!element || !rect || rect.width <= 0 || rect.height <= 0) {
+        return { text: '', x: 0, y: 0, size: 0, weight: 0 }
+      }
+      const style = getComputedStyle(element)
+      const cssSize = Number.parseFloat(style.fontSize)
+      // libass's \fs metric is visibly smaller than Chromium's CSS font-size metric. The actual
+      // one-line box is the stable common unit here: it also includes native WebKit page zoom and
+      // the title's leading-tight / episode's leading-snug line height. This makes the native ASS
+      // title match the HTML title revealed beneath an options sheet instead of jumping in size.
+      const size = Math.max(Number.isFinite(cssSize) ? cssSize : 0, rect.height)
+      const weight = Number.parseInt(style.fontWeight, 10)
+      return {
+        text: element.textContent?.trim() ?? '',
+        x: rect.left,
+        y: rect.top + rect.height / 2,
+        size: Number.isFinite(size) ? size : 0,
+        weight: Number.isFinite(weight) ? weight : 0,
+      }
     }
     const title = label('[data-gm-title]')
     const episode = label('[data-gm-episode]')
@@ -848,15 +861,20 @@
             }
           })
       : []
-    return {
+    lastChrome = {
       title: title.text,
       titleX: title.x,
       titleY: title.y,
+      titleSize: title.size,
+      titleWeight: title.weight,
       episodeText: episode.text,
       episodeX: episode.x,
       episodeY: episode.y,
+      episodeSize: episode.size,
+      episodeWeight: episode.weight,
       controlItems,
     }
+    return lastChrome
   }
 
   function currentGmDynamicState() {
@@ -871,12 +889,30 @@
     // exactly on top of the HTML bar — dragging feels like dragging the player's bar, not a
     // separate mini-skimmer. Measure it ONLY when NOT actively scrubbing: the bar is
     // geometrically constant during a drag, so re-reading getBoundingClientRect() every scrub
-    // frame is a forced synchronous reflow 60x/s that jitters the very sample stream we then
-    // smooth. Non-scrub frames (hover/loading) keep lastBar fresh; a one-time fallback covers a
+    // frame is a forced synchronous reflow 60x/s that jitters the input sample stream. Cached
+    // non-scrub geometry stays valid for the gesture; a one-time fallback covers a
     // scrub that starts before any measurement exists (the "drifts down" bug).
-    if (!s.active || lastBar.w <= 0) measureSeekBar()
-    const chrome = nativeControls ? measureNativeChrome() : {
-      title: '', titleX: 0, titleY: 0, episodeText: '', episodeX: 0, episodeY: 0, controlItems: [],
+    // Geometry and computed styles do not change with playback progress. Cache them instead of
+    // forcing dozens of getBoundingClientRect/getComputedStyle calls for every D-pad/touch sample.
+    // Resize, episode/title, pause-icon, and focus changes all invalidate the relevant cache.
+    const barLayoutKey = `${window.innerWidth}:${window.innerHeight}:${loadedKey}:${nativeControls}`
+    if (lastBar.w <= 0 || (!s.active && lastBarLayoutKey !== barLayoutKey)) {
+      measureSeekBar()
+      if (lastBar.w > 0) lastBarLayoutKey = barLayoutKey
+    }
+    const chromeLayoutKey = `${barLayoutKey}:${paused}:${gmFocusRev}:${np.title}:${np.episode ?? ''}`
+    const chrome = nativeControls
+      ? (lastChrome.controlItems.length > 0 && lastChromeLayoutKey === chromeLayoutKey
+          ? lastChrome
+          : (() => {
+              const measured = measureNativeChrome()
+              if (measured.controlItems.length > 0) lastChromeLayoutKey = chromeLayoutKey
+              return measured
+            })())
+      : {
+      title: '', titleX: 0, titleY: 0, titleSize: 0, titleWeight: 0,
+      episodeText: '', episodeX: 0, episodeY: 0, episodeSize: 0, episodeWeight: 0,
+      controlItems: [],
     }
     return {
       visible,
@@ -890,13 +926,6 @@
       dur,
       buffer: gmDynamicBuffer,
       scrubTime: s.active ? s.time : pos,
-      // Tween the native bar in the 60fps mpv OSD loop for BOTH input sources. Touch used to
-      // snap to each IPC-delivered sample (mpv doesn't interpolate between osd-overlay pushes),
-      // so it looked steppy; letting the OSD loop ease toward the latest target decouples visible
-      // motion from IPC arrival rate — the chromium/compositor model. padScrub selects the tween
-      // time-constant (longer for stepped triggers, short for a finger).
-      smoothScrub: s.active,
-      padScrub: s.source === 'pad',
       width: Math.max(1, window.innerWidth || 1),
       height: Math.max(1, window.innerHeight || 1),
       barX: lastBar.x,
@@ -916,29 +945,26 @@
   }
 
   function scheduleGmDynamicOverlay() {
-    if (typeof window === 'undefined' || gmDynDisposed || gmDynRaf) return
+    if (typeof window === 'undefined' || gmDynDisposed) return
     if (!(gmBitmapMode && get(playing) && (loading || get(scrub).active || controlsVisible || showSkip)) && !gmDynLastVisible) return
-    gmDynRaf = requestAnimationFrame(() => {
-      gmDynRaf = 0
-      if (gmDynInFlight) {
-        gmDynDirty = true
-        return
-      }
+    if (gmDynInFlight) {
+      gmDynDirty = true
+      return
+    }
 
-      const state = currentGmDynamicState()
-      if (!state.visible && !gmDynLastVisible) return
-      gmDynInFlight = true
-      gmDynLastVisible = state.visible
-      invoke('player_gm_dynamic_overlay', { state })
-        .catch(() => {})
-        .finally(() => {
-          gmDynInFlight = false
-          if (gmDynDirty && !gmDynDisposed) {
-            gmDynDirty = false
-            scheduleGmDynamicOverlay()
-          }
-        })
-    })
+    const state = currentGmDynamicState()
+    if (!state.visible && !gmDynLastVisible) return
+    gmDynInFlight = true
+    gmDynLastVisible = state.visible
+    invoke('player_gm_dynamic_overlay', { state })
+      .catch(() => {})
+      .finally(() => {
+        gmDynInFlight = false
+        if (gmDynDirty && !gmDynDisposed) {
+          gmDynDirty = false
+          scheduleGmDynamicOverlay()
+        }
+      })
   }
 
   $effect(() => {
@@ -982,7 +1008,7 @@
     window.dispatchEvent(new CustomEvent('player-finalize', { detail: { pos, dur } }))
     void stopDirectTorrentPlayback()
     gmDynDisposed = true
-    if (gmDynRaf) cancelAnimationFrame(gmDynRaf)
+    clearTimeout(dpadVisualT)
     if (gmDynLastVisible) invoke('player_gm_dynamic_overlay', { state: hiddenGmDynamicState() }).catch(() => {})
     invoke('set_idle_inhibit', { on: false }).catch(() => {})
     // Retract the OS media panel / Discord entry on EVERY teardown path, not just the ← button —
@@ -1148,6 +1174,10 @@
       listen<[number, number]>('player-progress', (e) => {
         pos = e.payload[0]
         dur = e.payload[1]
+        if (dpadVisualPos != null && Math.abs(pos - dpadVisualPos) < 0.5) {
+          dpadVisualPos = null
+          clearTimeout(dpadVisualT)
+        }
         reportDirectTorrentBuffer(pos, buffer)
         reportWatchPlayback(pos, dur, paused, buffering)
         // First real frame shown → stop treating core-idle as "still loading".
@@ -1486,7 +1516,7 @@
   {:else if controlsMounted}
     <!-- XWayland measures this bar for Rust's native 60Hz OSD. Native Wayland paints it live. -->
     <div class="izumi-hud" class:opacity-0={(gmBitmapMode && gmDynamicOwnsChrome || quietDpadScrub) && !$playerSideSheetOpen}>
-      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} />
+      <Controls pos={controlsPos} {dur} buffer={controlsBuffer} {paused} {segments} {cmd} onclose={close} gm={gmMode} native={gmBitmapMode} ontoggleplay={togglePlayback} oneditsubtitles={() => (subtitleEditorOpen = true)} onscrubinput={scheduleGmDynamicOverlay} />
     </div>
   {/if}
 

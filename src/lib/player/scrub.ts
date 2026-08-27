@@ -42,8 +42,17 @@ export function beginScrub(time: number, source: ScrubSource): void {
   scrub.set({ active: true, time, source })
 }
 
-export function moveScrub(time: number): void {
+export function moveScrub(time: number, immediate = false): void {
   if (!get(scrub).active) return
+  // Gamescope already frame-paces touch and controller input. Adding another browser rAF here,
+  // followed by the native-overlay scheduler's own turn, put the visible knob one or two frames
+  // behind the user's finger. Direct-manipulation callers bypass that queue; desktop hover can
+  // retain the coalescing path.
+  if (immediate) {
+    cancelPending()
+    applyMove(time)
+    return
+  }
   if (typeof requestAnimationFrame === 'function') {
     pendingTime = time
     if (raf) return
@@ -60,6 +69,8 @@ export function moveScrub(time: number): void {
 export function endScrub(): void {
   flushPending()
   const s = get(scrub)
-  scrub.set({ active: false, time: s.time, source: null })
   if (s.active && s.source) commit(s.time, s.source)
+  // Dispatch the final seek before the reactive pause effect sees an inactive scrub and resumes
+  // playback. This preserves command order at release instead of briefly resuming the old frame.
+  scrub.set({ active: false, time: s.time, source: null })
 }

@@ -4,7 +4,6 @@
   // r/anime episode thread found by search (inline comment bodies) + an optional configured mapper.
   // Read-only for now — posting (AniList free, Reddit OAuth) is a later phase.
   import { fade } from 'svelte/transition'
-  import { onDestroy } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import MessageSquare from '@lucide/svelte/icons/message-square'
@@ -13,7 +12,8 @@
   import Minimize2 from '@lucide/svelte/icons/minimize-2'
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import ArrowBigUp from '@lucide/svelte/icons/arrow-big-up'
-  import { nowPlayingMedia, commentsOpen, commentsOverlayMoving, gameMode } from '$lib/player/session'
+  import { nowPlayingMedia, commentsOpen, gameMode, fullscreen } from '$lib/player/session'
+  import { isAndroid } from '$lib/platform'
   import { fetchDiscussion, defaultDiscussionPlatform, discussionExpanded, type DiscussionThread, type DiscussionComment, type ScriptEmbed } from '$lib/comments'
   import { loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
   import { warnBeforeThirdPartyLogin } from '$lib/deck/keyboard-warning'
@@ -44,7 +44,7 @@
     if ($gameMode && open !== commentsWereOpen) {
       const focused = document.activeElement as HTMLElement | null
       if (!open && focused?.closest?.('[data-comments-panel]')) focused.blur()
-      if (!open) finishCommentsMotion()
+      if (!open) window.dispatchEvent(new Event('osk-close'))
       restoreGmTouchAfterTransition()
     }
     commentsWereOpen = open
@@ -161,21 +161,6 @@
   let archiveTouchVelocity = 0
   let archiveTouchFrame = 0
   let archiveMomentumFrame = 0
-  let commentsMotionTimer: number | undefined
-  function finishCommentsMotion() {
-    if (commentsMotionTimer != null) window.clearTimeout(commentsMotionTimer)
-    commentsMotionTimer = undefined
-    commentsOverlayMoving.set(false)
-  }
-  function noteCommentsMotion() {
-    if (!$gameMode || !$commentsOpen) return
-    commentsOverlayMoving.set(true)
-    if (commentsMotionTimer != null) window.clearTimeout(commentsMotionTimer)
-    // Scroll events continue through kinetic motion, so this only settles after the last painted
-    // offset. The final false transition asks the native bridge for one authoritative end frame.
-    commentsMotionTimer = window.setTimeout(finishCommentsMotion, 140)
-  }
-  onDestroy(finishCommentsMotion)
   function stopArchiveMomentum() {
     if (archiveMomentumFrame) window.cancelAnimationFrame(archiveMomentumFrame)
     archiveMomentumFrame = 0
@@ -194,7 +179,6 @@
     archiveTouchDelta = 0
   }
   function archiveTouchScroll(phase?: string, rawDy?: number, rawDt?: number) {
-    noteCommentsMotion()
     if (phase === 'start') { resetArchiveTouch(); return }
     if (phase === 'move') {
       const dy = Number(rawDy)
@@ -276,23 +260,44 @@
       type: 'anime-community:init', config: tacConfig,
     }, TAC_ORIGIN)
   }
+  function openDisqusKeyboard(frame: Window) {
+    const send = (action: 'insert' | 'backspace' | 'submit' | 'close', text?: string) => {
+      try { frame.postMessage({ type: 'izumi-comments-key', action, text }, '*') } catch { /* stale frame */ }
+    }
+    window.dispatchEvent(new CustomEvent('osk-remote-open', { detail: {
+      insert: (text: string) => send('insert', text),
+      backspace: () => send('backspace'),
+      submit: () => send('submit'),
+      close: () => send('close'),
+    } }))
+  }
   // A new archive starts at the viewport height until it reports its actual content height.
   $effect(() => { void embedSrc; archiveHeight = null })
   $effect(() => {
     function onMsg(e: MessageEvent) {
-      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number; url?: string; phase?: string; dy?: number; dt?: number } | null
-      // The same-origin Disqus loader and direct third-party Deck widgets report real scroll
-      // activity. Origin + exact iframe window prevent unrelated page messages from starting the
-      // expensive native refresh loop.
-      const trustedScrollActivity = m?.type === 'izumi-comments-scroll-activity' && (
-        (e.origin === location.origin && e.source === embedIframe?.contentWindow)
-        || (archiveEmbed && e.origin === 'https://discussanime.moe' && e.source === embedIframe?.contentWindow)
-        // The direct widget can own scrolling in a same-provider descendant frame. Its fixed origin
-        // is sufficient here: the only permitted effect is waking a bounded bitmap refresh loop.
-        || (directTacEmbed && e.origin === TAC_ORIGIN)
-      )
-      if (trustedScrollActivity) {
-        noteCommentsMotion()
+      const m = e.data as { type?: string; base?: string; identifier?: string; key?: string | null; height?: number; url?: string; phase?: string; dy?: number; dt?: number; mode?: number; rect?: { left?: number; top?: number; width?: number; height?: number } } | null
+      // Focus events inside Disqus never reach the app-level OSK listener because the composer is
+      // in a cross-origin descendant frame. Its narrowly-scoped all-frame bridge reports the field
+      // geometry so Steam's floating keyboard can be summoned while focus remains in the composer.
+      const disqusOrigin = e.origin === 'https://disqus.com' || /^https:\/\/[a-z0-9-]+\.disqus\.com$/i.test(e.origin)
+      if ($gameMode && $commentsOpen && embedThread?.source === 'Disqus'
+          && disqusOrigin && m?.type === 'izumi-comments-focus-input') {
+        const composerWindow = e.source as Window | null
+        const frame = embedIframe?.getBoundingClientRect()
+        const rect = m.rect
+        const scale = window.devicePixelRatio || 1
+        const number = (value: unknown, fallback: number) => Number.isFinite(Number(value)) ? Number(value) : fallback
+        void invoke<boolean>('steam_show_osk', {
+          x: Math.round(((frame?.left ?? 0) + number(rect?.left, 0)) * scale),
+          y: Math.round(((frame?.top ?? 0) + number(rect?.top, 0)) * scale),
+          w: Math.max(1, Math.round(number(rect?.width, frame?.width ?? 640) * scale)),
+          h: Math.max(1, Math.round(number(rect?.height, 48) * scale)),
+          mode: Math.max(0, Math.min(3, Math.round(number(m.mode, 1)))),
+        }).then((shown) => {
+          void invoke('gm_log', { message: `disqus-composer: keyboard requested shown=${shown}` })
+          if (!shown && composerWindow) openDisqusKeyboard(composerWindow)
+        })
+          .catch((error) => invoke('gm_log', { message: `disqus-composer: keyboard request failed ${String(error)}` }).catch(() => {}))
         return
       }
       // Profile links in the live Disqus embed are rewritten to the forum's profile-redirect
@@ -382,7 +387,6 @@
         return
       }
       const amount = dir === 'down' ? 180 : -180
-      noteCommentsMotion()
       // The embed's scroller stays bound while hidden on another tab — pick by what's visible.
       if (!embedActive) { listScroller?.scrollBy(0, amount); return }
       if (archiveScroller) { archiveScroller.scrollBy(0, amount); return }
@@ -419,10 +423,15 @@
   // Tell the Disqus loader page which layout to use so its reactions strip switches between the compact
   // chips (side) and the big Hayami-style tiles (expanded). Posted on mode change + on iframe load.
   const postMode = () => embedIframe?.contentWindow?.postMessage({
-    type: 'izumi-mode', expanded: $discussionExpanded, gameMode: $gameMode,
+    type: 'izumi-mode',
+    expanded: $discussionExpanded || $gameMode || ($fullscreen && !$isAndroid),
+    gameMode: $gameMode,
   }, location.origin)
   const postIframeState = () => { postMode(); postTacConfig() }
-  $effect(() => { void $discussionExpanded; void $gameMode; void embedIframe; void embedThread; postIframeState() })
+  $effect(() => {
+    void $discussionExpanded; void $gameMode; void $fullscreen; void $isAndroid
+    void embedIframe; void embedThread; postIframeState()
+  })
 
   const ago = (ms?: number) => {
     if (!ms) return ''
@@ -455,6 +464,7 @@
     <h2 class="flex items-baseline gap-1.5 text-sm font-black"><span>Discussion</span>{#if ep}<span class="font-semibold text-muted-foreground">· Ep {ep}</span>{/if}</h2>
     <div class="ml-auto flex items-center gap-1">
       <button data-focusable onclick={() => discussionExpanded.set(!$discussionExpanded)}
+              class:hidden={$gameMode}
               aria-label={$discussionExpanded ? 'Dock to side' : 'Expand'}
               class="grid h-8 w-8 place-items-center rounded-md hover:bg-accent">
         {#if $discussionExpanded}<Minimize2 size={16} />{:else}<Maximize2 size={16} />{/if}
@@ -481,7 +491,7 @@
          while other tabs are selected or the panel is closed — detaching an iframe reboots the embed
          from scratch, so it boots once per episode instead of on every tab switch/expand/reopen. -->
     {#if archiveEmbed}
-      <div bind:this={archiveScroller} onscroll={noteCommentsMotion} class={embedActive ? 'discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5' : 'hidden'}>
+      <div bind:this={archiveScroller} class={embedActive ? 'discussion-scrollbar min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-2.5' : 'hidden'}>
         <iframe title="Discussion" src={embedSrc} bind:this={embedIframe} scrolling="no"
                 style:height={archiveHeight ? `${archiveHeight}px` : '100%'}
                 class="block min-h-full w-full border-0"
@@ -513,11 +523,9 @@
     {/if}
   {/if}
   {#if !embedActive}
-    <div bind:this={listScroller} onscroll={noteCommentsMotion} class="flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3">
+    <div bind:this={listScroller} class="flex-1 touch-pan-y overflow-y-auto overscroll-contain px-3 py-3">
       {#if loading}
-        <!-- A CSS pulse keeps WebKit painting underneath the native Deck video surface while the
-             network is pending, even though the bitmap bridge intentionally displays a settled
-             frame. A static placeholder communicates loading without that hidden compositor work. -->
+        <!-- Keep the Deck placeholder static so initial network work gets the compositor budget. -->
         {#each Array.from({ length: 5 }) as _}<div class="mb-2 h-20 rounded-lg bg-muted" class:animate-pulse={!$gameMode}></div>{/each}
       {:else if !shown.length}
         <div class="grid h-full place-items-center px-6 text-center">
@@ -583,8 +591,10 @@
      overflow clip intersecting the iframe surface forces another render surface (kRoundedCorner);
      the iframe's square bottom corners on the near-identical dark panel are imperceptible. -->
 <div data-comments-panel data-gm-comments-surface data-capture-exclude-when-inert inert={!$commentsOpen}
-     class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground {$gameMode ? 'shadow-none' : 'shadow-2xl'}
-       {$discussionExpanded
+     class="dq-panel absolute z-40 flex flex-col border-white/10 bg-background text-foreground {$gameMode ? 'inset-0 h-full w-full max-w-none border-0 shadow-none' : 'shadow-2xl'}
+       {$gameMode
+         ? ''
+         : $discussionExpanded
          ? `inset-0 m-auto h-[85vh] w-[94vw] max-w-[920px] rounded-2xl border ${embedActive ? '' : 'overflow-hidden'}`
          : 'inset-y-0 right-0 w-full max-w-md border-l'}
        {$commentsOpen ? '' : $gameMode ? 'dq-gm-hide' : $discussionExpanded ? 'dq-closed-pop' : 'dq-closed-slide'}">

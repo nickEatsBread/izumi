@@ -37,14 +37,20 @@ pub const OVERLAY_MOTION_PX: i64 = 16;
 pub const OVERLAY_SHEET_MOTION_PX: i64 = 40;
 /// Premultiply scale uses 0..=1000 so a fade tick can be integer math.
 pub const OVERLAY_FADE_FULL: u32 = 1000;
-/// The source Leanback CSS declares a long parent opacity transition, but on the native mpv path
-/// that duration reads as input latency. A 160ms display-cadence reveal preserves its ease while
-/// matching the immediate feel of VacuumTube on Deck hardware.
-pub const NATIVE_CONTROLS_FADE_MS: u64 = 160;
-/// Content settles just ahead of the wash so buttons feel attached to the input edge.
-pub const NATIVE_CONTROLS_CONTENT_MS: u64 = 120;
-/// Short travel avoids the slow "rising tray" effect of the former 30px motion.
-pub const NATIVE_CONTROLS_MOTION_PX: f64 = 18.0;
+/// Crunchy Deck keeps the whole player chrome in one 300ms opacity transition. Matching that
+/// cadence in mpv avoids the abrupt split wash/content reveal that made Izumi feel less fluid.
+pub const NATIVE_CONTROLS_FADE_MS: u64 = 300;
+/// The reference chrome fades in place; vertical travel made the title and controls feel detached.
+pub const NATIVE_CONTROLS_MOTION_PX: f64 = 0.0;
+/// Restrict renderer-facing tween values to a stable set of sub-frame alpha/geometry states.
+/// A 60Hz display shows only ~18 frames during the 300ms fade; 30 eased levels remain visually
+/// continuous while preventing libass from caching a new blurred full-width bitmap forever merely
+/// because timer jitter changed an alpha by a fraction of one percent.
+pub const NATIVE_ASS_TWEEN_STEPS: f64 = 30.0;
+/// Reference seek track: 6px at rest, 10px while grabbed, eased over Tailwind's default 150ms.
+pub const NATIVE_SEEKBAR_IDLE_PX: f64 = 6.0;
+pub const NATIVE_SEEKBAR_ACTIVE_PX: f64 = 10.0;
+pub const NATIVE_SEEKBAR_TWEEN_MS: u64 = 150;
 /// Bottom fraction of the viewport that holds the control strip (idle snapshots only).
 /// 0.28 sliced the Game-mode title/episode line (64px play + seek + two text rows).
 pub const CONTROL_STRIP_FRACTION: f64 = 0.36;
@@ -90,8 +96,9 @@ pub fn overlay_fade_step(current: u32, fade_in: bool, dt_ms: u64, duration_ms: u
     }
 }
 
-/// CSS `ease` (`cubic-bezier(.25,.1,.25,1)`) evaluated by time rather than Bézier parameter.
-/// The native OSD uses the browser's actual curve so its 60Hz motion matches VacuumTube.
+/// Tailwind 3's default transition curve (`cubic-bezier(.4,0,.2,1)`) evaluated by time rather than
+/// Bézier parameter. Crunchy Deck's `transition-opacity duration-300` and seek track both use this
+/// curve, so the native OSD must use it too for the title/bar to fade and expand at the same pace.
 pub fn css_ease(progress: f64) -> f64 {
     let x = progress.clamp(0.0, 1.0);
     if x <= 0.0 || x >= 1.0 {
@@ -108,14 +115,14 @@ pub fn css_ease(progress: f64) -> f64 {
 
     let mut t = x;
     for _ in 0..6 {
-        let dx = sample(t, 0.25, 0.25) - x;
-        let d = slope(t, 0.25, 0.25);
+        let dx = sample(t, 0.4, 0.2) - x;
+        let d = slope(t, 0.4, 0.2);
         if d.abs() < 1e-7 {
             break;
         }
         t = (t - dx / d).clamp(0.0, 1.0);
     }
-    sample(t, 0.1, 1.0).clamp(0.0, 1.0)
+    sample(t, 0.0, 1.0).clamp(0.0, 1.0)
 }
 
 /// Scale premultiplied BGRA by `alpha_millis` (0..=1000) into `dst`.
@@ -229,6 +236,10 @@ pub fn playback_download_bps(
 
 pub fn should_restore_touch(last_ms: u64, now_ms: u64) -> bool {
     now_ms.saturating_sub(last_ms) >= TOUCH_RESTORE_MIN_INTERVAL_MS || now_ms < last_ms
+}
+
+pub fn quantize_animation_unit(value: f64) -> f64 {
+    (value.clamp(0.0, 1.0) * NATIVE_ASS_TWEEN_STEPS).round() / NATIVE_ASS_TWEEN_STEPS
 }
 
 /// A normal touch release keeps a short grace deadline so a transient Gamescope focus-return

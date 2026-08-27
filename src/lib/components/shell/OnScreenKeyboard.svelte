@@ -14,7 +14,14 @@
   const gm = $derived($gameMode)
 
   type Field = HTMLInputElement | HTMLTextAreaElement
+  type RemoteKeyboard = {
+    insert: (text: string) => void
+    backspace: () => void
+    submit: () => void
+    close?: () => void
+  }
   let target: Field | null = $state(null)
+  let remote: RemoteKeyboard | null = null
   let open = $state(false)
   let shift = $state(false)
   let symbols = $state(false)
@@ -48,6 +55,11 @@
   const cap = (c: string) => (shift && !symbols ? c.toUpperCase() : c)
 
   function type(ch: string) {
+    if (remote) {
+      remote.insert(ch)
+      if (shift && !symbols) shift = false
+      return
+    }
     if (!target) return
     const el = target
     const s = el.selectionStart ?? el.value.length
@@ -59,6 +71,7 @@
     if (shift && !symbols) shift = false // one-shot shift, like a phone keyboard
   }
   function backspace() {
+    if (remote) { remote.backspace(); return }
     if (!target) return
     const el = target
     const s = el.selectionStart ?? el.value.length
@@ -74,7 +87,8 @@
   }
   function submit() {
     // Enter: fire a keydown so search boxes that listen for Enter act, then close.
-    target?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    if (remote) remote.submit()
+    else target?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     close()
   }
   let closedAt = 0
@@ -82,11 +96,14 @@
     open = false
     closedAt = performance.now()
     const t = target
+    const r = remote
     target = null
+    remote = null
     shift = false; symbols = false
     // DESELECT the field (blur) — do NOT refocus, or focusin would immediately re-open the
     // keyboard (the "Done doesn't close it" bug).
     requestAnimationFrame(() => t?.blur())
+    r?.close?.()
   }
 
   // Steam OSK mode from the field: email → 2, numeric/tel/number → 3, textarea → 1, else 0.
@@ -112,6 +129,7 @@
       if (performance.now() - closedAt < 400) return
       if (!isTextField(e.target)) return
       const el = e.target as Field
+      remote = null
       // Try the Steam Deck OSK first. Its floating keyboard injects OS keystrokes straight into the
       // focused field. Rect is window pixels = CSS px × page-zoom (uiScale × the 1.25 game-mode
       // browse boost) × devicePixelRatio. Only fall back to the built-in keyboard if it declines.
@@ -130,10 +148,22 @@
     // B (via the controller translator) and Escape close it; fields blur to the keys, so we do NOT
     // close on focusout.
     const onClose = () => close()
+    const onRemoteOpen = (event: Event) => {
+      if (!gm) return
+      const detail = (event as CustomEvent<RemoteKeyboard>).detail
+      if (!detail?.insert || !detail.backspace || !detail.submit) return
+      target = null
+      remote = detail
+      open = true
+      shift = false
+      symbols = false
+    }
     window.addEventListener('focusin', onFocusIn, true)
+    window.addEventListener('osk-remote-open', onRemoteOpen)
     window.addEventListener('osk-close', onClose)
     return () => {
       window.removeEventListener('focusin', onFocusIn, true)
+      window.removeEventListener('osk-remote-open', onRemoteOpen)
       window.removeEventListener('osk-close', onClose)
     }
   })
