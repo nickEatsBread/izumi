@@ -16,4 +16,13 @@ describe('My List navigation', () => {
     expect(nav).toContain("{ id: 'mylist', placement: 'bottom' }")
     expect(nav).not.toContain("{ id: 'mylist', placement: 'hidden' }")
   })
+
+  it('keeps a connected SIMKL library visible even when its Watching list is empty', () => {
+    const page = read('../../../routes/app/mylist/+page.svelte')
+    const row = read('../cards/TrackerListRow.svelte')
+    expect(page).toContain('Simkl Library')
+    expect(page).toContain('status="watching" showEmpty')
+    expect(row).toContain('{:else if showEmpty}')
+    expect(row).toContain('No titles in this list.')
+  })
 })

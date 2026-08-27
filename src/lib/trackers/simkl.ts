@@ -73,14 +73,19 @@ interface SimklListItem {
   watched_episodes_count?: number
   user_rating?: number
   anime?: { ids?: SimklIds }
+  // GET /sync/all-items/anime currently returns the standard anime/show object here. SIMKL
+  // documents anime as sharing the Show shape and supporting both wrapper names across endpoints.
+  show?: { ids?: SimklIds }
   ids?: SimklIds
 }
 
 interface SimklIds {
   simkl?: number
+  simkl_id?: number
   slug?: string
-  anilist?: number
-  mal?: number
+  // SIMKL documents every external response ID as a string, even when it is numeric-looking.
+  anilist?: string | number
+  mal?: string | number
 }
 
 interface SimklAnimeCache {
@@ -121,20 +126,22 @@ async function currentAnimeActivity(): Promise<SimklAnimeActivity | null> {
 }
 
 async function fetchAnimeItems(path: string): Promise<SimklListItem[] | null> {
-  const response = await simklFetch(path).catch(() => null)
-  if (!response?.ok) return null
+  const response = await simklFetch(path)
+  if (!response) return null
+  if (!response.ok) throw new Error(`Simkl returned HTTP ${response.status}.`)
   const json = await response.json().catch(() => null) as { anime?: SimklListItem[] } | SimklListItem[] | null
-  if (!json) return null
+  if (!json) throw new Error('Simkl returned an unreadable library response.')
   return Array.isArray(json) ? json : json.anime ?? []
 }
 
 function itemIds(item: SimklListItem): SimklIds {
-  return item.anime?.ids ?? item.ids ?? {}
+  return item.anime?.ids ?? item.show?.ids ?? item.ids ?? {}
 }
 
 function itemKey(item: SimklListItem): string | undefined {
   const value = itemIds(item)
-  if (value.simkl) return `simkl:${value.simkl}`
+  const simkl = value.simkl ?? value.simkl_id
+  if (simkl) return `simkl:${simkl}`
   if (value.anilist) return `anilist:${value.anilist}`
   if (value.mal) return `mal:${value.mal}`
   return undefined
@@ -223,8 +230,8 @@ export async function getSimklProgress(mediaId: number, idMal?: number): Promise
   try {
     const entries = await listEntries()
     const entry = entries?.find((item) => {
-      const itemIds = item.anime?.ids ?? item.ids
-      return itemIds?.anilist === mediaId || (!!idMal && itemIds?.mal === idMal)
+      const values = itemIds(item)
+      return Number(values.anilist) === mediaId || (!!idMal && Number(values.mal) === idMal)
     })
     if (!entry) return null
     return {
@@ -281,7 +288,7 @@ export async function getSimklAnimeRefs(status: string, limit = 30): Promise<Sim
       ? direct
       : Number.isFinite(mal) && index ? lookupAnilistByMal(index, mal) : undefined
     if (anilistId == null) continue
-    const simkl = Number(values.simkl)
+    const simkl = Number(values.simkl ?? values.simkl_id)
     const slug = typeof values.slug === 'string' ? values.slug.trim() : ''
     refs.push({
       anilistId,

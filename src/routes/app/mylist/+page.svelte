@@ -67,11 +67,21 @@
           <TrackerListRow title="Dropped (Kitsu)" tracker="Kitsu" status="dropped" />
         {/if}
         {#if $simklToken}
-          <TrackerListRow title="Watching (Simkl)" tracker="Simkl" status="watching" />
-          <TrackerListRow title="Plan to Watch (Simkl)" tracker="Simkl" status="plantowatch" />
-          <TrackerListRow title="Completed (Simkl)" tracker="Simkl" status="completed" />
-          <TrackerListRow title="On Hold (Simkl)" tracker="Simkl" status="hold" />
-          <TrackerListRow title="Dropped (Simkl)" tracker="Simkl" status="dropped" />
+          <section class="mt-8 border-t border-border/70 pt-6" aria-labelledby="simkl-library-heading">
+            <div class="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h2 id="simkl-library-heading" class="text-xl font-black">Simkl Library</h2>
+              <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/10 px-2.5 py-1 text-[11px] font-black text-emerald-300">
+                <span class="size-1.5 rounded-full bg-emerald-400"></span>
+                Connected
+              </span>
+              <p class="w-full text-xs text-muted-foreground">Watchlist status and progress synced from Simkl.</p>
+            </div>
+            <TrackerListRow title="Watching" tracker="Simkl" status="watching" showEmpty />
+            <TrackerListRow title="Plan to Watch" tracker="Simkl" status="plantowatch" />
+            <TrackerListRow title="Completed" tracker="Simkl" status="completed" />
+            <TrackerListRow title="On Hold" tracker="Simkl" status="hold" />
+            <TrackerListRow title="Dropped" tracker="Simkl" status="dropped" />
+          </section>
         {/if}
       {:else}
         <p class="mb-5 max-w-2xl text-sm text-muted-foreground">

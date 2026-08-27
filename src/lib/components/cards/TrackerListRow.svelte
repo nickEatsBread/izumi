@@ -7,7 +7,12 @@
   import Carousel from './Carousel.svelte'
   import SmallCard from './SmallCard.svelte'
 
-  let { title, tracker, status }: { title: string; tracker: 'Kitsu' | 'Simkl'; status: string } = $props()
+  let { title, tracker, status, showEmpty = false }: {
+    title: string
+    tracker: 'Kitsu' | 'Simkl'
+    status: string
+    showEmpty?: boolean
+  } = $props()
   let medias = $state<Media[]>([])
   let loading = $state(true)
   let error = $state('')
@@ -32,9 +37,14 @@
       if (!ids.length) { medias = []; return }
       const mapped = await fetchMediaByIds(ids)
       medias = ids.flatMap((id) => mapped.get(id) ? [mapped.get(id)!] : [])
+      if (!medias.length) {
+        error = `${tracker} returned titles, but Izumi could not load their card metadata.`
+      }
     } catch (cause) {
       console.warn(`${tracker} row`, title, cause)
-      error = `Could not load your ${tracker} list.`
+      error = cause instanceof Error && cause.message.includes('public Simkl Client ID')
+        ? cause.message
+        : `Could not load your ${tracker} list.`
     } finally { loading = false }
   }
 </script>
@@ -60,5 +70,12 @@
         <SmallCard {media} sourceHref={sourceUrls.get(media.id)} sourceLabel={tracker === 'Simkl' ? 'Simkl' : undefined} />
       {/each}
     </Carousel>
+  {:else if showEmpty}
+    <section class="mb-6 space-y-2">
+      <h3 class="text-base font-black">{title}</h3>
+      <p class="rounded-lg border border-border/70 bg-card/50 px-4 py-3 text-sm text-muted-foreground">
+        No titles in this list.
+      </p>
+    </section>
   {/if}
 </div>

@@ -119,7 +119,11 @@ function clearSimklIdentity() {
 
 export async function simklFetch(path: string, init: RequestInit = {}): Promise<Response | null> {
   const token = get(simklToken)
-  if (!token || !simklClientId) return null
+  if (!token) return null
+  // A persisted login can outlive a local/repackaged build that omitted its public Client ID.
+  // Treat that as configuration failure, not an empty SIMKL library: list callers can then show
+  // an actionable error instead of silently collapsing every SIMKL row.
+  if (!simklClientId) throw new Error('This Izumi build is missing its public Simkl Client ID. Restart after configuring PUBLIC_SIMKL_CLIENT_ID.')
   const response = await request(path, init, token)
   // Tokens are long-lived and have no refresh grant. SIMKL documents a 401 as revocation or an
   // invalid token, so retrying it is wasteful; disconnect and let the user run PIN auth again.

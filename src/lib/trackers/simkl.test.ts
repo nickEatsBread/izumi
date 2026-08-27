@@ -45,6 +45,25 @@ describe('SIMKL activity-gated anime list cache', () => {
     ])
   })
 
+  it('accepts the documented bucket response and string external IDs', async () => {
+    mocks.simklFetch.mockImplementation(async (path: string) => path === '/sync/all-items/anime'
+      ? json({ anime: [{
+          status: 'watching',
+          show: { ids: { anilist: '10', simkl_id: 1885096, slug: 'anime-10' } },
+        }] })
+      : json({ anime: { all: 'activity-1' } }))
+
+    await expect(getSimklAnimeRefs('watching')).resolves.toEqual([{
+      anilistId: 10,
+      simklUrl: 'https://simkl.com/anime/1885096/anime-10',
+    }])
+  })
+
+  it('does not misreport a failed SIMKL library request as an empty list', async () => {
+    mocks.simklFetch.mockResolvedValue(json({ error: 'temporary' }, 503))
+    await expect(getSimklAnimeRefs('watching')).rejects.toThrow('HTTP 503')
+  })
+
   it('checks activities after the user-data cache expires and skips an unchanged list pull', async () => {
     mocks.simklFetch.mockImplementation(async (path: string) => path === '/sync/all-items/anime'
       ? json([anime(10)])
