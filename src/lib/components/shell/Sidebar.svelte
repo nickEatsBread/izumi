@@ -1,5 +1,6 @@
 <script lang="ts">
   import Logo from '../Logo.svelte'
+  import CatalogSwitcher from '../catalog/CatalogSwitcher.svelte'
   import Home from '@lucide/svelte/icons/house'
   import Calendar from '@lucide/svelte/icons/calendar'
   import Search from '@lucide/svelte/icons/search'
@@ -14,6 +15,8 @@
   import { anilistUserName, malUserName, anilistUserAvatar, malUserAvatar, malUser } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
+  import { offlineMode } from '$lib/stores/offline'
+  import { catalogSwitcherPlacement, enabledCatalogProviders } from '$lib/settings/catalog'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
@@ -33,6 +36,7 @@
   // rail as-is. `open` drives width + labels; there's no content scrim (the rail goes opaque
   // + casts a shadow, which is enough to read the labels).
   let focused = $state(false)
+  let catalogPickerOpen = $state(false)
   // Expand only when focus arrived via the d-pad / arrow keys (inputType 'dpad') — never a touch
   // tap or a mouse (which would flash the rail open then closed as it navigates; a tap should
   // just switch pages). `inputType` is the app-wide modality store (set to 'dpad' on arrow keys
@@ -54,6 +58,7 @@
   $effect(() => {
     void page.url.pathname
     focused = false
+    catalogPickerOpen = false
   })
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
@@ -71,15 +76,26 @@
      left accent bar + brighter text (no heavy filled box); keyboard/gamepad FOCUS fills the row
      (see app.css) — no squared ring. -->
 <nav data-nav-sidebar onfocusin={onFocusIn} onfocusout={onFocusOut}
-     class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 overflow-hidden py-3 pt-9 transition-[width] duration-200 ease-out
+     class="fixed inset-y-0 left-0 z-30 flex flex-col gap-1 py-3 pt-9 transition-[width] duration-200 ease-out
+       {catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'}
        {open ? 'w-[200px]' : 'w-14'} {$playing || open ? 'bg-background' : ''} {open ? 'shadow-2xl' : $playing ? '' : 'drop-shadow-md'}">
-  <!-- Brand behaviour stays predictable: it always returns Home. Catalog selection lives in the
-       explicit, labelled picker on the views it changes. -->
-  <a href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
-     class="group mb-2 flex h-10 shrink-0 items-center gap-3 pl-3 text-left">
-    <span class="grid w-8 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110"><Logo /></span>
+  <!-- On Home, Integrated mode turns the brand into the catalog trigger. Everywhere else it stays
+       predictable Home navigation; Below mode keeps the explicit provider row underneath. -->
+  <div class="group mb-2 flex h-10 shrink-0 items-center gap-2 text-left">
+    {#if $catalogSwitcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogProviders.length > 1}
+      <CatalogSwitcher display="brand" bind:open={catalogPickerOpen} className="ml-2 shrink-0" />
+    {:else}
+      <a href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
+         class="ml-2 grid size-10 shrink-0 place-items-center transition-transform duration-200 group-hover:scale-110">
+        <Logo />
+      </a>
+    {/if}
     <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
-  </a>
+  </div>
+
+  {#if !$offlineMode && $catalogSwitcherPlacement === 'below'}
+    <CatalogSwitcher display="rail" bind:open={catalogPickerOpen} expanded={open} className="shrink-0" />
+  {/if}
 
   {#each items as it (it.href)}
     {@const on = active(it.href)}

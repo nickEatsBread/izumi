@@ -4,6 +4,7 @@
   import Check from '@lucide/svelte/icons/check'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
+  import CatalogBrandLogo from './CatalogBrandLogo.svelte'
   import CatalogPlatformLogo from './CatalogPlatformLogo.svelte'
   import {
     catalogLabel,
@@ -19,14 +20,24 @@
     appearance = 'overlay',
     className = '',
     align = 'start',
+    display = 'value',
+    expanded = false,
+    showWordmark = false,
+    open = $bindable(false),
   }: {
     appearance?: 'overlay' | 'surface'
     className?: string
     align?: 'start' | 'end'
+    display?: 'brand' | 'icon' | 'value' | 'rail'
+    /** Sidebar rail only: whether the rail is expanded, so the label can fade in/out with it. */
+    expanded?: boolean
+    /** Brand trigger only: include the Izumi wordmark in the clickable area (mobile Home). */
+    showWordmark?: boolean
+    open?: boolean
   } = $props()
 
   const descriptions: Record<CatalogSelection, string> = {
-    auto: 'Anime-first, with automatic metadata fallbacks',
+    auto: 'Anime-first with smart metadata fallbacks',
     anilist: 'Anime discovery from AniList',
     kitsu: 'An independent anime catalog',
     tmdb: 'Movies, television, and anime',
@@ -37,7 +48,6 @@
   let root = $state<HTMLDivElement>()
   let trigger = $state<HTMLButtonElement>()
   let listbox = $state<HTMLDivElement>()
-  let open = $state(false)
   const choices = $derived($enabledCatalogProviders)
   const activeLabel = $derived(catalogLabel($catalogProvider))
   const canSwitch = $derived(choices.length > 1)
@@ -116,29 +126,79 @@
 </script>
 
 {#if canSwitch}
-  <div bind:this={root} class="relative {className}" data-nav-trap={open ? '' : undefined}>
+  <!-- Keep caller positioning on the outer wrapper. Combining `relative` with Home's supplied
+       `absolute` class let Tailwind's generated order choose `relative`, putting this control in
+       document flow and exposing a black strip above the full-bleed hero. -->
+  <div bind:this={root} class={className} data-nav-trap={open ? '' : undefined}>
+    <div class="relative {display === 'rail' ? 'w-full' : 'w-fit'}">
     <button
       bind:this={trigger}
       type="button"
       data-focusable
       aria-label={`Catalog: ${activeLabel}. Choose catalog`}
+      title={`Catalog: ${activeLabel}`}
       aria-haspopup="listbox"
       aria-expanded={open}
       aria-controls={open ? 'catalog-switcher-options' : undefined}
       onclick={() => void setOpen(!open)}
       onkeydown={onTriggerKeydown}
-      class="group flex min-h-11 items-center gap-2 rounded-xl border py-1.5 pl-1.5 pr-3 text-left shadow-lg outline-none transition
+      class="group relative text-left outline-none transition
         focus-visible:ring-2 focus-visible:ring-theme
-        {appearance === 'overlay'
+        {display === 'rail'
+          ? 'flex h-11 w-full shrink-0 items-center gap-3 rounded-md pl-3 text-muted-foreground hover:bg-accent hover:text-foreground'
+          : display === 'brand'
+          ? showWordmark
+            ? 'flex min-h-10 items-center gap-2 rounded-md pr-1 hover:bg-accent/40'
+            : 'grid size-10 place-items-center rounded-md hover:bg-accent/40 hover:scale-110'
+          : display === 'icon'
+          ? 'grid size-11 place-items-center rounded-full'
+          : 'flex min-h-10 items-center gap-2 rounded-full py-1 pl-1 pr-2.5'}
+        {display === 'rail' || display === 'brand'
+          ? ''
+          : appearance === 'overlay'
           ? 'border-white/15 bg-black/55 text-white backdrop-blur-md hover:bg-black/70'
-          : 'border-border bg-card/90 text-foreground hover:bg-accent'}"
+          : 'border-border bg-card/90 text-foreground hover:bg-accent'}
+        {display === 'rail' || display === 'brand' ? '' : 'border shadow-lg'}"
     >
-      <span class="-m-1 scale-75"><CatalogPlatformLogo platform={$catalogProvider} /></span>
-      <span class="min-w-0 leading-tight">
-        <span class="block text-[0.62rem] font-extrabold uppercase tracking-[0.14em] opacity-55">Catalog</span>
+      {#if display === 'rail'}
+        <!-- Sidebar rail row: same anatomy as the nav links (icon slot + fading label), so it
+             reads as just another destination. The tile is scaled down like the value pill's. -->
+        <span class="grid w-8 shrink-0 place-items-center"><span class="-m-1 scale-75"><CatalogPlatformLogo platform={$catalogProvider} /></span></span>
+        <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {expanded ? 'opacity-100' : 'opacity-0'}">Catalog: {activeLabel}</span>
+      {:else if display === 'brand'}
+        <!-- Integrated mode keeps the identity visually intact: the full Izumi mark is the
+             trigger, and a quiet chevron communicates that it opens instead of navigating. -->
+        <span class="relative grid size-8 shrink-0 place-items-center">
+          <CatalogBrandLogo platform={$catalogProvider} />
+          <ChevronDown
+            aria-hidden="true"
+            size={11}
+            strokeWidth={3}
+            class="absolute -bottom-1 -right-1 rounded-full bg-background/85 p-px text-foreground drop-shadow-md transition-transform {open ? 'rotate-180' : ''}"
+          />
+        </span>
+        {#if showWordmark}
+          <img src="/brand/izumi-wordmark-white.svg" alt="" class="catalog-brand-wordmark h-5" draggable="false" />
+        {/if}
+      {:else if display === 'icon'}
+        <!-- The provider tile is the button face, rather than a smaller tile floating inside a
+             second dark circle. Scale it to the 44px hit area and clip its corners to the circle. -->
+        <span class="grid size-11 place-items-center overflow-hidden rounded-full">
+          <span class="scale-110"><CatalogPlatformLogo platform={$catalogProvider} /></span>
+        </span>
+      {:else}
+        <span class="-m-1 scale-75"><CatalogPlatformLogo platform={$catalogProvider} /></span>
         <span class="block max-w-32 truncate text-sm font-black">{activeLabel}</span>
-      </span>
-      <ChevronDown size={15} class="ml-1 shrink-0 opacity-65 transition-transform {open ? 'rotate-180' : ''}" />
+        <ChevronDown size={14} class="shrink-0 opacity-65 transition-transform {open ? 'rotate-180' : ''}" />
+      {/if}
+      {#if display === 'icon'}
+        <span
+          aria-hidden="true"
+          class="absolute bottom-0 right-0 grid size-4 place-items-center rounded-full border border-white/15 bg-background text-foreground shadow-sm"
+        >
+          <ChevronDown size={10} strokeWidth={3} class="transition-transform {open ? 'rotate-180' : ''}" />
+        </span>
+      {/if}
     </button>
 
     {#if open}
@@ -216,5 +276,12 @@
         </div>
       </div>
     {/if}
+    </div>
   </div>
 {/if}
+
+<style>
+  :global(html[data-scheme='light']) .catalog-brand-wordmark {
+    filter: brightness(0) saturate(100%);
+  }
+</style>

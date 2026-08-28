@@ -6,7 +6,8 @@ const source = readFileSync(fileURLToPath(new URL('./CatalogPlatformLogo.svelte'
 
 describe('catalog platform logos', () => {
   it('uses the official provider assets', () => {
-    expect(source).toContain('https://anilist.co/img/icons/icon.svg')
+    expect(source).toContain('/brand/anilist.svg')
+    expect(source).not.toContain('https://anilist.co/img/icons/icon.svg')
     expect(source).toContain('https://avatars.githubusercontent.com/u/7648832')
     expect(source).toContain('/brand/tmdb.svg')
     expect(source).toContain('https://www.stremio.com/website/favicon.ico')
@@ -16,7 +17,8 @@ describe('catalog platform logos', () => {
 
   it('distinguishes automatic fallback mode from direct AniList', () => {
     expect(source).toContain("platform === 'auto'")
-    expect(source).toContain('<RefreshCw')
+    expect(source).toContain('<Sparkles')
+    expect(source).not.toContain('ring-2 ring-background')
   })
 
   it('keeps every logo on the same square mobile-safe canvas', () => {
@@ -27,8 +29,10 @@ describe('catalog platform logos', () => {
     expect(source).toContain('class="w-9 object-contain"')
   })
 
-  it('only reveals text fallbacks after image errors', () => {
-    expect(source).toContain('let imageFailed = $state(false)')
+  it('only reveals text fallbacks after errors from the active provider', () => {
+    expect(source).toContain('let failedPlatform = $state<CatalogSelection | null>(null)')
+    expect(source).toContain('const imageFailed = $derived(failedPlatform === platform)')
+    expect(source).toContain('failedPlatform = platform')
     expect(source.match(/onerror=\{showFallback\}/g)).toHaveLength(5)
     expect(source.match(/\{#if imageFailed\}/g)).toHaveLength(5)
   })

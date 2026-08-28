@@ -1,13 +1,17 @@
 <script lang="ts">
   import type { CatalogSelection } from '$lib/settings/catalog'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Sparkles from '@lucide/svelte/icons/sparkles'
   import Coffee from '@lucide/svelte/icons/coffee'
 
   let { platform }: { platform: CatalogSelection } = $props()
-  let imageFailed = $state(false)
+  let failedPlatform = $state<CatalogSelection | null>(null)
+  const imageFailed = $derived(failedPlatform === platform)
 
   function showFallback() {
-    imageFailed = true
+    // A CatalogPlatformLogo instance is reused as the user switches providers. Remembering one
+    // generic failure hid every later logo (including bundled TMDB); scope it to the asset that
+    // actually failed instead.
+    failedPlatform = platform
   }
 </script>
 
@@ -16,10 +20,10 @@
     {#if imageFailed}
       <span class="text-[9px] font-black text-[#02a9ff]">AL</span>
     {:else}
-      <img src="https://anilist.co/img/icons/icon.svg" alt="" class="absolute inset-1.5 size-7 object-contain" onerror={showFallback} />
+      <img src="/brand/anilist.svg" alt="" class="absolute inset-1.5 size-7 object-contain" onerror={showFallback} />
     {/if}
-    <span class="absolute -bottom-1 -right-1 grid size-4 place-items-center rounded-full bg-theme text-white ring-2 ring-background">
-      <RefreshCw size={9} strokeWidth={3} />
+    <span class="absolute -bottom-1 -right-1 grid size-4 place-items-center rounded-full bg-theme text-white shadow-md">
+      <Sparkles size={9} strokeWidth={2.8} />
     </span>
   </span>
 {:else if platform === 'anilist'}
@@ -27,7 +31,7 @@
     {#if imageFailed}
       <span class="text-[9px] font-black text-[#02a9ff]">AL</span>
     {:else}
-      <img src="https://anilist.co/img/icons/icon.svg" alt="" class="absolute inset-1.5 size-7 object-contain" onerror={showFallback} />
+      <img src="/brand/anilist.svg" alt="" class="absolute inset-1.5 size-7 object-contain" onerror={showFallback} />
     {/if}
   </span>
 {:else if platform === 'kitsu'}

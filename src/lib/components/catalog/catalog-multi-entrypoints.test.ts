@@ -8,20 +8,38 @@ describe('multi-platform catalog entry points', () => {
   const home = read('../../../routes/app/home/+page.svelte')
   const search = read('../../../routes/app/search/+page.svelte')
   const sidebar = read('../shell/Sidebar.svelte')
+  const catalogSettings = read('../../../routes/app/settings/catalog/+page.svelte')
+  const catalogStore = read('../../settings/catalog.ts')
 
   it('removes the horizontal platform tabs from Home and Search', () => {
     expect(home).not.toContain('CatalogProviderTabs')
     expect(search).not.toContain('CatalogProviderTabs')
   })
 
-  it('uses an explicit catalog picker on both Home and Search', () => {
+  it('supports integrated and separate catalog pickers on Home without duplicating one above Search', () => {
     expect(home).toContain("import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'")
-    expect(home).toContain('<CatalogSwitcher')
-    expect(search).toContain("import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'")
-    expect(search.match(/<CatalogSwitcher/g)).toHaveLength(2)
+    expect(home).toContain('<CatalogSwitcher display="brand" showWordmark />')
+    expect(home).toContain('<CatalogSwitcher display="icon" />')
+    expect(home).toContain("$catalogSwitcherPlacement === 'integrated'")
+    expect(home).toContain("$catalogSwitcherPlacement === 'below'")
+    expect(search).not.toContain("import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'")
+    expect(search).not.toContain('<CatalogSwitcher')
+    expect(sidebar).toContain('<CatalogSwitcher display="brand" bind:open={catalogPickerOpen}')
+    expect(sidebar).toContain('<CatalogSwitcher display="rail" bind:open={catalogPickerOpen}')
+    expect(sidebar).toContain('expanded={open}')
+    expect(sidebar).toContain("catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'")
   })
 
-  it('keeps the brand as predictable Home navigation', () => {
+  it('persists the user-selected placement and exposes it in Catalog settings', () => {
+    expect(catalogStore).toContain("export type CatalogSwitcherPlacement = 'integrated' | 'below'")
+    expect(catalogStore).toContain("'catalog-switcher-placement'")
+    expect(catalogStore).toContain("'below',")
+    expect(catalogSettings).toContain('Integrated into Izumi logo')
+    expect(catalogSettings).toContain('Below Izumi logo')
+    expect(catalogSettings).toContain('settingKey="catalog-switcher-placement"')
+  })
+
+  it('keeps the brand as Home navigation away from Home', () => {
     expect(sidebar).toContain('href="/app/home"')
     expect(sidebar).not.toContain('cycleCatalog')
     expect(sidebar).not.toContain('event.preventDefault()')

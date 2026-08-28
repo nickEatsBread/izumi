@@ -4,6 +4,7 @@ import { derived, get, writable } from 'svelte/store'
 export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm'
 export type CatalogDefaultSelection = CatalogSelection | 'adaptive'
 export type ContinueWatchingCatalogScope = 'provider' | 'all'
+export type CatalogSwitcherPlacement = 'integrated' | 'below'
 
 export const CATALOG_SELECTIONS: CatalogSelection[] = ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']
 
@@ -91,6 +92,13 @@ export const catalogProvider = writable<CatalogSelection>(resolveCatalogStartup(
 export const continueWatchingCatalogScope = persisted<ContinueWatchingCatalogScope>(
   'continue-watching-catalog-scope',
   'provider',
+)
+
+/** Controls whether Home's catalog picker shares the Izumi brand control or gets its own,
+ * more explicit row below it. Keep the explicit row as the default for existing installs. */
+export const catalogSwitcherPlacement = persisted<CatalogSwitcherPlacement>(
+  'catalog-switcher-placement',
+  'below',
 )
 
 /** Per-source catalog visibility is independent from source/package enablement. Missing entries

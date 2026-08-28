@@ -4,6 +4,7 @@
     catalogLastProvider,
     catalogProvider,
     catalogProviders,
+    catalogSwitcherPlacement,
     continueWatchingCatalogScope,
     isJvmCatalogSourceEnabled,
     jvmCatalogSourceOverrides,
@@ -13,6 +14,7 @@
     tmdbReadToken,
     type CatalogDefaultSelection,
     type CatalogSelection,
+    type CatalogSwitcherPlacement,
     type ContinueWatchingCatalogScope,
   } from '$lib/settings/catalog'
   import { addonUrls } from '$lib/stremio/sources'
@@ -53,6 +55,10 @@
   const continueWatchingOptions = [
     { value: 'provider', label: 'Current platform only' },
     { value: 'all', label: 'All platforms' },
+  ]
+  const switcherPlacementOptions = [
+    { value: 'below', label: 'Below Izumi logo' },
+    { value: 'integrated', label: 'Integrated into Izumi logo' },
   ]
   const hasPlatform = (id: CatalogSelection) => enabled.includes(id)
   const homeCustomizeProvider = $derived($catalogProvider === 'auto' ? 'anilist' : $catalogProvider)
@@ -98,6 +104,12 @@
     }
   }
 
+  function setSwitcherPlacement(value: string) {
+    if (value === 'integrated' || value === 'below') {
+      $catalogSwitcherPlacement = value as CatalogSwitcherPlacement
+    }
+  }
+
   function togglePlatform(id: CatalogSelection) {
     const current = normalizeCatalogProviders($catalogProviders, $catalogProvider)
     const turningOff = current.includes(id)
@@ -133,16 +145,33 @@
   />
 {/snippet}
 
+{#snippet switcherPlacementControl()}
+  <SelectMenu
+    className="w-full sm:w-56"
+    value={$catalogSwitcherPlacement}
+    options={switcherPlacementOptions}
+    onChange={setSwitcherPlacement}
+    ariaLabel="Catalog switcher placement"
+  />
+{/snippet}
+
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Catalog</h2>
-  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms. Click the app logo to cycle through them; quick search checks all enabled platforms.</p>
+  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms and choose how catalog selection appears. Quick search checks all enabled platforms.</p>
 
-  <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose what the logo cycles through and which platform opens first.">
+  <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose where the picker appears and which platform opens first.">
     <SettingsRow
       settingKey="default-catalog-platform"
       title="Default platform"
       description="Choose a fixed startup platform, or Adaptive to reopen the last platform you selected."
       control={defaultControl}
+      controlLayout="stack"
+    />
+    <SettingsRow
+      settingKey="catalog-switcher-placement"
+      title="Catalog switcher"
+      description="Integrate catalog selection into the Izumi logo, or show a more visible provider row below it."
+      control={switcherPlacementControl}
       controlLayout="stack"
     />
     <SettingsRow

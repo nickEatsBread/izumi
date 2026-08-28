@@ -24,6 +24,7 @@
   import { markClientPerformance } from '$lib/performance/client'
   import {
     catalogProvider,
+    catalogSwitcherPlacement,
     enabledCatalogProviders,
     isLegacyAniListCatalog,
     nextCatalogProvider,
@@ -140,12 +141,19 @@
   <!-- The degraded strip is fixed at the same safe-area edge as this in-flow toolbar. Reserve its
        height while visible so the logo and top actions remain fully tappable on Android. -->
   <div class="flex items-center justify-between px-4 pb-3 pt-3 {legacyCatalog && $anilistDegraded ? 'mt-7' : ''}">
-    <div class="flex items-center gap-2" aria-label="izumi">
-      <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
-      <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
-    </div>
-    {#if topNav.length}
+    {#if !$offlineMode && $catalogSwitcherPlacement === 'integrated' && canCycleCatalog}
+      <CatalogSwitcher display="brand" showWordmark />
+    {:else}
+      <div class="flex items-center gap-2" aria-label="izumi">
+        <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
+        <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
+      </div>
+    {/if}
+    {#if topNav.length || (!$offlineMode && $catalogSwitcherPlacement === 'below')}
       <div class="flex items-center gap-1">
+        {#if !$offlineMode && $catalogSwitcherPlacement === 'below'}
+          <CatalogSwitcher display="icon" />
+        {/if}
         {#each topNav as c (c.id)}
           {@const meta = NAV_META[c.id]}
           {@const Icon = meta.icon}
@@ -157,13 +165,6 @@
       </div>
     {/if}
   </div>
-{/if}
-
-{#if !$offlineMode}
-  <!-- The catalog is a view context, so its current value sits on the Home content instead of
-       hiding behind the brand. Desktop anchors the popover in the hero's quiet top-left gutter;
-       mobile keeps it within easy reach at the top-right of the contained hero. -->
-  <CatalogSwitcher className="absolute z-30 {$isMobile ? 'right-4 top-[4.25rem]' : 'left-8 top-10'}" />
 {/if}
 
 <style>
