@@ -21,6 +21,7 @@
   import LibraryBig from '@lucide/svelte/icons/library-big'
   import KeyRound from '@lucide/svelte/icons/key-round'
   import Boxes from '@lucide/svelte/icons/boxes'
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
 
   const platforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
     { id: 'auto', label: 'Automatic anime', description: 'AniList with automatic Kitsu and Jikan fallbacks.' },
@@ -43,6 +44,7 @@
     { value: 'all', label: 'All platforms' },
   ]
   const hasPlatform = (id: CatalogSelection) => enabled.includes(id)
+  const homeCustomizeProvider = $derived($catalogProvider === 'auto' ? 'anilist' : $catalogProvider)
 
   function setDefaultPlatform(value: string) {
     if (value === 'adaptive') {
@@ -128,6 +130,11 @@
     {/each}
   </SettingsGroup>
 
+  <SettingsGroup icon={SlidersHorizontal} title="Home layout" desc="Control Home separately for each catalog platform.">
+    <SettingsRow title="Home rows" description="Show, hide, and reorder discovery rows without changing your enabled catalogs.">
+      <a href={`/app/settings/catalog/home?provider=${homeCustomizeProvider}`} data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Customize Home</a>
+    </SettingsRow>
+  </SettingsGroup>
   {#if hasPlatform('tmdb')}
     <SettingsGroup icon={KeyRound} title="TMDB access">
       <SettingsRow title="Read access token" description="A personal free non-commercial credential; stored only on this device.">

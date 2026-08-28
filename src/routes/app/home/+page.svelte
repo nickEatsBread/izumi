@@ -18,7 +18,9 @@
   import { effectiveNav, NAV_META } from '$lib/settings/nav'
   import type { Media } from '$lib/anilist/types'
   import { anilistDegraded } from '$lib/anilist/degraded'
-  import { DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, hotkeyBindings, type HomeRowId } from '$lib/settings/ui'
+  import { hotkeyBindings } from '$lib/settings/ui'
+  import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
+  import { ANILIST_HOME_ROWS } from '$lib/catalog/home-options'
   import { markClientPerformance } from '$lib/performance/client'
   import {
     catalogLabel,
@@ -45,12 +47,8 @@
   // Personalized rows use the connected AniList account name (from OAuth) if present,
   // otherwise the manually-entered username.
   const listUser = $derived($anilistUserName || $anilistUser)
-  const orderedRows = $derived.by(() => {
-    const valid = new Set<string>(DEFAULT_HOME_ROWS)
-    const saved = $homeRowOrder.filter((id) => valid.has(id))
-    const order = [...saved, ...DEFAULT_HOME_ROWS.filter((id) => !saved.includes(id))]
-    return order.filter((id) => !$hiddenHomeRows.includes(id)) as HomeRowId[]
-  })
+  const orderedRows = $derived(resolveCatalogHomeRows('anilist', ANILIST_HOME_ROWS, $catalogHomeLayouts)
+    .filter((row) => row.enabled).map((row) => row.id))
   const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
   const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)
 
@@ -182,9 +180,11 @@
 {#if $offlineMode}
   <!-- Offline: local-first Continue Watching + the downloaded-series library. No network fired. -->
   <div class="space-y-4 pb-16 pt-2">
-    {#key listUser}
-      <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
-    {/key}
+    {#if orderedRows.includes('continue')}
+      {#key listUser}
+        <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
+      {/key}
+    {/if}
     <DownloadedLibrary />
   </div>
 {:else if !legacyCatalog}

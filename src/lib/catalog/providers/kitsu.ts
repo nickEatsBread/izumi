@@ -2,6 +2,8 @@ import { get } from 'svelte/store'
 import { showAdult } from '$lib/settings/ui'
 import { kitsuJson, mapKitsuMedia, type KitsuAnime } from '$lib/anilist/kitsu-catalog'
 import type { ExternalMediaIds, Media, MediaVideo } from '$lib/anilist/types'
+import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
+import { KITSU_HOME_ROWS } from '../home-options'
 import type { MediaRef } from '../identity'
 import type { CatalogHome, CatalogHomeSection, CatalogPage, CatalogProvider, CatalogSearchRequest } from '../types'
 
@@ -104,26 +106,30 @@ function currentSeason(date = new Date()): { season: string; year: number } {
 
 async function home(signal?: AbortSignal): Promise<CatalogHome> {
   const now = currentSeason()
-  const requests = await Promise.all([
-    animePage({ 'filter[status]': 'current', sort: '-userCount', limit: 20 }, signal),
-    animePage({ 'filter[season]': now.season, 'filter[seasonYear]': now.year, sort: '-userCount', limit: 20 }, signal),
-    animePage({ sort: '-userCount', limit: 20 }, signal),
-    animePage({ sort: '-averageRating', limit: 20 }, signal),
-    animePage({ 'filter[categories]': 'action', sort: '-userCount', limit: 20 }, signal),
-    animePage({ 'filter[categories]': 'romance', sort: '-userCount', limit: 20 }, signal),
-  ])
-  const [current, seasonal, popular, rated, action, romance] = requests
-  const heroPool = current.media.filter((media) => media.bannerImage || media.trailer?.id)
+  const specs: Record<string, { params: Record<string, string | number | undefined>; more?: CatalogHomeSection['more'] }> = {
+    season: { params: { 'filter[season]': now.season, 'filter[seasonYear]': now.year, sort: '-userCount', limit: 20 }, more: { sort: 'popular', year: now.year } },
+    trending: { params: { 'filter[status]': 'current', sort: '-userCount', limit: 20 }, more: { sort: 'trending' } },
+    popular: { params: { sort: '-userCount', limit: 20 }, more: { sort: 'popular' } },
+    rated: { params: { sort: '-averageRating', limit: 20 }, more: { sort: 'rating' } },
+    action: { params: { 'filter[categories]': 'action', sort: '-userCount', limit: 20 }, more: { genre: 'Action', sort: 'popular' } },
+    romance: { params: { 'filter[categories]': 'romance', sort: '-userCount', limit: 20 }, more: { genre: 'Romance', sort: 'popular' } },
+  }
+  const selected = resolveCatalogHomeRows('kitsu', KITSU_HOME_ROWS, get(catalogHomeLayouts))
+    .filter((row) => row.enabled && row.id !== 'continue')
+  // Airing Now also supplies the hero. Keep that request even when only its row is hidden.
+  const fetchIds = selected.some((row) => row.id === 'trending')
+    ? selected.map((row) => row.id)
+    : ['trending', ...selected.map((row) => row.id)]
+  const loaded = await Promise.all(fetchIds.flatMap((id) => specs[id] ? [animePage(specs[id].params, signal).then((page) => [id, page] as const)] : []))
+  const mediaById = new Map(loaded.map(([id, page]) => [id, page.media]))
+  const current = mediaById.get('trending') ?? []
+  const heroPool = current.filter((media) => media.bannerImage || media.trailer?.id)
   return {
-    hero: (heroPool.length ? heroPool : current.media).slice(0, 10),
-    sections: ([
-      { id: 'season', title: 'Popular This Season', media: seasonal.media, more: { sort: 'popular', year: now.year } },
-      { id: 'trending', title: 'Airing Now', media: current.media, more: { sort: 'trending' } },
-      { id: 'popular', title: 'All Time Popular', media: popular.media, more: { sort: 'popular' } },
-      { id: 'rated', title: 'Highest Rated', media: rated.media, more: { sort: 'rating' } },
-      { id: 'action', title: 'Action', media: action.media, more: { genre: 'Action', sort: 'popular' } },
-      { id: 'romance', title: 'Romance', media: romance.media, more: { genre: 'Romance', sort: 'popular' } },
-    ] satisfies CatalogHomeSection[]).filter((section) => section.media.length),
+    hero: (heroPool.length ? heroPool : current).slice(0, 10),
+    sections: selected.flatMap((row) => {
+      const media = mediaById.get(row.id) ?? []
+      return media.length ? [{ id: row.id, title: row.title, media, more: specs[row.id]?.more } satisfies CatalogHomeSection] : []
+    }),
   }
 }
 
@@ -270,6 +276,7 @@ export const kitsuCatalog: CatalogProvider = {
     anime: true, movies: false, series: true, search: true, genres: true,
     episodes: true, cast: true, relations: true,
   },
+  homeRows: async () => KITSU_HOME_ROWS,
   home,
   search,
   detail,

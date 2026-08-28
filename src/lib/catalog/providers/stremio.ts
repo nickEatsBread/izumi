@@ -3,8 +3,10 @@ import { phttp } from '$lib/net/http'
 import { enabledAddonUrls, addonOriginId, normalizeBase } from '$lib/stremio/sources'
 import { fetchManifest, type AddonCatalog, type AddonManifest, type AddonResource } from '$lib/stremio/manifest'
 import type { Media, MediaVideo } from '$lib/anilist/types'
+import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
+import { CONTINUE_HOME_ROW } from '../home-options'
 import { compatibilityMediaId, type CatalogContentType, type MediaRef } from '../identity'
-import { CatalogConfigurationError, type CatalogHome, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
+import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
 
 interface StremioVideo {
   id?: string
@@ -167,13 +169,39 @@ async function manifests(): Promise<{ base: string; manifest: AddonManifest }[]>
 const canBrowse = (entry: AddonCatalog) => !(entry.extra ?? []).some((extra) => extra.isRequired)
 const canSearch = (entry: AddonCatalog) => (entry.extra ?? []).some((extra) => extra.name === 'search')
 
+type StremioHomeEntry = { base: string; manifest: AddonManifest; entry: AddonCatalog; id: string }
+
+function stremioHomeEntries(sources: { base: string; manifest: AddonManifest }[]): StremioHomeEntry[] {
+  return sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? []).filter(canBrowse).map((entry) => ({
+    base, manifest, entry, id: `${addonOriginId(base)}:${entry.type}:${entry.id}`,
+  })))
+}
+
+function stremioHomeOptions(entries: StremioHomeEntry[]): CatalogHomeRowOption[] {
+  return [CONTINUE_HOME_ROW, ...entries.map(({ manifest, entry, id }) => ({
+    id,
+    title: entries.length > 1 ? `${entry.name} · ${manifest.name}` : entry.name,
+    description: `${entry.type} catalog supplied by ${manifest.name}.`,
+    group: manifest.name,
+    defaultEnabled: true,
+  }))]
+}
+
+async function homeRows(): Promise<CatalogHomeRowOption[]> {
+  return stremioHomeOptions(stremioHomeEntries(await manifests()))
+}
+
 async function home(signal?: AbortSignal): Promise<CatalogHome> {
   const sources = await manifests()
-  const entries = sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? [])
-    .filter(canBrowse).map((entry) => ({ base, manifest, entry }))).slice(0, 16)
-  const rows = await Promise.all(entries.map(async ({ base, manifest, entry }) => ({
-    id: `${addonOriginId(base)}:${entry.type}:${entry.id}`,
-    title: entries.length > 1 ? `${entry.name} · ${manifest.name}` : entry.name,
+  const available = stremioHomeEntries(sources)
+  const byId = new Map(available.map((entry) => [entry.id, entry]))
+  // Keep the provider safety cap, but apply it after customization so a user can promote a row
+  // from a large add-on manifest by hiding or moving less useful catalogs.
+  const entries = resolveCatalogHomeRows('stremio', stremioHomeOptions(available), get(catalogHomeLayouts))
+    .filter((row) => row.enabled && row.id !== 'continue').flatMap((row) => byId.get(row.id) ?? []).slice(0, 16)
+  const rows = await Promise.all(entries.map(async ({ base, manifest, entry, id }) => ({
+    id,
+    title: available.length > 1 ? `${entry.name} · ${manifest.name}` : entry.name,
     media: await catalog(base, entry, {}, signal).catch(() => []),
     more: canSearch(entry) ? { type: contentType(entry.type) } : undefined,
   })))
@@ -223,6 +251,7 @@ export const stremioCatalog: CatalogProvider = {
     anime: true, movies: true, series: true, search: true, genres: true,
     episodes: true, cast: true, relations: false,
   },
+  homeRows,
   home,
   search,
   detail,

@@ -4,6 +4,8 @@ import { phttp } from '$lib/net/http'
 import { showAdult } from '$lib/settings/ui'
 import { tmdbReadToken } from '$lib/settings/catalog'
 import type { Media, MediaVideo } from '$lib/anilist/types'
+import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
+import { TMDB_HOME_ROWS } from '../home-options'
 import { compatibilityMediaId, type MediaRef } from '../identity'
 import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
 
@@ -219,32 +221,97 @@ async function list(path: string, kind: TmdbKind | undefined, signal?: AbortSign
   return mapList(page, kind)
 }
 
+interface TmdbHomeRequest {
+  id: string
+  path: string
+  kind?: TmdbKind
+  params?: Record<string, string | number | boolean | undefined>
+  more?: CatalogHomeSection['more']
+}
+
+const movieGenre = (id: string, genre: number, name: string): TmdbHomeRequest => ({
+  id, path: '/discover/movie', kind: 'movie',
+  params: { sort_by: 'popularity.desc', with_genres: genre },
+  more: { type: 'movie', genre: name, sort: 'popular' },
+})
+const seriesGenre = (id: string, genre: number, name: string): TmdbHomeRequest => ({
+  id, path: '/discover/tv', kind: 'tv',
+  params: { sort_by: 'popularity.desc', with_genres: genre },
+  more: { type: 'series', genre: name, sort: 'popular' },
+})
+
+/** Preset ids are stable storage keys. Numeric genre ids are TMDB's documented movie/TV genre
+ * ids; using discover here gives users useful rows without exposing a fragile raw query editor. */
+const TMDB_HOME_REQUESTS: TmdbHomeRequest[] = [
+  { id: 'trending', path: '/trending/all/week', more: { sort: 'trending', type: 'all' } },
+  { id: 'trending-today', path: '/trending/all/day', more: { sort: 'trending', type: 'all' } },
+  { id: 'trending-movies', path: '/trending/movie/week', kind: 'movie', more: { sort: 'trending', type: 'movie' } },
+  { id: 'trending-movies-today', path: '/trending/movie/day', kind: 'movie', more: { sort: 'trending', type: 'movie' } },
+  { id: 'trending-series', path: '/trending/tv/week', kind: 'tv', more: { sort: 'trending', type: 'series' } },
+  { id: 'trending-series-today', path: '/trending/tv/day', kind: 'tv', more: { sort: 'trending', type: 'series' } },
+
+  { id: 'movies', path: '/movie/popular', kind: 'movie', more: { sort: 'popular', type: 'movie' } },
+  { id: 'rated-movies', path: '/movie/top_rated', kind: 'movie', more: { sort: 'rating', type: 'movie' } },
+  { id: 'upcoming', path: '/movie/upcoming', kind: 'movie', more: { sort: 'recent', type: 'movie' } },
+  { id: 'now-playing', path: '/movie/now_playing', kind: 'movie', more: { sort: 'recent', type: 'movie' } },
+  movieGenre('action-movies', 28, 'Action'),
+  movieGenre('adventure-movies', 12, 'Adventure'),
+  movieGenre('comedy-movies', 35, 'Comedy'),
+  movieGenre('crime-movies', 80, 'Crime'),
+  movieGenre('documentary-movies', 99, 'Documentary'),
+  movieGenre('family-movies', 10751, 'Family'),
+  movieGenre('fantasy-movies', 14, 'Fantasy'),
+  movieGenre('horror-movies', 27, 'Horror'),
+  movieGenre('romance-movies', 10749, 'Romance'),
+  movieGenre('sci-fi-movies', 878, 'Science Fiction'),
+  movieGenre('thriller-movies', 53, 'Thriller'),
+
+  { id: 'series', path: '/tv/popular', kind: 'tv', more: { sort: 'popular', type: 'series' } },
+  { id: 'rated-series', path: '/tv/top_rated', kind: 'tv', more: { sort: 'rating', type: 'series' } },
+  { id: 'on-the-air', path: '/tv/on_the_air', kind: 'tv', more: { sort: 'recent', type: 'series' } },
+  { id: 'airing-today', path: '/tv/airing_today', kind: 'tv', more: { sort: 'recent', type: 'series' } },
+  seriesGenre('comedy-series', 35, 'Comedy'),
+  seriesGenre('crime-series', 80, 'Crime'),
+  seriesGenre('documentary-series', 99, 'Documentary'),
+  seriesGenre('drama-series', 18, 'Drama'),
+  seriesGenre('family-series', 10751, 'Family'),
+  seriesGenre('mystery-series', 9648, 'Mystery'),
+  seriesGenre('reality-series', 10764, 'Reality'),
+  seriesGenre('sci-fi-fantasy-series', 10765, 'Sci-Fi & Fantasy'),
+
+  { id: 'anime-series', path: '/discover/tv', kind: 'tv', params: { sort_by: 'popularity.desc', with_genres: 16, with_origin_country: 'JP' }, more: { sort: 'popular', type: 'anime' } },
+  { id: 'anime-movies', path: '/discover/movie', kind: 'movie', params: { sort_by: 'popularity.desc', with_genres: 16, with_original_language: 'ja' }, more: { sort: 'popular', type: 'anime' } },
+  { id: 'rated-anime-series', path: '/discover/tv', kind: 'tv', params: { sort_by: 'vote_average.desc', with_genres: 16, with_origin_country: 'JP', 'vote_count.gte': 100 }, more: { sort: 'rating', type: 'anime' } },
+  { id: 'rated-anime-movies', path: '/discover/movie', kind: 'movie', params: { sort_by: 'vote_average.desc', with_genres: 16, with_original_language: 'ja', 'vote_count.gte': 100 }, more: { sort: 'rating', type: 'anime' } },
+]
+
 async function home(signal?: AbortSignal): Promise<CatalogHome> {
-  const [trending, animeSeries, animeMovies, movies, television, ratedMovies, ratedTelevision, upcoming] = await Promise.all([
-    list('/trending/all/week', undefined, signal),
-    list('/discover/tv', 'tv', signal, { sort_by: 'popularity.desc', with_genres: 16, with_origin_country: 'JP' }),
-    list('/discover/movie', 'movie', signal, { sort_by: 'popularity.desc', with_genres: 16, with_original_language: 'ja' }),
-    list('/movie/popular', 'movie', signal),
-    list('/tv/popular', 'tv', signal),
-    list('/movie/top_rated', 'movie', signal),
-    list('/tv/top_rated', 'tv', signal),
-    list('/movie/upcoming', 'movie', signal),
-  ])
+  const configured = resolveCatalogHomeRows('tmdb', TMDB_HOME_ROWS, get(catalogHomeLayouts))
+  const selected = configured.filter((row) => row.enabled && row.id !== 'continue')
+  const requests = new Map(TMDB_HOME_REQUESTS.map((request) => [request.id, request]))
+  // Trending also supplies the featured banner. Fetch it once even when its carousel is hidden.
+  const fetchIds = selected.some((row) => row.id === 'trending')
+    ? selected.map((row) => row.id)
+    : ['trending', ...selected.map((row) => row.id)]
+  const loaded = await mapConcurrent(fetchIds.flatMap((id) => requests.get(id) ?? []), 6, async (request) => ({
+    request,
+    media: await list(request.path, request.kind, signal, request.params).catch((error) => {
+      if (error instanceof CatalogConfigurationError || signal?.aborted) throw error
+      return []
+    }),
+  }))
+  const mediaById = new Map(loaded.map(({ request, media }) => [request.id, media]))
+  const trending = mediaById.get('trending') ?? []
   const heroCandidates = trending.filter((media) => media.bannerImage)
   const hero = await mapConcurrent((heroCandidates.length ? heroCandidates : trending).slice(0, 10), 4,
     (media) => withTmdbLogo(media, signal))
   return {
-    hero: hero,
-    sections: ([
-      { id: 'trending', title: 'Trending', media: trending, more: { sort: 'trending', type: 'all' } },
-      { id: 'anime-series', title: 'Popular Anime Series', media: animeSeries, more: { sort: 'popular', type: 'anime' } },
-      { id: 'anime-movies', title: 'Popular Anime Movies', media: animeMovies, more: { sort: 'popular', type: 'anime' } },
-      { id: 'movies', title: 'Popular Movies', media: movies, more: { sort: 'popular', type: 'movie' } },
-      { id: 'series', title: 'Popular Series', media: television, more: { sort: 'popular', type: 'series' } },
-      { id: 'rated-movies', title: 'Top Rated Movies', media: ratedMovies, more: { sort: 'rating', type: 'movie' } },
-      { id: 'rated-series', title: 'Top Rated Series', media: ratedTelevision, more: { sort: 'rating', type: 'series' } },
-      { id: 'upcoming', title: 'Upcoming Movies', media: upcoming, more: { sort: 'recent', type: 'movie' } },
-    ] satisfies CatalogHomeSection[]).filter((section) => section.media.length),
+    hero,
+    sections: selected.flatMap((row) => {
+      const request = requests.get(row.id)
+      const media = mediaById.get(row.id) ?? []
+      return request && media.length ? [{ id: row.id, title: row.title, media, more: request.more } satisfies CatalogHomeSection] : []
+    }),
   }
 }
 
@@ -444,6 +511,7 @@ export const tmdbCatalog: CatalogProvider = {
     anime: true, movies: true, series: true, search: true, genres: true,
     episodes: true, cast: true, relations: true,
   },
+  homeRows: async () => TMDB_HOME_ROWS,
   home,
   search,
   detail,

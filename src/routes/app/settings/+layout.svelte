@@ -41,6 +41,7 @@
     '/app/settings/player': 'Player', '/app/settings/subtitles': 'Subtitles',
     '/app/settings/hotkeys': 'Hotkeys',
     '/app/settings/store': 'Source Store',
+    '/app/settings/catalog/home': 'Customize Home',
     '/app/settings/catalog': 'Catalog',
     // Nested routes come FIRST: the lookup below takes the first prefix that matches, so listing
     // /sources ahead of /sources/priority would title the reorder screen "Sources".

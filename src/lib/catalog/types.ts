@@ -44,10 +44,21 @@ export interface CatalogHome {
   sections: CatalogHomeSection[]
 }
 
+/** A row offered by a provider's Home customizer. `defaultEnabled: false` keeps broad preset
+ * libraries cheap until the user asks for them. */
+export interface CatalogHomeRowOption {
+  id: string
+  title: string
+  description?: string
+  group?: string
+  defaultEnabled?: boolean
+}
+
 export interface CatalogProvider {
   id: CatalogProviderId
   label: string
   capabilities: CatalogCapabilities
+  homeRows?(signal?: AbortSignal): Promise<CatalogHomeRowOption[]>
   home(signal?: AbortSignal): Promise<CatalogHome>
   search(request: CatalogSearchRequest): Promise<CatalogPage>
   detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null>

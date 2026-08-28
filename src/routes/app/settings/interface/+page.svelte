@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, DEFAULT_HOME_ROWS, hiddenHomeRows, homeRowOrder, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
+  import { episodeLayout, browseLayout, hideSpoilers, absoluteEpisodeNumbers, uiScale, showAdult, autoIncognitoAdult, wheelScrollAcross, dragCarousels, scheduleLayout, scheduleDefaultTab, scheduleStickyHeader, scheduleShowNextUp, haptics, cwDismissAction, airingNotifications, airingNotificationLeadMinutes, themePreset, motionPreference, highContrast, largeInteractionTargets, titleLanguage, type EpisodeLayout, type BrowseLayout, type ScheduleLayout, type ScheduleTab, type CwDismissAction, type ThemePreset } from '$lib/settings/ui'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { isAndroid } from '$lib/platform'
   import { setAiringNotificationsEnabled } from '$lib/notifications/airing'
@@ -51,28 +51,6 @@
     { value: 'light', label: 'Light', background: '#fafafa', surface: '#e7e7eb', foreground: '#121217', accent: '#be123c' },
     { value: 'system', label: 'System', background: '#f4f4f5', surface: '#18181b', foreground: '#ffffff', accent: '#e93b69' },
   ]
-  const rowLabels: Record<string, string> = {
-    continue: 'Continue Watching', recent: 'Recently Released', list: 'Your List', recommendations: 'Recommended for You',
-    season: 'Popular This Season', trending: 'Trending Now', popular: 'All Time Popular',
-    romance: 'Romance', action: 'Action', fantasy: 'Fantasy',
-  }
-  const orderedRows = $derived([
-    ...$homeRowOrder.filter((id) => DEFAULT_HOME_ROWS.includes(id as never)),
-    ...DEFAULT_HOME_ROWS.filter((id) => !$homeRowOrder.includes(id)),
-  ])
-  function moveRow(id: string, direction: -1 | 1) {
-    const order = [...orderedRows]
-    const index = order.indexOf(id)
-    const target = index + direction
-    if (index < 0 || target < 0 || target >= order.length) return
-    ;[order[index], order[target]] = [order[target], order[index]]
-    $homeRowOrder = order
-  }
-  function toggleRow(id: string) {
-    $hiddenHomeRows = $hiddenHomeRows.includes(id)
-      ? $hiddenHomeRows.filter((row) => row !== id)
-      : [...$hiddenHomeRows, id]
-  }
 </script>
 
 <div class="p-4 sm:p-8">
@@ -209,22 +187,6 @@
     <div class="mb-4 space-y-3">
       <Toggle label="Pin schedule header" desc="Keep the Schedule/Watchlist tabs, week navigation, and My Shows / All toggle stuck to the top while scrolling the schedule. Off = the header scrolls away with the list (default on Android; ignored in Game mode)." value={$scheduleStickyHeader} onToggle={() => ($scheduleStickyHeader = !$scheduleStickyHeader)} />
       <Toggle label={'Show "Next up" on the schedule'} desc="The strip of soonest episodes above the schedule grid." value={$scheduleShowNextUp} onToggle={() => ($scheduleShowNextUp = !$scheduleShowNextUp)} />
-    </div>
-
-    <p class="mb-1 text-sm font-bold">{m.settings_home_rows()}</p>
-    <p class="mb-2 text-xs text-muted-foreground">Reorder or hide carousel rows. Recommendations use the shows on your connected AniList account.</p>
-    <div class="mb-4 divide-y divide-border overflow-hidden rounded-md border border-border">
-      {#each orderedRows as id, index (id)}
-        {@const hidden = $hiddenHomeRows.includes(id)}
-        <div class="flex items-center gap-2 px-3 py-2">
-          <button data-focusable disabled={index === 0} onclick={() => moveRow(id, -1)} aria-label={`Move ${rowLabels[id]} up`} class="rounded px-3 py-2 font-bold disabled:opacity-25 active:bg-secondary sm:px-2 sm:py-1 sm:hover:bg-secondary">↑</button>
-          <button data-focusable disabled={index === orderedRows.length - 1} onclick={() => moveRow(id, 1)} aria-label={`Move ${rowLabels[id]} down`} class="rounded px-3 py-2 font-bold disabled:opacity-25 active:bg-secondary sm:px-2 sm:py-1 sm:hover:bg-secondary">↓</button>
-          <span class="min-w-0 flex-1 font-semibold" class:opacity-50={hidden}>{rowLabels[id]}</span>
-          <button data-focusable onclick={() => toggleRow(id)} aria-pressed={!hidden} class="rounded-md border border-border px-3 py-2 text-sm font-bold active:bg-secondary sm:py-1 sm:text-xs sm:hover:bg-secondary">
-            {hidden ? m.settings_show() : m.settings_hide()}
-          </button>
-        </div>
-      {/each}
     </div>
 
     <p class="mb-1 text-sm font-bold">Remove from Continue Watching</p>

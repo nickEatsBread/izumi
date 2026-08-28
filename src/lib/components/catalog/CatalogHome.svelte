@@ -4,9 +4,11 @@
   import Carousel from '$lib/components/cards/Carousel.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
-  import type { CatalogHome } from '$lib/catalog/types'
+  import type { CatalogHome, CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import { catalogProvider } from '$lib/settings/catalog'
+  import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
+  import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
   import { mediaHref } from '$lib/anilist/media'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
@@ -16,6 +18,20 @@
   let error = $state('')
   let retry = $state(0)
   const listUser = $derived($anilistUserName || $anilistUser)
+  type ContentRow = { id: string; kind: 'continue' } | { id: string; kind: 'section'; section: CatalogHomeSection }
+  const continueEnabled = $derived(resolveCatalogHomeRows($catalogProvider, [CONTINUE_HOME_ROW], $catalogHomeLayouts)[0]?.enabled ?? true)
+  const contentRows = $derived.by((): ContentRow[] => {
+    if (!home) return []
+    const sections = new Map(home.sections.map((section) => [section.id, section]))
+    const options = [CONTINUE_HOME_ROW, ...home.sections.map((section) => ({ id: section.id, title: section.title }))]
+    const result: ContentRow[] = []
+    for (const row of resolveCatalogHomeRows($catalogProvider, options, $catalogHomeLayouts)) {
+      if (!row.enabled) continue
+      if (row.id === 'continue') result.push({ id: row.id, kind: 'continue' })
+      else if (sections.has(row.id)) result.push({ id: row.id, kind: 'section', section: sections.get(row.id)! })
+    }
+    return result
+  })
 
   $effect(() => {
     const selection = $catalogProvider
@@ -55,7 +71,9 @@
   {/if}
 
   <div class="space-y-5">
-    {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
+    {#if continueEnabled && !home}
+      {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
+    {/if}
 
     {#if error}
       <div class="mx-4 rounded-xl border border-destructive/30 bg-destructive/10 p-5 sm:mx-8">
@@ -73,14 +91,19 @@
         </div>
       {/each}
     {:else if home}
-      {#each home.sections as section (section.id)}
-        <Carousel title={section.title} viewMoreHref={section.more ? moreHref(section.more) : undefined}>
-          {#each section.media as media (media.catalog?.id ?? media.id)}
-            <div class="load-in shrink-0"><SmallCard {media} /></div>
-          {/each}
-        </Carousel>
+      {#each contentRows as row (row.id)}
+        {#if row.kind === 'continue'}
+          {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
+        {:else}
+          {@const section = row.section}
+          <Carousel title={section.title} viewMoreHref={section.more ? moreHref(section.more) : undefined}>
+            {#each section.media as media (media.catalog?.id ?? media.id)}
+              <div class="load-in shrink-0"><SmallCard {media} /></div>
+            {/each}
+          </Carousel>
+        {/if}
       {/each}
-      {#if !home.sections.length && !error}
+      {#if !contentRows.length && !error}
         <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">This provider returned no browseable catalogs.</div>
       {/if}
     {/if}
