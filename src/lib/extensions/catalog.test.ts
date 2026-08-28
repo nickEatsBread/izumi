@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { pointerUrl, normalizeManifest, isRunnableType, isLegacyTorrentType, extensionBackendLabel, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages } from './catalog'
+import { pointerUrl, normalizeManifest, isRunnableType, isLegacyTorrentType, extensionBackendLabel, resolveManifestUrl, manifestProblem, sourceLabel, catalogPackages, aniyomiRepositoryPackages } from './catalog'
 
 // Shapes below are the real ones served by the catalogs we support, trimmed to the fields we read.
 
@@ -297,5 +297,48 @@ describe('catalogPackages', () => {
 
   it('explains a catalog it refused instead of calling the URL unreachable', () => {
     expect(manifestProblem({ ...catalog, formatVersion: 2 })).toMatch(/catalog/i)
+  })
+})
+
+describe('aniyomiRepositoryPackages', () => {
+  const anime = {
+    name: 'Aniyomi: Example',
+    pkg: 'eu.kanade.tachiyomi.animeextension.en.example',
+    apk: 'apk/aniyomi-en.example-v14.2.apk',
+    lang: 'en',
+    code: 2,
+    version: '14.2',
+    nsfw: 1,
+    sources: [{ name: 'Example', lang: 'en', id: '123', baseUrl: 'https://example.test' }],
+  }
+
+  it('turns a native Aniyomi index entry into an installable package', () => {
+    const packages = aniyomiRepositoryPackages(
+      [anime],
+      'https://raw.githubusercontent.com/owner/repo/repo/index.min.json',
+    )
+    expect(packages).toHaveLength(1)
+    expect(packages?.[0]).toMatchObject({
+      packageFormat: 'aniyomi-repo',
+      id: anime.pkg,
+      version: '14.2',
+      nsfw: true,
+      apk: 'https://raw.githubusercontent.com/owner/repo/repo/apk/aniyomi-en.example-v14.2.apk',
+      sources: [{ id: '123', name: 'Example', language: 'en' }],
+    })
+  })
+
+  it('does not expose manga packages to the anime runtime', () => {
+    expect(aniyomiRepositoryPackages([
+      anime,
+      { ...anime, pkg: 'eu.kanade.tachiyomi.extension.en.manga' },
+    ], 'https://example.test/index.json')?.map((entry) => entry.id)).toEqual([anime.pkg])
+  })
+
+  it('does not mistake an Izumi JavaScript manifest for an Aniyomi repository', () => {
+    expect(aniyomiRepositoryPackages(
+      [{ id: 'x', name: 'X', code: 'https://example.test/x.js' }],
+      'https://example.test/index.json',
+    )).toBeNull()
   })
 })

@@ -46,9 +46,7 @@ export function sourceLabel(spec: string): string {
   return host
 }
 
-/** One `.izumi-ext` package in a maintained catalog: a downloadable, hash-pinned payload rather
- *  than a module izumi runs straight off the network. */
-export interface ExtensionCatalogPackage {
+interface ExtensionPackageBase {
   id: string
   name: string
   version: string
@@ -61,10 +59,26 @@ export interface ExtensionCatalogPackage {
     baseUrl?: string
   }>
   backend: 'izumi-js' | 'aniyomi-jvm' | 'izumi-service'
+}
+
+/** One pre-built `.izumi-ext` package in an Izumi catalog. */
+export interface IzumiCatalogPackage extends ExtensionPackageBase {
+  packageFormat?: 'izumi-ext'
   package: string
   packageSha256: string
   packageBytes: number
 }
+
+/** One APK from a standard Aniyomi repository. Izumi converts and wraps it at install time. */
+export interface AniyomiRepositoryPackage extends ExtensionPackageBase {
+  packageFormat: 'aniyomi-repo'
+  backend: 'aniyomi-jvm'
+  apk: string
+  apkSha256?: string
+  packageBytes?: number
+}
+
+export type ExtensionCatalogPackage = IzumiCatalogPackage | AniyomiRepositoryPackage
 
 export interface ExtensionCatalog {
   formatVersion: 1
@@ -74,7 +88,7 @@ export interface ExtensionCatalog {
     transport: 'http'
     manga: false
   }
-  packages: ExtensionCatalogPackage[]
+  packages: IzumiCatalogPackage[]
 }
 
 /**
@@ -86,17 +100,68 @@ export interface ExtensionCatalog {
  * to manifest expansion and be reported as a broken manifest.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function catalogPackages(raw: any): ExtensionCatalogPackage[] | null {
+export function catalogPackages(raw: any): IzumiCatalogPackage[] | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   if (raw.formatVersion !== 1) return null
   if (raw.scope?.content !== 'anime' || raw.scope?.transport !== 'http' || raw.scope?.manga !== false) return null
   if (!Array.isArray(raw.packages)) return null
+  const entries: unknown[] = raw.packages
   // Entries missing an id or a payload can't be installed or tracked; drop them rather than
   // rendering a row whose Install button throws.
-  return raw.packages.filter((p: unknown): p is ExtensionCatalogPackage =>
-    !!p && typeof p === 'object'
-    && typeof (p as ExtensionCatalogPackage).id === 'string'
-    && typeof (p as ExtensionCatalogPackage).package === 'string')
+  return entries
+    .filter((p: unknown): p is IzumiCatalogPackage =>
+      !!p && typeof p === 'object'
+      && typeof (p as IzumiCatalogPackage).id === 'string'
+      && typeof (p as IzumiCatalogPackage).package === 'string')
+    .map((p) => ({ ...p, packageFormat: 'izumi-ext' }))
+}
+
+/** Parse Aniyomi's native `index.json` / `index.min.json` repository format. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function aniyomiRepositoryPackages(raw: any, manifestUrl: string): AniyomiRepositoryPackage[] | null {
+  if (!Array.isArray(raw)) return null
+  const looksLikeAniyomi = raw.some((entry) => entry && typeof entry === 'object'
+    && typeof entry.pkg === 'string' && typeof entry.apk === 'string' && Array.isArray(entry.sources))
+  if (!looksLikeAniyomi) return null
+
+  const packages: AniyomiRepositoryPackage[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object' || typeof entry.pkg !== 'string'
+      || typeof entry.apk !== 'string' || !Array.isArray(entry.sources)) continue
+    // Anime and manga repositories use closely related schemas. Only the anime package namespace
+    // can be loaded by the AnymeX runtime bridge.
+    if (!entry.pkg.startsWith('eu.kanade.tachiyomi.animeextension.')) continue
+    let apk: string
+    try { apk = new URL(entry.apk, manifestUrl).toString() } catch { continue }
+    const sources = entry.sources.flatMap((source: any) => {
+      if (!source || typeof source !== 'object' || source.id == null || !source.name) return []
+      return [{
+        id: String(source.id),
+        name: String(source.name),
+        language: source.lang ? String(source.lang).toLowerCase() : undefined,
+        baseUrl: source.baseUrl ? String(source.baseUrl) : undefined,
+      }]
+    })
+    if (!sources.length) continue
+    const declaredHash = entry.sha256 ?? entry.apkSha256
+    if (declaredHash != null && !/^[a-f\d]{64}$/i.test(String(declaredHash))) continue
+    packages.push({
+      packageFormat: 'aniyomi-repo',
+      id: entry.pkg,
+      name: String(entry.name ?? sources[0].name ?? entry.pkg),
+      version: String(entry.version ?? entry.code ?? '0'),
+      language: entry.lang ? String(entry.lang).toLowerCase() : undefined,
+      nsfw: entry.nsfw === true || Number(entry.nsfw) > 0,
+      sources,
+      backend: 'aniyomi-jvm',
+      apk,
+      apkSha256: declaredHash == null ? undefined : String(declaredHash).toLowerCase(),
+      packageBytes: Number.isFinite(Number(entry.size)) && Number(entry.size) > 0
+        ? Number(entry.size)
+        : undefined,
+    })
+  }
+  return packages
 }
 
 // gh:/npm: → esm.sh; http(s) passthrough; relative (`main`) → resolve against

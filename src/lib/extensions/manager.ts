@@ -3,7 +3,7 @@ import { get } from 'svelte/store'
 import { invokeNativeHttp, isNativeTransportFailure, phttp } from '$lib/net/http'
 import { enabledExtensionUrls, disabledPlugins } from '$lib/settings/ui'
 import type { TorrentResult, TorrentQuery, ExtensionConfig } from './types'
-import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages } from './catalog'
+import { resolveManifestUrl, normalizeManifest, pointerUrl, isRunnableType, isLegacyTorrentType, manifestProblem, catalogPackages, aniyomiRepositoryPackages } from './catalog'
 import type { ExtensionCatalogPackage } from './catalog'
 import { extensionSourceConfigured, liveJvmSources } from './availability'
 import { clearProviderCache } from '$lib/stremio/online-cache'
@@ -127,12 +127,25 @@ export async function installedExtensionPackages(): Promise<InstalledExtensionPa
 }
 
 export async function installCatalogPackage(
-  extension: Pick<ExtensionCatalogPackage, 'package' | 'packageSha256'>,
+  extension: ExtensionCatalogPackage,
 ): Promise<InstalledExtensionPackage> {
-  const installed = await invoke<InstalledExtensionPackage>('extension_install_url', {
-    url: extension.package,
-    expectedSha256: extension.packageSha256,
-  })
+  const installed = extension.packageFormat === 'aniyomi-repo'
+    ? await invoke<InstalledExtensionPackage>('extension_install_aniyomi_url', {
+        url: extension.apk,
+        expectedSha256: extension.apkSha256,
+        metadata: {
+          id: extension.id,
+          name: extension.name,
+          version: extension.version,
+          language: extension.language,
+          nsfw: extension.nsfw,
+          sources: extension.sources,
+        },
+      })
+    : await invoke<InstalledExtensionPackage>('extension_install_url', {
+        url: extension.package,
+        expectedSha256: extension.packageSha256,
+      })
   return finishPackageInstall(installed)
 }
 
@@ -187,7 +200,7 @@ async function expandRaw(raw: any, url: string, depth = 0): Promise<ExtensionCon
   // A package catalog runs nothing itself: its entries are `.izumi-ext` downloads, and the
   // INSTALLED copies are what loadConfigs picks up. Stop here so a catalog URL sitting in the
   // source list can't be mistaken for a manifest that produced no extensions.
-  if (catalogPackages(raw)) return []
+  if (catalogPackages(raw) || aniyomiRepositoryPackages(raw, url)) return []
   const entries = Array.isArray(raw) ? raw : [raw]
   // Partition rather than all-or-nothing: a marketplace may mix pointer entries with inline
   // configs, and `every(isPointer)` silently dropped the whole catalog when even one differed.
@@ -232,7 +245,7 @@ export async function fetchExtensionInfo(spec: string): Promise<ExtensionSourceI
   } catch {
     return { configs: [], problem: 'That URL could not be fetched.' }
   }
-  const packages = catalogPackages(raw)
+  const packages = catalogPackages(raw) ?? aniyomiRepositoryPackages(raw, url)
   if (packages) return { configs: [], packages }
   const configs = await expandRaw(raw, url).catch(() => [] as ExtensionConfig[])
   // Say so out loud when a source can never work (a compiled Android plugin repo, say), rather

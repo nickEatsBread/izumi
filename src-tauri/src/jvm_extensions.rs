@@ -31,6 +31,7 @@ const CONSCRYPT_SHA256: &str = "f8a8f5020c66abc53a3d33cbc855ef8fc06187fa652fb3c0
 const MAX_EXTENSION_APK_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_EXTENSION_ICON_BYTES: u64 = 512 * 1024;
 const MAX_CONVERTED_JAR_BYTES: u64 = 128 * 1024 * 1024;
+static CONVERSION_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[path = "jvm_runtime_args.rs"]
 mod jvm_runtime_args;
@@ -1027,6 +1028,80 @@ async fn ensure_multidex_extensions(
         let _ = tokio::fs::remove_file(converted_path).await;
     }
     Ok(())
+}
+
+/// Convert an APK selected from a native Aniyomi repository into the desktop runtime's JAR form.
+/// dex2jar receives the APK itself so its MultiDex reader includes every `classesN.dex` file.
+pub(crate) async fn convert_aniyomi_apk(
+    app: &AppHandle,
+    id: &str,
+    apk: &[u8],
+) -> Result<Vec<u8>, String> {
+    if !safe_package_id(id) {
+        return Err("Aniyomi extension id is unsafe".into());
+    }
+    if apk.is_empty() || apk.len() as u64 > MAX_EXTENSION_APK_BYTES {
+        return Err("Aniyomi extension APK is invalid or too large".into());
+    }
+    let runtime = ensure_runtime_file(app).await?;
+    let java = java_command(app).await?;
+    let work_dir = data_dir(app)?
+        .join("extensions")
+        .join("runtime")
+        .join("conversion");
+    tokio::fs::create_dir_all(&work_dir)
+        .await
+        .map_err(|error| error.to_string())?;
+    let sequence = CONVERSION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let stem = format!("{id}-{}-{sequence}", std::process::id());
+    let apk_path = work_dir.join(format!("{stem}.apk"));
+    let converted_path = work_dir.join(format!("{stem}.jar"));
+    tokio::fs::write(&apk_path, apk)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let result = async {
+        let mut command = Command::new(java);
+        command
+            .arg("-cp")
+            .arg(runtime)
+            .arg("com.googlecode.dex2jar.tools.Dex2jarCmd")
+            .arg("--force")
+            .arg("--dont-sanitize-names")
+            .arg("--output")
+            .arg(&converted_path)
+            .arg(&apk_path)
+            .current_dir(&work_dir)
+            .kill_on_drop(true);
+        hide_console(&mut command);
+        let output = timeout(Duration::from_secs(180), command.output())
+            .await
+            .map_err(|_| format!("Converting Aniyomi extension {id} timed out"))?
+            .map_err(|error| format!("Could not convert Aniyomi extension {id}: {error}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "Could not convert Aniyomi extension {id}: {}",
+                stderr.trim()
+            ));
+        }
+        let metadata = tokio::fs::metadata(&converted_path)
+            .await
+            .map_err(|error| error.to_string())?;
+        if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_CONVERTED_JAR_BYTES {
+            return Err(format!(
+                "Converted Aniyomi extension {id} is invalid or too large"
+            ));
+        }
+        tokio::fs::read(&converted_path)
+            .await
+            .map_err(|error| error.to_string())
+    }
+    .await;
+
+    let _ = tokio::fs::remove_file(apk_path).await;
+    let _ = tokio::fs::remove_file(converted_path).await;
+    result
 }
 
 fn runtime_jvm_args(

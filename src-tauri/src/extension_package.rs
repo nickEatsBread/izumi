@@ -2,6 +2,26 @@ use tauri::AppHandle;
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AniyomiInstallSource {
+    pub id: String,
+    pub name: String,
+    pub language: Option<String>,
+    pub base_url: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AniyomiInstallMetadata {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub language: Option<String>,
+    pub nsfw: bool,
+    pub sources: Vec<AniyomiInstallSource>,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InstalledExtension {
     pub id: String,
     pub name: String,
@@ -17,7 +37,7 @@ pub struct InstalledExtension {
 }
 
 mod package {
-    use super::InstalledExtension;
+    use super::{AniyomiInstallMetadata, InstalledExtension};
     use base64::Engine;
     use ed25519_dalek::pkcs8::DecodePublicKey;
     use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -25,7 +45,7 @@ mod package {
     use serde_json::Value;
     use sha2::{Digest, Sha256};
     use std::collections::{BTreeMap, BTreeSet};
-    use std::io::{Cursor, Read};
+    use std::io::{Cursor, Read, Write};
     use std::path::{Path, PathBuf};
     use tauri::{AppHandle, Manager};
     use zip::write::SimpleFileOptions;
@@ -35,6 +55,7 @@ mod package {
     // per-file hashes and package signature still apply; only the size ceiling differs from JS/JVM.
     const MAX_PACKAGE_BYTES: usize = 160 * 1024 * 1024;
     const MAX_ENTRY_BYTES: usize = 152 * 1024 * 1024;
+    const MAX_ANIYOMI_APK_BYTES: usize = 32 * 1024 * 1024;
     // v2 rebuilds desktop Aniyomi runtime JARs with resources preserved from their signed APK.
     const PACKAGE_CACHE_VERSION: u8 = 2;
 
@@ -89,6 +110,47 @@ mod package {
 
     fn sha256(bytes: &[u8]) -> String {
         format!("{:x}", Sha256::digest(bytes))
+    }
+
+    pub fn validate_aniyomi_metadata(metadata: &AniyomiInstallMetadata) -> Result<(), String> {
+        if !safe_id(&metadata.id)
+            || !metadata
+                .id
+                .starts_with("eu.kanade.tachiyomi.animeextension.")
+        {
+            return Err("Aniyomi extension id is invalid".into());
+        }
+        if metadata.name.trim().is_empty()
+            || metadata.name.len() > 512
+            || metadata.version.trim().is_empty()
+            || metadata.version.len() > 128
+            || metadata
+                .language
+                .as_ref()
+                .is_some_and(|value| value.len() > 32)
+            || metadata.sources.is_empty()
+            || metadata.sources.len() > 100
+        {
+            return Err("Aniyomi extension metadata is invalid".into());
+        }
+        for source in &metadata.sources {
+            if source.id.trim().is_empty()
+                || source.id.len() > 200
+                || source.name.trim().is_empty()
+                || source.name.len() > 512
+                || source
+                    .language
+                    .as_ref()
+                    .is_some_and(|value| value.len() > 32)
+                || source
+                    .base_url
+                    .as_ref()
+                    .is_some_and(|value| value.len() > 2048)
+            {
+                return Err("Aniyomi source metadata is invalid".into());
+            }
+        }
+        Ok(())
     }
 
     fn canonical_json(value: &Value) -> String {
@@ -767,45 +829,151 @@ mod package {
         install_bytes(app, std::fs::read(path).map_err(|e| e.to_string())?)
     }
 
+    async fn download_https(
+        url: &str,
+        expected_sha256: Option<&str>,
+        max_bytes: usize,
+        label: &str,
+    ) -> Result<Vec<u8>, String> {
+        let parsed = reqwest::Url::parse(url).map_err(|_| format!("{label} URL is invalid"))?;
+        if parsed.scheme() != "https" {
+            return Err(format!("{label}s must use HTTPS"));
+        }
+        if expected_sha256.is_some_and(|expected| {
+            expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit())
+        }) {
+            return Err(format!("{label} SHA-256 is invalid"));
+        }
+        let response = reqwest::get(parsed)
+            .await
+            .map_err(|error| format!("Could not download {label}: {error}"))?
+            .error_for_status()
+            .map_err(|error| format!("Could not download {label}: {error}"))?;
+        if response
+            .content_length()
+            .is_some_and(|length| length > max_bytes as u64)
+        {
+            return Err(format!("{label} is too large"));
+        }
+        let mut bytes = Vec::new();
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|error| format!("Could not read {label}: {error}"))?;
+            if bytes.len().saturating_add(chunk.len()) > max_bytes {
+                return Err(format!("{label} is too large"));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if expected_sha256.is_some_and(|expected| sha256(&bytes) != expected.to_ascii_lowercase()) {
+            return Err(format!("Downloaded {label} failed its SHA-256 check"));
+        }
+        Ok(bytes)
+    }
+
     pub async fn install_url(
         app: &AppHandle,
         url: &str,
         expected_sha256: &str,
     ) -> Result<InstalledExtension, String> {
-        let parsed = reqwest::Url::parse(url).map_err(|_| "Extension package URL is invalid")?;
-        if parsed.scheme() != "https" {
-            return Err("Extension packages must use HTTPS".into());
-        }
-        if expected_sha256.len() != 64
-            || !expected_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
-        {
-            return Err("Extension package SHA-256 is invalid".into());
-        }
-        let response = reqwest::get(parsed)
-            .await
-            .map_err(|error| format!("Could not download extension package: {error}"))?
-            .error_for_status()
-            .map_err(|error| format!("Could not download extension package: {error}"))?;
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_PACKAGE_BYTES as u64)
-        {
-            return Err("Extension package is too large".into());
-        }
-        let mut bytes = Vec::new();
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk =
-                chunk.map_err(|error| format!("Could not read extension package: {error}"))?;
-            if bytes.len().saturating_add(chunk.len()) > MAX_PACKAGE_BYTES {
-                return Err("Extension package is too large".into());
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        if sha256(&bytes) != expected_sha256.to_ascii_lowercase() {
-            return Err("Downloaded extension package failed its SHA-256 check".into());
-        }
+        let bytes = download_https(
+            url,
+            Some(expected_sha256),
+            MAX_PACKAGE_BYTES,
+            "extension package",
+        )
+        .await?;
         install_bytes(app, bytes)
+    }
+
+    pub async fn download_aniyomi_apk(
+        url: &str,
+        expected_sha256: Option<&str>,
+    ) -> Result<Vec<u8>, String> {
+        let bytes = download_https(
+            url,
+            expected_sha256,
+            MAX_ANIYOMI_APK_BYTES,
+            "Aniyomi extension APK",
+        )
+        .await?;
+        if !is_android_apk(&bytes) {
+            return Err("Downloaded file is not a valid Aniyomi extension APK".into());
+        }
+        Ok(bytes)
+    }
+
+    fn build_aniyomi_package(
+        metadata: &AniyomiInstallMetadata,
+        apk: &[u8],
+        converted_jar: &[u8],
+    ) -> Result<Vec<u8>, String> {
+        validate_aniyomi_metadata(metadata)?;
+        if !is_android_apk(apk) {
+            return Err("Aniyomi Android entry is not a valid extension APK".into());
+        }
+        if converted_jar.is_empty()
+            || converted_jar.len() > MAX_ENTRY_BYTES
+            || !converted_jar.starts_with(b"PK")
+        {
+            return Err("Converted Aniyomi extension JAR is invalid or too large".into());
+        }
+
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "formatVersion": 1,
+            "runtimeAbi": 1,
+            "id": metadata.id,
+            "name": metadata.name,
+            "version": metadata.version,
+            "entry": "extension.jar",
+            "nsfw": metadata.nsfw,
+            "execution": { "backend": "aniyomi-jvm", "status": "compatible" },
+            "sources": metadata.sources,
+        }))
+        .map_err(|error| error.to_string())?;
+        let compatibility = br#"{"runtime":"izumi-aniyomi-jvm-v1"}"#.to_vec();
+        let integrity = serde_json::to_vec(&serde_json::json!({
+            "algorithm": "SHA-256",
+            "files": {
+                "manifest.json": sha256(&manifest),
+                "compatibility.json": sha256(&compatibility),
+                "extension.jar": sha256(converted_jar),
+                "extension.apk": sha256(apk),
+            }
+        }))
+        .map_err(|error| error.to_string())?;
+        let signature = br#"{"algorithm":"none","signed":false,"signature":null}"#;
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for (name, bytes) in [
+            ("manifest.json", manifest.as_slice()),
+            ("compatibility.json", compatibility.as_slice()),
+            ("extension.jar", converted_jar),
+            ("extension.apk", apk),
+            ("integrity.json", integrity.as_slice()),
+            ("signature.json", signature.as_slice()),
+        ] {
+            writer
+                .start_file(name, options)
+                .map_err(|error| error.to_string())?;
+            writer.write_all(bytes).map_err(|error| error.to_string())?;
+        }
+        let package = writer
+            .finish()
+            .map_err(|error| error.to_string())?
+            .into_inner();
+        if package.len() > MAX_PACKAGE_BYTES {
+            return Err("Generated extension package is too large".into());
+        }
+        Ok(package)
+    }
+
+    pub fn install_aniyomi(
+        app: &AppHandle,
+        metadata: &AniyomiInstallMetadata,
+        apk: &[u8],
+        converted_jar: &[u8],
+    ) -> Result<InstalledExtension, String> {
+        install_bytes(app, build_aniyomi_package(metadata, apk, converted_jar)?)
     }
 
     pub fn list(app: &AppHandle) -> Result<Vec<InstalledExtension>, String> {
@@ -919,6 +1087,40 @@ mod package {
                 writer.write_all(bytes).unwrap();
             }
             writer.finish().unwrap().into_inner()
+        }
+
+        #[cfg(not(target_os = "android"))]
+        #[test]
+        fn wraps_a_repository_apk_as_a_valid_izumi_extension() {
+            let apk = zip_entries(&[
+                ("AndroidManifest.xml", b"android"),
+                ("classes.dex", b"dex"),
+                ("assets/config.json", b"{}"),
+            ]);
+            let jar = zip_entries(&[("example/Source.class", b"converted")]);
+            let metadata = AniyomiInstallMetadata {
+                id: "eu.kanade.tachiyomi.animeextension.en.example".into(),
+                name: "Aniyomi: Example".into(),
+                version: "14.2".into(),
+                language: Some("en".into()),
+                nsfw: false,
+                sources: vec![super::super::AniyomiInstallSource {
+                    id: "123".into(),
+                    name: "Example".into(),
+                    language: Some("en".into()),
+                    base_url: Some("https://example.test".into()),
+                }],
+            };
+
+            let package = build_aniyomi_package(&metadata, &apk, &jar).unwrap();
+            let (installed, runtime) = parse_package(&package).unwrap();
+            assert_eq!(installed.id, metadata.id);
+            assert_eq!(installed.name, "Example");
+            assert_eq!(installed.source_ids, vec!["123"]);
+            assert!(!installed.signed);
+            let mut runtime = ZipArchive::new(Cursor::new(runtime.unwrap())).unwrap();
+            assert!(runtime.by_name("example/Source.class").is_ok());
+            assert!(runtime.by_name("assets/config.json").is_ok());
         }
 
         #[cfg(not(target_os = "android"))]
@@ -1176,6 +1378,29 @@ pub async fn extension_install_url(
     expected_sha256: String,
 ) -> Result<InstalledExtension, String> {
     package::install_url(&app, &url, &expected_sha256).await
+}
+
+#[tauri::command]
+pub async fn extension_install_aniyomi_url(
+    app: AppHandle,
+    url: String,
+    expected_sha256: Option<String>,
+    metadata: AniyomiInstallMetadata,
+) -> Result<InstalledExtension, String> {
+    package::validate_aniyomi_metadata(&metadata)?;
+    let apk = package::download_aniyomi_apk(&url, expected_sha256.as_deref()).await?;
+    #[cfg(not(target_os = "android"))]
+    let converted_jar =
+        crate::jvm_extensions::convert_aniyomi_apk(&app, &metadata.id, &apk).await?;
+    // Android executes the original APK from `extension.apk`; `extension.jar` is retained only to
+    // keep the cross-platform package layout valid and is never handed to the Android bridge.
+    #[cfg(target_os = "android")]
+    let converted_jar = apk.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        package::install_aniyomi(&app, &metadata, &apk, &converted_jar)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
