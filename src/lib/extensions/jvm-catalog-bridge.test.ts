@@ -31,8 +31,11 @@ describe('JVM catalog bridge', () => {
   })
 
   it('cancels the native runtime request when the UI aborts or times out', () => {
-    expect(manager).toContain("invoke('jvm_extension_cancel', { requestId })")
+    expect(manager).toContain("invoke<void>('jvm_extension_cancel', { requestId })")
+    expect(manager).toContain('void cancel().then(() => reject(')
     expect(android).toContain('invokeAniyomi("cancelRequest", it)')
+    expect(desktopBridge).toContain('runtime.cancel_request(&request_id).await')
+    expect(desktopBridge).not.toContain('ensure_started(&app)\n        .await?\n        .cancel(&request_id)')
   })
 
   it('repairs APK resources and converts every dex file on desktop', () => {

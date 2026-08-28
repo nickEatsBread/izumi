@@ -1197,6 +1197,27 @@ impl Runtime {
         *self.sources.write().await = None;
     }
 
+    async fn cancel_request(&self, request_id: &str) -> Result<(), String> {
+        // Some converted Aniyomi extensions block inside their own HTTP stack and do not observe
+        // the runtime's cooperative cancel message. Remove and terminate the current process while
+        // holding the runtime lock so another request cannot reuse it during teardown. The next
+        // call starts a clean host and reloads the already-converted extensions.
+        let mut current = self.process.lock().await;
+        let Some(process) = current.take() else {
+            return Ok(());
+        };
+        let _ = process.cancel(request_id).await;
+        let kill_result = process
+            .child
+            .lock()
+            .await
+            .kill()
+            .await
+            .map_err(|error| format!("Could not stop unresponsive extension runtime: {error}"));
+        *self.sources.write().await = None;
+        kill_result
+    }
+
     pub(crate) async fn set_socks_proxy(&self, address: Option<SocketAddr>) {
         // Keep the same lock order as ensure_started so a setting change cannot
         // race a process launch using the previous resolver configuration.
@@ -1251,15 +1272,10 @@ pub async fn jvm_extension_call(
 
 #[tauri::command]
 pub async fn jvm_extension_cancel(
-    app: AppHandle,
     request_id: String,
     runtime: tauri::State<'_, Runtime>,
 ) -> Result<(), String> {
-    runtime
-        .ensure_started(&app)
-        .await?
-        .cancel(&request_id)
-        .await
+    runtime.cancel_request(&request_id).await
 }
 
 #[tauri::command]

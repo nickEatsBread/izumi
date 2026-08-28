@@ -681,14 +681,15 @@ function invokeJvmNow<T>(method: string, args: Record<string, unknown>, signal?:
       signal?.removeEventListener('abort', abort)
       action()
     }
-    const cancel = () => { void invoke('jvm_extension_cancel', { requestId }).catch(() => {}) }
+    // Keep the global bridge lane occupied until native cancellation finishes. Otherwise the next
+    // queued call can reach the same JVM before a wedged request has been torn down, recreating the
+    // apparent Home freeze as stale Java network work accumulates behind fresh requests.
+    const cancel = () => invoke<void>('jvm_extension_cancel', { requestId }).catch(() => undefined)
     const abort = () => finish(() => {
-      cancel()
-      reject(new DOMException('Aborted', 'AbortError'))
+      void cancel().then(() => reject(new DOMException('Aborted', 'AbortError')))
     })
     timer = setTimeout(() => finish(() => {
-      cancel()
-      reject(new Error(`The extension did not answer in time (${method}).`))
+      void cancel().then(() => reject(new Error(`The extension did not answer in time (${method}).`)))
     }), JVM_CALL_TIMEOUT_MS)
     if (signal?.aborted) {
       abort()
