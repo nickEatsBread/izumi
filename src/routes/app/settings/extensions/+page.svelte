@@ -465,80 +465,89 @@
         {@const label = sourceLabel(url)}
         {@const cat = catalogUrls.includes(url)}
         {@const off = $disabledExtensions.includes(url)}
-        <li style:order={sortRanks.get(`extension:${url}`) ?? 0} class="rounded-lg border border-border p-3" class:opacity-50={off && !cat}>
-          <div class="flex items-center gap-3">
+        <li style:order={sortRanks.get(`extension:${url}`) ?? 0} class="min-w-0 overflow-hidden rounded-lg border border-border p-3" class:opacity-50={off && !cat}>
+          <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
           {#await ext}
-            <div class="skeloader size-10 shrink-0 rounded-md"></div>
-            <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
+            <div class="flex min-w-0 items-center gap-3 sm:flex-1">
+              <div class="skeloader size-10 shrink-0 rounded-md"></div>
+              <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
+            </div>
+            <div class="flex w-full justify-end sm:w-auto">
+              <button onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
+            </div>
           {:then info}
             {@const metas = info.configs}
             {@const pkgs = info.packages}
             {@const m = metas[0]}
-            {#if pkgs}
-              <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Boxes size={18} /></div>
-            {:else if gh}
-              <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-foreground">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.2 3.44 9.61 8.2 11.17.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.7-4.04-1.58-4.04-1.58-.55-1.36-1.33-1.73-1.33-1.73-1.09-.73.08-.71.08-.71 1.2.08 1.83 1.21 1.83 1.21 1.07 1.79 2.81 1.27 3.5.97.11-.76.42-1.27.76-1.56-2.67-.3-5.47-1.29-5.47-5.75 0-1.27.47-2.31 1.24-3.12-.12-.3-.54-1.52.12-3.16 0 0 1.01-.32 3.3 1.19a11.6 11.6 0 0 1 3-.39c1.02 0 2.05.13 3 .39 2.29-1.51 3.3-1.19 3.3-1.19.66 1.64.24 2.86.12 3.16.77.81 1.24 1.85 1.24 3.12 0 4.47-2.81 5.45-5.49 5.74.43.36.81 1.08.81 2.18 0 1.57-.01 2.84-.01 3.23 0 .31.22.68.83.56A12.02 12.02 0 0 0 24 12.29C24 5.78 18.63.5 12 .5Z"/></svg>
-              </div>
-            {:else if m}
-              <!-- Single-plugin source: its own icon, else the shared placeholder AddonLogo falls
-                   back to when the manifest ships none / the icon host is down. -->
-              <AddonLogo logo={m.icon} name={m.name} id={m.id} size={40} />
-            {:else}
-              <!-- A multi-plugin source has no icon of its own to show. Same placeholder as a
-                   missing one, so there is a single missing-artwork visual across the app. -->
-              <SourcePlaceholder size={40} />
-            {/if}
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-2">
-                <!-- A manifest with several plugins has no single name of its own, so the source is
-                     named after where it came from — owner/repo, not the raw URL. -->
-                <span class="truncate font-bold">{pkgs || gh || metas.length > 1 ? label : (m?.name ?? label)}</span>
-                <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{pkgs ? 'CATALOG' : 'SOURCE'}</span>
-                {#if pkgs}
-                  <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{pkgs.length} {pkgs.length === 1 ? 'Package' : 'Packages'}</span>
-                {:else if metas.length}
-                  <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{metas.length} {metas.length === 1 ? 'Source' : 'Sources'}</span>
-                {/if}
-                {#if m?.version && metas.length === 1}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{m.version}</span>{/if}
-              </div>
+            <div class="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
               {#if pkgs}
-                {@const mine = installedIn(pkgs)}
-                {@const enabledMine = enabledInstalledIn(pkgs)}
-                <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                  {mine.length} of {pkgs.length} installed · {enabledMine.length} enabled
-                  {#if enabledMine.length} · {enabledMine.map((p) => p.name).join(' · ')}
-                  {:else if mine.length} · none enabled
-                  {:else} · no packages installed{/if}
-                </p>
-              {:else if metas.length > 1}
-                {@const on = enabledCount(metas.map((x) => x.id))}
-                <p class="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{on} of {metas.length} sources on · {metas.filter((x) => !pluginOff(x.id)).map((x) => x.name).join(' · ') || 'none'}</p>
-              {:else if info.problem}
-                <!-- Loudly, rather than an empty list that reads as "izumi is broken". -->
-                <p class="mt-0.5 text-xs text-amber-400">{info.problem}</p>
+                <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Boxes size={18} /></div>
+              {:else if gh}
+                <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-foreground">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.2 3.44 9.61 8.2 11.17.6.11.82-.25.82-.56 0-.28-.01-1.02-.02-2-3.34.7-4.04-1.58-4.04-1.58-.55-1.36-1.33-1.73-1.33-1.73-1.09-.73.08-.71.08-.71 1.2.08 1.83 1.21 1.83 1.21 1.07 1.79 2.81 1.27 3.5.97.11-.76.42-1.27.76-1.56-2.67-.3-5.47-1.29-5.47-5.75 0-1.27.47-2.31 1.24-3.12-.12-.3-.54-1.52.12-3.16 0 0 1.01-.32 3.3 1.19a11.6 11.6 0 0 1 3-.39c1.02 0 2.05.13 3 .39 2.29-1.51 3.3-1.19 3.3-1.19.66 1.64.24 2.86.12 3.16.77.81 1.24 1.85 1.24 3.12 0 4.47-2.81 5.45-5.49 5.74.43.36.81 1.08.81 2.18 0 1.57-.01 2.84-.01 3.23 0 .31.22.68.83.56A12.02 12.02 0 0 0 24 12.29C24 5.78 18.63.5 12 .5Z"/></svg>
+                </div>
+              {:else if m}
+                <!-- Single-plugin source: its own icon, else the shared placeholder AddonLogo falls
+                     back to when the manifest ships none / the icon host is down. -->
+                <AddonLogo logo={m.icon} name={m.name} id={m.id} size={40} />
               {:else}
-                <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{m?.description ?? label}</p>
+                <!-- A multi-plugin source has no icon of its own to show. Same placeholder as a
+                     missing one, so there is a single missing-artwork visual across the app. -->
+                <SourcePlaceholder size={40} />
               {/if}
+              <div class="min-w-0 flex-1">
+                <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <!-- A manifest with several plugins has no single name of its own, so the source is
+                       named after where it came from — owner/repo, not the raw URL. -->
+                  <span class="min-w-0 flex-1 truncate font-bold">{pkgs || gh || metas.length > 1 ? label : (m?.name ?? label)}</span>
+                  <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{pkgs ? 'CATALOG' : 'SOURCE'}</span>
+                  {#if pkgs}
+                    <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{pkgs.length} {pkgs.length === 1 ? 'Package' : 'Packages'}</span>
+                  {:else if metas.length}
+                    <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">{metas.length} {metas.length === 1 ? 'Source' : 'Sources'}</span>
+                  {/if}
+                  {#if m?.version && metas.length === 1}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{m.version}</span>{/if}
+                </div>
+                {#if pkgs}
+                  {@const mine = installedIn(pkgs)}
+                  {@const enabledMine = enabledInstalledIn(pkgs)}
+                  <p class="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">
+                    {mine.length} of {pkgs.length} installed · {enabledMine.length} enabled
+                    {#if enabledMine.length} · {enabledMine.map((p) => p.name).join(' · ')}
+                    {:else if mine.length} · none enabled
+                    {:else} · no packages installed{/if}
+                  </p>
+                {:else if metas.length > 1}
+                  {@const on = enabledCount(metas.map((x) => x.id))}
+                  <p class="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">{on} of {metas.length} sources on · {metas.filter((x) => !pluginOff(x.id)).map((x) => x.name).join(' · ') || 'none'}</p>
+                {:else if info.problem}
+                  <!-- Loudly, rather than an empty list that reads as "izumi is broken". -->
+                  <p class="mt-0.5 break-words text-xs text-amber-400">{info.problem}</p>
+                {:else}
+                  <p class="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">{m?.description ?? label}</p>
+                {/if}
+              </div>
             </div>
-            {#if pkgs || metas.length > 1}
-              <button data-focusable onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
-                class="shrink-0 rounded-md bg-secondary px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-1">
-                {isExpanded(url) ? 'Hide' : pkgs ? 'Packages' : 'Sources'}
-              </button>
-            {/if}
-            <!-- No source-level switch for a catalog: nothing of it runs, so it would toggle
-                 nothing. Its packages carry their own switches inside. -->
-            {#if !pkgs}
-              <!-- `data-switch`: fixed-geometry pill — the large-target a11y mode grows its pointer
-                   target, not its box, so the slider never squares off into a circle (app.css). -->
-              <button data-focusable data-switch onclick={() => toggleExt(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
-                class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
-                <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
-              </button>
-            {/if}
+            <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
+              {#if pkgs || metas.length > 1}
+                <button data-focusable onclick={() => toggleExpanded(url)} aria-expanded={isExpanded(url)}
+                  class="shrink-0 rounded-md bg-secondary px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-1">
+                  {isExpanded(url) ? 'Hide' : pkgs ? 'Packages' : 'Sources'}
+                </button>
+              {/if}
+              <!-- No source-level switch for a catalog: nothing of it runs, so it would toggle
+                   nothing. Its packages carry their own switches inside. -->
+              {#if !pkgs}
+                <!-- `data-switch`: fixed-geometry pill — the large-target a11y mode grows its pointer
+                     target, not its box, so the slider never squares off into a circle (app.css). -->
+                <button data-focusable data-switch onclick={() => toggleExt(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
+                  class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+                  <span class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform {off ? 'translate-x-0.5' : 'translate-x-4'}"></span>
+                </button>
+              {/if}
+              <button onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
+            </div>
           {/await}
-          <button onclick={() => removeExt(i)} data-focusable title="Remove" aria-label="Remove {sourceLabel(url)}" class="grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-accent sm:size-8"><Trash2 size={16} /></button>
           </div>
 
           {#if isExpanded(url)}
@@ -660,9 +669,9 @@
                 {@const metas = info.configs}
                 {@const ids = metas.map((x) => x.id)}
                 <div class="mt-3 border-t border-border pt-3">
-                  <div class="mb-2 flex items-center justify-between">
+                  <div class="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <span class="text-xs font-bold text-muted-foreground">Sources in this repository</span>
-                    <span class="flex gap-1">
+                    <span class="flex self-end gap-1 sm:self-auto">
                       <button data-focusable onclick={() => setAllPlugins(ids, true)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All on</button>
                       <button data-focusable onclick={() => setAllPlugins(ids, false)} class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-accent sm:bg-transparent sm:px-2 sm:py-0.5">All off</button>
                     </span>

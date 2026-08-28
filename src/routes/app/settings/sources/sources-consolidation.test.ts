@@ -60,7 +60,7 @@ describe('unified Sources settings', () => {
     const filter = page.indexOf('aria-label="Filter sources"')
     expect(search).toBeLessThan(sort)
     expect(sort).toBeLessThan(filter)
-    expect(page).toContain('class="relative min-w-52 flex-1"')
+    expect(page).toContain('class="relative col-span-2 min-w-0 sm:min-w-52 sm:flex-1"')
     expect(page).toContain('<div class="mt-3 grid gap-2 2xl:grid-cols-2">')
     expect(page).toContain('<ul class="contents">')
     expect(communitySources).toContain('<ul class="contents">')
@@ -85,6 +85,18 @@ describe('unified Sources settings', () => {
   it('puts Add from Store on the Sources heading row', () => {
     expect(page).toMatch(/<h2 class="[^"]*max-sm:hidden[^"]*">Sources<\/h2>[\s\S]{0,400}Add from Store[\s\S]{0,800}<div role="tablist"/)
     expect(page).toMatch(/href="\/app\/settings\/store"[^>]*class="[^"]*sm:translate-y-3/)
+  })
+
+  it('keeps the add controls and source cards inside phone-width viewports', () => {
+    expect(page).toContain('class="min-w-0 overflow-x-hidden p-4 sm:p-8"')
+    expect(page).toMatch(/href="\/app\/settings\/store"[^>]*class="[^"]*w-full[^"]*sm:w-auto/)
+    expect(page).toContain('class="flex flex-col gap-2 sm:flex-row"')
+    expect(page).toContain('class="min-w-0 flex-1 rounded-md bg-input')
+    expect(page).toContain('class="flex min-w-0 flex-col gap-3 overflow-hidden rounded-lg border border-border p-3 sm:flex-row sm:items-center"')
+    expect(page).toContain('class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap"')
+    expect(communitySources).toContain('class="min-w-0 overflow-hidden rounded-lg border border-border p-3"')
+    expect(communitySources).toContain('class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center"')
+    expect(communitySources).toContain('class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap"')
   })
 
   it('keeps old Extensions bookmarks working without retaining a second destination', () => {

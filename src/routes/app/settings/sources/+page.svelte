@@ -253,12 +253,12 @@
   }
 }} />
 
-<div class="p-4 sm:p-8">
+<div class="min-w-0 overflow-x-hidden p-4 sm:p-8">
   <div class="mb-5 max-w-7xl">
-    <div class="mb-1 flex items-center justify-between gap-3">
+    <div class="mb-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h2 class="text-xl font-black max-sm:hidden">Sources</h2>
       <a href="/app/settings/store" data-focusable
-         class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity max-sm:ml-auto active:opacity-80 sm:translate-y-3 sm:hover:opacity-90">
+         class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity active:opacity-80 sm:w-auto sm:translate-y-3 sm:hover:opacity-90">
         <Store size={16} />
         Add from Store
       </a>
@@ -364,13 +364,13 @@
   {#if activeTab === 'manage'}
   <div id="sources-panel-manage" role="tabpanel" aria-labelledby="sources-tab-manage">
   <div class="max-w-7xl">
-    <div class="flex gap-2">
-      <input bind:value={input} data-focusable placeholder="URL, GitHub repo, or catalog…" class="flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" onkeydown={(event) => { if (event.key === 'Enter') void add() }} />
-      <button onclick={() => void add()} data-focusable disabled={adding} class="rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:py-2">{adding ? 'Adding…' : 'Add'}</button>
+    <div class="flex flex-col gap-2 sm:flex-row">
+      <input bind:value={input} data-focusable placeholder="URL, GitHub repo, or catalog…" class="min-w-0 flex-1 rounded-md bg-input px-3 py-2.5 text-base sm:py-2 sm:text-sm" onkeydown={(event) => { if (event.key === 'Enter') void add() }} />
+      <button onclick={() => void add()} data-focusable disabled={adding} class="w-full rounded-md bg-primary px-4 py-2.5 font-bold text-primary-foreground disabled:opacity-50 sm:w-auto sm:py-2">{adding ? 'Adding…' : 'Add'}</button>
     </div>
     {#if addError}<p role="alert" class="mt-2 text-xs text-destructive">{addError}</p>{/if}
-    <div class="mt-2 flex flex-wrap items-center gap-2">
-      <div class="relative min-w-52 flex-1">
+    <div class="mt-2 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap">
+      <div class="relative col-span-2 min-w-0 sm:min-w-52 sm:flex-1">
         <Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input type="search" data-focusable bind:value={manageQuery} aria-label="Search sources" placeholder="Search sources…"
           class="w-full rounded-md border border-border bg-transparent py-2 pl-9 pr-8 text-xs outline-none placeholder:text-muted-foreground focus:border-theme" />
@@ -382,10 +382,10 @@
         {/if}
       </div>
 
-      <div class="relative shrink-0" bind:this={sortRoot}>
+      <div class="relative min-w-0 sm:shrink-0" bind:this={sortRoot}>
         <button type="button" data-focusable aria-label="Sort sources" aria-haspopup="menu" aria-expanded={sortOpen}
           onclick={() => (sortOpen = !sortOpen)}
-          class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+          class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:w-auto">
           <ArrowUpDown size={14} />
           Sort
         </button>
@@ -405,10 +405,10 @@
         {/if}
       </div>
 
-      <div class="relative shrink-0" bind:this={filterRoot}>
+      <div class="relative min-w-0 sm:shrink-0" bind:this={filterRoot}>
         <button type="button" data-focusable aria-label="Filter sources" aria-haspopup="dialog" aria-expanded={filterOpen}
           onclick={() => (filterOpen = !filterOpen)}
-          class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+          class="inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-bold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:w-auto">
           <SlidersHorizontal size={14} />
           Filter
           {#if manageFilterCount}<span class="grid size-4 place-items-center rounded-full bg-theme text-[0.6rem] text-white">{manageFilterCount}</span>{/if}
@@ -416,7 +416,7 @@
 
         {#if filterOpen}
           <div role="dialog" aria-label="Source filters"
-            class="absolute left-0 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-3 shadow-xl sm:left-auto sm:right-0">
+            class="absolute right-0 top-[calc(100%+0.35rem)] z-50 w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-card p-3 shadow-xl">
             <div>
               <p class="mb-1.5 text-[0.68rem] font-black uppercase tracking-wide text-muted-foreground">Status</p>
               <div class="grid grid-cols-3 gap-1 rounded-lg bg-secondary/60 p-1">
@@ -452,7 +452,7 @@
       </div>
 
       {#if manageFiltersReady}
-        <span class="ml-auto shrink-0 text-[0.68rem] font-bold tabular-nums text-muted-foreground">
+        <span class="col-span-2 text-right text-[0.68rem] font-bold tabular-nums text-muted-foreground sm:ml-auto sm:shrink-0">
           {visibleAddonRows.length + filteredCommunityCount} of {configuredCount}
         </span>
       {/if}
@@ -483,40 +483,53 @@
     {#if visibleAddonRows.length}
     <ul class="contents">
       {#each visibleAddonRows as { url, i, disabled: off } (url)}
-        <li style:order={manageSortRanks.get(`addon:${url}`) ?? 0} class="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3" class:opacity-50={off}>
+        <li style:order={manageSortRanks.get(`addon:${url}`) ?? 0} class="flex min-w-0 flex-col gap-3 overflow-hidden rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={off}>
           {#await addonMetaByUrl.get(url)!}
-            <div class="skeloader size-10 shrink-0 rounded-md"></div>
-            <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
-          {:then m}
-            {#if m?.logo}
-              <img src={m.logo} alt="" loading="lazy" decoding="async" class="size-10 shrink-0 rounded-md bg-neutral-900 object-contain" />
-            {:else}
-              <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Globe size={18} /></div>
-            {/if}
-            <div class="min-w-0 flex-1 basis-48">
-              <div class="flex items-center gap-2">
-                <span class="truncate font-bold">{m?.name ?? host(url)}</span>
-                <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">ADD-ON</span>
-                {#if m?.version}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{m.version}</span>{/if}
-              </div>
-              <p class="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{m?.description ?? url}</p>
+            <div class="flex min-w-0 items-center gap-3 sm:flex-1">
+              <div class="skeloader size-10 shrink-0 rounded-md"></div>
+              <div class="min-w-0 flex-1"><div class="skeloader h-4 w-1/3 rounded"></div></div>
             </div>
-            {#if m}
-              {#await findAddonConfigureUrl(url, m) then configureUrl}
-                {#if configureUrl}
-                  <button data-focusable onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
-                          class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm font-bold active:bg-accent sm:py-1.5 sm:text-xs sm:hover:bg-accent">Configure</button>
-                {/if}
-              {/await}
-            {/if}
+            <div class="flex w-full min-w-0 items-center justify-end gap-2 sm:w-auto">
+              <button data-focusable data-switch onclick={() => toggle(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
+                class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+                <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
+              </button>
+              <button onclick={() => remove(i)} data-focusable class="shrink-0 rounded-md px-3 py-2 text-sm text-destructive active:bg-destructive/10 sm:px-1 sm:py-1">Remove</button>
+            </div>
+          {:then m}
+            <div class="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
+              {#if m?.logo}
+                <img src={m.logo} alt="" loading="lazy" decoding="async" class="size-10 shrink-0 rounded-md bg-neutral-900 object-contain" />
+              {:else}
+                <div class="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-muted-foreground"><Globe size={18} /></div>
+              {/if}
+              <div class="min-w-0 flex-1">
+                <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <span class="min-w-0 flex-1 truncate font-bold">{m?.name ?? host(url)}</span>
+                  <span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">ADD-ON</span>
+                  {#if m?.version}<span class="shrink-0 rounded bg-secondary px-1.5 py-0.5 text-[0.6rem] font-bold text-muted-foreground">v{m.version}</span>{/if}
+                </div>
+                <p class="mt-0.5 line-clamp-2 break-words text-xs text-muted-foreground">{m?.description ?? url}</p>
+              </div>
+            </div>
+            <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap">
+              {#if m}
+                {#await findAddonConfigureUrl(url, m) then configureUrl}
+                  {#if configureUrl}
+                    <button data-focusable onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
+                            class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm font-bold active:bg-accent sm:py-1.5 sm:text-xs sm:hover:bg-accent">Configure</button>
+                  {/if}
+                {/await}
+              {/if}
+              <!-- `data-switch`: fixed-geometry pill — the large-target a11y mode grows its pointer
+                   target, not its box, so the slider never squares off into a circle (app.css). -->
+              <button data-focusable data-switch onclick={() => toggle(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
+                class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
+                <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
+              </button>
+              <button onclick={() => remove(i)} data-focusable class="shrink-0 rounded-md px-3 py-2 text-sm text-destructive active:bg-destructive/10 sm:px-1 sm:py-1">Remove</button>
+            </div>
           {/await}
-          <!-- `data-switch`: fixed-geometry pill — the large-target a11y mode grows its pointer
-               target, not its box, so the slider never squares off into a circle (app.css). -->
-          <button data-focusable data-switch onclick={() => toggle(url)} aria-pressed={!off} title={off ? 'Enable' : 'Disable'}
-            class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
-            <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
-          </button>
-          <button onclick={() => remove(i)} data-focusable class="shrink-0 rounded-md px-3 py-2 text-sm text-destructive active:bg-destructive/10 sm:px-1 sm:py-1">Remove</button>
         </li>
       {/each}
     </ul>
