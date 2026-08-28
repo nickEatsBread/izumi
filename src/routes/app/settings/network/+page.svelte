@@ -84,7 +84,7 @@
   <p class="mb-4 text-sm text-muted-foreground">Advanced networking. Limited effect with debrid streaming — see notes.</p>
 
   <div class="max-w-2xl space-y-3">
-    <Toggle label="Use DNS over HTTPS" desc="Resolves hostnames via the DoH endpoint below for community sources, add-ons, metadata (AniZip/Kitsu) and downloads. JVM sources fail closed instead of falling back to intercepted system DNS; other app requests fall back if DoH is unreachable. AniList/MAL browse and mpv playback still use the OS resolver." value={$enableDoH} onToggle={() => ($enableDoH = !$enableDoH)} />
+    <Toggle label="Use DNS over HTTPS" desc="Resolves hostnames via the DoH endpoint below for community sources, add-ons, metadata (AniZip/Kitsu) and downloads. Aniyomi sources fail closed instead of falling back to intercepted system DNS; other app requests fall back if DoH is unreachable. AniList/MAL browse and mpv playback still use the OS resolver." value={$enableDoH} onToggle={() => ($enableDoH = !$enableDoH)} />
     {#if $enableDoH}
       <label class="flex flex-col gap-1">
         <span class="text-sm font-bold">DNS-over-HTTPS URL</span>

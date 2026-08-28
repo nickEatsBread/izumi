@@ -77,7 +77,7 @@
 
     {#if error}
       <div class="mx-4 rounded-xl border border-destructive/30 bg-destructive/10 p-5 sm:mx-8">
-        <h2 class="font-black">Couldn’t load {$catalogProvider === 'stremio' ? 'Stremio metadata' : $catalogProvider === 'jvm' ? 'JVM sources' : $catalogProvider.toUpperCase()}</h2>
+        <h2 class="font-black">Couldn’t load {$catalogProvider === 'stremio' ? 'Stremio metadata' : $catalogProvider === 'jvm' ? 'Aniyomi sources' : $catalogProvider.toUpperCase()}</h2>
         <p class="mt-1 text-sm text-muted-foreground">{error}</p>
         <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
       </div>

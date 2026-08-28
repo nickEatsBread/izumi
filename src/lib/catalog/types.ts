@@ -1,4 +1,5 @@
 import type { Media } from '$lib/anilist/types'
+import type { JvmSourceFilter } from '$lib/extensions/manager'
 import type { CatalogContentType, CatalogProviderId, MediaRef } from './identity'
 
 export interface CatalogCapabilities {
@@ -38,6 +39,9 @@ export interface CatalogSearchRequest extends CatalogAdvancedSearchFilters {
   genre?: string
   year?: number
   sort?: 'popular' | 'rating' | 'recent' | 'oldest' | 'title' | 'trending'
+  /** JVM-only: selecting one source unlocks that extension's native Aniyomi filters. */
+  sourceId?: string
+  jvmFilters?: JvmSourceFilter[]
   signal?: AbortSignal
 }
 

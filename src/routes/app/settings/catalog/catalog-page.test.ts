@@ -13,6 +13,11 @@ describe('catalog settings', () => {
     expect(source).toContain("$catalogMode === 'merged'")
   })
 
+  it('puts provider connections before catalog behaviour controls', () => {
+    expect(source.indexOf('<CatalogPlatformRow')).toBeLessThan(source.indexOf('settingKey="catalog-mode"'))
+    expect(source).toContain('title="Catalog experience" desc="Choose how your enabled platforms behave after connecting them."')
+  })
+
   it('offers every platform as an independently enabled row', () => {
     for (const id of ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']) expect(source).toContain(`id: '${id}'`)
     expect(source).toContain('CatalogPlatformRow')
@@ -54,5 +59,7 @@ describe('catalog settings', () => {
     expect(source).toContain('JvmCatalogSourceRow')
     expect(source).toContain('isJvmCatalogSourceEnabled(source.id, $jvmCatalogSourceOverrides)')
     expect(source).toContain('onToggle={() => toggleJvmSource(source.id)}')
+    expect(source).toContain('onSettings={() => (configuringJvmSource = source)}')
+    expect(source).toContain('<JvmSourcePreferences')
   })
 })

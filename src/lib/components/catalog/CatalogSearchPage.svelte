@@ -7,11 +7,18 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import TmdbAdvancedFilters from './TmdbAdvancedFilters.svelte'
+  import JvmSourceFilters from './JvmSourceFilters.svelte'
   import { catalogProvider, type CatalogSelection } from '$lib/settings/catalog'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import type { CatalogContentType } from '$lib/catalog/identity'
   import { mediaKey } from '$lib/catalog/identity'
   import type { CatalogAdvancedSearchFilters, CatalogSearchOptions } from '$lib/catalog/types'
+  import {
+    installedJvmCatalogSources,
+    jvmCatalogSourceFilters,
+    type JvmCatalogSource,
+    type JvmSourceFilter,
+  } from '$lib/extensions/manager'
   import type { Media } from '$lib/anilist/types'
 
   let { selection, embedded = false, onQueryChange }: {
@@ -32,6 +39,7 @@
   let minVotes = $state<number | undefined>(Number(page.url.searchParams.get('votes')) || undefined)
   let language = $state(page.url.searchParams.get('language') ?? '')
   let country = $state(page.url.searchParams.get('country') ?? '')
+  let jvmSourceId = $state(page.url.searchParams.get('source') ?? '')
   let settled = $state(page.url.searchParams.get('search') ?? page.url.searchParams.get('q') ?? '')
   let debounce: ReturnType<typeof setTimeout>
   let media = $state<Media[]>([])
@@ -40,6 +48,11 @@
   let availableGenres = $state<string[]>([])
   let filterOptions = $state<CatalogSearchOptions>({})
   let showAdvanced = $state(false)
+  let jvmSources = $state<JvmCatalogSource[]>([])
+  let jvmFilters = $state<JvmSourceFilter[]>([])
+  let jvmFilterDefaults = $state<JvmSourceFilter[]>([])
+  let jvmFiltersLoading = $state(false)
+  let showJvmFilters = $state(false)
   let resultTotal = $state<number | undefined>()
   let hasNext = true
   let pageNumber = 1
@@ -50,6 +63,7 @@
 
   const animeOnly = $derived(activeSelection === 'kitsu' || activeSelection === 'jvm')
   const isTmdb = $derived(activeSelection === 'tmdb')
+  const isJvm = $derived(activeSelection === 'jvm')
   const typeOptions = $derived(animeOnly
     ? [{ value: 'all', label: 'Anime' }]
     : [
@@ -83,6 +97,13 @@
   const advancedCount = $derived(
     (minScore ? 1 : 0) + (minVotes ? 1 : 0) + (language ? 1 : 0) + (country ? 1 : 0),
   )
+  const jvmSourceOptions = $derived([
+    { value: '', label: 'All enabled sources' },
+    ...jvmSources.map((source) => ({ value: source.id, label: source.name })),
+  ])
+  const selectedJvmSource = $derived(jvmSources.find((source) => source.id === jvmSourceId))
+  const jvmFilterCount = $derived(jvmFilters.reduce((count, filter, index) =>
+    count + (JSON.stringify(filter.state) === JSON.stringify(jvmFilterDefaults[index]?.state) ? 0 : 1), 0))
 
   $effect(() => {
     const selection = activeSelection
@@ -122,8 +143,42 @@
     return () => clearTimeout(debounce)
   })
 
+  $effect(() => {
+    if (!isJvm) {
+      jvmSources = []
+      jvmSourceId = ''
+      return
+    }
+    const abort = new AbortController()
+    void installedJvmCatalogSources().then((sources) => {
+      if (abort.signal.aborted) return
+      jvmSources = sources
+      if (jvmSourceId && !sources.some((source) => source.id === jvmSourceId)) jvmSourceId = ''
+    }).catch(() => {})
+    return () => abort.abort()
+  })
+
+  $effect(() => {
+    const sourceId = isJvm ? jvmSourceId : ''
+    showJvmFilters = false
+    jvmFilters = []
+    jvmFilterDefaults = []
+    if (!sourceId) return
+    const abort = new AbortController()
+    jvmFiltersLoading = true
+    void jvmCatalogSourceFilters(sourceId, abort.signal).then((filters) => {
+      if (abort.signal.aborted) return
+      jvmFilterDefaults = structuredClone(filters)
+      jvmFilters = structuredClone(filters)
+    }).catch(() => {}).finally(() => {
+      if (!abort.signal.aborted) jvmFiltersLoading = false
+    })
+    return () => abort.abort()
+  })
+
   const requestKey = $derived(JSON.stringify([
     activeSelection, settled, type, genre, year, sort, minScore, minVotes, language, country,
+    jvmSourceId, jvmFilters, jvmFiltersLoading,
   ]))
   $effect(() => {
     void requestKey
@@ -159,6 +214,7 @@
     if (minVotes) params.set('votes', String(minVotes))
     if (language) params.set('language', language)
     if (country) params.set('country', country)
+    if (isJvm && jvmSourceId) params.set('source', jvmSourceId)
     const next = params.size ? `${page.url.pathname}?${params}` : page.url.pathname
     if (next !== page.url.pathname + page.url.search) {
       try { replaceState(next, page.state) } catch { /* router not ready */ }
@@ -167,6 +223,7 @@
 
   async function loadMore() {
     if (loading || !hasNext) return
+    if (isJvm && jvmSourceId && jvmFiltersLoading) return
     const selection = activeSelection
     if (selection === 'auto' || selection === 'anilist') return
     const generation = requestGeneration
@@ -185,6 +242,8 @@
         minVotes,
         language: language || undefined,
         country: country || undefined,
+        sourceId: isJvm ? jvmSourceId || undefined : undefined,
+        jvmFilters: isJvm && jvmSourceId ? jvmFilters : undefined,
         page: pageNumber,
         signal: abort?.signal,
       })
@@ -232,6 +291,11 @@
     return [item.startDate?.year, kind, rating].filter(Boolean).join(' · ')
   }
 
+  function jvmMetadata(item: Media): string {
+    const sourceCount = 1 + (item.catalogAlternatives?.length ?? 0)
+    return sourceCount > 1 ? `${sourceCount} sources` : item.catalog?.sourceName ?? ''
+  }
+
   function nearBottom() {
     return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 900
   }
@@ -253,6 +317,20 @@
     <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
       <SelectMenu bind:value={type} ariaLabel="Content type" options={typeOptions} className="w-48 shrink-0" />
       <SelectMenu bind:value={sort} ariaLabel="Sort results" className="w-40 shrink-0" options={sortOptions} />
+      {#if isJvm}
+        <SelectMenu bind:value={jvmSourceId} ariaLabel="Aniyomi source" className="w-52 shrink-0" options={jvmSourceOptions} />
+        {#if jvmSourceId}
+          <button
+            type="button"
+            data-focusable
+            disabled={jvmFiltersLoading || !jvmFilters.length}
+            onclick={() => (showJvmFilters = true)}
+            class="flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold transition-colors disabled:opacity-45 {jvmFilterCount ? 'bg-theme/20 text-theme hover:bg-theme/30' : 'bg-secondary hover:bg-accent'}"
+          >
+            <SlidersHorizontal size={16} /> {jvmFiltersLoading ? 'Loading filters…' : `Source filters${jvmFilterCount ? ` · ${jvmFilterCount}` : ''}`}
+          </button>
+        {/if}
+      {/if}
       {#if availableGenres.length}
         <SelectMenu bind:value={genre} ariaLabel="Genre" className="w-44 shrink-0" options={genreOptions} />
       {:else if activeSelection === 'stremio'}
@@ -285,7 +363,7 @@
   {#if media.length}
     <div class="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5">
       {#each media as item (mediaKey(item))}
-        <SmallCard media={item} fill subline={isTmdb ? tmdbMetadata(item) : undefined} />
+        <SmallCard media={item} fill subline={isTmdb ? tmdbMetadata(item) : isJvm ? jvmMetadata(item) : undefined} />
       {/each}
     </div>
   {:else if !loading && !error}
@@ -312,5 +390,14 @@
     queryActive={!!settled}
     onApply={applyAdvanced}
     onClose={() => (showAdvanced = false)}
+  />
+{/if}
+
+{#if showJvmFilters && isJvm && selectedJvmSource && jvmFilters.length}
+  <JvmSourceFilters
+    sourceName={selectedJvmSource.name}
+    filters={jvmFilters}
+    onApply={(filters) => { jvmFilters = filters; showJvmFilters = false }}
+    onClose={() => (showJvmFilters = false)}
   />
 {/if}

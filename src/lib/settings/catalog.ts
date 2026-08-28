@@ -16,7 +16,7 @@ export const catalogLabel = (provider: CatalogDefaultSelection): string => ({
   kitsu: 'Kitsu',
   tmdb: 'TMDB',
   stremio: 'Stremio',
-  jvm: 'JVM sources',
+  jvm: 'Aniyomi sources',
 })[provider]
 
 export function normalizeCatalogProviders(value: unknown, fallback: CatalogSelection = 'auto'): CatalogSelection[] {

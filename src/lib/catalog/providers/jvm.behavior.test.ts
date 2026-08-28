@@ -49,6 +49,22 @@ describe('JVM catalog provider', () => {
     expect(mocks.browse).toHaveBeenCalledWith('two', 'search', 1, 'Frieren')
   })
 
+  it('opens native filters only for the explicitly selected source', async () => {
+    const filters = [{ name: 'Genre', type: 'Select' as const, state: 2, values: ['Any', 'Action', 'Drama'] }]
+    await jvmCatalog.search({ query: 'Frieren', page: 1, sourceId: 'two', jvmFilters: filters })
+    expect(mocks.browse).toHaveBeenCalledTimes(1)
+    expect(mocks.browse).toHaveBeenCalledWith('two', 'search', 1, 'Frieren', filters, undefined)
+  })
+
+  it('groups duplicate titles without losing their alternative source identity', async () => {
+    mocks.browse.mockImplementation(async (sourceId: string) => ({
+      list: [{ title: 'Frieren', url: `/frieren/${sourceId}` }], hasNextPage: false,
+    }))
+    const result = await jvmCatalog.search({ query: 'Frieren' })
+    expect(result.media).toHaveLength(1)
+    expect(result.media[0].catalogAlternatives).toMatchObject([{ sourceName: 'Two' }])
+  })
+
   it('keeps a featured title when every JVM carousel is hidden', async () => {
     catalogHomeLayouts.set({
       jvm: {
@@ -64,7 +80,11 @@ describe('JVM catalog provider', () => {
   it('loads detail and episode data from the owning source', async () => {
     mocks.detail.mockResolvedValue({
       title: 'Frieren', url: '/frieren', cover: 'https://img/frieren.jpg',
-      episodes: [{ name: 'Episode 1', url: '/frieren/1', episode_number: 1 }],
+      episodes: [{
+        name: 'Episode 1', url: '/frieren/1', episode_number: 1,
+        summary: 'The journey begins.', preview_url: 'https://img/frieren-1.jpg',
+        date_upload: 1_700_000_000_000, fillermark: true, scanlator: 'SubsPlease',
+      }],
     })
     const id = encodeJvmIdentity({ sourceId: 'one', url: '/frieren', title: 'Frieren' })
     const media = await jvmCatalog.detail({ provider: 'jvm', type: 'anime', id })
@@ -74,6 +94,8 @@ describe('JVM catalog provider', () => {
     expect(media?.videos).toEqual([{
       id: JSON.stringify({ url: '/frieren/1', name: 'Episode 1' }),
       number: 1, episode: 1, season: undefined, title: 'Episode 1',
+      overview: 'The journey begins.', thumbnail: 'https://img/frieren-1.jpg',
+      released: '2023-11-14T22:13:20.000Z', filler: true, group: 'SubsPlease',
     }])
   })
 })

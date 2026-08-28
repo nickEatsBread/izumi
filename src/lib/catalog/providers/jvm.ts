@@ -5,6 +5,7 @@ import {
   detailJvmCatalogSource,
   installedJvmCatalogSources,
   type JvmCatalogSource,
+  type JvmSourceFilter,
 } from '$lib/extensions/manager'
 import { isJvmCatalogSourceEnabled, jvmCatalogSourceOverrides } from '$lib/settings/catalog'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
@@ -125,6 +126,7 @@ export function mapJvmCatalogMedia(
     description,
     creators: creators.length ? creators : undefined,
     seasonNumber: positiveNumber(raw.season_number),
+    fetchType: stringValue(raw.fetch_type),
     // Aniyomi's SAnime contract does not define a TV/movie format. Only retain a format when an
     // individual source explicitly supplies one instead of labelling every JVM result as TV.
     format: formatOf(raw.format ?? raw.media_type),
@@ -153,12 +155,20 @@ function videosOf(value: unknown): MediaVideo[] {
     if (!Number.isFinite(number)) return []
     const name = stringValue(raw.name)
     const url = stringValue(raw.url)
+    const uploaded = Number(raw.date_upload)
     return [{
       id: url ? JSON.stringify({ url, name: name ?? '' }) : undefined,
       number,
       episode: number,
       season: Number.isFinite(Number(raw.season)) ? Number(raw.season) : undefined,
       title: name,
+      ...(stringValue(raw.summary) ? { overview: stringValue(raw.summary) } : {}),
+      ...(stringValue(raw.preview_url) ? { thumbnail: stringValue(raw.preview_url) } : {}),
+      ...(Number.isFinite(uploaded) && uploaded > 0 ? {
+        released: new Date(uploaded < 1_000_000_000_000 ? uploaded * 1000 : uploaded).toISOString(),
+      } : {}),
+      ...(raw.fillermark === true ? { filler: true } : {}),
+      ...(stringValue(raw.scanlator) ? { group: stringValue(raw.scanlator) } : {}),
     }]
   }).sort((left, right) => left.number - right.number)
 }
@@ -175,7 +185,7 @@ async function selectedSources(): Promise<JvmCatalogSource[]> {
   const overrides = get(jvmCatalogSourceOverrides)
   const selected = installed.filter((source) => isJvmCatalogSourceEnabled(source.id, overrides))
   if (!selected.length) {
-    throw new CatalogConfigurationError('Choose at least one JVM catalog source in Settings → Catalog.')
+    throw new CatalogConfigurationError('Choose at least one Aniyomi source in Settings → Catalog.')
   }
   return selected
 }
@@ -186,9 +196,12 @@ async function sourcePage(
   page: number,
   signal?: AbortSignal,
   query = '',
+  filters?: JvmSourceFilter[],
 ): Promise<{ media: Media[]; hasNextPage: boolean }> {
   throwIfAborted(signal)
-  const result = await browseJvmCatalogSource(source.id, method, page, query)
+  const result = filters || signal
+    ? await browseJvmCatalogSource(source.id, method, page, query, filters, signal)
+    : await browseJvmCatalogSource(source.id, method, page, query)
   throwIfAborted(signal)
   return {
     media: result.list.flatMap((raw) => {
@@ -208,11 +221,36 @@ function jvmHomeRequests(sources: JvmCatalogSource[]): JvmHomeRequest[] {
     if (source.supportsLatest) calls.push({
       id: `latest:${source.id}`, source, method: 'getLatestUpdates', title: `Latest updates · ${source.name}`,
     })
-    if (!calls.length) calls.push({
-      id: `popular:${source.id}`, source, method: 'getPopular', title: `Popular · ${source.name}`,
-    })
     return calls
   })
+}
+
+async function enrichHero(media: Media[], signal?: AbortSignal): Promise<Media[]> {
+  const candidates = media.filter((item) => !item.bannerImage).slice(0, 3)
+  if (!candidates.length) return media
+  const details = await Promise.allSettled(candidates.map(async (item) => {
+    const identity = item.catalog ? decodeJvmIdentity(item.catalog.id) : null
+    if (!identity) return null
+    const request = {
+      url: identity.url,
+      title: identity.title,
+      thumbnail_url: identity.cover ?? '',
+    }
+    const raw = signal
+      ? await detailJvmCatalogSource(identity.sourceId, request, signal)
+      : await detailJvmCatalogSource(identity.sourceId, request)
+    const mapped = mapJvmCatalogMedia(raw, {
+      id: identity.sourceId,
+      name: item.catalog?.sourceName ?? '',
+      icon: item.catalog?.sourceIcon,
+      lang: item.catalog?.sourceLanguage,
+    }, identity)
+    return mapped ? { key: mediaKey(item), media: { ...item, ...mapped } } : null
+  }))
+  throwIfAborted(signal)
+  const enriched = new Map(details.flatMap((result) =>
+    result.status === 'fulfilled' && result.value ? [[result.value.key, result.value.media] as const] : []))
+  return media.map((item) => enriched.get(mediaKey(item)) ?? item)
 }
 
 function jvmHomeOptions(requests: JvmHomeRequest[]): CatalogHomeRowOption[] {
@@ -232,6 +270,7 @@ async function homeRows(): Promise<CatalogHomeRowOption[]> {
 async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
   const sources = await selectedSources()
   const available = jvmHomeRequests(sources)
+  if (!available.length) return { hero: [], sections: [] }
   const byId = new Map(available.map((request) => [request.id, request]))
   const options = jvmHomeOptions(available)
   const configured = rowIds
@@ -258,30 +297,48 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
   })
   if (!sections.length && results.every((result) => result.status === 'rejected')) {
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-    throw failure?.reason ?? new Error('The selected JVM sources did not return catalog data.')
+    throw failure?.reason ?? new Error('The selected Aniyomi sources did not return catalog data.')
   }
   const all = [...loaded.values()].flat()
   const unique = [...new Map(all.map((media) => [mediaKey(media), media])).values()]
-  const withBanners = unique.filter((media) => media.bannerImage)
-  return { hero: (withBanners.length ? withBanners : unique).slice(0, 10), sections }
+  const heroPool = await enrichHero(unique, signal)
+  const withBanners = heroPool.filter((media) => media.bannerImage)
+  return { hero: (withBanners.length ? withBanners : heroPool).slice(0, 10), sections }
 }
 
 async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
   const sources = await selectedSources()
+  const searchedSources = request.sourceId
+    ? sources.filter((source) => source.id === request.sourceId)
+    : sources
+  if (!searchedSources.length) {
+    throw new CatalogConfigurationError('The selected Aniyomi source is no longer enabled.')
+  }
   const page = Math.max(1, request.page ?? 1)
   const query = request.query?.trim() ?? ''
-  const results = await Promise.allSettled(sources.map((source) => {
-    const method = query
+  const results = await Promise.allSettled(searchedSources.map((source) => {
+    const method = query || request.jvmFilters?.length
       ? 'search' as const
       : (request.sort === 'recent' || request.sort === 'trending') && source.supportsLatest
         ? 'getLatestUpdates' as const
-        : 'getPopular' as const
-    return sourcePage(source, method, page, request.signal, query)
+        : source.supportsPopular
+          ? 'getPopular' as const
+          : source.supportsLatest
+            ? 'getLatestUpdates' as const
+            : 'search' as const
+    return sourcePage(
+      source,
+      method,
+      page,
+      request.signal,
+      query,
+      request.sourceId === source.id ? request.jvmFilters : undefined,
+    )
   }))
   throwIfAborted(request.signal)
   if (results.every((result) => result.status === 'rejected')) {
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-    throw failure?.reason ?? new Error('The selected JVM sources did not return search results.')
+    throw failure?.reason ?? new Error('The selected Aniyomi sources did not return search results.')
   }
   // Multiple sources usually return the same show. Keep the first selected source's version so
   // search remains useful instead of filling the grid with visually identical cards.
@@ -290,7 +347,16 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
     if (result.status !== 'fulfilled') continue
     for (const media of result.value.media) {
       const key = (media.title.romaji ?? media.title.english ?? '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')
-      if (!unique.has(key || mediaKey(media))) unique.set(key || mediaKey(media), media)
+      const identity = key || mediaKey(media)
+      const existing = unique.get(identity)
+      if (!existing) {
+        unique.set(identity, media)
+      } else if (media.catalog && media.catalog.id !== existing.catalog?.id) {
+        existing.catalogAlternatives = [
+          ...(existing.catalogAlternatives ?? []),
+          media.catalog,
+        ]
+      }
     }
   }
   return {
@@ -305,13 +371,16 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   const identity = decodeJvmIdentity(ref.id)
   if (!identity) return null
   const source = (await installedJvmCatalogSources()).find((entry) => entry.id === identity.sourceId)
-  if (!source) throw new CatalogConfigurationError('The JVM source that supplied this title is no longer installed or enabled.')
+  if (!source) throw new CatalogConfigurationError('The Aniyomi source that supplied this title is no longer installed or enabled.')
   throwIfAborted(signal)
-  const raw = await detailJvmCatalogSource(source.id, {
+  const request = {
     url: identity.url,
     title: identity.title,
     thumbnail_url: identity.cover ?? '',
-  })
+  }
+  const raw = signal
+    ? await detailJvmCatalogSource(source.id, request, signal)
+    : await detailJvmCatalogSource(source.id, request)
   throwIfAborted(signal)
   const media = mapJvmCatalogMedia(raw, source, identity)
   if (!media) return null
@@ -322,7 +391,7 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
 
 export const jvmCatalog: CatalogProvider = {
   id: 'jvm',
-  label: 'JVM sources',
+  label: 'Aniyomi sources',
   capabilities: {
     anime: true, movies: false, series: true, search: true,
     episodes: true, cast: false, relations: false,

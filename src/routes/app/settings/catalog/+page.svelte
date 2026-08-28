@@ -25,11 +25,13 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import CatalogPlatformRow from '$lib/components/catalog/CatalogPlatformRow.svelte'
   import JvmCatalogSourceRow from '$lib/components/catalog/JvmCatalogSourceRow.svelte'
+  import JvmSourcePreferences from '$lib/components/catalog/JvmSourcePreferences.svelte'
   import { installedJvmCatalogSources, type JvmCatalogSource } from '$lib/extensions/manager'
   import LibraryBig from '@lucide/svelte/icons/library-big'
   import KeyRound from '@lucide/svelte/icons/key-round'
   import Boxes from '@lucide/svelte/icons/boxes'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
+  import Rows3 from '@lucide/svelte/icons/rows-3'
   import Coffee from '@lucide/svelte/icons/coffee'
 
   const platforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
@@ -38,13 +40,14 @@
     { id: 'kitsu', label: 'Kitsu', description: 'Independent anime and manga catalogs.' },
     { id: 'tmdb', label: 'TMDB', description: 'Movies, television, and cross-database anime metadata.' },
     { id: 'stremio', label: 'Stremio metadata add-ons', description: 'Catalogs exposed by your enabled add-ons.' },
-    { id: 'jvm', label: 'JVM sources', description: 'Browse anime directly from installed Aniyomi sources.' },
+    { id: 'jvm', label: 'Aniyomi sources', description: 'Browse anime directly from installed Aniyomi sources.' },
   ]
 
   let jvmSources = $state<JvmCatalogSource[]>([])
   let jvmSourcesLoading = $state(false)
   let jvmSourcesLoaded = $state(false)
   let jvmSourcesError = $state('')
+  let configuringJvmSource = $state<JvmCatalogSource | null>(null)
 
   const enabled = $derived(normalizeCatalogProviders($catalogProviders, $catalogProvider))
   const defaultOptions = $derived([
@@ -181,7 +184,21 @@
   <h2 class="mb-1 text-xl font-black">Catalog</h2>
   <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms, then keep them separate or combine them into one discovery experience.</p>
 
-  <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose whether enabled platforms stay separate or appear together.">
+  <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose the services and sources available throughout Home and Search.">
+    {#each platforms as platform (platform.id)}
+      <CatalogPlatformRow
+        platform={platform.id}
+        label={platform.label}
+        description={platform.description}
+        enabled={hasPlatform(platform.id)}
+        locked={hasPlatform(platform.id) && enabled.length === 1}
+        settingKey={platform.id === 'auto' ? 'catalog-provider' : undefined}
+        onToggle={() => togglePlatform(platform.id)}
+      />
+    {/each}
+  </SettingsGroup>
+
+  <SettingsGroup icon={SlidersHorizontal} title="Catalog experience" desc="Choose how your enabled platforms behave after connecting them.">
     <SettingsRow
       settingKey="catalog-mode"
       title="Catalog experience"
@@ -212,20 +229,9 @@
         controlLayout="stack"
       />
     {/if}
-    {#each platforms as platform (platform.id)}
-      <CatalogPlatformRow
-        platform={platform.id}
-        label={platform.label}
-        description={platform.description}
-        enabled={hasPlatform(platform.id)}
-        locked={hasPlatform(platform.id) && enabled.length === 1}
-        settingKey={platform.id === 'auto' ? 'catalog-provider' : undefined}
-        onToggle={() => togglePlatform(platform.id)}
-      />
-    {/each}
   </SettingsGroup>
 
-  <SettingsGroup icon={SlidersHorizontal} title="Home layout" desc="Control each separate platform and the Merged Home independently.">
+  <SettingsGroup icon={Rows3} title="Home layout" desc="Control each separate platform and the Merged Home independently.">
     <SettingsRow title="Home rows" description="Show, hide, and reorder discovery rows without changing your enabled catalogs.">
       <a href={`/app/settings/catalog/home?provider=${homeCustomizeProvider}`} data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Customize Home</a>
     </SettingsRow>
@@ -256,11 +262,11 @@
   {/if}
 
   {#if hasPlatform('jvm')}
-    <SettingsGroup icon={Coffee} title="JVM catalog sources" desc="Choose which enabled Aniyomi sources contribute browsing and search results.">
+    <SettingsGroup icon={Coffee} title="Aniyomi sources" desc="Choose which enabled Aniyomi sources contribute browsing and search results.">
       {#if jvmSourcesLoading}
-        <SettingsRow title="Loading JVM sources…" description="Starting the extension runtime and reading installed providers." />
+        <SettingsRow title="Loading Aniyomi sources…" description="Starting the extension runtime and reading installed providers." />
       {:else if jvmSourcesError}
-        <SettingsRow title="Couldn’t load JVM sources" description={jvmSourcesError}>
+        <SettingsRow title="Couldn’t load Aniyomi sources" description={jvmSourcesError}>
           <button type="button" data-focusable onclick={() => void loadJvmSources()} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold">Retry</button>
         </SettingsRow>
       {:else if jvmSources.length}
@@ -269,10 +275,11 @@
             {source}
             enabled={isJvmCatalogSourceEnabled(source.id, $jvmCatalogSourceOverrides)}
             onToggle={() => toggleJvmSource(source.id)}
+            onSettings={() => (configuringJvmSource = source)}
           />
         {/each}
       {:else}
-        <SettingsRow title="No enabled JVM sources" description="Install or enable an Aniyomi source before using the JVM catalog.">
+        <SettingsRow title="No enabled Aniyomi sources" description="Install or enable an Aniyomi source before using the Aniyomi catalog.">
           <a href="/app/settings/store" data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add from Store</a>
         </SettingsRow>
       {/if}
@@ -281,3 +288,11 @@
 
   <p class="max-w-2xl px-1 text-xs text-muted-foreground">Catalog choices do not disconnect tracker accounts. Progress updates continue using mapped IDs when available.</p>
 </div>
+
+{#if configuringJvmSource}
+  <JvmSourcePreferences
+    sourceId={configuringJvmSource.id}
+    sourceName={configuringJvmSource.name}
+    onClose={() => (configuringJvmSource = null)}
+  />
+{/if}

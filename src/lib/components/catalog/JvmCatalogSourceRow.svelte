@@ -3,11 +3,13 @@
   import SettingsSwitch from '$lib/components/settings/SettingsSwitch.svelte'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import type { JvmCatalogSource } from '$lib/extensions/manager'
+  import Settings from '@lucide/svelte/icons/settings'
 
-  let { source, enabled, onToggle }: {
+  let { source, enabled, onToggle, onSettings }: {
     source: JvmCatalogSource
     enabled: boolean
     onToggle: () => void
+    onSettings?: () => void
   } = $props()
 
   const capabilities = $derived([
@@ -25,10 +27,15 @@
 {/snippet}
 
 {#snippet control()}
+  {#if onSettings}
+    <button type="button" data-focusable aria-label={`Configure ${source.name}`} onclick={onSettings} class="grid size-9 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
+      <Settings size={17} />
+    </button>
+  {/if}
   <SettingsSwitch
-    interactive={false}
+    interactive
     value={enabled}
-    label={`${enabled ? 'Hide' : 'Show'} ${source.name} in the JVM catalog`}
+    label={`${enabled ? 'Hide' : 'Show'} ${source.name} in the Aniyomi catalog`}
     {onToggle}
   />
 {/snippet}
@@ -38,6 +45,4 @@
   {leading}
   {meta}
   {control}
-  onActivate={onToggle}
-  pressed={enabled}
 />

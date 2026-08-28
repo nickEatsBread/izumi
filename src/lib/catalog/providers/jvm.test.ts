@@ -30,6 +30,7 @@ describe('JVM catalog mapping', () => {
       genre: ['Action', 'Drama'],
       status: 7,
       season_number: 3,
+      fetch_type: 'Seasons',
       author: 'Hajime Isayama',
       artist: 'Hajime Isayama',
     }, source)
@@ -37,6 +38,7 @@ describe('JVM catalog mapping', () => {
       type: 'ANIME',
       status: 'NOT_YET_RELEASED',
       seasonNumber: 3,
+      fetchType: 'Seasons',
       creators: ['Hajime Isayama'],
       genres: ['Action', 'Drama'],
       bannerImage: 'https://img.example/banner.jpg',

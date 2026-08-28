@@ -19,7 +19,7 @@ describe('catalog platform selection', () => {
   it('provides compact labels for the platform switcher', () => {
     expect(catalogLabel('auto')).toBe('Automatic anime')
     expect(catalogLabel('tmdb')).toBe('TMDB')
-    expect(catalogLabel('jvm')).toBe('JVM sources')
+    expect(catalogLabel('jvm')).toBe('Aniyomi sources')
     expect(catalogLabel('adaptive')).toBe('Adaptive')
   })
 

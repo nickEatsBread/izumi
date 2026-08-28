@@ -48,6 +48,9 @@ export interface MediaVideo {
   overview?: string
   thumbnail?: string
   released?: string
+  /** Source-supplied episode annotations used by Aniyomi catalogs. */
+  filler?: boolean
+  group?: string
 }
 
 export interface Media {
@@ -56,6 +59,8 @@ export interface Media {
   id: number
   idMal?: number
   catalog?: MediaCatalogIdentity
+  /** Other installed sources collapsed into the same JVM search result. */
+  catalogAlternatives?: MediaCatalogIdentity[]
   externalIds?: ExternalMediaIds
   videos?: MediaVideo[]
   type?: 'ANIME' | 'MANGA' | 'MOVIE' | 'SERIES'
@@ -67,6 +72,8 @@ export interface Media {
   seasonYear?: number
   /** Provider-native season number. Aniyomi sources may expose this without a release year. */
   seasonNumber?: number
+  /** Aniyomi's navigation contract: direct episodes or an intermediate season list. */
+  fetchType?: string
   format?: string
   status?: string
   episodes?: number

@@ -6,6 +6,7 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.m
 const page = read('./CatalogSearchPage.svelte')
 const advanced = read('./TmdbAdvancedFilters.svelte')
 const provider = read('../../catalog/providers/tmdb.ts')
+const jvmFilters = read('./JvmSourceFilters.svelte')
 
 describe('TMDB search filters', () => {
   it('keeps the primary search surface compact and reveals advanced filters on demand', () => {
@@ -51,5 +52,21 @@ describe('TMDB search filters', () => {
   it('shows useful TMDB metadata beneath each result', () => {
     expect(page).toContain('tmdbMetadata(item)')
     expect(page).toContain("`${(item.averageScore / 10).toFixed(1)} ★`")
+  })
+})
+
+describe('JVM source filters', () => {
+  it('searches all enabled sources until the user chooses one', () => {
+    expect(page).toContain("{ value: '', label: 'All enabled sources' }")
+    expect(page).toContain('bind:value={jvmSourceId}')
+    expect(page).toContain('sourceId: isJvm ? jvmSourceId || undefined')
+  })
+
+  it('reveals the selected source’s native filter model on demand', () => {
+    expect(page).toContain('jvmCatalogSourceFilters(sourceId')
+    expect(page).toContain('<JvmSourceFilters')
+    for (const type of ['CheckBox', 'TriState', 'Select', 'Sort', 'Text', 'Group']) {
+      expect(jvmFilters).toContain(`filter.type === '${type}'`)
+    }
   })
 })
