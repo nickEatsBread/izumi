@@ -320,7 +320,7 @@
       {#if !$isMobile && !selecting}
         <!-- Release timing belongs to episode controls, not series navigation. `ml-auto` keeps it
              at the opposite edge from the actions; if the toolbar wraps, it remains right-aligned. -->
-        <div class="col-span-2 ml-auto flex shrink-0 items-center">
+        <div class="col-span-2 ml-auto flex shrink-0 items-center gap-3">
           <AiringStatus {media} toolbar />
         </div>
       {/if}
