@@ -106,10 +106,6 @@
         onkeydown={(event) => { if (event.key === 'Enter' && !busy) void install() }}
       />
     </label>
-    <p class="mt-2 text-xs text-amber-400">
-      This link may contain API keys or debrid credentials. It stays in Izumi's local settings unless you explicitly sync or export settings with secrets.
-    </p>
-
     {#if error}
       <p role="alert" class="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
     {/if}

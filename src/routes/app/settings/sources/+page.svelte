@@ -374,7 +374,7 @@
       <div class="relative col-span-2 min-w-0 sm:min-w-52 sm:flex-1">
         <Search size={14} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <input type="search" data-focusable bind:value={manageQuery} aria-label="Search sources" placeholder="Search sources…"
-          class="w-full rounded-md border border-border bg-transparent py-2 pl-9 pr-8 text-xs outline-none placeholder:text-muted-foreground focus:border-theme" />
+          class="w-full rounded-md border border-border bg-transparent py-2 pl-9 pr-8 text-xs outline-none placeholder:text-muted-foreground" />
         {#if manageQuery}
           <button type="button" data-focusable aria-label="Clear source search" onclick={() => (manageQuery = '')}
             class="absolute right-1 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">

@@ -284,20 +284,22 @@
           {@const installedBase = installedAddonBases[addon.manifest.id] ?? (configuredBases.has(base) ? base : '')}
           {@const installed = !!installedBase}
           {@const off = installed && $disabledSources.includes(installedBase)}
-          <article class="flex gap-3 rounded-xl border border-border bg-secondary/25 p-4" class:opacity-60={installed && off}>
+          <article class="flex gap-3 rounded-xl border border-border bg-secondary/25 p-4 lg:items-center lg:p-3" class:opacity-60={installed && off}>
             <AddonLogo
               logo={resolveAddonLogo(addon.manifest.logo, base)}
               name={addon.manifest.name}
               id={addon.manifest.id}
               size={48}
             />
-            <div class="min-w-0 flex-1">
-              <div class="flex items-start gap-2">
-                <h3 class="min-w-0 flex-1 truncate font-black">{addon.manifest.name}</h3>
-                <span class="flex shrink-0 items-center gap-1 text-xs font-bold text-amber-400"><Star size={12} fill="currentColor" />{addon.stars}</span>
+            <div class="min-w-0 flex-1 lg:flex lg:items-center lg:gap-3">
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start gap-2">
+                  <h3 class="min-w-0 flex-1 truncate font-black">{addon.manifest.name}</h3>
+                  <span class="flex shrink-0 items-center gap-1 text-xs font-bold text-amber-400"><Star size={12} fill="currentColor" />{addon.stars}</span>
+                </div>
+                <p class="mt-1 line-clamp-2 text-xs text-muted-foreground lg:line-clamp-1">{addon.manifest.description || 'Community Stremio addon'}</p>
               </div>
-              <p class="mt-1 line-clamp-2 text-xs text-muted-foreground">{addon.manifest.description || 'Community Stremio addon'}</p>
-              <div class="mt-3 flex flex-wrap gap-2">
+              <div class="mt-3 flex flex-wrap gap-2 lg:mt-0 lg:shrink-0 lg:flex-nowrap">
                 {#if installed}
                   <button data-focusable onclick={() => toggleAddon(installedBase)}
                           class="rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
@@ -326,8 +328,8 @@
       {#each extensionResults as item (item.id)}
         {@const installed = packageById.get(item.id)}
         {@const off = $disabledPlugins.includes(item.id)}
-        <article class="rounded-xl border border-border bg-secondary/25 p-4" class:opacity-60={!!installed && off}>
-          <div class="flex items-start gap-3">
+        <article class="rounded-xl border border-border bg-secondary/25 p-4 lg:flex lg:items-center lg:gap-3 lg:p-3" class:opacity-60={!!installed && off}>
+          <div class="flex items-start gap-3 lg:min-w-0 lg:flex-1">
             <!-- The package's own artwork once we have it (installed launcher icon, or a manifest
                  icon when the same provider is served by one of the user's sources), else the
                  shared placeholder AddonLogo falls back to. -->
@@ -338,7 +340,7 @@
               <p class="mt-1 line-clamp-1 text-[0.68rem] text-muted-foreground">{item.sources.map((source) => source.name).join(' · ')}</p>
             </div>
           </div>
-          <div class="mt-3 flex gap-2">
+          <div class="mt-3 flex flex-wrap gap-2 lg:mt-0 lg:shrink-0 lg:flex-nowrap">
             {#if installed}
               <button data-focusable onclick={() => toggleExtension(item.id)}
                       class="rounded-md px-3 py-2 text-sm font-black sm:py-1.5 sm:text-xs {off ? 'bg-secondary' : 'bg-emerald-500/15 text-emerald-400'}">{off ? 'Enable' : 'Enabled'}</button>
