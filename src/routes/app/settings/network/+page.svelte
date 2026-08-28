@@ -137,7 +137,7 @@
     {#if !$isAndroid}
       <section class="rounded-md border border-border p-3">
         <div class="font-bold">VPN adapter binding</div>
-        <p class="mt-1 text-xs text-muted-foreground">Tie Direct P2P to one network adapter, the way qBittorrent binds to a VPN interface. Torrenting refuses to start while the adapter is missing, and the instant it drops every torrent is paused until it returns — a crashed VPN can't quietly continue on your normal connection.</p>
+        <p class="mt-1 text-xs text-muted-foreground">Tie Direct P2P to one network adapter. macOS and Linux bind torrent sockets to it at the OS level; Windows keeps bound sessions outbound-only. Every desktop also refuses to start while the adapter is missing and pauses all torrents the instant it drops.</p>
 
         <label class="mt-3 flex items-center justify-between gap-4">
           <span>
@@ -160,7 +160,7 @@
           {:else}
             <p class="mt-2 text-xs text-destructive">The bound adapter is not connected right now — Direct P2P won't start until it is (or the binding is cleared).</p>
           {/if}
-          <p class="mt-2 text-xs text-muted-foreground">Restart Izumi after changing this so the torrent session is recreated with the binding. While the VPN is connected its own route carries the traffic; this binding is the fail-safe for when it isn't. Keep the VPN app's kill switch on too, and combine with the SOCKS5 proxy below for defense in depth.</p>
+          <p class="mt-2 text-xs text-muted-foreground">Restart Izumi after changing this so the torrent session is recreated. On macOS and Linux, the selected adapter is applied to peer TCP/uTP, DHT, trackers, incoming peers, and local discovery. Keep the VPN app's kill switch on too, and combine with the SOCKS5 proxy below for defense in depth.</p>
         {/if}
       </section>
     {/if}

@@ -1,12 +1,13 @@
-//! Direct P2P VPN binding: adapter enumeration plus the session-level kill switch.
+//! Direct P2P VPN binding: adapter enumeration plus a session-level kill switch.
 //!
-//! Izumi's cross-platform adapter binding is enforced at the session layer:
+//! macOS and Linux additionally pass the selected interface to librqbit, which applies the native
+//! per-socket binding to DHT, BT TCP/uTP, trackers, listeners and local discovery. All desktop
+//! platforms retain this independent session-level guard:
 //!   * a bound engine refuses to START unless the adapter is up with a routable address;
 //!   * a network monitor pauses every torrent in every engine the moment the adapter drops and
 //!     resumes them when it returns, so a crashed VPN cannot quietly continue on the ISP route;
-//!   * while the VPN is connected its default route carries the traffic, like any other app.
-//! librqbit 9 can bind by device name on Unix, but not Windows. Keep one consistent fail-closed
-//! behavior until the native path can be validated on ordinary Linux/Deck accounts and Android.
+//!   * Windows, where librqbit cannot bind by device name, remains outbound-only while configured
+//!     and relies on the guard plus the VPN's route.
 
 use std::{
     net::IpAddr,

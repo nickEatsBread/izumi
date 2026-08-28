@@ -327,9 +327,9 @@ export const torrentUpstreamCapacityMbps = persisted<number>('torrent-upstream-c
  * peer TCP and HTTP trackers use the proxy, while direct-only DHT/UDP trackers are disabled. */
 export const torrentProxyEnabled = persisted<boolean>('torrent-proxy-enabled', false)
 export const torrentProxyUrl = persisted<string>('torrent-proxy-url', 'socks5://127.0.0.1:1080')
-/** qBittorrent-style adapter binding for Direct P2P: the OS name of the network interface
- * (usually the VPN's virtual adapter) torrenting is tied to. Empty = any interface. The native
- * engine refuses to start without the adapter and pauses every torrent the moment it drops. */
+/** Adapter binding for Direct P2P: the OS name of the network interface (usually the VPN's virtual
+ * adapter) torrenting is tied to. Empty = any interface. macOS/Linux pass it to librqbit for native
+ * socket binding; every desktop also refuses startup and pauses torrents when it disappears. */
 export const torrentBindInterface = persisted<string>('torrent-bind-interface', '')
 /** Mobile post-play seeding is opt-in and additionally requires charging + an unmetered network. */
 export const torrentAndroidPostSeed = persisted<boolean>('torrent-android-post-seed', false)

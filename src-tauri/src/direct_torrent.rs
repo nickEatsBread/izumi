@@ -44,12 +44,34 @@ const AUTO_UPLOAD_MBPS: f64 = 1.0;
 const USER_CAPACITY_FRACTION: f64 = 0.70;
 const BUFFERING_UPLOAD_BPS: u32 = 64 * 1024;
 
-fn peer_listener_enabled(has_proxy: bool, has_bound_interface: bool) -> bool {
-    !has_proxy && !has_bound_interface
+fn peer_listener_enabled(
+    has_proxy: bool,
+    has_bound_interface: bool,
+    native_binding_supported: bool,
+) -> bool {
+    !has_proxy && (!has_bound_interface || native_binding_supported)
 }
 
 fn upnp_enabled(is_android: bool, has_proxy: bool, has_bound_interface: bool) -> bool {
-    !is_android && peer_listener_enabled(has_proxy, has_bound_interface)
+    // A VPN tunnel generally has no UPnP gateway to configure. More importantly, never let a
+    // router mapping on the ordinary LAN undermine an explicitly selected privacy interface.
+    !is_android && !has_proxy && !has_bound_interface
+}
+
+/// librqbit implements complete device binding on macOS (`IP_BOUND_IF` / `IPV6_BOUND_IF`) and
+/// Linux (`SO_BINDTODEVICE`), covering peer TCP/uTP, DHT, trackers, listeners and LSD. Its Windows
+/// implementation deliberately returns unsupported, so Windows retains Izumi's monitor-and-pause
+/// guard without passing a device into the session.
+pub(crate) fn native_bind_device_name(bind_interface: Option<&str>) -> Option<String> {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        bind_interface.map(str::to_owned)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = bind_interface;
+        None
+    }
 }
 
 fn peer_listener_mode() -> ListenerMode {
@@ -621,36 +643,42 @@ impl DirectTorrentState {
                         ..Default::default()
                     })
                 };
-                let listen =
-                    if peer_listener_enabled(configured_proxy.is_some(), configured_bind.is_some())
-                    {
-                        let port = available_peer_port().ok_or_else(|| {
-                            format!(
-                                "Could not find a free incoming peer port in {}-{}.",
-                                DIRECT_PEER_PORTS.start,
-                                DIRECT_PEER_PORTS.end - 1
-                            )
-                        })?;
-                        Some(ListenerOptions {
-                            mode: peer_listener_mode(),
-                            // Keep the established IPv4 listener behavior while librqbit 9's DHT and
-                            // outgoing connector gain dual-stack peer discovery and connections.
-                            listen_addr: (Ipv4Addr::UNSPECIFIED, port).into(),
-                            enable_upnp_port_forwarding: upnp_enabled(
-                                cfg!(target_os = "android"),
-                                configured_proxy.is_some(),
-                                configured_bind.is_some(),
-                            ),
-                            ..Default::default()
-                        })
-                    } else {
-                        None
-                    };
+                let listen = if peer_listener_enabled(
+                    configured_proxy.is_some(),
+                    configured_bind.is_some(),
+                    native_bind_device_name(configured_bind.as_deref()).is_some(),
+                ) {
+                    let port = available_peer_port().ok_or_else(|| {
+                        format!(
+                            "Could not find a free incoming peer port in {}-{}.",
+                            DIRECT_PEER_PORTS.start,
+                            DIRECT_PEER_PORTS.end - 1
+                        )
+                    })?;
+                    Some(ListenerOptions {
+                        mode: peer_listener_mode(),
+                        // Keep the established IPv4 listener behavior while librqbit 9's DHT and
+                        // outgoing connector gain dual-stack peer discovery and connections.
+                        listen_addr: (Ipv4Addr::UNSPECIFIED, port).into(),
+                        enable_upnp_port_forwarding: upnp_enabled(
+                            cfg!(target_os = "android"),
+                            configured_proxy.is_some(),
+                            configured_bind.is_some(),
+                        ),
+                        ..Default::default()
+                    })
+                } else {
+                    None
+                };
                 let game_mode = cfg!(target_os = "linux")
                     && std::env::var_os("GAMESCOPE_WAYLAND_DISPLAY").is_some();
                 let session = Session::new_with_opts(
                     folder,
                     SessionOptions {
+                        // This is the actual kernel-enforced adapter binding on macOS/Linux. The
+                        // independent VpnGuard below remains active as a second fail-closed layer
+                        // and supplies disconnect/reconnect feedback to the UI.
+                        bind_device_name: native_bind_device_name(configured_bind.as_deref()),
                         // Proxy mode disables UDP DHT completely to prevent bypassing SOCKS5.
                         dht,
                         // Persistence supplies rqbit's bitfield store. Payload retention remains
@@ -666,8 +694,8 @@ impl DirectTorrentState {
                         // A real listen port lets DHT/trackers announce us and allows peers to
                         // connect back. Android supports ordinary server sockets too; keeping it
                         // outbound-only made Wi-Fi/manual-forwarding and VPN-forwarded ports
-                        // unusable. Keep proxy/VPN-bound sessions closed until native device
-                        // binding is supported consistently across desktop and Android.
+                        // unusable. Bound macOS/Linux listeners are safe because librqbit applies
+                        // the same device to TCP and uTP; Windows stays outbound-only when bound.
                         listen,
                         peer_limit: crate::gm_perf::torrent_peer_limit(game_mode),
                         runtime_worker_threads: crate::gm_perf::torrent_runtime_threads(game_mode),
@@ -2096,10 +2124,11 @@ mod tests {
     use super::{
         add_public_trackers, begin_metadata_flight, configured_startup_timeout, dht_port_override,
         empty_fastresume_bitfield_len, mbps_to_bps, metadata_prefetch_source,
-        normalized_socks_proxy, peer_listener_enabled, peer_listener_mode, proxy_safe_magnet,
-        ratio_target_bytes, remaining_startup_time, selected_file_downloaded_bytes,
-        selection_needs_restoring, startup_is_current, upload_limit, upnp_enabled,
-        DirectTorrentState, METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT, PUBLIC_TRACKERS,
+        native_bind_device_name, normalized_socks_proxy, peer_listener_enabled, peer_listener_mode,
+        proxy_safe_magnet, ratio_target_bytes, remaining_startup_time,
+        selected_file_downloaded_bytes, selection_needs_restoring, startup_is_current,
+        upload_limit, upnp_enabled, DirectTorrentState, METADATA_TIMEOUT, MIN_STARTUP_TIMEOUT,
+        PUBLIC_TRACKERS,
     };
     use std::sync::atomic::Ordering;
 
@@ -2120,12 +2149,23 @@ mod tests {
 
     #[test]
     fn direct_sessions_keep_tcp_and_utp_peer_paths_available() {
-        assert!(peer_listener_enabled(false, false));
+        assert!(peer_listener_enabled(false, false, false));
         assert!(!upnp_enabled(true, false, false));
         assert!(peer_listener_mode().tcp_enabled());
         assert!(peer_listener_mode().utp_enabled());
-        assert!(!peer_listener_enabled(true, false));
-        assert!(!peer_listener_enabled(false, true));
+        assert!(!peer_listener_enabled(true, false, true));
+        assert!(!peer_listener_enabled(false, true, false));
+        assert!(peer_listener_enabled(false, true, true));
+        assert!(!upnp_enabled(false, false, true));
+    }
+
+    #[test]
+    fn native_device_binding_is_only_forwarded_on_supported_desktop_platforms() {
+        let binding = native_bind_device_name(Some("vpn-test"));
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        assert_eq!(binding.as_deref(), Some("vpn-test"));
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        assert_eq!(binding, None);
     }
 
     #[test]

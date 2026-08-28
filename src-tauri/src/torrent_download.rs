@@ -36,8 +36,8 @@ use tokio::{
 };
 
 use crate::direct_torrent::{
-    add_public_trackers, mbps_to_bps, normalized_bind_interface, normalized_socks_proxy,
-    proxy_safe_magnet, upload_limit,
+    add_public_trackers, mbps_to_bps, native_bind_device_name, normalized_bind_interface,
+    normalized_socks_proxy, proxy_safe_magnet, upload_limit,
 };
 use crate::direct_torrent_select::{select_file, TorrentFile};
 use crate::download::sanitize;
@@ -159,6 +159,9 @@ impl TorrentDownloads {
                 let session = Session::new_with_opts(
                     folder,
                     SessionOptions {
+                        // Match playback: macOS/Linux pass the selected device to every librqbit
+                        // socket; Windows continues to rely on the shared fail-closed guard.
+                        bind_device_name: native_bind_device_name(configured_bind.as_deref()),
                         // Same privacy kill switch as playback: with a SOCKS5 proxy configured,
                         // UDP DHT would bypass it entirely, so it is turned off rather than leaked.
                         dht: configured.is_none().then_some(DhtSessionConfig {
