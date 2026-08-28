@@ -628,11 +628,35 @@ function mediaType(url: string, label = ''): 'm3u8' | 'dash' | 'mp4' {
 // report). The native side has its own deadlines now; this race keeps the UI honest even if a
 // bridge response goes missing entirely.
 const JVM_CALL_TIMEOUT_MS = 20_000
+type JvmQueuedCall = {
+  signal?: AbortSignal
+  run: () => Promise<void>
+}
+
+// The Android bridge creates two native threads for every call (worker + watchdog), while the
+// desktop host feeds every request through one long-lived JVM process. Letting Home/Search fan out
+// across every enabled source can therefore create a thread storm on Android and overload the
+// single runtime on desktop. Keep one cancellable lane for the bridge; stale queued searches are
+// removed immediately rather than being allowed to delay the user's next selection.
+const jvmCallQueue: JvmQueuedCall[] = []
+let jvmCallActive = false
+
+function pumpJvmCallQueue(): void {
+  if (jvmCallActive) return
+  const next = jvmCallQueue.shift()
+  if (!next) return
+  jvmCallActive = true
+  void next.run().finally(() => {
+    jvmCallActive = false
+    queueMicrotask(pumpJvmCallQueue)
+  })
+}
+
 function jvmRequestId(): string {
   return `izumi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-function jvmInvoke<T>(method: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+function invokeJvmNow<T>(method: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const requestId = jvmRequestId()
   return new Promise<T>((resolve, reject) => {
     let finished = false
@@ -662,6 +686,50 @@ function jvmInvoke<T>(method: string, args: Record<string, unknown>, signal?: Ab
       (value) => finish(() => resolve(value)),
       (error) => finish(() => reject(error)),
     )
+  })
+}
+
+function jvmInvoke<T>(method: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let queued = true
+    let settled = false
+    const finish = (action: () => void) => {
+      if (settled) return
+      settled = true
+      signal?.removeEventListener('abort', abortQueued)
+      action()
+    }
+    const entry: JvmQueuedCall = {
+      signal,
+      run: async () => {
+        queued = false
+        signal?.removeEventListener('abort', abortQueued)
+        if (settled) return
+        if (signal?.aborted) {
+          finish(() => reject(new DOMException('Aborted', 'AbortError')))
+          return
+        }
+        try {
+          const value = await invokeJvmNow<T>(method, args, signal)
+          finish(() => resolve(value))
+        } catch (error) {
+          finish(() => reject(error))
+        }
+      },
+    }
+    const abortQueued = () => {
+      if (!queued) return
+      const index = jvmCallQueue.indexOf(entry)
+      if (index >= 0) jvmCallQueue.splice(index, 1)
+      finish(() => reject(new DOMException('Aborted', 'AbortError')))
+    }
+    if (signal?.aborted) {
+      abortQueued()
+      return
+    }
+    signal?.addEventListener('abort', abortQueued, { once: true })
+    jvmCallQueue.push(entry)
+    pumpJvmCallQueue()
   })
 }
 

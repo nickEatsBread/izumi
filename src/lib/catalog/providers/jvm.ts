@@ -35,7 +35,10 @@ interface JvmHomeRequest {
   title: string
 }
 
-const JVM_HOME_CONCURRENCY = 3
+// The manager also protects the native bridge globally, but Home remains serial itself so it never
+// creates a large queue that can sit in front of a detail/search request after the user navigates.
+const JVM_HOME_CONCURRENCY = 1
+const JVM_HOME_ROW_TIMEOUT_MS = 8_000
 
 async function settleWithConcurrency<T, R>(
   values: T[],
@@ -240,16 +243,38 @@ async function sourcePage(
 }
 
 function jvmHomeRequests(sources: JvmCatalogSource[]): JvmHomeRequest[] {
-  return sources.flatMap((source) => {
-    const calls: JvmHomeRequest[] = []
-    if (source.supportsPopular) calls.push({
+  // Visit each source once before asking any source for its second row. A broken first extension
+  // can then only cost one bounded timeout before another provider gets a chance to paint Home.
+  const popular = sources.flatMap((source) => source.supportsPopular ? [{
       id: `popular:${source.id}`, source, method: 'getPopular', title: `Popular · ${source.name}`,
-    })
-    if (source.supportsLatest) calls.push({
+    } satisfies JvmHomeRequest] : [])
+  const latest = sources.flatMap((source) => source.supportsLatest ? [{
       id: `latest:${source.id}`, source, method: 'getLatestUpdates', title: `Latest updates · ${source.name}`,
-    })
-    return calls
-  })
+    } satisfies JvmHomeRequest] : [])
+  return [...popular, ...latest]
+}
+
+async function homeSourcePage(request: JvmHomeRequest, signal?: AbortSignal) {
+  const controller = new AbortController()
+  let timedOut = false
+  const abort = () => controller.abort()
+  if (signal?.aborted) controller.abort()
+  else signal?.addEventListener('abort', abort, { once: true })
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, JVM_HOME_ROW_TIMEOUT_MS)
+  try {
+    return await sourcePage(request.source, request.method, 1, controller.signal)
+  } catch (error) {
+    if (timedOut && !signal?.aborted) {
+      throw new Error(`${request.source.name} took too long to load ${request.title.toLowerCase()}.`)
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', abort)
+  }
 }
 
 async function enrichHero(media: Media[], signal?: AbortSignal): Promise<Media[]> {
@@ -316,7 +341,6 @@ async function home(
     : selected
   const loaded = new Map<string, Media[]>()
   let hero: Media[] = []
-  let heroTask: Promise<void> | null = null
   const snapshot = (): CatalogHome => {
     const sections = selected.flatMap((request) => {
       const media = loaded.get(request.id) ?? []
@@ -328,21 +352,11 @@ async function home(
   const publish = () => {
     if (!signal?.aborted) onUpdate?.(snapshot())
   }
-  const startHero = (media: Media[]) => {
-    if (heroTask || !media.length) return
-    // Do not wait for every provider row before asking for usable hero art. Three detail calls are
-    // enough to find a banner without flooding the runtime while the remaining rows are loading.
-    heroTask = enrichHero(media.slice(0, 3), signal).then((pool) => {
-      const withBanners = pool.filter((item) => item.bannerImage)
-      hero = (withBanners.length ? withBanners : pool).slice(0, 10)
-      publish()
-    }).catch(() => {})
-  }
   const results = await settleWithConcurrency(requests, JVM_HOME_CONCURRENCY, async (request) => {
-    const page = await sourcePage(request.source, request.method, 1, signal)
+    const page = await homeSourcePage(request, signal)
     loaded.set(request.id, page.media)
+    if (!hero.length && page.media.length) hero = page.media.slice(0, 10)
     publish()
-    startHero(page.media)
     return { request, page }
   })
   throwIfAborted(signal)
@@ -350,9 +364,14 @@ async function home(
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
     throw failure?.reason ?? new Error('The selected Aniyomi sources did not return catalog data.')
   }
-  // Direct callers still receive the enriched hero. UI callers already have progressive row
-  // updates, so the detached completion can repaint the hero without extending their wait.
-  if (!onUpdate && heroTask) await heroTask
+  // Home is already usable before this optional request begins. Enrich one featured item only,
+  // after all rows, instead of inserting three speculative details ahead of the row queue.
+  if (hero.length && !hero.some((item) => item.bannerImage)) {
+    const pool = await enrichHero(hero.slice(0, 1), signal)
+    const withBanners = pool.filter((item) => item.bannerImage)
+    hero = (withBanners.length ? withBanners : pool).slice(0, 10)
+    publish()
+  }
   return snapshot()
 }
 

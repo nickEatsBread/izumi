@@ -37,7 +37,7 @@ describe('JVM catalog provider', () => {
   it('builds popular and latest Home rows for every selected source', async () => {
     const home = await jvmCatalog.home()
     expect(home.sections.map((section) => section.title)).toEqual([
-      'Popular · One', 'Latest updates · One', 'Popular · Two', 'Latest updates · Two',
+      'Popular · One', 'Popular · Two', 'Latest updates · One', 'Latest updates · Two',
     ])
     expect(mocks.browse).toHaveBeenCalledTimes(4)
   })
@@ -96,6 +96,44 @@ describe('JVM catalog provider', () => {
 
     releaseSlow()
     await complete
+  })
+
+  it('never fans Home requests out across the JVM bridge', async () => {
+    let active = 0
+    let peak = 0
+    mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
+      active += 1
+      peak = Math.max(peak, active)
+      await Promise.resolve()
+      active -= 1
+      return {
+        list: [{ title: `${method} ${sourceId}`, url: `/${method}/${sourceId}` }],
+        hasNextPage: false,
+      }
+    })
+
+    await jvmCatalog.home()
+
+    expect(peak).toBe(1)
+  })
+
+  it('waits for Home rows before enriching only one featured item', async () => {
+    let completedRows = 0
+    mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
+      completedRows += 1
+      return {
+        list: [{ title: `${method} ${sourceId}`, url: `/${method}/${sourceId}` }],
+        hasNextPage: false,
+      }
+    })
+    mocks.detail.mockImplementation(async () => {
+      expect(completedRows).toBe(4)
+      return { title: 'Featured', url: '/featured', banner: 'https://img/banner.jpg' }
+    })
+
+    await jvmCatalog.home()
+
+    expect(mocks.detail).toHaveBeenCalledTimes(1)
   })
 
   it('loads detail and episode data from the owning source', async () => {
