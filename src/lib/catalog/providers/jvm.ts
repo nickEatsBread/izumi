@@ -54,8 +54,28 @@ function statusOf(value: unknown): string | undefined {
     case 4: return 'FINISHED'
     case 5: return 'CANCELLED'
     case 6: return 'HIATUS'
+    case 7: return 'NOT_YET_RELEASED'
     default: return undefined
   }
+}
+
+function formatOf(value: unknown): string | undefined {
+  const normalized = stringValue(value)?.toUpperCase().replace(/[\s-]+/g, '_')
+  if (!normalized) return undefined
+  const formats: Record<string, string> = {
+    TV: 'TV', SERIES: 'TV', TV_SERIES: 'TV', TV_SHORT: 'TV_SHORT',
+    MOVIE: 'MOVIE', FILM: 'MOVIE', SPECIAL: 'SPECIAL', OVA: 'OVA', ONA: 'ONA', MUSIC: 'MUSIC',
+  }
+  return formats[normalized]
+}
+
+function positiveNumber(value: unknown): number | undefined {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : undefined
+}
+
+function creatorsOf(raw: Record<string, unknown>): string[] {
+  return [...new Set([stringValue(raw.author), stringValue(raw.artist)].filter((name): name is string => !!name))]
 }
 
 /** The media URL is part of Aniyomi's native identity and is required again by getDetail. Keeping
@@ -78,7 +98,7 @@ export function decodeJvmIdentity(value: string): JvmIdentity | null {
 
 export function mapJvmCatalogMedia(
   raw: Record<string, unknown>,
-  source: Pick<JvmCatalogSource, 'id' | 'name' | 'icon'>,
+  source: Pick<JvmCatalogSource, 'id' | 'name' | 'icon' | 'lang'>,
   fallback?: Partial<JvmIdentity>,
 ): Media | null {
   const title = stringValue(raw.title) ?? fallback?.title
@@ -92,16 +112,22 @@ export function mapJvmCatalogMedia(
     id: encodeJvmIdentity(identity),
     sourceName: source.name,
     sourceIcon: source.icon,
+    sourceLanguage: source.lang,
   }
   const description = stringValue(raw.description)
   const banner = stringValue(raw.background_url)
+  const creators = creatorsOf(raw)
   return {
     id: compatibilityMediaId(ref),
     catalog: ref,
     type: 'ANIME',
     title: { romaji: title, english: title, userPreferred: title },
     description,
-    format: 'TV',
+    creators: creators.length ? creators : undefined,
+    seasonNumber: positiveNumber(raw.season_number),
+    // Aniyomi's SAnime contract does not define a TV/movie format. Only retain a format when an
+    // individual source explicitly supplies one instead of labelling every JVM result as TV.
+    format: formatOf(raw.format ?? raw.media_type),
     status: statusOf(raw.status),
     genres: genresOf(raw.genre),
     coverImage: { extraLarge: cover, large: cover, medium: cover },

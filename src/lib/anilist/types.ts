@@ -22,6 +22,8 @@ export interface MediaCatalogIdentity {
   sourceName?: string
   /** Source-owned artwork. JVM icons may be an absolute URL or an extracted base64 payload. */
   sourceIcon?: string
+  /** Language declared by an installed source (for example, `en`). */
+  sourceLanguage?: string
 }
 
 /** Cross-database ids are optional capabilities, not the identity of the object. Consumers use
@@ -59,8 +61,12 @@ export interface Media {
   type?: 'ANIME' | 'MANGA' | 'MOVIE' | 'SERIES'
   title: { romaji?: string; english?: string; native?: string; userPreferred?: string }
   description?: string
+  /** Provider-supplied creator names when they cannot be represented as AniList staff records. */
+  creators?: string[]
   season?: string
   seasonYear?: number
+  /** Provider-native season number. Aniyomi sources may expose this without a release year. */
+  seasonNumber?: number
   format?: string
   status?: string
   episodes?: number

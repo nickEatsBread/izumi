@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { decodeJvmIdentity, encodeJvmIdentity, mapJvmCatalogMedia } from './jvm'
 
 describe('JVM catalog mapping', () => {
-  const source = { id: '12345', name: 'AniDB', icon: 'https://img.example/anidb.png' }
+  const source = { id: '12345', name: 'AniDB', lang: 'en', icon: 'https://img.example/anidb.png' }
 
   it('keeps the source and native URL in a restart-safe opaque identity', () => {
     const encoded = encodeJvmIdentity({
@@ -28,20 +28,30 @@ describe('JVM catalog mapping', () => {
       background_url: 'https://img.example/banner.jpg',
       description: 'Humanity fights back.',
       genre: ['Action', 'Drama'],
-      status: 2,
+      status: 7,
+      season_number: 3,
+      author: 'Hajime Isayama',
+      artist: 'Hajime Isayama',
     }, source)
     expect(media).toMatchObject({
       type: 'ANIME',
-      format: 'TV',
-      status: 'FINISHED',
+      status: 'NOT_YET_RELEASED',
+      seasonNumber: 3,
+      creators: ['Hajime Isayama'],
       genres: ['Action', 'Drama'],
       bannerImage: 'https://img.example/banner.jpg',
       coverImage: { extraLarge: 'https://img.example/cover.jpg' },
       catalog: {
-        provider: 'jvm', type: 'anime', sourceName: 'AniDB', sourceIcon: 'https://img.example/anidb.png',
+        provider: 'jvm', type: 'anime', sourceName: 'AniDB', sourceIcon: 'https://img.example/anidb.png', sourceLanguage: 'en',
       },
     })
+    expect(media?.format).toBeUndefined()
     expect(decodeJvmIdentity(media!.catalog!.id)?.sourceId).toBe(source.id)
+  })
+
+  it('uses a source-provided format but never invents one for lightweight browse results', () => {
+    expect(mapJvmCatalogMedia({ title: 'Film', url: '/film', media_type: 'movie' }, source)?.format).toBe('MOVIE')
+    expect(mapJvmCatalogMedia({ title: 'Unknown', url: '/unknown' }, source)?.format).toBeUndefined()
   })
 
   it('rejects catalog entries that cannot be reopened for details', () => {

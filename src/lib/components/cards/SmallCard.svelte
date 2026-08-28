@@ -10,7 +10,7 @@
 <script lang="ts">
   import type { Media } from '$lib/anilist/types'
   import { reliableImage } from '$lib/util/reliable-image'
-  import { title, cardCover, season, format, mediaHref } from '$lib/anilist/media'
+  import { title, cardCover, season, format, mediaHref, status } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import { fade } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
@@ -23,6 +23,7 @@
   import PreviewCard from './PreviewCard.svelte'
   import { previewPos, rootZoom } from './preview-pos'
   import { portal } from '$lib/util/portal'
+  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
   let { media, fill = false, badge, subline, simpleHover = false }: {
@@ -47,7 +48,17 @@
   let pos = $state({ left: 0, top: 0 })
   let el: HTMLElement
   let closeT: ReturnType<typeof setTimeout>
-  const dot = (m: Media) => m.status === 'RELEASING' ? '#3db4f2' : m.status === 'NOT_YET_RELEASED' ? '#f79a63' : '#7bd555'
+  const dot = (m: Media) => m.status === 'RELEASING' ? '#3db4f2'
+    : m.status === 'NOT_YET_RELEASED' ? '#f79a63'
+    : m.catalog?.provider === 'jvm' && !m.status ? undefined
+    : '#7bd555'
+  const jvmSource = $derived(media.catalog?.provider === 'jvm' && media.catalog.sourceName ? media.catalog : undefined)
+  const jvmMeta = $derived.by(() => {
+    if (!jvmSource) return ''
+    const compact = [media.seasonNumber ? `S${media.seasonNumber}` : '', jvmSource.sourceLanguage?.toUpperCase()]
+      .filter(Boolean).join(' · ')
+    return compact || status(media)
+  })
 
   // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and clamped to the
   // viewport so it never gets cut off by the sidebar or edges. The math is zoom-aware — see
@@ -140,10 +151,18 @@
       {/if}
     </div>
     <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
-      <span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{title(media)}
+      {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
     </div>
     {#if subline}
       <div class="mt-0.5 truncate text-[0.7rem] font-semibold text-foreground/70">{subline}</div>
+    {:else if jvmSource}
+      <div class="mt-0.5 flex min-w-0 items-center justify-between gap-1.5 text-[0.7rem] text-muted-foreground">
+        <span class="flex min-w-0 items-center gap-1">
+          <AddonLogo logo={jvmSource.sourceIcon} name={jvmSource.sourceName} id={jvmSource.id} size={13} />
+          <span class="truncate">{jvmSource.sourceName}</span>
+        </span>
+        {#if jvmMeta}<span class="shrink-0 font-semibold">{jvmMeta}</span>{/if}
+      </div>
     {:else}
       <div class="mt-0.5 flex justify-between text-[0.7rem] text-muted-foreground">
         <span>{season(media) || media.startDate?.year || ''}</span><span>{format(media)}</span>
