@@ -38,6 +38,15 @@ describe('JVM catalog bridge', () => {
     expect(desktopBridge).not.toContain('ensure_started(&app)\n        .await?\n        .cancel(&request_id)')
   })
 
+  it('keeps desktop runtime startup cancellable while extensions load', () => {
+    expect(desktopBridge).toContain('startup: Mutex<()>')
+    expect(desktopBridge).toContain('generation: AtomicU64')
+    const publishProcess = desktopBridge.indexOf('*self.process.lock().await = Some(process.clone());')
+    const loadExtensions = desktopBridge.indexOf('"loadExtensions",', publishProcess)
+    expect(publishProcess).toBeGreaterThan(0)
+    expect(loadExtensions).toBeGreaterThan(publishProcess)
+  })
+
   it('repairs APK resources and converts every dex file on desktop', () => {
     expect(packages).toContain('repair_aniyomi_jar_resources')
     expect(packages).toContain('name.starts_with("assets/")')

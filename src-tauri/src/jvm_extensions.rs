@@ -181,10 +181,12 @@ impl Process {
 
 #[derive(Default)]
 pub struct Runtime {
+    startup: Mutex<()>,
     process: Mutex<Option<Arc<Process>>>,
     sources: RwLock<Option<Value>>,
     developer_logging: Arc<AtomicBool>,
     socks_proxy: RwLock<Option<SocketAddr>>,
+    generation: AtomicU64,
 }
 
 fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -1136,20 +1138,26 @@ fn java_home_from_executable(java: &Path) -> Option<PathBuf> {
 
 impl Runtime {
     async fn ensure_started(&self, app: &AppHandle) -> Result<Arc<Process>, String> {
-        let mut current = self.process.lock().await;
-        if let Some(process) = current.as_ref() {
-            let running = process
-                .child
-                .lock()
-                .await
-                .try_wait()
-                .map_err(|error| format!("Could not inspect extension runtime: {error}"))?
-                .is_none();
-            if running {
-                return Ok(process.clone());
+        // Only one caller may launch/load the host, but do not hold `process` across that work:
+        // cancellation needs to take it immediately when an extension or loadExtensions wedges.
+        let _startup = self.startup.lock().await;
+        let generation = self.generation.load(Ordering::Acquire);
+        {
+            let mut current = self.process.lock().await;
+            if let Some(process) = current.as_ref() {
+                let running = process
+                    .child
+                    .lock()
+                    .await
+                    .try_wait()
+                    .map_err(|error| format!("Could not inspect extension runtime: {error}"))?
+                    .is_none();
+                if running {
+                    return Ok(process.clone());
+                }
+                current.take();
+                *self.sources.write().await = None;
             }
-            current.take();
-            *self.sources.write().await = None;
         }
         let runtime = ensure_runtime_file(app).await?;
         let java = java_command(app).await?;
@@ -1166,6 +1174,13 @@ impl Runtime {
         } else {
             None
         };
+        let folder = extension_dir(app)?;
+        tokio::fs::create_dir_all(&folder)
+            .await
+            .map_err(|error| error.to_string())?;
+        if self.generation.load(Ordering::Acquire) != generation {
+            return Err("Extension runtime startup was cancelled".into());
+        }
         let process = start_process(
             app,
             &java,
@@ -1175,22 +1190,54 @@ impl Runtime {
             *self.socks_proxy.read().await,
         )
         .await?;
-        let folder = extension_dir(app)?;
-        tokio::fs::create_dir_all(&folder)
-            .await
-            .map_err(|error| error.to_string())?;
-        let sources = process
+        if self.generation.load(Ordering::Acquire) != generation {
+            let _ = process.child.lock().await.kill().await;
+            return Err("Extension runtime startup was cancelled".into());
+        }
+        // Publish the child before loadExtensions so cancellation can terminate a runtime whose
+        // extension initialization itself has become unresponsive. `startup` still prevents other
+        // callers from using the process until initialization finishes.
+        *self.process.lock().await = Some(process.clone());
+        let sources = match process
             .request(
                 "loadExtensions",
                 json!({ "folderPath": folder.to_string_lossy() }),
             )
-            .await?;
+            .await
+        {
+            Ok(sources) => sources,
+            Err(error) => {
+                let mut current = self.process.lock().await;
+                let owns_process = current
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &process));
+                if owns_process {
+                    current.take();
+                }
+                drop(current);
+                if owns_process {
+                    let _ = process.child.lock().await.kill().await;
+                }
+                *self.sources.write().await = None;
+                return Err(error);
+            }
+        };
+        let current = self.process.lock().await;
+        let still_current = self.generation.load(Ordering::Acquire) == generation
+            && current
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &process));
+        if !still_current {
+            drop(current);
+            return Err("Extension runtime startup was cancelled".into());
+        }
         *self.sources.write().await = Some(sources);
-        *current = Some(process.clone());
+        drop(current);
         Ok(process)
     }
 
     async fn stop(&self) {
+        self.generation.fetch_add(1, Ordering::AcqRel);
         if let Some(process) = self.process.lock().await.take() {
             let _ = process.child.lock().await.kill().await;
         }
@@ -1202,6 +1249,7 @@ impl Runtime {
         // the runtime's cooperative cancel message. Remove and terminate the current process while
         // holding the runtime lock so another request cannot reuse it during teardown. The next
         // call starts a clean host and reloads the already-converted extensions.
+        self.generation.fetch_add(1, Ordering::AcqRel);
         let mut current = self.process.lock().await;
         let Some(process) = current.take() else {
             return Ok(());
@@ -1226,6 +1274,7 @@ impl Runtime {
         if *configured == address {
             return;
         }
+        self.generation.fetch_add(1, Ordering::AcqRel);
         *configured = address;
         if let Some(active) = process.take() {
             let _ = active.child.lock().await.kill().await;
