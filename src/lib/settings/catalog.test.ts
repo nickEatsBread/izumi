@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
   catalogLabel, catalogLastProvider, catalogProvider, nextCatalogProvider,
-  isJvmCatalogSourceEnabled, normalizeCatalogProviders, previousCatalogProvider, resolveCatalogStartup, selectCatalogProvider,
+  isJvmCatalogSourceEnabled, mergedCatalogProviders, normalizeCatalogProviders, previousCatalogProvider, resolveCatalogStartup, selectCatalogProvider,
 } from './catalog'
 
 describe('catalog platform selection', () => {
@@ -37,6 +37,11 @@ describe('catalog platform selection', () => {
 
   it('recovers to the first enabled platform when the active value is unavailable', () => {
     expect(nextCatalogProvider('stremio', ['auto', 'tmdb'])).toBe('auto')
+  })
+
+  it('collapses duplicate AniList access only when composing merged catalogs', () => {
+    expect(mergedCatalogProviders(['tmdb', 'auto', 'anilist', 'jvm'])).toEqual(['tmdb', 'auto', 'jvm'])
+    expect(mergedCatalogProviders(['anilist', 'tmdb'])).toEqual(['anilist', 'tmdb'])
   })
 
   it('shows newly installed JVM sources by default and preserves explicit filters', () => {

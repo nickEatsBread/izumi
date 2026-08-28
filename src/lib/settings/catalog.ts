@@ -3,6 +3,7 @@ import { derived, get, writable } from 'svelte/store'
 
 export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm'
 export type CatalogDefaultSelection = CatalogSelection | 'adaptive'
+export type CatalogMode = 'separate' | 'merged'
 export type ContinueWatchingCatalogScope = 'provider' | 'all'
 export type CatalogSwitcherPlacement = 'integrated' | 'below'
 
@@ -73,6 +74,17 @@ export const catalogDefaultProvider = persisted<CatalogDefaultSelection>(
  * existing installs and all provider-specific filters keep their behaviour. */
 export const catalogProviders = persisted<CatalogSelection[]>('catalog-providers', [get(legacyCatalogProvider)])
 export const enabledCatalogProviders = derived(catalogProviders, ($providers) => normalizeCatalogProviders($providers))
+
+/** Automatic anime already queries AniList, so a separately enabled AniList entry would duplicate
+ * every result in a merged view. Keep the user's stored choices intact and collapse only at use. */
+export function mergedCatalogProviders(value: unknown): CatalogSelection[] {
+  const providers = normalizeCatalogProviders(value)
+  return providers.includes('auto') ? providers.filter((provider) => provider !== 'anilist') : providers
+}
+
+/** Separate preserves the provider-by-provider Home switcher. Merged composes enabled providers
+ * into one independently configurable Home and searches them together by default. */
+export const catalogMode = persisted<CatalogMode>('catalog-mode', 'separate')
 
 /** The last platform the user actually selected. It is written at switch time rather than only on
  * exit, so Adaptive also survives a crash or forced Steam shutdown. A fixed default does not alter

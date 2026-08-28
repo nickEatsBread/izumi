@@ -2,7 +2,13 @@
   import AlertTriangle from '@lucide/svelte/icons/triangle-alert'
   import X from '@lucide/svelte/icons/x'
   import { anilistDegraded } from '$lib/anilist/degraded'
-  import { catalogProvider, isLegacyAniListCatalog } from '$lib/settings/catalog'
+  import {
+    catalogMode,
+    catalogProvider,
+    catalogProviders,
+    isLegacyAniListCatalog,
+    mergedCatalogProviders,
+  } from '$lib/settings/catalog'
   import { offlineMode } from '$lib/stores/offline'
   import { online } from '$lib/stores/online'
   import { incognito } from '$lib/stores/incognito'
@@ -13,11 +19,14 @@
   const stripsAbove = $derived(($offlineMode || !$online ? 1 : 0) + ($incognito ? 1 : 0))
   const offset = $derived(`${stripsAbove * 1.75}rem`)
   const desktopInset = $derived($isMacOS ? 'sm:left-28 sm:right-0' : 'sm:left-14 sm:right-[8.25rem]')
+  const usesAniList = $derived($catalogMode === 'merged'
+    ? mergedCatalogProviders($catalogProviders).some(isLegacyAniListCatalog)
+    : isLegacyAniListCatalog($catalogProvider))
 </script>
 
 <svelte:window onkeydown={(event) => { if (detailsOpen && event.key === 'Escape') detailsOpen = false }} />
 
-{#if $anilistDegraded && isLegacyAniListCatalog($catalogProvider)}
+{#if $anilistDegraded && usesAniList}
   <div data-tauri-drag-region transition:slide={{ duration: 250 }} role="status" style:--banner-offset={offset}
        class="fixed left-0 right-0 top-[calc(env(safe-area-inset-top)+var(--banner-offset))] z-[60] flex min-h-7 items-center justify-center gap-2 bg-amber-700 px-2 py-1 text-center text-xs font-semibold text-white shadow-md sm:top-[var(--banner-offset)] {desktopInset}">
     <AlertTriangle size={14} class="shrink-0" />

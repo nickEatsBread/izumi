@@ -229,11 +229,14 @@ async function homeRows(): Promise<CatalogHomeRowOption[]> {
   return jvmHomeOptions(jvmHomeRequests(await selectedSources()))
 }
 
-async function home(signal?: AbortSignal): Promise<CatalogHome> {
+async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
   const sources = await selectedSources()
   const available = jvmHomeRequests(sources)
   const byId = new Map(available.map((request) => [request.id, request]))
-  const configured = resolveCatalogHomeRows('jvm', jvmHomeOptions(available), get(catalogHomeLayouts))
+  const options = jvmHomeOptions(available)
+  const configured = rowIds
+    ? options.map((row) => ({ ...row, enabled: rowIds.includes(row.id) }))
+    : resolveCatalogHomeRows('jvm', options, get(catalogHomeLayouts))
   const selected = configured
     .filter((row) => row.enabled && row.id !== 'continue')
     .flatMap((row) => byId.get(row.id) ?? [])

@@ -47,6 +47,20 @@ describe('catalog Home layouts', () => {
     expect(catalogHomeLayoutKey('anilist')).toBe('anilist')
   })
 
+  it('keeps the merged layout independent from every provider layout', () => {
+    expect(catalogHomeLayoutKey('merged')).toBe('merged')
+    const options = [
+      { id: 'continue', title: 'Continue Watching' },
+      { id: 'tmdb:trending', title: 'Trending' },
+    ]
+    expect(resolveCatalogHomeRows('merged', options, {
+      tmdb: { order: ['trending'], disabled: [] },
+      merged: { order: ['tmdb:trending', 'continue'], disabled: ['continue'] },
+    }).map((row) => [row.id, row.enabled])).toEqual([
+      ['tmdb:trending', true], ['continue', false],
+    ])
+  })
+
   it('serializes the effective order and disabled rows', () => {
     expect(catalogHomeLayoutFromRows([
       { id: 'a', title: 'A', enabled: true },

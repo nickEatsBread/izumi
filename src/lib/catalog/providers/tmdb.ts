@@ -297,8 +297,10 @@ const TMDB_HOME_REQUESTS: TmdbHomeRequest[] = [
   { id: 'rated-anime-movies', path: '/discover/movie', kind: 'movie', params: { sort_by: 'vote_average.desc', with_genres: 16, with_original_language: 'ja', 'vote_count.gte': 100 }, more: { sort: 'rating', type: 'anime' } },
 ]
 
-async function home(signal?: AbortSignal): Promise<CatalogHome> {
-  const configured = resolveCatalogHomeRows('tmdb', TMDB_HOME_ROWS, get(catalogHomeLayouts))
+async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
+  const configured = rowIds
+    ? TMDB_HOME_ROWS.map((row) => ({ ...row, enabled: rowIds.includes(row.id) }))
+    : resolveCatalogHomeRows('tmdb', TMDB_HOME_ROWS, get(catalogHomeLayouts))
   const selected = configured.filter((row) => row.enabled && row.id !== 'continue')
   const requests = new Map(TMDB_HOME_REQUESTS.map((request) => [request.id, request]))
   // Trending also supplies the featured banner. Fetch it once even when its carousel is hidden.

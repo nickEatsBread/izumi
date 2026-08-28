@@ -12,13 +12,19 @@
   import ContinueCard from './ContinueCard.svelte'
   import * as h from '$lib/haptics'
 
-  let { title, userName, malActive }: { title: string; userName?: string; malActive: boolean } = $props()
+  let { title, userName, malActive, catalogScope }: {
+    title: string
+    userName?: string
+    malActive: boolean
+    /** Merged Home always spans providers without rewriting the user's Separate-mode preference. */
+    catalogScope?: 'provider' | 'all'
+  } = $props()
   const client = getContextClient()
 
   const items = $derived(filterContinueWatching(
     $continueWatching,
     $catalogProvider,
-    $continueWatchingCatalogScope,
+    catalogScope ?? $continueWatchingCatalogScope,
   ))
 
   // D on a keyboard and X on a controller remove the active card. The controller translator maps

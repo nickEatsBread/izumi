@@ -24,6 +24,13 @@ describe('Home row customization screen', () => {
     expect(source).toContain('hide(row.id)')
   })
 
+  it('customizes Merged Home as an independent target', () => {
+    expect(source).toContain("selection: 'merged' as CatalogHomeTarget")
+    expect(source).toContain("selection === 'merged'")
+    expect(source).toContain('mergedCatalogHomeRowOptions($catalogProviders')
+    expect(source).toContain("label: 'Merged'")
+  })
+
   it('offers a per-provider reset', () => {
     expect(source).toContain('resetCatalogHomeLayout(selected)')
   })

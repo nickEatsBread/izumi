@@ -4,7 +4,8 @@ import { hiddenHomeRows, homeRowOrder } from '$lib/settings/ui'
 import type { CatalogSelection } from '$lib/settings/catalog'
 import type { CatalogHomeRowOption } from './types'
 
-export type CatalogHomeLayoutKey = 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm'
+export type CatalogHomeLayoutKey = 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm' | 'merged'
+export type CatalogHomeTarget = CatalogSelection | 'merged'
 
 export interface CatalogHomeLayout {
   /** Contains visible and hidden rows so a hidden row remembers its former position. */
@@ -20,13 +21,13 @@ export const catalogHomeLayouts = persisted<CatalogHomeLayouts>('catalog-home-la
   anilist: { order: get(homeRowOrder), disabled: get(hiddenHomeRows) },
 })
 
-export const catalogHomeLayoutKey = (selection: CatalogSelection): CatalogHomeLayoutKey =>
+export const catalogHomeLayoutKey = (selection: CatalogHomeTarget): CatalogHomeLayoutKey =>
   selection === 'auto' || selection === 'anilist' ? 'anilist' : selection
 
 /** Repair stale/partial persisted layouts, append newly shipped rows, and apply their defaults.
  * Unknown saved ids are deliberately dropped so removing a preset cannot leave ghost rows. */
 export function resolveCatalogHomeRows(
-  selection: CatalogSelection,
+  selection: CatalogHomeTarget,
   options: CatalogHomeRowOption[],
   layouts: CatalogHomeLayouts,
 ): Array<CatalogHomeRowOption & { enabled: boolean }> {
@@ -58,7 +59,7 @@ export function catalogHomeLayoutFromRows(rows: Array<CatalogHomeRowOption & { e
   }
 }
 
-export function resetCatalogHomeLayout(selection: CatalogSelection): void {
+export function resetCatalogHomeLayout(selection: CatalogHomeTarget): void {
   const key = catalogHomeLayoutKey(selection)
   catalogHomeLayouts.update((layouts) => {
     const next = { ...layouts }

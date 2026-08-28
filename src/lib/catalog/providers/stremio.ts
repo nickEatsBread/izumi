@@ -191,13 +191,17 @@ async function homeRows(): Promise<CatalogHomeRowOption[]> {
   return stremioHomeOptions(stremioHomeEntries(await manifests()))
 }
 
-async function home(signal?: AbortSignal): Promise<CatalogHome> {
+async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
   const sources = await manifests()
   const available = stremioHomeEntries(sources)
   const byId = new Map(available.map((entry) => [entry.id, entry]))
   // Keep the provider safety cap, but apply it after customization so a user can promote a row
   // from a large add-on manifest by hiding or moving less useful catalogs.
-  const entries = resolveCatalogHomeRows('stremio', stremioHomeOptions(available), get(catalogHomeLayouts))
+  const options = stremioHomeOptions(available)
+  const configured = rowIds
+    ? options.map((row) => ({ ...row, enabled: rowIds.includes(row.id) }))
+    : resolveCatalogHomeRows('stremio', options, get(catalogHomeLayouts))
+  const entries = configured
     .filter((row) => row.enabled && row.id !== 'continue').flatMap((row) => byId.get(row.id) ?? []).slice(0, 16)
   const rows = await Promise.all(entries.map(async ({ base, manifest, entry, id }) => ({
     id,

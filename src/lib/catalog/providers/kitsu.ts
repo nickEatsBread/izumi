@@ -104,7 +104,7 @@ function currentSeason(date = new Date()): { season: string; year: number } {
   }
 }
 
-async function home(signal?: AbortSignal): Promise<CatalogHome> {
+async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
   const now = currentSeason()
   const specs: Record<string, { params: Record<string, string | number | undefined>; more?: CatalogHomeSection['more'] }> = {
     season: { params: { 'filter[season]': now.season, 'filter[seasonYear]': now.year, sort: '-userCount', limit: 20 }, more: { sort: 'popular', year: now.year } },
@@ -114,7 +114,10 @@ async function home(signal?: AbortSignal): Promise<CatalogHome> {
     action: { params: { 'filter[categories]': 'action', sort: '-userCount', limit: 20 }, more: { genre: 'Action', sort: 'popular' } },
     romance: { params: { 'filter[categories]': 'romance', sort: '-userCount', limit: 20 }, more: { genre: 'Romance', sort: 'popular' } },
   }
-  const selected = resolveCatalogHomeRows('kitsu', KITSU_HOME_ROWS, get(catalogHomeLayouts))
+  const configured = rowIds
+    ? KITSU_HOME_ROWS.map((row) => ({ ...row, enabled: rowIds.includes(row.id) }))
+    : resolveCatalogHomeRows('kitsu', KITSU_HOME_ROWS, get(catalogHomeLayouts))
+  const selected = configured
     .filter((row) => row.enabled && row.id !== 'continue')
   // Airing Now also supplies the hero. Keep that request even when only its row is hidden.
   const fetchIds = selected.some((row) => row.id === 'trending')

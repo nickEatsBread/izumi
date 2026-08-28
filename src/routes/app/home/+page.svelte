@@ -24,14 +24,18 @@
   import { markClientPerformance } from '$lib/performance/client'
   import {
     catalogProvider,
+    catalogMode,
+    catalogProviders,
     catalogSwitcherPlacement,
     enabledCatalogProviders,
     isLegacyAniListCatalog,
+    mergedCatalogProviders,
     nextCatalogProvider,
     previousCatalogProvider,
     selectCatalogProvider,
   } from '$lib/settings/catalog'
   import CatalogHome from '$lib/components/catalog/CatalogHome.svelte'
+  import MergedCatalogHome from '$lib/components/catalog/MergedCatalogHome.svelte'
   import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'
   import { mediaHref } from '$lib/anilist/media'
   import { playing } from '$lib/player/session'
@@ -40,6 +44,8 @@
 
   const client = getContextClient()
   const legacyCatalog = $derived(isLegacyAniListCatalog($catalogProvider))
+  const mergedUsesAniList = $derived(mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)))
+  const usesAniListHome = $derived($catalogMode === 'merged' ? mergedUsesAniList : legacyCatalog)
   const sections = homeSections(new Date())
 
   // Top-bar icons come from the nav config (items the user placed 'top').
@@ -74,7 +80,7 @@
   // store. Keeping the first paused store forever is why the anime platform had no hero carousel
   // after TMDB had been active at startup.
   $effect(() => {
-    const active = legacyCatalog
+    const active = usesAniListHome
     hero = { fetching: active }
     heroStore = makeHeroStore(!active)
   })
@@ -87,7 +93,7 @@
     return heroStore.subscribe((v) => (hero = v as HeroResult))
   })
 
-  const canCycleCatalog = $derived($enabledCatalogProviders.length > 1)
+  const canCycleCatalog = $derived($catalogMode === 'separate' && $enabledCatalogProviders.length > 1)
 
   function handleCatalogKeydown(event: KeyboardEvent) {
     if (event.defaultPrevented) return
@@ -140,7 +146,7 @@
        double-counted the status-bar inset and left a big black gap above the logo. -->
   <!-- The degraded strip is fixed at the same safe-area edge as this in-flow toolbar. Reserve its
        height while visible so the logo and top actions remain fully tappable on Android. -->
-  <div class="flex items-center justify-between px-4 pb-3 pt-3 {legacyCatalog && $anilistDegraded ? 'mt-7' : ''}">
+  <div class="flex items-center justify-between px-4 pb-3 pt-3 {usesAniListHome && $anilistDegraded ? 'mt-7' : ''}">
     {#if !$offlineMode && $catalogSwitcherPlacement === 'integrated' && canCycleCatalog}
       <CatalogSwitcher display="brand" showWordmark />
     {:else}
@@ -149,9 +155,9 @@
         <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
       </div>
     {/if}
-    {#if topNav.length || (!$offlineMode && $catalogSwitcherPlacement === 'below')}
+    {#if topNav.length || (!$offlineMode && $catalogMode === 'separate' && $catalogSwitcherPlacement === 'below')}
       <div class="flex items-center gap-1">
-        {#if !$offlineMode && $catalogSwitcherPlacement === 'below'}
+        {#if !$offlineMode && $catalogMode === 'separate' && $catalogSwitcherPlacement === 'below'}
           <CatalogSwitcher display="icon" />
         {/if}
         {#each topNav as c (c.id)}
@@ -183,6 +189,8 @@
     {/if}
     <DownloadedLibrary />
   </div>
+{:else if $catalogMode === 'merged'}
+  <MergedCatalogHome anilistHero={heroMedias} />
 {:else if !legacyCatalog}
   <CatalogHome />
 {:else}

@@ -5,6 +5,14 @@ import { describe, expect, it } from 'vitest'
 const source = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
 
 describe('catalog settings', () => {
+  it('offers separate and merged catalog experiences', () => {
+    expect(source).toContain("{ value: 'separate', label: 'Separate catalogs' }")
+    expect(source).toContain("{ value: 'merged', label: 'Merged Home and Search' }")
+    expect(source).toContain('value={$catalogMode}')
+    expect(source).toContain('onChange={setCatalogMode}')
+    expect(source).toContain("$catalogMode === 'merged'")
+  })
+
   it('offers every platform as an independently enabled row', () => {
     for (const id of ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']) expect(source).toContain(`id: '${id}'`)
     expect(source).toContain('CatalogPlatformRow')

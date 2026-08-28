@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores'
-  import { catalogHomeRowOptions } from '$lib/catalog/registry'
+  import { catalogHomeRowOptions, mergedCatalogHomeRowOptions } from '$lib/catalog/registry'
   import {
     catalogHomeLayoutFromRows,
     catalogHomeLayoutKey,
@@ -9,6 +9,7 @@
     resolveCatalogHomeRows,
   } from '$lib/catalog/home-layout'
   import { catalogLabel, catalogProviders, normalizeCatalogProviders, type CatalogSelection } from '$lib/settings/catalog'
+  import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
   import type { CatalogHomeRowOption } from '$lib/catalog/types'
   import ArrowUp from '@lucide/svelte/icons/arrow-up'
   import ArrowDown from '@lucide/svelte/icons/arrow-down'
@@ -18,23 +19,24 @@
 
   const targets = $derived.by(() => {
     const seen = new Set<string>()
-    return normalizeCatalogProviders($catalogProviders).flatMap((provider) => {
+    const separate = normalizeCatalogProviders($catalogProviders).flatMap((provider) => {
       const key = catalogHomeLayoutKey(provider)
       if (seen.has(key)) return []
       seen.add(key)
       const selection: CatalogSelection = key === 'anilist' ? 'anilist' : provider
-      return [{ selection, label: key === 'anilist' ? 'Anime' : catalogLabel(provider) }]
+      return [{ selection: selection as CatalogHomeTarget, label: key === 'anilist' ? 'Anime' : catalogLabel(provider) }]
     })
+    return [{ selection: 'merged' as CatalogHomeTarget, label: 'Merged' }, ...separate]
   })
 
-  let selected = $state<CatalogSelection>('anilist')
+  let selected = $state<CatalogHomeTarget>('anilist')
   let options = $state<CatalogHomeRowOption[]>([])
   let loading = $state(true)
   let error = $state('')
 
   // Honour a direct provider link, then keep the selection valid as catalog platforms change.
   $effect(() => {
-    const requested = $page.url.searchParams.get('provider') as CatalogSelection | null
+    const requested = $page.url.searchParams.get('provider') as CatalogHomeTarget | null
     const available = targets.map((target) => target.selection)
     if (requested && available.includes(requested)) selected = requested
     else if (!available.includes(selected) && available[0]) selected = available[0]
@@ -46,7 +48,10 @@
     loading = true
     error = ''
     options = []
-    void catalogHomeRowOptions(selection, abort.signal).then((rows) => {
+    const request = selection === 'merged'
+      ? mergedCatalogHomeRowOptions($catalogProviders, abort.signal)
+      : catalogHomeRowOptions(selection, abort.signal)
+    void request.then((rows) => {
       if (!abort.signal.aborted) options = rows
     }).catch((reason) => {
       if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
@@ -98,7 +103,7 @@
   <div class="mb-5 flex max-w-3xl items-start justify-between gap-4">
     <div>
       <h2 class="mb-1 text-xl font-black">Customize Home</h2>
-      <p class="text-sm text-muted-foreground">Choose the rows each catalog shows and put the most useful ones first.</p>
+      <p class="text-sm text-muted-foreground">Choose the rows each catalog shows and put the most useful ones first. Merged has its own layout.</p>
     </div>
     <button data-focusable onclick={() => resetCatalogHomeLayout(selected)} class="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-border px-3 text-sm font-bold transition-colors hover:bg-secondary active:bg-secondary">
       <RotateCcw size={16} /> Reset

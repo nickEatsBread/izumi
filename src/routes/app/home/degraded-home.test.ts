@@ -18,7 +18,7 @@ describe('degraded home', () => {
   })
 
   it('keeps the Android toolbar below the fixed degraded banner only for the AniList-backed catalog', () => {
-    expect(page).toContain("{legacyCatalog && $anilistDegraded ? 'mt-7' : ''}")
+    expect(page).toContain("{usesAniListHome && $anilistDegraded ? 'mt-7' : ''}")
   })
 
   it('keeps the first personal row below the desktop banner when the hero is removed', () => {

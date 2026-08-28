@@ -2,6 +2,7 @@
   import {
     catalogDefaultProvider,
     catalogLastProvider,
+    catalogMode,
     catalogProvider,
     catalogProviders,
     catalogSwitcherPlacement,
@@ -13,6 +14,7 @@
     selectCatalogProvider,
     tmdbReadToken,
     type CatalogDefaultSelection,
+    type CatalogMode,
     type CatalogSelection,
     type CatalogSwitcherPlacement,
     type ContinueWatchingCatalogScope,
@@ -56,12 +58,18 @@
     { value: 'provider', label: 'Current platform only' },
     { value: 'all', label: 'All platforms' },
   ]
+  const modeOptions = [
+    { value: 'separate', label: 'Separate catalogs' },
+    { value: 'merged', label: 'Merged Home and Search' },
+  ]
   const switcherPlacementOptions = [
     { value: 'below', label: 'Below Izumi logo' },
     { value: 'integrated', label: 'Integrated into Izumi logo' },
   ]
   const hasPlatform = (id: CatalogSelection) => enabled.includes(id)
-  const homeCustomizeProvider = $derived($catalogProvider === 'auto' ? 'anilist' : $catalogProvider)
+  const homeCustomizeProvider = $derived($catalogMode === 'merged'
+    ? 'merged'
+    : $catalogProvider === 'auto' ? 'anilist' : $catalogProvider)
 
   $effect(() => {
     if (!hasPlatform('jvm') || jvmSourcesLoaded || jvmSourcesLoading) return
@@ -96,6 +104,10 @@
     if (!enabled.includes(value as CatalogSelection)) return
     $catalogDefaultProvider = value as CatalogSelection
     selectCatalogProvider(value as CatalogSelection)
+  }
+
+  function setCatalogMode(value: string) {
+    if (value === 'separate' || value === 'merged') $catalogMode = value as CatalogMode
   }
 
   function setContinueWatchingScope(value: string) {
@@ -135,6 +147,16 @@
   />
 {/snippet}
 
+{#snippet modeControl()}
+  <SelectMenu
+    className="w-full sm:w-56"
+    value={$catalogMode}
+    options={modeOptions}
+    onChange={setCatalogMode}
+    ariaLabel="Catalog experience"
+  />
+{/snippet}
+
 {#snippet continueWatchingControl()}
   <SelectMenu
     className="w-full sm:w-48"
@@ -157,30 +179,39 @@
 
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Catalog</h2>
-  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms and choose how catalog selection appears. Quick search checks all enabled platforms.</p>
+  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms, then keep them separate or combine them into one discovery experience.</p>
 
-  <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose where the picker appears and which platform opens first.">
+  <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose whether enabled platforms stay separate or appear together.">
     <SettingsRow
-      settingKey="default-catalog-platform"
-      title="Default platform"
-      description="Choose a fixed startup platform, or Adaptive to reopen the last platform you selected."
-      control={defaultControl}
+      settingKey="catalog-mode"
+      title="Catalog experience"
+      description="Merged combines provider rows on Home and searches every enabled provider by default."
+      control={modeControl}
       controlLayout="stack"
     />
-    <SettingsRow
-      settingKey="catalog-switcher-placement"
-      title="Catalog switcher"
-      description="Integrate catalog selection into the Izumi logo, or show a more visible provider row below it."
-      control={switcherPlacementControl}
-      controlLayout="stack"
-    />
-    <SettingsRow
-      settingKey="continue-watching"
-      title="Continue Watching"
-      description="Show progress for the active catalog or combine all platforms."
-      control={continueWatchingControl}
-      controlLayout="stack"
-    />
+    {#if $catalogMode === 'separate'}
+      <SettingsRow
+        settingKey="default-catalog-platform"
+        title="Default platform"
+        description="Choose a fixed startup platform, or Adaptive to reopen the last platform you selected."
+        control={defaultControl}
+        controlLayout="stack"
+      />
+      <SettingsRow
+        settingKey="catalog-switcher-placement"
+        title="Catalog switcher"
+        description="Integrate catalog selection into the Izumi logo, or show a more visible provider row below it."
+        control={switcherPlacementControl}
+        controlLayout="stack"
+      />
+      <SettingsRow
+        settingKey="continue-watching"
+        title="Continue Watching"
+        description="Show progress for the active catalog or combine all platforms. Merged Home always combines them."
+        control={continueWatchingControl}
+        controlLayout="stack"
+      />
+    {/if}
     {#each platforms as platform (platform.id)}
       <CatalogPlatformRow
         platform={platform.id}
@@ -194,7 +225,7 @@
     {/each}
   </SettingsGroup>
 
-  <SettingsGroup icon={SlidersHorizontal} title="Home layout" desc="Control Home separately for each catalog platform.">
+  <SettingsGroup icon={SlidersHorizontal} title="Home layout" desc="Control each separate platform and the Merged Home independently.">
     <SettingsRow title="Home rows" description="Show, hide, and reorder discovery rows without changing your enabled catalogs.">
       <a href={`/app/settings/catalog/home?provider=${homeCustomizeProvider}`} data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Customize Home</a>
     </SettingsRow>

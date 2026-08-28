@@ -79,7 +79,8 @@ export interface CatalogProvider {
   label: string
   capabilities: CatalogCapabilities
   homeRows?(signal?: AbortSignal): Promise<CatalogHomeRowOption[]>
-  home(signal?: AbortSignal): Promise<CatalogHome>
+  /** Optional row ids let the independently configured Merged Home request exactly its rows. */
+  home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome>
   search(request: CatalogSearchRequest): Promise<CatalogPage>
   detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null>
   genres?(signal?: AbortSignal): Promise<string[]>
