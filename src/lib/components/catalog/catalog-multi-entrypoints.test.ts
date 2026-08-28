@@ -76,15 +76,17 @@ describe('multi-platform catalog entry points', () => {
     expect(catalogHome).toContain('provider.home(abort.signal, undefined, publish)')
     expect(catalogHome).toContain('publish(result, result.partial !== true)')
     expect(catalogHome).toContain('if (result.hero.length || result.sections.length) loading = false')
-    expect(catalogHome).toContain("class:deferred-skeleton={$catalogProvider === 'jvm'}")
+    expect(catalogHome).not.toContain("class:deferred-skeleton={$catalogProvider === 'jvm'}")
     expect(catalogHome).toContain("showCatalogSource={$catalogProvider !== 'jvm'}")
     expect(read('./MergedCatalogHome.svelte')).toContain('let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})')
   })
 
   it('uses catalog row skeletons instead of a redundant Aniyomi loading card', () => {
     const catalogHome = read('./CatalogHome.svelte')
+    const appCss = read('../../../app.css')
     expect(catalogHome).toContain('{#each Array.from({ length: 4 }) as _}')
     expect(catalogHome).toContain('aspect-[2/3] w-36 shrink-0 rounded-md skeloader')
+    expect(appCss).toContain('animation: skeleton-swipe 1.5s infinite')
     expect(catalogHome).not.toContain('Loading Aniyomi sources…')
     expect(catalogHome).not.toContain('Checking enabled sources.')
     expect(catalogHome).not.toContain('LoaderCircle')

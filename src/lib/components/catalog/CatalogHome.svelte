@@ -92,9 +92,9 @@
   }
 </script>
 
-<!-- Aniyomi can add several source-owned rows in one update. Its static skeletons still explain
-     pending artwork without promoting every placeholder to a continuously animated layer. -->
-<div class="pb-16" class:deferred-skeleton={$catalogProvider === 'jvm'}>
+<!-- The bounded Aniyomi loader now reconciles rows in two batches, so its placeholders can use the
+     same loading shimmer as every other catalog without repeatedly remounting the card tree. -->
+<div class="pb-16">
   {#if home?.hero.length}
     <Hero medias={home.hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
   {:else if loading && $catalogProvider !== 'jvm'}
