@@ -10,8 +10,20 @@
   import { page } from '$app/state'
   import { replaceState } from '$app/navigation'
   import type { Snapshot } from './$types'
-  import { catalogProvider, isLegacyAniListCatalog } from '$lib/settings/catalog'
+  import {
+    CATALOG_SELECTIONS,
+    catalogLabel,
+    catalogMode,
+    catalogProvider,
+    catalogProviders,
+    isLegacyAniListCatalog,
+    mergedCatalogProviders,
+    type CatalogSelection,
+  } from '$lib/settings/catalog'
   import CatalogSearchPage from '$lib/components/catalog/CatalogSearchPage.svelte'
+  import CatalogPlatformLogo from '$lib/components/catalog/CatalogPlatformLogo.svelte'
+  import MergedCatalogSearchPage from '$lib/components/catalog/MergedCatalogSearchPage.svelte'
+  import Layers3 from '@lucide/svelte/icons/layers-3'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
   heroMedia.set(null)
@@ -35,18 +47,57 @@
   }
   let filters = $state<SearchFilters>({ ...seed })
   let debounced = $state<SearchFilters>({ ...seed })
+  type MergedScope = 'all' | CatalogSelection
+  const requestedScope = sp.get('provider')
+  let mergedScope = $state<MergedScope>(requestedScope && CATALOG_SELECTIONS.includes(requestedScope as CatalogSelection)
+    ? requestedScope as CatalogSelection : 'all')
+  let mergedQuery = $state(seed.search ?? '')
   let t: ReturnType<typeof setTimeout>
+  const mergedSelections = $derived(mergedCatalogProviders($catalogProviders))
+
+  $effect(() => {
+    if (mergedScope !== 'all' && !mergedSelections.includes(mergedScope)) mergedScope = 'all'
+  })
+
+  $effect(() => {
+    if ($catalogMode !== 'merged') return
+    if (mergedScope === 'all') {
+      const search = mergedQuery.trim() || undefined
+      if (filters.search !== search) filters = { search }
+    } else {
+      mergedQuery = filters.search ?? ''
+    }
+  })
+
+  function selectMergedScope(scope: MergedScope) {
+    if (scope === mergedScope) return
+    const next = { search: mergedQuery.trim() || undefined }
+    mergedScope = scope
+    filters = next
+    debounced = next
+  }
 
   // The URL round-trip below covers only the quick-bar fields; a second genre and everything from
   // the Advanced modal (formats, statuses, tags, score, episode range, …) has no URL form, so a
   // Back from a series page silently dropped them. The history-entry snapshot restores the FULL
   // filter set — it runs after the URL seed above, so on a back-navigation it wins, while a fresh
   // visit or shared link still seeds from the URL alone.
-  export const snapshot: Snapshot<SearchFilters> = {
-    capture: () => $state.snapshot(filters) as SearchFilters,
+  interface SearchSnapshot {
+    filters: SearchFilters
+    mergedScope: MergedScope
+    mergedQuery: string
+  }
+  export const snapshot: Snapshot<SearchSnapshot> = {
+    capture: () => ({
+      filters: $state.snapshot(filters) as SearchFilters,
+      mergedScope,
+      mergedQuery,
+    }),
     restore: (value) => {
-      filters = { ...value }
-      debounced = { ...value } // same value for both — no debounce swap, no replayed card animation
+      filters = { ...value.filters }
+      debounced = { ...value.filters } // same value for both — no debounce swap, no replayed card animation
+      mergedScope = value.mergedScope
+      mergedQuery = value.mergedQuery
     },
   }
 
@@ -74,15 +125,20 @@
   // the return trip and look like the filters had been mangled.
   $effect(() => {
     const f = debounced
+    if ($catalogMode === 'separate' && !legacyCatalog) return
+    if ($catalogMode === 'merged' && mergedScope !== 'all' && !isLegacyAniListCatalog(mergedScope)) return
     const params = new URLSearchParams()
+    if ($catalogMode === 'merged' && mergedScope !== 'all') params.set('provider', mergedScope)
     if (f.search) params.set('search', f.search)
-    if (f.sort) params.set('sort', f.sort)
-    if (f.genres?.[0]) params.set('genre', f.genres[0])
-    if (f.season) params.set('season', f.season)
-    if (f.year != null) params.set('year', String(f.year))
-    if (f.studioId) params.set('studio', String(f.studioId))
-    if (f.staffId) params.set('staff', String(f.staffId))
-    if (f.exploreName) params.set('name', f.exploreName)
+    if ($catalogMode !== 'merged' || mergedScope !== 'all') {
+      if (f.sort) params.set('sort', f.sort)
+      if (f.genres?.[0]) params.set('genre', f.genres[0])
+      if (f.season) params.set('season', f.season)
+      if (f.year != null) params.set('year', String(f.year))
+      if (f.studioId) params.set('studio', String(f.studioId))
+      if (f.staffId) params.set('staff', String(f.staffId))
+      if (f.exploreName) params.set('name', f.exploreName)
+    }
     const query = params.toString()
     const next = query ? `${page.url.pathname}?${query}` : page.url.pathname
     // Compare against the live URL so this settles instead of re-writing every run.
@@ -95,6 +151,49 @@
 
 {#if $offlineMode}
   <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
+{:else if $catalogMode === 'merged'}
+  <div class="px-4 pt-4 sm:px-8 sm:pt-8">
+    <h1 class="text-2xl font-black">Search</h1>
+    <p class="mt-1 text-sm text-muted-foreground">Search everything together, or choose one catalog to unlock its filters.</p>
+    <div class="-mx-4 mt-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0" role="tablist" aria-label="Search catalog">
+      <button
+        type="button"
+        data-focusable
+        role="tab"
+        aria-selected={mergedScope === 'all'}
+        onclick={() => selectMergedScope('all')}
+        class="flex min-h-11 shrink-0 items-center gap-2 rounded-full border px-3.5 text-sm font-black transition-colors {mergedScope === 'all' ? 'border-theme bg-theme text-white' : 'border-border bg-card hover:bg-secondary'}"
+      >
+        <Layers3 size={18} /> All catalogs
+      </button>
+      {#each mergedSelections as provider (provider)}
+        <button
+          type="button"
+          data-focusable
+          role="tab"
+          aria-selected={mergedScope === provider}
+          onclick={() => selectMergedScope(provider)}
+          class="flex min-h-11 shrink-0 items-center gap-2 rounded-full border py-1 pl-1.5 pr-3.5 text-sm font-black transition-colors {mergedScope === provider ? 'border-theme bg-theme/15 text-foreground' : 'border-border bg-card hover:bg-secondary'}"
+        >
+          <span class="-m-1 scale-75"><CatalogPlatformLogo platform={provider} /></span>
+          {catalogLabel(provider)}
+        </button>
+      {/each}
+    </div>
+  </div>
+
+  {#if mergedScope === 'all'}
+    <MergedCatalogSearchPage bind:query={mergedQuery} />
+  {:else if !isLegacyAniListCatalog(mergedScope)}
+    <CatalogSearchPage selection={mergedScope} embedded onQueryChange={(value) => (mergedQuery = value)} />
+  {:else}
+    <div class="p-4 pt-5 sm:px-8">
+      <FilterBar bind:filters />
+      <div class="mt-6">
+        {#key key}<SearchResults filters={debounced} />{/key}
+      </div>
+    </div>
+  {/if}
 {:else if !legacyCatalog}
   <CatalogSearchPage />
 {:else}

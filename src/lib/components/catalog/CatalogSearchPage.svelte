@@ -7,12 +7,19 @@
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import TmdbAdvancedFilters from './TmdbAdvancedFilters.svelte'
-  import { catalogProvider } from '$lib/settings/catalog'
+  import { catalogProvider, type CatalogSelection } from '$lib/settings/catalog'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import type { CatalogContentType } from '$lib/catalog/identity'
   import { mediaKey } from '$lib/catalog/identity'
   import type { CatalogAdvancedSearchFilters, CatalogSearchOptions } from '$lib/catalog/types'
   import type { Media } from '$lib/anilist/types'
+
+  let { selection, embedded = false, onQueryChange }: {
+    selection?: CatalogSelection
+    embedded?: boolean
+    onQueryChange?: (query: string) => void
+  } = $props()
+  const activeSelection = $derived(selection ?? $catalogProvider)
 
   type CatalogSort = 'popular' | 'rating' | 'recent' | 'oldest' | 'title' | 'trending'
 
@@ -41,8 +48,8 @@
   let emptyPageStreak = 0
   const seen = new Set<string>()
 
-  const animeOnly = $derived($catalogProvider === 'kitsu' || $catalogProvider === 'jvm')
-  const isTmdb = $derived($catalogProvider === 'tmdb')
+  const animeOnly = $derived(activeSelection === 'kitsu' || activeSelection === 'jvm')
+  const isTmdb = $derived(activeSelection === 'tmdb')
   const typeOptions = $derived(animeOnly
     ? [{ value: 'all', label: 'Anime' }]
     : [
@@ -51,9 +58,9 @@
         { value: 'movie', label: 'Movies' },
         { value: 'series', label: 'Series' },
       ])
-  const sortOptions = $derived($catalogProvider === 'jvm'
+  const sortOptions = $derived(activeSelection === 'jvm'
     ? [{ value: 'popular', label: 'Popular' }, { value: 'recent', label: 'Latest' }]
-    : $catalogProvider === 'tmdb'
+    : activeSelection === 'tmdb'
     ? [
         { value: 'popular', label: 'Most popular' }, { value: 'rating', label: 'Highest rated' },
         { value: 'recent', label: 'Newest releases' }, { value: 'oldest', label: 'Oldest releases' },
@@ -78,7 +85,7 @@
   )
 
   $effect(() => {
-    const selection = $catalogProvider
+    const selection = activeSelection
     if (selection === 'auto' || selection === 'anilist') return
     if ((selection === 'kitsu' || selection === 'jvm') && type !== 'all' && type !== 'anime') type = 'all'
     if (selection === 'jvm' && sort !== 'popular' && sort !== 'recent') sort = 'popular'
@@ -109,13 +116,14 @@
 
   $effect(() => {
     void query
+    if (embedded) onQueryChange?.(query)
     clearTimeout(debounce)
     debounce = setTimeout(() => (settled = query.trim()), 300)
     return () => clearTimeout(debounce)
   })
 
   const requestKey = $derived(JSON.stringify([
-    $catalogProvider, settled, type, genre, year, sort, minScore, minVotes, language, country,
+    activeSelection, settled, type, genre, year, sort, minScore, minVotes, language, country,
   ]))
   $effect(() => {
     void requestKey
@@ -141,6 +149,7 @@
 
   $effect(() => {
     const params = new URLSearchParams()
+    if (embedded) params.set('provider', activeSelection)
     if (settled) params.set('search', settled)
     if (type !== 'all') params.set('type', type)
     if (genre) params.set('genre', genre)
@@ -158,7 +167,7 @@
 
   async function loadMore() {
     if (loading || !hasNext) return
-    const selection = $catalogProvider
+    const selection = activeSelection
     if (selection === 'auto' || selection === 'anilist') return
     const generation = requestGeneration
     const abort = requestAbort
@@ -234,7 +243,7 @@
   })
 </script>
 
-<div class="p-4 pb-20 sm:p-8">
+<div class="pb-20 {embedded ? 'pt-4' : 'p-4 sm:p-8'}">
   <div class="mb-6 flex flex-col gap-3">
     <label class="relative min-w-0 flex-1">
       <Search size={19} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -246,11 +255,11 @@
       <SelectMenu bind:value={sort} ariaLabel="Sort results" className="w-40 shrink-0" options={sortOptions} />
       {#if availableGenres.length}
         <SelectMenu bind:value={genre} ariaLabel="Genre" className="w-44 shrink-0" options={genreOptions} />
-      {:else if $catalogProvider === 'stremio'}
+      {:else if activeSelection === 'stremio'}
         <input bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
           class="h-11 w-32 shrink-0 rounded-lg bg-input px-3 text-base" />
       {/if}
-      {#if $catalogProvider !== 'jvm'}
+      {#if activeSelection !== 'jvm'}
         <input bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
           class="h-11 w-24 shrink-0 rounded-lg bg-input px-3 text-base" />
       {/if}
