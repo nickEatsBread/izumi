@@ -28,13 +28,15 @@ mod package {
     use std::io::{Cursor, Read};
     use std::path::{Path, PathBuf};
     use tauri::{AppHandle, Manager};
-    use zip::ZipArchive;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
     // Native service packages can contain a self-contained runtime. The strict signed file list,
     // per-file hashes and package signature still apply; only the size ceiling differs from JS/JVM.
     const MAX_PACKAGE_BYTES: usize = 160 * 1024 * 1024;
     const MAX_ENTRY_BYTES: usize = 152 * 1024 * 1024;
-    const PACKAGE_CACHE_VERSION: u8 = 1;
+    // v2 rebuilds desktop Aniyomi runtime JARs with resources preserved from their signed APK.
+    const PACKAGE_CACHE_VERSION: u8 = 2;
 
     #[derive(serde::Deserialize, serde::Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -168,6 +170,66 @@ mod package {
             return false;
         };
         archive.by_name("AndroidManifest.xml").is_ok() && archive.by_name("classes.dex").is_ok()
+    }
+
+    /// The desktop runtime loads the converted JAR, while many Aniyomi extensions load scripts
+    /// and configuration with `Class.getResource("/assets/…")`. Some published conversions lost
+    /// those APK resources even though the signed package still carries the original APK. Rebuild
+    /// the runtime copy after signature verification, preserving every converted class and adding
+    /// only the missing classpath resources. The signed `.izumi-ext` itself is never modified.
+    #[cfg(not(target_os = "android"))]
+    fn repair_aniyomi_jar_resources(jar_bytes: &[u8], apk_bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let mut jar = ZipArchive::new(Cursor::new(jar_bytes))
+            .map_err(|_| "Aniyomi extension JAR is invalid")?;
+        let mut apk = ZipArchive::new(Cursor::new(apk_bytes))
+            .map_err(|_| "Aniyomi extension APK is invalid")?;
+        let mut written = BTreeSet::new();
+        let mut uncompressed_bytes = 0_u64;
+        let mut output = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+        for index in 0..jar.len() {
+            let mut entry = jar.by_index(index).map_err(|error| error.to_string())?;
+            if entry.is_dir() || !written.insert(entry.name().to_string()) {
+                continue;
+            }
+            if entry.size() as usize > MAX_ENTRY_BYTES {
+                return Err("Aniyomi extension JAR entry is too large".into());
+            }
+            uncompressed_bytes = uncompressed_bytes.saturating_add(entry.size());
+            if uncompressed_bytes > MAX_ENTRY_BYTES as u64 {
+                return Err("Aniyomi extension JAR expands beyond the safety limit".into());
+            }
+            output
+                .start_file(entry.name(), options)
+                .map_err(|error| error.to_string())?;
+            std::io::copy(&mut entry, &mut output).map_err(|error| error.to_string())?;
+        }
+
+        for index in 0..apk.len() {
+            let mut entry = apk.by_index(index).map_err(|error| error.to_string())?;
+            let name = entry.name().replace('\\', "/");
+            let is_classpath_resource = name == "manifest.json" || name.starts_with("assets/");
+            if entry.is_dir() || !is_classpath_resource || !written.insert(name.clone()) {
+                continue;
+            }
+            if entry.size() as usize > MAX_ENTRY_BYTES {
+                return Err("Aniyomi extension APK resource is too large".into());
+            }
+            uncompressed_bytes = uncompressed_bytes.saturating_add(entry.size());
+            if uncompressed_bytes > MAX_ENTRY_BYTES as u64 {
+                return Err("Aniyomi extension resources expand beyond the safety limit".into());
+            }
+            output
+                .start_file(name, options)
+                .map_err(|error| error.to_string())?;
+            std::io::copy(&mut entry, &mut output).map_err(|error| error.to_string())?;
+        }
+
+        output
+            .finish()
+            .map(|cursor| cursor.into_inner())
+            .map_err(|error| error.to_string())
     }
 
     fn service_filename() -> &'static str {
@@ -419,7 +481,10 @@ mod package {
             }
             #[cfg(not(target_os = "android"))]
             {
-                Some(entry_bytes)
+                match android_entry_bytes.as_deref() {
+                    Some(apk) => Some(repair_aniyomi_jar_resources(&entry_bytes, apk)?),
+                    None => Some(entry_bytes),
+                }
             }
         } else if backend == "izumi-service" {
             Some(entry_bytes)
@@ -584,6 +649,15 @@ mod package {
             std::fs::remove_file(&destination).map_err(|e| e.to_string())?;
         }
         std::fs::rename(temporary, &destination).map_err(|e| e.to_string())?;
+        #[cfg(not(target_os = "android"))]
+        if extension.backend == "aniyomi-jvm" {
+            let marker = jvm_dir(app)?.join(format!("{}.multidex.sha256", extension.id));
+            match std::fs::remove_file(marker) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
         #[cfg(unix)]
         if service {
             use std::os::unix::fs::PermissionsExt;
@@ -591,6 +665,83 @@ mod package {
                 .map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn multidex_packages(app: &AppHandle) -> Result<Vec<(String, Vec<u8>, String)>, String> {
+        let dir = extension_dir(app)?;
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error.to_string()),
+        };
+        let mut result = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("izumi-ext") {
+                continue;
+            }
+            let package_bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
+            let (extension, _) = parse_package(&package_bytes)?;
+            if extension.backend != "aniyomi-jvm" {
+                continue;
+            }
+            let mut package = ZipArchive::new(Cursor::new(package_bytes))
+                .map_err(|_| "Extension package is not a ZIP")?;
+            if package.by_name("extension.apk").is_err() {
+                continue;
+            }
+            let apk = read_entry(&mut package, "extension.apk")?;
+            let mut apk_archive = ZipArchive::new(Cursor::new(&apk))
+                .map_err(|_| "Aniyomi extension APK is invalid")?;
+            let dex_files = (0..apk_archive.len())
+                .filter_map(|index| {
+                    apk_archive
+                        .by_index(index)
+                        .ok()
+                        .map(|entry| entry.name().to_string())
+                })
+                .filter(|name| {
+                    name == "classes.dex"
+                        || name
+                            .strip_prefix("classes")
+                            .and_then(|rest| rest.strip_suffix(".dex"))
+                            .is_some_and(|number| {
+                                !number.is_empty()
+                                    && number.bytes().all(|byte| byte.is_ascii_digit())
+                            })
+                })
+                .count();
+            if dex_files > 1 {
+                let digest = sha256(&apk);
+                result.push((extension.id, apk, digest));
+            }
+        }
+        Ok(result)
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn store_converted_jvm_jar(
+        app: &AppHandle,
+        id: &str,
+        converted_jar: &[u8],
+        apk: &[u8],
+    ) -> Result<(), String> {
+        if !safe_id(id) {
+            return Err("Extension id is unsafe".into());
+        }
+        let repaired = repair_aniyomi_jar_resources(converted_jar, apk)?;
+        let destination = jvm_path(app, id)?;
+        let parent = destination
+            .parent()
+            .ok_or("Aniyomi runtime path has no parent")?;
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        let temporary = destination.with_extension("jar.part");
+        std::fs::write(&temporary, repaired).map_err(|error| error.to_string())?;
+        if destination.exists() {
+            std::fs::remove_file(&destination).map_err(|error| error.to_string())?;
+        }
+        std::fs::rename(temporary, destination).map_err(|error| error.to_string())
     }
 
     fn install_bytes(app: &AppHandle, bytes: Vec<u8>) -> Result<InstalledExtension, String> {
@@ -713,10 +864,20 @@ mod package {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error.to_string()),
         };
+        #[cfg(not(target_os = "android"))]
+        let marker_result =
+            match std::fs::remove_file(jvm_dir(app)?.join(format!("{id}.multidex.sha256"))) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.to_string()),
+            };
+        #[cfg(target_os = "android")]
+        let marker_result: Result<(), String> = Ok(());
         package_result
             .and(jar_result)
             .and(service_result)
             .and(cache_result)
+            .and(marker_result)
     }
 
     pub fn service_entry(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
@@ -747,6 +908,51 @@ mod package {
         use ed25519_dalek::{Signer, SigningKey};
         use std::io::Write;
         use zip::write::SimpleFileOptions;
+
+        #[cfg(not(target_os = "android"))]
+        fn zip_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            for (name, bytes) in entries {
+                writer
+                    .start_file(*name, SimpleFileOptions::default())
+                    .unwrap();
+                writer.write_all(bytes).unwrap();
+            }
+            writer.finish().unwrap().into_inner()
+        }
+
+        #[cfg(not(target_os = "android"))]
+        #[test]
+        fn repairs_missing_aniyomi_classpath_resources_without_replacing_classes() {
+            let jar = zip_entries(&[
+                ("example/Source.class", b"converted"),
+                ("assets/kept.js", b"jar"),
+            ]);
+            let apk = zip_entries(&[
+                ("AndroidManifest.xml", b"android"),
+                ("classes.dex", b"dex"),
+                ("assets/kept.js", b"apk"),
+                ("assets/missing.js", b"restored"),
+                ("manifest.json", b"{}"),
+            ]);
+
+            let repaired = repair_aniyomi_jar_resources(&jar, &apk).unwrap();
+            let mut archive = ZipArchive::new(Cursor::new(repaired)).unwrap();
+            let mut read = |name: &str| {
+                let mut value = Vec::new();
+                archive
+                    .by_name(name)
+                    .unwrap()
+                    .read_to_end(&mut value)
+                    .unwrap();
+                value
+            };
+            assert_eq!(read("example/Source.class"), b"converted");
+            assert_eq!(read("assets/kept.js"), b"jar");
+            assert_eq!(read("assets/missing.js"), b"restored");
+            assert_eq!(read("manifest.json"), b"{}");
+            assert!(archive.by_name("classes.dex").is_err());
+        }
 
         fn fixture(tamper_code: bool, signed: bool, extra: Option<(&str, &[u8])>) -> Vec<u8> {
             let manifest = br#"{
@@ -994,6 +1200,23 @@ pub(crate) fn extension_service_entry(
     id: &str,
 ) -> Result<std::path::PathBuf, String> {
     package::service_entry(app, id)
+}
+
+#[cfg(not(target_os = "android"))]
+pub(crate) fn aniyomi_multidex_packages(
+    app: &AppHandle,
+) -> Result<Vec<(String, Vec<u8>, String)>, String> {
+    package::multidex_packages(app)
+}
+
+#[cfg(not(target_os = "android"))]
+pub(crate) fn store_converted_aniyomi_jar(
+    app: &AppHandle,
+    id: &str,
+    converted_jar: &[u8],
+    apk: &[u8],
+) -> Result<(), String> {
+    package::store_converted_jvm_jar(app, id, converted_jar, apk)
 }
 
 #[cfg(target_os = "android")]

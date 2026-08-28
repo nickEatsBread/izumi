@@ -49,6 +49,24 @@ export interface InstalledExtensionPackage {
   serviceEntry?: string
 }
 
+export interface JvmSourceFilter {
+  name: string
+  type: 'Header' | 'Separator' | 'CheckBox' | 'TriState' | 'Select' | 'Group' | 'Sort' | 'Text' | 'Unknown'
+  state: unknown
+  values?: string[] | null
+}
+
+export interface JvmSourcePreference {
+  key: string
+  title?: string | null
+  summary?: string | null
+  enabled?: boolean
+  type: 'list' | 'multi_select' | 'switch' | 'checkbox' | 'text' | 'other'
+  value: unknown
+  entries?: string[] | null
+  entryValues?: string[] | null
+}
+
 export type { ExtensionCatalogPackage, ExtensionCatalog } from './catalog'
 
 /** The maintained anime/HTTP package catalog used by the built-in Source Store. It can also appear
@@ -604,12 +622,41 @@ function mediaType(url: string, label = ''): 'm3u8' | 'dash' | 'mp4' {
 // report). The native side has its own deadlines now; this race keeps the UI honest even if a
 // bridge response goes missing entirely.
 const JVM_CALL_TIMEOUT_MS = 20_000
-function jvmInvoke<T>(method: string, args: Record<string, unknown>): Promise<T> {
-  return Promise.race([
-    invoke<T>('jvm_extension_call', { method, args }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`The extension did not answer in time (${method}).`)), JVM_CALL_TIMEOUT_MS)),
-  ])
+function jvmRequestId(): string {
+  return `izumi-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function jvmInvoke<T>(method: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  const requestId = jvmRequestId()
+  return new Promise<T>((resolve, reject) => {
+    let finished = false
+    let timer: ReturnType<typeof setTimeout>
+    const finish = (action: () => void) => {
+      if (finished) return
+      finished = true
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', abort)
+      action()
+    }
+    const cancel = () => { void invoke('jvm_extension_cancel', { requestId }).catch(() => {}) }
+    const abort = () => finish(() => {
+      cancel()
+      reject(new DOMException('Aborted', 'AbortError'))
+    })
+    timer = setTimeout(() => finish(() => {
+      cancel()
+      reject(new Error(`The extension did not answer in time (${method}).`))
+    }), JVM_CALL_TIMEOUT_MS)
+    if (signal?.aborted) {
+      abort()
+      return
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    invoke<T>('jvm_extension_call', { method, args, requestId }).then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    )
+  })
 }
 
 async function jvmProviderCall(source: JvmSource, method: string, callArgs: unknown[]): Promise<unknown> {
@@ -637,7 +684,7 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
     })
     guard()
     return (response.list ?? []).map((item) => ({
-      id: JSON.stringify({ url: item.url, title: item.title, cover: item.cover }),
+      id: JSON.stringify({ url: item.url, title: item.title, cover: item.cover ?? item.thumbnail_url }),
       title: String(item.title ?? ''),
       url: String(item.url ?? ''),
     }))
@@ -657,10 +704,23 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
     guard()
     return (detail.episodes ?? [])
       .map((episode) => ({
-        id: JSON.stringify({ url: episode.url, name: episode.name }),
+        id: JSON.stringify({
+          url: episode.url,
+          name: episode.name,
+          episode_number: episode.episode_number,
+          scanlator: episode.scanlator,
+          date_upload: episode.date_upload,
+          fillermark: episode.fillermark,
+          summary: episode.summary,
+          preview_url: episode.preview_url,
+        }),
         number: episodeNumber(episode),
         title: String(episode.name ?? ''),
         url: String(episode.url ?? ''),
+        overview: String(episode.summary ?? '') || undefined,
+        thumbnail: String(episode.preview_url ?? '') || undefined,
+        filler: episode.fillermark === true,
+        group: String(episode.scanlator ?? '') || undefined,
         // Keep the detail page's canonical identity attached through episode resolution. Search
         // pages can be fuzzy or redirect; the online resolver revalidates this before fetching video.
         sourceTitle: String(detail.title ?? identity.title ?? ''),
@@ -670,11 +730,11 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
   if (method === 'findEpisodeServer') {
     const raw = callArgs[0] as { id?: unknown } | string
     const encoded = typeof raw === 'string' ? raw : raw?.id
-    const episode = JSON.parse(String(encoded ?? '{}')) as { url?: string; name?: string }
+    const episode = JSON.parse(String(encoded ?? '{}')) as Record<string, unknown>
     guard()
     const videos = await jvmInvoke<Record<string, unknown>[]>('getVideoList', {
       sourceId: source.id,
-      episode: { url: episode.url ?? '', name: episode.name ?? '' },
+      episode,
     })
     guard()
     const mapped = videos
@@ -706,6 +766,14 @@ async function jvmProviderCall(source: JvmSource, method: string, callArgs: unkn
             ? 'hard'
             : subtitles.length ? 'soft' : undefined,
           headers: (video.headers ?? {}) as Record<string, string>,
+          bitrate: Number(video.bitrate) || undefined,
+          preferred: video.preferred === true,
+          timestamps: Array.isArray(video.timestamps) ? video.timestamps : [],
+          mpvArgs: (video.mpvArgs ?? {}) as Record<string, string>,
+          ffmpegStreamArgs: (video.ffmpegStreamArgs ?? {}) as Record<string, string>,
+          ffmpegVideoArgs: (video.ffmpegVideoArgs ?? {}) as Record<string, string>,
+          internalData: video.internalData,
+          initialized: video.initialized === true,
           subtitles,
           audioTracks: ((video.audios ?? []) as Record<string, unknown>[])
             .flatMap((track) => {
@@ -917,15 +985,16 @@ export async function installedJvmCatalogSources(): Promise<JvmCatalogSource[]> 
       name: source.name,
       lang: source.lang,
       icon: source.iconUrl ?? undefined,
-      // Older runtime listings omitted the flags even though their sources implemented both calls.
-      supportsLatest: source.supportsLatest !== false,
-      supportsPopular: source.supportsPopular !== false,
+      // Runtime 2.3 reports these from the actual source type; do not advertise methods merely
+      // because an older listing omitted its capability flags.
+      supportsLatest: source.supportsLatest === true,
+      supportsPopular: source.supportsPopular === true,
     }))
 }
 
 async function requireJvmCatalogSource(sourceId: string): Promise<JvmCatalogSource> {
   const source = (await installedJvmCatalogSources()).find((entry) => entry.id === sourceId)
-  if (!source) throw new Error('This JVM source is no longer installed or enabled.')
+  if (!source) throw new Error('This Aniyomi source is no longer installed or enabled.')
   return source
 }
 
@@ -934,26 +1003,54 @@ export async function browseJvmCatalogSource(
   method: 'getPopular' | 'getLatestUpdates' | 'search',
   page = 1,
   query = '',
+  filters?: JvmSourceFilter[],
+  signal?: AbortSignal,
 ): Promise<JvmCatalogPageResult> {
   await requireJvmCatalogSource(sourceId)
   const response = await jvmInvoke<{ list?: Record<string, unknown>[]; hasNextPage?: unknown }>(method, {
     sourceId,
     isAnime: true,
     page: Math.max(1, Math.floor(page)),
-    ...(method === 'search' ? { query } : {}),
-  })
+    ...(method === 'search' ? { query, ...(filters ? { filters } : {}) } : {}),
+  }, signal)
   return { list: response.list ?? [], hasNextPage: response.hasNextPage === true }
 }
 
 export async function detailJvmCatalogSource(
   sourceId: string,
   media: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   await requireJvmCatalogSource(sourceId)
   return jvmInvoke<Record<string, unknown>>('getDetail', {
     sourceId,
     isAnime: true,
     media,
+  }, signal)
+}
+
+export async function jvmCatalogSourceFilters(sourceId: string, signal?: AbortSignal): Promise<JvmSourceFilter[]> {
+  await requireJvmCatalogSource(sourceId)
+  return jvmInvoke<JvmSourceFilter[]>('getFilterList', { sourceId, isAnime: true }, signal)
+}
+
+export async function jvmCatalogSourcePreferences(sourceId: string, signal?: AbortSignal): Promise<JvmSourcePreference[]> {
+  await requireJvmCatalogSource(sourceId)
+  return jvmInvoke<JvmSourcePreference[]>('aniyomiGetPreferences', { sourceId, isAnime: true }, signal)
+}
+
+export async function saveJvmCatalogSourcePreference(
+  sourceId: string,
+  key: string,
+  value: unknown,
+): Promise<boolean> {
+  await requireJvmCatalogSource(sourceId)
+  return jvmInvoke<boolean>('aniyomiSavePreference', {
+    sourceId,
+    isAnime: true,
+    key,
+    action: 'change',
+    value,
   })
 }
 

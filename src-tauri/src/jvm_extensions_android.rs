@@ -10,9 +10,9 @@ use tauri_plugin_extplayer::{
 // Android cannot launch the desktop Java 17 process. The upstream runtime publishes a dedicated
 // Android host APK which is loaded inside Izumi's process through DexClassLoader. Pin both its
 // version and digest: executable code never runs merely because "latest" changed upstream.
-const RUNTIME_VERSION: &str = "2.0.0";
-const RUNTIME_URL: &str = "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/download/v2.0.0/anymex_runtime_host.apk";
-const RUNTIME_SHA256: &str = "b54cce2af8fda9e48cfa37d814362a41a85bde248b3519f9231410dc18b25f52";
+const RUNTIME_VERSION: &str = "2.3.0";
+const RUNTIME_URL: &str = "https://github.com/RyanYuuki/AnymeXExtensionRuntimeBridge/releases/download/v2.3.0/anymex_runtime_host.apk";
+const RUNTIME_SHA256: &str = "0c062265e3eca14f68597785dfd03e814229a5c5de961fc85f50220c7c0a252c";
 const MAX_RUNTIME_BYTES: usize = 20 * 1024 * 1024;
 
 fn digest(bytes: &[u8]) -> String {
@@ -192,8 +192,22 @@ pub async fn jvm_extension_sources(app: AppHandle) -> Result<Value, String> {
 pub async fn jvm_extension_call(
     app: AppHandle,
     method: String,
-    args: Value,
+    mut args: Value,
+    request_id: Option<String>,
 ) -> Result<Value, String> {
+    if let Some(request_id) = request_id {
+        if request_id.is_empty()
+            || request_id.len() > 128
+            || !request_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
+        {
+            return Err("Extension runtime request id is invalid".into());
+        }
+        args.as_object_mut()
+            .ok_or("Extension runtime arguments must be an object")?
+            .insert("requestId".into(), Value::String(request_id));
+    }
     let paths = runtime_request(&app).await?;
     let args_json = serde_json::to_string(&args).map_err(|error| error.to_string())?;
     let response = call_bridge(85, move || {
@@ -208,6 +222,25 @@ pub async fn jvm_extension_call(
     })
     .await?;
     parse_response(response)
+}
+
+#[tauri::command]
+pub async fn jvm_extension_cancel(app: AppHandle, request_id: String) -> Result<(), String> {
+    let paths = runtime_request(&app).await?;
+    let args_json = serde_json::to_string(&serde_json::json!({ "requestId": request_id }))
+        .map_err(|error| error.to_string())?;
+    call_bridge(10, move || {
+        app.extplayer()
+            .aniyomi_call(AniyomiCallRequest {
+                runtime_path: paths.runtime_path,
+                extensions_path: paths.extensions_path,
+                method: "cancel".into(),
+                args_json,
+            })
+            .map_err(|error| error.to_string())
+    })
+    .await?;
+    Ok(())
 }
 
 #[tauri::command]

@@ -480,6 +480,13 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                 @Suppress("UNCHECKED_CAST")
                 val values = jsonValue(JSONObject(args.argsJson)) as Map<String, Any?>
                 val context = activity.applicationContext
+                val requestId = values["requestId"]?.toString()
+                val parameters = requestId?.let { mapOf<String, Any?>("token" to it) }
+                if (args.method == "cancel") {
+                    val cancelled = requestId?.let { invokeAniyomi("cancelRequest", it) } ?: false
+                    if (settled.compareAndSet(false, true)) resolveJson(invoke, cancelled)
+                    return@Thread
+                }
                 val sourceId = values["sourceId"]?.toString()
                     ?: error("Aniyomi call has no sourceId")
                 val isAnime = values["isAnime"] as? Boolean ?: true
@@ -490,7 +497,7 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                         sourceId,
                         isAnime,
                         (values["page"] as? Number)?.toInt() ?: 1,
-                        null,
+                        parameters,
                     )
                     "getLatestUpdates" -> invokeAniyomi(
                         "aniyomiGetLatestUpdates",
@@ -498,7 +505,7 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                         sourceId,
                         isAnime,
                         (values["page"] as? Number)?.toInt() ?: 1,
-                        null,
+                        parameters,
                     )
                     "search" -> invokeAniyomi(
                         "aniyomiSearch",
@@ -507,7 +514,8 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                         isAnime,
                         values["query"]?.toString() ?: "",
                         (values["page"] as? Number)?.toInt() ?: 1,
-                        null,
+                        values["filters"] as? List<*>,
+                        parameters,
                     )
                     "getDetail" -> invokeAniyomi(
                         "aniyomiGetDetail",
@@ -515,7 +523,7 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                         sourceId,
                         isAnime,
                         values["media"] as? Map<*, *> ?: emptyMap<String, Any?>(),
-                        null,
+                        parameters,
                     )
                     "getVideoList" -> invokeAniyomi(
                         "aniyomiGetVideoList",
@@ -523,7 +531,27 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                         sourceId,
                         isAnime,
                         values["episode"] as? Map<*, *> ?: emptyMap<String, Any?>(),
-                        null,
+                        parameters,
+                    )
+                    "getFilterList" -> invokeAniyomi(
+                        "aniyomiGetFilterList",
+                        context,
+                        sourceId,
+                        isAnime,
+                    )
+                    "aniyomiGetPreferences" -> invokeAniyomi(
+                        "aniyomiGetPreference",
+                        context,
+                        sourceId,
+                        isAnime,
+                    )
+                    "aniyomiSavePreference" -> invokeAniyomi(
+                        "aniyomiSavePreference",
+                        context,
+                        sourceId,
+                        values["key"]?.toString() ?: "",
+                        values["action"]?.toString() ?: "change",
+                        values["value"],
                     )
                     else -> error("Unsupported Aniyomi method: ${args.method}")
                 }

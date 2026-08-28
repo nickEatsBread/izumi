@@ -30,6 +30,7 @@ const CONSCRYPT_URL: &str = "https://repo1.maven.org/maven2/org/conscrypt/conscr
 const CONSCRYPT_SHA256: &str = "f8a8f5020c66abc53a3d33cbc855ef8fc06187fa652fb3c0eda6c94e4335b2e9";
 const MAX_EXTENSION_APK_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_EXTENSION_ICON_BYTES: u64 = 512 * 1024;
+const MAX_CONVERTED_JAR_BYTES: u64 = 128 * 1024 * 1024;
 
 #[path = "jvm_runtime_args.rs"]
 mod jvm_runtime_args;
@@ -84,7 +85,25 @@ struct Process {
 
 impl Process {
     async fn request(&self, method: &str, args: Value) -> Result<Value, String> {
-        let id = self.sequence.fetch_add(1, Ordering::Relaxed).to_string();
+        self.request_with_id(method, args, None).await
+    }
+
+    async fn request_with_id(
+        &self,
+        method: &str,
+        args: Value,
+        request_id: Option<String>,
+    ) -> Result<Value, String> {
+        let id =
+            request_id.unwrap_or_else(|| self.sequence.fetch_add(1, Ordering::Relaxed).to_string());
+        if id.is_empty()
+            || id.len() > 128
+            || !id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
+        {
+            return Err("Extension runtime request id is invalid".into());
+        }
         let started = Instant::now();
         self.logger.emit(
             "aniyomi-jvm",
@@ -92,7 +111,12 @@ impl Process {
             &format!("request {id} started: {method}"),
         );
         let (sender, receiver) = oneshot::channel();
-        self.pending.lock().await.insert(id.clone(), sender);
+        let mut pending = self.pending.lock().await;
+        if pending.contains_key(&id) {
+            return Err("Extension runtime request id is already active".into());
+        }
+        pending.insert(id.clone(), sender);
+        drop(pending);
         let request = json!({ "id": id, "method": method, "args": args });
         {
             let mut stdin = self.stdin.lock().await;
@@ -114,6 +138,7 @@ impl Process {
             Ok(Err(_)) => Err("Extension runtime stopped before replying".into()),
             Err(_) => {
                 self.pending.lock().await.remove(&id);
+                let _ = self.cancel(&id).await;
                 Err(format!("Extension runtime request timed out: {method}"))
             }
         };
@@ -131,6 +156,25 @@ impl Process {
             ),
         );
         result
+    }
+
+    async fn cancel(&self, request_id: &str) -> Result<(), String> {
+        let request = json!({
+            "id": format!("cancel-{}", self.sequence.fetch_add(1, Ordering::Relaxed)),
+            "method": "cancel",
+            "args": { "id": request_id },
+        });
+        let mut stdin = self.stdin.lock().await;
+        stdin
+            .write_all(format!("{request}\n").as_bytes())
+            .await
+            .map_err(|error| format!("Extension runtime cancellation failed: {error}"))?;
+        stdin
+            .flush()
+            .await
+            .map_err(|error| format!("Extension runtime cancellation failed: {error}"))?;
+        self.pending.lock().await.remove(request_id);
+        Ok(())
     }
 }
 
@@ -865,6 +909,126 @@ async fn start_process(
     }))
 }
 
+/// The upstream converter embedded in runtime 2.3 extracts only `classes.dex` before invoking
+/// dex2jar. Invoke dex2jar's own APK-aware CLI for multidex extensions instead; its
+/// `MultiDexFileReader` consumes every `classesN.dex`. The verified APK is recovered from the
+/// signed package, and extension_package adds its classpath assets to the generated JAR.
+async fn ensure_multidex_extensions(
+    app: &AppHandle,
+    java: &Path,
+    runtime: &Path,
+) -> Result<(), String> {
+    let app_for_read = app.clone();
+    let packages = tauri::async_runtime::spawn_blocking(move || {
+        crate::extension_package::aniyomi_multidex_packages(&app_for_read)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    if packages.is_empty() {
+        return Ok(());
+    }
+
+    let work_dir = data_dir(app)?
+        .join("extensions")
+        .join("runtime")
+        .join("conversion");
+    tokio::fs::create_dir_all(&work_dir)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    for (id, apk, apk_digest) in packages {
+        if !safe_package_id(&id) {
+            return Err("Aniyomi extension id is unsafe".into());
+        }
+        let marker = extension_dir(app)?.join(format!("{id}.multidex.sha256"));
+        let installed_jar = extension_dir(app)?.join(format!("{id}.jar"));
+        if installed_jar.is_file()
+            && tokio::fs::read_to_string(&marker)
+                .await
+                .is_ok_and(|value| value.trim() == apk_digest)
+        {
+            continue;
+        }
+
+        let apk_path = work_dir.join(format!("{id}.apk"));
+        let converted_path = work_dir.join(format!("{id}.converted.jar"));
+        tokio::fs::write(&apk_path, &apk)
+            .await
+            .map_err(|error| error.to_string())?;
+        if converted_path.exists() {
+            tokio::fs::remove_file(&converted_path)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+
+        let mut command = Command::new(java);
+        command
+            .arg("-cp")
+            .arg(runtime)
+            .arg("com.googlecode.dex2jar.tools.Dex2jarCmd")
+            .arg("--force")
+            .arg("--dont-sanitize-names")
+            .arg("--output")
+            .arg(&converted_path)
+            .arg(&apk_path)
+            .current_dir(&work_dir)
+            .kill_on_drop(true);
+        hide_console(&mut command);
+        let output = timeout(Duration::from_secs(180), command.output())
+            .await
+            .map_err(|_| format!("Converting multidex Aniyomi extension {id} timed out"))?
+            .map_err(|error| {
+                format!("Could not convert multidex Aniyomi extension {id}: {error}")
+            })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "Could not convert multidex Aniyomi extension {id}: {}",
+                stderr.trim()
+            ));
+        }
+        let metadata = tokio::fs::metadata(&converted_path)
+            .await
+            .map_err(|error| error.to_string())?;
+        if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_CONVERTED_JAR_BYTES {
+            return Err(format!(
+                "Converted Aniyomi extension {id} is invalid or too large"
+            ));
+        }
+        let converted = tokio::fs::read(&converted_path)
+            .await
+            .map_err(|error| error.to_string())?;
+        let app_for_store = app.clone();
+        let store_id = id.clone();
+        let store_apk = apk.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::extension_package::store_converted_aniyomi_jar(
+                &app_for_store,
+                &store_id,
+                &converted,
+                &store_apk,
+            )
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+        let marker_temporary = marker.with_extension("sha256.part");
+        tokio::fs::write(&marker_temporary, format!("{apk_digest}\n"))
+            .await
+            .map_err(|error| error.to_string())?;
+        if marker.exists() {
+            tokio::fs::remove_file(&marker)
+                .await
+                .map_err(|error| error.to_string())?;
+        }
+        tokio::fs::rename(marker_temporary, marker)
+            .await
+            .map_err(|error| error.to_string())?;
+        let _ = tokio::fs::remove_file(apk_path).await;
+        let _ = tokio::fs::remove_file(converted_path).await;
+    }
+    Ok(())
+}
+
 fn runtime_jvm_args(
     os: &str,
     tls_provider_jar: Option<&Path>,
@@ -914,6 +1078,7 @@ impl Runtime {
         }
         let runtime = ensure_runtime_file(app).await?;
         let java = java_command(app).await?;
+        ensure_multidex_extensions(app, &java, &runtime).await?;
         let tls_provider = if cfg!(target_os = "macos") {
             match ensure_macos_tls_provider(app).await {
                 Ok(path) => Some(path),
@@ -999,12 +1164,26 @@ pub async fn jvm_extension_call(
     app: AppHandle,
     method: String,
     args: Value,
+    request_id: Option<String>,
     runtime: tauri::State<'_, Runtime>,
 ) -> Result<Value, String> {
     runtime
         .ensure_started(&app)
         .await?
-        .request(&method, args)
+        .request_with_id(&method, args, request_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn jvm_extension_cancel(
+    app: AppHandle,
+    request_id: String,
+    runtime: tauri::State<'_, Runtime>,
+) -> Result<(), String> {
+    runtime
+        .ensure_started(&app)
+        .await?
+        .cancel(&request_id)
         .await
 }
 
