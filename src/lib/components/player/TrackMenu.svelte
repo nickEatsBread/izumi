@@ -3,9 +3,9 @@
   import { invoke } from '@tauri-apps/api/core'
   import { playerTracks } from '$lib/player/native'
   import { listenSafe } from '$lib/util/listen'
-  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, bumpPlayerOverlay } from '$lib/player/session'
+  import { trackMenuOpen, onlineSubCandidates, subtitleNotice, playerNotice, nowPlayingMedia, nowPlayingStream, bingeSource, bumpPlayerOverlay, playbackRecovery } from '$lib/player/session'
   import { get } from 'svelte/store'
-  import { searchOnlineSubtitles } from '$lib/stremio/play'
+  import { playStream, searchOnlineSubtitles } from '$lib/stremio/play'
   import { openSubtitlesToken } from '$lib/settings/ui'
   import { providerBadge, candidateTitle, candidateKey, isCandidateLoaded, subtitleErrorNotice, candidateApiKey, candidateDownloadUrl } from './online-subs'
   import type { SubtitleCandidate } from '$lib/stremio/subtitles/types'
@@ -13,14 +13,21 @@
   import { deckKeyboardWarning } from '$lib/deck/keyboard-warning'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
   import Check from '@lucide/svelte/icons/check'
+  import Captions from '@lucide/svelte/icons/captions'
+  import ServerIcon from '@lucide/svelte/icons/server'
+  import Volume2 from '@lucide/svelte/icons/volume-2'
+  import Brush from '@lucide/svelte/icons/brush'
+  import Search from '@lucide/svelte/icons/search'
   import { captureFromExtradata } from '$lib/player/ass-style-capture'
   import { savedSubtitleStyles, sessionSubtitleStyle, saveSubtitlePreset, subtitlePresetSourceName, type SubtitleStylePreset } from '$lib/settings/subtitle-presets'
+  import { serverSiblings, variantLabels } from '$lib/player/source-variants'
+  import type { Stream } from '$lib/stremio/addon'
 
-  // Game-mode (Deck) audio/subtitle picker: a controller-navigable CASCADING column menu.
+  // Game-mode (Deck) audio/subtitle/server picker: a controller-navigable CASCADING column menu.
   // Opens on the ☰ (start) button; d-pad up/down moves within a column, →/A descends into the
   // track list, ←/B goes back a level (or closes at the root), ☰ closes. Items are also
   // clickable for touch. mpv is the source (player_tracks) + sink (`set aid`/`set sid`).
-  let { cmd }: { cmd: (name: string, args?: string[]) => void } = $props()
+  let { cmd, pos = 0 }: { cmd: (name: string, args?: string[]) => void; pos?: number } = $props()
 
   type Track = {
     id: number; type: string; title?: string; lang?: string; selected?: boolean
@@ -31,6 +38,13 @@
   const audios = $derived(tracks.filter((t) => t.type === 'audio'))
   const subs = $derived(tracks.filter((t) => t.type === 'sub'))
   const captions = $derived(tracks.filter((t) => t.type === 'caption'))
+
+  // Server variants belong beside tracks: one media-options menu, with the playing server checked
+  // and sibling mirrors selectable without returning to the source picker.
+  const currentStream = $derived($playbackRecovery?.current ?? null)
+  const altServers = $derived(currentStream ? serverSiblings(currentStream, $playbackRecovery?.streams ?? []) : [])
+  const serverMenuLabels = $derived(variantLabels(currentStream ? [currentStream, ...altServers] : []))
+  let swapping = $state(false)
 
   // Online subtitle candidates (searched on play) + the titles of the currently-selected sub
   // tracks, so a candidate shows its Check once its downloaded track is live and selected.
@@ -53,10 +67,12 @@
     | { kind: 'style-default'; label: string; selected: boolean }
     | { kind: 'style-preset'; label: string; selected: boolean; preset: SubtitleStylePreset }
     | { kind: 'style-save'; label: string; selected: false }
+    | { kind: 'server'; label: string; selected: boolean; target: Stream }
   // Only surface a category that has tracks; Online shows when candidates were found on play.
   const roots = $derived([
     ...(audios.length ? [{ key: 'audio' as const, label: 'Audio' }] : []),
     ...(subs.length ? [{ key: 'subs' as const, label: 'Subtitles' }] : []),
+    ...(altServers.length ? [{ key: 'server' as const, label: 'Server' }] : []),
     ...(captions.length ? [{ key: 'captions' as const, label: 'Closed captions' }] : []),
     ...(onlineItems.length ? [{ key: 'online' as const, label: 'Online subtitles' }] : []),
     { key: 'style' as const, label: 'Subtitle style' },
@@ -69,6 +85,12 @@
       { kind: 'sid' as const, id: -1, label: 'Off', selected: !subs.some((s) => s.selected) },
       ...subs.map((t) => ({ kind: 'sid' as const, id: t.id, label: label(t, subs), selected: !!t.selected })),
     ]
+    if (key === 'server' && currentStream) return [currentStream, ...altServers].map((target, index) => ({
+      kind: 'server' as const,
+      label: serverMenuLabels[index] ?? `Server ${index + 1}`,
+      selected: index === 0,
+      target,
+    }))
     if (key === 'captions') return [
       { kind: 'ccid' as const, id: -1, label: 'Off', selected: !captions.some((s) => s.selected) },
       ...captions.map((t) => ({ kind: 'ccid' as const, id: t.id, label: label(t, captions), selected: !!t.selected })),
@@ -92,7 +114,8 @@
   // Stable {#each} key across the union (online/search leaves have no track id).
   const leafKey = (it: Leaf) => it.kind === 'online' ? candidateKey(it.candidate)
     : it.kind === 'style-preset' ? `style-${it.preset.id}`
-      : it.kind === 'aid' || it.kind === 'sid' || it.kind === 'ccid' ? `${it.kind}${it.id}` : it.kind
+      : it.kind === 'server' ? `server-${it.target.url ?? it.label}`
+        : it.kind === 'aid' || it.kind === 'sid' || it.kind === 'ccid' ? `${it.kind}${it.id}` : it.kind
 
   let open = $state(false)
   let level = $state(0) // 0 = category column, 1 = track column
@@ -182,11 +205,24 @@
     playerNotice.set(`Saved and applied subtitle style “${preset.name}”`)
     closeMenu()
   }
+  async function swapTo(target: Stream) {
+    const context = get(nowPlayingMedia)
+    if (!context || swapping || target.url === currentStream?.url) return
+    swapping = true
+    closeMenu()
+    const startSeconds = pos
+    await playStream(context.media, context.episode, target, (state) => {
+      if (state.status === 'error') playerNotice.set(state.message ?? 'Could not switch source.')
+      if (state.status !== 'resolving') swapping = false
+    }, { autoplay: true, startSeconds })
+    swapping = false
+  }
   async function apply(leaf: Leaf) {
     // "Search again" re-runs the aggregator; an online candidate downloads + live-loads. Both keep
     // the menu open so the updated list/Check stays visible (only track picks close the menu).
     if (leaf.kind === 'search') { void searchOnlineSubtitles(); return }
     if (leaf.kind === 'online') { void addOnlineSub(leaf.candidate); return }
+    if (leaf.kind === 'server') { await swapTo(leaf.target); return }
     if (leaf.kind === 'style-save') { await saveCurrentStyle(); return }
     if (leaf.kind === 'style-default') {
       sessionSubtitleStyle.set(null)
@@ -280,6 +316,14 @@
             onpointerenter={() => { if (level === 0 && pointerAllowed()) rootIdx = i }}
             onclick={() => { if (level === 0) { rootIdx = i; descend() } }}
           >
+            <span class="grid w-10 shrink-0 place-items-center">
+              {#if r.key === 'audio'}<Volume2 size={30} />
+              {:else if r.key === 'subs'}<Captions size={30} />
+              {:else if r.key === 'server'}<ServerIcon size={30} />
+              {:else if r.key === 'captions'}<Captions size={30} />
+              {:else if r.key === 'online'}<Search size={30} />
+              {:else}<Brush size={30} />{/if}
+            </span>
             <span>{r.label}</span>
             <ChevronRight size={36} class="ml-auto" />
           </button>

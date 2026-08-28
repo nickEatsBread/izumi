@@ -1111,28 +1111,8 @@ fn control_icon_ass(
                 &a,
             ),
         );
-    } else if label == "subtitle and audio tracks" {
-        // Lucide Languages: this communicates the combined audio/subtitle picker without the
-        // anonymous empty rectangle users mistook for a broken subtitle icon.
-        let u = size / 24.0;
-        let stroke = 2.0 * u;
-        let point = |x: f64, y: f64| (cx + (x - 12.0) * u, cy + (y - 12.0) * u);
-        for (x0, y0, x1, y1) in [
-            (5.0, 8.0, 11.0, 14.0),
-            (4.0, 14.0, 10.0, 8.0),
-            (10.0, 8.0, 12.0, 5.0),
-            (2.0, 5.0, 14.0, 5.0),
-            (7.0, 2.0, 8.0, 2.0),
-            (22.0, 22.0, 17.0, 12.0),
-            (17.0, 12.0, 12.0, 22.0),
-            (14.0, 18.0, 20.0, 18.0),
-        ] {
-            let (x0, y0) = point(x0, y0);
-            let (x1, y1) = point(x1, y1);
-            push(lines, round_line(x0, y0, x1, y1, stroke, color, &a));
-        }
     } else if label.contains("subtitle") || label.contains("track") {
-        // Lucide Captions for the optional previous/replay/next subtitle-line controls. Use a
+        // Lucide Captions for the combined media menu and optional subtitle-line controls. Use a
         // stroke polyline so libass cannot collapse its hollow frame into a filled rectangle.
         let u = size / 24.0;
         let stroke = 2.0 * u;

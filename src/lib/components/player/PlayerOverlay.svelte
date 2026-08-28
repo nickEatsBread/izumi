@@ -1567,10 +1567,10 @@
     </div>
   {/if}
 
-  <!-- Game mode: the ☰-button controller track menu (audio/subtitles). Mounted whenever in
+  <!-- Game mode: the ☰-button media menu (audio/subtitles/server). Mounted whenever in
        Game mode so it can catch the ☰ press; it renders its own overlay only while open. -->
   {#if gmMode}
-    <TrackMenu {cmd} />
+    <TrackMenu {cmd} {pos} />
   {/if}
 
   <!-- Discussion panel: self-gates on `commentsOpen`. Keyed on the playing episode. -->

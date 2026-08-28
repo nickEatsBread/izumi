@@ -25,3 +25,27 @@ describe('Steam Deck subtitle style menu', () => {
     expect(controls).toContain('Apply {preset.name}')
   })
 })
+
+describe('Unified player media menu', () => {
+  it('uses the captions control and removes the standalone server button', () => {
+    expect(controls).toContain('aria-label="Audio, subtitles and server"><Captions')
+    expect(controls).not.toContain('aria-label="Switch server"')
+    expect(controls).not.toContain('showServers')
+  })
+
+  it('shows labelled Audio, Subtitles, and Server roots with distinct icons', () => {
+    expect(controls).toContain("openDetail('audio')")
+    expect(controls).toContain('<Volume2 size={18}')
+    expect(controls).toContain("openDetail('subs')")
+    expect(controls).toContain('<Captions size={18}')
+    expect(controls).toContain("openDetail('server')")
+    expect(controls).toContain('<ServerIcon size={18}')
+  })
+
+  it('offers the current server and alternatives in the controller menu', () => {
+    expect(src).toContain("{ key: 'server' as const, label: 'Server' }")
+    expect(src).toContain("kind: 'server' as const")
+    expect(src).toContain('serverMenuLabels')
+    expect(src).toContain('await playStream(')
+  })
+})

@@ -24,7 +24,7 @@
   import Languages from '@lucide/svelte/icons/languages'
   import Search from '@lucide/svelte/icons/search'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
-  import ArrowRightLeft from '@lucide/svelte/icons/arrow-right-left'
+  import ServerIcon from '@lucide/svelte/icons/server'
   import PictureInPicture from '@lucide/svelte/icons/picture-in-picture-2'
   import { get } from 'svelte/store'
   import { fullscreen, toggleFullscreen, togglePictureInPicture, nowPlaying, nowPlayingUrl, nowPlayingStream, playerNotice, playerMenuOpen, playerSideSheetOpen, nowPlayingMedia, commentsOpen, subtitleNotice, onlineSubCandidates, torrentSubtitleState, nextEpisodeReady, playerStatsOpen, playerSleep, playerAbLoop, gifRecordingStart, playbackRecovery, bumpPlayerOverlay } from '$lib/player/session'
@@ -99,7 +99,6 @@
     commentsOpen.set(opening)
     showOptions = false
     showTracks = false
-    showServers = false
   }
 
   // Game mode (Deck) scales the controls up for a touchscreen at arm's length: bigger
@@ -174,7 +173,6 @@
   function toggleOptions() {
     showOptions = !showOptions
     showTracks = false
-    showServers = false
     gmSettingsPage = 'root'
     gmSetIdx = 0
     bumpPlayerOverlay()
@@ -186,7 +184,6 @@
   function closePlayerMenus() {
     showOptions = false
     showTracks = false
-    showServers = false
     gmSettingsPage = 'root'
     gmSetIdx = 0
   }
@@ -302,16 +299,16 @@
   const currentStream = $derived(recovery?.current ?? null)
   const variantPool = $derived(recovery?.streams ?? [])
   const altServers = $derived(currentStream ? serverSiblings(currentStream, variantPool) : [])
-  // Labelled as a SET: two unnamed mirrors of one site can reduce to the same text, and a menu of
-  // identical rows gives no basis to choose.
-  const altServerLabels = $derived(variantLabels(altServers))
-  let showServers = $state(false)
+  // Labelled as one set, including the playing row, so unnamed mirrors receive stable suffixes and
+  // the Server detail page can show an unambiguous checked current selection.
+  const serverMenuLabels = $derived(variantLabels(currentStream ? [currentStream, ...altServers] : []))
   let swapping = $state(false)
   async function swapTo(target: Stream) {
     const ctx = get(nowPlayingMedia)
     if (!ctx || swapping) return
     swapping = true
-    showServers = false
+    showTracks = false
+    menuLevel = 'root'
     const startSeconds = pos // position at CLICK time, not a stale derived
     await playStream(ctx.media, ctx.episode, target, (s) => {
       if (s.status === 'error') playerNotice.set(s.message ?? 'Could not switch source.')
@@ -522,7 +519,7 @@
   // category's list) with a Miller-column slide. `menuLevel`/`detailCat` drive the slide;
   // `rootH`/`detailH` are the measured column heights so the panel morphs to fit.
   let menuLevel = $state<'root' | 'detail'>('root')
-  let detailCat = $state<'audio' | 'subs' | 'captions' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters'>('audio')
+  let detailCat = $state<'audio' | 'subs' | 'server' | 'captions' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters'>('audio')
 
   // Subtitle style presets: capture the active ASS track's fonting (mpv sub-ass-extradata) and
   // save it under the release group's name; picking a saved preset overrides styling for THIS
@@ -592,7 +589,6 @@
   }
   async function loadTracks() {
     showOptions = false
-    showServers = false
     if (gm) {
       window.dispatchEvent(new Event('gm-open-tracks'))
       return
@@ -635,7 +631,7 @@
   // `curLabel` is what shows on the collapsed root row for each category (the active
   // track, or "Off"). `pickLeaf` sets the track then slides back to the root.
   const detailItems = $derived(detailCat === 'audio' ? audios : detailCat === 'captions' ? captions : subs)
-  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'captions' ? 'Closed captions' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : detailCat === 'chapters' ? 'Chapters' : 'Subtitles')
+  const detailTitle = $derived(detailCat === 'audio' ? 'Audio' : detailCat === 'server' ? 'Server' : detailCat === 'captions' ? 'Closed captions' : detailCat === 'secondary' ? 'Secondary subtitles' : detailCat === 'dev' ? 'Dev tools' : detailCat === 'online' ? 'Online subtitles' : detailCat === 'style' ? 'Subtitle style' : detailCat === 'chapters' ? 'Chapters' : 'Subtitles')
   // Controls unmounts entirely when the bar is hidden (PlayerOverlay only mounts it while its
   // `controlsVisible` is true), so this only runs while the bar is actually on screen — one lookup
   // shared by the track-menu highlight below and the overlay label further down.
@@ -665,11 +661,12 @@
       : curLabel(subs),
   )
   const curCaptionLabel = $derived(curLabel(captions))
+  const curServerLabel = $derived(serverMenuLabels[0] ?? 'Current server')
   const curSecondaryLabel = $derived.by(() => {
     const track = subs.find((item) => String(item.id) === secondaryId)
     return track ? label(track, subs) : 'Off'
   })
-  function openDetail(cat: 'audio' | 'subs' | 'captions' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters') {
+  function openDetail(cat: 'audio' | 'subs' | 'server' | 'captions' | 'secondary' | 'dev' | 'online' | 'style' | 'chapters') {
     detailCat = cat
     menuLevel = 'detail'
   }
@@ -724,8 +721,8 @@
   // Keep Controls mounted (and the overlay full-viewport) while a popover is open. Reset on
   // unmount so the flag cannot stick true after the player closes.
   $effect(() => {
-    playerMenuOpen.set(showOptions || showTracks || showServers)
-    playerSideSheetOpen.set(native && (showOptions || showTracks || showServers))
+    playerMenuOpen.set(showOptions || showTracks)
+    playerSideSheetOpen.set(native && (showOptions || showTracks))
   })
 </script>
 
@@ -932,30 +929,10 @@
           <MessageSquare size={icSize} class={$commentsOpen ? 'text-theme' : ''} />
         </button>
 
-        <!-- Alternate servers/qualities for the current source (same site, same flavour). -->
-        {#if altServers.length}
-          <div class="relative">
-            <button data-focusable class={iconBtn} onclick={() => { showServers = !showServers; showOptions = false; showTracks = false }} aria-label="Switch server"><ArrowRightLeft size={icSize} /></button>
-            {#if showServers}
-              <!-- Same popover rules as the options menu: no backdrop-blur; Desktop promotes its
-                   own layer, Game mode must stay on the base layer to snapshot crisply. -->
-              <div data-gm-side-sheet={gm ? '' : undefined} class="{gm
-                ? 'gm-sheet gm-sheet-in fixed right-5 top-[18%] z-30 w-[22rem] max-h-[70vh] overflow-y-auto rounded-3xl border border-white/10 bg-[#1a1a1a] p-3 text-sm text-white shadow-2xl'
-                : 'absolute bottom-full right-0 mb-2 max-h-72 w-56 overflow-y-auto rounded-lg bg-neutral-900 p-2 text-sm text-white shadow-xl [transform:translateZ(0)] [will-change:transform]'}">
-                <p class="px-2 py-1 text-xs uppercase tracking-wide text-white/50">Servers</p>
-                {#each altServers as alt, i (alt.url)}
-                  <button data-focusable disabled={swapping} class="block w-full rounded px-2 py-1 text-left transition hover:bg-white/15 disabled:opacity-40" onclick={() => swapTo(alt)}>
-                    {altServerLabels[i]}
-                  </button>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/if}
-
-        <!-- Subtitle / audio track menu -->
+        <!-- Audio, subtitle and server menu. Server selection lives here so the control strip has
+             one predictable media-options entry point rather than a second, unlabeled arrows icon. -->
         <div class="relative">
-          <button data-focusable class={iconBtn} onclick={loadTracks} aria-label="Subtitle and audio tracks"><Languages size={icSize} /></button>
+          <button data-focusable class={iconBtn} onclick={loadTracks} aria-label="Audio, subtitles and server"><Captions size={icSize} /></button>
           {#if showTracks}
             {#if gm}
               <!-- Game mode keeps the flat, tap-friendly list (the ☰ TrackMenu is the primary
@@ -1012,22 +989,34 @@
               <div class="absolute bottom-full right-0 mb-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900 text-sm text-white shadow-2xl [transform:translateZ(0)] [will-change:transform]">
                 <div class="overflow-hidden transition-[height] duration-200 ease-out" style="height:{menuLevel === 'root' ? rootH : detailH}px">
                   <div class="flex w-[200%] [transition:transform_200ms_cubic-bezier(.25,1,.5,1)]" style="transform:translateX({menuLevel === 'root' ? '0' : '-50%'})">
-                    <!-- ROOT: the two categories -->
+                    <!-- ROOT: media track and source categories -->
                     <div class="w-1/2 p-2" bind:clientHeight={rootH}>
                       <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('audio')}>
-                        <span class="min-w-0">
+                        <Volume2 size={18} class="shrink-0 text-white/55" />
+                        <span class="min-w-0 flex-1">
                           <span class="block text-xs uppercase tracking-wide text-white/45">Audio</span>
                           <span class="block truncate">{curAudioLabel}</span>
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
                       <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('subs')}>
-                        <span class="min-w-0">
+                        <Captions size={18} class="shrink-0 text-white/55" />
+                        <span class="min-w-0 flex-1">
                           <span class="block text-xs uppercase tracking-wide text-white/45">Subtitles</span>
                           <span class="block truncate">{curSubLabel}</span>
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
+                      {#if altServers.length}
+                        <button data-focusable disabled={swapping} class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10 disabled:opacity-40" onclick={() => openDetail('server')}>
+                          <ServerIcon size={18} class="shrink-0 text-white/55" />
+                          <span class="min-w-0 flex-1">
+                            <span class="block text-xs uppercase tracking-wide text-white/45">Server</span>
+                            <span class="block truncate">{curServerLabel}</span>
+                          </span>
+                          <ChevronRight size={18} class="shrink-0 text-white/40" />
+                        </button>
+                      {/if}
                       {#if captions.length}
                         <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('captions')}>
                           <span class="min-w-0">
@@ -1178,6 +1167,20 @@
                                 <span class="block truncate text-xs text-white/45">{p.style.font}</span>
                               </span>
                               {#if $sessionSubtitleStyle?.id === p.id}<Check size={18} class="shrink-0 text-primary" />{/if}
+                            </button>
+                          {/each}
+                        </div>
+                      {:else if detailCat === 'server'}
+                        <div class="max-h-64 overflow-y-auto">
+                          {#if currentStream}
+                            <button data-focusable disabled class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left opacity-80">
+                              <span class="truncate">{serverMenuLabels[0]}</span>
+                              <Check size={18} class="shrink-0 text-primary" />
+                            </button>
+                          {/if}
+                          {#each altServers as alt, i (alt.url)}
+                            <button data-focusable disabled={swapping} class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/10 disabled:opacity-40" onclick={() => swapTo(alt)}>
+                              <span class="truncate">{serverMenuLabels[i + 1]}</span>
                             </button>
                           {/each}
                         </div>
