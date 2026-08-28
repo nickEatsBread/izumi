@@ -13,7 +13,7 @@
   import { get } from 'svelte/store'
   import { gameMode, playing } from '$lib/player/session'
   import { androidMpvActive } from '$lib/player/android-mpv'
-  import { airingCountdown } from '$lib/anime/airing-labels'
+  import { airingCountdown, airingCountdownAccessible } from '$lib/anime/airing-labels'
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
   import { untrack } from 'svelte'
 
@@ -233,6 +233,11 @@
       ? `Episode ${nextAiring.episode} in ${airingCountdown(nextAiringAt, clock)}`
       : '',
   )
+  const nextAiringAccessibleLabel = $derived(
+    nextAiring?.episode && nextAiringAt
+      ? `Episode ${nextAiring.episode} airs in ${airingCountdownAccessible(nextAiringAt, clock)}`
+      : '',
+  )
   const productionLabel = $derived(current?.studios?.nodes?.[0]?.name || season(current))
   const scoreColor = (s?: number) =>
     s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
@@ -290,8 +295,8 @@
         {#if nextAiringLabel || current.genres?.length}
           <div class="flex flex-wrap items-center gap-1.5">
             {#if nextAiringLabel}
-              <span class="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/55 px-2.5 py-1 text-[0.7rem] font-black text-white shadow-lg backdrop-blur">
-                <Clock3 size={12} />{nextAiringLabel}
+              <span aria-label={nextAiringAccessibleLabel} class="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/55 px-2.5 py-1 text-[0.7rem] font-black tabular-nums text-white shadow-lg backdrop-blur">
+                <Clock3 size={12} aria-hidden="true" />{nextAiringLabel}
               </span>
             {/if}
             {#each current.genres?.slice(0, 3) ?? [] as g (g)}
@@ -404,8 +409,8 @@
           {#if nextAiringLabel || current.genres?.length}
             <div class="mt-3 flex flex-wrap items-center gap-2">
               {#if nextAiringLabel}
-                <span class="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/50 px-3 py-1.5 text-xs font-black text-white shadow-lg backdrop-blur">
-                  <Clock3 size={14} />{nextAiringLabel}
+                <span aria-label={nextAiringAccessibleLabel} class="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-black/50 px-3 py-1.5 text-xs font-black tabular-nums text-white shadow-lg backdrop-blur">
+                  <Clock3 size={14} aria-hidden="true" />{nextAiringLabel}
                 </span>
               {/if}
               {#each current.genres?.slice(0, 3) ?? [] as g}

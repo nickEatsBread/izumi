@@ -8,6 +8,9 @@ describe('featured carousel UX', () => {
   it('shows a live next-episode countdown', () => {
     expect(hero).toContain('setInterval(() => (clock = Date.now()), 1_000)')
     expect(hero).toContain('`Episode ${nextAiring.episode} in ${airingCountdown(nextAiringAt, clock)}`')
+    expect(hero).toContain('`Episode ${nextAiring.episode} airs in ${airingCountdownAccessible(nextAiringAt, clock)}`')
+    expect(hero.match(/aria-label=\{nextAiringAccessibleLabel\}/g)?.length).toBe(2)
+    expect(hero.match(/font-black tabular-nums/g)?.length).toBe(2)
   })
 
   it('combines airing context and genres beneath a compact discovery-facts row', () => {
