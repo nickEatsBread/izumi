@@ -92,6 +92,14 @@ describe('multi-platform catalog entry points', () => {
     expect(detail).toContain('aria-label="Source information"')
   })
 
+  it('gives the cover meaningful desktop presence without squeezing the text column', () => {
+    const detail = read('./CatalogMediaDetail.svelte')
+    expect(detail).toContain('max-w-6xl items-end gap-8')
+    expect(detail).toContain('md:w-48 lg:w-56 xl:w-64')
+    expect(detail).toContain('class="min-w-0 flex-1"')
+    expect(detail).not.toContain('aspect-[2/3] w-40 rounded-lg')
+  })
+
   it('carries merged JVM source attribution from search into the series page', () => {
     const detail = read('./CatalogMediaDetail.svelte')
     expect(detail).not.toContain("provider === 'jvm' ? 'JVM source'")

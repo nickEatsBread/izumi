@@ -94,9 +94,9 @@
       <div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/35"></div>
       <button data-focusable onclick={() => history.length > 1 ? history.back() : goto('/app/home')} aria-label="Back"
         class="absolute left-4 top-10 z-10 grid size-10 place-items-center rounded-full bg-black/55 text-white backdrop-blur sm:left-8"><ChevronLeft size={22} /></button>
-      <div class="relative flex min-h-[52vh] max-w-4xl items-end gap-5 px-5 pb-8 pt-24 sm:px-8">
-        <img src={cover(media)} alt="" class="hidden aspect-[2/3] w-40 rounded-lg bg-muted object-cover shadow-2xl sm:block" />
-        <div class="min-w-0">
+      <div class="relative flex min-h-[52vh] max-w-6xl items-end gap-8 px-5 pb-8 pt-24 sm:px-8">
+        <img src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
+        <div class="min-w-0 flex-1">
           {#if provider !== 'tmdb' && provider !== 'jvm'}
             <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">{provider === 'kitsu' ? 'Kitsu' : 'Stremio metadata'}</div>
           {/if}
