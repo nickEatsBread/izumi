@@ -3,34 +3,46 @@
   import { page } from '$app/state'
   import { replaceState } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
+  import TmdbAdvancedFilters from './TmdbAdvancedFilters.svelte'
   import { catalogProvider } from '$lib/settings/catalog'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import type { CatalogContentType } from '$lib/catalog/identity'
   import { mediaKey } from '$lib/catalog/identity'
+  import type { CatalogAdvancedSearchFilters, CatalogSearchOptions } from '$lib/catalog/types'
   import type { Media } from '$lib/anilist/types'
 
-  type CatalogSort = 'popular' | 'rating' | 'recent' | 'trending'
+  type CatalogSort = 'popular' | 'rating' | 'recent' | 'oldest' | 'title' | 'trending'
 
   let query = $state(page.url.searchParams.get('search') ?? page.url.searchParams.get('q') ?? '')
   let type = $state<CatalogContentType | 'all'>((page.url.searchParams.get('type') as CatalogContentType | null) ?? 'all')
   let genre = $state(page.url.searchParams.get('genre') ?? '')
   let year = $state(page.url.searchParams.get('year') ?? '')
   let sort = $state<CatalogSort>((page.url.searchParams.get('sort') as CatalogSort | null) ?? 'popular')
+  let minScore = $state<number | undefined>(Number(page.url.searchParams.get('score')) || undefined)
+  let minVotes = $state<number | undefined>(Number(page.url.searchParams.get('votes')) || undefined)
+  let language = $state(page.url.searchParams.get('language') ?? '')
+  let country = $state(page.url.searchParams.get('country') ?? '')
   let settled = $state(page.url.searchParams.get('search') ?? page.url.searchParams.get('q') ?? '')
   let debounce: ReturnType<typeof setTimeout>
   let media = $state<Media[]>([])
   let loading = $state(false)
   let error = $state('')
   let availableGenres = $state<string[]>([])
+  let filterOptions = $state<CatalogSearchOptions>({})
+  let showAdvanced = $state(false)
+  let resultTotal = $state<number | undefined>()
   let hasNext = true
   let pageNumber = 1
   let requestGeneration = 0
   let requestAbort: AbortController | null = null
+  let emptyPageStreak = 0
   const seen = new Set<string>()
 
   const animeOnly = $derived($catalogProvider === 'kitsu' || $catalogProvider === 'jvm')
+  const isTmdb = $derived($catalogProvider === 'tmdb')
   const typeOptions = $derived(animeOnly
     ? [{ value: 'all', label: 'Anime' }]
     : [
@@ -41,6 +53,12 @@
       ])
   const sortOptions = $derived($catalogProvider === 'jvm'
     ? [{ value: 'popular', label: 'Popular' }, { value: 'recent', label: 'Latest' }]
+    : $catalogProvider === 'tmdb'
+    ? [
+        { value: 'popular', label: 'Most popular' }, { value: 'rating', label: 'Highest rated' },
+        { value: 'recent', label: 'Newest releases' }, { value: 'oldest', label: 'Oldest releases' },
+        { value: 'title', label: 'Title A–Z' },
+      ]
     : [
         { value: 'popular', label: 'Popular' }, { value: 'rating', label: 'Rating' },
         { value: 'recent', label: 'Recent' }, { value: 'trending', label: 'Trending' },
@@ -49,16 +67,42 @@
     { value: '', label: 'All genres' },
     ...availableGenres.map((name) => ({ value: name, label: name })),
   ])
+  const advancedFilters = $derived<CatalogAdvancedSearchFilters>({
+    minScore,
+    minVotes,
+    language: language || undefined,
+    country: country || undefined,
+  })
+  const advancedCount = $derived(
+    (minScore ? 1 : 0) + (minVotes ? 1 : 0) + (language ? 1 : 0) + (country ? 1 : 0),
+  )
 
   $effect(() => {
     const selection = $catalogProvider
     if (selection === 'auto' || selection === 'anilist') return
     if ((selection === 'kitsu' || selection === 'jvm') && type !== 'all' && type !== 'anime') type = 'all'
     if (selection === 'jvm' && sort !== 'popular' && sort !== 'recent') sort = 'popular'
+    if (selection !== 'tmdb' && (sort === 'oldest' || sort === 'title')) sort = 'popular'
+    if (selection !== 'tmdb') {
+      minScore = undefined
+      minVotes = undefined
+      language = ''
+      country = ''
+      filterOptions = {}
+      showAdvanced = false
+    }
     const abort = new AbortController()
     availableGenres = []
-    void loadCatalogProvider(selection).then((provider) => provider.genres?.(abort.signal) ?? [])
-      .then((values) => { if (!abort.signal.aborted) availableGenres = values })
+    void loadCatalogProvider(selection).then(async (provider) => {
+      const [genres, options] = await Promise.allSettled([
+        provider.genres?.(abort.signal) ?? [],
+        selection === 'tmdb' ? provider.searchOptions?.(abort.signal) ?? {} : {},
+      ])
+      if (!abort.signal.aborted) {
+        if (genres.status === 'fulfilled') availableGenres = genres.value
+        if (options.status === 'fulfilled') filterOptions = options.value
+      }
+    })
       .catch(() => {})
     return () => abort.abort()
   })
@@ -70,7 +114,9 @@
     return () => clearTimeout(debounce)
   })
 
-  const requestKey = $derived(JSON.stringify([$catalogProvider, settled, type, genre, year, sort]))
+  const requestKey = $derived(JSON.stringify([
+    $catalogProvider, settled, type, genre, year, sort, minScore, minVotes, language, country,
+  ]))
   $effect(() => {
     void requestKey
     const abort = new AbortController()
@@ -85,6 +131,8 @@
       pageNumber = 1
       hasNext = true
       error = ''
+      resultTotal = undefined
+      emptyPageStreak = 0
       requestGeneration++
       void loadMore()
     })
@@ -98,6 +146,10 @@
     if (genre) params.set('genre', genre)
     if (year) params.set('year', year)
     if (sort !== 'popular') params.set('sort', sort)
+    if (minScore) params.set('score', String(minScore))
+    if (minVotes) params.set('votes', String(minVotes))
+    if (language) params.set('language', language)
+    if (country) params.set('country', country)
     const next = params.size ? `${page.url.pathname}?${params}` : page.url.pathname
     if (next !== page.url.pathname + page.url.search) {
       try { replaceState(next, page.state) } catch { /* router not ready */ }
@@ -110,6 +162,7 @@
     if (selection === 'auto' || selection === 'anilist') return
     const generation = requestGeneration
     const abort = requestAbort
+    let seekNextFilteredPage = false
     loading = true
     try {
       const provider = await loadCatalogProvider(selection)
@@ -119,10 +172,15 @@
         genre: genre || undefined,
         year: Number(year) || undefined,
         sort,
+        minScore,
+        minVotes,
+        language: language || undefined,
+        country: country || undefined,
         page: pageNumber,
         signal: abort?.signal,
       })
       if (generation !== requestGeneration) return
+      resultTotal = result.total
       let added = 0
       for (const item of result.media) {
         const key = mediaKey(item)
@@ -131,7 +189,12 @@
         media.push(item)
         added++
       }
-      hasNext = result.hasNextPage && added > 0
+      emptyPageStreak = added ? 0 : emptyPageStreak + 1
+      hasNext = result.hasNextPage
+      // Text search cannot send advanced Discover parameters to TMDB. If client-side filtering
+      // empties a page, quietly inspect a few more rather than claiming there are no matches while
+      // later result pages still exist. The cap prevents a narrow filter from crawling the API.
+      seekNextFilteredPage = !!settled && advancedCount > 0 && !added && hasNext && emptyPageStreak < 4
       pageNumber++
     } catch (reason) {
       if (generation === requestGeneration && !abort?.signal.aborted) {
@@ -139,8 +202,25 @@
         hasNext = false
       }
     } finally {
-      if (generation === requestGeneration) loading = false
+      if (generation === requestGeneration) {
+        loading = false
+        if (seekNextFilteredPage && !abort?.signal.aborted) queueMicrotask(() => void loadMore())
+      }
     }
+  }
+
+  function applyAdvanced(filters: CatalogAdvancedSearchFilters) {
+    minScore = filters.minScore
+    minVotes = filters.minVotes
+    language = filters.language ?? ''
+    country = filters.country ?? ''
+    showAdvanced = false
+  }
+
+  function tmdbMetadata(item: Media): string {
+    const kind = item.catalog?.type === 'movie' ? 'Movie' : item.catalog?.type === 'series' ? 'Series' : ''
+    const rating = item.averageScore != null ? `${(item.averageScore / 10).toFixed(1)} ★` : ''
+    return [item.startDate?.year, kind, rating].filter(Boolean).join(' · ')
   }
 
   function nearBottom() {
@@ -155,29 +235,49 @@
 </script>
 
 <div class="p-4 pb-20 sm:p-8">
-  <div class="mb-6 flex flex-col gap-3 sm:flex-row">
+  <div class="mb-6 flex flex-col gap-3">
     <label class="relative min-w-0 flex-1">
       <Search size={19} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
       <input bind:value={query} data-focusable placeholder="Search {animeOnly ? 'anime' : 'movies and series'}…"
         class="h-11 w-full rounded-lg bg-input pl-10 pr-3 text-base" />
     </label>
-    <SelectMenu bind:value={type} ariaLabel="Content type" options={typeOptions} className="sm:w-48" />
-    <SelectMenu bind:value={sort} ariaLabel="Sort results" className="sm:w-40" options={sortOptions} />
-    {#if availableGenres.length}
-      <SelectMenu bind:value={genre} ariaLabel="Genre" className="sm:w-44" options={genreOptions} />
-    {:else if $catalogProvider === 'stremio'}
-      <input bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
-        class="h-11 w-full rounded-lg bg-input px-3 text-base sm:w-32" />
-    {/if}
-    {#if $catalogProvider !== 'jvm'}
-      <input bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
-        class="h-11 w-full rounded-lg bg-input px-3 text-base sm:w-24" />
-    {/if}
+    <div class="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+      <SelectMenu bind:value={type} ariaLabel="Content type" options={typeOptions} className="w-48 shrink-0" />
+      <SelectMenu bind:value={sort} ariaLabel="Sort results" className="w-40 shrink-0" options={sortOptions} />
+      {#if availableGenres.length}
+        <SelectMenu bind:value={genre} ariaLabel="Genre" className="w-44 shrink-0" options={genreOptions} />
+      {:else if $catalogProvider === 'stremio'}
+        <input bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
+          class="h-11 w-32 shrink-0 rounded-lg bg-input px-3 text-base" />
+      {/if}
+      {#if $catalogProvider !== 'jvm'}
+        <input bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
+          class="h-11 w-24 shrink-0 rounded-lg bg-input px-3 text-base" />
+      {/if}
+      {#if isTmdb}
+        <button
+          type="button"
+          data-focusable
+          onclick={() => (showAdvanced = true)}
+          class="flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-bold transition-colors {advancedCount ? 'bg-theme/20 text-theme hover:bg-theme/30' : 'bg-secondary hover:bg-accent'}"
+        >
+          <SlidersHorizontal size={16} /> More filters{advancedCount ? ` · ${advancedCount}` : ''}
+        </button>
+      {/if}
+    </div>
   </div>
+
+  {#if isTmdb && (media.length || resultTotal != null)}
+    <p class="mb-3 text-xs font-semibold text-muted-foreground">
+      {settled && advancedCount ? `${media.length} filtered title${media.length === 1 ? '' : 's'} loaded` : `${resultTotal?.toLocaleString() ?? media.length} title${resultTotal === 1 ? '' : 's'}`}
+    </p>
+  {/if}
 
   {#if media.length}
     <div class="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] sm:gap-5">
-      {#each media as item (mediaKey(item))}<SmallCard media={item} fill />{/each}
+      {#each media as item (mediaKey(item))}
+        <SmallCard media={item} fill subline={isTmdb ? tmdbMetadata(item) : undefined} />
+      {/each}
     </div>
   {:else if !loading && !error}
     <div class="rounded-xl bg-secondary/40 p-8 text-center text-muted-foreground">No results.</div>
@@ -195,3 +295,13 @@
     </div>
   {/if}
 </div>
+
+{#if showAdvanced && isTmdb}
+  <TmdbAdvancedFilters
+    filters={advancedFilters}
+    options={filterOptions}
+    queryActive={!!settled}
+    onApply={applyAdvanced}
+    onClose={() => (showAdvanced = false)}
+  />
+{/if}

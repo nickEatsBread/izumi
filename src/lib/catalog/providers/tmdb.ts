@@ -7,7 +7,7 @@ import type { Media, MediaVideo } from '$lib/anilist/types'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
 import { TMDB_HOME_ROWS } from '../home-options'
 import { compatibilityMediaId, type MediaRef } from '../identity'
-import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
+import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection, type CatalogPage, type CatalogProvider, type CatalogSearchOptions, type CatalogSearchRequest } from '../types'
 
 const API = 'https://api.themoviedb.org/3'
 const IMAGE = 'https://image.tmdb.org/t/p'
@@ -40,6 +40,18 @@ interface TmdbPage {
   total_pages?: number
   total_results?: number
   results?: TmdbListItem[]
+}
+
+interface TmdbLanguage {
+  iso_639_1?: string
+  english_name?: string
+  name?: string
+}
+
+interface TmdbCountry {
+  iso_3166_1?: string
+  english_name?: string
+  native_name?: string
 }
 
 interface TmdbCredit {
@@ -315,24 +327,39 @@ async function home(signal?: AbortSignal): Promise<CatalogHome> {
   }
 }
 
-const sortBy = (sort?: CatalogSearchRequest['sort']) => sort === 'rating' ? 'vote_average.desc'
-  : sort === 'recent' ? 'primary_release_date.desc' : 'popularity.desc'
+const sortBy = (kind: TmdbKind, sort?: CatalogSearchRequest['sort']) => sort === 'rating' ? 'vote_average.desc'
+  : sort === 'recent' ? (kind === 'movie' ? 'primary_release_date.desc' : 'first_air_date.desc')
+  : sort === 'oldest' ? (kind === 'movie' ? 'primary_release_date.asc' : 'first_air_date.asc')
+  : sort === 'title' ? (kind === 'movie' ? 'original_title.asc' : 'original_name.asc')
+  : 'popularity.desc'
 
-async function discover(kind: TmdbKind, request: CatalogSearchRequest, animeOnly = false): Promise<TmdbPage> {
-  const genre = request.genre ? await genreId(kind, request.genre, request.signal) : undefined
-  return tmdb<TmdbPage>(`/discover/${kind}`, {
+/** Translate Izumi's provider-neutral filters to TMDB Discover parameters. Exported so the
+ * important scale conversion (0–100 UI score to TMDB's 0–10 score) stays regression-tested. */
+export function tmdbDiscoverFilterParams(
+  kind: TmdbKind,
+  request: CatalogSearchRequest,
+  genre?: number,
+  animeOnly = false,
+): Record<string, string | number | boolean | undefined> {
+  return {
     page: request.page ?? 1,
     include_adult: get(showAdult),
     language: 'en-GB',
-    sort_by: sortBy(request.sort),
+    sort_by: sortBy(kind, request.sort),
     with_genres: [animeOnly ? 16 : undefined, genre].filter((value) => value != null).join(',') || undefined,
-    with_origin_country: animeOnly && kind === 'tv' ? 'JP' : undefined,
-    with_original_language: animeOnly && kind === 'movie' ? 'ja' : undefined,
+    with_origin_country: request.country || (animeOnly && kind === 'tv' ? 'JP' : undefined),
+    with_original_language: request.language || (animeOnly && kind === 'movie' ? 'ja' : undefined),
     ...(kind === 'movie'
       ? { primary_release_year: request.year }
       : { first_air_date_year: request.year }),
-    'vote_count.gte': request.sort === 'rating' ? 100 : undefined,
-  }, request.signal)
+    'vote_average.gte': request.minScore ? request.minScore / 10 : undefined,
+    'vote_count.gte': request.minVotes ?? (request.sort === 'rating' ? 100 : undefined),
+  }
+}
+
+async function discover(kind: TmdbKind, request: CatalogSearchRequest, animeOnly = false): Promise<TmdbPage> {
+  const genre = request.genre ? await genreId(kind, request.genre, request.signal) : undefined
+  return tmdb<TmdbPage>(`/discover/${kind}`, tmdbDiscoverFilterParams(kind, request, genre, animeOnly), request.signal)
 }
 
 let genresPromise: Promise<{ movie: Map<string, number>; tv: Map<string, number> }> | null = null
@@ -372,10 +399,10 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
       page: pageNumber,
       total_pages: Math.max(movies.total_pages ?? 1, television.total_pages ?? 1),
       total_results: (movies.total_results ?? 0) + (television.total_results ?? 0),
-      results: [
+      results: sortTmdbItems([
         ...(movies.results ?? []).map((item) => ({ ...item, media_type: 'movie' as const })),
         ...(television.results ?? []).map((item) => ({ ...item, media_type: 'tv' as const })),
-      ].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0)),
+      ], request.sort),
     }
   }
   const forced = request.type === 'movie' ? 'movie' : request.type === 'series' ? 'tv' : undefined
@@ -397,6 +424,10 @@ async function filterSearchResults(items: TmdbListItem[], request: CatalogSearch
     if (kind !== 'movie' && kind !== 'tv') return false
     const date = kind === 'movie' ? item.release_date : item.first_air_date
     if (request.year && Number(yearOf(date)) !== request.year) return false
+    if (request.minScore && (item.vote_average ?? 0) * 10 < request.minScore) return false
+    if (request.minVotes && (item.vote_count ?? 0) < request.minVotes) return false
+    if (request.language && item.original_language !== request.language) return false
+    if (request.country && !item.origin_country?.includes(request.country)) return false
     if (genre) {
       const wanted = maps?.[kind].get(genre)
       if (wanted != null && !item.genre_ids?.includes(wanted)) return false
@@ -405,12 +436,26 @@ async function filterSearchResults(items: TmdbListItem[], request: CatalogSearch
       || (!(item.origin_country?.includes('JP')) && item.original_language !== 'ja'))) return false
     return true
   })
-  return filtered.sort((left, right) => {
-    if (request.sort === 'rating') return (right.vote_average ?? 0) - (left.vote_average ?? 0)
-    if (request.sort === 'recent') {
+  return sortTmdbItems(filtered, request.sort)
+}
+
+function sortTmdbItems(items: TmdbListItem[], sort?: CatalogSearchRequest['sort']): TmdbListItem[] {
+  return items.sort((left, right) => {
+    if (sort === 'rating') return (right.vote_average ?? 0) - (left.vote_average ?? 0)
+    if (sort === 'recent') {
       const leftDate = left.release_date ?? left.first_air_date ?? ''
       const rightDate = right.release_date ?? right.first_air_date ?? ''
       return rightDate.localeCompare(leftDate)
+    }
+    if (sort === 'oldest') {
+      const leftDate = left.release_date ?? left.first_air_date ?? '9999'
+      const rightDate = right.release_date ?? right.first_air_date ?? '9999'
+      return leftDate.localeCompare(rightDate)
+    }
+    if (sort === 'title') {
+      const leftTitle = left.title ?? left.name ?? left.original_title ?? left.original_name ?? ''
+      const rightTitle = right.title ?? right.name ?? right.original_title ?? right.original_name ?? ''
+      return leftTitle.localeCompare(rightTitle)
     }
     return (right.popularity ?? 0) - (left.popularity ?? 0)
   })
@@ -504,6 +549,26 @@ async function genres(signal?: AbortSignal): Promise<string[]> {
     .map((name) => name.replace(/\b\w/g, (letter) => letter.toUpperCase())).sort()
 }
 
+let searchOptionsPromise: Promise<CatalogSearchOptions> | null = null
+async function searchOptions(signal?: AbortSignal): Promise<CatalogSearchOptions> {
+  if (!searchOptionsPromise) searchOptionsPromise = Promise.all([
+    tmdb<TmdbLanguage[]>('/configuration/languages', {}, signal),
+    tmdb<TmdbCountry[]>('/configuration/countries', {}, signal),
+  ]).then(([languages, countries]) => ({
+    languages: languages.flatMap((language) => language.iso_639_1 && language.english_name ? [{
+      value: language.iso_639_1,
+      label: language.name && language.name !== language.english_name
+        ? `${language.english_name} · ${language.name}` : language.english_name,
+    }] : []).sort((left, right) => left.label.localeCompare(right.label)),
+    countries: countries.flatMap((country) => country.iso_3166_1 && country.english_name ? [{
+      value: country.iso_3166_1,
+      label: country.native_name && country.native_name !== country.english_name
+        ? `${country.english_name} · ${country.native_name}` : country.english_name,
+    }] : []).sort((left, right) => left.label.localeCompare(right.label)),
+  })).catch((error) => { searchOptionsPromise = null; throw error })
+  return searchOptionsPromise
+}
+
 export const tmdbCatalog: CatalogProvider = {
   id: 'tmdb',
   label: 'TMDB',
@@ -516,4 +581,5 @@ export const tmdbCatalog: CatalogProvider = {
   search,
   detail,
   genres,
+  searchOptions,
 }

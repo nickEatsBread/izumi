@@ -21,14 +21,34 @@ export interface CatalogPage {
   total?: number
 }
 
-export interface CatalogSearchRequest {
+export interface CatalogAdvancedSearchFilters {
+  /** Inclusive minimum score on Izumi's shared 0–100 scale. */
+  minScore?: number
+  minVotes?: number
+  /** ISO 639-1 original-language code. */
+  language?: string
+  /** ISO 3166-1 country-of-origin code. */
+  country?: string
+}
+
+export interface CatalogSearchRequest extends CatalogAdvancedSearchFilters {
   query?: string
   page?: number
   type?: CatalogContentType | 'all'
   genre?: string
   year?: number
-  sort?: 'popular' | 'rating' | 'recent' | 'trending'
+  sort?: 'popular' | 'rating' | 'recent' | 'oldest' | 'title' | 'trending'
   signal?: AbortSignal
+}
+
+export interface CatalogFilterOption {
+  value: string
+  label: string
+}
+
+export interface CatalogSearchOptions {
+  languages?: CatalogFilterOption[]
+  countries?: CatalogFilterOption[]
 }
 
 export interface CatalogHomeSection {
@@ -63,6 +83,8 @@ export interface CatalogProvider {
   search(request: CatalogSearchRequest): Promise<CatalogPage>
   detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null>
   genres?(signal?: AbortSignal): Promise<string[]>
+  /** Provider-owned values for richer search controls, loaded only when its search page is open. */
+  searchOptions?(signal?: AbortSignal): Promise<CatalogSearchOptions>
 }
 
 export class CatalogConfigurationError extends Error {
