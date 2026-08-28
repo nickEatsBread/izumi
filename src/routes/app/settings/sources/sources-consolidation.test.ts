@@ -6,10 +6,17 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.m
 const page = read('./+page.svelte')
 const legacy = read('../extensions/+page.ts')
 const communitySources = read('../extensions/+page.svelte')
+const store = read('../store/+page.svelte')
 const priority = read('./priority/+page.svelte')
 const search = read('../../../../lib/settings/search.ts')
 
 describe('unified Sources settings', () => {
+  it('uses compact accessible bin actions for removing add-ons', () => {
+    expect(page).toContain("import Trash2 from '@lucide/svelte/icons/trash-2'")
+    expect(page.match(/<Trash2 size=\{16\} \/>/g)).toHaveLength(2)
+    expect(page).not.toContain('>Remove</button>')
+  })
+
   it('organises all source controls by task on one screen', () => {
     expect(page).toContain("{ id: 'manage', label: 'My sources'")
     expect(page).toContain("{ id: 'playback', label: 'Playback'")
@@ -82,9 +89,23 @@ describe('unified Sources settings', () => {
     expect(communitySources).toMatch(/section === 'manage'[\s\S]{0,100}<div class="contents"/)
   })
 
-  it('puts Add from Store on the Sources heading row', () => {
-    expect(page).toMatch(/<h2 class="[^"]*max-sm:hidden[^"]*">Sources<\/h2>[\s\S]{0,400}Add from Store[\s\S]{0,800}<div role="tablist"/)
-    expect(page).toMatch(/href="\/app\/settings\/store"[^>]*class="[^"]*sm:translate-y-3/)
+  it('puts Check for Updates directly before Add from Store on the Sources heading row', () => {
+    const heading = page.indexOf('>Sources</h2>')
+    const check = page.indexOf("'Check for Updates'", heading)
+    const store = page.indexOf('Add from Store', check)
+    const tabs = page.indexOf('<div role="tablist"', store)
+    expect(heading).toBeGreaterThan(-1)
+    expect(check).toBeGreaterThan(heading)
+    expect(store).toBeGreaterThan(check)
+    expect(tabs).toBeGreaterThan(store)
+    expect(page).toContain("import { checkExtensionUpdates } from '$lib/extensions/auto-update'")
+    expect(page).toMatch(/checkExtensionUpdates\(\{[\s\S]{0,180}retryAttempted: true,[\s\S]{0,180}includeDisabledCatalogs: true,[\s\S]{0,180}includeOfficialCatalog: true,[\s\S]{0,80}\}\)/)
+    expect(page).toMatch(/class="[^"]*sm:translate-y-3[^"]*sm:flex-row"/)
+  })
+
+  it('keeps the built-in update catalog available after installing from the Store', () => {
+    expect(store).toContain('disabledExtensions, disabledPlugins, enabledExtensionUrls, extensionUrls')
+    expect(store).toContain('$disabledExtensions = $disabledExtensions.filter((spec) => spec !== OFFICIAL_ANIME_CATALOG)')
   })
 
   it('keeps the add controls and source cards inside phone-width viewports', () => {

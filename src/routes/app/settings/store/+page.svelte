@@ -21,7 +21,7 @@
     type ExtensionCatalogPackage,
     type InstalledExtensionPackage,
   } from '$lib/extensions/manager'
-  import { disabledPlugins, enabledExtensionUrls, extensionUrls } from '$lib/settings/ui'
+  import { disabledExtensions, disabledPlugins, enabledExtensionUrls, extensionUrls } from '$lib/settings/ui'
   import { extensionBackendLabel } from '$lib/extensions/catalog'
   import Search from '@lucide/svelte/icons/search'
   import Star from '@lucide/svelte/icons/star'
@@ -211,6 +211,7 @@
       if (!$extensionUrls.includes(OFFICIAL_ANIME_CATALOG)) {
         $extensionUrls = [...$extensionUrls, OFFICIAL_ANIME_CATALOG]
       }
+      $disabledExtensions = $disabledExtensions.filter((spec) => spec !== OFFICIAL_ANIME_CATALOG)
       $disabledPlugins = $disabledPlugins.filter((id) => id !== installed.id)
       notice = `${installed.name} installed and enabled.`
     } catch (cause) {

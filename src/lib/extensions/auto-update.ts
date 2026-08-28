@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store'
-import { enabledExtensionUrls } from '$lib/settings/ui'
+import { enabledExtensionUrls, extensionUrls } from '$lib/settings/ui'
 import { playing } from '$lib/player/session'
 import type { ExtensionCatalogPackage } from './catalog'
 import type { InstalledExtensionPackage } from './manager'
@@ -44,22 +44,51 @@ export function collectPackageUpdates(
 // the same reason — hammering a broken download every 6h helps nobody. Cleared by restart.
 const attempted = new Set<string>()
 
+export interface ExtensionUpdateCheckResult {
+  updated: ExtensionCatalogPackage[]
+  failed: number
+  reason?: 'playback' | 'no-installed' | 'no-catalogs' | 'catalog-unavailable'
+}
+
+export interface ExtensionUpdateCheckOptions {
+  retryAttempted?: boolean
+  /** A manual check is an explicit request, so it may inspect catalogs the user has disabled for
+   *  background polling without changing their enabled state. */
+  includeDisabledCatalogs?: boolean
+  /** Packages installed from the built-in Store predate catalog provenance in some profiles.
+   *  Include the Store catalog directly so those installs can still be checked. */
+  includeOfficialCatalog?: boolean
+}
+
 /** Compare every installed package against the enabled catalogs and reinstall what changed.
  *  Never throws. Skipped entirely during playback: each install tears down the running worker set
  *  and the JVM runtime, which would kill an in-flight resolve. */
-export async function checkExtensionUpdates(): Promise<void> {
-  if (get(playing)) return
+export async function checkExtensionUpdates(
+  options: ExtensionUpdateCheckOptions = {},
+): Promise<ExtensionUpdateCheckResult> {
+  if (get(playing)) return { updated: [], failed: 0, reason: 'playback' }
   // The first check is delayed by 15 seconds; keep the extension manager and worker graph out of
   // the app-layout startup chunk until the check actually runs.
-  const { fetchExtensionInfo, installCatalogPackage, installedExtensionPackages } = await import('./manager')
+  const {
+    fetchExtensionInfo,
+    installCatalogPackage,
+    installedExtensionPackages,
+    OFFICIAL_ANIME_CATALOG,
+  } = await import('./manager')
   const installed = await installedExtensionPackages()
-  if (!installed.length) return
-  const specs = get(enabledExtensionUrls)
-  if (!specs.length) return
+  if (!installed.length) return { updated: [], failed: 0, reason: 'no-installed' }
+  const configured = get(options.includeDisabledCatalogs ? extensionUrls : enabledExtensionUrls)
+  const specs = [...new Set([
+    ...configured,
+    ...(options.includeOfficialCatalog ? [OFFICIAL_ANIME_CATALOG] : []),
+  ])]
+  if (!specs.length) return { updated: [], failed: 0, reason: 'no-catalogs' }
   const infos = await Promise.all(specs.map((spec) => fetchExtensionInfo(spec).catch(() => null)))
+  if (infos.every((info) => !info)) return { updated: [], failed: 0, reason: 'catalog-unavailable' }
   const updates = collectPackageUpdates(installed, infos.map((info) => info?.packages ?? []))
-    .filter((entry) => !attempted.has(`${entry.id}@${entry.version}`))
+    .filter((entry) => options.retryAttempted || !attempted.has(`${entry.id}@${entry.version}`))
   const updated: ExtensionCatalogPackage[] = []
+  let failed = 0
   // Sequential on purpose: every install rebuilds the worker set; racing several rebuilds is the
   // exact contention resetRunning exists to avoid.
   for (const entry of updates) {
@@ -69,11 +98,13 @@ export async function checkExtensionUpdates(): Promise<void> {
       await installCatalogPackage(entry)
       updated.push(entry)
     } catch {
+      failed += 1
       // Old version stays installed and keeps working; the latch stops same-session retries.
     }
   }
   if (updated.length === 1) showNotice(`Updated ${updated[0].name} to v${updated[0].version}.`)
   else if (updated.length) showNotice(`Updated ${updated.length} sources.`)
+  return { updated, failed }
 }
 
 const FIRST_DELAY = 15_000 // after the app-update check's 5s, so boot network isn't all at once

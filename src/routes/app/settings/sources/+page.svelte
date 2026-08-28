@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { goto } from '$app/navigation'
   import { page } from '$app/stores'
   import { addonUrls, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
@@ -21,6 +22,7 @@
   import { fetchManifest } from '$lib/stremio/manifest'
   import { findAddonConfigureUrl } from '$lib/stremio/configure'
   import { defaultDiscussionPlatform } from '$lib/comments'
+  import { checkExtensionUpdates } from '$lib/extensions/auto-update'
   import AddonConfigurator from '$lib/components/settings/AddonConfigurator.svelte'
   import CommunitySources from '../extensions/+page.svelte'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
@@ -31,6 +33,8 @@
   import ListOrdered from '@lucide/svelte/icons/list-ordered'
   import Search from '@lucide/svelte/icons/search'
   import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down'
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
   import X from '@lucide/svelte/icons/x'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
@@ -48,6 +52,9 @@
   let input = $state('')
   let addError = $state('')
   let adding = $state(false)
+  let checkingUpdates = $state(false)
+  let updateCheckFeedback = $state('')
+  let updateFeedbackTimer: ReturnType<typeof setTimeout> | undefined
   let hasManageRows = $state(true)
   let orphanCount = $state(0)
   let filteredCommunityCount = $state(0)
@@ -182,6 +189,35 @@
     manageTypeFilter = 'all'
     filterOpen = false
   }
+  async function checkForUpdates() {
+    if (checkingUpdates) return
+    checkingUpdates = true
+    updateCheckFeedback = ''
+    if (updateFeedbackTimer) clearTimeout(updateFeedbackTimer)
+    try {
+      const result = await checkExtensionUpdates({
+        retryAttempted: true,
+        includeDisabledCatalogs: true,
+        includeOfficialCatalog: true,
+      })
+      if (result.reason === 'playback') updateCheckFeedback = 'Stop playback first'
+      else if (result.reason === 'no-installed') updateCheckFeedback = 'Nothing installed'
+      else if (result.reason === 'no-catalogs') updateCheckFeedback = 'No update source available'
+      else if (result.reason === 'catalog-unavailable') updateCheckFeedback = 'Check failed'
+      else if (result.updated.length && result.failed) updateCheckFeedback = `${result.updated.length} updated · ${result.failed} failed`
+      else if (result.updated.length) updateCheckFeedback = `${result.updated.length} updated`
+      else if (result.failed) updateCheckFeedback = 'Update failed'
+      else updateCheckFeedback = 'Up to date'
+    } catch {
+      updateCheckFeedback = 'Check failed'
+    } finally {
+      checkingUpdates = false
+      updateFeedbackTimer = setTimeout(() => (updateCheckFeedback = ''), 4500)
+    }
+  }
+  onDestroy(() => {
+    if (updateFeedbackTimer) clearTimeout(updateFeedbackTimer)
+  })
   function clearManageView() {
     manageQuery = ''
     resetManageFilters()
@@ -258,11 +294,18 @@
   <div class="mb-5 max-w-7xl">
     <div class="mb-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h2 class="text-xl font-black max-sm:hidden">Sources</h2>
-      <a href="/app/settings/store" data-focusable
-         class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity active:opacity-80 sm:w-auto sm:translate-y-3 sm:hover:opacity-90">
-        <Store size={16} />
-        Add from Store
-      </a>
+      <div class="flex w-full flex-col gap-2 sm:w-auto sm:translate-y-3 sm:flex-row">
+        <button type="button" data-focusable disabled={checkingUpdates} onclick={() => void checkForUpdates()}
+          class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-black text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60 sm:w-auto sm:min-w-44">
+          <RefreshCw size={16} class={checkingUpdates ? 'animate-spin' : ''} />
+          {checkingUpdates ? 'Checking…' : updateCheckFeedback || 'Check for Updates'}
+        </button>
+        <a href="/app/settings/store" data-focusable
+           class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground transition-opacity active:opacity-80 sm:w-auto sm:hover:opacity-90">
+          <Store size={16} />
+          Add from Store
+        </a>
+      </div>
     </div>
     <p class="max-w-2xl text-sm text-muted-foreground">Add, configure, and prioritise every place Izumi finds an episode.</p>
     <p class="mt-1 text-xs text-muted-foreground">
@@ -495,7 +538,8 @@
                 class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                 <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
               </button>
-              <button onclick={() => remove(i)} data-focusable class="shrink-0 rounded-md px-3 py-2 text-sm text-destructive active:bg-destructive/10 sm:px-1 sm:py-1">Remove</button>
+              <button onclick={() => remove(i)} data-focusable title="Remove" aria-label={`Remove ${host(url)}`}
+                class="grid size-10 shrink-0 place-items-center rounded-md text-destructive transition-colors hover:bg-accent active:bg-destructive/10 sm:size-8"><Trash2 size={16} /></button>
             </div>
           {:then m}
             <div class="flex min-w-0 items-start gap-3 sm:flex-1 sm:items-center">
@@ -528,7 +572,8 @@
                 class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors sm:h-5 sm:w-9 {off ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
                 <span class="inline-block h-5 w-5 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 {off ? 'translate-x-0.5' : 'translate-x-5 sm:translate-x-4'}"></span>
               </button>
-              <button onclick={() => remove(i)} data-focusable class="shrink-0 rounded-md px-3 py-2 text-sm text-destructive active:bg-destructive/10 sm:px-1 sm:py-1">Remove</button>
+              <button onclick={() => remove(i)} data-focusable title="Remove" aria-label={`Remove ${m?.name ?? host(url)}`}
+                class="grid size-10 shrink-0 place-items-center rounded-md text-destructive transition-colors hover:bg-accent active:bg-destructive/10 sm:size-8"><Trash2 size={16} /></button>
             </div>
           {/await}
         </li>
