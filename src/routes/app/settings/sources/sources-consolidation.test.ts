@@ -61,7 +61,7 @@ describe('unified Sources settings', () => {
     expect(search).toBeLessThan(sort)
     expect(sort).toBeLessThan(filter)
     expect(page).toContain('class="relative col-span-2 min-w-0 sm:min-w-52 sm:flex-1"')
-    expect(page).toContain('<div class="mt-3 grid gap-2 2xl:grid-cols-2">')
+    expect(page).toContain('<div class="mt-3 grid items-start gap-2 2xl:grid-cols-2">')
     expect(page).toContain('<ul class="contents">')
     expect(communitySources).toContain('<ul class="contents">')
   })
@@ -97,6 +97,10 @@ describe('unified Sources settings', () => {
     expect(communitySources).toContain('class="min-w-0 overflow-hidden rounded-lg border border-border p-3"')
     expect(communitySources).toContain('class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center"')
     expect(communitySources).toContain('class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 sm:w-auto sm:flex-nowrap"')
+  })
+
+  it('does not stretch the card beside an expanded source to the same row height', () => {
+    expect(page).toContain('<div class="mt-3 grid items-start gap-2 2xl:grid-cols-2">')
   })
 
   it('keeps old Extensions bookmarks working without retaining a second destination', () => {

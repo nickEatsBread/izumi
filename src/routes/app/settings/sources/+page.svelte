@@ -479,7 +479,7 @@
         <p class="mt-1 text-xs text-muted-foreground">Paste a Stremio add-on, GitHub repo, or catalog. Or add one from the Store.</p>
       </div>
     {/if}
-    <div class="mt-3 grid gap-2 2xl:grid-cols-2">
+    <div class="mt-3 grid items-start gap-2 2xl:grid-cols-2">
     {#if visibleAddonRows.length}
     <ul class="contents">
       {#each visibleAddonRows as { url, i, disabled: off } (url)}
