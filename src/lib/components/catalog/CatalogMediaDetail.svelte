@@ -141,23 +141,9 @@
     {#if media.genres?.length}<div class="flex flex-wrap gap-2 px-5 sm:px-8">{#each media.genres as genre}<span class="rounded-full bg-secondary px-3 py-1 text-xs font-bold">{genre}</span>{/each}</div>{/if}
 
     {#if parsedDescription.facts.length || parsedDescription.alternativeTitles.length || parsedDescription.links.length}
-      <section class="mt-7 max-w-6xl px-5 sm:px-8" aria-label="Source information">
-        <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h2 class="mr-auto text-xl font-black">Information</h2>
-          {#if parsedDescription.links.length}
-            <div class="flex flex-wrap items-center gap-1" aria-label="External links">
-              <span class="mr-1 text-xs font-semibold text-muted-foreground">Links</span>
-              {#each parsedDescription.links as link (link.url)}
-                <button data-focusable onclick={() => openUrl(link.url)} class="group flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold text-foreground/70 transition hover:bg-secondary hover:text-foreground">
-                  {link.label}<ExternalLink size={12} class="text-muted-foreground transition group-hover:text-foreground" />
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
-
+      <section class="mt-4 max-w-6xl px-5 sm:px-8" aria-label="Source information">
         {#if parsedDescription.facts.length}
-          <dl class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3.5">
+          <dl class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3">
             {#each parsedDescription.facts as fact (fact.label)}
               <div class="min-w-24 max-w-sm">
                 <dt class="text-[0.7rem] font-semibold text-muted-foreground">{fact.label}</dt>
@@ -167,10 +153,23 @@
           </dl>
         {/if}
 
-        {#if parsedDescription.alternativeTitles.length}
-          <div class="flex flex-col gap-1.5 py-3 sm:flex-row sm:gap-4" class:border-t={!parsedDescription.facts.length} class:border-border={!parsedDescription.facts.length}>
-            <div class="w-28 shrink-0 text-[0.7rem] font-semibold text-muted-foreground">Alternative titles</div>
-            <div class="min-w-0 text-sm leading-snug text-foreground/75">{parsedDescription.alternativeTitles.join(' · ')}</div>
+        {#if parsedDescription.alternativeTitles.length || parsedDescription.links.length}
+          <div class="flex flex-col gap-2 py-2.5 lg:flex-row lg:items-start lg:gap-5" class:border-t={!parsedDescription.facts.length} class:border-border={!parsedDescription.facts.length}>
+            {#if parsedDescription.alternativeTitles.length}
+              <div class="min-w-0 flex-1 sm:flex sm:gap-4">
+                <div class="w-28 shrink-0 text-[0.7rem] font-semibold text-muted-foreground">Alternative titles</div>
+                <div class="mt-0.5 min-w-0 text-sm leading-snug text-foreground/75 sm:mt-0">{parsedDescription.alternativeTitles.join(' · ')}</div>
+              </div>
+            {/if}
+            {#if parsedDescription.links.length}
+              <div class="flex shrink-0 flex-wrap items-center gap-1 lg:justify-end" aria-label="External links">
+                {#each parsedDescription.links as link (link.url)}
+                  <button data-focusable onclick={() => openUrl(link.url)} class="group flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold text-foreground/70 transition hover:bg-secondary hover:text-foreground">
+                    {link.label}<ExternalLink size={12} class="text-muted-foreground transition group-hover:text-foreground" />
+                  </button>
+                {/each}
+              </div>
+            {/if}
           </div>
         {/if}
       </section>

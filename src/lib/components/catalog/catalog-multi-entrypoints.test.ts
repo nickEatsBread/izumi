@@ -110,12 +110,15 @@ describe('multi-platform catalog entry points', () => {
     expect(detail).toContain('aria-label="Source information"')
   })
 
-  it('integrates source information into the page instead of stretching a filled card', () => {
+  it('renders source metadata as an unlabeled compact band beneath the hero', () => {
     const detail = read('./CatalogMediaDetail.svelte')
-    expect(detail).toContain('mr-auto text-xl font-black">Information')
+    expect(detail).toContain('section class="mt-4 max-w-6xl')
     expect(detail).toContain('flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60')
     expect(detail).toContain('class="min-w-24 max-w-sm"')
+    expect(detail).toContain('lg:flex-row lg:items-start lg:gap-5')
     expect(detail).toContain('text-foreground/70 transition hover:bg-secondary hover:text-foreground')
+    expect(detail).not.toContain('>Information</h2>')
+    expect(detail).not.toContain('>Links</span>')
     expect(detail).not.toContain('rounded-xl bg-secondary/55')
   })
 
