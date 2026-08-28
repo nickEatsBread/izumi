@@ -33,7 +33,9 @@
   let { anilistHero = [] }: { anilistHero?: Media[] } = $props()
 
   let options = $state<Awaited<ReturnType<typeof mergedCatalogHomeRowOptions>>>([])
-  let homes = $state<Partial<Record<CatalogSelection, CatalogHome>>>({})
+  // Catalog homes are immutable snapshots. A raw root preserves Media identity between the first
+  // usable Aniyomi update and its final result instead of recursively proxying every card.
+  let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})
   let optionsLoading = $state(true)
   let homeLoading = $state(false)
   let errors = $state<Array<{ provider: CatalogSelection; message: string }>>([])

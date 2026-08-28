@@ -21,7 +21,11 @@
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
 
-  let home = $state<CatalogHome | null>(null)
+  // Provider payloads are immutable snapshots. Deep-proxying every Media object gives Svelte's
+  // keyed carousels a fresh proxy identity on every progressive update; in dev builds the sixth
+  // replacement triggers an extremely expensive stack capture for every card. Keep the snapshot
+  // reactive only at its root so unchanged Media references remain unchanged across updates.
+  let home = $state.raw<CatalogHome | null>(null)
   let loading = $state(true)
   let error = $state('')
   let retry = $state(0)
@@ -47,10 +51,14 @@
     if (selection === 'auto' || selection === 'anilist') return
     const abort = new AbortController()
     const cached = providerHomeCache.get(selection)
-    home = cached && Date.now() - cached.storedAt < HOME_CACHE_MS ? cached.home : null
-    loading = !home
+    // Keep this local: reading reactive `home` inside its own loading effect subscribes the effect
+    // to every progressive result it writes later. Each first Aniyomi row then aborted and restarted
+    // the whole provider load, hammering getPopular in a feedback loop and freezing the renderer.
+    const initialHome = cached && Date.now() - cached.storedAt < HOME_CACHE_MS ? cached.home : null
+    home = initialHome
+    loading = !initialHome
     error = ''
-    if (cached?.complete && home) return
+    if (cached?.complete && initialHome) return
     const publish = (result: CatalogHome, complete = false) => {
       if (abort.signal.aborted) return
       home = result
@@ -76,7 +84,9 @@
   }
 </script>
 
-<div class="pb-16">
+<!-- Aniyomi can add several source-owned rows in one update. Its static skeletons still explain
+     pending artwork without promoting every placeholder to a continuously animated layer. -->
+<div class="pb-16" class:deferred-skeleton={$catalogProvider === 'jvm'}>
   {#if home?.hero.length}
     <Hero medias={home.hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
   {:else if loading && $catalogProvider !== 'jvm'}
@@ -124,7 +134,11 @@
           {@const section = row.section}
           <Carousel title={section.title} viewMoreHref={section.more ? moreHref(section.more) : undefined}>
             {#each section.media as media (media.catalog?.id ?? media.id)}
-              <div class="load-in shrink-0"><SmallCard {media} /></div>
+              <!-- The row title already says "Popular/Latest · Source". Repeating the same source
+                   logo on every tile adds dozens of image decodes and no extra information. -->
+              <div class="shrink-0" class:load-in={$catalogProvider !== 'jvm'}>
+                <SmallCard {media} showCatalogSource={$catalogProvider !== 'jvm'} />
+              </div>
             {/each}
           </Carousel>
         {/if}

@@ -285,7 +285,13 @@ async function homeSourcePage(request: JvmHomeRequest, signal?: AbortSignal) {
     controller.abort()
   }, JVM_HOME_ROW_TIMEOUT_MS)
   try {
-    return await sourcePage(request.source, request.method, 1, controller.signal)
+    const page = await sourcePage(request.source, request.method, 1, controller.signal)
+    // Aniyomi extensions choose their own page size; several return 25-30 full-resolution
+    // posters while Izumi's native Home providers return about 20. Mounting two unbounded rows
+    // for every enabled source made WebView2 decode hundreds of large posters at once and could
+    // monopolise its renderer for close to a minute. Search still exposes the extension's full
+    // page; only the horizontally browsed Home preview is kept to the established Home density.
+    return { ...page, media: page.media.slice(0, 20) }
   } catch (error) {
     if (timedOut && !signal?.aborted) {
       throw new Error(`${request.source.name} took too long to load ${request.title.toLowerCase()}.`)
@@ -389,23 +395,33 @@ async function home(
     : selected
   const loaded = new Map<string, Media[]>()
   let hero: Media[] = []
+  let publishedUsableHome = false
   const snapshot = (): CatalogHome => {
     const sections = selected.flatMap((request) => {
       const media = loaded.get(request.id) ?? []
       return media.length ? [{ id: request.id, title: request.title, media }] : []
     })
     const naturallyWide = [...loaded.values()].flat().filter((media) => media.bannerImage)
-    return { hero: (hero.length ? hero : naturallyWide).slice(0, 10), sections }
+    // `hero` is already capped when it is created. Preserve that array identity between row
+    // updates so Hero does not restart all of its effects for an unchanged carousel.
+    return { hero: hero.length ? hero : naturallyWide.slice(0, 10), sections }
   }
-  const publish = () => {
-    if (!signal?.aborted) onUpdate?.(snapshot())
+  const publishFirstUsableHome = () => {
+    if (publishedUsableHome || signal?.aborted) return
+    const current = snapshot()
+    if (!current.hero.length && !current.sections.length) return
+    publishedUsableHome = true
+    onUpdate?.(current)
   }
   try {
     const results = await settleWithConcurrency(requests, JVM_HOME_CONCURRENCY, async (request) => {
       const page = await homeSourcePage(request, loadController.signal)
       loaded.set(request.id, page.media)
       if (!hero.length && page.media.length) hero = page.media.slice(0, 10)
-      publish()
+      // Paint one useful row immediately. Subsequent rows are returned together in the final
+      // snapshot; publishing every row repeatedly reconciled all previous keyed cards and caused
+      // Svelte's development diagnostics to monopolise the WebView renderer for over a minute.
+      publishFirstUsableHome()
       return { request, page }
     })
     throwIfAborted(signal)
@@ -420,10 +436,11 @@ async function home(
     // Home is already usable before this optional request begins. Enrich one featured item only,
     // after all rows, instead of inserting three speculative details ahead of the row queue.
     if (!loadController.signal.aborted && hero.length && !hero.some((item) => item.bannerImage)) {
-      const pool = await enrichHero(hero.slice(0, 1), loadController.signal)
-      const withBanners = pool.filter((item) => item.bannerImage)
-      hero = (withBanners.length ? withBanners : pool).slice(0, 10)
-      publish()
+      const [featured] = await enrichHero(hero.slice(0, 1), loadController.signal)
+      // Enrichment operates on one item deliberately, but that item must be merged back into the
+      // existing carousel. Replacing `hero` with the one-item response made the remaining slides
+      // disappear as soon as getDetail completed.
+      if (featured) hero = [featured, ...hero.slice(1)].slice(0, 10)
     }
     return snapshot()
   } catch (error) {

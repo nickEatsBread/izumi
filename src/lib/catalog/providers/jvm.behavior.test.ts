@@ -42,6 +42,23 @@ describe('JVM catalog provider', () => {
     expect(mocks.browse).toHaveBeenCalledTimes(4)
   })
 
+  it('keeps unbounded extension pages to the established Home row density', async () => {
+    mocks.browse.mockImplementation(async (sourceId: string, method: string) => ({
+      list: Array.from({ length: 30 }, (_, index) => ({
+        title: `${method} ${sourceId} ${index}`,
+        url: `/${method}/${sourceId}/${index}`,
+        cover: `https://img/${sourceId}/${index}.jpg`,
+      })),
+      hasNextPage: true,
+    }))
+
+    const home = await jvmCatalog.home()
+
+    expect(home.sections).toHaveLength(4)
+    expect(home.sections.every((section) => section.media.length === 20)).toBe(true)
+    expect(home.hero).toHaveLength(10)
+  })
+
   it('does not query sources explicitly filtered out of the JVM catalog', async () => {
     jvmCatalogSourceOverrides.set({ one: false })
     await jvmCatalog.search({ query: 'Frieren', page: 1 })
@@ -96,6 +113,16 @@ describe('JVM catalog provider', () => {
 
     releaseSlow()
     await complete
+  })
+
+  it('does not reconcile every previously published card again for each later Home row', async () => {
+    const updates: Array<{ sections: Array<{ id: string }> }> = []
+
+    const home = await jvmCatalog.home(undefined, undefined, (update) => updates.push(update))
+
+    expect(updates).toHaveLength(1)
+    expect(updates[0].sections).toHaveLength(1)
+    expect(home.sections).toHaveLength(4)
   })
 
   it('never fans Home requests out across the JVM bridge', async () => {

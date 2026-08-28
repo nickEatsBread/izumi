@@ -26,7 +26,7 @@
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
-  let { media, fill = false, badge, subline, simpleHover = false }: {
+  let { media, fill = false, badge, subline, simpleHover = false, showCatalogSource = true }: {
     media: Media
     fill?: boolean
     /** Optional context owned by a specialized row (for example, the released episode number). */
@@ -35,6 +35,8 @@
     subline?: string
     /** Replace the desktop trailer popup with a quiet, Miruro-style play affordance. */
     simpleHover?: boolean
+    /** Home rows already name their Aniyomi source; avoid decoding its logo on every card. */
+    showCatalogSource?: boolean
   } = $props()
 
   let hovered = $state(false)
@@ -52,7 +54,7 @@
     : m.status === 'NOT_YET_RELEASED' ? '#f79a63'
     : m.catalog?.provider === 'jvm' && !m.status ? undefined
     : '#7bd555'
-  const jvmSource = $derived(media.catalog?.provider === 'jvm' && media.catalog.sourceName ? media.catalog : undefined)
+  const jvmSource = $derived(showCatalogSource && media.catalog?.provider === 'jvm' && media.catalog.sourceName ? media.catalog : undefined)
   const jvmMeta = $derived.by(() => {
     if (!jvmSource) return ''
     const compact = [media.seasonNumber ? `S${media.seasonNumber}` : '', jvmSource.sourceLanguage?.toUpperCase()]

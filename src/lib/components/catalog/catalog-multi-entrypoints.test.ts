@@ -66,9 +66,15 @@ describe('multi-platform catalog entry points', () => {
   it('keeps provider Home results warm and accepts progressive row updates', () => {
     const catalogHome = read('./CatalogHome.svelte')
     expect(catalogHome).toContain('providerHomeCache')
-    expect(catalogHome).toContain('cached?.complete && home')
+    expect(catalogHome).toContain('let home = $state.raw<CatalogHome | null>(null)')
+    expect(catalogHome).toContain('const initialHome = cached && Date.now() - cached.storedAt < HOME_CACHE_MS ? cached.home : null')
+    expect(catalogHome).toContain('loading = !initialHome')
+    expect(catalogHome).toContain('cached?.complete && initialHome')
     expect(catalogHome).toContain('provider.home(abort.signal, undefined, publish)')
     expect(catalogHome).toContain('if (result.hero.length || result.sections.length) loading = false')
+    expect(catalogHome).toContain("class:deferred-skeleton={$catalogProvider === 'jvm'}")
+    expect(catalogHome).toContain("showCatalogSource={$catalogProvider !== 'jvm'}")
+    expect(read('./MergedCatalogHome.svelte')).toContain('let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})')
   })
 
   it('renders TMDB title artwork on detail pages and keeps a text fallback', () => {
