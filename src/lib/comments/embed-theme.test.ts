@@ -28,11 +28,18 @@ describe('DiscussAnime embed theming', () => {
   it('keeps Android comments in the watch page scroll instead of a nested scroller', () => {
     const loader = read('../../../static/disqus-embed.html')
     const android = read('../components/player/AndroidWatchDetails.svelte')
+    const plugin = read('../../../src-tauri/tauri-plugin-extplayer/android/src/main/java/app/izumi/extplayer/ExtPlayerPlugin.kt')
 
     expect(loader).toContain('html.izumi-expand, html.izumi-expand body { overflow: hidden; }')
+    expect(loader).toContain("type: 'izumi-disqus-page-scroll'")
     expect(android).toMatch(/title="Episode comments"[^>]*scrolling="no"/)
     expect(android).toContain('style:height={`${disqusHeight}px`}')
+    expect(android).toContain("closest<HTMLElement>('.preparing-details')")
+    expect(android).toContain('embedTouchScroll(event.origin, event.data, window.location.origin)')
     expect(android).not.toContain('min(70dvh')
+    expect(plugin).toContain('window.__izumiDisqusTouchBridge')
+    expect(plugin).toContain("type: 'izumi-disqus-touch-scroll'")
+    expect(plugin).toContain("document.addEventListener('touchmove'")
   })
 
   it('removes native dark-frame mutation and forced WebView theming', () => {

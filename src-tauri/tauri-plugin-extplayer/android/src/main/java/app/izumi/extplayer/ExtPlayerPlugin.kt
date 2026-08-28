@@ -627,9 +627,10 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
             setAcceptCookie(true)
             setAcceptThirdPartyCookies(webView, true)
         }
-        // Disqus renders its login control inside a cross-origin child frame. Install a narrowly
-        // scoped document-start hook in those frames so choosing Login opens Android's browser
-        // Custom Tab (saved passwords/cookies and proper browser chrome) instead of a raw WebView.
+        // Disqus renders inside a cross-origin child frame. Install narrowly scoped document-start
+        // hooks there for login and for touch-scroll handoff. The Android watch page expands the
+        // iframe to its content height, so a drag inside that child otherwise has no scroll owner and
+        // cannot naturally chain into the surrounding `.preparing-details` scroller.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) &&
             WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
         ) {
@@ -673,6 +674,52 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                       event.stopImmediatePropagation();
                     }
                   }, true);
+                })();
+                (() => {
+                  if (location.hostname !== 'disqus.com' || !location.pathname.startsWith('/embed/comments')) return;
+                  if (window.__izumiDisqusTouchBridge) return;
+                  window.__izumiDisqusTouchBridge = true;
+                  let active = false;
+                  let moved = false;
+                  let startY = 0;
+                  let lastY = 0;
+                  let lastAt = 0;
+                  const relay = (phase, dy, dt) => {
+                    try { window.parent.postMessage({ type: 'izumi-disqus-touch-scroll', phase, dy: dy || 0, dt: dt || 0 }, '*'); }
+                    catch (_) {}
+                  };
+                  document.addEventListener('touchstart', (event) => {
+                    if (event.touches.length !== 1) return;
+                    const touch = event.touches[0];
+                    active = true;
+                    moved = false;
+                    startY = lastY = touch.clientY;
+                    lastAt = performance.now();
+                    relay('start', 0, 0);
+                  }, { capture: true, passive: true });
+                  document.addEventListener('touchmove', (event) => {
+                    if (!active || event.touches.length !== 1) return;
+                    const now = performance.now();
+                    const y = event.touches[0].clientY;
+                    const total = startY - y;
+                    const dy = lastY - y;
+                    const dt = Math.max(1, now - lastAt);
+                    lastY = y;
+                    lastAt = now;
+                    if (!moved && Math.abs(total) < 10) return;
+                    moved = true;
+                    if (event.cancelable) event.preventDefault();
+                    event.stopPropagation();
+                    relay('move', dy, dt);
+                  }, { capture: true, passive: false });
+                  const finish = () => {
+                    if (!active) return;
+                    active = false;
+                    if (moved) relay('end', 0, 0);
+                    moved = false;
+                  };
+                  document.addEventListener('touchend', finish, { capture: true, passive: true });
+                  document.addEventListener('touchcancel', finish, { capture: true, passive: true });
                 })();
                 """.trimIndent(),
                 origins,

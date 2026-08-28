@@ -56,6 +56,28 @@ export function embedResizeHeight(origin: string, data: unknown, appOrigin: stri
   return Math.max(480, Math.min(100_000, Math.ceil(height)))
 }
 
+export type EmbedTouchScroll = {
+  phase: 'start' | 'move' | 'end'
+  dy: number
+  dt: number
+}
+
+/**
+ * A validated touch-scroll relay from the same-origin Disqus loader. Android expands that loader to
+ * its content height, so its cross-origin child cannot scroll itself or naturally chain the gesture
+ * into the surrounding watch-page scroller.
+ */
+export function embedTouchScroll(origin: string, data: unknown, appOrigin: string): EmbedTouchScroll | null {
+  const message = data as { type?: unknown; phase?: unknown; dy?: unknown; dt?: unknown } | null
+  if (origin !== appOrigin || message?.type !== 'izumi-disqus-page-scroll') return null
+  if (message.phase !== 'start' && message.phase !== 'move' && message.phase !== 'end') return null
+  if (message.phase !== 'move') return { phase: message.phase, dy: 0, dt: 0 }
+  const dy = Number(message.dy)
+  const dt = Number(message.dt)
+  if (!Number.isFinite(dy) || Math.abs(dy) > 300 || !Number.isFinite(dt) || dt <= 0) return null
+  return { phase: 'move', dy, dt: Math.min(100, dt) }
+}
+
 /** A bare disqus.com inner iframe needs Izumi's same-origin embed.js loader to render. */
 export function mobileEmbedSrc(embed: string): string {
   try {
