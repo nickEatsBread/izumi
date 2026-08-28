@@ -10,7 +10,7 @@
   import { episodeLabels } from '$lib/anilist/episode-labels'
   import { fetchMediaById } from '$lib/anilist/fetch-media'
   import { fetchDiscussion } from '$lib/comments'
-  import { embedResizeHeight, embedTouchScroll, preferredMobileDiscussion, type EmbedTouchScroll } from '$lib/comments/mobile'
+  import { embedResizeHeight, preferredMobileDiscussion } from '$lib/comments/mobile'
   import { isDiscussAnimeEmbed, loadDiscussAnimeEmbedTheme } from '$lib/comments/embed-theme'
   import { hideSpoilers } from '$lib/settings/ui'
   import { localHistory, sessionProgress } from '$lib/player/history'
@@ -132,63 +132,8 @@
     commentsLoading || discussion ? ['comments', 'episodes', 'related'] : ['episodes', 'comments', 'related'],
   )
   let tabsEl = $state<HTMLElement>()
-  let watchPage = $state<HTMLElement>()
   let disqusFrame = $state<HTMLIFrameElement>()
   let disqusHeight = $state(480)
-  let disqusTouchDelta = 0
-  let disqusTouchVelocity = 0
-  let disqusTouchFrame = 0
-  let disqusMomentumFrame = 0
-
-  const disqusScroller = () => watchPage?.closest<HTMLElement>('.preparing-details') ?? null
-  function stopDisqusMomentum() {
-    if (disqusMomentumFrame) cancelAnimationFrame(disqusMomentumFrame)
-    disqusMomentumFrame = 0
-  }
-  function flushDisqusTouchScroll() {
-    disqusTouchFrame = 0
-    const scroller = disqusScroller()
-    if (!scroller || !disqusTouchDelta) return
-    scroller.scrollTop += disqusTouchDelta
-    disqusTouchDelta = 0
-  }
-  function resetDisqusTouchScroll() {
-    stopDisqusMomentum()
-    if (disqusTouchFrame) cancelAnimationFrame(disqusTouchFrame)
-    disqusTouchFrame = 0
-    disqusTouchDelta = 0
-    disqusTouchVelocity = 0
-  }
-  function startDisqusMomentum() {
-    stopDisqusMomentum()
-    if (Math.abs(disqusTouchVelocity) < 0.15) return
-    const started = performance.now()
-    let last = started
-    const step = (now: number) => {
-      const scroller = disqusScroller()
-      if (!scroller) { disqusMomentumFrame = 0; return }
-      const dt = Math.min(32, Math.max(1, now - last))
-      const before = scroller.scrollTop
-      last = now
-      disqusTouchVelocity *= Math.pow(0.92, dt / 16.67)
-      if (now - started > 420 || Math.abs(disqusTouchVelocity) < 0.15) { disqusMomentumFrame = 0; return }
-      scroller.scrollTop += disqusTouchVelocity * dt
-      if (scroller.scrollTop === before) { disqusMomentumFrame = 0; return }
-      disqusMomentumFrame = requestAnimationFrame(step)
-    }
-    disqusMomentumFrame = requestAnimationFrame(step)
-  }
-  function applyDisqusTouchScroll(message: EmbedTouchScroll) {
-    if (message.phase === 'start') { resetDisqusTouchScroll(); return }
-    if (message.phase === 'end') { flushDisqusTouchScroll(); startDisqusMomentum(); return }
-    stopDisqusMomentum()
-    disqusTouchDelta += message.dy
-    const nextVelocity = Math.max(-3, Math.min(3, message.dy / message.dt))
-    disqusTouchVelocity = disqusTouchVelocity && nextVelocity && Math.sign(disqusTouchVelocity) !== Math.sign(nextVelocity)
-      ? nextVelocity
-      : disqusTouchVelocity * 0.6 + nextVelocity * 0.4
-    if (!disqusTouchFrame) disqusTouchFrame = requestAnimationFrame(flushDisqusTouchScroll)
-  }
 
   const postToFrame = (msg: unknown) => disqusFrame?.contentWindow?.postMessage(msg, window.location.origin)
   const postReactionResult = (ok: boolean) => postToFrame({ type: 'izumi-react-result', ok })
@@ -255,8 +200,6 @@
       // archive (which hides its own overflow — unsized, it clips to 480px and cannot scroll).
       const height = embedResizeHeight(event.origin, event.data, window.location.origin)
       if (height != null) { disqusHeight = height; return }
-      const touchScroll = embedTouchScroll(event.origin, event.data, window.location.origin)
-      if (touchScroll) { applyDisqusTouchScroll(touchScroll); return }
       if (event.origin !== window.location.origin) return
       if (event.data?.type === 'izumi-react') {
         void sendReaction(event.data.base, event.data.identifier, event.data.key)
@@ -265,15 +208,11 @@
       }
     }
     window.addEventListener('message', onMessage)
-    return () => {
-      window.removeEventListener('message', onMessage)
-      resetDisqusTouchScroll()
-    }
+    return () => window.removeEventListener('message', onMessage)
   })
 
   $effect(() => {
     discussion?.kind === 'disqus' ? discussion.embedSrc : null
-    resetDisqusTouchScroll()
     disqusHeight = 480
   })
 
@@ -368,7 +307,7 @@
   </div>
 {/snippet}
 
-<section bind:this={watchPage} class="watch-page px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5">
+<section class="watch-page px-4 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5">
   <h1 class="text-xl font-extrabold leading-tight">{heading}</h1>
   {#if subheading}<p class="mt-1 text-sm text-white/60">{subheading}</p>{/if}
   <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-white/45">

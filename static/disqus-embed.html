@@ -177,17 +177,6 @@
         if (event.origin !== 'https://disqus.com' || !message || message.type !== 'izumi-disqus-touch-scroll') return;
         var inner = document.querySelector('iframe[src*="disqus.com/embed/comments"]');
         if (!inner || event.source !== inner.contentWindow) return;
-        // Android expands this document to the full comment height, so it has no scrollbar of its
-        // own. Relay the validated drag to the app frame, which owns `.preparing-details` scrolling.
-        if (expand) {
-          window.parent.postMessage({
-            type: 'izumi-disqus-page-scroll',
-            phase: message.phase,
-            dy: message.dy || 0,
-            dt: message.dt || 0
-          }, location.origin);
-          return;
-        }
         if (message.phase === 'start') {
           resetTouchScroll();
         } else if (message.phase === 'move') {
