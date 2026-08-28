@@ -992,18 +992,22 @@
                     <!-- ROOT: media track and source categories -->
                     <div class="w-1/2 p-2" bind:clientHeight={rootH}>
                       <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('audio')}>
-                        <Volume2 size={18} class="shrink-0 text-white/55" />
                         <span class="min-w-0 flex-1">
                           <span class="block text-xs uppercase tracking-wide text-white/45">Audio</span>
-                          <span class="block truncate">{curAudioLabel}</span>
+                          <span class="flex min-w-0 items-center gap-2" data-track-summary="audio">
+                            <Volume2 size={16} class="shrink-0 text-white/55" />
+                            <span class="block truncate">{curAudioLabel}</span>
+                          </span>
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>
                       <button data-focusable class="flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left transition hover:bg-white/10" onclick={() => openDetail('subs')}>
-                        <Captions size={18} class="shrink-0 text-white/55" />
                         <span class="min-w-0 flex-1">
                           <span class="block text-xs uppercase tracking-wide text-white/45">Subtitles</span>
-                          <span class="block truncate">{curSubLabel}</span>
+                          <span class="flex min-w-0 items-center gap-2" data-track-summary="subtitles">
+                            <Captions size={16} class="shrink-0 text-white/55" />
+                            <span class="block truncate">{curSubLabel}</span>
+                          </span>
                         </span>
                         <ChevronRight size={18} class="shrink-0 text-white/40" />
                       </button>

@@ -35,11 +35,16 @@ describe('Unified player media menu', () => {
 
   it('shows labelled Audio, Subtitles, and Server roots with distinct icons', () => {
     expect(controls).toContain("openDetail('audio')")
-    expect(controls).toContain('<Volume2 size={18}')
+    expect(controls).toMatch(/data-track-summary="audio">\s*<Volume2 size=\{16\}/)
     expect(controls).toContain("openDetail('subs')")
-    expect(controls).toContain('<Captions size={18}')
+    expect(controls).toMatch(/data-track-summary="subtitles">\s*<Captions size=\{16\}/)
     expect(controls).toContain("openDetail('server')")
     expect(controls).toContain('<ServerIcon size={18}')
+  })
+
+  it('keeps one-line utility actions as conventional leading-icon rows', () => {
+    expect(controls).toMatch(/<Languages size=\{15\}[^>]*\/>\s*<span[^>]*>Online subtitles<\/span>/)
+    expect(controls).toMatch(/<Brush size=\{15\}[^>]*\/>\s*<span[^>]*>Subtitle style<\/span>/)
   })
 
   it('offers the current server and alternatives in the controller menu', () => {
