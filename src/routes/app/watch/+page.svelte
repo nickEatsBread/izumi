@@ -7,7 +7,6 @@
   import Copy from '@lucide/svelte/icons/copy'
   import Users from '@lucide/svelte/icons/users'
   import LogOut from '@lucide/svelte/icons/log-out'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import { copyToClipboard } from '$lib/util/clipboard'
   import { torrentPlaybackMode, debridKey, debridRoomNoticeAck } from '$lib/settings/ui'
   import DebridRoomNotice from '$lib/components/watch/DebridRoomNotice.svelte'
@@ -15,6 +14,7 @@
   import LoaderCircle from '@lucide/svelte/icons/loader-circle'
   import CircleCheck from '@lucide/svelte/icons/circle-check'
   import Clock3 from '@lucide/svelte/icons/clock-3'
+  import RefreshButton from '$lib/components/RefreshButton.svelte'
 
   heroMedia.set(null)
   let code = $state('')
@@ -54,7 +54,7 @@
 
 <div class="mx-auto max-w-3xl p-4 pb-24 sm:p-8">
   <div class="mb-6"><h1 class="text-2xl font-black">Watch Together</h1><p class="mt-1 text-sm text-muted-foreground">Keep playback synchronized across Izumi devices using the host's exact source.</p></div>
-  {#if localError || $partyError}<div class="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{localError || $partyError}</div>{/if}
+  {#if localError || $partyError}<div role="alert" class="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{localError || $partyError}</div>{/if}
   {#if !$watchParty}
     <div class="grid gap-4 sm:grid-cols-2">
       <section class="rounded-2xl border border-border bg-secondary/30 p-5"><Users size={28} class="mb-3 text-theme" /><h2 class="text-lg font-black">Host a room</h2><p class="mb-5 mt-1 text-sm text-muted-foreground">Create a code, start an episode normally, and your controls become the room controls.</p><button disabled={busy} onclick={hostRoom} class="w-full rounded-lg bg-theme py-2.5 font-black text-white">Create room</button></section>
@@ -72,7 +72,16 @@
       {#if $partySyncing}<div class="mt-3 text-sm font-bold text-theme">Resolving the host’s episode…</div>{/if}
       {#if $partyNotice}<div class="mt-3 text-sm font-bold text-muted-foreground">{$partyNotice}</div>{/if}
     </section>
-    <div class="mt-5 flex items-center justify-between"><h2 class="font-black">Participants ({$partyParticipants.length})</h2><button onclick={refreshWatchParty} class="grid size-9 place-items-center rounded-lg bg-secondary"><RefreshCw size={16} /></button></div>
+    <div class="mt-5 flex items-center justify-between">
+      <h2 class="font-black">Participants ({$partyParticipants.length})</h2>
+      <RefreshButton
+        onRefresh={refreshWatchParty}
+        iconOnly
+        successLabel="Participants refreshed"
+        errorLabel="Participant refresh failed"
+        class="size-9 rounded-lg bg-secondary hover:bg-accent"
+      />
+    </div>
     <div class="mt-2 space-y-2">
       {#each $partyParticipants as participant (participant.deviceId)}
         <div class="flex items-center gap-3 rounded-lg bg-secondary/40 px-4 py-3">

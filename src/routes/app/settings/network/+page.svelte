@@ -12,6 +12,7 @@
   import { isAndroid } from '$lib/platform'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
+  import RefreshButton from '$lib/components/RefreshButton.svelte'
 
   let applyingRelay = $state(false)
   let relayNotice = $state('')
@@ -28,8 +29,10 @@
     try {
       ifaces = await listNetworkInterfaces()
       ifaceError = ''
+      return true
     } catch (error) {
       ifaceError = error instanceof Error ? error.message : String(error)
+      return false
     }
   }
 
@@ -143,10 +146,13 @@
           </span>
           <span class="flex items-center gap-2">
             <SelectMenu bind:value={$torrentBindInterface} className="max-w-72 min-w-44" ariaLabel="Bind to network interface" options={ifaceOptions} />
-            <button data-focusable onclick={refreshInterfaces} class="rounded-md bg-secondary px-3 py-2 text-sm font-bold">Refresh</button>
+            <RefreshButton
+              onRefresh={refreshInterfaces}
+              class="min-w-[7.25rem] rounded-md bg-secondary px-3 py-2 text-sm font-bold hover:bg-accent"
+            />
           </span>
         </label>
-        {#if ifaceError}<p class="mt-2 text-xs text-destructive">{ifaceError}</p>{/if}
+        {#if ifaceError}<p role="alert" class="mt-2 text-xs text-destructive">{ifaceError}</p>{/if}
 
         {#if $torrentBindInterface}
           {#if boundIface && boundIface.isUp}

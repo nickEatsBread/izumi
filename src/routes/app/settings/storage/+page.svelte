@@ -3,9 +3,9 @@
   import { invoke } from '@tauri-apps/api/core'
   import { formatBytes } from '$lib/util/format'
   import { ioErrorMessage } from '$lib/player/history-io'
+  import RefreshButton from '$lib/components/RefreshButton.svelte'
   import HardDrive from '@lucide/svelte/icons/hard-drive'
   import Trash2 from '@lucide/svelte/icons/trash-2'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
 
   // Ids match cache_gc::BUCKETS. Anything not listed here is app DATA (downloads, extensions,
   // sync state) — user-owned, and deliberately not clearable from a "caches" screen.
@@ -35,29 +35,35 @@
   let sizes = $state<Record<string, number>>({})
   let busy = $state('')
   let message = $state('')
+  let messageError = $state(false)
   let loaded = $state(false)
 
   const total = $derived(Object.values(sizes).reduce((sum, n) => sum + n, 0))
 
-  async function refresh() {
+  async function refresh(clearMessage = true) {
     try {
       const buckets = await invoke<{ id: string; bytes: number }[]>('cache_usage')
       sizes = Object.fromEntries(buckets.map((b) => [b.id, b.bytes]))
-      message = ''
+      if (clearMessage) { message = ''; messageError = false }
+      return true
     } catch (error) {
       message = ioErrorMessage(error, 'Could not read cache sizes.')
+      messageError = true
+      return false
+    } finally {
+      loaded = true
     }
-    loaded = true
   }
 
   async function clear(bucket: string) {
     busy = bucket
     try {
       const freed = await invoke<number>('clear_cache', { bucket })
-      message = freed > 0 ? `Freed ${formatBytes(freed)}.` : 'Nothing to clear.'
-      await refresh()
+      const clearedMessage = freed > 0 ? `Freed ${formatBytes(freed)}.` : 'Nothing to clear.'
+      if (await refresh(false)) { message = clearedMessage; messageError = false }
     } catch (error) {
       message = ioErrorMessage(error, 'Could not clear that cache.')
+      messageError = true
     }
     busy = ''
   }
@@ -86,10 +92,11 @@
         </div>
       </div>
       <div class="flex gap-2">
-        <button data-focusable onclick={refresh} aria-label="Refresh sizes"
-                class="flex items-center gap-2 rounded-md border border-border px-3 py-2.5 text-sm font-bold hover:bg-accent sm:py-2 sm:text-xs">
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <RefreshButton
+          onRefresh={refresh}
+          successLabel="Updated"
+          class="min-w-[7rem] rounded-md border border-border px-3 py-2.5 text-sm font-bold hover:bg-accent sm:py-2 sm:text-xs"
+        />
         <button data-focusable onclick={() => clear('all')} disabled={busy !== '' || total === 0}
                 class="flex items-center gap-2 rounded-md bg-secondary px-3 py-2.5 text-sm font-bold hover:bg-accent disabled:opacity-50 sm:py-2 sm:text-xs">
           <Trash2 size={14} /> Clear all
@@ -115,6 +122,8 @@
       </section>
     {/each}
 
-    {#if message}<p class="text-sm text-theme">{message}</p>{/if}
+    {#if message}
+      <p role={messageError ? 'alert' : 'status'} class="text-sm {messageError ? 'text-destructive' : 'text-theme'}">{message}</p>
+    {/if}
   </div>
 </div>

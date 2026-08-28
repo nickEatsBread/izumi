@@ -10,12 +10,12 @@
   import { downloads } from '$lib/downloads/store'
   import { forceOffline } from '$lib/stores/offline'
   import Toggle from '$lib/components/settings/Toggle.svelte'
+  import RefreshButton from '$lib/components/RefreshButton.svelte'
   import {
     autoDownloadRules, autoDownloadRunning, removeAutoDownloadRule, runAutoDownloadRules,
     updateAutoDownloadRule,
   } from '$lib/downloads/rules'
   import Trash2 from '@lucide/svelte/icons/trash-2'
-  import RefreshCw from '@lucide/svelte/icons/refresh-cw'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
 
   // Desktop: native folder picker → an absolute filesystem path the reqwest downloader can write to.
@@ -39,6 +39,20 @@
     return `${v.toFixed(1)} ${u[i]}`
   }
   const used = $derived(Object.values($downloads).filter((d) => d.status === 'done').reduce((s, d) => s + (d.bytes || 0), 0))
+  let checkResult = $state('Checked')
+  let checkError = $state('')
+
+  async function checkAutoDownloads() {
+    checkError = ''
+    try {
+      const queued = await runAutoDownloadRules()
+      checkResult = queued ? `${queued} queued` : 'Up to date'
+      return true
+    } catch (error) {
+      checkError = error instanceof Error ? error.message : String(error)
+      return false
+    }
+  }
 
   onMount(async () => {
     if (!$downloadDir) { try { $downloadDir = await invoke<string>('download_dir_default') } catch { /* not in Tauri */ } }
@@ -110,8 +124,16 @@
       <!-- Stacked on a phone: the long description squeezed the button into a stub beside it. -->
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div><div class="font-bold">Automatic downloads</div><p class="mt-1 text-xs text-muted-foreground">Enable a series from its episode Download menu. Izumi checks on launch, when reconnecting, and every 15 minutes while running.</p></div>
-        <button data-focusable onclick={() => runAutoDownloadRules()} disabled={$autoDownloadRunning} class="flex shrink-0 items-center gap-2 self-start rounded-md bg-secondary px-3 py-2.5 text-sm font-bold sm:self-auto sm:py-2 sm:text-xs"><RefreshCw size={14} class={$autoDownloadRunning ? 'animate-spin' : ''} /> Check now</button>
+        <RefreshButton
+          onRefresh={checkAutoDownloads}
+          label="Check now"
+          busyLabel="Checking…"
+          successLabel={checkResult}
+          disabled={$autoDownloadRunning}
+          class="min-w-[7.5rem] shrink-0 self-start rounded-md bg-secondary px-3 py-2.5 text-sm font-bold hover:bg-accent sm:self-auto sm:py-2 sm:text-xs"
+        />
       </div>
+      {#if checkError}<p role="alert" class="mt-3 text-xs text-destructive">{checkError}</p>{/if}
       {#if !$autoDownloadRules.length}
         <p class="mt-3 rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">No series enabled. Open a series, choose Download…, then turn on “Auto-download new episodes”.</p>
       {:else}

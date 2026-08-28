@@ -57,19 +57,23 @@
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import SourcePlaceholder from '$lib/components/SourcePlaceholder.svelte'
   import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
+  import RefreshButton from '$lib/components/RefreshButton.svelte'
   import { formatBytes } from '$lib/util/format'
 
   const current = $derived(providerMeta($debridProvider))
   let account = $state<DebridAccountInfo | null>(null)
   let accountError = $state('')
-  let accountLoading = $state(false)
   async function refreshAccount() {
-    if (!$debridKey) { account = null; accountError = ''; return }
-    accountLoading = true
+    if (!$debridKey) { account = null; accountError = ''; return false }
     accountError = ''
-    try { account = await accountInfo($debridProvider, $debridKey) }
-    catch (error) { account = null; accountError = error instanceof Error ? error.message : String(error) }
-    finally { accountLoading = false }
+    try {
+      account = await accountInfo($debridProvider, $debridKey)
+      return true
+    } catch (error) {
+      account = null
+      accountError = error instanceof Error ? error.message : String(error)
+      return false
+    }
   }
   const accountDate = (value?: number) => value
     ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(value)
@@ -379,10 +383,14 @@
             <h3 class="text-sm font-black">Account & usage</h3>
             <p class="text-xs text-muted-foreground">Live data from {current?.name ?? 'your provider'}; fetched only when you ask.</p>
           </div>
-          <button data-focusable onclick={refreshAccount} disabled={accountLoading}
-            class="rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent disabled:opacity-50">
-            {accountLoading ? 'Checking…' : account ? 'Refresh' : 'Check account'}
-          </button>
+          <RefreshButton
+            onRefresh={refreshAccount}
+            label={account ? 'Refresh' : 'Check account'}
+            busyLabel="Checking…"
+            successLabel="Account updated"
+            errorLabel="Check failed"
+            class="min-w-[8.5rem] rounded-md bg-secondary px-3 py-1.5 text-xs font-bold hover:bg-accent"
+          />
         </div>
         {#if account}
           <dl class="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">

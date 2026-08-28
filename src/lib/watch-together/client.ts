@@ -342,10 +342,15 @@ async function exchange(playback?: PartyPlayback) {
 }
 
 export async function refreshWatchParty() {
-  if (!get(watchParty)) { partyParticipants.set([]); return }
+  if (!get(watchParty)) { partyParticipants.set([]); return true }
+  partyError.set('')
   try {
     await exchange()
-  } catch (error) { partyError.set(error instanceof Error ? error.message : String(error)) }
+    return true
+  } catch (error) {
+    partyError.set(error instanceof Error ? error.message : String(error))
+    return false
+  }
 }
 
 export async function createWatchParty() {

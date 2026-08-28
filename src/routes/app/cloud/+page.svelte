@@ -6,11 +6,11 @@
   import { heroMedia } from '$lib/stores/hero'
   import { offlineMode } from '$lib/stores/offline'
   import OfflineUnavailable from '$lib/components/offline/OfflineUnavailable.svelte'
+  import RefreshButton from '$lib/components/RefreshButton.svelte'
   import type { DebridItem } from '$lib/stremio/debrid/types'
   import Search from '@lucide/svelte/icons/search'
   import Play from '@lucide/svelte/icons/play'
   import Trash2 from '@lucide/svelte/icons/trash-2'
-  import RotateCw from '@lucide/svelte/icons/rotate-cw'
 
   heroMedia.set(null)
 
@@ -36,11 +36,12 @@
   async function load() {
     loading = true; error = ''
     try {
-      if (!$debridKey) { error = `Add a ${providerName(prov)} key in Settings → Sources → Playback to browse your account.`; items = []; return }
-      if (!supported) { error = `${providerName(prov)} doesn't support browsing your account.`; items = []; return }
+      if (!$debridKey) { error = `Add a ${providerName(prov)} key in Settings → Sources → Playback to browse your account.`; items = []; return false }
+      if (!supported) { error = `${providerName(prov)} doesn't support browsing your account.`; items = []; return false }
       items = await listItems(prov, $debridKey)
+      return true
     }
-    catch (e) { error = e instanceof Error ? e.message : String(e) }
+    catch (e) { error = e instanceof Error ? e.message : String(e); return false }
     finally { loading = false }
   }
 
@@ -68,7 +69,14 @@
     <h1 class="text-2xl font-black">Cloud</h1>
     <div class="flex flex-wrap items-center justify-end gap-3">
       <span class="text-sm text-muted-foreground">{providerName(prov)} · {items.length} items · {fmtBytes(totalBytes)}</span>
-      <button data-focusable title="Refresh" onclick={load} class="grid size-10 place-items-center rounded-md hover:bg-accent sm:size-8"><RotateCw size={15} /></button>
+      <RefreshButton
+        onRefresh={load}
+        iconOnly
+        disabled={loading}
+        successLabel="Cloud refreshed"
+        errorLabel="Cloud refresh failed"
+        class="size-10 rounded-md hover:bg-accent sm:size-8"
+      />
       <label class="flex w-full items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 sm:w-auto">
         <Search size={15} class="text-muted-foreground" />
         <input bind:value={filter} data-focusable placeholder="Filter…" class="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground sm:w-40" />
@@ -81,7 +89,7 @@
   {#if loading}
     <p class="mt-16 text-center text-muted-foreground">Loading your {providerName(prov)} account…</p>
   {:else if error}
-    <p class="mt-16 text-center text-muted-foreground">{error}</p>
+    <p role="alert" class="mt-16 text-center text-muted-foreground">{error}</p>
   {:else if !list.length}
     <p class="mt-16 text-center text-muted-foreground">Nothing on your {providerName(prov)} account yet.</p>
   {:else}
