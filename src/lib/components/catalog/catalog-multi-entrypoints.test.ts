@@ -66,6 +66,7 @@ describe('multi-platform catalog entry points', () => {
   it('keeps provider Home results warm and accepts progressive row updates', () => {
     const catalogHome = read('./CatalogHome.svelte')
     expect(catalogHome).toContain('providerHomeCache')
+    expect(catalogHome).toContain('cached?.complete && home')
     expect(catalogHome).toContain('provider.home(abort.signal, undefined, publish)')
     expect(catalogHome).toContain('if (result.hero.length || result.sections.length) loading = false')
   })

@@ -2,7 +2,7 @@
   import type { CatalogHome as CatalogHomeData } from '$lib/catalog/types'
 
   const HOME_CACHE_MS = 5 * 60_000
-  const providerHomeCache = new Map<string, { storedAt: number; home: CatalogHomeData }>()
+  const providerHomeCache = new Map<string, { storedAt: number; home: CatalogHomeData; complete: boolean }>()
 </script>
 
 <script lang="ts">
@@ -49,14 +49,15 @@
     home = cached && Date.now() - cached.storedAt < HOME_CACHE_MS ? cached.home : null
     loading = !home
     error = ''
-    const publish = (result: CatalogHome) => {
+    if (cached?.complete && home) return
+    const publish = (result: CatalogHome, complete = false) => {
       if (abort.signal.aborted) return
       home = result
-      providerHomeCache.set(selection, { storedAt: Date.now(), home: result })
+      providerHomeCache.set(selection, { storedAt: Date.now(), home: result, complete })
       if (result.hero.length || result.sections.length) loading = false
     }
     void loadCatalogProvider(selection).then((provider) => provider.home(abort.signal, undefined, publish)).then((result) => {
-      publish(result)
+      publish(result, true)
     }).catch((reason) => {
       if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
     }).finally(() => { if (!abort.signal.aborted) loading = false })
