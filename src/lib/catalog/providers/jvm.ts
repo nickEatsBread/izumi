@@ -38,7 +38,27 @@ interface JvmHomeRequest {
 // The manager also protects the native bridge globally, but Home remains serial itself so it never
 // creates a large queue that can sit in front of a detail/search request after the user navigates.
 const JVM_HOME_CONCURRENCY = 1
-const JVM_HOME_ROW_TIMEOUT_MS = 8_000
+const JVM_HOME_ROW_TIMEOUT_MS = 5_000
+const JVM_HOME_LOAD_BUDGET_MS = 12_000
+
+function waitForSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => {
+      cleanup()
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    const cleanup = () => signal.removeEventListener('abort', abort)
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    work.then(
+      (value) => { cleanup(); resolve(value) },
+      (error) => { cleanup(); reject(error) },
+    )
+  })
+}
 
 async function settleWithConcurrency<T, R>(
   values: T[],
@@ -324,9 +344,37 @@ async function home(
   rowIds?: string[],
   onUpdate?: CatalogHomeUpdate,
 ): Promise<CatalogHome> {
-  const sources = await selectedSources()
+  const loadController = new AbortController()
+  let budgetExpired = false
+  const abortLoad = () => loadController.abort()
+  if (signal?.aborted) loadController.abort()
+  else signal?.addEventListener('abort', abortLoad, { once: true })
+  const budgetTimer = setTimeout(() => {
+    budgetExpired = true
+    loadController.abort()
+  }, JVM_HOME_LOAD_BUDGET_MS)
+  const finishLoad = () => {
+    clearTimeout(budgetTimer)
+    signal?.removeEventListener('abort', abortLoad)
+  }
+  let sources: JvmCatalogSource[]
+  try {
+    // Source enumeration can legitimately continue warming its shared cache, but this Home caller
+    // must remain bounded even when JVM startup itself gets stuck.
+    sources = await waitForSignal(selectedSources(), loadController.signal)
+  } catch (error) {
+    finishLoad()
+    throwIfAborted(signal)
+    if (budgetExpired) {
+      throw new Error('Aniyomi sources did not initialize within 12 seconds. Retry, or disable the source that is not responding.')
+    }
+    throw error
+  }
   const available = jvmHomeRequests(sources)
-  if (!available.length) return { hero: [], sections: [] }
+  if (!available.length) {
+    finishLoad()
+    return { hero: [], sections: [] }
+  }
   const byId = new Map(available.map((request) => [request.id, request]))
   const options = jvmHomeOptions(available)
   const configured = rowIds
@@ -352,27 +400,43 @@ async function home(
   const publish = () => {
     if (!signal?.aborted) onUpdate?.(snapshot())
   }
-  const results = await settleWithConcurrency(requests, JVM_HOME_CONCURRENCY, async (request) => {
-    const page = await homeSourcePage(request, signal)
-    loaded.set(request.id, page.media)
-    if (!hero.length && page.media.length) hero = page.media.slice(0, 10)
-    publish()
-    return { request, page }
-  })
-  throwIfAborted(signal)
-  if (!snapshot().sections.length && results.every((result) => result.status === 'rejected')) {
-    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-    throw failure?.reason ?? new Error('The selected Aniyomi sources did not return catalog data.')
+  try {
+    const results = await settleWithConcurrency(requests, JVM_HOME_CONCURRENCY, async (request) => {
+      const page = await homeSourcePage(request, loadController.signal)
+      loaded.set(request.id, page.media)
+      if (!hero.length && page.media.length) hero = page.media.slice(0, 10)
+      publish()
+      return { request, page }
+    })
+    throwIfAborted(signal)
+    const current = snapshot()
+    if (!current.sections.length && results.every((result) => result.status === 'rejected')) {
+      if (budgetExpired) {
+        throw new Error('Aniyomi sources did not return Home content within 12 seconds. Retry, or disable the source that is not responding.')
+      }
+      const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+      throw failure?.reason ?? new Error('The selected Aniyomi sources did not return catalog data.')
+    }
+    // Home is already usable before this optional request begins. Enrich one featured item only,
+    // after all rows, instead of inserting three speculative details ahead of the row queue.
+    if (!loadController.signal.aborted && hero.length && !hero.some((item) => item.bannerImage)) {
+      const pool = await enrichHero(hero.slice(0, 1), loadController.signal)
+      const withBanners = pool.filter((item) => item.bannerImage)
+      hero = (withBanners.length ? withBanners : pool).slice(0, 10)
+      publish()
+    }
+    return snapshot()
+  } catch (error) {
+    throwIfAborted(signal)
+    const current = snapshot()
+    if (budgetExpired && (current.hero.length || current.sections.length)) return current
+    if (budgetExpired) {
+      throw new Error('Aniyomi sources did not return Home content within 12 seconds. Retry, or disable the source that is not responding.')
+    }
+    throw error
+  } finally {
+    finishLoad()
   }
-  // Home is already usable before this optional request begins. Enrich one featured item only,
-  // after all rows, instead of inserting three speculative details ahead of the row queue.
-  if (hero.length && !hero.some((item) => item.bannerImage)) {
-    const pool = await enrichHero(hero.slice(0, 1), signal)
-    const withBanners = pool.filter((item) => item.bannerImage)
-    hero = (withBanners.length ? withBanners : pool).slice(0, 10)
-    publish()
-  }
-  return snapshot()
 }
 
 async function search(request: CatalogSearchRequest): Promise<CatalogPage> {

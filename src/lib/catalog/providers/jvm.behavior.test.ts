@@ -117,6 +117,30 @@ describe('JVM catalog provider', () => {
     expect(peak).toBe(1)
   })
 
+  it('bounds the whole Home transition when enabled sources never answer', async () => {
+    vi.useFakeTimers()
+    try {
+      mocks.browse.mockImplementation(async (
+        _sourceId: string,
+        _method: string,
+        _page: number,
+        _query: string,
+        _filters: unknown,
+        signal?: AbortSignal,
+      ) => new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      }))
+
+      const result = expect(jvmCatalog.home()).rejects.toThrow('did not return Home content within 12 seconds')
+      await vi.advanceTimersByTimeAsync(12_000)
+
+      await result
+      expect(mocks.browse.mock.calls.length).toBeLessThan(sources.length * 2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('waits for Home rows before enriching only one featured item', async () => {
     let completedRows = 0
     mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
