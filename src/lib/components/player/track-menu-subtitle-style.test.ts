@@ -35,9 +35,9 @@ describe('Unified player media menu', () => {
 
   it('shows labelled Audio, Subtitles, and Server roots with distinct icons', () => {
     expect(controls).toContain("openDetail('audio')")
-    expect(controls).toMatch(/data-track-summary="audio">\s*<Volume2 size=\{16\}/)
+    expect(controls).toMatch(/data-track-summary="audio">\s*<Volume2 size=\{16\}[^>]*\/>\s*<span[^>]*>Audio<\/span>\s*<span[^>]*>\{curAudioLabel\}<\/span>/)
     expect(controls).toContain("openDetail('subs')")
-    expect(controls).toMatch(/data-track-summary="subtitles">\s*<Captions size=\{16\}/)
+    expect(controls).toMatch(/data-track-summary="subtitles">\s*<Captions size=\{16\}[^>]*\/>\s*<span[^>]*>Subtitles<\/span>\s*<span[^>]*>\{curSubLabel\}<\/span>/)
     expect(controls).toContain("openDetail('server')")
     expect(controls).toContain('<ServerIcon size={18}')
   })
