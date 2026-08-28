@@ -17,6 +17,18 @@ describe('unified Sources settings', () => {
     expect(page).not.toContain('>Remove</button>')
   })
 
+  it('uses accessible cog actions for configurable Stremio and Aniyomi sources', () => {
+    expect(page).toContain("import Settings from '@lucide/svelte/icons/settings'")
+    expect(page).toContain('aria-label={`Configure ${m.name}`}')
+    expect(page).toContain('<Settings size={17} />')
+    expect(page).not.toContain('>Configure</button>')
+    expect(communitySources).toContain("import JvmSourcePreferences from '$lib/components/catalog/JvmSourcePreferences.svelte'")
+    expect(communitySources).toContain("p.backend === 'aniyomi-jvm' && p.sources[0]")
+    expect(communitySources).toContain('openJvmSourceSettings(p.sources[0].id, p.sources[0].name)')
+    expect(communitySources).toContain("p.backend === 'aniyomi-jvm' && p.sourceId")
+    expect(communitySources).toContain('<JvmSourcePreferences')
+  })
+
   it('organises all source controls by task on one screen', () => {
     expect(page).toContain("{ id: 'manage', label: 'My sources'")
     expect(page).toContain("{ id: 'playback', label: 'Playback'")

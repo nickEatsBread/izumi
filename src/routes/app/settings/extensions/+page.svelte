@@ -57,7 +57,9 @@
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import SourcePlaceholder from '$lib/components/SourcePlaceholder.svelte'
   import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
+  import JvmSourcePreferences from '$lib/components/catalog/JvmSourcePreferences.svelte'
   import RefreshButton from '$lib/components/RefreshButton.svelte'
+  import Settings from '@lucide/svelte/icons/settings'
   import { formatBytes } from '$lib/util/format'
   import { masonryItem } from '$lib/actions/masonry'
 
@@ -87,6 +89,7 @@
   let packageStatus = $state<{ url: string; text: string; ok: boolean } | null>(null)
   let packageBusy = $state(false)
   let serviceSettings = $state<{ id: string; name: string } | null>(null)
+  let jvmSourceSettings = $state<{ id: string; name: string } | null>(null)
   const installedById = $derived(new Map(localPackages.map((extension) => [extension.id, extension])))
   // Real launcher icons for INSTALLED Aniyomi extensions, keyed by Android package name — which is
   // the same string a catalog entry uses as its id. The catalog itself ships no icons, so anything
@@ -129,6 +132,9 @@
   }
   function openServiceSettings(id: string, name: string) {
     serviceSettings = { id, name }
+  }
+  function openJvmSourceSettings(id: string, name: string) {
+    jvmSourceSettings = { id, name }
   }
   $effect(() => { void refreshPackages() })
 
@@ -642,6 +648,14 @@
                         </div>
                         <div class="flex items-center justify-end gap-2 sm:contents">
                           {#if inst}
+                            {#if p.backend === 'aniyomi-jvm' && p.sources[0]}
+                              <button type="button" data-focusable disabled={pOff}
+                                aria-label={`Configure ${p.sources[0].name}`} title={`Configure ${p.sources[0].name}`}
+                                onclick={() => openJvmSourceSettings(p.sources[0].id, p.sources[0].name)}
+                                class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 sm:size-7">
+                                <Settings size={17} />
+                              </button>
+                            {/if}
                             <button data-focusable data-switch onclick={() => togglePlugin(p.id)} aria-pressed={!pOff}
                               title={pOff ? 'Enable' : 'Disable'}
                               class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors {pOff ? 'bg-white/20 ring-1 ring-inset ring-white/20' : 'bg-theme'}">
@@ -723,6 +737,14 @@
             </div>
           </div>
           <div class="flex items-center justify-end gap-2">
+            {#if p.backend === 'aniyomi-jvm' && p.sourceId}
+              <button type="button" data-focusable disabled={pOff}
+                aria-label={`Configure ${p.name}`} title={`Configure ${p.name}`}
+                onclick={() => openJvmSourceSettings(p.sourceId, p.name)}
+                class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 sm:size-8">
+                <Settings size={17} />
+              </button>
+            {/if}
             {#if p.backend === 'izumi-service'}
               <button data-focusable onclick={() => openServiceSettings(p.id, p.name)}
                 class="rounded-md bg-secondary px-3 py-2 text-xs font-bold hover:bg-accent">Settings</button>
@@ -745,5 +767,13 @@
     id={serviceSettings.id}
     name={serviceSettings.name}
     onclose={() => (serviceSettings = null)}
+  />
+{/if}
+
+{#if jvmSourceSettings}
+  <JvmSourcePreferences
+    sourceId={jvmSourceSettings.id}
+    sourceName={jvmSourceSettings.name}
+    onClose={() => (jvmSourceSettings = null)}
   />
 {/if}

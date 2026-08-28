@@ -34,6 +34,7 @@
   import Search from '@lucide/svelte/icons/search'
   import ArrowUpDown from '@lucide/svelte/icons/arrow-up-down'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Settings from '@lucide/svelte/icons/settings'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import X from '@lucide/svelte/icons/x'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
@@ -561,8 +562,11 @@
               {#if m}
                 {#await findAddonConfigureUrl(url, m) then configureUrl}
                   {#if configureUrl}
-                    <button data-focusable onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
-                            class="shrink-0 rounded-md bg-secondary px-3 py-2 text-sm font-bold active:bg-accent sm:py-1.5 sm:text-xs sm:hover:bg-accent">Configure</button>
+                    <button type="button" data-focusable aria-label={`Configure ${m.name}`} title={`Configure ${m.name}`}
+                      onclick={() => beginConfiguration(url, m.name, m.id, configureUrl)}
+                      class="grid size-9 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground">
+                      <Settings size={17} />
+                    </button>
                   {/if}
                 {/await}
               {/if}
