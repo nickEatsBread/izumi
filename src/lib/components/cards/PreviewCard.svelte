@@ -10,7 +10,7 @@
   import Heart from '@lucide/svelte/icons/heart'
   import Plus from '@lucide/svelte/icons/plus'
   import BookOpen from '@lucide/svelte/icons/book-open'
-  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
+  import CatalogSourceAttribution from '$lib/components/catalog/CatalogSourceAttribution.svelte'
   let { media }: { media: Media } = $props()
 
   // YouTube trailers only; WebKitGTK (no `credentialless`) will just show the still.
@@ -76,10 +76,8 @@
       {/if}
     </div>
     {#if jvmSource}
-      <div class="mt-2 flex min-w-0 items-center gap-1.5 text-[11px] font-semibold text-foreground/75">
-        <AddonLogo logo={jvmSource.sourceIcon} name={jvmSource.sourceName} id={jvmSource.id} size={15} />
-        <span class="truncate">{jvmSource.sourceName}</span>
-        {#if jvmSource.sourceLanguage}<span class="shrink-0 uppercase text-muted-foreground">· {jvmSource.sourceLanguage}</span>{/if}
+      <div class="mt-2 text-[11px] font-semibold text-foreground/75">
+        <CatalogSourceAttribution {media} />
       </div>
     {/if}
     {#if metadata}<div class="mt-2 text-[11px] text-muted-foreground">{metadata}</div>{/if}

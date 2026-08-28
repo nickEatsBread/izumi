@@ -6,12 +6,13 @@
   import { openUrl } from '@tauri-apps/plugin-opener'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import Carousel from '$lib/components/cards/Carousel.svelte'
-  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
+  import CatalogSourceAttribution from './CatalogSourceAttribution.svelte'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import type { CatalogContentType, CatalogProviderId, MediaRef } from '$lib/catalog/identity'
   import { providerExternalUrl } from '$lib/catalog/identity'
   import { banner, cover, format, season, status, title } from '$lib/anilist/media'
   import type { Media, MediaVideo } from '$lib/anilist/types'
+  import { detailHints } from '$lib/anilist/detail-hint'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
@@ -51,6 +52,12 @@
   const externalUrl = $derived(media ? providerExternalUrl(media) : null)
   const isMovie = $derived(media?.catalog?.type === 'movie' || media?.format === 'MOVIE')
   const titleLogo = $derived(media?.logoImage && media.logoImage !== failedLogo ? media.logoImage : '')
+  const attributedMedia = $derived.by(() => {
+    if (!media || media.catalog?.provider !== 'jvm') return media
+    const remembered = $detailHints[media.id]
+    const alternatives = [...(media.catalogAlternatives ?? []), ...(remembered?.catalogAlternatives ?? [])]
+    return alternatives.length ? { ...media, catalogAlternatives: alternatives } : media
+  })
 
   function play(video?: MediaVideo) {
     if (!media) return
@@ -107,10 +114,10 @@
             {#if media.averageScore}<span>{media.averageScore}%</span>{/if}
           </div>
           <p class="mt-4 line-clamp-5 max-w-3xl text-sm leading-relaxed text-foreground/80 sm:text-base">{(media.description ?? '').replace(/<[^>]+>/g, '')}</p>
-          {#if provider === 'jvm' && media.catalog?.sourceName}
-            <div class="mt-4 flex w-fit items-center gap-2 text-sm font-bold text-foreground/75">
-              <AddonLogo logo={media.catalog.sourceIcon} name={media.catalog.sourceName} id={media.catalog.id} size={24} />
-              <span>{media.catalog.sourceName}</span>
+          {#if provider === 'jvm' && attributedMedia?.catalog?.sourceName}
+            <div class="mt-4 max-w-full text-sm font-bold text-foreground/75">
+              <div class="mb-1 text-xs font-semibold text-muted-foreground">Available from</div>
+              <CatalogSourceAttribution media={attributedMedia} iconSize={20} />
             </div>
           {/if}
           <div class="mt-5 flex flex-wrap gap-2">

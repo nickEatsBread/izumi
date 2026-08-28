@@ -19,4 +19,14 @@ describe('JVM card metadata', () => {
     expect(preview).not.toContain("totalEpisodes(media) || '?'")
     expect(preview).not.toContain("media.averageScore ?? '–'")
   })
+
+  it('reveals merged sources in the hover preview and caps the row with a remainder count', () => {
+    const preview = read('./PreviewCard.svelte')
+    const attribution = read('../catalog/CatalogSourceAttribution.svelte')
+    expect(preview).toContain('<CatalogSourceAttribution {media} />')
+    expect(attribution).toContain('...(media.catalogAlternatives ?? [])')
+    expect(attribution).toContain('sources.slice(0, Math.max(1, limit))')
+    expect(attribution).toContain('+{hidden.length}')
+    expect(attribution).toContain('aria-label={accessibleLabel}')
+  })
 })

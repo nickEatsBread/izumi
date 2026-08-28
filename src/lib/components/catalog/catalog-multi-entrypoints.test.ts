@@ -75,12 +75,14 @@ describe('multi-platform catalog entry points', () => {
     expect(tmdb).toContain('append_to_response: append')
   })
 
-  it('attributes JVM titles to their actual source below the title metadata', () => {
+  it('carries merged JVM source attribution from search into the series page', () => {
     const detail = read('./CatalogMediaDetail.svelte')
     expect(detail).not.toContain("provider === 'jvm' ? 'JVM source'")
-    expect(detail).toContain("provider === 'jvm' && media.catalog?.sourceName")
-    expect(detail).toContain('logo={media.catalog.sourceIcon}')
-    expect(detail).toContain('{media.catalog.sourceName}</span>')
+    expect(detail).toContain("import { detailHints } from '$lib/anilist/detail-hint'")
+    expect(detail).toContain('...(remembered?.catalogAlternatives ?? [])')
+    expect(detail).toContain("provider === 'jvm' && attributedMedia?.catalog?.sourceName")
+    expect(detail).toContain('<CatalogSourceAttribution media={attributedMedia} iconSize={20} />')
+    expect(detail).toContain('Available from')
   })
 
   it('does not let Browse invalidate its own provider request', () => {
