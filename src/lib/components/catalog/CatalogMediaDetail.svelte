@@ -6,6 +6,7 @@
   import { openUrl } from '@tauri-apps/plugin-opener'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import Carousel from '$lib/components/cards/Carousel.svelte'
+  import AddonLogo from '$lib/components/player/AddonLogo.svelte'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import type { CatalogContentType, CatalogProviderId, MediaRef } from '$lib/catalog/identity'
   import { providerExternalUrl } from '$lib/catalog/identity'
@@ -86,7 +87,7 @@
       <div class="relative flex min-h-[52vh] max-w-4xl items-end gap-5 px-5 pb-8 pt-24 sm:px-8">
         <img src={cover(media)} alt="" class="hidden aspect-[2/3] w-40 rounded-lg bg-muted object-cover shadow-2xl sm:block" />
         <div class="min-w-0">
-          {#if provider !== 'tmdb'}
+          {#if provider !== 'tmdb' && provider !== 'jvm'}
             <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">{provider === 'kitsu' ? 'Kitsu' : 'Stremio metadata'}</div>
           {/if}
           {#if titleLogo}
@@ -106,6 +107,12 @@
             {#if media.averageScore}<span>{media.averageScore}%</span>{/if}
           </div>
           <p class="mt-4 line-clamp-5 max-w-3xl text-sm leading-relaxed text-foreground/80 sm:text-base">{(media.description ?? '').replace(/<[^>]+>/g, '')}</p>
+          {#if provider === 'jvm' && media.catalog?.sourceName}
+            <div class="mt-4 flex w-fit items-center gap-2 text-sm font-bold text-foreground/75">
+              <AddonLogo logo={media.catalog.sourceIcon} name={media.catalog.sourceName} id={media.catalog.id} size={24} />
+              <span>{media.catalog.sourceName}</span>
+            </div>
+          {/if}
           <div class="mt-5 flex flex-wrap gap-2">
             <button data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
             {#if externalUrl}

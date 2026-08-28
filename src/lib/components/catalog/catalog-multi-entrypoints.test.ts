@@ -40,8 +40,8 @@ describe('multi-platform catalog entry points', () => {
   it('feeds a featured carousel from every platform home', () => {
     expect(home).toContain('<Hero medias={heroMedias}')
     expect(read('./CatalogHome.svelte')).toContain('<Hero medias={home.hero}')
-    for (const provider of ['kitsu', 'tmdb', 'stremio']) {
-      expect(read(`../../catalog/providers/${provider}.ts`)).toContain('hero:')
+    for (const provider of ['kitsu', 'tmdb', 'stremio', 'jvm']) {
+      expect(read(`../../catalog/providers/${provider}.ts`)).toMatch(/\bhero[:,]/)
     }
   })
 
@@ -51,10 +51,18 @@ describe('multi-platform catalog entry points', () => {
     expect(detail).toContain('{#if titleLogo}')
     expect(detail).toContain('src={titleLogo}')
     expect(detail).toContain('{title(media)}</h1>')
-    expect(detail).toContain("{#if provider !== 'tmdb'}")
+    expect(detail).toContain("{#if provider !== 'tmdb' && provider !== 'jvm'}")
     expect(detail).toContain("{provider === 'tmdb' ? 'TMDB' : 'Open provider'}")
     expect(tmdb).toContain("include_image_language: 'en,null'")
     expect(tmdb).toContain('append_to_response: append')
+  })
+
+  it('attributes JVM titles to their actual source below the title metadata', () => {
+    const detail = read('./CatalogMediaDetail.svelte')
+    expect(detail).not.toContain("provider === 'jvm' ? 'JVM source'")
+    expect(detail).toContain("provider === 'jvm' && media.catalog?.sourceName")
+    expect(detail).toContain('logo={media.catalog.sourceIcon}')
+    expect(detail).toContain('{media.catalog.sourceName}</span>')
   })
 
   it('does not let Browse invalidate its own provider request', () => {

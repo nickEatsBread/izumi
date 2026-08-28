@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CatalogSelection } from '$lib/settings/catalog'
   import RefreshCw from '@lucide/svelte/icons/refresh-cw'
+  import Coffee from '@lucide/svelte/icons/coffee'
 
   let { platform }: { platform: CatalogSelection } = $props()
   let imageFailed = $state(false)
@@ -49,6 +50,10 @@
     {:else}
       <img src="/brand/tmdb.svg" alt="" class="w-9 object-contain" onerror={showFallback} />
     {/if}
+  </span>
+{:else if platform === 'jvm'}
+  <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-[#5c3624] text-[#f7d7aa]" aria-hidden="true">
+    <Coffee size={24} strokeWidth={2.4} />
   </span>
 {:else}
   <span class="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#2a2843]" aria-hidden="true">

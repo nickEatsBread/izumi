@@ -5,6 +5,8 @@
     catalogProvider,
     catalogProviders,
     continueWatchingCatalogScope,
+    isJvmCatalogSourceEnabled,
+    jvmCatalogSourceOverrides,
     normalizeCatalogProviders,
     resolveCatalogStartup,
     selectCatalogProvider,
@@ -18,10 +20,13 @@
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import CatalogPlatformRow from '$lib/components/catalog/CatalogPlatformRow.svelte'
+  import JvmCatalogSourceRow from '$lib/components/catalog/JvmCatalogSourceRow.svelte'
+  import { installedJvmCatalogSources, type JvmCatalogSource } from '$lib/extensions/manager'
   import LibraryBig from '@lucide/svelte/icons/library-big'
   import KeyRound from '@lucide/svelte/icons/key-round'
   import Boxes from '@lucide/svelte/icons/boxes'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
+  import Coffee from '@lucide/svelte/icons/coffee'
 
   const platforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
     { id: 'auto', label: 'Automatic anime', description: 'AniList with automatic Kitsu and Jikan fallbacks.' },
@@ -29,7 +34,13 @@
     { id: 'kitsu', label: 'Kitsu', description: 'Independent anime and manga catalogs.' },
     { id: 'tmdb', label: 'TMDB', description: 'Movies, television, and cross-database anime metadata.' },
     { id: 'stremio', label: 'Stremio metadata add-ons', description: 'Catalogs exposed by your enabled add-ons.' },
+    { id: 'jvm', label: 'JVM sources', description: 'Browse anime directly from installed Aniyomi sources.' },
   ]
+
+  let jvmSources = $state<JvmCatalogSource[]>([])
+  let jvmSourcesLoading = $state(false)
+  let jvmSourcesLoaded = $state(false)
+  let jvmSourcesError = $state('')
 
   const enabled = $derived(normalizeCatalogProviders($catalogProviders, $catalogProvider))
   const defaultOptions = $derived([
@@ -45,6 +56,30 @@
   ]
   const hasPlatform = (id: CatalogSelection) => enabled.includes(id)
   const homeCustomizeProvider = $derived($catalogProvider === 'auto' ? 'anilist' : $catalogProvider)
+
+  $effect(() => {
+    if (!hasPlatform('jvm') || jvmSourcesLoaded || jvmSourcesLoading) return
+    void loadJvmSources()
+  })
+
+  async function loadJvmSources() {
+    jvmSourcesLoading = true
+    jvmSourcesError = ''
+    try {
+      jvmSources = await installedJvmCatalogSources()
+      jvmSourcesLoaded = true
+    } catch (error) {
+      jvmSourcesError = error instanceof Error ? error.message : String(error)
+    } finally {
+      jvmSourcesLoaded = true
+      jvmSourcesLoading = false
+    }
+  }
+
+  function toggleJvmSource(sourceId: string) {
+    const next = !isJvmCatalogSourceEnabled(sourceId, $jvmCatalogSourceOverrides)
+    $jvmCatalogSourceOverrides = { ...$jvmCatalogSourceOverrides, [sourceId]: next }
+  }
 
   function setDefaultPlatform(value: string) {
     if (value === 'adaptive') {
@@ -135,6 +170,7 @@
       <a href={`/app/settings/catalog/home?provider=${homeCustomizeProvider}`} data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Customize Home</a>
     </SettingsRow>
   </SettingsGroup>
+
   {#if hasPlatform('tmdb')}
     <SettingsGroup icon={KeyRound} title="TMDB access">
       <SettingsRow title="Read access token" description="A personal free non-commercial credential; stored only on this device.">
@@ -156,6 +192,30 @@
         <p class="text-xs text-muted-foreground">{$addonUrls.length ? `${$addonUrls.length} configured add-on${$addonUrls.length === 1 ? '' : 's'} will be checked.` : 'No add-ons are configured yet.'}</p>
         {#if !$addonUrls.length}<a href="/app/settings/sources" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add a source</a>{/if}
       </SettingsRow>
+    </SettingsGroup>
+  {/if}
+
+  {#if hasPlatform('jvm')}
+    <SettingsGroup icon={Coffee} title="JVM catalog sources" desc="Choose which enabled Aniyomi sources contribute browsing and search results.">
+      {#if jvmSourcesLoading}
+        <SettingsRow title="Loading JVM sources…" description="Starting the extension runtime and reading installed providers." />
+      {:else if jvmSourcesError}
+        <SettingsRow title="Couldn’t load JVM sources" description={jvmSourcesError}>
+          <button type="button" data-focusable onclick={() => void loadJvmSources()} class="min-h-9 rounded-md bg-secondary px-3 text-xs font-bold">Retry</button>
+        </SettingsRow>
+      {:else if jvmSources.length}
+        {#each jvmSources as source (source.id)}
+          <JvmCatalogSourceRow
+            {source}
+            enabled={isJvmCatalogSourceEnabled(source.id, $jvmCatalogSourceOverrides)}
+            onToggle={() => toggleJvmSource(source.id)}
+          />
+        {/each}
+      {:else}
+        <SettingsRow title="No enabled JVM sources" description="Install or enable an Aniyomi source before using the JVM catalog.">
+          <a href="/app/settings/store" data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add from Store</a>
+        </SettingsRow>
+      {/if}
     </SettingsGroup>
   {/if}
 

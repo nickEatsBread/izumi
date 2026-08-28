@@ -152,7 +152,7 @@
           }
           const provider = await loadCatalogProvider(selection)
           return (await provider.search({
-            query: clean, page: 1, type: selection === 'kitsu' ? 'anime' : 'all', sort: 'popular',
+            query: clean, page: 1, type: selection === 'kitsu' || selection === 'jvm' ? 'anime' : 'all', sort: 'popular',
           })).media.slice(0, 10)
         }))
         const unique = new Map<string, Media>()

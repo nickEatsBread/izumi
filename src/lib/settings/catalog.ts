@@ -1,11 +1,11 @@
 import { persisted } from 'svelte-persisted-store'
 import { derived, get, writable } from 'svelte/store'
 
-export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio'
+export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm'
 export type CatalogDefaultSelection = CatalogSelection | 'adaptive'
 export type ContinueWatchingCatalogScope = 'provider' | 'all'
 
-export const CATALOG_SELECTIONS: CatalogSelection[] = ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio']
+export const CATALOG_SELECTIONS: CatalogSelection[] = ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']
 
 export const catalogLabel = (provider: CatalogDefaultSelection): string => ({
   adaptive: 'Adaptive',
@@ -14,6 +14,7 @@ export const catalogLabel = (provider: CatalogDefaultSelection): string => ({
   kitsu: 'Kitsu',
   tmdb: 'TMDB',
   stremio: 'Stremio',
+  jvm: 'JVM sources',
 })[provider]
 
 export function normalizeCatalogProviders(value: unknown, fallback: CatalogSelection = 'auto'): CatalogSelection[] {
@@ -91,6 +92,19 @@ export const continueWatchingCatalogScope = persisted<ContinueWatchingCatalogSco
   'continue-watching-catalog-scope',
   'provider',
 )
+
+/** Per-source catalog visibility is independent from source/package enablement. Missing entries
+ * default on, so installing a new JVM source makes it discoverable without silently changing the
+ * user's explicit choices for sources they already configured. */
+export const jvmCatalogSourceOverrides = persisted<Record<string, boolean>>(
+  'jvm-catalog-source-overrides',
+  {},
+)
+
+export function isJvmCatalogSourceEnabled(sourceId: string, overrides: unknown): boolean {
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return true
+  return (overrides as Record<string, unknown>)[sourceId] !== false
+}
 
 export function selectCatalogProvider(provider: CatalogSelection): void {
   catalogProvider.set(provider)

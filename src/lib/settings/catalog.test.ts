@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
   catalogLabel, catalogLastProvider, catalogProvider, nextCatalogProvider,
-  normalizeCatalogProviders, previousCatalogProvider, resolveCatalogStartup, selectCatalogProvider,
+  isJvmCatalogSourceEnabled, normalizeCatalogProviders, previousCatalogProvider, resolveCatalogStartup, selectCatalogProvider,
 } from './catalog'
 
 describe('catalog platform selection', () => {
@@ -19,6 +19,7 @@ describe('catalog platform selection', () => {
   it('provides compact labels for the platform switcher', () => {
     expect(catalogLabel('auto')).toBe('Automatic anime')
     expect(catalogLabel('tmdb')).toBe('TMDB')
+    expect(catalogLabel('jvm')).toBe('JVM sources')
     expect(catalogLabel('adaptive')).toBe('Adaptive')
   })
 
@@ -36,6 +37,13 @@ describe('catalog platform selection', () => {
 
   it('recovers to the first enabled platform when the active value is unavailable', () => {
     expect(nextCatalogProvider('stremio', ['auto', 'tmdb'])).toBe('auto')
+  })
+
+  it('shows newly installed JVM sources by default and preserves explicit filters', () => {
+    expect(isJvmCatalogSourceEnabled('aniyomi:one', {})).toBe(true)
+    expect(isJvmCatalogSourceEnabled('aniyomi:one', { 'aniyomi:one': false })).toBe(false)
+    expect(isJvmCatalogSourceEnabled('aniyomi:one', { 'aniyomi:one': true })).toBe(true)
+    expect(isJvmCatalogSourceEnabled('aniyomi:one', 'malformed')).toBe(true)
   })
 
   it('resolves Adaptive to the last selected enabled platform', () => {

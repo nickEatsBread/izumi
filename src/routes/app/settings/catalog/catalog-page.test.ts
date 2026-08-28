@@ -6,7 +6,7 @@ const source = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.
 
 describe('catalog settings', () => {
   it('offers every platform as an independently enabled row', () => {
-    for (const id of ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio']) expect(source).toContain(`id: '${id}'`)
+    for (const id of ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']) expect(source).toContain(`id: '${id}'`)
     expect(source).toContain('CatalogPlatformRow')
     expect(source).toContain('platform={platform.id}')
     expect(source).toContain('onToggle={() => togglePlatform(platform.id)}')
@@ -38,5 +38,13 @@ describe('catalog settings', () => {
   it('shows provider-specific configuration whenever that provider is enabled', () => {
     expect(source).toContain("{#if hasPlatform('tmdb')}")
     expect(source).toContain("{#if hasPlatform('stremio')}")
+    expect(source).toContain("{#if hasPlatform('jvm')}")
+  })
+
+  it('filters JVM catalog providers independently with their source artwork', () => {
+    expect(source).toContain('installedJvmCatalogSources')
+    expect(source).toContain('JvmCatalogSourceRow')
+    expect(source).toContain('isJvmCatalogSourceEnabled(source.id, $jvmCatalogSourceOverrides)')
+    expect(source).toContain('onToggle={() => toggleJvmSource(source.id)}')
   })
 })

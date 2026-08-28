@@ -484,6 +484,22 @@ class ExtPlayerPlugin(private val activity: Activity) : Plugin(activity) {
                     ?: error("Aniyomi call has no sourceId")
                 val isAnime = values["isAnime"] as? Boolean ?: true
                 val result = when (args.method) {
+                    "getPopular" -> invokeAniyomi(
+                        "aniyomiGetPopular",
+                        context,
+                        sourceId,
+                        isAnime,
+                        (values["page"] as? Number)?.toInt() ?: 1,
+                        null,
+                    )
+                    "getLatestUpdates" -> invokeAniyomi(
+                        "aniyomiGetLatestUpdates",
+                        context,
+                        sourceId,
+                        isAnime,
+                        (values["page"] as? Number)?.toInt() ?: 1,
+                        null,
+                    )
                     "search" -> invokeAniyomi(
                         "aniyomiSearch",
                         context,

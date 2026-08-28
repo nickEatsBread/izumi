@@ -10,6 +10,7 @@ export const providerChain = (selection: CatalogSelection): CatalogSelection[] =
 export async function loadCatalogProvider(selection: Exclude<CatalogSelection, 'auto' | 'anilist'>): Promise<CatalogProvider> {
   if (selection === 'kitsu') return (await import('./providers/kitsu')).kitsuCatalog
   if (selection === 'tmdb') return (await import('./providers/tmdb')).tmdbCatalog
+  if (selection === 'jvm') return (await import('./providers/jvm')).jvmCatalog
   return (await import('./providers/stremio')).stremioCatalog
 }
 

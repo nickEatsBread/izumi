@@ -10,6 +10,8 @@ describe('catalog platform logos', () => {
     expect(source).toContain('https://avatars.githubusercontent.com/u/7648832')
     expect(source).toContain('/brand/tmdb.svg')
     expect(source).toContain('https://www.stremio.com/website/favicon.ico')
+    expect(source).toContain("platform === 'jvm'")
+    expect(source).toContain('<Coffee')
   })
 
   it('distinguishes automatic fallback mode from direct AniList', () => {
@@ -18,7 +20,7 @@ describe('catalog platform logos', () => {
   })
 
   it('keeps every logo on the same square mobile-safe canvas', () => {
-    expect(source.match(/size-10 shrink-0/g)).toHaveLength(5)
+    expect(source.match(/size-10 shrink-0/g)).toHaveLength(6)
   })
 
   it('fits the TMDB lockup inside the shared square canvas', () => {

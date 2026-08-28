@@ -12,12 +12,16 @@ export interface MediaTag {
 /** The catalogue record that owns this media item. AniList records created before catalogue
  * switching intentionally omit this field and are treated as `anilist` by the identity helpers. */
 export interface MediaCatalogIdentity {
-  provider: 'anilist' | 'kitsu' | 'tmdb' | 'stremio'
-  /** Provider-native id. Stremio ids include the add-on fingerprint and content type. */
+  provider: 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm'
+  /** Provider-native id. Stremio and JVM ids include their source identity. */
   id: string
   type: 'anime' | 'manga' | 'movie' | 'series'
   /** Opaque fingerprint of the configured add-on that owns a Stremio meta item. Never a URL. */
   addonId?: string
+  /** Human-readable source attribution for providers that aggregate separately installed sources. */
+  sourceName?: string
+  /** Source-owned artwork. JVM icons may be an absolute URL or an extracted base64 payload. */
+  sourceIcon?: string
 }
 
 /** Cross-database ids are optional capabilities, not the identity of the object. Consumers use

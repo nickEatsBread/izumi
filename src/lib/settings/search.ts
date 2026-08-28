@@ -46,9 +46,10 @@ export const SETTINGS_SEARCH_INDEX: SettingSearchItem[] = [
   { title: 'Jimaku', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'provider captions api key japanese', anchored: true },
   { title: 'Jimaku API key', category: 'Subtitles', href: '/app/settings/subtitles', keywords: 'token provider japanese' },
 
-  { title: 'Default catalog platform', category: 'Catalog', href: '/app/settings/catalog', keywords: 'startup home provider anilist kitsu tmdb stremio automatic', anchored: true },
+  { title: 'Default catalog platform', category: 'Catalog', href: '/app/settings/catalog', keywords: 'startup home provider anilist kitsu tmdb stremio jvm aniyomi automatic', anchored: true },
   { title: 'Continue Watching', category: 'Catalog', href: '/app/settings/catalog', keywords: 'history progress current platform provider all combined separate scope', anchored: true },
-  { title: 'Catalog platforms', category: 'Catalog', href: '/app/settings/catalog', keywords: 'enable provider logo cycle switch anilist kitsu tmdb stremio automatic adaptive last selected default startup' },
+  { title: 'Catalog platforms', category: 'Catalog', href: '/app/settings/catalog', keywords: 'enable provider logo cycle switch anilist kitsu tmdb stremio jvm aniyomi automatic adaptive last selected default startup' },
+  { title: 'JVM catalog sources', category: 'Catalog', href: '/app/settings/catalog', keywords: 'aniyomi extension provider popular latest browse filter' },
 
   { title: 'Auto-play the best source', category: 'Sources', href: '/app/settings/sources?tab=playback', keywords: 'automatic stream cached countdown timer instant', anchored: true },
   { title: 'Preferred quality', category: 'Sources', href: '/app/settings/sources?tab=playback', keywords: '4k 1080p 720p resolution' },

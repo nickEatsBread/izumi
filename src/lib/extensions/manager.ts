@@ -51,9 +51,9 @@ export interface InstalledExtensionPackage {
 
 export type { ExtensionCatalogPackage, ExtensionCatalog } from './catalog'
 
-/** The maintained anime/HTTP package catalog. Not installed by default and not offered in the UI —
- *  a catalog is added the same way any other source is, by pasting its URL. Kept here as the
- *  canonical address of the repo the packages are published to. */
+/** The maintained anime/HTTP package catalog used by the built-in Source Store. It can also appear
+ *  in the user's source list like any other package catalog. Kept here as the canonical address of
+ *  the repository the packages are published to. */
 export const OFFICIAL_ANIME_CATALOG =
   'https://raw.githubusercontent.com/nickEatsBread/izumi-extension-repo/refs/heads/main/index.json'
 
@@ -65,6 +65,8 @@ interface JvmSource {
   baseUrl?: string
   pkgName: string
   className?: string
+  supportsLatest?: boolean
+  supportsPopular?: boolean
   /** The extension APK's launcher icon as base64 PNG. The bridge extracts it to a file and returns
    *  a path; the Rust command inlines it (see inline_source_icons) because a webview cannot load a
    *  bare filesystem path. Null when the extension has no readable icon. */
@@ -761,6 +763,20 @@ export interface ServiceSettingCondition {
   key: string
   equals: ServiceSettingValue | ServiceSettingValue[]
 }
+
+export interface JvmCatalogSource {
+  id: string
+  name: string
+  lang?: string
+  icon?: string
+  supportsLatest: boolean
+  supportsPopular: boolean
+}
+
+export interface JvmCatalogPageResult {
+  list: Record<string, unknown>[]
+  hasNextPage: boolean
+}
 export interface ServiceSettingOption {
   value: string
   label: string
@@ -885,6 +901,60 @@ async function jvmSources(): Promise<JvmSource[]> {
       setTimeout(() => reject(new Error('The extension runtime did not answer in time.')), 15_000)),
   ])
   return sources
+}
+
+/** Installed, enabled anime sources that may supply catalog rows. Package/source enablement is the
+ * hard permission boundary; the separate catalog switches only decide which of these are browsed. */
+export async function installedJvmCatalogSources(): Promise<JvmCatalogSource[]> {
+  const installed = await installedExtensionPackages()
+  const allowed = liveJvmSources(installed, get(disabledPlugins))
+  if (!allowed.size) return []
+  const sources = await jvmSources()
+  return dedupeJvmSources(sources)
+    .filter((source) => source.type === 'anime' && allowed.has(source.id))
+    .map((source) => ({
+      id: source.id,
+      name: source.name,
+      lang: source.lang,
+      icon: source.iconUrl ?? undefined,
+      // Older runtime listings omitted the flags even though their sources implemented both calls.
+      supportsLatest: source.supportsLatest !== false,
+      supportsPopular: source.supportsPopular !== false,
+    }))
+}
+
+async function requireJvmCatalogSource(sourceId: string): Promise<JvmCatalogSource> {
+  const source = (await installedJvmCatalogSources()).find((entry) => entry.id === sourceId)
+  if (!source) throw new Error('This JVM source is no longer installed or enabled.')
+  return source
+}
+
+export async function browseJvmCatalogSource(
+  sourceId: string,
+  method: 'getPopular' | 'getLatestUpdates' | 'search',
+  page = 1,
+  query = '',
+): Promise<JvmCatalogPageResult> {
+  await requireJvmCatalogSource(sourceId)
+  const response = await jvmInvoke<{ list?: Record<string, unknown>[]; hasNextPage?: unknown }>(method, {
+    sourceId,
+    isAnime: true,
+    page: Math.max(1, Math.floor(page)),
+    ...(method === 'search' ? { query } : {}),
+  })
+  return { list: response.list ?? [], hasNextPage: response.hasNextPage === true }
+}
+
+export async function detailJvmCatalogSource(
+  sourceId: string,
+  media: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  await requireJvmCatalogSource(sourceId)
+  return jvmInvoke<Record<string, unknown>>('getDetail', {
+    sourceId,
+    isAnime: true,
+    media,
+  })
 }
 
 async function runningJvmExtensions(onlyId?: string): Promise<

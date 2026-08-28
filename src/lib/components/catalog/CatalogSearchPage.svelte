@@ -30,13 +30,20 @@
   let requestAbort: AbortController | null = null
   const seen = new Set<string>()
 
-  const typeOptions = $derived($catalogProvider === 'kitsu'
+  const animeOnly = $derived($catalogProvider === 'kitsu' || $catalogProvider === 'jvm')
+  const typeOptions = $derived(animeOnly
     ? [{ value: 'all', label: 'Anime' }]
     : [
         { value: 'all', label: 'Movies and series' },
         { value: 'anime', label: 'Anime' },
         { value: 'movie', label: 'Movies' },
         { value: 'series', label: 'Series' },
+      ])
+  const sortOptions = $derived($catalogProvider === 'jvm'
+    ? [{ value: 'popular', label: 'Popular' }, { value: 'recent', label: 'Latest' }]
+    : [
+        { value: 'popular', label: 'Popular' }, { value: 'rating', label: 'Rating' },
+        { value: 'recent', label: 'Recent' }, { value: 'trending', label: 'Trending' },
       ])
   const genreOptions = $derived([
     { value: '', label: 'All genres' },
@@ -46,7 +53,8 @@
   $effect(() => {
     const selection = $catalogProvider
     if (selection === 'auto' || selection === 'anilist') return
-    if (selection === 'kitsu' && type !== 'all' && type !== 'anime') type = 'all'
+    if ((selection === 'kitsu' || selection === 'jvm') && type !== 'all' && type !== 'anime') type = 'all'
+    if (selection === 'jvm' && sort !== 'popular' && sort !== 'recent') sort = 'popular'
     const abort = new AbortController()
     availableGenres = []
     void loadCatalogProvider(selection).then((provider) => provider.genres?.(abort.signal) ?? [])
@@ -150,22 +158,21 @@
   <div class="mb-6 flex flex-col gap-3 sm:flex-row">
     <label class="relative min-w-0 flex-1">
       <Search size={19} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-      <input bind:value={query} data-focusable placeholder="Search {$catalogProvider === 'kitsu' ? 'anime' : 'movies and series'}…"
+      <input bind:value={query} data-focusable placeholder="Search {animeOnly ? 'anime' : 'movies and series'}…"
         class="h-11 w-full rounded-lg bg-input pl-10 pr-3 text-base" />
     </label>
     <SelectMenu bind:value={type} ariaLabel="Content type" options={typeOptions} className="sm:w-48" />
-    <SelectMenu bind:value={sort} ariaLabel="Sort results" className="sm:w-40" options={[
-      { value: 'popular', label: 'Popular' }, { value: 'rating', label: 'Rating' },
-      { value: 'recent', label: 'Recent' }, { value: 'trending', label: 'Trending' },
-    ]} />
+    <SelectMenu bind:value={sort} ariaLabel="Sort results" className="sm:w-40" options={sortOptions} />
     {#if availableGenres.length}
       <SelectMenu bind:value={genre} ariaLabel="Genre" className="sm:w-44" options={genreOptions} />
     {:else if $catalogProvider === 'stremio'}
       <input bind:value={genre} data-focusable placeholder="Genre" aria-label="Genre"
         class="h-11 w-full rounded-lg bg-input px-3 text-base sm:w-32" />
     {/if}
-    <input bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
-      class="h-11 w-full rounded-lg bg-input px-3 text-base sm:w-24" />
+    {#if $catalogProvider !== 'jvm'}
+      <input bind:value={year} inputmode="numeric" maxlength="4" data-focusable placeholder="Year" aria-label="Release year"
+        class="h-11 w-full rounded-lg bg-input px-3 text-base sm:w-24" />
+    {/if}
   </div>
 
   {#if media.length}
