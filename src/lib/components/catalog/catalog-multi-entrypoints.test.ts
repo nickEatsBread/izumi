@@ -82,6 +82,16 @@ describe('multi-platform catalog entry points', () => {
     expect(tmdb).toContain('append_to_response: append')
   })
 
+  it('structures rich source descriptions instead of exposing Markdown as one paragraph', () => {
+    const detail = read('./CatalogMediaDetail.svelte')
+    expect(detail).toContain("import { parseCatalogDescription } from '$lib/catalog/description'")
+    expect(detail).toContain('parsedDescription.synopsis')
+    expect(detail).toContain('parsedDescription.facts')
+    expect(detail).toContain('parsedDescription.alternativeTitles')
+    expect(detail).toContain('parsedDescription.links')
+    expect(detail).toContain('aria-label="Source information"')
+  })
+
   it('carries merged JVM source attribution from search into the series page', () => {
     const detail = read('./CatalogMediaDetail.svelte')
     expect(detail).not.toContain("provider === 'jvm' ? 'JVM source'")

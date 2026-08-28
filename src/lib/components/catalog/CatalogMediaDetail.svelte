@@ -3,6 +3,7 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import Play from '@lucide/svelte/icons/play'
   import ExternalLink from '@lucide/svelte/icons/external-link'
+  import Star from '@lucide/svelte/icons/star'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import Carousel from '$lib/components/cards/Carousel.svelte'
@@ -14,6 +15,7 @@
   import type { Media, MediaVideo } from '$lib/anilist/types'
   import { detailHints } from '$lib/anilist/detail-hint'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
+  import { parseCatalogDescription } from '$lib/catalog/description'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
@@ -52,6 +54,7 @@
   const externalUrl = $derived(media ? providerExternalUrl(media) : null)
   const isMovie = $derived(media?.catalog?.type === 'movie' || media?.format === 'MOVIE')
   const titleLogo = $derived(media?.logoImage && media.logoImage !== failedLogo ? media.logoImage : '')
+  const parsedDescription = $derived(parseCatalogDescription(media?.description))
   const attributedMedia = $derived.by(() => {
     if (!media || media.catalog?.provider !== 'jvm') return media
     const remembered = $detailHints[media.id]
@@ -111,9 +114,13 @@
             {#if season(media)}<span>{season(media)}</span>{/if}
             {#if status(media)}<span>{status(media)}</span>{/if}
             {#if media.startDate?.year}<span>{media.startDate.year}</span>{/if}
-            {#if media.averageScore}<span>{media.averageScore}%</span>{/if}
+            {#if parsedDescription.score != null}
+              <span class="flex items-center gap-1"><Star size={14} class="fill-current text-amber-300" /> {parsedDescription.score.toFixed(1)}</span>
+            {:else if media.averageScore}<span>{media.averageScore}%</span>{/if}
           </div>
-          <p class="mt-4 line-clamp-5 max-w-3xl text-sm leading-relaxed text-foreground/80 sm:text-base">{(media.description ?? '').replace(/<[^>]+>/g, '')}</p>
+          {#if parsedDescription.synopsis}
+            <p class="mt-4 line-clamp-5 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-foreground/80 sm:text-base">{parsedDescription.synopsis}</p>
+          {/if}
           {#if provider === 'jvm' && attributedMedia?.catalog?.sourceName}
             <div class="mt-4 max-w-full text-sm font-bold text-foreground/75">
               <div class="mb-1 text-xs font-semibold text-muted-foreground">Available from</div>
@@ -132,6 +139,39 @@
     </section>
 
     {#if media.genres?.length}<div class="flex flex-wrap gap-2 px-5 sm:px-8">{#each media.genres as genre}<span class="rounded-full bg-secondary px-3 py-1 text-xs font-bold">{genre}</span>{/each}</div>{/if}
+
+    {#if parsedDescription.facts.length || parsedDescription.alternativeTitles.length || parsedDescription.links.length}
+      <section class="mt-6 max-w-6xl px-5 sm:px-8" aria-label="Source information">
+        <div class="rounded-2xl bg-secondary/55 p-4 sm:p-5">
+          <h2 class="mb-4 text-sm font-black uppercase tracking-wide text-foreground/70">Information</h2>
+          {#if parsedDescription.facts.length}
+            <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+              {#each parsedDescription.facts as fact (fact.label)}
+                <div class="min-w-0">
+                  <dt class="text-xs font-semibold text-muted-foreground">{fact.label}</dt>
+                  <dd class="mt-0.5 break-words text-sm font-bold text-foreground/90">{fact.value}</dd>
+                </div>
+              {/each}
+            </dl>
+          {/if}
+          {#if parsedDescription.alternativeTitles.length}
+            <div class="mt-5">
+              <div class="text-xs font-semibold text-muted-foreground">Alternative titles</div>
+              <div class="mt-1 text-sm text-foreground/85">{parsedDescription.alternativeTitles.join(' · ')}</div>
+            </div>
+          {/if}
+          {#if parsedDescription.links.length}
+            <div class="mt-5 flex flex-wrap gap-2" aria-label="External links">
+              {#each parsedDescription.links as link (link.url)}
+                <button data-focusable onclick={() => openUrl(link.url)} class="flex items-center gap-1.5 rounded-lg bg-background/60 px-3 py-2 text-sm font-bold transition hover:bg-background">
+                  {link.label}<ExternalLink size={14} class="text-muted-foreground" />
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </section>
+    {/if}
 
     {#if !isMovie && videos.length}
       <section class="mt-8 px-5 sm:px-8">
