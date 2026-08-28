@@ -1,3 +1,10 @@
+<script module lang="ts">
+  import type { CatalogHome as CatalogHomeData } from '$lib/catalog/types'
+
+  const HOME_CACHE_MS = 5 * 60_000
+  const providerHomeCache = new Map<string, { storedAt: number; home: CatalogHomeData }>()
+</script>
+
 <script lang="ts">
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
@@ -38,11 +45,18 @@
     void retry
     if (selection === 'auto' || selection === 'anilist') return
     const abort = new AbortController()
-    loading = true
+    const cached = providerHomeCache.get(selection)
+    home = cached && Date.now() - cached.storedAt < HOME_CACHE_MS ? cached.home : null
+    loading = !home
     error = ''
-    home = null
-    void loadCatalogProvider(selection).then((provider) => provider.home(abort.signal)).then((result) => {
-      if (!abort.signal.aborted) home = result
+    const publish = (result: CatalogHome) => {
+      if (abort.signal.aborted) return
+      home = result
+      providerHomeCache.set(selection, { storedAt: Date.now(), home: result })
+      if (result.hero.length || result.sections.length) loading = false
+    }
+    void loadCatalogProvider(selection).then((provider) => provider.home(abort.signal, undefined, publish)).then((result) => {
+      publish(result)
     }).catch((reason) => {
       if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
     }).finally(() => { if (!abort.signal.aborted) loading = false })

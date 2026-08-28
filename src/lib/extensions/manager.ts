@@ -453,6 +453,12 @@ export async function warmExtensions(): Promise<void> {
   // Do not make the WebView parse JS workers while a clean-install JVM runtime is also being
   // discovered/downloaded/extracted. Foreground resolvers still share either in-flight promise.
   await ensureRunning().then(() => {}, () => {})
+  await warmJvmExtensions()
+}
+
+/** Warm only the installed Aniyomi runtime. Catalog Home schedules this ahead of the broader JS
+ * extension warm so switching providers does not begin Java discovery from a cold start. */
+export async function warmJvmExtensions(): Promise<void> {
   await runningJvmExtensions().then(() => {}, () => {})
 }
 

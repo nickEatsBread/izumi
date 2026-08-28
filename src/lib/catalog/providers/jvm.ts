@@ -14,6 +14,7 @@ import { compatibilityMediaId, mediaKey, type MediaRef } from '../identity'
 import {
   CatalogConfigurationError,
   type CatalogHome,
+  type CatalogHomeUpdate,
   type CatalogHomeRowOption,
   type CatalogPage,
   type CatalogProvider,
@@ -32,6 +33,32 @@ interface JvmHomeRequest {
   source: JvmCatalogSource
   method: 'getPopular' | 'getLatestUpdates'
   title: string
+}
+
+const JVM_HOME_CONCURRENCY = 3
+
+async function settleWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  load: (value: T) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results = new Array<PromiseSettledResult<R>>(values.length)
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < values.length) {
+      const index = cursor++
+      try {
+        results[index] = { status: 'fulfilled', value: await load(values[index]) }
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason }
+      }
+    }
+  }
+  await Promise.all(Array.from(
+    { length: Math.min(Math.max(1, concurrency), values.length) },
+    () => worker(),
+  ))
+  return results
 }
 
 const stringValue = (value: unknown): string | undefined => {
@@ -267,7 +294,11 @@ async function homeRows(): Promise<CatalogHomeRowOption[]> {
   return jvmHomeOptions(jvmHomeRequests(await selectedSources()))
 }
 
-async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome> {
+async function home(
+  signal?: AbortSignal,
+  rowIds?: string[],
+  onUpdate?: CatalogHomeUpdate,
+): Promise<CatalogHome> {
   const sources = await selectedSources()
   const available = jvmHomeRequests(sources)
   if (!available.length) return { hero: [], sections: [] }
@@ -283,27 +314,46 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
   const requests = available[0] && !selected.some((request) => request.id === available[0].id)
     ? [available[0], ...selected]
     : selected
-  const results = await Promise.allSettled(requests.map(async (request) => ({
-    request,
-    page: await sourcePage(request.source, request.method, 1, signal),
-  })))
-  throwIfAborted(signal)
-  const loaded = new Map(results.flatMap((result) => result.status === 'fulfilled'
-    ? [[result.value.request.id, result.value.page.media] as const]
-    : []))
-  const sections = selected.flatMap((request) => {
-    const media = loaded.get(request.id) ?? []
-    return media.length ? [{ id: request.id, title: request.title, media }] : []
+  const loaded = new Map<string, Media[]>()
+  let hero: Media[] = []
+  let heroTask: Promise<void> | null = null
+  const snapshot = (): CatalogHome => {
+    const sections = selected.flatMap((request) => {
+      const media = loaded.get(request.id) ?? []
+      return media.length ? [{ id: request.id, title: request.title, media }] : []
+    })
+    const naturallyWide = [...loaded.values()].flat().filter((media) => media.bannerImage)
+    return { hero: (hero.length ? hero : naturallyWide).slice(0, 10), sections }
+  }
+  const publish = () => {
+    if (!signal?.aborted) onUpdate?.(snapshot())
+  }
+  const startHero = (media: Media[]) => {
+    if (heroTask || !media.length) return
+    // Do not wait for every provider row before asking for usable hero art. Three detail calls are
+    // enough to find a banner without flooding the runtime while the remaining rows are loading.
+    heroTask = enrichHero(media.slice(0, 3), signal).then((pool) => {
+      const withBanners = pool.filter((item) => item.bannerImage)
+      hero = (withBanners.length ? withBanners : pool).slice(0, 10)
+      publish()
+    }).catch(() => {})
+  }
+  const results = await settleWithConcurrency(requests, JVM_HOME_CONCURRENCY, async (request) => {
+    const page = await sourcePage(request.source, request.method, 1, signal)
+    loaded.set(request.id, page.media)
+    publish()
+    startHero(page.media)
+    return { request, page }
   })
-  if (!sections.length && results.every((result) => result.status === 'rejected')) {
+  throwIfAborted(signal)
+  if (!snapshot().sections.length && results.every((result) => result.status === 'rejected')) {
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
     throw failure?.reason ?? new Error('The selected Aniyomi sources did not return catalog data.')
   }
-  const all = [...loaded.values()].flat()
-  const unique = [...new Map(all.map((media) => [mediaKey(media), media])).values()]
-  const heroPool = await enrichHero(unique, signal)
-  const withBanners = heroPool.filter((media) => media.bannerImage)
-  return { hero: (withBanners.length ? withBanners : heroPool).slice(0, 10), sections }
+  // Direct callers still receive the enriched hero. UI callers already have progressive row
+  // updates, so the detached completion can repaint the hero without extending their wait.
+  if (!onUpdate && heroTask) await heroTask
+  return snapshot()
 }
 
 async function search(request: CatalogSearchRequest): Promise<CatalogPage> {

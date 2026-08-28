@@ -68,6 +68,8 @@ export interface CatalogHome {
   sections: CatalogHomeSection[]
 }
 
+export type CatalogHomeUpdate = (home: CatalogHome) => void
+
 /** A row offered by a provider's Home customizer. `defaultEnabled: false` keeps broad preset
  * libraries cheap until the user asks for them. */
 export interface CatalogHomeRowOption {
@@ -84,7 +86,7 @@ export interface CatalogProvider {
   capabilities: CatalogCapabilities
   homeRows?(signal?: AbortSignal): Promise<CatalogHomeRowOption[]>
   /** Optional row ids let the independently configured Merged Home request exactly its rows. */
-  home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHome>
+  home(signal?: AbortSignal, rowIds?: string[], onUpdate?: CatalogHomeUpdate): Promise<CatalogHome>
   search(request: CatalogSearchRequest): Promise<CatalogPage>
   detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null>
   genres?(signal?: AbortSignal): Promise<string[]>

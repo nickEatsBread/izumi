@@ -62,6 +62,9 @@ describe('app layout mounting', () => {
     }
     expect(layout).not.toContain("import { warmExtensions } from '$lib/extensions/manager'")
     expect(layout).toContain("import('$lib/extensions/manager')")
+    expect(layout).toContain("scheduleBootWork('aniyomi-catalog'")
+    expect(layout).toContain('get(enabledCatalogProviders).includes(\'jvm\')')
+    expect(layout).toContain('warmJvmExtensions()')
     expect(extensionUpdates).not.toMatch(/^import(?! type).*['"]\.\/manager['"]/m)
     expect(extensionUpdates).toContain("import('./manager')")
     expect(layout).toContain("const loadGlobalSearch = () => import('$lib/components/search/GlobalSearch.svelte')")

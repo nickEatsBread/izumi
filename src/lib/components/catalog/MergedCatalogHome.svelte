@@ -79,7 +79,10 @@
     void Promise.all([...requested].map(async ([selection, rowIds]) => {
       try {
         const provider = await loadCatalogProvider(selection)
-        const home = await provider.home(abort.signal, rowIds)
+        const publish = (home: CatalogHome) => {
+          if (!abort.signal.aborted) homes = { ...homes, [selection]: home }
+        }
+        const home = await provider.home(abort.signal, rowIds, publish)
         if (!abort.signal.aborted) homes = { ...homes, [selection]: home }
       } catch (reason) {
         if (!abort.signal.aborted) errors = [...errors, {

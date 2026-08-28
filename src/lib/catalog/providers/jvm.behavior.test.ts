@@ -77,6 +77,27 @@ describe('JVM catalog provider', () => {
     expect(home.hero).toHaveLength(1)
   })
 
+  it('publishes the first completed Home row without waiting for slower sources', async () => {
+    let releaseSlow!: () => void
+    const slow = new Promise<void>((resolve) => { releaseSlow = resolve })
+    mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
+      if (sourceId !== 'one' || method !== 'getPopular') await slow
+      return {
+        list: [{ title: `${method} ${sourceId}`, url: `/${method}/${sourceId}` }],
+        hasNextPage: false,
+      }
+    })
+    const updates: Array<{ sections: Array<{ id: string }> }> = []
+    const complete = jvmCatalog.home(undefined, undefined, (home) => updates.push(home))
+
+    await vi.waitFor(() => expect(updates.some((home) =>
+      home.sections.some((section) => section.id === 'popular:one'))).toBe(true))
+    expect(updates.at(-1)?.sections.length).toBeLessThan(4)
+
+    releaseSlow()
+    await complete
+  })
+
   it('loads detail and episode data from the owning source', async () => {
     mocks.detail.mockResolvedValue({
       title: 'Frieren', url: '/frieren', cover: 'https://img/frieren.jpg',

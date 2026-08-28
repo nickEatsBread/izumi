@@ -166,6 +166,14 @@
     const stopVpnToasts = initTorrentVpnToasts()
     let stopDeepLinks: () => void = () => {}
     initDeepLinks().then((stop) => { stopDeepLinks = stop }).catch(() => {})
+    // Aniyomi is a complete Home provider, so its runtime needs to be ready before the user switches
+    // to it. Warm only that runtime after first paint when it is enabled; the later extension task
+    // reuses the same in-flight/result cache and still owns the broader JS worker startup.
+    void scheduleBootWork('aniyomi-catalog', async () => {
+      if (skipSpeculativeNetwork() || !get(enabledCatalogProviders).includes('jvm')) return
+      const { warmJvmExtensions } = await import('$lib/extensions/manager')
+      await warmJvmExtensions()
+    }, 1200)
     // Import the manifest/source graph only after first paint. Warm connections sequentially so a
     // large source list does not contend with the hero request or open many TLS handshakes at once.
     void scheduleBootWork('addon-manifests', async () => {
