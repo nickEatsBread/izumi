@@ -59,6 +59,7 @@
   import ExtensionServiceSettings from '$lib/components/settings/ExtensionServiceSettings.svelte'
   import RefreshButton from '$lib/components/RefreshButton.svelte'
   import { formatBytes } from '$lib/util/format'
+  import { masonryItem } from '$lib/actions/masonry'
 
   const current = $derived(providerMeta($debridProvider))
   let account = $state<DebridAccountInfo | null>(null)
@@ -473,7 +474,7 @@
         {@const label = sourceLabel(url)}
         {@const cat = catalogUrls.includes(url)}
         {@const off = $disabledExtensions.includes(url)}
-        <li style:order={sortRanks.get(`extension:${url}`) ?? 0} class="min-w-0 overflow-hidden rounded-lg border border-border p-3" class:opacity-50={off && !cat}>
+        <li use:masonryItem style:order={sortRanks.get(`extension:${url}`) ?? 0} class="min-w-0 overflow-hidden rounded-lg border border-border p-3" class:opacity-50={off && !cat}>
           <div class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
           {#await ext}
             <div class="flex min-w-0 items-center gap-3 sm:flex-1">
@@ -708,7 +709,7 @@
       {/each}
       {#each visibleOrphans as p (p.id)}
         {@const pOff = pluginOff(p.id)}
-        <li style:order={sortRanks.get(`package:${p.id}`) ?? 0} class="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={pOff}>
+        <li use:masonryItem style:order={sortRanks.get(`package:${p.id}`) ?? 0} class="flex flex-col gap-2 rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={pOff}>
           <div class="flex min-w-0 flex-1 items-center gap-3">
             <AddonLogo logo={jvmIcons.get(p.id)} name={p.name} id={p.id} size={40} />
             <div class="min-w-0 flex-1">

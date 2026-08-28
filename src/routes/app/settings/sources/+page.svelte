@@ -34,6 +34,7 @@
   import X from '@lucide/svelte/icons/x'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import Toggle from '$lib/components/settings/Toggle.svelte'
+  import { masonryItem } from '$lib/actions/masonry'
 
   // One control over two stores: whether to auto-pick at all, and whether to wait first. They were
   // separate toggles, which read as unrelated settings even though the second only means anything
@@ -479,11 +480,11 @@
         <p class="mt-1 text-xs text-muted-foreground">Paste a Stremio add-on, GitHub repo, or catalog. Or add one from the Store.</p>
       </div>
     {/if}
-    <div class="mt-3 grid items-start gap-2 2xl:grid-cols-2">
+    <div data-source-masonry class="mt-3 grid items-start gap-2 2xl:auto-rows-[1px] 2xl:grid-cols-2">
     {#if visibleAddonRows.length}
     <ul class="contents">
       {#each visibleAddonRows as { url, i, disabled: off } (url)}
-        <li style:order={manageSortRanks.get(`addon:${url}`) ?? 0} class="flex min-w-0 flex-col gap-3 overflow-hidden rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={off}>
+        <li use:masonryItem style:order={manageSortRanks.get(`addon:${url}`) ?? 0} class="flex min-w-0 flex-col gap-3 overflow-hidden rounded-lg border border-border p-3 sm:flex-row sm:items-center" class:opacity-50={off}>
           {#await addonMetaByUrl.get(url)!}
             <div class="flex min-w-0 items-center gap-3 sm:flex-1">
               <div class="skeloader size-10 shrink-0 rounded-md"></div>
