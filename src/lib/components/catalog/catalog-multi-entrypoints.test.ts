@@ -14,18 +14,18 @@ describe('multi-platform catalog entry points', () => {
     expect(search).not.toContain('CatalogProviderTabs')
   })
 
-  it('cycles enabled platforms from the Izumi logo on desktop and mobile Home', () => {
-    for (const source of [home, sidebar]) {
-      expect(source).toContain('nextCatalogProvider')
-      expect(source).toContain('function cycleCatalog()')
-      expect(source).toContain('selectCatalogProvider(nextCatalog)')
-    }
+  it('uses an explicit catalog picker on both Home and Search', () => {
+    expect(home).toContain("import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'")
+    expect(home).toContain('<CatalogSwitcher')
+    expect(search).toContain("import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'")
+    expect(search.match(/<CatalogSwitcher/g)).toHaveLength(2)
   })
 
-  it('uses the desktop logo as Home navigation away from Home', () => {
+  it('keeps the brand as predictable Home navigation', () => {
     expect(sidebar).toContain('href="/app/home"')
-    expect(sidebar).toContain("if (!onHome) { h.tap(); return }")
-    expect(sidebar).toContain('event.preventDefault()')
+    expect(sidebar).not.toContain('cycleCatalog')
+    expect(sidebar).not.toContain('event.preventDefault()')
+    expect(home).not.toContain('onclick={cycleCatalog}')
   })
 
   it('cycles forward and backward with Control-Tab only on Home', () => {

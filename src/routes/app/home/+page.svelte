@@ -23,7 +23,6 @@
   import { ANILIST_HOME_ROWS } from '$lib/catalog/home-options'
   import { markClientPerformance } from '$lib/performance/client'
   import {
-    catalogLabel,
     catalogProvider,
     enabledCatalogProviders,
     isLegacyAniListCatalog,
@@ -32,6 +31,7 @@
     selectCatalogProvider,
   } from '$lib/settings/catalog'
   import CatalogHome from '$lib/components/catalog/CatalogHome.svelte'
+  import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'
   import { mediaHref } from '$lib/anilist/media'
   import { playing } from '$lib/player/session'
   import { androidMpvActive } from '$lib/player/android-mpv'
@@ -86,19 +86,7 @@
     return heroStore.subscribe((v) => (hero = v as HeroResult))
   })
 
-  const nextCatalog = $derived(nextCatalogProvider($catalogProvider, $enabledCatalogProviders))
   const canCycleCatalog = $derived($enabledCatalogProviders.length > 1)
-  const catalogSwitchLabel = $derived(
-    canCycleCatalog
-      ? `Switch catalog from ${catalogLabel($catalogProvider)} to ${catalogLabel(nextCatalog)}`
-      : `Catalog: ${catalogLabel($catalogProvider)}`,
-  )
-
-  function cycleCatalog() {
-    if (!canCycleCatalog) return
-    h.tap()
-    selectCatalogProvider(nextCatalog)
-  }
 
   function handleCatalogKeydown(event: KeyboardEvent) {
     if (event.defaultPrevented) return
@@ -152,10 +140,10 @@
   <!-- The degraded strip is fixed at the same safe-area edge as this in-flow toolbar. Reserve its
        height while visible so the logo and top actions remain fully tappable on Android. -->
   <div class="flex items-center justify-between px-4 pb-3 pt-3 {legacyCatalog && $anilistDegraded ? 'mt-7' : ''}">
-    <button type="button" data-focusable onclick={cycleCatalog} aria-label={catalogSwitchLabel} title={catalogSwitchLabel} class="flex items-center gap-2">
+    <div class="flex items-center gap-2" aria-label="izumi">
       <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
       <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
-    </button>
+    </div>
     {#if topNav.length}
       <div class="flex items-center gap-1">
         {#each topNav as c (c.id)}
@@ -169,6 +157,13 @@
       </div>
     {/if}
   </div>
+{/if}
+
+{#if !$offlineMode}
+  <!-- The catalog is a view context, so its current value sits on the Home content instead of
+       hiding behind the brand. Desktop anchors the popover in the hero's quiet top-left gutter;
+       mobile keeps it within easy reach at the top-right of the contained hero. -->
+  <CatalogSwitcher className="absolute z-30 {$isMobile ? 'right-4 top-[4.25rem]' : 'left-8 top-10'}" />
 {/if}
 
 <style>

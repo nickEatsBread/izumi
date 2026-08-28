@@ -12,6 +12,7 @@
   import type { Snapshot } from './$types'
   import { catalogProvider, isLegacyAniListCatalog } from '$lib/settings/catalog'
   import CatalogSearchPage from '$lib/components/catalog/CatalogSearchPage.svelte'
+  import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'
 
   // No hero on this page — clear the shared banner so it doesn't persist.
   heroMedia.set(null)
@@ -96,11 +97,15 @@
 {#if $offlineMode}
   <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
 {:else if !legacyCatalog}
+  <div class="p-4 pb-0 sm:p-8 sm:pb-0">
+    <CatalogSwitcher appearance="surface" />
+  </div>
   <CatalogSearchPage />
 {:else}
   <!-- Normal padding clears the mobile edge/titlebar. While the fixed degraded strip exists, add
        its 1.75rem height as well so it cannot cover the browse controls. -->
   <div class="p-4 sm:p-8 {$anilistDegraded ? 'pt-[2.75rem] sm:pt-[3.75rem]' : ''}">
+    <CatalogSwitcher appearance="surface" className="mb-5" />
     {#if filters.studioId || filters.staffId || filters.genres?.[0]}
       <h1 class="mb-4 text-2xl font-black">
         {filters.staffId ? (filters.exploreName || 'Voice actor') : filters.studioId ? (filters.exploreName || 'Studio') : filters.genres?.[0]}
