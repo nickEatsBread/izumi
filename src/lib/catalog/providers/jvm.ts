@@ -39,7 +39,12 @@ interface JvmHomeRequest {
 // creates a large queue that can sit in front of a detail/search request after the user navigates.
 const JVM_HOME_CONCURRENCY = 1
 const JVM_HOME_ROW_TIMEOUT_MS = 5_000
-const JVM_HOME_LOAD_BUDGET_MS = 12_000
+const JVM_HOME_INIT_TIMEOUT_MS = 12_000
+// Every enabled source gets one fair Home attempt before optional second rows consume the
+// remaining budget. Above five sources, shorten each first attempt so one slow extension cannot
+// prevent sources later in the list from ever being queried.
+const JVM_HOME_PRIMARY_BUDGET_MS = 25_000
+const JVM_HOME_LOAD_BUDGET_MS = 30_000
 
 function waitForSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -274,7 +279,11 @@ function jvmHomeRequests(sources: JvmCatalogSource[]): JvmHomeRequest[] {
   return [...popular, ...latest]
 }
 
-async function homeSourcePage(request: JvmHomeRequest, signal?: AbortSignal) {
+async function homeSourcePage(
+  request: JvmHomeRequest,
+  signal?: AbortSignal,
+  timeoutMs = JVM_HOME_ROW_TIMEOUT_MS,
+) {
   const controller = new AbortController()
   let timedOut = false
   const abort = () => controller.abort()
@@ -283,7 +292,7 @@ async function homeSourcePage(request: JvmHomeRequest, signal?: AbortSignal) {
   const timer = setTimeout(() => {
     timedOut = true
     controller.abort()
-  }, JVM_HOME_ROW_TIMEOUT_MS)
+  }, timeoutMs)
   try {
     const page = await sourcePage(request.source, request.method, 1, controller.signal)
     // Aniyomi extensions choose their own page size; several return 25-30 full-resolution
@@ -351,16 +360,19 @@ async function home(
   onUpdate?: CatalogHomeUpdate,
 ): Promise<CatalogHome> {
   const loadController = new AbortController()
+  let initializationExpired = false
   let budgetExpired = false
   const abortLoad = () => loadController.abort()
   if (signal?.aborted) loadController.abort()
   else signal?.addEventListener('abort', abortLoad, { once: true })
-  const budgetTimer = setTimeout(() => {
-    budgetExpired = true
+  const initializationTimer = setTimeout(() => {
+    initializationExpired = true
     loadController.abort()
-  }, JVM_HOME_LOAD_BUDGET_MS)
+  }, JVM_HOME_INIT_TIMEOUT_MS)
+  let budgetTimer: ReturnType<typeof setTimeout> | undefined
   const finishLoad = () => {
-    clearTimeout(budgetTimer)
+    clearTimeout(initializationTimer)
+    if (budgetTimer) clearTimeout(budgetTimer)
     signal?.removeEventListener('abort', abortLoad)
   }
   let sources: JvmCatalogSource[]
@@ -371,11 +383,12 @@ async function home(
   } catch (error) {
     finishLoad()
     throwIfAborted(signal)
-    if (budgetExpired) {
+    if (initializationExpired) {
       throw new Error('Aniyomi sources did not initialize within 12 seconds. Retry, or disable the source that is not responding.')
     }
     throw error
   }
+  clearTimeout(initializationTimer)
   const available = jvmHomeRequests(sources)
   if (!available.length) {
     finishLoad()
@@ -393,42 +406,99 @@ async function home(
   const requests = available[0] && !selected.some((request) => request.id === available[0].id)
     ? [available[0], ...selected]
     : selected
+  // Requests are source-fair: one preferred row from every enabled source is attempted before a
+  // source can consume the bridge for its second row. The manager keeps the native JVM lane serial,
+  // so this changes scheduling without recreating the renderer/bridge fan-out that froze Home.
+  const primaryRequests: JvmHomeRequest[] = []
+  const secondaryRequests: JvmHomeRequest[] = []
+  const scheduledSources = new Set<string>()
+  for (const request of requests) {
+    if (scheduledSources.has(request.source.id)) secondaryRequests.push(request)
+    else {
+      scheduledSources.add(request.source.id)
+      primaryRequests.push(request)
+    }
+  }
+  const primaryRowTimeout = Math.min(
+    JVM_HOME_ROW_TIMEOUT_MS,
+    Math.max(1_000, Math.floor(JVM_HOME_PRIMARY_BUDGET_MS / Math.max(1, primaryRequests.length))),
+  )
+  budgetTimer = setTimeout(() => {
+    budgetExpired = true
+    loadController.abort()
+  }, JVM_HOME_LOAD_BUDGET_MS)
   const loaded = new Map<string, Media[]>()
   let hero: Media[] = []
   let publishedUsableHome = false
-  const snapshot = (): CatalogHome => {
+  let publishedSectionCount = 0
+  let rowsComplete = false
+  const snapshot = (partial = false): CatalogHome => {
     const sections = selected.flatMap((request) => {
       const media = loaded.get(request.id) ?? []
-      return media.length ? [{ id: request.id, title: request.title, media }] : []
+      return media.length ? [{
+        id: request.id,
+        title: request.title,
+        media,
+        more: {
+          type: 'anime' as const,
+          sourceId: request.source.id,
+          sort: request.method === 'getLatestUpdates' ? ('recent' as const) : ('popular' as const),
+        },
+      }] : []
     })
     const naturallyWide = [...loaded.values()].flat().filter((media) => media.bannerImage)
     // `hero` is already capped when it is created. Preserve that array identity between row
     // updates so Hero does not restart all of its effects for an unchanged carousel.
-    return { hero: hero.length ? hero : naturallyWide.slice(0, 10), sections }
+    return {
+      hero: hero.length ? hero : naturallyWide.slice(0, 10),
+      sections,
+      ...(partial ? { partial: true } : {}),
+    }
   }
   const publishFirstUsableHome = () => {
     if (publishedUsableHome || signal?.aborted) return
     const current = snapshot()
     if (!current.hero.length && !current.sections.length) return
     publishedUsableHome = true
+    publishedSectionCount = current.sections.length
     onUpdate?.(current)
   }
-  try {
-    const results = await settleWithConcurrency(requests, JVM_HOME_CONCURRENCY, async (request) => {
-      const page = await homeSourcePage(request, loadController.signal)
+  const publishPrimarySources = () => {
+    if (signal?.aborted) return
+    const current = snapshot()
+    if (!current.hero.length && !current.sections.length) return
+    // This is the only additional progressive reconciliation: it reveals the other providers
+    // together after the fair first pass, rather than replacing every mounted row one-by-one.
+    if (publishedUsableHome && current.sections.length <= publishedSectionCount) return
+    publishedUsableHome = true
+    publishedSectionCount = current.sections.length
+    onUpdate?.(current)
+  }
+  const loadRows = (phase: JvmHomeRequest[], timeoutMs: number) => settleWithConcurrency(
+    phase,
+    JVM_HOME_CONCURRENCY,
+    async (request) => {
+      const page = await homeSourcePage(request, loadController.signal, timeoutMs)
       loaded.set(request.id, page.media)
       if (!hero.length && page.media.length) hero = page.media.slice(0, 10)
-      // Paint one useful row immediately. Subsequent rows are returned together in the final
-      // snapshot; publishing every row repeatedly reconciled all previous keyed cards and caused
-      // Svelte's development diagnostics to monopolise the WebView renderer for over a minute.
       publishFirstUsableHome()
       return { request, page }
-    })
+    },
+  )
+  try {
+    const primaryResults = await loadRows(primaryRequests, primaryRowTimeout)
+    publishPrimarySources()
+    const secondaryResults = loadController.signal.aborted
+      ? []
+      : await loadRows(secondaryRequests, JVM_HOME_ROW_TIMEOUT_MS)
+    const results = [...primaryResults, ...secondaryResults]
+    rowsComplete = results.length === requests.length
+      && results.every((result) => result.status === 'fulfilled')
     throwIfAborted(signal)
     const current = snapshot()
     if (!current.sections.length && results.every((result) => result.status === 'rejected')) {
       if (budgetExpired) {
-        throw new Error('Aniyomi sources did not return Home content within 12 seconds. Retry, or disable the source that is not responding.')
+        throw new Error('Aniyomi sources did not return Home content in time. Retry, or disable the source that is not responding.')
       }
       const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected')
       throw failure?.reason ?? new Error('The selected Aniyomi sources did not return catalog data.')
@@ -442,13 +512,13 @@ async function home(
       // disappear as soon as getDetail completed.
       if (featured) hero = [featured, ...hero.slice(1)].slice(0, 10)
     }
-    return snapshot()
+    return snapshot(!rowsComplete)
   } catch (error) {
     throwIfAborted(signal)
     const current = snapshot()
-    if (budgetExpired && (current.hero.length || current.sections.length)) return current
+    if (budgetExpired && (current.hero.length || current.sections.length)) return snapshot(!rowsComplete)
     if (budgetExpired) {
-      throw new Error('Aniyomi sources did not return Home content within 12 seconds. Retry, or disable the source that is not responding.')
+      throw new Error('Aniyomi sources did not return Home content in time. Retry, or disable the source that is not responding.')
     }
     throw error
   } finally {

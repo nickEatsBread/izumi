@@ -113,6 +113,7 @@
     if (more.genre) params.set('genre', more.genre)
     if (more.year) params.set('year', String(more.year))
     if (more.sort) params.set('sort', more.sort)
+    if (more.sourceId) params.set('source', more.sourceId)
     return `/app/search?${params}`
   }
 </script>

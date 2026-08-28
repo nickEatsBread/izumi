@@ -39,6 +39,12 @@ describe('JVM catalog provider', () => {
     expect(home.sections.map((section) => section.title)).toEqual([
       'Popular · One', 'Popular · Two', 'Latest updates · One', 'Latest updates · Two',
     ])
+    expect(home.sections.map((section) => section.more)).toEqual([
+      { type: 'anime', sourceId: 'one', sort: 'popular' },
+      { type: 'anime', sourceId: 'two', sort: 'popular' },
+      { type: 'anime', sourceId: 'one', sort: 'recent' },
+      { type: 'anime', sourceId: 'two', sort: 'recent' },
+    ])
     expect(mocks.browse).toHaveBeenCalledTimes(4)
   })
 
@@ -57,6 +63,23 @@ describe('JVM catalog provider', () => {
     expect(home.sections).toHaveLength(4)
     expect(home.sections.every((section) => section.media.length === 20)).toBe(true)
     expect(home.hero).toHaveLength(10)
+  })
+
+  it('marks a usable Home snapshot partial when an enabled source fails', async () => {
+    mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
+      if (sourceId === 'two') throw new Error('Extension failed')
+      return {
+        list: [{ title: `${method} ${sourceId}`, url: `/${method}/${sourceId}` }],
+        hasNextPage: false,
+      }
+    })
+
+    const home = await jvmCatalog.home()
+
+    expect(home.sections.map((section) => section.title)).toEqual([
+      'Popular · One', 'Latest updates · One',
+    ])
+    expect(home.partial).toBe(true)
   })
 
   it('does not query sources explicitly filtered out of the JVM catalog', async () => {
@@ -120,9 +143,52 @@ describe('JVM catalog provider', () => {
 
     const home = await jvmCatalog.home(undefined, undefined, (update) => updates.push(update))
 
-    expect(updates).toHaveLength(1)
+    expect(updates).toHaveLength(2)
     expect(updates[0].sections).toHaveLength(1)
+    expect(updates[1].sections).toHaveLength(2)
     expect(home.sections).toHaveLength(4)
+  })
+
+  it('gives every enabled source a primary Home attempt before loading second rows', async () => {
+    vi.useFakeTimers()
+    try {
+      const fourSources = Array.from({ length: 4 }, (_, index) => ({
+        id: `source-${index + 1}`,
+        name: `Source ${index + 1}`,
+        lang: 'en',
+        supportsPopular: true,
+        supportsLatest: true,
+      }))
+      const calls: Array<[string, string]> = []
+      mocks.sources.mockResolvedValue(fourSources)
+      mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
+        calls.push([sourceId, method])
+        if (method === 'getPopular') {
+          await new Promise((resolve) => setTimeout(resolve, 4_000))
+        }
+        return {
+          list: [{ title: `${method} ${sourceId}`, url: `/${method}/${sourceId}` }],
+          hasNextPage: false,
+        }
+      })
+      const updates: Array<{ sections: Array<{ id: string }> }> = []
+      const complete = jvmCatalog.home(undefined, undefined, (update) => updates.push(update))
+
+      await vi.advanceTimersByTimeAsync(17_000)
+      const home = await complete
+      const firstLatest = calls.findIndex(([, method]) => method === 'getLatestUpdates')
+
+      expect(firstLatest).toBe(4)
+      expect(calls.slice(0, firstLatest).map(([sourceId]) => sourceId)).toEqual(
+        fourSources.map((source) => source.id),
+      )
+      expect(updates.at(-1)?.sections.map((section) => section.id)).toEqual(
+        fourSources.map((source) => `popular:${source.id}`),
+      )
+      expect(home.sections).toHaveLength(8)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('never fans Home requests out across the JVM bridge', async () => {
@@ -144,7 +210,7 @@ describe('JVM catalog provider', () => {
     expect(peak).toBe(1)
   })
 
-  it('bounds the whole Home transition when enabled sources never answer', async () => {
+  it('bounds every serial Home row when enabled sources never answer', async () => {
     vi.useFakeTimers()
     try {
       mocks.browse.mockImplementation(async (
@@ -158,11 +224,11 @@ describe('JVM catalog provider', () => {
         signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
       }))
 
-      const result = expect(jvmCatalog.home()).rejects.toThrow('did not return Home content within 12 seconds')
-      await vi.advanceTimersByTimeAsync(12_000)
+      const result = expect(jvmCatalog.home()).rejects.toThrow('took too long to load')
+      await vi.advanceTimersByTimeAsync(20_000)
 
       await result
-      expect(mocks.browse.mock.calls.length).toBeLessThan(sources.length * 2)
+      expect(mocks.browse).toHaveBeenCalledTimes(sources.length * 2)
     } finally {
       vi.useRealTimers()
     }

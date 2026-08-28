@@ -13,8 +13,8 @@
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
   import type { CatalogHome, CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
-  import { catalogProvider } from '$lib/settings/catalog'
-  import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
+  import { catalogProvider, jvmCatalogSourceOverrides } from '$lib/settings/catalog'
+  import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
   import { mediaHref } from '$lib/anilist/media'
   import { anilistUser } from '$lib/anilist/account'
@@ -49,7 +49,15 @@
     void retry
     if (selection === 'auto' || selection === 'anilist') return
     const abort = new AbortController()
-    const cached = providerHomeCache.get(selection)
+    // A provider's visible rows are part of the request, not merely presentation. Include them in
+    // the cache identity so enabling an Aniyomi source or restoring a hidden Home row cannot reuse
+    // an older one-source snapshot that was previously considered complete.
+    const cacheKey = JSON.stringify([
+      selection,
+      $catalogHomeLayouts[catalogHomeLayoutKey(selection)] ?? null,
+      selection === 'jvm' ? $jvmCatalogSourceOverrides : null,
+    ])
+    const cached = providerHomeCache.get(cacheKey)
     // Keep this local: reading reactive `home` inside its own loading effect subscribes the effect
     // to every progressive result it writes later. Each first Aniyomi row then aborted and restarted
     // the whole provider load, hammering getPopular in a feedback loop and freezing the renderer.
@@ -61,11 +69,11 @@
     const publish = (result: CatalogHome, complete = false) => {
       if (abort.signal.aborted) return
       home = result
-      providerHomeCache.set(selection, { storedAt: Date.now(), home: result, complete })
+      providerHomeCache.set(cacheKey, { storedAt: Date.now(), home: result, complete })
       if (result.hero.length || result.sections.length) loading = false
     }
     void loadCatalogProvider(selection).then((provider) => provider.home(abort.signal, undefined, publish)).then((result) => {
-      publish(result, true)
+      publish(result, result.partial !== true)
     }).catch((reason) => {
       if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
     }).finally(() => { if (!abort.signal.aborted) loading = false })
@@ -79,6 +87,7 @@
     if (more.genre) params.set('genre', more.genre)
     if (more.year) params.set('year', String(more.year))
     if (more.sort) params.set('sort', more.sort)
+    if (more.sourceId) params.set('source', more.sourceId)
     return `/app/search?${params}`
   }
 </script>

@@ -67,10 +67,14 @@ describe('multi-platform catalog entry points', () => {
     const catalogHome = read('./CatalogHome.svelte')
     expect(catalogHome).toContain('providerHomeCache')
     expect(catalogHome).toContain('let home = $state.raw<CatalogHome | null>(null)')
+    expect(catalogHome).toContain('const cacheKey = JSON.stringify([')
+    expect(catalogHome).toContain('$catalogHomeLayouts[catalogHomeLayoutKey(selection)] ?? null')
+    expect(catalogHome).toContain("selection === 'jvm' ? $jvmCatalogSourceOverrides : null")
     expect(catalogHome).toContain('const initialHome = cached && Date.now() - cached.storedAt < HOME_CACHE_MS ? cached.home : null')
     expect(catalogHome).toContain('loading = !initialHome')
     expect(catalogHome).toContain('cached?.complete && initialHome')
     expect(catalogHome).toContain('provider.home(abort.signal, undefined, publish)')
+    expect(catalogHome).toContain('publish(result, result.partial !== true)')
     expect(catalogHome).toContain('if (result.hero.length || result.sections.length) loading = false')
     expect(catalogHome).toContain("class:deferred-skeleton={$catalogProvider === 'jvm'}")
     expect(catalogHome).toContain("showCatalogSource={$catalogProvider !== 'jvm'}")
@@ -86,6 +90,12 @@ describe('multi-platform catalog entry points', () => {
     expect(catalogHome).not.toContain('LoaderCircle')
     expect(catalogHome).toContain('Couldn’t load')
     expect(catalogHome).toContain('>Retry</button>')
+  })
+
+  it('preserves the Aniyomi source when opening a Home row in search', () => {
+    expect(read('./CatalogHome.svelte')).toContain("if (more.sourceId) params.set('source', more.sourceId)")
+    expect(read('./MergedCatalogHome.svelte')).toContain("if (more.sourceId) params.set('source', more.sourceId)")
+    expect(read('../../catalog/providers/jvm.ts')).toContain('sourceId: request.source.id')
   })
 
   it('renders TMDB title artwork on detail pages and keeps a text fallback', () => {
