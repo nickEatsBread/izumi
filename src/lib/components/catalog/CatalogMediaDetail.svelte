@@ -141,34 +141,40 @@
     {#if media.genres?.length}<div class="flex flex-wrap gap-2 px-5 sm:px-8">{#each media.genres as genre}<span class="rounded-full bg-secondary px-3 py-1 text-xs font-bold">{genre}</span>{/each}</div>{/if}
 
     {#if parsedDescription.facts.length || parsedDescription.alternativeTitles.length || parsedDescription.links.length}
-      <section class="mt-6 max-w-6xl px-5 sm:px-8" aria-label="Source information">
-        <div class="rounded-2xl bg-secondary/55 p-4 sm:p-5">
-          <h2 class="mb-4 text-sm font-black uppercase tracking-wide text-foreground/70">Information</h2>
-          {#if parsedDescription.facts.length}
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
-              {#each parsedDescription.facts as fact (fact.label)}
-                <div class="min-w-0">
-                  <dt class="text-xs font-semibold text-muted-foreground">{fact.label}</dt>
-                  <dd class="mt-0.5 break-words text-sm font-bold text-foreground/90">{fact.value}</dd>
-                </div>
-              {/each}
-            </dl>
-          {/if}
-          {#if parsedDescription.alternativeTitles.length}
-            <div class="mt-5">
-              <div class="text-xs font-semibold text-muted-foreground">Alternative titles</div>
-              <div class="mt-1 text-sm text-foreground/85">{parsedDescription.alternativeTitles.join(' · ')}</div>
-            </div>
-          {/if}
-          {#if parsedDescription.links.length}
-            <div class="mt-5 flex flex-wrap gap-2" aria-label="External links">
-              {#each parsedDescription.links as link (link.url)}
-                <button data-focusable onclick={() => openUrl(link.url)} class="flex items-center gap-1.5 rounded-lg bg-background/60 px-3 py-2 text-sm font-bold transition hover:bg-background">
-                  {link.label}<ExternalLink size={14} class="text-muted-foreground" />
-                </button>
-              {/each}
-            </div>
-          {/if}
+      <section class="mt-5 max-w-6xl px-5 sm:px-8" aria-label="Source information">
+        <div class="rounded-xl bg-secondary/55 p-4 lg:flex lg:items-start lg:gap-5">
+          <h2 class="mb-3 shrink-0 text-xs font-black uppercase tracking-wide text-foreground/70 lg:mb-0 lg:w-24 lg:pt-0.5">Information</h2>
+          <div class="min-w-0 flex-1">
+            {#if parsedDescription.facts.length}
+              <dl class="grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                {#each parsedDescription.facts as fact (fact.label)}
+                  <div class="min-w-0">
+                    <dt class="text-[0.7rem] font-semibold text-muted-foreground">{fact.label}</dt>
+                    <dd class="mt-0.5 break-words text-sm font-bold leading-snug text-foreground/90">{fact.value}</dd>
+                  </div>
+                {/each}
+              </dl>
+            {/if}
+            {#if parsedDescription.alternativeTitles.length || parsedDescription.links.length}
+              <div class="mt-3 flex flex-col gap-3 border-t border-border/50 pt-3 lg:flex-row lg:items-start lg:justify-between lg:gap-5">
+                {#if parsedDescription.alternativeTitles.length}
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[0.7rem] font-semibold text-muted-foreground">Alternative titles</div>
+                    <div class="mt-0.5 text-sm leading-snug text-foreground/85">{parsedDescription.alternativeTitles.join(' · ')}</div>
+                  </div>
+                {/if}
+                {#if parsedDescription.links.length}
+                  <div class="flex shrink-0 flex-wrap gap-2" aria-label="External links">
+                    {#each parsedDescription.links as link (link.url)}
+                      <button data-focusable onclick={() => openUrl(link.url)} class="flex items-center gap-1.5 rounded-md bg-background/60 px-2.5 py-1.5 text-xs font-bold transition hover:bg-background">
+                        {link.label}<ExternalLink size={13} class="text-muted-foreground" />
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
         </div>
       </section>
     {/if}

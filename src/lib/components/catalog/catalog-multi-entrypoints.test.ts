@@ -99,6 +99,14 @@ describe('multi-platform catalog entry points', () => {
     expect(detail).toContain('aria-label="Source information"')
   })
 
+  it('keeps source information dense on desktop without collapsing the mobile facts', () => {
+    const detail = read('./CatalogMediaDetail.svelte')
+    expect(detail).toContain('lg:flex lg:items-start lg:gap-5')
+    expect(detail).toContain('grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6')
+    expect(detail).toContain('lg:flex-row lg:items-start lg:justify-between')
+    expect(detail).toContain('px-2.5 py-1.5 text-xs')
+  })
+
   it('gives the cover meaningful desktop presence without squeezing the text column', () => {
     const detail = read('./CatalogMediaDetail.svelte')
     expect(detail).toContain('max-w-6xl items-end gap-8')
