@@ -77,6 +77,17 @@ describe('multi-platform catalog entry points', () => {
     expect(read('./MergedCatalogHome.svelte')).toContain('let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})')
   })
 
+  it('uses catalog row skeletons instead of a redundant Aniyomi loading card', () => {
+    const catalogHome = read('./CatalogHome.svelte')
+    expect(catalogHome).toContain('{#each Array.from({ length: 4 }) as _}')
+    expect(catalogHome).toContain('aspect-[2/3] w-36 shrink-0 rounded-md skeloader')
+    expect(catalogHome).not.toContain('Loading Aniyomi sources…')
+    expect(catalogHome).not.toContain('Checking enabled sources.')
+    expect(catalogHome).not.toContain('LoaderCircle')
+    expect(catalogHome).toContain('Couldn’t load')
+    expect(catalogHome).toContain('>Retry</button>')
+  })
+
   it('renders TMDB title artwork on detail pages and keeps a text fallback', () => {
     const detail = read('./CatalogMediaDetail.svelte')
     const tmdb = read('../../catalog/providers/tmdb.ts')

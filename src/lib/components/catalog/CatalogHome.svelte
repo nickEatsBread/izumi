@@ -19,7 +19,6 @@
   import { mediaHref } from '$lib/anilist/media'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
-  import LoaderCircle from '@lucide/svelte/icons/loader-circle'
 
   // Provider payloads are immutable snapshots. Deep-proxying every Media object gives Svelte's
   // keyed carousels a fresh proxy identity on every progressive update; in dev builds the sixth
@@ -110,22 +109,12 @@
     {/if}
 
     {#if loading && !home}
-      {#if $catalogProvider === 'jvm'}
-        <div class="mx-4 flex min-h-24 items-center gap-4 rounded-xl bg-secondary/50 px-5 py-4 sm:mx-8">
-          <LoaderCircle size={24} class="shrink-0 animate-spin text-primary" aria-hidden="true" />
-          <div>
-            <p class="font-bold">Loading Aniyomi sources…</p>
-            <p class="mt-0.5 text-sm text-muted-foreground">Checking enabled sources. An unresponsive extension will be skipped automatically.</p>
-          </div>
+      {#each Array.from({ length: 4 }) as _}
+        <div class="px-4 sm:px-8">
+          <div class="mb-3 h-5 w-40 rounded skeloader"></div>
+          <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
         </div>
-      {:else}
-        {#each Array.from({ length: 4 }) as _}
-          <div class="px-4 sm:px-8">
-            <div class="mb-3 h-5 w-40 rounded skeloader"></div>
-            <div class="flex gap-3 overflow-hidden">{#each Array.from({ length: 8 }) as _}<div class="aspect-[2/3] w-36 shrink-0 rounded-md skeloader sm:w-[152px]"></div>{/each}</div>
-          </div>
-        {/each}
-      {/if}
+      {/each}
     {:else if home}
       {#each contentRows as row (row.id)}
         {#if row.kind === 'continue'}
