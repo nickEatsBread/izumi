@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import type { CatalogHomeFeature, CatalogHomeSection } from '$lib/catalog/types'
-  import { orderStreamingServices, streamingBrand } from '$lib/catalog/streaming-brands'
+  import { populateStreamingServices, streamingBrand } from '$lib/catalog/streaming-brands'
   import Carousel from '$lib/components/cards/Carousel.svelte'
 
   let { section, title = section.title }: { section: CatalogHomeSection; title?: string } = $props()
@@ -9,7 +9,7 @@
   let previewId = $state<string | null>(null)
   let previewState = $state<Record<string, 'ready' | 'failed'>>({})
   let failedMarks = $state<Record<string, boolean>>({})
-  const features = $derived(orderStreamingServices(section.features ?? []))
+  const features = $derived(populateStreamingServices(section.features ?? []))
 
   function showPreview(feature: CatalogHomeFeature) {
     if (streamingBrand(feature.title).preview && previewState[feature.id] !== 'failed') previewId = feature.id

@@ -49,6 +49,7 @@ describe('featured TMDB home sections', () => {
 
   it('uses complete provider marks, lazy remote hover media, and direct navigation', () => {
     expect(streamingRow).toContain('streamingBrand(feature.title)')
+    expect(streamingRow).toContain('populateStreamingServices(section.features ?? [])')
     expect(streamingRow).toContain('brand.mark ?? feature.image')
     expect(streamingRow).toContain('brand.mark || !failedMarks[feature.id]')
     expect(streamingRow).toContain('previewId === feature.id')

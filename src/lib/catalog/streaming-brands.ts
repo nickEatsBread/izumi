@@ -1,3 +1,5 @@
+import type { CatalogHomeFeature } from './types'
+
 export type StreamingBrandId =
   | 'netflix'
   | 'disney'
@@ -42,6 +44,28 @@ const STREAMING_BRAND_PRIORITY: Partial<Record<StreamingBrandId, number>> = {
   'filmbox-plus': 10,
   'sun-nxt': 11,
 }
+
+function primaryService(id: number, title: string): CatalogHomeFeature {
+  return {
+    id: `primary-${id}`,
+    title,
+    href: `/app/streaming/${id}?name=${encodeURIComponent(title)}`,
+  }
+}
+
+/** The leading service set is intentionally global. Regional providers are appended afterwards,
+ * but must not make these recognizable entry points disappear from Home. */
+export const PRIMARY_STREAMING_SERVICES = [
+  primaryService(8, 'Netflix'),
+  primaryService(337, 'Disney+'),
+  primaryService(15, 'Hulu'),
+  primaryService(9, 'Prime Video'),
+  primaryService(350, 'Apple TV'),
+  primaryService(1899, 'Max'),
+  primaryService(531, 'Paramount+'),
+  primaryService(386, 'Peacock'),
+  primaryService(283, 'Crunchyroll'),
+] as const
 
 /** Provider ids vary by region, while service names and marks remain recognizable. Known services
  * use bundled vector marks; every other service falls back to the live provider artwork. */
@@ -122,4 +146,12 @@ export function orderStreamingServices<T extends { title: string }>(services: re
       (STREAMING_BRAND_PRIORITY[left.brand] ?? 100) - (STREAMING_BRAND_PRIORITY[right.brand] ?? 100)
       || left.index - right.index)
     .map(({ service }) => service)
+}
+
+/** Populates the primary service shelf before adding non-duplicate providers available locally. */
+export function populateStreamingServices(services: readonly CatalogHomeFeature[]): CatalogHomeFeature[] {
+  const primaryBrands = new Set(PRIMARY_STREAMING_SERVICES.map((service) => streamingBrand(service.title).id))
+  const regional = orderStreamingServices(services)
+    .filter((service) => !primaryBrands.has(streamingBrand(service.title).id))
+  return [...PRIMARY_STREAMING_SERVICES, ...regional]
 }

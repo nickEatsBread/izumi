@@ -1,7 +1,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { orderStreamingServices, streamingBrand } from './streaming-brands'
+import { orderStreamingServices, populateStreamingServices, streamingBrand } from './streaming-brands'
 
 const PRIMARY_SERVICES = [
   { name: 'Netflix', id: 'netflix', mark: '/brand/streaming/netflix.svg' },
@@ -66,6 +66,23 @@ describe('streaming service visual identity', () => {
       'Paramount Plus', 'Peacock', 'Crunchyroll',
       'A regional service', 'Another regional service',
     ])
+  })
+
+  it('populates missing primary cards before regional services', () => {
+    const populated = populateStreamingServices([
+      { id: '8', title: 'Netflix', href: '/live-netflix' },
+      { id: '337', title: 'Disney Plus', href: '/live-disney' },
+      { id: '9', title: 'Prime Video', href: '/live-prime' },
+      { id: '2', title: 'Apple TV Store', href: '/store' },
+      { id: '3', title: 'Google Play Movies', href: '/google' },
+    ])
+
+    expect(populated.slice(0, 9).map((service) => streamingBrand(service.title).id)).toEqual([
+      'netflix', 'disney', 'hulu', 'prime-video', 'apple-tv', 'max',
+      'paramount-plus', 'peacock', 'crunchyroll',
+    ])
+    expect(populated[9]).toMatchObject({ title: 'Google Play Movies', href: '/google' })
+    expect(populated.some((service) => service.title === 'Apple TV Store')).toBe(false)
   })
 
   it('uses a stable fallback for regional services', () => {
