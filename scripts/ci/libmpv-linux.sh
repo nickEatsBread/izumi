@@ -18,7 +18,7 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 git clone --depth 1 --branch "v${MPV_VERSION}" "$MPV_REPO" "$work/mpv"
 meson setup "$work/mpv/build" "$work/mpv" \
-  --buildtype=release --prefix=/usr/local \
+  --buildtype=release --prefix=/usr \
   -Dlibmpv=true -Dcplayer=false -Dtests=false -Dlua=disabled -Djavascript=disabled
 meson compile -C "$work/mpv/build"
 
