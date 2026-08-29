@@ -30,6 +30,8 @@ describe('catalogue discovery context UI', () => {
     expect(hero).toContain('`#${current.featuredRank.position} in ${current.featuredRank.label}`')
     expect(hero).toContain('Crunchyroll · {featuredAward.year} {featuredAward.category} winner')
     expect(hero).toContain('<TrendingUp')
+    expect(hero).toContain('class:bottom-16={medias.length > 1}')
+    expect(hero).toContain('class="flex justify-end"')
     expect(tmdb).toContain("'Movies Today'")
     expect(tmdb).toContain("'TV Today'")
   })

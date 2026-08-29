@@ -284,18 +284,11 @@
                 onclick={openCurrent} aria-label={`View details for ${title(current)}`}></button>
       {/if}
       <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col gap-2 p-4">
-        {#if featuredRankLabel || featuredAward}
+        {#if featuredAward}
           <div class="flex flex-wrap gap-1.5">
-            {#if featuredRankLabel}
-              <span class="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/65 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
-                <TrendingUp size={12} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
-              </span>
-            {/if}
-            {#if featuredAward}
-              <span class="inline-flex items-center gap-1.5 rounded-full border border-orange-300/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
-                <Award size={12} class="text-orange-300" aria-hidden="true" />Crunchyroll · {featuredAward.year} {featuredAward.category}
-              </span>
-            {/if}
+            <span class="inline-flex items-center gap-1.5 rounded-full border border-orange-300/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
+              <Award size={12} class="text-orange-300" aria-hidden="true" />Crunchyroll · {featuredAward.year} {featuredAward.category}
+            </span>
           </div>
         {/if}
         {#if currentLogo}
@@ -338,6 +331,13 @@
             <Info size={18} /> Details
           </button>
         </div>
+        {#if featuredRankLabel}
+          <div class="flex justify-end">
+            <span class="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/70 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
+              <TrendingUp size={12} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
+            </span>
+          </div>
+        {/if}
         {#if medias.length > 1}
           <div class="mt-1.5 flex justify-center gap-1.5">
             {#each medias as _, idx (idx)}
@@ -412,22 +412,25 @@
       </button>
     {/if}
 
+    {#if showOverlay && featuredRankLabel}
+      <span
+        class="pointer-events-none absolute right-8 z-20 hidden items-center gap-2 rounded-md border border-white/15 bg-black/65 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur sm:inline-flex"
+        class:bottom-16={medias.length > 1}
+        class:bottom-8={medias.length <= 1}
+      >
+        <TrendingUp size={15} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
+      </span>
+    {/if}
+
     {#if showOverlay}
       <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-6 sm:px-8 sm:pb-8">
         {#key current.id}
         <div class="hero-copy max-w-2xl" style="--hero-enter-x:{navDirection * 1.5}%">
-          {#if featuredRankLabel || featuredAward}
+          {#if featuredAward}
             <div class="mb-4 flex flex-wrap gap-2">
-              {#if featuredRankLabel}
-                <span class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/55 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur">
-                  <TrendingUp size={15} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
-                </span>
-              {/if}
-              {#if featuredAward}
-                <span class="inline-flex items-center gap-2 rounded-lg border border-orange-300/20 bg-black/55 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur">
-                  <Award size={15} class="text-orange-300" aria-hidden="true" />Crunchyroll · {featuredAward.year} {featuredAward.category} winner
-                </span>
-              {/if}
+              <span class="inline-flex items-center gap-2 rounded-lg border border-orange-300/20 bg-black/55 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur">
+                <Award size={15} class="text-orange-300" aria-hidden="true" />Crunchyroll · {featuredAward.year} {featuredAward.category} winner
+              </span>
             </div>
           {/if}
           {#if currentLogo}
