@@ -445,8 +445,8 @@ async function streamingProviderFeatures(region: string, signal?: AbortSignal): 
     .map((provider) => ({
       id: String(provider.provider_id),
       title: provider.provider_name!,
-      image: image(provider.logo_path, 'w185'),
-      href: `/app/streaming/${provider.provider_id}?name=${encodeURIComponent(provider.provider_name!)}&logo=${encodeURIComponent(image(provider.logo_path, 'w185') ?? '')}`,
+      image: image(provider.logo_path, 'w500'),
+      href: `/app/streaming/${provider.provider_id}?name=${encodeURIComponent(provider.provider_name!)}&logo=${encodeURIComponent(image(provider.logo_path, 'w500') ?? '')}`,
     }))
 }
 
