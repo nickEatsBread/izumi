@@ -1,7 +1,12 @@
 import type { Config } from 'tailwindcss'
 export default {
   darkMode: 'class',
-  content: ['./src/**/*.{html,svelte,ts}'],
+  content: [
+    './src/**/*.{html,svelte,ts}',
+    // Paraglide atomically regenerates this directory. Tailwind can otherwise discover a
+    // declaration file just before Paraglide replaces it, then fail when it tries to read it.
+    '!./src/lib/paraglide/**',
+  ],
   theme: {
     container: { center: true, padding: '2rem', screens: { '2xl': '1400px' } },
     extend: {
