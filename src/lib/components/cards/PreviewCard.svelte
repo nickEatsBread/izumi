@@ -10,11 +10,12 @@
   import {
     communityRatingKey, loadProviderCommunityRating, providerRatingOnMedia,
   } from '$lib/trackers/community-rating'
-  import { toggleFavourite, setStatus, anyTrackerConnected } from '$lib/trackers'
+  import { toggleFavourite } from '$lib/trackers'
+  import { WATCHLIST_ID, localLibrary, mediaIsInLocalList, toggleMediaInLocalList } from '$lib/library/local-lists'
   import YoutubeTrailer from './YoutubeTrailer.svelte'
   import Play from '@lucide/svelte/icons/play'
   import Heart from '@lucide/svelte/icons/heart'
-  import Plus from '@lucide/svelte/icons/plus'
+  import Bookmark from '@lucide/svelte/icons/bookmark'
   import BookOpen from '@lucide/svelte/icons/book-open'
   import CatalogSourceAttribution from '$lib/components/catalog/CatalogSourceAttribution.svelte'
   import { compactRatingLabel, primaryRating } from '$lib/catalog/media-metadata'
@@ -28,12 +29,12 @@
       : undefined,
   )
 
-  // Favourite is AniList-only; bookmark (PLANNING) works on any connected tracker.
+  // Favourite is AniList-only. Watchlist saving is device-local and never requires an account.
   const canFavourite = $derived(!!$anilistToken)
-  const canBookmark = $derived(anyTrackerConnected())
+  const inWatchlist = $derived(mediaIsInLocalList($localLibrary, media, WATCHLIST_ID))
   let busy = $state(false)
   async function favourite(e: Event) { e.stopPropagation(); if (busy) return; busy = true; try { await toggleFavourite(media) } catch { /* ignore */ } finally { busy = false } }
-  async function bookmark(e: Event) { e.stopPropagation(); if (busy) return; busy = true; try { await setStatus(media, 'PLANNING') } finally { busy = false } }
+  function bookmark(e: Event) { e.stopPropagation(); toggleMediaInLocalList(media, WATCHLIST_ID) }
   const reading = $derived(media.type === 'MANGA')
   const jvmSource = $derived(media.catalog?.provider === 'jvm' && media.catalog.sourceName ? media.catalog : undefined)
   const cleanDescription = $derived((media.description ?? '').replace(/<[^>]+>/g, '').trim())
@@ -118,10 +119,10 @@
                 class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground disabled:opacity-40">
           <Heart size={16} />
         </button>
-        <button aria-label="Add to list" onclick={bookmark} disabled={!canBookmark || busy}
-                title={canBookmark ? 'Add to Planning' : 'Connect a tracker to bookmark'}
-                class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground disabled:opacity-40">
-          <Plus size={16} />
+        <button aria-label={inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'} onclick={bookmark}
+                title={inWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
+                class="grid place-items-center rounded-md bg-secondary px-2 py-1 text-secondary-foreground">
+          <Bookmark size={16} class={inWatchlist ? 'fill-current text-theme' : ''} />
         </button>
       {/if}
     </div>

@@ -20,6 +20,7 @@
   import type { Media } from '$lib/anilist/types'
   import type { PlayState } from '$lib/stremio/play'
   import { watchlistLayout, watchlistSort, type WatchlistLayout, type WatchlistSort } from '$lib/settings/ui'
+  import { WATCHLIST_ID, availableLocalLists, localEntriesForList, localLibrary } from '$lib/library/local-lists'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
   import Search from '@lucide/svelte/icons/search'
@@ -35,8 +36,30 @@
   const malActive = $derived(!!$malToken || !!$malUser)
   const simklActive = $derived(!!$simklToken)
 
-  let items = $state<WatchlistItem[]>([])
+  let trackerEntries = $state<Entry[]>([])
+  let trackerMalEntries = $state<MalListEntry[]>([])
+  let trackerMalMedia = $state<Media[]>([])
   let loading = $state(true)
+  let selectedListId = $state(WATCHLIST_ID)
+  const savedLists = $derived(availableLocalLists($localLibrary))
+  const selectedList = $derived(savedLists.find((list) => list.id === selectedListId) ?? savedLists[0])
+  const localEntries = $derived(localEntriesForList($localLibrary, selectedListId))
+  const localWatchEntries = $derived(localEntries.map((entry): Entry => ({
+    media: entry.media,
+    progress: entry.media.mediaListEntry?.progress ?? 0,
+    updatedAt: Math.floor(entry.updatedAt / 1000),
+  })))
+  const items = $derived.by(() => buildWatchlist(
+    selectedListId === WATCHLIST_ID ? [...trackerEntries, ...localWatchEntries] : localWatchEntries,
+    selectedListId === WATCHLIST_ID ? trackerMalEntries : [],
+    selectedListId === WATCHLIST_ID ? trackerMalMedia : [],
+  ))
+  const canTrackProgress = $derived(selectedListId === WATCHLIST_ID && Boolean(listUser || malActive || simklActive))
+
+  $effect(() => {
+    if (savedLists.some((list) => list.id === selectedListId)) return
+    selectedListId = WATCHLIST_ID
+  })
 
   // Best-effort per source (same policy as loadMySets): a failing tracker just contributes
   // nothing instead of blanking the whole list.
@@ -93,16 +116,19 @@
 
   $effect(() => {
     const user = listUser
+    const useMal = malActive
     const useSimkl = simklActive
     let cancelled = false
     loading = true
     void Promise.all([
       user ? aniEntries(user) : Promise.resolve([]),
-      malSide(),
+      useMal ? malSide() : Promise.resolve({ entries: [], media: [] }),
       useSimkl ? simklSide() : Promise.resolve([]),
     ]).then(([ani, mal, simkl]) => {
       if (cancelled) return
-      items = buildWatchlist([...ani, ...simkl], mal.entries, mal.media)
+      trackerEntries = [...ani, ...simkl]
+      trackerMalEntries = mal.entries
+      trackerMalMedia = mal.media
       loading = false
     })
     return () => { cancelled = true }
@@ -201,16 +227,22 @@
       {/each}
     </div>
   {/if}
-{:else if !listUser && !malActive && !simklActive}
-  <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
-    <p class="font-bold text-foreground">No tracker linked</p>
-    <p class="mt-1">Link AniList, MyAnimeList, or Simkl in Settings → Accounts to see your watching list here.</p>
-  </div>
-{:else if !items.length}
-  <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
-    Nothing in your watching list.
-  </div>
 {:else}
+  <div class="mb-4 flex items-center gap-2">
+    <label class="flex min-w-0 items-center gap-2 text-sm font-bold">
+      <span class="shrink-0 text-muted-foreground">My list</span>
+      <select bind:value={selectedListId} data-focusable aria-label="Choose saved list"
+        class="h-10 min-w-0 max-w-60 rounded-xl bg-secondary px-3 text-sm font-bold outline-none focus:ring-2 focus:ring-accent">
+        {#each savedLists as list (list.id)}<option value={list.id}>{list.name}</option>{/each}
+      </select>
+    </label>
+  </div>
+  {#if !items.length}
+    <div class="rounded-lg border border-border bg-card px-4 py-6 text-center text-sm text-muted-foreground">
+      <p class="font-bold text-foreground">{selectedListId === WATCHLIST_ID ? 'Your watchlist is empty' : `${selectedList?.name ?? 'This list'} is empty`}</p>
+      <p class="mt-1">Save a show from its card or details page. No account is required.</p>
+    </div>
+  {:else}
   <!-- Toolbar: filter + sort + layout, one wrapping row like the episode controls. -->
   <div class="mb-4 flex flex-wrap items-center gap-2">
     <label class="relative min-w-0 flex-1 basis-48">
@@ -270,10 +302,12 @@
               {#if resolvingId === it.media.id}<Loader size={14} class="animate-spin" />
               {:else}<Play size={14} class="translate-x-px fill-current" />{/if}
             </button>
-            <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
-                    class="grid size-8 place-items-center rounded-full bg-black/70 text-white shadow-lg transition-colors hover:bg-primary">
-              <Plus size={15} />
-            </button>
+            {#if canTrackProgress}
+              <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
+                      class="grid size-8 place-items-center rounded-full bg-black/70 text-white shadow-lg transition-colors hover:bg-primary">
+                <Plus size={15} />
+              </button>
+            {/if}
           </div>
         </div>
       {/each}
@@ -306,10 +340,12 @@
               {#if resolvingId === it.media.id}<Loader size={15} class="animate-spin" />
               {:else}<Play size={15} class="translate-x-px fill-current" />{/if}
             </button>
-            <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
-                    class="grid size-9 place-items-center rounded-md bg-secondary text-foreground/85 transition-colors hover:bg-accent">
-              <Plus size={16} />
-            </button>
+            {#if canTrackProgress}
+              <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
+                      class="grid size-9 place-items-center rounded-md bg-secondary text-foreground/85 transition-colors hover:bg-accent">
+                <Plus size={16} />
+              </button>
+            {/if}
           </div>
         </div>
       {/each}
@@ -330,12 +366,15 @@
           {:else if nextAiring(it)}
             <span class="hidden shrink-0 text-[0.65rem] text-muted-foreground sm:inline">{nextAiring(it)}</span>
           {/if}
-          <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
-                  class="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
-            <Plus size={15} />
-          </button>
+          {#if canTrackProgress}
+            <button data-focusable onclick={() => bump(it)} aria-label="Mark episode {it.progress + 1} watched"
+                    class="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+              <Plus size={15} />
+            </button>
+          {/if}
         </div>
       {/each}
     </div>
+  {/if}
   {/if}
 {/if}

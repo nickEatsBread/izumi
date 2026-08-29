@@ -23,7 +23,10 @@
   import type { AniStatus } from '$lib/trackers'
   import { mergedProgress, STATUS_LABEL, STATUS_COLOR } from '$lib/trackers/status'
   import ListEditor from '$lib/components/detail/ListEditor.svelte'
+  import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
+  import { localLibrary, mediaIsSaved } from '$lib/library/local-lists'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
+  import BookmarkCheck from '@lucide/svelte/icons/bookmark-check'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
   import Share2 from '@lucide/svelte/icons/share-2'
   import Clapperboard from '@lucide/svelte/icons/clapperboard'
@@ -188,6 +191,7 @@
   // List-editor state. `listOpt` is the optimistic patch applied after a save so the status pill +
   // progress badge reflect instantly (the tracker queue reconciles every connected service).
   let showEditor = $state(false)
+  let showLocalLists = $state(false)
   let listOpt = $state<{ status?: AniStatus; progress?: number; score?: number; removed?: boolean }>({})
   const rawEntry = $derived($store.data?.Media?.mediaListEntry) // AniList list entry (has id/status/score)
   const effStatus = $derived.by((): AniStatus | undefined => {
@@ -204,6 +208,7 @@
   ))
   const effScore100 = $derived(listOpt.removed ? 0 : (listOpt.score ?? rawEntry?.score ?? externalEntry?.score ?? 0))
   const hasEntry = $derived(!!effStatus)
+  const savedLocally = $derived(media ? mediaIsSaved($localLibrary, media) : false)
 
   const fmtDate = (d?: { year?: number; month?: number; day?: number } | null) =>
     d?.year ? [d.year, d.month, d.day].filter(Boolean).join('-') : ''
@@ -474,16 +479,10 @@
 
         <!-- Compact action row: 4 icons + overflow. Handlers are the SAME functions the desktop bar uses. -->
         <div class="relative mt-2 flex items-center gap-2">
-          {#if trackerConnected}
-            <button data-focusable onclick={() => { h.tap(); showEditor = true }} aria-label="Edit list status"
-                    class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
-              {#if effStatus}
-                <span class="size-2.5 shrink-0 rounded-full" style="background:{STATUS_COLOR[effStatus]}"></span>{STATUS_LABEL[effStatus]}
-              {:else}
-                <BookmarkPlus size={16} /> Add
-              {/if}
-            </button>
-          {/if}
+          <button data-focusable onclick={() => { h.tap(); showLocalLists = true }} aria-label="Save to lists"
+                  class="flex h-11 flex-[2] items-center justify-center gap-1.5 rounded-lg bg-secondary px-2 text-sm font-bold">
+            {#if savedLocally}<BookmarkCheck size={17} class="text-theme" /> Saved{:else}<BookmarkPlus size={17} /> Save{/if}
+          </button>
           <button data-focusable onclick={() => { h.tap(); void onShare(m) }} aria-label="Share series"
                   class="grid h-11 flex-1 place-items-center rounded-lg bg-secondary">
             {#if copied}<Check size={18} class="text-theme" />{:else}<Share2 size={18} />{/if}
@@ -506,6 +505,12 @@
             <button type="button" aria-label="Close menu" onclick={() => (showMore = false)}
                     class="fixed inset-0 z-40 cursor-default"></button>
             <div class="absolute bottom-full right-0 z-50 mb-2 w-56 rounded-lg border border-border bg-card p-2 shadow-2xl">
+              {#if trackerConnected}
+                <button data-focusable onclick={() => { h.tap(); showMore = false; showEditor = true }}
+                        class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
+                  <ChevronDown size={15} /> {effStatus ? `Edit ${STATUS_LABEL[effStatus]}` : 'Add to tracker'}
+                </button>
+              {/if}
               {#each externalTrackerLinks as tracker (tracker.id)}
                 <button data-focusable onclick={() => { h.tap(); showMore = false; openUrl(tracker.url) }}
                         class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-bold hover:bg-accent">
@@ -641,6 +646,11 @@
             <Play size={16} />{ctaHasProgress(m) ? `Continue · Ep ${ctaEp(m)}` : $offlineMode ? `Play · Ep ${ctaEp(m)}` : 'Play'}
           </button>
 
+          <button data-focusable onclick={() => (showLocalLists = true)} title="Save to lists"
+                  class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
+            {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
+          </button>
+
           {#if trackerConnected}
             <button data-focusable onclick={() => (showEditor = true)} title="Edit list status"
                     class="inline-flex items-center gap-2 rounded-md bg-secondary px-3 py-2 font-bold transition-colors hover:bg-accent">
@@ -734,6 +744,7 @@
       onsaved={(patch) => (listOpt = { ...listOpt, ...patch })}
     />
   {/if}
+  {#if showLocalLists}<LocalListPicker media={m} onclose={() => (showLocalLists = false)} />{/if}
 {:else if $offlineMode}
   <div class="grid min-h-[50vh] place-items-center p-8 text-center">
     <div class="max-w-sm text-muted-foreground">
