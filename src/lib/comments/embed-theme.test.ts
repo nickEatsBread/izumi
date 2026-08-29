@@ -25,7 +25,7 @@ describe('DiscussAnime embed theming', () => {
     expect(android).not.toContain('style:color-scheme="dark"')
   })
 
-  it('leaves Android comment scrolling with the native watch-page scroller', () => {
+  it('relays Android drags out of the cross-origin child into the watch-page scroller', () => {
     const loader = read('../../../static/disqus-embed.html')
     const android = read('../components/player/AndroidWatchDetails.svelte')
     const plugin = read('../../../src-tauri/tauri-plugin-extplayer/android/src/main/java/app/izumi/extplayer/ExtPlayerPlugin.kt')
@@ -34,11 +34,20 @@ describe('DiscussAnime embed theming', () => {
     expect(android).toMatch(/title="Episode comments"[^>]*scrolling="no"/)
     expect(android).toContain('style:height={`${disqusHeight}px`}')
     expect(android).not.toContain('min(70dvh')
-    expect(android).not.toContain('embedTouchScroll')
-    expect(android).not.toContain('disqusTouchVelocity')
-    expect(loader).not.toContain("type: 'izumi-disqus-page-scroll'")
-    expect(plugin).not.toContain('window.__izumiDisqusTouchBridge')
-    expect(plugin).not.toContain("type: 'izumi-disqus-touch-scroll'")
+    expect(android).toContain("closest<HTMLElement>('.preparing-details, .watch-details')")
+    expect(android).toContain('embedTouchScroll(event.origin, event.data, window.location.origin)')
+    expect(loader).toContain("type: 'izumi-disqus-page-scroll'")
+    expect(plugin).toContain('window.__izumiDisqusTouchBridge')
+    expect(plugin).toContain("type: 'izumi-disqus-touch-scroll'")
+    expect(plugin).toContain("document.addEventListener('touchmove'")
+  })
+
+  it('loads and sizes the current Disqus application on Android', () => {
+    const loader = read('../../../static/disqus-embed.html')
+    expect(loader).toContain("https://c.disquscdn.com")
+    expect(loader).toMatch(/html\.izumi-expand #disqus_thread > iframe\s*\{[^}]*min-height: 480px !important;/s)
+    expect(loader).toContain('var heightTimer = 0')
+    expect(loader).toContain('heightTimer = window.setTimeout')
   })
 
   it('removes native dark-frame mutation and forced WebView theming', () => {

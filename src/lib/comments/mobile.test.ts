@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { discussionBrowserUrl, embedResizeHeight, mobileEmbedSrc, preferredMobileDiscussion } from './mobile'
+import { discussionBrowserUrl, embedResizeHeight, embedTouchScroll, mobileEmbedSrc, preferredMobileDiscussion } from './mobile'
 import type { DiscussionThread } from './types'
 
 const thread = (source: string, extra: Partial<DiscussionThread> = {}): DiscussionThread => ({
@@ -80,6 +80,26 @@ describe('embedResizeHeight', () => {
     expect(embedResizeHeight(APP, { type: 'izumi-disqus-height', height: Number.NaN }, APP)).toBeNull()
     expect(embedResizeHeight(APP, { type: 'izumi-disqus-height', height: 0 }, APP)).toBeNull()
     expect(embedResizeHeight(APP, { type: 'izumi-disqus-height' }, APP)).toBeNull()
+  })
+})
+
+describe('embedTouchScroll', () => {
+  const APP = 'http://tauri.localhost'
+
+  it('accepts bounded drag phases from the same-origin loader', () => {
+    expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'start' }, APP))
+      .toEqual({ phase: 'start', dy: 0, dt: 0 })
+    expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'move', dy: 24, dt: 12 }, APP))
+      .toEqual({ phase: 'move', dy: 24, dt: 12 })
+    expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'end' }, APP))
+      .toEqual({ phase: 'end', dy: 0, dt: 0 })
+  })
+
+  it('rejects foreign, malformed, and unbounded drag messages', () => {
+    expect(embedTouchScroll('https://evil.example', { type: 'izumi-disqus-page-scroll', phase: 'move', dy: 10, dt: 10 }, APP)).toBeNull()
+    expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'move', dy: 301, dt: 10 }, APP)).toBeNull()
+    expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'move', dy: 10, dt: 0 }, APP)).toBeNull()
+    expect(embedTouchScroll(APP, { type: 'izumi-disqus-page-scroll', phase: 'sideways', dy: 10, dt: 10 }, APP)).toBeNull()
   })
 })
 

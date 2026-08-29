@@ -19,14 +19,12 @@
       f=<forum shortname>  t_i=<identifier>  t_u=<canonical page url>  t_t=<title>
   -->
   <meta name="referrer" content="no-referrer" />
-  <!-- Scripts in THIS page: only ours (inline) + embed.js itself. embed.js also injects its "lounge"
-       helper (alfie, from disquscdn) into its HOST page, which runs a link-affiliation tracker
-       (viglink) firing plain-http beacons — none of it is needed for the comments, which live in a
-       cross-origin disqus.com iframe this policy can't touch. script-src drops alfie & friends;
-       img-src https: kills any plain-http beacon from whatever still runs. Fetches (reaction counts
-       to the forum host) stay unrestricted. -->
+  <!-- Scripts in THIS page: ours (inline), embed.js, and Disqus's signed CDN bundle. Disqus now
+       bootstraps the comments application through that CDN bundle; blocking it leaves the inner
+       frame at zero height on Android. img-src remains HTTPS-only so legacy plain-http tracking
+       beacons cannot load. Fetches (reaction counts to the forum host) stay unrestricted. -->
   <meta http-equiv="Content-Security-Policy"
-        content="script-src 'unsafe-inline' https://disqus.com https://*.disqus.com; img-src https: data: blob:" />
+        content="script-src 'unsafe-inline' https://disqus.com https://*.disqus.com https://c.disquscdn.com; img-src https: data: blob:" />
   <!-- Warm the TLS handshakes the embed is guaranteed to need: the forum subdomain serves embed.js,
        disqus.com serves the inner comments iframe, disquscdn serves its app bundle. (Same connection
        pool as the inner iframe: pooling is partitioned by top-level site, which we share.) The forum
@@ -62,6 +60,12 @@
       overscroll-behavior-y: auto;
     }
     html.izumi-expand #disqus_thread { overflow: visible; }
+    /* Disqus initially writes height:0!important on its child iframe and waits for that frame's
+       first animation-frame resize report. Android WebView throttles animation frames for a
+       zero-height cross-origin frame, leaving the thread permanently collapsed. Give only the
+       expanded Android layout a visible bootstrap height; Disqus can then measure itself and its
+       later (larger) explicit height still wins normally. */
+    html.izumi-expand #disqus_thread > iframe { min-height: 480px !important; }
     /* Thin, themed scrollbar (this page is a separate doc, so the app's global scrollbar hiding doesn't
        reach it). STANDARD properties only — ::-webkit-scrollbar custom-painted scrollbars need a
        main-thread thumb repaint on every scroll offset, and embed.js keeps that thread busy; the
@@ -183,6 +187,17 @@
         if (event.origin !== 'https://disqus.com' || !message || message.type !== 'izumi-disqus-touch-scroll') return;
         var inner = document.querySelector('iframe[src*="disqus.com/embed/comments"]');
         if (!inner || event.source !== inner.contentWindow) return;
+        // Expanded Android comments deliberately have no nested scrollbar. Pass the validated drag
+        // to the app frame, whose watch-page scroller owns the full episode details surface.
+        if (expand) {
+          window.parent.postMessage({
+            type: 'izumi-disqus-page-scroll',
+            phase: message.phase,
+            dy: message.dy || 0,
+            dt: message.dt || 0
+          }, location.origin);
+          return;
+        }
         if (message.phase === 'start') {
           resetTouchScroll();
         } else if (message.phase === 'move') {
@@ -200,10 +215,12 @@
       if (expand) {
         document.documentElement.classList.add('izumi-expand');
         var lastReportedHeight = 0;
-        var heightFrame = 0;
+        var heightTimer = 0;
         var reportHeight = function () {
-          window.cancelAnimationFrame(heightFrame);
-          heightFrame = window.requestAnimationFrame(function () {
+          window.clearTimeout(heightTimer);
+          // Android throttles requestAnimationFrame in a nested frame before it has been expanded
+          // into view. A zero-delay task still runs and lets the parent size the frame correctly.
+          heightTimer = window.setTimeout(function () {
             var thread = document.getElementById('disqus_thread');
             var height = Math.max(
               document.documentElement.scrollHeight,
