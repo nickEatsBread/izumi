@@ -27,7 +27,7 @@ describe('featured TMDB home sections', () => {
     expect(row).toContain("section.presentation === 'ranked'")
     expect(row).toContain("section.presentation === 'providers'")
     expect(row).toContain('<StreamingProviderRow')
-    expect(row).toContain('Number ${index + 1}')
+    expect(row).toContain('Number ${position}')
     expect(home).toContain('<CatalogSectionRow')
     expect(merged).toContain('<CatalogSectionRow')
   })
@@ -48,7 +48,18 @@ describe('featured TMDB home sections', () => {
   it('reveals service colour on hover and uses a branded selection transition', () => {
     expect(streamingRow).toContain('group-hover:grayscale-0')
     expect(streamingRow).toContain('streamingBrand(feature.title)')
+    expect(streamingRow).toContain('provider-card motion-{brand.motion}')
+    expect(streamingRow).toContain('provider-art absolute inset-0 size-full object-cover')
+    expect(streamingRow).toContain('@keyframes service-arc')
     expect(streamingRow).toContain('provider-transition motion-{active.brand.motion}')
     expect(streamingRow).toContain('prefers-reduced-motion: reduce')
+  })
+
+  it('renders stable condensed SVG numerals for Top 10 shelves', () => {
+    expect(row).toContain('<svg')
+    expect(row).toContain('class="rank-number')
+    expect(row).toContain('paint-order: stroke fill')
+    expect(row).toContain("font-family: Impact")
+    expect(row).not.toContain('-webkit-text-stroke')
   })
 })
