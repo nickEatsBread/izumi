@@ -21,11 +21,20 @@ meson setup "$work/mpv/build" "$work/mpv" \
   --buildtype=release --prefix=/usr/local \
   -Dlibmpv=true -Dcplayer=false -Dtests=false -Dlua=disabled -Djavascript=disabled
 meson compile -C "$work/mpv/build"
+
+built_version="$(
+  meson introspect "$work/mpv/build" --projectinfo |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])'
+)"
+test "$built_version" = "$MPV_VERSION" || {
+  echo "Expected mpv $MPV_VERSION, built $built_version" >&2
+  exit 1
+}
+
 sudo meson install -C "$work/mpv/build"
 sudo ldconfig
 
-actual="$(pkg-config --modversion mpv)"
-test "$actual" = "$MPV_VERSION" || {
-  echo "Expected libmpv $MPV_VERSION, got $actual" >&2
+pkg-config --exists mpv || {
+  echo "libmpv $MPV_VERSION was built but its pkg-config metadata is unavailable" >&2
   exit 1
 }
