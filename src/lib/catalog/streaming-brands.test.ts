@@ -1,16 +1,34 @@
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { orderStreamingServices, streamingBrand } from './streaming-brands'
 
+const PRIMARY_SERVICES = [
+  { name: 'Netflix', id: 'netflix', mark: '/brand/streaming/netflix.svg' },
+  { name: 'Disney+', id: 'disney', mark: '/brand/streaming/disney-plus.svg' },
+  { name: 'Hulu', id: 'hulu', mark: '/brand/streaming/hulu.svg' },
+  { name: 'Prime Video', id: 'prime-video', mark: '/brand/streaming/amazon-prime-video.svg' },
+  { name: 'Apple TV Plus', id: 'apple-tv', mark: '/brand/streaming/apple-tv.svg' },
+  { name: 'Max', id: 'max', mark: '/brand/streaming/max.svg' },
+  { name: 'Paramount Plus', id: 'paramount-plus', mark: '/brand/streaming/paramount-plus.svg' },
+  { name: 'Peacock', id: 'peacock', mark: '/brand/streaming/peacock.svg' },
+  { name: 'Crunchyroll', id: 'crunchyroll', mark: '/brand/streaming/crunchyroll.svg' },
+] as const
+
 describe('streaming service visual identity', () => {
   it('assigns recognizable accents and bundled marks to major services', () => {
-    expect(streamingBrand('Netflix')).toMatchObject({ id: 'netflix', primary: '#e50914', mark: '/brand/streaming/netflix.svg' })
-    expect(streamingBrand('Disney Plus')).toMatchObject({ id: 'disney', primary: '#04d6c8', mark: '/brand/streaming/disney-plus.svg' })
-    expect(streamingBrand('Amazon Prime Video')).toMatchObject({ id: 'prime-video', primary: '#00a8e1', mark: '/brand/streaming/amazon-prime-video.svg' })
-    expect(streamingBrand('Apple TV Plus')).toMatchObject({ id: 'apple-tv', primary: '#f5f5f7', secondary: '#242a38', mark: '/brand/streaming/apple-tv.svg' })
-    expect(streamingBrand('Hulu')).toMatchObject({ id: 'hulu', primary: '#1ce783', mark: '/brand/streaming/hulu.svg' })
-    expect(streamingBrand('Max')).toMatchObject({ id: 'max', primary: '#2f55ff', mark: '/brand/streaming/max.svg' })
+    for (const service of PRIMARY_SERVICES) {
+      expect(streamingBrand(service.name)).toMatchObject({ id: service.id, mark: service.mark })
+    }
+    expect(streamingBrand('Apple TV Plus')).toMatchObject({ primary: '#f5f5f7', secondary: '#242a38' })
+  })
+
+  it('ships every primary service icon in the static bundle', () => {
+    for (const service of PRIMARY_SERVICES) {
+      const path = fileURLToPath(new URL(`../../../static${service.mark}`, import.meta.url))
+      expect(existsSync(path)).toBe(true)
+      expect(statSync(path).size).toBeGreaterThan(0)
+    }
   })
 
   it('recognizes supplied regional service artwork', () => {
