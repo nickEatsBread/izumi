@@ -212,6 +212,10 @@ private const val PIP_ACTION = "app.izumi.mpv.PIP_ACTION"
 private const val PIP_EXTRA_CODE = "code"
 private const val PIP_CODE_PLAY_PAUSE = 1
 
+// A landscape-side flip crosses a portrait sensor reading briefly. Only treat portrait as an exit
+// when the phone rests there; this mirrors the grace period used by touch-first video players.
+private const val LANDSCAPE_PORTRAIT_DWELL_MS = 650L
+
 // Bounds for a capture, matched to the desktop recorder so both platforms produce comparable files.
 private const val GIF_FRAME_INTERVAL_MS = 50L
 private const val GIF_MAX_FRAMES = 600
@@ -238,6 +242,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     /** Clips the SurfaceView and moves with the web player shell during direct-manipulation gestures. */
     private var container: FrameLayout? = null
     private var landscapeReleaseListener: OrientationEventListener? = null
+    private var landscapeReleaseTask: Runnable? = null
     /** The last viewport the web shell asked for, replayed when picture-in-picture ends. */
     private var lastViewport: ViewportArgs? = null
     /** True once Android reports the activity is actually in PiP (see [installPipWatcher]). */
@@ -276,26 +281,55 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      *  desktop `RENDER_OPTS` is. Replaced as a whole set so leaving High clears deband. */
     private val storedRenderOpts = LinkedHashMap<String, String>()
 
+    private fun cancelLandscapeReleaseTask() {
+        landscapeReleaseTask?.let { activity.window.decorView.removeCallbacks(it) }
+        landscapeReleaseTask = null
+    }
+
     private fun stopLandscapeReleaseListener() {
+        cancelLandscapeReleaseTask()
         landscapeReleaseListener?.disable()
         landscapeReleaseListener = null
     }
 
     /**
-     * Force the initial portrait -> landscape transition, then hand orientation back to Android as
-     * soon as the phone is physically landscape. That preserves the fullscreen button while still
-     * allowing a normal turn back to portrait without tapping an exit control.
+     * Force the initial portrait -> landscape transition and keep the landscape family locked while
+     * the phone crosses portrait on its way to the other landscape side. After it has reached either
+     * landscape side, a sustained portrait reading hands orientation back to Android so a deliberate
+     * turn still exits fullscreen without tapping a control.
      */
     private fun enterLandscapeWithSensorReturn() {
         stopLandscapeReleaseListener()
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        var hasReachedLandscape = false
         val listener = object : OrientationEventListener(activity) {
             override fun onOrientationChanged(orientation: Int) {
-                if (orientation == ORIENTATION_UNKNOWN) return
+                if (orientation == ORIENTATION_UNKNOWN) {
+                    cancelLandscapeReleaseTask()
+                    return
+                }
                 val physicallyLandscape = orientation in 60..120 || orientation in 240..300
-                if (!physicallyLandscape) return
-                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                stopLandscapeReleaseListener()
+                if (physicallyLandscape) {
+                    hasReachedLandscape = true
+                    cancelLandscapeReleaseTask()
+                    return
+                }
+                // Include upside-down portrait too: either path between the two landscape sides
+                // should retain fullscreen as long as the device keeps moving through it.
+                val physicallyPortrait = orientation <= 30 || orientation >= 330 || orientation in 150..210
+                if (!hasReachedLandscape || !physicallyPortrait) {
+                    cancelLandscapeReleaseTask()
+                    return
+                }
+                if (landscapeReleaseTask != null) return
+                val releaseTask = Runnable {
+                    if (activity.requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+                        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    }
+                    stopLandscapeReleaseListener()
+                }
+                landscapeReleaseTask = releaseTask
+                activity.window.decorView.postDelayed(releaseTask, LANDSCAPE_PORTRAIT_DWELL_MS)
             }
         }
         if (listener.canDetectOrientation()) {

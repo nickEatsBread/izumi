@@ -73,4 +73,17 @@ describe('Android UI contracts', () => {
     expect(native).toContain('if (pipActive || pipRequested)')
     expect(native).toContain('return@runOnUiThread')
   })
+
+  it('lets fullscreen cross portrait while switching landscape sides', () => {
+    const rotation = native.slice(
+      native.indexOf('private fun cancelLandscapeReleaseTask()'),
+      native.indexOf('/** Hide system bars for landscape playback'),
+    )
+    expect(rotation).toContain('removeCallbacks(it)')
+    expect(rotation).toContain('var hasReachedLandscape = false')
+    expect(rotation).toContain('hasReachedLandscape = true')
+    expect(rotation).toContain('if (!hasReachedLandscape || !physicallyPortrait)')
+    expect(rotation).toContain('if (landscapeReleaseTask != null) return')
+    expect(rotation).toContain('postDelayed(releaseTask, LANDSCAPE_PORTRAIT_DWELL_MS)')
+  })
 })
