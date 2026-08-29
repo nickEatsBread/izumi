@@ -3,6 +3,7 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import Play from '@lucide/svelte/icons/play'
   import ExternalLink from '@lucide/svelte/icons/external-link'
+  import Clapperboard from '@lucide/svelte/icons/clapperboard'
   import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
   import BookmarkCheck from '@lucide/svelte/icons/bookmark-check'
   import { openUrl } from '@tauri-apps/plugin-opener'
@@ -22,6 +23,7 @@
   import CatalogAwards from './CatalogAwards.svelte'
   import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
   import { localLibrary, mediaIsSaved } from '$lib/library/local-lists'
+  import { openTrailerPopup } from '$lib/stores/trailer'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
@@ -84,6 +86,11 @@
     if (!media) return
     const episode = isMovie ? undefined : video?.number ?? 1
     void playEpisode(media, episode, (state) => (playState = state))
+  }
+
+  function watchTrailer() {
+    if (!media?.trailer?.id) return
+    openTrailerPopup(media.trailer.id, `${title(media)} trailer`)
   }
 
   function titleLogoFailed(event: Event) {
@@ -154,6 +161,16 @@
             <button data-focusable onclick={() => (showLocalLists = true)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold">
               {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
             </button>
+            {#if media.trailer?.id}
+              <button
+                type="button"
+                data-focusable
+                title="Watch trailer"
+                aria-label="Watch trailer"
+                onclick={watchTrailer}
+                class="grid size-11 place-items-center rounded-lg bg-secondary transition-colors hover:bg-accent"
+              ><Clapperboard size={19} /></button>
+            {/if}
             {#if externalUrl}
               <button data-focusable onclick={() => openUrl(externalUrl)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold"><ExternalLink size={17} /> {provider === 'tmdb' ? 'TMDB' : 'Open provider'}</button>
             {/if}
