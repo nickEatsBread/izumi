@@ -99,14 +99,6 @@ interface TmdbWatchProviderPage {
   results?: TmdbWatchProvider[]
 }
 
-interface TmdbCollection {
-  id?: number
-  name?: string
-  poster_path?: string | null
-  backdrop_path?: string | null
-  parts?: TmdbListItem[]
-}
-
 interface TmdbWatchEntry {
   link?: string
   flatrate?: TmdbWatchProvider[]
@@ -428,34 +420,25 @@ const TMDB_HOME_REQUESTS: TmdbHomeRequest[] = [
   { id: 'rated-anime-movies', path: '/discover/movie', kind: 'movie', params: { sort_by: 'vote_average.desc', with_genres: 16, with_original_language: 'ja', 'vote_count.gte': 100 }, more: { sort: 'rating', type: 'anime' } },
 ]
 
-const FEATURED_COLLECTION_IDS = [10, 1241, 119, 86311, 328, 10194]
-
 export function tmdbRegionName(region: string): string {
   try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(region) ?? region }
   catch { return region }
 }
 
-async function collectionFeatures(signal?: AbortSignal): Promise<CatalogHomeFeature[]> {
-  const collections = await mapConcurrent(FEATURED_COLLECTION_IDS, 4, (id) =>
-    tmdb<TmdbCollection>(`/collection/${id}`, { language: TMDB_LANGUAGE }, signal).catch(() => null))
-  return collections.flatMap((collection) => {
-    if (!collection?.id || !collection.name) return []
-    const title = collection.name.replace(/\s+Collection$/i, '')
-    const count = collection.parts?.filter((part) => part.id != null).length ?? 0
-    return [{
-      id: String(collection.id), title,
-      image: image(collection.backdrop_path ?? collection.poster_path, 'w1280'),
-      subtitle: count ? `${count} film${count === 1 ? '' : 's'}` : undefined,
-      href: `/app/search?provider=tmdb&type=movie&search=${encodeURIComponent(title)}`,
-    } satisfies CatalogHomeFeature]
-  })
-}
-
 async function streamingProviderFeatures(region: string, signal?: AbortSignal): Promise<CatalogHomeFeature[]> {
-  const page = await tmdb<TmdbWatchProviderPage>('/watch/providers/movie', {
-    language: TMDB_LANGUAGE, watch_region: region,
-  }, signal)
-  return [...(page.results ?? [])]
+  const [movies, television] = await Promise.all(['movie', 'tv'].map((kind) =>
+    tmdb<TmdbWatchProviderPage>(`/watch/providers/${kind}`, {
+      language: TMDB_LANGUAGE, watch_region: region,
+    }, signal)))
+  const unique = new Map<number, TmdbWatchProvider>()
+  for (const provider of [...(movies.results ?? []), ...(television.results ?? [])]) {
+    if (provider.provider_id == null) continue
+    const existing = unique.get(provider.provider_id)
+    if (!existing || (provider.display_priority ?? 999) < (existing.display_priority ?? 999)) {
+      unique.set(provider.provider_id, provider)
+    }
+  }
+  return [...unique.values()]
     .filter((provider) => provider.provider_id != null && !!provider.provider_name && !!provider.logo_path)
     .sort((left, right) => (left.display_priority ?? 999) - (right.display_priority ?? 999))
     .slice(0, 16)
@@ -463,7 +446,7 @@ async function streamingProviderFeatures(region: string, signal?: AbortSignal): 
       id: String(provider.provider_id),
       title: provider.provider_name!,
       image: image(provider.logo_path, 'w185'),
-      href: `/app/search?provider=tmdb&type=movie&watchProvider=${provider.provider_id}&watchProviderName=${encodeURIComponent(provider.provider_name!)}`,
+      href: `/app/streaming/${provider.provider_id}?name=${encodeURIComponent(provider.provider_name!)}&logo=${encodeURIComponent(image(provider.logo_path, 'w185') ?? '')}`,
     }))
 }
 
@@ -481,7 +464,7 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
     'trending-movies-today',
     'trending-series-today',
   ])]
-  const [loaded, collections, providers] = await Promise.all([
+  const [loaded, providers] = await Promise.all([
     mapConcurrent(fetchIds.flatMap((id) => requests.get(id) ?? []), 6, async (request) => {
       const media = await list(request.path, request.kind, signal, request.id === 'top10-movies' ? {
         ...request.params, region, watch_region: region,
@@ -491,7 +474,6 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
       })
       return { request, media: request.limit ? media.slice(0, request.limit) : media }
     }),
-    selected.some((row) => row.id === 'collections') ? collectionFeatures(signal) : [],
     selected.some((row) => row.id === 'streaming-providers')
       ? streamingProviderFeatures(region, signal).catch(() => []) : [],
   ])
@@ -505,9 +487,6 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
   return {
     hero,
     sections: selected.flatMap((row): CatalogHomeSection[] => {
-      if (row.id === 'collections') return collections.length ? [{
-        id: row.id, title: row.title, media: [], presentation: 'collections', features: collections,
-      } satisfies CatalogHomeSection] : []
       if (row.id === 'streaming-providers') return providers.length ? [{
         id: row.id, title: row.title, media: [], presentation: 'providers', features: providers,
         attribution: 'Availability by JustWatch',

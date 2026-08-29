@@ -62,7 +62,7 @@ export interface CatalogHomeSection {
   title: string
   media: Media[]
   /** Specialized visual language for rows that are not ordinary poster shelves. */
-  presentation?: 'posters' | 'ranked' | 'collections' | 'providers'
+  presentation?: 'posters' | 'ranked' | 'providers'
   features?: CatalogHomeFeature[]
   attribution?: string
   /** Search request represented by “View more”, where the provider supports it. */

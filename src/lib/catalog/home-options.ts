@@ -38,7 +38,6 @@ export const TMDB_HOME_ROWS: CatalogHomeRowOption[] = [
   CONTINUE_HOME_ROW,
   { id: 'trending', title: 'Trending This Week', description: 'Movies and TV gaining attention across TMDB this week.', group: 'Trending', defaultEnabled: true },
   { id: 'top10-movies', title: 'Top 10 Movies Streaming in Your Region', description: 'The most popular movies available to stream where you are.', group: 'Featured', defaultEnabled: true },
-  { id: 'collections', title: 'Collections', description: 'Explore complete movie franchises in cinematic landscape cards.', group: 'Featured', defaultEnabled: true },
   { id: 'streaming-providers', title: 'Your Streaming', description: 'Browse the services available in your region.', group: 'Featured', defaultEnabled: true },
   { id: 'anime-series', title: 'Popular Anime Series', description: 'Japanese animated series ordered by popularity.', group: 'Anime', defaultEnabled: true },
   { id: 'anime-movies', title: 'Popular Anime Movies', description: 'Japanese animated movies ordered by popularity.', group: 'Anime', defaultEnabled: true },
