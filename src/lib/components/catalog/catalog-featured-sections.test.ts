@@ -47,15 +47,14 @@ describe('featured TMDB home sections', () => {
     expect(search).toContain('watchProvider,')
   })
 
-  it('uses local vector marks, service-specific hover scenes, and a branded selection transition', () => {
+  it('uses complete provider marks, lazy remote hover media, and direct navigation', () => {
     expect(streamingRow).toContain('streamingBrand(feature.title)')
-    expect(streamingRow).toContain('provider-card brand-{brand.id} motion-{brand.motion}')
-    expect(streamingRow).toContain('src={brand.mark}')
-    expect(streamingRow).not.toContain('src={feature.image}')
-    expect(streamingRow).toContain('.brand-netflix .scene-a')
-    expect(streamingRow).toContain('.brand-disney .scene-a')
-    expect(streamingRow).toContain('.brand-prime-video .scene-a')
-    expect(streamingRow).toContain('provider-transition brand-{active.brand.id}')
+    expect(streamingRow).toContain('brand.mark ?? feature.image')
+    expect(streamingRow).toContain('previewId === feature.id')
+    expect(streamingRow).toContain('src={brand.preview}')
+    expect(streamingRow).toContain('void goto(feature.href)')
+    expect(streamingRow).not.toContain('provider-transition')
+    expect(streamingRow).not.toContain('scene-a')
     expect(streamingRow).toContain('prefers-reduced-motion: reduce')
   })
 
