@@ -22,19 +22,24 @@ describe('catalog platform logos', () => {
   })
 
   it('keeps every logo on the same square mobile-safe canvas', () => {
-    expect(source.match(/size-10 shrink-0/g)).toHaveLength(6)
+    expect(source.match(/size-10 shrink-0/g)).toHaveLength(7)
   })
 
-  it('fills the TMDB catalog tile with its official square mark', () => {
-    expect(source).toContain('class="absolute inset-0 size-10 object-cover"')
+  it('shows the complete TMDB mark with breathing room', () => {
+    expect(source).toContain('class="absolute inset-1.5 size-7 object-contain"')
   })
 
   it('only reveals text fallbacks after errors from the active provider', () => {
-    expect(source).toContain('let failedPlatform = $state<CatalogSelection | null>(null)')
+    expect(source).toContain('let failedPlatform = $state<CatalogScreen | null>(null)')
     expect(source).toContain('const imageFailed = $derived(failedPlatform === platform)')
     expect(source).toContain('failedPlatform = platform')
     expect(source.match(/onerror=\{showFallback\}/g)).toHaveLength(5)
     expect(source.match(/\{#if imageFailed\}/g)).toHaveLength(5)
+  })
+
+  it('gives the combined Home its own layered identity', () => {
+    expect(source).toContain("platform === 'merged'")
+    expect(source).toContain('<Layers3')
   })
 
   it('adds breathing room around the Stremio artwork', () => {

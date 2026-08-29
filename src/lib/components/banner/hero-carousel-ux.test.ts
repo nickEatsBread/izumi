@@ -39,7 +39,8 @@ describe('featured carousel UX', () => {
   it('keeps a skeleton visible until the active artwork has loaded', () => {
     expect(hero).toContain('const artworkReady = $derived(loadedArtworkId === current?.id)')
     expect(hero.match(/\{#if !artworkReady\}<div class="absolute inset-0 skeloader"><\/div>\{\/if\}/g)?.length).toBe(2)
-    expect(hero.match(/onload=\{artworkSettled\} onerror=\{artworkSettled\}/g)?.length).toBe(2)
+    // Mobile plus the two mutually exclusive desktop treatments (backdrop or full cover).
+    expect(hero.match(/onload=\{artworkSettled\} onerror=\{artworkSettled\}/g)?.length).toBe(3)
   })
 
   it('keeps pointer-only carousel controls out of Steam Deck spatial navigation', () => {

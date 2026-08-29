@@ -43,6 +43,12 @@ export interface MediaWatchProvider {
   url?: string
 }
 
+/** Context supplied by the catalogue that selected a title for the featured carousel. */
+export interface MediaFeaturedRank {
+  position: number
+  label: string
+}
+
 /** Cross-database ids are optional capabilities, not the identity of the object. Consumers use
  * whichever namespace they understand (trackers, AniZip, Stremio stream add-ons, etc.). */
 export interface ExternalMediaIds {
@@ -103,11 +109,14 @@ export interface Media {
   /** Provider-labelled scores; `averageScore` remains the normalized 0–100 sorting value. */
   ratings?: MediaRating[]
   contentRating?: string
+  /** Provider-authored summary of significant wins and nominations. */
+  awards?: string
   tagline?: string
   releaseDate?: string
   originalLanguage?: string
   watchRegion?: string
   watchProviders?: MediaWatchProvider[]
+  featuredRank?: MediaFeaturedRank
   popularity?: number
   trending?: number
   genres?: string[]

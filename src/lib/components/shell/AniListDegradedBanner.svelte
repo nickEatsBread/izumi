@@ -3,8 +3,8 @@
   import X from '@lucide/svelte/icons/x'
   import { anilistDegraded } from '$lib/anilist/degraded'
   import {
-    catalogMode,
     catalogProvider,
+    catalogScreen,
     catalogProviders,
     isLegacyAniListCatalog,
     mergedCatalogProviders,
@@ -19,7 +19,7 @@
   const stripsAbove = $derived(($offlineMode || !$online ? 1 : 0) + ($incognito ? 1 : 0))
   const offset = $derived(`${stripsAbove * 1.75}rem`)
   const desktopInset = $derived($isMacOS ? 'sm:left-28 sm:right-0' : 'sm:left-14 sm:right-[8.25rem]')
-  const usesAniList = $derived($catalogMode === 'merged'
+  const usesAniList = $derived($catalogScreen === 'merged'
     ? mergedCatalogProviders($catalogProviders).some(isLegacyAniListCatalog)
     : isLegacyAniListCatalog($catalogProvider))
 </script>

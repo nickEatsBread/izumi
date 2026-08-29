@@ -8,7 +8,15 @@
     resetCatalogHomeLayout,
     resolveCatalogHomeRows,
   } from '$lib/catalog/home-layout'
-  import { catalogLabel, catalogProviders, normalizeCatalogProviders, type CatalogSelection } from '$lib/settings/catalog'
+  import {
+    catalogLabel,
+    catalogProviders,
+    catalogScreens,
+    normalizeCatalogProviders,
+    stremioHeroArtwork,
+    type CatalogSelection,
+    type StremioHeroArtwork,
+  } from '$lib/settings/catalog'
   import type { CatalogHomeTarget } from '$lib/catalog/home-layout'
   import type { CatalogHomeRowOption } from '$lib/catalog/types'
   import ArrowUp from '@lucide/svelte/icons/arrow-up'
@@ -16,6 +24,7 @@
   import EyeOff from '@lucide/svelte/icons/eye-off'
   import Plus from '@lucide/svelte/icons/plus'
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw'
+  import Search from '@lucide/svelte/icons/search'
 
   const targets = $derived.by(() => {
     const seen = new Set<string>()
@@ -26,13 +35,21 @@
       const selection: CatalogSelection = key === 'anilist' ? 'anilist' : provider
       return [{ selection: selection as CatalogHomeTarget, label: key === 'anilist' ? 'Anime' : catalogLabel(provider) }]
     })
-    return [{ selection: 'merged' as CatalogHomeTarget, label: 'Merged' }, ...separate]
+    const merged = catalogScreens($catalogProviders).includes('merged')
+      ? [{ selection: 'merged' as CatalogHomeTarget, label: 'Merged' }]
+      : []
+    return [...merged, ...separate]
   })
 
   let selected = $state<CatalogHomeTarget>('anilist')
   let options = $state<CatalogHomeRowOption[]>([])
   let loading = $state(true)
   let error = $state('')
+  let availableSearch = $state('')
+  const artworkChoices: Array<{ value: StremioHeroArtwork; title: string; description: string }> = [
+    { value: 'backdrop', title: 'Cinematic backdrop', description: 'Use wide artwork when available, with cover art as a fallback.' },
+    { value: 'cover', title: 'Cover art', description: 'Keep the full portrait cover visible over a softened background.' },
+  ]
 
   // Honour a direct provider link, then keep the selection valid as catalog platforms change.
   $effect(() => {
@@ -45,6 +62,7 @@
   $effect(() => {
     const selection = selected
     const abort = new AbortController()
+    availableSearch = ''
     loading = true
     error = ''
     options = []
@@ -63,7 +81,9 @@
   const visibleRows = $derived(rows.filter((row) => row.enabled))
   const availableGroups = $derived.by(() => {
     const grouped = new Map<string, typeof rows>()
-    for (const row of rows.filter((item) => !item.enabled)) {
+    const query = availableSearch.trim().toLowerCase()
+    for (const row of rows.filter((item) => !item.enabled && (!query
+      || `${item.title} ${item.description ?? ''} ${item.group ?? ''}`.toLowerCase().includes(query)))) {
       const group = row.group ?? 'More rows'
       grouped.set(group, [...(grouped.get(group) ?? []), row])
     }
@@ -97,6 +117,11 @@
       ...rows.filter((row) => !row.enabled && row.id !== id),
     ])
   }
+
+  function resetSelected() {
+    resetCatalogHomeLayout(selected)
+    if (selected === 'stremio') $stremioHeroArtwork = 'backdrop'
+  }
 </script>
 
 <div class="p-4 sm:p-8">
@@ -105,7 +130,7 @@
       <h2 class="mb-1 text-xl font-black">Customize Home</h2>
       <p class="text-sm text-muted-foreground">Choose the rows each catalog shows and put the most useful ones first. Merged has its own layout.</p>
     </div>
-    <button data-focusable onclick={() => resetCatalogHomeLayout(selected)} class="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-border px-3 text-sm font-bold transition-colors hover:bg-secondary active:bg-secondary">
+    <button data-focusable onclick={resetSelected} class="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-border px-3 text-sm font-bold transition-colors hover:bg-secondary active:bg-secondary">
       <RotateCcw size={16} /> Reset
     </button>
   </div>
@@ -122,6 +147,23 @@
   {/if}
 
   <div class="max-w-3xl">
+    {#if selected === 'stremio'}
+      <section class="mb-6 rounded-xl border border-border bg-card p-4" aria-labelledby="stremio-featured-artwork-title">
+        <h3 id="stremio-featured-artwork-title" class="font-black">Featured artwork</h3>
+        <p class="mt-0.5 text-xs text-muted-foreground">Choose how Stremio metadata appears in the desktop Home banner. Phones continue to use cover art.</p>
+        <div class="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Stremio featured artwork">
+          {#each artworkChoices as choice (choice.value)}
+            <button type="button" data-focusable role="radio" aria-checked={$stremioHeroArtwork === choice.value}
+              onclick={() => ($stremioHeroArtwork = choice.value)}
+              class="rounded-lg border p-3 text-left transition-colors {$stremioHeroArtwork === choice.value ? 'border-primary bg-primary/10' : 'border-border bg-secondary/35 hover:bg-secondary'}">
+              <span class="block text-sm font-black">{choice.title}</span>
+              <span class="mt-1 block text-xs leading-5 text-muted-foreground">{choice.description}</span>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
     {#if loading}
       <div class="space-y-2" aria-label="Loading Home rows">
         {#each Array.from({ length: 6 }) as _}<div class="h-16 rounded-lg skeloader"></div>{/each}
@@ -163,6 +205,14 @@
       <div>
         <h3 class="font-black">Available rows</h3>
         <p class="mb-2 text-xs text-muted-foreground">Add a row to place it at the bottom of your Home.</p>
+        {#if rows.filter((row) => !row.enabled).length > 8}
+          <label class="relative mb-3 block">
+            <span class="sr-only">Filter available Home rows</span>
+            <Search size={17} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input bind:value={availableSearch} type="search" placeholder="Find a genre, year, or catalog…"
+              class="h-11 w-full rounded-lg border border-border bg-card pl-10 pr-3 text-sm outline-none transition focus:border-theme/70" />
+          </label>
+        {/if}
         {#if availableGroups.length}
           <div class="space-y-4">
             {#each availableGroups as group (group.group)}
@@ -184,6 +234,8 @@
               </section>
             {/each}
           </div>
+        {:else if rows.some((row) => !row.enabled) && availableSearch.trim()}
+          <div class="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">No rows match that search.</div>
         {:else}
           <div class="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted-foreground">Every available row is already on your Home.</div>
         {/if}

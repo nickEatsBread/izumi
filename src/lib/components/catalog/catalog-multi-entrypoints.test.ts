@@ -54,8 +54,8 @@ describe('multi-platform catalog entry points', () => {
     expect(home).toContain("findHotkey(event, $hotkeyBindings, 'Home', $isMacOS)")
     expect(home).toContain('$playing || $androidMpvActive || isTypingTarget(event.target)')
     expect(home).toContain("action === 'homePreviousCatalog'")
-    expect(home).toContain('previousCatalogProvider')
-    expect(home).toContain('nextCatalogProvider')
+    expect(home).toContain('previousCatalogScreen')
+    expect(home).toContain('nextCatalogScreen')
   })
 
   it('feeds a featured carousel from every platform home', () => {
@@ -123,7 +123,8 @@ describe('multi-platform catalog entry points', () => {
     expect(detail).toContain('{#if titleLogo}')
     expect(detail).toContain('src={titleLogo}')
     expect(detail).toContain('{title(media)}</h1>')
-    expect(detail).toContain("{#if provider !== 'tmdb' && provider !== 'jvm'}")
+    expect(detail).toContain("{#if provider === 'kitsu'}")
+    expect(detail).not.toContain('Stremio metadata')
     expect(detail).toContain("{provider === 'tmdb' ? 'TMDB' : 'Open provider'}")
     expect(tmdb).toContain("include_image_language: 'en,null'")
     expect(tmdb).toContain('append_to_response: append')

@@ -8,6 +8,7 @@ import { CONTINUE_HOME_ROW } from '../home-options'
 import { compatibilityMediaId, type CatalogContentType, type MediaRef } from '../identity'
 import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
 import { enrichOmdbRatings } from './omdb'
+import { interleaveFeatured, rankFeaturedMedia } from '../featured-context'
 
 interface StremioVideo {
   id?: string
@@ -19,11 +20,12 @@ interface StremioVideo {
   overview?: string
 }
 
-interface StremioMeta {
+export interface StremioMeta {
   id?: string
   type?: string
   name?: string
   poster?: string
+  posterShape?: 'poster' | 'square' | 'landscape'
   background?: string
   logo?: string
   description?: string
@@ -33,7 +35,12 @@ interface StremioMeta {
   imdbRating?: string
   runtime?: string
   director?: string[]
+  writer?: string[]
   cast?: string[]
+  country?: string
+  language?: string
+  awards?: string
+  genre?: string[]
   trailers?: { source?: string; type?: string }[]
   videos?: StremioVideo[]
 }
@@ -104,7 +111,7 @@ export function stremioMetaMatchesIdentity(raw: StremioMeta, identity: StremioId
   return true
 }
 
-function mapMeta(raw: StremioMeta, base: string, forcedType?: string, forcedIdentity?: string): Media | null {
+export function mapStremioMeta(raw: StremioMeta, base: string, forcedType?: string, forcedIdentity?: string): Media | null {
   if (!raw.id || !raw.name) return null
   // Stremio catalogs can mix movies and series under a custom catalog type, so a row's explicit
   // type wins. `forcedType` is the fallback for the common compact-preview shape that omits it.
@@ -132,6 +139,7 @@ function mapMeta(raw: StremioMeta, base: string, forcedType?: string, forcedIden
     type: ref.type === 'movie' ? 'MOVIE' : ref.type === 'manga' ? 'MANGA' : 'SERIES',
     title: { english: raw.name, romaji: raw.name, userPreferred: raw.name },
     description: raw.description,
+    creators: raw.writer?.length ? raw.writer : raw.director,
     format: ref.type === 'movie' ? 'MOVIE' : ref.type === 'manga' ? 'MANGA' : 'TV',
     status: raw.releaseInfo?.endsWith('-') ? 'RELEASING' : undefined,
     episodes: ref.type === 'movie' ? 1 : videos.length || undefined,
@@ -140,10 +148,15 @@ function mapMeta(raw: StremioMeta, base: string, forcedType?: string, forcedIden
     ratings: Number.isFinite(rating) && rating > 0 && rating <= 10
       ? [{ source: 'IMDb', score: rating, scale: 10 }]
       : undefined,
-    genres: raw.genres ?? [],
+    genres: raw.genres ?? raw.genre ?? [],
+    countryOfOrigin: raw.country,
+    originalLanguage: raw.language,
+    awards: raw.awards,
+    releaseDate: raw.released?.slice(0, 10),
     startDate: releaseYear ? { year: releaseYear } : undefined,
     coverImage: { extraLarge: raw.poster, large: raw.poster, medium: raw.poster },
     bannerImage: raw.background,
+    logoImage: raw.logo,
     trailer: raw.trailers?.find((trailer) => trailer.source)?.source
       ? { id: raw.trailers.find((trailer) => trailer.source)!.source, site: 'youtube' }
       : null,
@@ -197,7 +210,7 @@ async function catalog(base: string, entry: AddonCatalog, extra: Record<string, 
   const url = stremioCatalogUrl(normalized, entry, extra)
   const response = await getJson<{ metas?: StremioMeta[] }>(url, signal)
   return (response.metas ?? []).flatMap((meta) => {
-    const media = mapMeta(meta, normalized, entry.type)
+    const media = mapStremioMeta(meta, normalized, entry.type)
     return media ? [rememberSummary(media)] : []
   })
 }
@@ -213,24 +226,116 @@ async function manifests(): Promise<{ base: string; manifest: AddonManifest }[]>
   return capable
 }
 
-const canBrowse = (entry: AddonCatalog) => !(entry.extra ?? []).some((extra) => extra.isRequired)
 const canSearch = (entry: AddonCatalog) => (entry.extra ?? []).some((extra) => extra.name === 'search')
 
-type StremioHomeEntry = { base: string; manifest: AddonManifest; entry: AddonCatalog; id: string }
+export interface StremioCatalogVariant {
+  key: string
+  extra: Record<string, string>
+  title: string
+  description: string
+  defaultEnabled: boolean
+}
+
+const contentLabel = (type: string): string => type === 'movie' ? 'Movies'
+  : type === 'series' ? 'TV'
+  : type === 'anime' ? 'Anime'
+  : type === 'manga' ? 'Manga'
+  : type.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+
+function catalogTitle(entry: AddonCatalog): string {
+  const label = contentLabel(entry.type)
+  const alreadyNamed = entry.type === 'movie' ? /\bmovies?\b/i.test(entry.name)
+    : entry.type === 'series' ? /\b(?:tv|series|shows?)\b/i.test(entry.name)
+    : new RegExp(`\\b${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(entry.name)
+  return alreadyNamed ? entry.name : `${entry.name} ${label}`
+}
+
+const extraKey = (extra: Record<string, string>): string => Object.entries(extra)
+  .sort(([left], [right]) => left.localeCompare(right))
+  .map(([name, value]) => `${name}=${value}`)
+  .join('&')
+
+/** Turn every finite manifest filter into a Home row. Required filters (Cinemeta's New-by-year
+ * catalogs) become their valid concrete rows; optional filters keep the unfiltered row and add
+ * opt-in variants. Required user-history inputs without declared options remain non-browsable. */
+export function stremioCatalogVariants(entry: AddonCatalog): StremioCatalogVariant[] {
+  const extras = entry.extra ?? []
+  const required = extras.filter((extra) => extra.isRequired)
+  if (required.some((extra) => !extra.options?.length)) return []
+
+  let bases: Record<string, string>[] = [{}]
+  for (const extra of required) {
+    bases = bases.flatMap((base) => (extra.options ?? []).map((value) => ({ ...base, [extra.name]: value })))
+  }
+  const optional = extras.filter((extra) => !extra.isRequired && extra.options?.length)
+  const values = [
+    ...bases.map((extra) => ({ extra, defaultEnabled: required.length === 0 })),
+    ...bases.flatMap((base) => optional.flatMap((extra) => (extra.options ?? []).map((value) => ({
+      extra: { ...base, [extra.name]: value },
+      defaultEnabled: false,
+    })))),
+  ]
+  const seen = new Set<string>()
+  const baseTitle = catalogTitle(entry)
+  return values.flatMap(({ extra, defaultEnabled }) => {
+    const key = extraKey(extra)
+    if (seen.has(key)) return []
+    seen.add(key)
+    const filters = Object.values(extra)
+    return [{
+      key,
+      extra,
+      title: filters.length ? `${baseTitle} · ${filters.join(' · ')}` : baseTitle,
+      description: filters.length
+        ? `${baseTitle}, filtered to ${filters.join(' and ')}.`
+        : `${baseTitle} from this metadata add-on.`,
+      defaultEnabled,
+    }]
+  })
+}
+
+type StremioHomeEntry = {
+  base: string
+  manifest: AddonManifest
+  entry: AddonCatalog
+  id: string
+  extra: Record<string, string>
+  title: string
+  description: string
+  group: string
+  defaultEnabled: boolean
+  rankLabel: string
+}
 
 function stremioHomeEntries(sources: { base: string; manifest: AddonManifest }[]): StremioHomeEntry[] {
-  return sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? []).filter(canBrowse).map((entry) => ({
-    base, manifest, entry, id: `${addonOriginId(base)}:${entry.type}:${entry.id}`,
-  })))
+  const multipleSources = sources.length > 1
+  return sources.flatMap(({ base, manifest }) => (manifest.catalogs ?? []).flatMap((entry) =>
+    stremioCatalogVariants(entry).map((variant) => {
+      const rootId = `${addonOriginId(base)}:${entry.type}:${entry.id}`
+      const title = multipleSources ? `${variant.title} · ${manifest.name}` : variant.title
+      const trending = /^trending(?:\s+now)?$/i.test(entry.name.trim())
+      return {
+        base,
+        manifest,
+        entry,
+        id: variant.key ? `${rootId}:${encodeURIComponent(variant.key)}` : rootId,
+        extra: variant.extra,
+        title,
+        description: variant.description,
+        group: `${manifest.name} · ${contentLabel(entry.type)}`,
+        defaultEnabled: variant.defaultEnabled,
+        rankLabel: trending ? `${contentLabel(entry.type)} Today` : title,
+      }
+    })))
 }
 
 function stremioHomeOptions(entries: StremioHomeEntry[]): CatalogHomeRowOption[] {
-  return [CONTINUE_HOME_ROW, ...entries.map(({ manifest, entry, id }) => ({
+  return [CONTINUE_HOME_ROW, ...entries.map(({ id, title, description, group, defaultEnabled }) => ({
     id,
-    title: entries.length > 1 ? `${entry.name} · ${manifest.name}` : entry.name,
-    description: `${entry.type} catalog supplied by ${manifest.name}.`,
-    group: manifest.name,
-    defaultEnabled: true,
+    title,
+    description,
+    group,
+    defaultEnabled,
   }))]
 }
 
@@ -250,16 +355,25 @@ async function home(signal?: AbortSignal, rowIds?: string[]): Promise<CatalogHom
     : resolveCatalogHomeRows('stremio', options, get(catalogHomeLayouts))
   const entries = configured
     .filter((row) => row.enabled && row.id !== 'continue').flatMap((row) => byId.get(row.id) ?? []).slice(0, 16)
-  const rows = await Promise.all(entries.map(async ({ base, manifest, entry, id }) => ({
+  const rows = await Promise.all(entries.map(async ({ base, entry, id, extra, title, rankLabel }) => ({
     id,
-    title: available.length > 1 ? `${entry.name} · ${manifest.name}` : entry.name,
-    media: await catalog(base, entry, {}, signal).catch(() => []),
+    title,
+    rankLabel,
+    media: await catalog(base, entry, extra, signal).catch(() => []),
     more: canSearch(entry) ? { type: contentType(entry.type) } : undefined,
   })))
   const sections = rows.filter((row) => row.media.length)
-  const all = sections.flatMap((section) => section.media)
+  // Give every enabled catalog a turn in the banner instead of letting the first 100-item row
+  // consume every slot. The provider's own rank and our type-aware label stay attached.
+  const all = interleaveFeatured(
+    sections.map((section) => rankFeaturedMedia(section.media, section.rankLabel)),
+    40,
+  )
   const hero = all.filter((media) => media.bannerImage)
-  return { hero: (hero.length ? hero : all).slice(0, 10), sections }
+  return {
+    hero: (hero.length ? hero : all).slice(0, 10),
+    sections: sections.map(({ rankLabel: _rankLabel, ...section }) => section),
+  }
 }
 
 async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
@@ -303,7 +417,7 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
     if (summary) return enrichOmdbRatings(summary, signal)
     throw new Error('The Stremio metadata add-on returned a different title for this catalog item, so it was blocked.')
   }
-  const media = mapMeta(response.meta, base, decoded.type, ref.id)
+  const media = mapStremioMeta(response.meta, base, decoded.type, ref.id)
   return media ? enrichOmdbRatings(media, signal) : null
 }
 

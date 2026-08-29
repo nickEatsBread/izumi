@@ -2,9 +2,11 @@
   import {
     catalogDefaultProvider,
     catalogLastProvider,
-    catalogMode,
+    catalogLastScreen,
     catalogProvider,
     catalogProviders,
+    catalogScreen,
+    catalogScreens,
     catalogSwitcherPlacement,
     continueWatchingCatalogScope,
     isJvmCatalogSourceEnabled,
@@ -12,10 +14,11 @@
     normalizeCatalogProviders,
     omdbApiKey,
     resolveCatalogStartup,
+    resolveCatalogScreenStartup,
     selectCatalogProvider,
+    selectCatalogScreen,
     tmdbReadToken,
     type CatalogDefaultSelection,
-    type CatalogMode,
     type CatalogSelection,
     type CatalogSwitcherPlacement,
     type ContinueWatchingCatalogScope,
@@ -57,18 +60,14 @@
   const enabled = $derived(normalizeCatalogProviders($catalogProviders, $catalogProvider))
   const defaultOptions = $derived([
     { value: 'adaptive', label: 'Adaptive · last selected' },
-    ...enabled.map((id) => ({
+    ...catalogScreens($catalogProviders).map((id) => ({
       value: id,
-      label: platforms.find((platform) => platform.id === id)?.label ?? id,
+      label: id === 'merged' ? 'Merged' : platforms.find((platform) => platform.id === id)?.label ?? id,
     })),
   ])
   const continueWatchingOptions = [
     { value: 'provider', label: 'Current platform only' },
     { value: 'all', label: 'All platforms' },
-  ]
-  const modeOptions = [
-    { value: 'separate', label: 'Separate catalogs' },
-    { value: 'merged', label: 'Merged Home and Search' },
   ]
   const switcherPlacementOptions = [
     { value: 'automatic', label: 'Automatic · desktop logo, below on Android' },
@@ -76,7 +75,7 @@
     { value: 'integrated', label: 'Integrated into Izumi logo' },
   ]
   const hasPlatform = (id: CatalogSelection) => enabled.includes(id)
-  const homeCustomizeProvider = $derived($catalogMode === 'merged'
+  const homeCustomizeProvider = $derived($catalogScreen === 'merged'
     ? 'merged'
     : $catalogProvider === 'auto' ? 'anilist' : $catalogProvider)
 
@@ -107,16 +106,17 @@
   function setDefaultPlatform(value: string) {
     if (value === 'adaptive') {
       $catalogDefaultProvider = 'adaptive'
-      selectCatalogProvider(resolveCatalogStartup('adaptive', $catalogLastProvider, enabled))
+      selectCatalogScreen(resolveCatalogScreenStartup('adaptive', $catalogLastScreen, enabled))
+      return
+    }
+    if (value === 'merged' && catalogScreens($catalogProviders).includes('merged')) {
+      $catalogDefaultProvider = 'merged'
+      selectCatalogScreen('merged')
       return
     }
     if (!enabled.includes(value as CatalogSelection)) return
     $catalogDefaultProvider = value as CatalogSelection
     selectCatalogProvider(value as CatalogSelection)
-  }
-
-  function setCatalogMode(value: string) {
-    if (value === 'separate' || value === 'merged') $catalogMode = value as CatalogMode
   }
 
   function setContinueWatchingScope(value: string) {
@@ -137,12 +137,20 @@
     if (turningOff && current.length === 1) return
     const next = turningOff ? current.filter((provider) => provider !== id) : [...current, id]
     $catalogProviders = next
+    const nextScreens = catalogScreens(next)
     const nextDefault: CatalogDefaultSelection = $catalogDefaultProvider === 'adaptive'
-      || next.includes($catalogDefaultProvider) ? $catalogDefaultProvider : next[0]
+      || nextScreens.includes($catalogDefaultProvider as typeof nextScreens[number]) ? $catalogDefaultProvider : next[0]
     $catalogDefaultProvider = nextDefault
+    const fallback = resolveCatalogStartup(nextDefault, $catalogLastProvider, next)
     if (!next.includes($catalogProvider)) {
-      selectCatalogProvider(resolveCatalogStartup(nextDefault, $catalogLastProvider, next))
+      if ($catalogScreen === 'merged' && nextScreens.includes('merged')) {
+        $catalogProvider = fallback
+        $catalogLastProvider = fallback
+      } else {
+        selectCatalogProvider(fallback)
+      }
     }
+    if (!nextScreens.includes($catalogScreen)) selectCatalogProvider(fallback)
   }
 
   function useKeylessCatalog() {
@@ -168,16 +176,6 @@
   />
 {/snippet}
 
-{#snippet modeControl()}
-  <SelectMenu
-    className="w-full sm:w-56"
-    value={$catalogMode}
-    options={modeOptions}
-    onChange={setCatalogMode}
-    ariaLabel="Catalog experience"
-  />
-{/snippet}
-
 {#snippet continueWatchingControl()}
   <SelectMenu
     className="w-full sm:w-48"
@@ -200,7 +198,7 @@
 
 <div class="p-4 sm:p-8">
   <h2 class="mb-1 text-xl font-black">Catalog</h2>
-  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms, then keep them separate or combine them into one discovery experience.</p>
+  <p class="mb-4 max-w-2xl text-sm text-muted-foreground">Enable one or more platforms. When two distinct catalogs are available, Merged joins them as another Home and Search destination.</p>
 
   <SettingsGroup icon={LibraryBig} title="Catalog platforms" desc="Choose the services and sources available throughout Home and Search.">
     {#each platforms as platform (platform.id)}
@@ -216,41 +214,32 @@
     {/each}
   </SettingsGroup>
 
-  <SettingsGroup icon={SlidersHorizontal} title="Catalog experience" desc="Choose how your enabled platforms behave after connecting them.">
+  <SettingsGroup icon={SlidersHorizontal} title="Browsing" desc="Choose how Home opens and where its catalog picker appears.">
     <SettingsRow
-      settingKey="catalog-mode"
-      title="Catalog experience"
-      description="Merged combines provider rows on Home and searches every enabled provider by default."
-      control={modeControl}
+      settingKey="default-catalog-platform"
+      title="Default Home"
+      description="Choose a fixed catalog, or Adaptive to reopen the last screen you selected. Merged appears when at least two distinct catalogs are enabled."
+      control={defaultControl}
       controlLayout="stack"
     />
-    {#if $catalogMode === 'separate'}
-      <SettingsRow
-        settingKey="default-catalog-platform"
-        title="Default platform"
-        description="Choose a fixed startup platform, or Adaptive to reopen the last platform you selected."
-        control={defaultControl}
-        controlLayout="stack"
-      />
-      <SettingsRow
-        settingKey="catalog-switcher-placement"
-        title="Catalog switcher"
-        description="Automatic integrates catalog selection into the Izumi logo on desktop and places it below the logo on Android."
-        control={switcherPlacementControl}
-        controlLayout="stack"
-      />
-      <SettingsRow
-        settingKey="continue-watching"
-        title="Continue Watching"
-        description="Show progress for the active catalog or combine all platforms. Merged Home always combines them."
-        control={continueWatchingControl}
-        controlLayout="stack"
-      />
-    {/if}
+    <SettingsRow
+      settingKey="catalog-switcher-placement"
+      title="Catalog switcher"
+      description="Automatic integrates catalog selection into the Izumi logo on desktop and places it below the logo on Android."
+      control={switcherPlacementControl}
+      controlLayout="stack"
+    />
+    <SettingsRow
+      settingKey="continue-watching"
+      title="Continue Watching"
+      description="Show progress for the active catalog or combine all platforms. Merged Home always combines them."
+      control={continueWatchingControl}
+      controlLayout="stack"
+    />
   </SettingsGroup>
 
-  <SettingsGroup icon={Rows3} title="Home layout" desc="Control each separate platform and the Merged Home independently.">
-    <SettingsRow title="Home rows" description="Show, hide, and reorder discovery rows without changing your enabled catalogs.">
+  <SettingsGroup icon={Rows3} title="Home layout" desc="Edit each catalog screen independently.">
+    <SettingsRow title="Home sections" description="Use the pencil in the Home catalog picker to edit in place, or open the full list here.">
       <a href={`/app/settings/catalog/home?provider=${homeCustomizeProvider}`} data-focusable class="inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Customize Home</a>
     </SettingsRow>
   </SettingsGroup>

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
-  catalogLabel, catalogLastProvider, catalogProvider, nextCatalogProvider,
+  catalogLabel, catalogLastProvider, catalogLastScreen, catalogProvider, catalogScreen, catalogScreens, nextCatalogProvider, nextCatalogScreen,
   isJvmCatalogSourceEnabled, mergedCatalogProviders, normalizeCatalogProviders, previousCatalogProvider,
-  resolveCatalogStartup, resolveCatalogSwitcherPlacement, selectCatalogProvider,
+  resolveCatalogScreenStartup, resolveCatalogStartup, resolveCatalogSwitcherPlacement, selectCatalogProvider, selectCatalogScreen,
+  stremioHeroArtwork,
 } from './catalog'
 
 describe('catalog platform selection', () => {
@@ -40,9 +41,21 @@ describe('catalog platform selection', () => {
     expect(nextCatalogProvider('stremio', ['auto', 'tmdb'])).toBe('auto')
   })
 
+  it('uses cinematic Stremio banner artwork until the user chooses full cover art', () => {
+    expect(get(stremioHeroArtwork)).toBe('backdrop')
+  })
+
   it('collapses duplicate AniList access only when composing merged catalogs', () => {
     expect(mergedCatalogProviders(['tmdb', 'auto', 'anilist', 'jvm'])).toEqual(['tmdb', 'auto', 'jvm'])
     expect(mergedCatalogProviders(['anilist', 'tmdb'])).toEqual(['anilist', 'tmdb'])
+  })
+
+  it('adds Merged as a peer screen only when it combines distinct catalogs', () => {
+    expect(catalogScreens(['auto'])).toEqual(['auto'])
+    expect(catalogScreens(['auto', 'anilist'])).toEqual(['auto', 'anilist'])
+    expect(catalogScreens(['auto', 'tmdb'])).toEqual(['auto', 'tmdb', 'merged'])
+    expect(nextCatalogScreen('tmdb', ['auto', 'tmdb'])).toBe('merged')
+    expect(nextCatalogScreen('merged', ['auto', 'tmdb'])).toBe('auto')
   })
 
   it('shows newly installed JVM sources by default and preserves explicit filters', () => {
@@ -59,6 +72,12 @@ describe('catalog platform selection', () => {
 
   it('keeps a fixed default independent of the last selected platform', () => {
     expect(resolveCatalogStartup('anilist', 'tmdb', ['anilist', 'tmdb'])).toBe('anilist')
+  })
+
+  it('restores Merged through the same fixed or Adaptive startup policy', () => {
+    expect(resolveCatalogScreenStartup('merged', 'auto', ['auto', 'tmdb'])).toBe('merged')
+    expect(resolveCatalogScreenStartup('adaptive', 'merged', ['auto', 'tmdb'])).toBe('merged')
+    expect(resolveCatalogScreenStartup('merged', 'merged', ['auto'])).toBe('auto')
   })
 
   it('places the automatic catalog switcher in the desktop logo and below it on Android', () => {
@@ -78,6 +97,23 @@ describe('catalog platform selection', () => {
     } finally {
       catalogProvider.set(previousCurrent)
       catalogLastProvider.set(previousLast)
+    }
+  })
+
+  it('selects Merged without replacing the concrete provider used by playback', () => {
+    const previousProvider = get(catalogProvider)
+    const previousScreen = get(catalogScreen)
+    const previousLastScreen = get(catalogLastScreen)
+    try {
+      catalogProvider.set('tmdb')
+      selectCatalogScreen('merged')
+      expect(get(catalogScreen)).toBe('merged')
+      expect(get(catalogProvider)).toBe('tmdb')
+      expect(get(catalogLastScreen)).toBe('merged')
+    } finally {
+      catalogProvider.set(previousProvider)
+      catalogScreen.set(previousScreen)
+      catalogLastScreen.set(previousLastScreen)
     }
   })
 })

@@ -3,6 +3,8 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import Play from '@lucide/svelte/icons/play'
   import ExternalLink from '@lucide/svelte/icons/external-link'
+  import BookmarkPlus from '@lucide/svelte/icons/bookmark-plus'
+  import BookmarkCheck from '@lucide/svelte/icons/bookmark-check'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import Carousel from '$lib/components/cards/Carousel.svelte'
@@ -17,6 +19,9 @@
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import { parseCatalogDescription } from '$lib/catalog/description'
   import MediaRatings from './MediaRatings.svelte'
+  import CatalogAwards from './CatalogAwards.svelte'
+  import LocalListPicker from '$lib/components/library/LocalListPicker.svelte'
+  import { localLibrary, mediaIsSaved } from '$lib/library/local-lists'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
@@ -27,6 +32,7 @@
   let playState = $state<PlayState>({ status: 'idle' })
   let retry = $state(0)
   let failedLogo = $state('')
+  let showLocalLists = $state(false)
 
   $effect(() => {
     const request = ref
@@ -58,6 +64,7 @@
   const cast = $derived(media?.characters?.edges ?? [])
   const crew = $derived(media?.staff?.edges ?? [])
   const externalUrl = $derived(media ? providerExternalUrl(media) : null)
+  const savedLocally = $derived(media ? mediaIsSaved($localLibrary, media) : false)
   const isMovie = $derived(media?.catalog?.type === 'movie' || media?.format === 'MOVIE')
   const titleLogo = $derived(media?.logoImage && media.logoImage !== failedLogo ? media.logoImage : '')
   const parsedDescription = $derived(parseCatalogDescription(media?.description))
@@ -115,8 +122,8 @@
       <div class="relative flex min-h-[52vh] max-w-6xl items-end gap-8 px-5 pb-8 pt-24 sm:px-8">
         <img src={cover(media)} alt="" class="hidden aspect-[2/3] rounded-xl bg-muted object-cover shadow-2xl md:block md:w-48 lg:w-56 xl:w-64" />
         <div class="min-w-0 flex-1">
-          {#if provider !== 'tmdb' && provider !== 'jvm'}
-            <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">{provider === 'kitsu' ? 'Kitsu' : 'Stremio metadata'}</div>
+          {#if provider === 'kitsu'}
+            <div class="mb-2 text-xs font-black uppercase tracking-[0.18em] text-theme">Kitsu</div>
           {/if}
           {#if titleLogo}
             <h1 aria-label={title(media)} class="h-28 w-[min(34rem,82vw)]">
@@ -147,6 +154,9 @@
           {/if}
           <div class="mt-5 flex flex-wrap gap-2">
             <button data-focusable onclick={() => play(videos[0])} class="flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 font-black text-primary-foreground"><Play size={19} class="fill-current" /> {isMovie ? 'Play' : 'Play episode 1'}</button>
+            <button data-focusable onclick={() => (showLocalLists = true)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold">
+              {#if savedLocally}<BookmarkCheck size={18} class="text-theme" /> Saved{:else}<BookmarkPlus size={18} /> Save{/if}
+            </button>
             {#if externalUrl}
               <button data-focusable onclick={() => openUrl(externalUrl)} class="flex items-center gap-2 rounded-lg bg-secondary px-4 py-2.5 font-bold"><ExternalLink size={17} /> {provider === 'tmdb' ? 'TMDB' : 'Open provider'}</button>
             {/if}
@@ -154,6 +164,7 @@
           {#if playState.status === 'error'}<p class="mt-3 text-sm text-destructive">{playState.message}</p>{/if}
         </div>
       </div>
+      <CatalogAwards {media} />
     </section>
 
     {#if media.genres?.length || parsedDescription.links.length}
@@ -255,4 +266,5 @@
       </section>
     {/if}
   </div>
+  {#if showLocalLists}<LocalListPicker {media} onclose={() => (showLocalLists = false)} />{/if}
 {/if}

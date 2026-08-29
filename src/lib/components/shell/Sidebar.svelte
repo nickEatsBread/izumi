@@ -16,7 +16,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
-  import { catalogMode, catalogSwitcherPlacement, enabledCatalogProviders, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
+  import { catalogSwitcherPlacement, enabledCatalogScreens, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
@@ -85,7 +85,7 @@
   <!-- On Home, Integrated mode turns the brand into the catalog trigger. Everywhere else it stays
        predictable Home navigation; Below mode keeps the explicit provider row underneath. -->
   <div class="group mb-2 flex h-10 shrink-0 items-center gap-2 text-left">
-    {#if $catalogMode === 'separate' && switcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogProviders.length > 1}
+    {#if switcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogScreens.length > 1}
       <CatalogSwitcher display="brand" bind:open={catalogPickerOpen} className="ml-2 shrink-0" />
     {:else}
       <a href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
@@ -96,7 +96,7 @@
     <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
   </div>
 
-  {#if !$offlineMode && $catalogMode === 'separate' && switcherPlacement === 'below'}
+  {#if !$offlineMode && switcherPlacement === 'below'}
     <CatalogSwitcher display="rail" bind:open={catalogPickerOpen} expanded={open} className="shrink-0" />
   {/if}
 

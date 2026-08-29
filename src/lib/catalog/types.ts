@@ -39,6 +39,8 @@ export interface CatalogSearchRequest extends CatalogAdvancedSearchFilters {
   genre?: string
   year?: number
   sort?: 'popular' | 'rating' | 'recent' | 'oldest' | 'title' | 'trending'
+  /** TMDB watch-provider id, paired with the viewer's current region. */
+  watchProvider?: number
   /** JVM-only: selecting one source unlocks that extension's native Aniyomi filters. */
   sourceId?: string
   jvmFilters?: JvmSourceFilter[]
@@ -59,8 +61,20 @@ export interface CatalogHomeSection {
   id: string
   title: string
   media: Media[]
+  /** Specialized visual language for rows that are not ordinary poster shelves. */
+  presentation?: 'posters' | 'ranked' | 'collections' | 'providers'
+  features?: CatalogHomeFeature[]
+  attribution?: string
   /** Search request represented by “View more”, where the provider supports it. */
   more?: Omit<CatalogSearchRequest, 'signal'>
+}
+
+export interface CatalogHomeFeature {
+  id: string
+  title: string
+  image?: string
+  subtitle?: string
+  href?: string
 }
 
 export interface CatalogHome {

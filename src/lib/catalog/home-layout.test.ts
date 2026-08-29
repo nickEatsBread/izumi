@@ -3,9 +3,10 @@ import { catalogHomeLayoutFromRows, catalogHomeLayoutKey, resolveCatalogHomeRows
 import { TMDB_HOME_ROWS } from './home-options'
 
 describe('catalog Home layouts', () => {
-  it('preserves the existing TMDB Home as the focused default', () => {
+  it('keeps a focused TMDB Home with the featured discovery rows enabled', () => {
     expect(resolveCatalogHomeRows('tmdb', TMDB_HOME_ROWS, {}).filter((row) => row.enabled).map((row) => row.id)).toEqual([
-      'continue', 'trending', 'anime-series', 'anime-movies', 'movies', 'series',
+      'continue', 'trending', 'top10-movies', 'collections', 'streaming-providers',
+      'anime-series', 'anime-movies', 'movies', 'series',
       'rated-movies', 'rated-series', 'upcoming',
     ])
   })

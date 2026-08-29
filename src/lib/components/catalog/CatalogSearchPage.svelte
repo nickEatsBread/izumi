@@ -4,6 +4,7 @@
   import { replaceState } from '$app/navigation'
   import Search from '@lucide/svelte/icons/search'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
+  import X from '@lucide/svelte/icons/x'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import TmdbAdvancedFilters from './TmdbAdvancedFilters.svelte'
@@ -39,6 +40,8 @@
   let minVotes = $state<number | undefined>(Number(page.url.searchParams.get('votes')) || undefined)
   let language = $state(page.url.searchParams.get('language') ?? '')
   let country = $state(page.url.searchParams.get('country') ?? '')
+  let watchProvider = $state<number | undefined>(Number(page.url.searchParams.get('watchProvider')) || undefined)
+  let watchProviderName = $state(page.url.searchParams.get('watchProviderName') ?? '')
   let jvmSourceId = $state(page.url.searchParams.get('source') ?? '')
   let settled = $state(page.url.searchParams.get('search') ?? page.url.searchParams.get('q') ?? '')
   let debounce: ReturnType<typeof setTimeout>
@@ -117,6 +120,8 @@
       minVotes = undefined
       language = ''
       country = ''
+      watchProvider = undefined
+      watchProviderName = ''
       filterOptions = {}
       showAdvanced = false
     }
@@ -178,7 +183,7 @@
   })
 
   const requestKey = $derived(JSON.stringify([
-    activeSelection, settled, type, genre, year, sort, minScore, minVotes, language, country,
+    activeSelection, settled, type, genre, year, sort, minScore, minVotes, language, country, watchProvider,
     jvmSourceId, jvmFilters, jvmFiltersLoading,
   ]))
   $effect(() => {
@@ -216,6 +221,8 @@
     if (minVotes) params.set('votes', String(minVotes))
     if (language) params.set('language', language)
     if (country) params.set('country', country)
+    if (isTmdb && watchProvider) params.set('watchProvider', String(watchProvider))
+    if (isTmdb && watchProviderName) params.set('watchProviderName', watchProviderName)
     if (isJvm && jvmSourceId) params.set('source', jvmSourceId)
     const next = params.size ? `${page.url.pathname}?${params}` : page.url.pathname
     if (next !== page.url.pathname + page.url.search) {
@@ -244,6 +251,7 @@
         minVotes,
         language: language || undefined,
         country: country || undefined,
+        watchProvider,
         sourceId: isJvm ? jvmSourceId || undefined : undefined,
         jvmFilters: isJvm && jvmSourceId ? jvmFilters : undefined,
         page: pageNumber,
@@ -311,6 +319,12 @@
 </script>
 
 <div class="pb-20 {embedded ? 'pt-4' : 'p-4 sm:p-8'}">
+  {#if isTmdb && watchProvider}
+    <div class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
+      <div><p class="text-xs font-semibold text-muted-foreground">Streaming service</p><p class="font-black">{watchProviderName || 'Selected provider'}</p></div>
+      <button type="button" data-focusable onclick={() => { watchProvider = undefined; watchProviderName = '' }} aria-label="Clear streaming service" class="grid size-9 place-items-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground"><X size={17} /></button>
+    </div>
+  {/if}
   <div class="mb-6 flex flex-col gap-3">
     <label class="relative min-w-0 flex-1">
       <Search size={19} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />

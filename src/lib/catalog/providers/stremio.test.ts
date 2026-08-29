@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   decodeStremioIdentity,
   encodeStremioIdentity,
+  mapStremioMeta,
+  stremioCatalogVariants,
   stremioCatalogUrl,
   stremioMetaMatchesIdentity,
   stremioMetaUrl,
@@ -44,5 +46,51 @@ describe('Stremio catalog identity', () => {
       .toBe('https://addon.test/catalog/tv/top%20picks/search=one%20%26%20two&skip=100.json')
     expect(stremioMetaUrl('https://addon.test', 'series', 'tt123:1:2'))
       .toBe('https://addon.test/meta/series/tt123%3A1%3A2.json')
+  })
+
+  it('offers both an unfiltered catalog and every optional manifest filter', () => {
+    const variants = stremioCatalogVariants({
+      type: 'movie', id: 'top', name: 'Popular',
+      extra: [{ name: 'genre', options: ['Action', 'Comedy'] }, { name: 'search' }],
+    })
+    expect(variants.map(({ title, extra, defaultEnabled }) => ({ title, extra, defaultEnabled }))).toEqual([
+      { title: 'Popular Movies', extra: {}, defaultEnabled: true },
+      { title: 'Popular Movies · Action', extra: { genre: 'Action' }, defaultEnabled: false },
+      { title: 'Popular Movies · Comedy', extra: { genre: 'Comedy' }, defaultEnabled: false },
+    ])
+  })
+
+  it('materializes required year catalogs but skips required history inputs it cannot invent', () => {
+    expect(stremioCatalogVariants({
+      type: 'series', id: 'year', name: 'New',
+      extra: [{ name: 'genre', isRequired: true, options: ['2026', '2025'] }],
+    }).map((variant) => [variant.title, variant.extra, variant.defaultEnabled])).toEqual([
+      ['New TV · 2026', { genre: '2026' }, false],
+      ['New TV · 2025', { genre: '2025' }, false],
+    ])
+    expect(stremioCatalogVariants({
+      type: 'series', id: 'last-videos', name: 'Last videos',
+      extra: [{ name: 'lastVideosIds', isRequired: true }],
+    })).toEqual([])
+  })
+
+  it('retains the full artwork and descriptive metadata supplied by Cinemeta-style records', () => {
+    const media = mapStremioMeta({
+      id: 'tt1234567', type: 'movie', name: 'Example', poster: 'https://img.test/poster.jpg',
+      background: 'https://img.test/backdrop.jpg', logo: 'https://img.test/logo.png',
+      awards: '7 wins & 15 nominations', country: 'United Kingdom', language: 'English',
+      writer: ['Writer One'], released: '2026-05-15T00:00:00Z', genre: ['Drama'],
+    }, 'https://addon.test')
+    expect(media).toMatchObject({
+      coverImage: { extraLarge: 'https://img.test/poster.jpg' },
+      bannerImage: 'https://img.test/backdrop.jpg',
+      logoImage: 'https://img.test/logo.png',
+      awards: '7 wins & 15 nominations',
+      countryOfOrigin: 'United Kingdom',
+      originalLanguage: 'English',
+      creators: ['Writer One'],
+      releaseDate: '2026-05-15',
+      genres: ['Drama'],
+    })
   })
 })

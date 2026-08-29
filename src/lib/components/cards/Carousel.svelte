@@ -13,7 +13,7 @@
   // and there's no hover to reveal the "View more" link, so keep it always visible there.
   const mob = $derived($isMobile)
   // `viewMoreHref` (optional): renders a "View more" link by the title.
-  let { title, viewMoreHref, children }: { title: string; viewMoreHref?: string; children: Snippet } = $props()
+  let { title, viewMoreHref, attribution, children }: { title: string; viewMoreHref?: string; attribution?: string; children: Snippet } = $props()
 
   let scroller = $state<HTMLDivElement>()
   let canLeft = $state(false)
@@ -65,7 +65,10 @@
 
 <section data-nav-row class="browse-render-row group/carousel relative mb-8">
   <div class="mb-2 flex items-baseline justify-between" class:px-8={!mob} class:px-4={mob}>
-    <h2 class="text-lg font-black">{title}</h2>
+    <div class="flex min-w-0 items-baseline gap-2">
+      <h2 class="truncate text-lg font-black">{title}</h2>
+      {#if attribution}<span class="shrink-0 text-[0.65rem] font-semibold text-muted-foreground">{attribution}</span>{/if}
+    </div>
     {#if viewMoreHref}
       <a href={viewMoreHref} data-focusable
          class="flex items-center gap-0.5 text-xs font-bold text-muted-foreground transition hover:text-foreground group-hover/carousel:opacity-100"

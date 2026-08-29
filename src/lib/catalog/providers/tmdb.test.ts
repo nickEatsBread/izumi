@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapTmdb, parseCinemetaRating, pickTmdbLogo, tmdbContentRating, tmdbDiscoverFilterParams, tmdbRegion, tmdbWatchProviders } from './tmdb'
+import { mapTmdb, parseCinemetaRating, pickTmdbLogo, tmdbContentRating, tmdbDiscoverFilterParams, tmdbRegion, tmdbRegionName, tmdbWatchProviders } from './tmdb'
 
 describe('TMDB catalog mapping', () => {
   it('maps movies to a provider-owned identity instead of an AniList id', () => {
@@ -79,6 +79,14 @@ describe('TMDB catalog mapping', () => {
     expect(tmdbDiscoverFilterParams('movie', { sort: 'title' })).toMatchObject({
       sort_by: 'original_title.asc',
     })
+  })
+
+  it('filters streaming-service shelves to the viewer region', () => {
+    expect(tmdbDiscoverFilterParams('movie', { watchProvider: 8 })).toMatchObject({
+      with_watch_providers: 8,
+      with_watch_monetization_types: 'flatrate|free|ads',
+    })
+    expect(tmdbRegionName('GB')).toBe('United Kingdom')
   })
 
   it('maps regional certification and viewing providers with sensible fallbacks', () => {

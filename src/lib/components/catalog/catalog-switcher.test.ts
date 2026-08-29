@@ -20,7 +20,7 @@ describe('catalog switcher', () => {
     expect(source).toContain('Catalog: {activeLabel}</span>')
     expect(source).toContain("expanded ? 'opacity-100' : 'opacity-0'")
     expect(source).toContain("display === 'brand'")
-    expect(source).toContain('<CatalogBrandLogo platform={$catalogProvider} />')
+    expect(source).toContain('<CatalogBrandLogo platform={$catalogScreen} />')
     expect(source).toContain('showWordmark')
     // Integrated mode must keep the mark clean instead of layering another provider badge on it.
     expect(source).not.toContain('CatalogProviderBadge')
@@ -32,11 +32,12 @@ describe('catalog switcher', () => {
     expect(source).not.toContain('class="relative {className}"')
   })
 
-  it('offers direct selection from only the enabled catalogs', () => {
-    expect(source).toContain('const choices = $derived($enabledCatalogProviders)')
+  it('offers enabled catalogs and Merged as peer Home screens', () => {
+    expect(source).toContain('const choices = $derived($enabledCatalogScreens)')
     expect(source).toContain('{#each choices as provider (provider)}')
-    expect(source).toContain('selectCatalogProvider(provider)')
-    expect(source).toContain('aria-selected={provider === $catalogProvider}')
+    expect(source).toContain('selectCatalogScreen(provider)')
+    expect(source).toContain('aria-selected={provider === $catalogScreen}')
+    expect(source).toContain("merged: 'Your custom mix from every catalog'")
   })
 
   it('adapts the same selection model to a mobile bottom sheet', () => {
@@ -48,5 +49,11 @@ describe('catalog switcher', () => {
   it('keeps catalog configuration one step away', () => {
     expect(source).toContain('href="/app/settings/catalog"')
     expect(source).toContain('Manage catalogs')
+  })
+
+  it('starts in-place Home editing from the picker', () => {
+    expect(source).toContain('Edit this Home')
+    expect(source).toContain('homeEditorOpen.set(true)')
+    expect(source).toContain('<Pencil')
   })
 })

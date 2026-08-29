@@ -3,16 +3,18 @@
   import { fade, fly } from 'svelte/transition'
   import Check from '@lucide/svelte/icons/check'
   import ChevronDown from '@lucide/svelte/icons/chevron-down'
+  import Pencil from '@lucide/svelte/icons/pencil'
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import CatalogBrandLogo from './CatalogBrandLogo.svelte'
   import CatalogPlatformLogo from './CatalogPlatformLogo.svelte'
   import {
     catalogLabel,
-    catalogProvider,
-    enabledCatalogProviders,
-    selectCatalogProvider,
-    type CatalogSelection,
+    catalogScreen,
+    enabledCatalogScreens,
+    selectCatalogScreen,
+    type CatalogScreen,
   } from '$lib/settings/catalog'
+  import { homeEditorOpen } from '$lib/catalog/home-editor'
   import { isMobile } from '$lib/platform'
   import * as h from '$lib/haptics'
 
@@ -36,7 +38,8 @@
     open?: boolean
   } = $props()
 
-  const descriptions: Record<CatalogSelection, string> = {
+  const descriptions: Record<CatalogScreen, string> = {
+    merged: 'Your custom mix from every catalog',
     auto: 'Anime-first with smart metadata fallbacks',
     anilist: 'Anime discovery from AniList',
     kitsu: 'An independent anime catalog',
@@ -48,8 +51,8 @@
   let root = $state<HTMLDivElement>()
   let trigger = $state<HTMLButtonElement>()
   let listbox = $state<HTMLDivElement>()
-  const choices = $derived($enabledCatalogProviders)
-  const activeLabel = $derived(catalogLabel($catalogProvider))
+  const choices = $derived($enabledCatalogScreens)
+  const activeLabel = $derived(catalogLabel($catalogScreen))
   const canSwitch = $derived(choices.length > 1)
 
   async function setOpen(next: boolean, refocus = false) {
@@ -65,12 +68,18 @@
     }
   }
 
-  function choose(provider: CatalogSelection) {
-    if (provider !== $catalogProvider) {
+  function choose(provider: CatalogScreen) {
+    if (provider !== $catalogScreen) {
       h.tap()
-      selectCatalogProvider(provider)
+      selectCatalogScreen(provider)
     }
     void setOpen(false, true)
+  }
+
+  function editHome() {
+    h.tap()
+    open = false
+    homeEditorOpen.set(true)
   }
 
   function onTriggerKeydown(event: KeyboardEvent) {
@@ -163,13 +172,13 @@
       {#if display === 'rail'}
         <!-- Sidebar rail row: same anatomy as the nav links (icon slot + fading label), so it
              reads as just another destination. The tile is scaled down like the value pill's. -->
-        <span class="grid w-8 shrink-0 place-items-center"><span class="-m-1 scale-75"><CatalogPlatformLogo platform={$catalogProvider} /></span></span>
+        <span class="grid w-8 shrink-0 place-items-center"><span class="-m-1 scale-75"><CatalogPlatformLogo platform={$catalogScreen} /></span></span>
         <span class="whitespace-nowrap text-sm font-semibold transition-opacity duration-150 {expanded ? 'opacity-100' : 'opacity-0'}">Catalog: {activeLabel}</span>
       {:else if display === 'brand'}
         <!-- Integrated mode keeps the identity visually intact: the full Izumi mark is the
              trigger, and a quiet chevron communicates that it opens instead of navigating. -->
         <span class="relative grid size-8 shrink-0 place-items-center">
-          <CatalogBrandLogo platform={$catalogProvider} />
+          <CatalogBrandLogo platform={$catalogScreen} />
           <ChevronDown
             aria-hidden="true"
             size={11}
@@ -184,10 +193,10 @@
         <!-- The provider tile is the button face, rather than a smaller tile floating inside a
              second dark circle. Scale it to the 44px hit area and clip its corners to the circle. -->
         <span class="grid size-11 place-items-center overflow-hidden rounded-full">
-          <span class="scale-110"><CatalogPlatformLogo platform={$catalogProvider} /></span>
+          <span class="scale-110"><CatalogPlatformLogo platform={$catalogScreen} /></span>
         </span>
       {:else}
-        <span class="-m-1 scale-75"><CatalogPlatformLogo platform={$catalogProvider} /></span>
+        <span class="-m-1 scale-75"><CatalogPlatformLogo platform={$catalogScreen} /></span>
         <span class="block max-w-32 truncate text-sm font-black">{activeLabel}</span>
         <ChevronDown size={14} class="shrink-0 opacity-65 transition-transform {open ? 'rotate-180' : ''}" />
       {/if}
@@ -246,23 +255,32 @@
               type="button"
               data-focusable
               role="option"
-              aria-selected={provider === $catalogProvider}
+              aria-selected={provider === $catalogScreen}
               onclick={() => choose(provider)}
               class="flex min-h-14 w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left outline-none transition
                 hover:bg-accent focus:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-theme
-                {provider === $catalogProvider ? 'bg-theme/10' : ''}"
+                {provider === $catalogScreen ? 'bg-theme/10' : ''}"
             >
               <CatalogPlatformLogo platform={provider} />
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-sm font-black">{catalogLabel(provider)}</span>
                 <span class="mt-0.5 block truncate text-xs text-muted-foreground">{descriptions[provider]}</span>
               </span>
-              {#if provider === $catalogProvider}<Check size={18} class="shrink-0 text-theme" />{/if}
+              {#if provider === $catalogScreen}<Check size={18} class="shrink-0 text-theme" />{/if}
             </button>
           {/each}
         </div>
 
         <div class="border-t border-border p-2">
+          <button
+            type="button"
+            data-focusable
+            onclick={editHome}
+            class="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm font-bold transition hover:bg-theme/10 hover:text-theme focus:bg-theme/10 focus:text-theme"
+          >
+            <Pencil size={17} />
+            <span class="flex-1">Edit this Home</span>
+          </button>
           <a
             href="/app/settings/catalog"
             data-focusable

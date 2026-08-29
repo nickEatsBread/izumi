@@ -13,7 +13,7 @@
   import {
     CATALOG_SELECTIONS,
     catalogLabel,
-    catalogMode,
+    catalogScreen,
     catalogProvider,
     catalogProviders,
     isLegacyAniListCatalog,
@@ -60,7 +60,7 @@
   })
 
   $effect(() => {
-    if ($catalogMode !== 'merged') return
+    if ($catalogScreen !== 'merged') return
     if (mergedScope === 'all') {
       const search = mergedQuery.trim() || undefined
       if (filters.search !== search) filters = { search }
@@ -125,12 +125,12 @@
   // the return trip and look like the filters had been mangled.
   $effect(() => {
     const f = debounced
-    if ($catalogMode === 'separate' && !legacyCatalog) return
-    if ($catalogMode === 'merged' && mergedScope !== 'all' && !isLegacyAniListCatalog(mergedScope)) return
+    if ($catalogScreen !== 'merged' && !legacyCatalog) return
+    if ($catalogScreen === 'merged' && mergedScope !== 'all' && !isLegacyAniListCatalog(mergedScope)) return
     const params = new URLSearchParams()
-    if ($catalogMode === 'merged' && mergedScope !== 'all') params.set('provider', mergedScope)
+    if ($catalogScreen === 'merged' && mergedScope !== 'all') params.set('provider', mergedScope)
     if (f.search) params.set('search', f.search)
-    if ($catalogMode !== 'merged' || mergedScope !== 'all') {
+    if ($catalogScreen !== 'merged' || mergedScope !== 'all') {
       if (f.sort) params.set('sort', f.sort)
       if (f.genres?.[0]) params.set('genre', f.genres[0])
       if (f.season) params.set('season', f.season)
@@ -151,7 +151,7 @@
 
 {#if $offlineMode}
   <OfflineUnavailable title="Search is unavailable offline" subtitle="Searching needs a connection. Your downloaded titles are available on the Downloads page." />
-{:else if $catalogMode === 'merged'}
+{:else if $catalogScreen === 'merged'}
   <div class="px-4 pt-4 sm:px-8 sm:pt-8">
     <h1 class="text-2xl font-black">Search</h1>
     <p class="mt-1 text-sm text-muted-foreground">Search everything together, or choose one catalog to unlock its filters.</p>

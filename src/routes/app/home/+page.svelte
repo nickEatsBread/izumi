@@ -24,20 +24,22 @@
   import { markClientPerformance } from '$lib/performance/client'
   import {
     catalogProvider,
-    catalogMode,
+    catalogScreen,
     catalogProviders,
     catalogSwitcherPlacement,
-    enabledCatalogProviders,
+    enabledCatalogScreens,
     isLegacyAniListCatalog,
     mergedCatalogProviders,
-    nextCatalogProvider,
-    previousCatalogProvider,
+    nextCatalogScreen,
+    previousCatalogScreen,
     resolveCatalogSwitcherPlacement,
-    selectCatalogProvider,
+    selectCatalogScreen,
   } from '$lib/settings/catalog'
   import CatalogHome from '$lib/components/catalog/CatalogHome.svelte'
   import MergedCatalogHome from '$lib/components/catalog/MergedCatalogHome.svelte'
   import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'
+  import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
+  import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
   import { mediaHref } from '$lib/anilist/media'
   import { playing } from '$lib/player/session'
   import { androidMpvActive } from '$lib/player/android-mpv'
@@ -46,7 +48,7 @@
   const client = getContextClient()
   const legacyCatalog = $derived(isLegacyAniListCatalog($catalogProvider))
   const mergedUsesAniList = $derived(mergedCatalogProviders($catalogProviders).some((provider) => isLegacyAniListCatalog(provider)))
-  const usesAniListHome = $derived($catalogMode === 'merged' ? mergedUsesAniList : legacyCatalog)
+  const usesAniListHome = $derived($catalogScreen === 'merged' ? mergedUsesAniList : legacyCatalog)
   const sections = homeSections(new Date())
 
   // Top-bar icons come from the nav config (items the user placed 'top').
@@ -55,8 +57,9 @@
   // Personalized rows use the connected AniList account name (from OAuth) if present,
   // otherwise the manually-entered username.
   const listUser = $derived($anilistUserName || $anilistUser)
-  const orderedRows = $derived(resolveCatalogHomeRows('anilist', ANILIST_HOME_ROWS, $catalogHomeLayouts)
-    .filter((row) => row.enabled).map((row) => row.id))
+  const anilistRows = $derived(resolveCatalogHomeRows('anilist', ANILIST_HOME_ROWS, $catalogHomeLayouts)
+    .filter((row) => row.enabled))
+  const orderedRows = $derived(anilistRows.map((row) => row.id))
   const sectionMap = $derived(new Map(sections.map((section) => [section.key, section])))
   const catalogUnavailable = $derived(!!$anilistDegraded?.fallbackError)
 
@@ -94,7 +97,7 @@
     return heroStore.subscribe((v) => (hero = v as HeroResult))
   })
 
-  const canCycleCatalog = $derived($catalogMode === 'separate' && $enabledCatalogProviders.length > 1)
+  const canCycleCatalog = $derived($enabledCatalogScreens.length > 1)
   const switcherPlacement = $derived(resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, $isAndroid))
 
   function handleCatalogKeydown(event: KeyboardEvent) {
@@ -104,9 +107,9 @@
     if (!canCycleCatalog || $playing || $androidMpvActive || isTypingTarget(event.target)) return
     event.preventDefault()
     h.tap()
-    selectCatalogProvider(action === 'homePreviousCatalog'
-      ? previousCatalogProvider($catalogProvider, $enabledCatalogProviders)
-      : nextCatalogProvider($catalogProvider, $enabledCatalogProviders))
+    selectCatalogScreen(action === 'homePreviousCatalog'
+      ? previousCatalogScreen($catalogScreen, $catalogProviders)
+      : nextCatalogScreen($catalogScreen, $catalogProviders))
   }
 
   // Only titles that have real landscape art: a bannerImage, or a YouTube trailer whose maxres
@@ -177,6 +180,8 @@
   </div>
 {/if}
 
+{#if !$offlineMode}<HomeEditor target={$catalogScreen} />{/if}
+
 <style>
   :global(html[data-scheme='light']) .home-wordmark {
     filter: brightness(0) saturate(100%);
@@ -193,7 +198,7 @@
     {/if}
     <DownloadedLibrary />
   </div>
-{:else if $catalogMode === 'merged'}
+{:else if $catalogScreen === 'merged'}
   <MergedCatalogHome anilistHero={heroMedias} />
 {:else if !legacyCatalog}
   <CatalogHome />
@@ -224,23 +229,26 @@
     {/if}
 
     {#each orderedRows as row (row)}
-      {#if row === 'continue'}
-        {#key listUser}
-          <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
-        {/key}
-      {:else if row === 'recent'}
-        {#if !catalogUnavailable}<RecentReleaseRow />{/if}
-      {:else if row === 'list'}
-        {#if listUser}
-          {#key listUser}<ListRow title="Your List" userName={listUser} status="PLANNING" preferLinkedRating={$catalogProvider === 'auto'} />{/key}
+      {@const rowOption = anilistRows.find((option) => option.id === row)}
+      <HomeRowFrame rowId={row} title={rowOption?.title ?? row} target={$catalogProvider} visibleIds={orderedRows}>
+        {#if row === 'continue'}
+          {#key listUser}
+            <ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />
+          {/key}
+        {:else if row === 'recent'}
+          {#if !catalogUnavailable}<RecentReleaseRow />{/if}
+        {:else if row === 'list'}
+          {#if listUser}
+            {#key listUser}<ListRow title="Your List" userName={listUser} status="PLANNING" preferLinkedRating={$catalogProvider === 'auto'} />{/key}
+          {/if}
+          {#if $malToken || $malUser}<MalListRow title="Your List" status="plan_to_watch" preferLinkedRating={$catalogProvider === 'auto'} />{/if}
+        {:else if row === 'recommendations'}
+          {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={$catalogProvider === 'auto'} />{/key}{/if}
+        {:else}
+          {@const section = sectionMap.get(row)}
+          {#if section && !catalogUnavailable}<HomeRow title={section.title} vars={section.vars} preferLinkedRating={$catalogProvider === 'auto'} />{/if}
         {/if}
-        {#if $malToken || $malUser}<MalListRow title="Your List" status="plan_to_watch" preferLinkedRating={$catalogProvider === 'auto'} />{/if}
-      {:else if row === 'recommendations'}
-        {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={$catalogProvider === 'auto'} />{/key}{/if}
-      {:else}
-        {@const section = sectionMap.get(row)}
-        {#if section && !catalogUnavailable}<HomeRow title={section.title} vars={section.vars} preferLinkedRating={$catalogProvider === 'auto'} />{/if}
-      {/if}
+      </HomeRowFrame>
     {/each}
   </div>
 {/if}

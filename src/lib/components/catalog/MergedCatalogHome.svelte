@@ -1,14 +1,14 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
-  import Carousel from '$lib/components/cards/Carousel.svelte'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
   import HomeRow from '$lib/components/cards/HomeRow.svelte'
   import ListRow from '$lib/components/cards/ListRow.svelte'
   import MalListRow from '$lib/components/cards/MalListRow.svelte'
   import PersonalizedRow from '$lib/components/cards/PersonalizedRow.svelte'
   import RecentReleaseRow from '$lib/components/cards/RecentReleaseRow.svelte'
-  import SmallCard from '$lib/components/cards/SmallCard.svelte'
+  import CatalogSectionRow from './CatalogSectionRow.svelte'
+  import HomeRowFrame from './HomeRowFrame.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { mediaHref } from '$lib/anilist/media'
   import { homeSections } from '$lib/anilist/queries'
@@ -19,7 +19,7 @@
     loadCatalogProvider,
     mergedCatalogHomeRowOptions,
   } from '$lib/catalog/registry'
-  import { CatalogConfigurationError, type CatalogHome } from '$lib/catalog/types'
+  import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption } from '$lib/catalog/types'
   import {
     catalogLabel,
     catalogProviders,
@@ -46,6 +46,7 @@
   const selections = $derived(mergedCatalogProviders($catalogProviders))
   const hasAniList = $derived(selections.includes('auto') || selections.includes('anilist'))
   const rows = $derived(resolveCatalogHomeRows('merged', options, $catalogHomeLayouts).filter((row) => row.enabled))
+  const visibleRowIds = $derived(rows.map((row) => row.id))
   const optionsKey = $derived(JSON.stringify(selections))
   const externalRequestKey = $derived(JSON.stringify(rows.flatMap((row) => {
     const decoded = decodeMergedCatalogHomeRowId(row.id)
@@ -118,6 +119,12 @@
     if (more.sourceId) params.set('source', more.sourceId)
     return `/app/search?${params}`
   }
+
+  function editorTitle(row: CatalogHomeRowOption): string {
+    if (row.id === 'continue') return row.title
+    const decoded = decodeMergedCatalogHomeRowId(row.id)
+    return decoded ? `${row.title} · ${catalogLabel(decoded.selection)}` : row.title
+  }
 </script>
 
 <div class="pb-16">
@@ -132,33 +139,32 @@
 
   <div class="space-y-5">
     {#each rows as row (row.id)}
-      {#if row.id === 'continue'}
-        {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
-      {:else}
-        {@const decoded = decodeMergedCatalogHomeRowId(row.id)}
-        {#if decoded?.selection === 'auto' || decoded?.selection === 'anilist'}
-          {#if decoded.rowId === 'recent'}
-            <RecentReleaseRow />
-          {:else if decoded.rowId === 'list'}
-            {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
-            {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" preferLinkedRating={decoded.selection === 'auto'} />{/if}
-          {:else if decoded.rowId === 'recommendations'}
-            {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
-          {:else}
-            {@const section = anilistSectionMap.get(decoded.rowId)}
-            {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} preferLinkedRating={decoded.selection === 'auto'} />{/if}
-          {/if}
-        {:else if decoded}
-          {@const section = homes[decoded.selection]?.sections.find((item) => item.id === decoded.rowId)}
-          {#if section}
-            <Carousel title={`${row.title} · ${catalogLabel(decoded.selection)}`} viewMoreHref={moreHref(decoded.selection, section.more)}>
-              {#each section.media as media (media.catalog?.id ?? media.id)}
-                <div class="load-in shrink-0"><SmallCard {media} /></div>
-              {/each}
-            </Carousel>
+      <HomeRowFrame rowId={row.id} title={editorTitle(row)} target="merged" visibleIds={visibleRowIds}>
+        {#if row.id === 'continue'}
+          {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} catalogScope="all" />{/key}
+        {:else}
+          {@const decoded = decodeMergedCatalogHomeRowId(row.id)}
+          {#if decoded?.selection === 'auto' || decoded?.selection === 'anilist'}
+            {#if decoded.rowId === 'recent'}
+              <RecentReleaseRow />
+            {:else if decoded.rowId === 'list'}
+              {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
+              {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" preferLinkedRating={decoded.selection === 'auto'} />{/if}
+            {:else if decoded.rowId === 'recommendations'}
+              {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
+            {:else}
+              {@const section = anilistSectionMap.get(decoded.rowId)}
+              {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} preferLinkedRating={decoded.selection === 'auto'} />{/if}
+            {/if}
+          {:else if decoded}
+            {@const section = homes[decoded.selection]?.sections.find((item) => item.id === decoded.rowId)}
+            {#if section}
+              <CatalogSectionRow {section} title={`${row.title} · ${catalogLabel(decoded.selection)}`}
+                viewMoreHref={moreHref(decoded.selection, section.more)} />
+            {/if}
           {/if}
         {/if}
-      {/if}
+      </HomeRowFrame>
     {/each}
 
     {#if optionsLoading || (homeLoading && !rows.length)}

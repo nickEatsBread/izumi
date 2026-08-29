@@ -2,15 +2,18 @@ import { persisted } from 'svelte-persisted-store'
 import { derived, get, writable } from 'svelte/store'
 
 export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio' | 'jvm'
-export type CatalogDefaultSelection = CatalogSelection | 'adaptive'
+export type CatalogScreen = CatalogSelection | 'merged'
+export type CatalogDefaultSelection = CatalogScreen | 'adaptive'
 export type CatalogMode = 'separate' | 'merged'
 export type ContinueWatchingCatalogScope = 'provider' | 'all'
 export type CatalogSwitcherPlacement = 'automatic' | 'integrated' | 'below'
+export type StremioHeroArtwork = 'backdrop' | 'cover'
 
 export const CATALOG_SELECTIONS: CatalogSelection[] = ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']
 
 export const catalogLabel = (provider: CatalogDefaultSelection): string => ({
   adaptive: 'Adaptive',
+  merged: 'Merged',
   auto: 'Automatic anime',
   anilist: 'AniList',
   kitsu: 'Kitsu',
@@ -82,9 +85,38 @@ export function mergedCatalogProviders(value: unknown): CatalogSelection[] {
   return providers.includes('auto') ? providers.filter((provider) => provider !== 'anilist') : providers
 }
 
-/** Separate preserves the provider-by-provider Home switcher. Merged composes enabled providers
- * into one independently configurable Home and searches them together by default. */
-export const catalogMode = persisted<CatalogMode>('catalog-mode', 'separate')
+/** The old release made Merged a global mode. Keep its value only as a one-time migration seed;
+ * Merged is now a normal destination beside the enabled providers in the Home picker. */
+const legacyCatalogMode = persisted<CatalogMode>('catalog-mode', 'separate')
+const legacyWasMerged = get(legacyCatalogMode) === 'merged'
+// Carry the old global choice into the equivalent fixed Home destination exactly once.
+if (legacyWasMerged) catalogDefaultProvider.set('merged')
+
+/** Merged is useful only when it can combine at least two distinct provider experiences. Automatic
+ * anime already contains AniList, so enabling both does not manufacture a duplicate screen. */
+export function catalogScreens(value: unknown): CatalogScreen[] {
+  const providers = normalizeCatalogProviders(value)
+  return mergedCatalogProviders(providers).length > 1 ? [...providers, 'merged'] : providers
+}
+
+export const enabledCatalogScreens = derived(catalogProviders, ($providers) => catalogScreens($providers))
+
+function adjacentCatalogScreen(
+  current: CatalogScreen,
+  providers: unknown,
+  direction: 1 | -1,
+): CatalogScreen {
+  const screens = catalogScreens(providers)
+  const index = screens.indexOf(current)
+  if (index < 0) return screens[0]
+  return screens[(index + direction + screens.length) % screens.length]
+}
+
+export const nextCatalogScreen = (current: CatalogScreen, providers: unknown): CatalogScreen =>
+  adjacentCatalogScreen(current, providers, 1)
+
+export const previousCatalogScreen = (current: CatalogScreen, providers: unknown): CatalogScreen =>
+  adjacentCatalogScreen(current, providers, -1)
 
 /** The last platform the user actually selected. It is written at switch time rather than only on
  * exit, so Adaptive also survives a crash or forced Steam shutdown. A fixed default does not alter
@@ -98,6 +130,39 @@ export const catalogProvider = writable<CatalogSelection>(resolveCatalogStartup(
   get(catalogLastProvider),
   get(catalogProviders),
 ))
+
+export const catalogLastScreen = persisted<CatalogScreen>(
+  'catalog-last-screen',
+  legacyWasMerged ? 'merged' : get(catalogLastProvider),
+)
+
+export function resolveCatalogScreenStartup(
+  defaultProvider: unknown,
+  lastScreen: unknown,
+  providers: unknown,
+): CatalogScreen {
+  const screens = catalogScreens(providers)
+  if (defaultProvider === 'adaptive'
+      && typeof lastScreen === 'string'
+      && screens.includes(lastScreen as CatalogScreen)) return lastScreen as CatalogScreen
+  if (typeof defaultProvider === 'string'
+      && screens.includes(defaultProvider as CatalogScreen)) return defaultProvider as CatalogScreen
+  return screens[0]
+}
+
+/** The active Home/Search destination. Provider state stays separate so playback history and
+ * provider-specific filters always retain a concrete catalog while Merged is on screen. */
+export const catalogScreen = writable<CatalogScreen>(resolveCatalogScreenStartup(
+  get(catalogDefaultProvider),
+  get(catalogLastScreen),
+  get(catalogProviders),
+))
+
+if (legacyWasMerged) legacyCatalogMode.set('separate')
+
+/** Compatibility read for older call sites and persisted data. New UI should use catalogScreen. */
+export const catalogMode = derived(catalogScreen, ($screen): CatalogMode =>
+  $screen === 'merged' ? 'merged' : 'separate')
 
 /** By default each catalog platform gets its own Continue Watching row. Users who prefer the old
  * combined row can opt into one list spanning every platform. */
@@ -122,6 +187,13 @@ export const catalogSwitcherPlacement = persisted<CatalogSwitcherPlacement>(
   'automatic',
 )
 
+/** Stremio metadata normally supplies both a wide backdrop and portrait cover. Desktop users can
+ * keep the cinematic backdrop treatment or deliberately retain the cover as the hero focal art. */
+export const stremioHeroArtwork = persisted<StremioHeroArtwork>(
+  'stremio-home-hero-artwork',
+  'backdrop',
+)
+
 /** Per-source catalog visibility is independent from source/package enablement. Missing entries
  * default on, so installing a new JVM source makes it discoverable without silently changing the
  * user's explicit choices for sources they already configured. */
@@ -138,6 +210,17 @@ export function isJvmCatalogSourceEnabled(sourceId: string, overrides: unknown):
 export function selectCatalogProvider(provider: CatalogSelection): void {
   catalogProvider.set(provider)
   catalogLastProvider.set(provider)
+  catalogScreen.set(provider)
+  catalogLastScreen.set(provider)
+}
+
+export function selectCatalogScreen(screen: CatalogScreen): void {
+  if (screen === 'merged') {
+    catalogScreen.set(screen)
+    catalogLastScreen.set(screen)
+    return
+  }
+  selectCatalogProvider(screen)
 }
 
 /** A desktop app cannot safely embed a shared TMDB application credential in its distributable.

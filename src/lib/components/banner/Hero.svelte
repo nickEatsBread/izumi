@@ -8,6 +8,8 @@
   import Clock3 from '@lucide/svelte/icons/clock-3'
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
+  import TrendingUp from '@lucide/svelte/icons/trending-up'
+  import Award from '@lucide/svelte/icons/award'
   import * as h from '$lib/haptics'
   import { isAndroid, isMobile } from '$lib/platform'
   import { get } from 'svelte/store'
@@ -16,6 +18,7 @@
   import { airingCountdown, airingCountdownAccessible } from '$lib/anime/airing-labels'
   import { dragCarousels, wheelScrollAcross } from '$lib/settings/ui'
   import { untrack } from 'svelte'
+  import { findTopAnimeAward } from '$lib/catalog/anime-awards'
 
   // Bottom-left content column + clean linear scrims. Discovery facts stay deliberately compact:
   // format/runtime/production/score, then one context line for next-airing + genres. Detail pages
@@ -27,6 +30,7 @@
     onfav,
     showOverlay = true,
     initialArtworkVisible = false,
+    artworkMode = 'backdrop',
   }: {
     medias: Media[]
     onplay?: (m: Media) => void
@@ -35,6 +39,8 @@
     showOverlay?: boolean
     /** The detail skeleton already painted this exact banner; settle it without replaying a slide. */
     initialArtworkVisible?: boolean
+    /** Desktop Home can retain portrait cover art instead of cropping it into a wide backdrop. */
+    artworkMode?: 'backdrop' | 'cover'
   } = $props()
 
   let i = $state(0)
@@ -239,6 +245,9 @@
       : '',
   )
   const productionLabel = $derived(current?.studios?.nodes?.[0]?.name || season(current))
+  const featuredRankLabel = $derived(current?.featuredRank
+    ? `#${current.featuredRank.position} in ${current.featuredRank.label}` : '')
+  const featuredAward = $derived(current ? findTopAnimeAward(title(current)) : null)
   const scoreColor = (s?: number) =>
     s == null ? 'text-white/70' : s >= 75 ? 'text-green-400' : s >= 65 ? 'text-orange-400' : 'text-red-400'
   const cleanDesc = (d?: string) => (d ?? '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()
@@ -275,6 +284,20 @@
                 onclick={openCurrent} aria-label={`View details for ${title(current)}`}></button>
       {/if}
       <div class="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col gap-2 p-4">
+        {#if featuredRankLabel || featuredAward}
+          <div class="flex flex-wrap gap-1.5">
+            {#if featuredRankLabel}
+              <span class="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-black/65 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
+                <TrendingUp size={12} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
+              </span>
+            {/if}
+            {#if featuredAward}
+              <span class="inline-flex items-center gap-1.5 rounded-full border border-orange-300/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-black text-white shadow-lg backdrop-blur">
+                <Award size={12} class="text-orange-300" aria-hidden="true" />Crunchyroll · {featuredAward.year} {featuredAward.category}
+              </span>
+            {/if}
+          </div>
+        {/if}
         {#if currentLogo}
           <h1 aria-label={title(current)} class="h-16 w-[82%]">
             <img src={currentLogo} alt="" loading="eager" decoding="async"
@@ -351,10 +374,18 @@
       {#key current.id}
         <div class="{initialArtworkVisible && !showOverlay ? 'detail-hero-reveal' : 'hero-slide-in'} absolute inset-0" style="--hero-enter-x:{navDirection * 3}%;--hero-final-opacity:.7">
           {#if !artworkReady}<div class="absolute inset-0 skeloader"></div>{/if}
-          <img src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
-               onload={artworkSettled} onerror={artworkSettled}
-               class="relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}"
-               style="object-position:center 20%" />
+          {#if artworkMode === 'cover'}
+            <img src={cover(current)} alt="" aria-hidden="true" draggable="false" loading="eager" decoding="async"
+                 class="absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-2xl" />
+            <img src={cover(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
+                 onload={artworkSettled} onerror={artworkSettled}
+                 class="relative ml-auto h-full w-[min(50vw,36rem)] object-contain object-right py-7 pr-[5vw] transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}" />
+          {:else}
+            <img src={banner(current)} alt="" draggable="false" loading="eager" decoding="async" fetchpriority="high"
+                 onload={artworkSettled} onerror={artworkSettled}
+                 class="relative h-full w-full object-cover transition-opacity duration-200 {artworkReady ? 'opacity-100' : 'opacity-0'}"
+                 style="object-position:center 20%" />
+          {/if}
         </div>
       {/key}
       <!-- Dual linear scrims: bright top-right, dark bottom-left. -->
@@ -385,6 +416,20 @@
       <div class="absolute inset-x-0 bottom-0 flex flex-col gap-3 px-4 pb-6 sm:px-8 sm:pb-8">
         {#key current.id}
         <div class="hero-copy max-w-2xl" style="--hero-enter-x:{navDirection * 1.5}%">
+          {#if featuredRankLabel || featuredAward}
+            <div class="mb-4 flex flex-wrap gap-2">
+              {#if featuredRankLabel}
+                <span class="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-black/55 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur">
+                  <TrendingUp size={15} class="text-orange-300" aria-hidden="true" />{featuredRankLabel}
+                </span>
+              {/if}
+              {#if featuredAward}
+                <span class="inline-flex items-center gap-2 rounded-lg border border-orange-300/20 bg-black/55 px-3 py-1.5 text-sm font-black text-white shadow-lg backdrop-blur">
+                  <Award size={15} class="text-orange-300" aria-hidden="true" />Crunchyroll · {featuredAward.year} {featuredAward.category} winner
+                </span>
+              {/if}
+            </div>
+          {/if}
           {#if currentLogo}
             <h1 aria-label={title(current)} class="h-24 w-[min(34rem,70vw)]">
               <img src={currentLogo} alt="" loading="eager" decoding="async"

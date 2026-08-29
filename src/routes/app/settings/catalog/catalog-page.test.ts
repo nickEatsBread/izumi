@@ -5,17 +5,16 @@ import { describe, expect, it } from 'vitest'
 const source = readFileSync(fileURLToPath(new URL('./+page.svelte', import.meta.url)), 'utf8')
 
 describe('catalog settings', () => {
-  it('offers separate and merged catalog experiences', () => {
-    expect(source).toContain("{ value: 'separate', label: 'Separate catalogs' }")
-    expect(source).toContain("{ value: 'merged', label: 'Merged Home and Search' }")
-    expect(source).toContain('value={$catalogMode}')
-    expect(source).toContain('onChange={setCatalogMode}')
-    expect(source).toContain("$catalogMode === 'merged'")
+  it('treats Merged as a Home destination instead of a global experience mode', () => {
+    expect(source).toContain("label: id === 'merged' ? 'Merged'")
+    expect(source).toContain("selectCatalogScreen('merged')")
+    expect(source).not.toContain('onChange={setCatalogMode}')
+    expect(source).not.toContain('settingKey="catalog-mode"')
   })
 
   it('puts provider connections before catalog behaviour controls', () => {
-    expect(source.indexOf('<CatalogPlatformRow')).toBeLessThan(source.indexOf('settingKey="catalog-mode"'))
-    expect(source).toContain('title="Catalog experience" desc="Choose how your enabled platforms behave after connecting them."')
+    expect(source.indexOf('<CatalogPlatformRow')).toBeLessThan(source.indexOf('settingKey="default-catalog-platform"'))
+    expect(source).toContain('title="Browsing" desc="Choose how Home opens and where its catalog picker appears."')
   })
 
   it('offers every platform as an independently enabled row', () => {
@@ -28,16 +27,18 @@ describe('catalog settings', () => {
   it('keeps at least one platform enabled and repairs the default and active platforms', () => {
     expect(source).toContain('if (turningOff && current.length === 1) return')
     expect(source).toContain("$catalogDefaultProvider === 'adaptive'")
-    expect(source).toContain('selectCatalogProvider(resolveCatalogStartup(nextDefault')
+    expect(source).toContain('const fallback = resolveCatalogStartup(nextDefault')
+    expect(source).toContain('if (!nextScreens.includes($catalogScreen)) selectCatalogProvider(fallback)')
   })
 
   it('offers a mobile-friendly default platform selector from enabled choices', () => {
-    expect(source).toContain('title="Default platform"')
+    expect(source).toContain('title="Default Home"')
     expect(source).toContain('options={defaultOptions}')
     expect(source).toContain('onChange={setDefaultPlatform}')
     expect(source).toContain('controlLayout="stack"')
     expect(source).toContain("{ value: 'adaptive', label: 'Adaptive · last selected' }")
     expect(source).toContain("if (value === 'adaptive')")
+    expect(source).toContain("if (value === 'merged'")
   })
 
   it('lets Continue Watching stay provider-specific or combine every platform', () => {

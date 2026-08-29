@@ -1,10 +1,11 @@
 <script lang="ts">
-  import type { CatalogSelection } from '$lib/settings/catalog'
+  import type { CatalogScreen } from '$lib/settings/catalog'
   import Sparkles from '@lucide/svelte/icons/sparkles'
   import Coffee from '@lucide/svelte/icons/coffee'
+  import Layers3 from '@lucide/svelte/icons/layers-3'
 
-  let { platform }: { platform: CatalogSelection } = $props()
-  let failedPlatform = $state<CatalogSelection | null>(null)
+  let { platform }: { platform: CatalogScreen } = $props()
+  let failedPlatform = $state<CatalogScreen | null>(null)
   const imageFailed = $derived(failedPlatform === platform)
 
   function showFallback() {
@@ -15,7 +16,11 @@
   }
 </script>
 
-{#if platform === 'auto'}
+{#if platform === 'merged'}
+  <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 via-blue-500 to-violet-600 text-white shadow-inner" aria-hidden="true">
+    <Layers3 size={23} strokeWidth={2.5} />
+  </span>
+{:else if platform === 'auto'}
   <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-[#152232]" aria-hidden="true">
     {#if imageFailed}
       <span class="text-[9px] font-black text-[#02a9ff]">AL</span>
@@ -55,7 +60,7 @@
       <img
         src="https://www.themoviedb.org/assets/v4/logos/v2/blue_square_2-d537fb228cf3ded904ef09b136fe3fec72548ebc1fea3fbbd1ad9e36364db38b.svg"
         alt=""
-        class="absolute inset-0 size-10 object-cover"
+        class="absolute inset-1.5 size-7 object-contain"
         onerror={showFallback}
       />
     {/if}

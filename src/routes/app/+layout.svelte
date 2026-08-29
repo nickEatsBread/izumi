@@ -35,7 +35,7 @@
   import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
-  import { catalogDefaultProvider, catalogLastProvider, catalogProvider, enabledCatalogProviders, resolveCatalogStartup, selectCatalogProvider } from '$lib/settings/catalog'
+  import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogScreen, catalogScreens, enabledCatalogProviders, resolveCatalogStartup, selectCatalogProvider } from '$lib/settings/catalog'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
@@ -91,12 +91,20 @@
   $effect(() => {
     const enabled = $enabledCatalogProviders
     if (!enabled.length) return
-    if ($catalogDefaultProvider !== 'adaptive' && !enabled.includes($catalogDefaultProvider)) {
+    const screens = catalogScreens(enabled)
+    if ($catalogDefaultProvider !== 'adaptive' && !screens.includes($catalogDefaultProvider)) {
       $catalogDefaultProvider = enabled[0]
     }
+    const fallback = resolveCatalogStartup($catalogDefaultProvider, $catalogLastProvider, enabled)
     if (!enabled.includes($catalogProvider)) {
-      selectCatalogProvider(resolveCatalogStartup($catalogDefaultProvider, $catalogLastProvider, enabled))
+      if ($catalogScreen === 'merged' && screens.includes('merged')) {
+        $catalogProvider = fallback
+        $catalogLastProvider = fallback
+      } else {
+        selectCatalogProvider(fallback)
+      }
     }
+    if (!screens.includes($catalogScreen)) selectCatalogProvider(fallback)
   })
 
   function handleShellKeydown(event: KeyboardEvent) {

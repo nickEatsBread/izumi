@@ -8,12 +8,12 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import Hero from '$lib/components/banner/Hero.svelte'
-  import Carousel from '$lib/components/cards/Carousel.svelte'
-  import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
+  import CatalogSectionRow from './CatalogSectionRow.svelte'
+  import HomeRowFrame from './HomeRowFrame.svelte'
   import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
-  import { catalogProvider, jvmCatalogSourceOverrides } from '$lib/settings/catalog'
+  import { catalogProvider, jvmCatalogSourceOverrides, stremioHeroArtwork } from '$lib/settings/catalog'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { CONTINUE_HOME_ROW } from '$lib/catalog/home-options'
   import { mediaHref } from '$lib/anilist/media'
@@ -44,6 +44,7 @@
     }
     return result
   })
+  const visibleRowIds = $derived(contentRows.map((row) => row.id))
 
   $effect(() => {
     const selection = $catalogProvider
@@ -101,7 +102,8 @@
      same loading shimmer as every other catalog without repeatedly remounting the card tree. -->
 <div class="pb-16">
   {#if home?.hero.length}
-    <Hero medias={home.hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
+    <Hero medias={home.hero} artworkMode={$catalogProvider === 'stremio' ? $stremioHeroArtwork : 'backdrop'}
+      onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
   {:else if loading}
     <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
       <div class="absolute inset-0 skeloader"></div>
@@ -135,20 +137,15 @@
       {/each}
     {:else if home}
       {#each contentRows as row (row.id)}
-        {#if row.kind === 'continue'}
-          {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
-        {:else}
-          {@const section = row.section}
-          <Carousel title={section.title} viewMoreHref={section.more ? moreHref(section.more) : undefined}>
-            {#each section.media as media (media.catalog?.id ?? media.id)}
-              <!-- The row title already says "Popular/Latest · Source". Repeating the same source
-                   logo on every tile adds dozens of image decodes and no extra information. -->
-              <div class="shrink-0" class:load-in={$catalogProvider !== 'jvm'}>
-                <SmallCard {media} showCatalogSource={$catalogProvider !== 'jvm'} />
-              </div>
-            {/each}
-          </Carousel>
-        {/if}
+        <HomeRowFrame rowId={row.id} title={row.kind === 'continue' ? 'Continue Watching' : row.section.title} target={$catalogProvider} visibleIds={visibleRowIds}>
+          {#if row.kind === 'continue'}
+            {#key listUser}<ContinueRow title="Continue Watching" userName={listUser} malActive={!!$malToken || !!$malUser} />{/key}
+          {:else}
+            {@const section = row.section}
+            <CatalogSectionRow {section} viewMoreHref={section.more ? moreHref(section.more) : undefined}
+              showCatalogSource={$catalogProvider !== 'jvm'} />
+          {/if}
+        </HomeRowFrame>
       {/each}
       {#if !contentRows.length && !error}
         <div class="mx-4 rounded-xl bg-secondary/50 p-6 text-center text-sm text-muted-foreground sm:mx-8">This provider returned no browseable catalogs.</div>
