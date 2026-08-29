@@ -35,8 +35,8 @@
   import { streamPicker, connecting, exitPrompt, nowPlayingMedia } from '$lib/player/session'
   import { playing, fullscreen, pictureInPicture, exitPictureInPicture, gameMode, gameModeResolved, initGameMode, debridCaching } from '$lib/player/session'
   import { uiScale, enableDoH, doHUrl, playerCacheMb, playerCacheBytes, hotkeyBindings } from '$lib/settings/ui'
-  import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogScreen, catalogScreens, enabledCatalogProviders, resolveCatalogStartup, selectCatalogProvider } from '$lib/settings/catalog'
-  import { afterNavigate, beforeNavigate } from '$app/navigation'
+  import { catalogDefaultProvider, catalogLastProvider, catalogProvider, catalogProviders, catalogScreen, catalogScreens, enabledCatalogProviders, enabledCatalogScreens, nextCatalogScreen, previousCatalogScreen, resolveCatalogStartup, selectCatalogProvider, selectCatalogScreen } from '$lib/settings/catalog'
+  import { afterNavigate, beforeNavigate, goto } from '$app/navigation'
   import { invoke } from '@tauri-apps/api/core'
   import { initInput, initDpadNav, suppressNativeContextMenus, suppressNativeTooltips } from '$lib/nav'
   import { startGamepadNav } from '$lib/nav/gamepad'
@@ -66,6 +66,7 @@
   import { trailerPopup } from '$lib/stores/trailer'
   import { findHotkey, isTypingTarget } from '$lib/hotkeys'
   import { markClientPerformance } from '$lib/performance/client'
+  import * as h from '$lib/haptics'
   let { children } = $props()
   let globalSearchMounted = $state(false)
   let trailerDialogMounted = $state(false)
@@ -109,6 +110,19 @@
 
   function handleShellKeydown(event: KeyboardEvent) {
     if (event.defaultPrevented) return
+    const catalogAction = findHotkey(event, $hotkeyBindings, 'Home', $isMacOS)
+    if ((catalogAction === 'homeNextCatalog' || catalogAction === 'homePreviousCatalog')
+        && $enabledCatalogScreens.length > 1
+        && !$playing && !$androidMpvActive && !isTypingTarget(event.target)
+        && !document.querySelector('[data-nav-trap]')) {
+      event.preventDefault()
+      h.tap()
+      selectCatalogScreen(catalogAction === 'homePreviousCatalog'
+        ? previousCatalogScreen($catalogScreen, $catalogProviders)
+        : nextCatalogScreen($catalogScreen, $catalogProviders))
+      void goto('/app/home')
+      return
+    }
     if (!$globalSearchOpen && !$playing && !document.querySelector('[data-nav-trap]')
         && !isTypingTarget(event.target)
         && findHotkey(event, $hotkeyBindings, 'Global', $isMacOS) === 'globalSearch') {

@@ -6,6 +6,7 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.m
 
 describe('multi-platform catalog entry points', () => {
   const home = read('../../../routes/app/home/+page.svelte')
+  const layout = read('../../../routes/app/+layout.svelte')
   const search = read('../../../routes/app/search/+page.svelte')
   const sidebar = read('../shell/Sidebar.svelte')
   const catalogSettings = read('../../../routes/app/settings/catalog/+page.svelte')
@@ -49,13 +50,15 @@ describe('multi-platform catalog entry points', () => {
     expect(home).not.toContain('onclick={cycleCatalog}')
   })
 
-  it('cycles forward and backward with Control-Tab only on Home', () => {
-    expect(home).toContain('<svelte:window onkeydown={handleCatalogKeydown} />')
-    expect(home).toContain("findHotkey(event, $hotkeyBindings, 'Home', $isMacOS)")
-    expect(home).toContain('$playing || $androidMpvActive || isTypingTarget(event.target)')
-    expect(home).toContain("action === 'homePreviousCatalog'")
-    expect(home).toContain('previousCatalogScreen')
-    expect(home).toContain('nextCatalogScreen')
+  it('cycles forward and backward from every app screen and returns to Home', () => {
+    expect(home).not.toContain('handleCatalogKeydown')
+    expect(layout).toContain('<svelte:window onkeydown={handleShellKeydown} />')
+    expect(layout).toContain("findHotkey(event, $hotkeyBindings, 'Home', $isMacOS)")
+    expect(layout).toContain('$enabledCatalogScreens.length > 1')
+    expect(layout).toContain("catalogAction === 'homePreviousCatalog'")
+    expect(layout).toContain('previousCatalogScreen')
+    expect(layout).toContain('nextCatalogScreen')
+    expect(layout).toContain("goto('/app/home')")
   })
 
   it('feeds a featured carousel from every platform home', () => {

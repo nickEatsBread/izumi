@@ -11,14 +11,13 @@
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
-  import { isAndroid, isMacOS, isMobile } from '$lib/platform'
+  import { isAndroid, isMobile } from '$lib/platform'
   import { offlineMode } from '$lib/stores/offline'
   import DownloadedLibrary from '$lib/components/offline/DownloadedLibrary.svelte'
   import * as h from '$lib/haptics'
   import { effectiveNav, NAV_META } from '$lib/settings/nav'
   import type { Media } from '$lib/anilist/types'
   import { anilistDegraded } from '$lib/anilist/degraded'
-  import { hotkeyBindings } from '$lib/settings/ui'
   import { catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
   import { ANILIST_HOME_ROWS } from '$lib/catalog/home-options'
   import { markClientPerformance } from '$lib/performance/client'
@@ -30,10 +29,7 @@
     enabledCatalogScreens,
     isLegacyAniListCatalog,
     mergedCatalogProviders,
-    nextCatalogScreen,
-    previousCatalogScreen,
     resolveCatalogSwitcherPlacement,
-    selectCatalogScreen,
   } from '$lib/settings/catalog'
   import CatalogHome from '$lib/components/catalog/CatalogHome.svelte'
   import MergedCatalogHome from '$lib/components/catalog/MergedCatalogHome.svelte'
@@ -41,9 +37,6 @@
   import HomeEditor from '$lib/components/catalog/HomeEditor.svelte'
   import HomeRowFrame from '$lib/components/catalog/HomeRowFrame.svelte'
   import { mediaHref } from '$lib/anilist/media'
-  import { playing } from '$lib/player/session'
-  import { androidMpvActive } from '$lib/player/android-mpv'
-  import { findHotkey, isTypingTarget } from '$lib/hotkeys'
 
   const client = getContextClient()
   const legacyCatalog = $derived(isLegacyAniListCatalog($catalogProvider))
@@ -100,18 +93,6 @@
   const canCycleCatalog = $derived($enabledCatalogScreens.length > 1)
   const switcherPlacement = $derived(resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, $isAndroid))
 
-  function handleCatalogKeydown(event: KeyboardEvent) {
-    if (event.defaultPrevented) return
-    const action = findHotkey(event, $hotkeyBindings, 'Home', $isMacOS)
-    if (action !== 'homeNextCatalog' && action !== 'homePreviousCatalog') return
-    if (!canCycleCatalog || $playing || $androidMpvActive || isTypingTarget(event.target)) return
-    event.preventDefault()
-    h.tap()
-    selectCatalogScreen(action === 'homePreviousCatalog'
-      ? previousCatalogScreen($catalogScreen, $catalogProviders)
-      : nextCatalogScreen($catalogScreen, $catalogProviders))
-  }
-
   // Only titles that have real landscape art: a bannerImage, or a YouTube trailer whose maxres
   // thumbnail banner() falls back to. Everything else would paint a stretched portrait cover.
   //
@@ -140,8 +121,6 @@
   })
 
 </script>
-
-<svelte:window onkeydown={handleCatalogKeydown} />
 
 {#if $isMobile}
   <!-- Top app bar: brand mark + wordmark on the left, configured top icons on the right. In-flow
