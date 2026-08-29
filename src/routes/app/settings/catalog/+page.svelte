@@ -10,6 +10,7 @@
     isJvmCatalogSourceEnabled,
     jvmCatalogSourceOverrides,
     normalizeCatalogProviders,
+    omdbApiKey,
     resolveCatalogStartup,
     selectCatalogProvider,
     tmdbReadToken,
@@ -19,13 +20,15 @@
     type CatalogSwitcherPlacement,
     type ContinueWatchingCatalogScope,
   } from '$lib/settings/catalog'
-  import { addonUrls } from '$lib/stremio/sources'
+  import { openUrl } from '@tauri-apps/plugin-opener'
+  import { addonUrls, CINEMETA_BASE, disabledSources, normalizeBase, replaceAddonBase } from '$lib/stremio/sources'
   import SettingsGroup from '$lib/components/settings/SettingsGroup.svelte'
   import SettingsRow from '$lib/components/settings/SettingsRow.svelte'
   import SelectMenu from '$lib/components/settings/SelectMenu.svelte'
   import CatalogPlatformRow from '$lib/components/catalog/CatalogPlatformRow.svelte'
   import JvmCatalogSourceRow from '$lib/components/catalog/JvmCatalogSourceRow.svelte'
   import JvmSourcePreferences from '$lib/components/catalog/JvmSourcePreferences.svelte'
+  import TmdbCredentialGuide from '$lib/components/catalog/TmdbCredentialGuide.svelte'
   import { installedJvmCatalogSources, type JvmCatalogSource } from '$lib/extensions/manager'
   import LibraryBig from '@lucide/svelte/icons/library-big'
   import KeyRound from '@lucide/svelte/icons/key-round'
@@ -33,6 +36,7 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal'
   import Rows3 from '@lucide/svelte/icons/rows-3'
   import Coffee from '@lucide/svelte/icons/coffee'
+  import CircleHelp from '@lucide/svelte/icons/circle-help'
 
   const platforms: Array<{ id: CatalogSelection; label: string; description: string }> = [
     { id: 'auto', label: 'Automatic anime', description: 'AniList with automatic Kitsu and Jikan fallbacks.' },
@@ -48,6 +52,7 @@
   let jvmSourcesLoaded = $state(false)
   let jvmSourcesError = $state('')
   let configuringJvmSource = $state<JvmCatalogSource | null>(null)
+  let showTmdbGuide = $state(false)
 
   const enabled = $derived(normalizeCatalogProviders($catalogProviders, $catalogProvider))
   const defaultOptions = $derived([
@@ -138,6 +143,18 @@
     if (!next.includes($catalogProvider)) {
       selectCatalogProvider(resolveCatalogStartup(nextDefault, $catalogLastProvider, next))
     }
+  }
+
+  function useKeylessCatalog() {
+    $addonUrls = replaceAddonBase($addonUrls, undefined, CINEMETA_BASE)
+    $disabledSources = $disabledSources.filter((url) => normalizeBase(url) !== CINEMETA_BASE)
+
+    const current = normalizeCatalogProviders($catalogProviders, $catalogProvider)
+    const next: CatalogSelection[] = [...current.filter((provider) => provider !== 'tmdb' && provider !== 'stremio'), 'stremio']
+    $catalogProviders = next
+    if ($catalogDefaultProvider === 'tmdb') $catalogDefaultProvider = 'stremio'
+    selectCatalogProvider('stremio')
+    showTmdbGuide = false
   }
 </script>
 
@@ -241,14 +258,28 @@
   {#if hasPlatform('tmdb')}
     <SettingsGroup icon={KeyRound} title="TMDB access">
       <SettingsRow title="Read access token" description="A personal free non-commercial credential; stored only on this device.">
-        <p class="mb-2 text-xs text-muted-foreground">
-          Create one in your
-          <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer" data-focusable class="font-bold text-theme underline underline-offset-2 hover:no-underline">TMDB API settings</a>.
-        </p>
+        <button type="button" data-focusable onclick={() => (showTmdbGuide = true)} class="mb-3 inline-flex min-h-9 items-center gap-2 rounded-lg bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">
+          <CircleHelp size={15} aria-hidden="true" /> How to get a free token
+        </button>
         <input bind:value={$tmdbReadToken} type="password" autocomplete="off" spellcheck="false" data-focusable
           placeholder="eyJhbGciOiJIUzI1NiJ9…" aria-label="TMDB read access token"
           class="h-11 w-full rounded-md bg-input px-3 font-mono text-base sm:h-10 sm:text-sm" />
         <p class="mt-2 text-[11px] text-muted-foreground">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+      </SettingsRow>
+    </SettingsGroup>
+  {/if}
+
+  {#if hasPlatform('tmdb') || hasPlatform('stremio')}
+    <SettingsGroup icon={KeyRound} title="Optional review ratings" desc="Add critic ratings to titles that have an IMDb ID.">
+      <SettingsRow title="OMDb API key" description="Adds Rotten Tomatoes, Metacritic, IMDb vote counts, and richer rating details. The keyless IMDb score continues to work without it.">
+        <button type="button" data-focusable onclick={() => openUrl('https://www.omdbapi.com/apikey.aspx')}
+          class="mb-3 inline-flex min-h-9 items-center gap-2 rounded-lg bg-secondary px-3 text-xs font-bold transition-colors hover:bg-accent">
+          Get a free OMDb key
+        </button>
+        <input bind:value={$omdbApiKey} type="password" autocomplete="off" spellcheck="false" data-focusable
+          placeholder="OMDb API key" aria-label="OMDb API key"
+          class="h-11 w-full rounded-md bg-input px-3 font-mono text-base sm:h-10 sm:text-sm" />
+        <p class="mt-2 text-[11px] text-muted-foreground">Stored only on this device. The free OMDb tier currently allows 1,000 requests per day.</p>
       </SettingsRow>
     </SettingsGroup>
   {/if}
@@ -296,4 +327,8 @@
     sourceName={configuringJvmSource.name}
     onClose={() => (configuringJvmSource = null)}
   />
+{/if}
+
+{#if showTmdbGuide}
+  <TmdbCredentialGuide onClose={() => (showTmdbGuide = false)} onUseKeyless={useKeylessCatalog} />
 {/if}

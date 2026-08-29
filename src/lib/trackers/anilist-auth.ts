@@ -1,10 +1,14 @@
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { get } from 'svelte/store'
-import { anilistToken, anilistClientId, anilistUserName, anilistUserAvatar } from './config'
+import {
+  anilistToken, anilistClientId, anilistUserName, anilistUserAvatar,
+  connectedTrackerProviders, forgetTrackerConnection, recordTrackerConnection,
+} from './config'
 import { anilistUser } from '$lib/anilist/account'
 import { captureLogin, redirectUri } from './oauth'
 
 export async function connectAniList() {
+  const connectedBefore = connectedTrackerProviders()
   if (!anilistClientId) throw new Error('Missing AniList Client ID (set PUBLIC_ANILIST_CLIENT_ID in .env.local).')
   const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${anilistClientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token`
   const u = await captureLogin(authUrl, 'AniList')
@@ -12,6 +16,7 @@ export async function connectAniList() {
   const token = frag.get('access_token') ?? u.searchParams.get('access_token')
   if (!token) throw new Error('No access token in redirect.')
   anilistToken.set(token)
+  recordTrackerConnection('anilist', connectedBefore)
   await refreshAniListViewer(token)
   if (!get(anilistUserName)) anilistUserName.set('AniList user')
 }
@@ -53,4 +58,9 @@ export async function refreshAniListAvatar(): Promise<void> {
   catch { /* ignore */ }
 }
 
-export function disconnectAniList() { anilistToken.set(null); anilistUserName.set(''); anilistUserAvatar.set('') }
+export function disconnectAniList() {
+  anilistToken.set(null)
+  anilistUserName.set('')
+  anilistUserAvatar.set('')
+  forgetTrackerConnection('anilist')
+}

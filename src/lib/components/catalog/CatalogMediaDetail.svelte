@@ -3,12 +3,12 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left'
   import Play from '@lucide/svelte/icons/play'
   import ExternalLink from '@lucide/svelte/icons/external-link'
-  import Star from '@lucide/svelte/icons/star'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import Carousel from '$lib/components/cards/Carousel.svelte'
   import CatalogSourceAttribution from './CatalogSourceAttribution.svelte'
   import { loadCatalogProvider } from '$lib/catalog/registry'
+  import { CatalogConfigurationError } from '$lib/catalog/types'
   import type { CatalogContentType, CatalogProviderId, MediaRef } from '$lib/catalog/identity'
   import { providerExternalUrl } from '$lib/catalog/identity'
   import { banner, cover, format, season, status, title } from '$lib/anilist/media'
@@ -16,12 +16,14 @@
   import { detailHints } from '$lib/anilist/detail-hint'
   import { playEpisode, type PlayState } from '$lib/stremio/play'
   import { parseCatalogDescription } from '$lib/catalog/description'
+  import MediaRatings from './MediaRatings.svelte'
 
   let { provider, type, id }: { provider: CatalogProviderId; type: CatalogContentType; id: string } = $props()
   const ref = $derived({ provider, type, id } as MediaRef)
   let media = $state<Media | null>(null)
   let loading = $state(true)
   let error = $state('')
+  let tmdbNeedsConfiguration = $state(false)
   let playState = $state<PlayState>({ status: 'idle' })
   let retry = $state(0)
   let failedLogo = $state('')
@@ -33,11 +35,15 @@
     const abort = new AbortController()
     loading = true
     error = ''
+    tmdbNeedsConfiguration = false
     media = null
     void loadCatalogProvider(request.provider).then((catalog) => catalog.detail(request, abort.signal)).then((result) => {
       if (!abort.signal.aborted) media = result
     }).catch((reason) => {
-      if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
+      if (!abort.signal.aborted) {
+        error = reason instanceof Error ? reason.message : String(reason)
+        tmdbNeedsConfiguration = request.provider === 'tmdb' && reason instanceof CatalogConfigurationError
+      }
     }).finally(() => { if (!abort.signal.aborted) loading = false })
     return () => abort.abort()
   })
@@ -55,6 +61,14 @@
   const isMovie = $derived(media?.catalog?.type === 'movie' || media?.format === 'MOVIE')
   const titleLogo = $derived(media?.logoImage && media.logoImage !== failedLogo ? media.logoImage : '')
   const parsedDescription = $derived(parseCatalogDescription(media?.description))
+  const releaseDate = $derived.by(() => {
+    if (!media?.releaseDate) return ''
+    const date = new Date(`${media.releaseDate}T00:00:00`)
+    return Number.isNaN(date.valueOf()) ? media.releaseDate : new Intl.DateTimeFormat(undefined, { dateStyle: 'long' }).format(date)
+  })
+  const watchKind = (kind: NonNullable<Media['watchProviders']>[number]['kind']) => ({
+    subscription: 'Stream', free: 'Free', ads: 'Free with ads', rent: 'Rent', buy: 'Buy',
+  })[kind]
   const attributedMedia = $derived.by(() => {
     if (!media || media.catalog?.provider !== 'jvm') return media
     const remembered = $detailHints[media.id]
@@ -83,7 +97,11 @@
     <div class="max-w-lg rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-center">
       <h1 class="text-xl font-black">{error ? 'Couldn’t load this title' : 'Title not found'}</h1>
       {#if error}<p class="mt-2 text-sm text-muted-foreground">{error}</p>{/if}
-      <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Retry</button>
+      {#if tmdbNeedsConfiguration}
+        <a href="/app/settings/catalog" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 font-bold text-primary-foreground">Add TMDB token</a>
+      {:else}
+        <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 font-bold text-primary-foreground">Retry</button>
+      {/if}
     </div>
   </div>
 {:else}
@@ -114,12 +132,12 @@
             {#if season(media)}<span>{season(media)}</span>{/if}
             {#if status(media)}<span>{status(media)}</span>{/if}
             {#if media.startDate?.year}<span>{media.startDate.year}</span>{/if}
-            {#if parsedDescription.score != null}
-              <span class="flex items-center gap-1"><Star size={14} class="fill-current text-amber-300" /> {parsedDescription.score.toFixed(1)}</span>
-            {:else if media.averageScore}<span>{media.averageScore}%</span>{/if}
+            {#if media.contentRating}<span class="rounded border border-foreground/25 px-1.5 font-bold">{media.contentRating}</span>{/if}
           </div>
+          <div class="mt-3"><MediaRatings {media} embeddedScore={parsedDescription.score} /></div>
+          {#if media.tagline}<p class="mt-4 text-base font-semibold italic text-foreground/75">“{media.tagline}”</p>{/if}
           {#if parsedDescription.synopsis}
-            <p class="mt-4 line-clamp-5 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-foreground/80 sm:text-base">{parsedDescription.synopsis}</p>
+            <p class="mt-3 line-clamp-5 max-w-3xl whitespace-pre-line text-sm leading-relaxed text-foreground/80 sm:text-base">{parsedDescription.synopsis}</p>
           {/if}
           {#if provider === 'jvm' && attributedMedia?.catalog?.sourceName}
             <div class="mt-4 max-w-full text-sm font-bold text-foreground/75">
@@ -167,6 +185,42 @@
             </div>
           {/each}
         </dl>
+      </section>
+    {/if}
+
+    {#if releaseDate || media.duration || media.originalLanguage || media.studios?.nodes?.length}
+      <section class="mt-3 max-w-6xl px-5 sm:px-8" aria-label="Title information">
+        <dl class="flex flex-wrap gap-x-7 gap-y-3 border-y border-border/60 py-3">
+          {#if releaseDate}<div><dt class="text-[0.7rem] font-semibold text-muted-foreground">Released</dt><dd class="mt-0.5 text-sm font-bold">{releaseDate}</dd></div>{/if}
+          {#if media.duration}<div><dt class="text-[0.7rem] font-semibold text-muted-foreground">Runtime</dt><dd class="mt-0.5 text-sm font-bold">{media.duration} min</dd></div>{/if}
+          {#if media.originalLanguage}<div><dt class="text-[0.7rem] font-semibold text-muted-foreground">Original language</dt><dd class="mt-0.5 text-sm font-bold uppercase">{media.originalLanguage}</dd></div>{/if}
+          {#if media.studios?.nodes?.length}<div class="max-w-xl"><dt class="text-[0.7rem] font-semibold text-muted-foreground">Studios & networks</dt><dd class="mt-0.5 text-sm font-bold">{media.studios.nodes.map((studio) => studio.name).join(', ')}</dd></div>{/if}
+        </dl>
+      </section>
+    {/if}
+
+    {#if media.watchProviders?.length}
+      <section class="mt-8 px-5 sm:px-8" aria-label="Where to watch">
+        <div class="mb-3 flex flex-wrap items-baseline gap-x-3">
+          <h2 class="text-xl font-black">Where to watch</h2>
+          <span class="text-xs text-muted-foreground">{media.watchRegion} · availability by JustWatch</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {#each media.watchProviders as watch (`${watch.id ?? watch.name}:${watch.kind}`)}
+            <button data-focusable disabled={!watch.url} onclick={() => watch.url && openUrl(watch.url)}
+              class="flex min-h-11 items-center gap-2 rounded-lg border border-border bg-secondary/65 px-2.5 py-2 text-left transition hover:bg-secondary disabled:cursor-default">
+              {#if watch.logoImage}<img src={watch.logoImage} alt="" loading="lazy" class="size-8 rounded-md bg-white object-cover" />{/if}
+              <span><span class="block text-sm font-bold">{watch.name}</span><span class="block text-[0.65rem] text-muted-foreground">{watchKind(watch.kind)}</span></span>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if media.tags?.length}
+      <section class="mt-6 px-5 sm:px-8" aria-label="Keywords">
+        <h2 class="mb-3 text-sm font-black uppercase tracking-wide text-muted-foreground">Keywords</h2>
+        <div class="flex max-w-5xl flex-wrap gap-1.5">{#each media.tags.slice(0, 18) as tag (tag.name)}<span class="rounded-md bg-secondary/60 px-2 py-1 text-xs text-foreground/75">{tag.name}</span>{/each}</div>
       </section>
     {/if}
 

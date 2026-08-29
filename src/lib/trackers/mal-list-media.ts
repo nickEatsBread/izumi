@@ -52,6 +52,7 @@ export function mapMalAnimeListMedia(node: MalAnimeListNode, anilistId: number):
       ? Math.max(1, Math.round(node.average_episode_duration / 60))
       : undefined,
     averageScore: node.mean ? Math.round(node.mean * 10) : undefined,
+    ratings: node.mean ? [{ source: 'MyAnimeList', score: node.mean, scale: 10 }] : undefined,
     popularity: node.num_list_users,
     synonyms: alternatives.synonyms ?? [],
     startDate: date

@@ -3,14 +3,19 @@ import { get } from 'svelte/store'
 import { phttp } from '$lib/net/http'
 import { showAdult } from '$lib/settings/ui'
 import { tmdbReadToken } from '$lib/settings/catalog'
-import type { Media, MediaVideo } from '$lib/anilist/types'
+import { CINEMETA_BASE } from '$lib/stremio/sources'
+import type { Media, MediaRating, MediaVideo, MediaWatchProvider } from '$lib/anilist/types'
 import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
 import { TMDB_HOME_ROWS } from '../home-options'
 import { compatibilityMediaId, type MediaRef } from '../identity'
 import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection, type CatalogPage, type CatalogProvider, type CatalogSearchOptions, type CatalogSearchRequest } from '../types'
+import { enrichOmdbRatings } from './omdb'
 
 const API = 'https://api.themoviedb.org/3'
 const IMAGE = 'https://image.tmdb.org/t/p'
+// en-US has TMDB's broadest English translation coverage. In particular, many anime entries have
+// an en-US title but no en-GB title, in which case TMDB falls back to the Japanese original.
+const TMDB_LANGUAGE = 'en-US'
 
 type TmdbKind = 'movie' | 'tv'
 
@@ -82,7 +87,33 @@ interface TmdbImages {
   logos?: TmdbImageFile[]
 }
 
+interface TmdbWatchProvider {
+  provider_id?: number
+  provider_name?: string
+  logo_path?: string | null
+}
+
+interface TmdbWatchEntry {
+  link?: string
+  flatrate?: TmdbWatchProvider[]
+  free?: TmdbWatchProvider[]
+  ads?: TmdbWatchProvider[]
+  rent?: TmdbWatchProvider[]
+  buy?: TmdbWatchProvider[]
+}
+
+interface TmdbReleaseCountry {
+  iso_3166_1?: string
+  release_dates?: { certification?: string; type?: number }[]
+}
+
+interface TmdbContentRating {
+  iso_3166_1?: string
+  rating?: string
+}
+
 interface TmdbDetail extends TmdbListItem {
+  tagline?: string
   status?: string
   runtime?: number
   episode_run_time?: number[]
@@ -99,6 +130,10 @@ interface TmdbDetail extends TmdbListItem {
   recommendations?: TmdbPage
   similar?: TmdbPage
   images?: TmdbImages
+  'watch/providers'?: { results?: Record<string, TmdbWatchEntry> }
+  release_dates?: { results?: TmdbReleaseCountry[] }
+  content_ratings?: { results?: TmdbContentRating[] }
+  keywords?: { keywords?: { id?: number; name?: string }[]; results?: { id?: number; name?: string }[] }
 }
 
 interface TmdbSeasonDetail {
@@ -138,6 +173,72 @@ async function tmdb<T>(path: string, params: Record<string, string | number | bo
 const image = (path: string | null | undefined, size: string) => path ? `${IMAGE}/${size}${path}` : undefined
 const yearOf = (date?: string) => /^\d{4}/.exec(date ?? '')?.[0]
 
+export function tmdbRegion(locale?: string): string {
+  try {
+    return new Intl.Locale(locale || (typeof navigator !== 'undefined' ? navigator.language : 'en-US')).region ?? 'US'
+  } catch {
+    return 'US'
+  }
+}
+
+function regionalValue<T extends { iso_3166_1?: string }>(values: T[], region: string): T | undefined {
+  return values.find((value) => value.iso_3166_1 === region)
+    ?? values.find((value) => value.iso_3166_1 === 'US')
+    ?? values.find((value) => value.iso_3166_1 === 'GB')
+    ?? values[0]
+}
+
+export function tmdbContentRating(raw: Pick<TmdbDetail, 'release_dates' | 'content_ratings'>, region: string): string | undefined {
+  const television = regionalValue(raw.content_ratings?.results ?? [], region)?.rating?.trim()
+  if (television) return television
+  const releases = regionalValue(raw.release_dates?.results ?? [], region)?.release_dates ?? []
+  return (releases.find((release) => release.type === 3 && release.certification?.trim())
+    ?? releases.find((release) => release.certification?.trim()))?.certification?.trim() || undefined
+}
+
+export function tmdbWatchProviders(raw: TmdbDetail['watch/providers'], region: string): MediaWatchProvider[] {
+  const results = raw?.results ?? {}
+  const entry = results[region] ?? results.US ?? results.GB ?? Object.values(results)[0]
+  if (!entry) return []
+  const groups: [MediaWatchProvider['kind'], TmdbWatchProvider[] | undefined][] = [
+    ['subscription', entry.flatrate], ['free', entry.free], ['ads', entry.ads], ['rent', entry.rent], ['buy', entry.buy],
+  ]
+  const seen = new Set<string>()
+  return groups.flatMap(([kind, providers]) => (providers ?? []).flatMap((provider) => {
+    if (!provider.provider_name) return []
+    const key = String(provider.provider_id ?? provider.provider_name).toLowerCase()
+    if (seen.has(key)) return []
+    seen.add(key)
+    return [{
+      id: provider.provider_id,
+      name: provider.provider_name,
+      logoImage: image(provider.logo_path, 'w92'),
+      kind,
+      url: entry.link,
+    } satisfies MediaWatchProvider]
+  }))
+}
+
+export function parseCinemetaRating(value: unknown): MediaRating | undefined {
+  const raw = value && typeof value === 'object'
+    ? (value as { meta?: { imdbRating?: unknown } }).meta?.imdbRating
+    : undefined
+  const score = typeof raw === 'number' ? raw : typeof raw === 'string' ? Number(raw) : Number.NaN
+  return Number.isFinite(score) && score > 0 && score <= 10 ? { source: 'IMDb', score, scale: 10 } : undefined
+}
+
+async function imdbRating(imdbId: string, kind: TmdbKind, signal?: AbortSignal): Promise<MediaRating | undefined> {
+  try {
+    const type = kind === 'movie' ? 'movie' : 'series'
+    const response = await phttp(`${CINEMETA_BASE}/meta/${type}/${encodeURIComponent(imdbId)}.json`, {
+      signal, timeoutMs: 8_000, maxBytes: 512 * 1024,
+    })
+    return response.ok ? parseCinemetaRating(await response.json()) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Prefer an English title treatment, then language-neutral clear art. TMDB normally returns
  * results by popularity, but ranking explicitly keeps the choice deterministic across responses. */
 export function pickTmdbLogo(images?: TmdbImages): string | undefined {
@@ -157,7 +258,7 @@ function tmdbLogo(kind: TmdbKind, id: string, signal?: AbortSignal): Promise<str
   const existing = logoRequests.get(key)
   if (existing) return existing
   const request = tmdb<TmdbImages>(`/${kind}/${encodeURIComponent(id)}/images`, {
-    language: 'en-GB', include_image_language: 'en,null',
+    language: TMDB_LANGUAGE, include_image_language: 'en,null',
   }, signal).then(pickTmdbLogo).catch((error) => {
     logoRequests.delete(key)
     throw error
@@ -190,25 +291,36 @@ export function mapTmdb(raw: TmdbListItem, kind: TmdbKind): Media | null {
   if (raw.id == null || raw.media_type === 'person') return null
   const ref = { provider: 'tmdb' as const, type: kind === 'movie' ? 'movie' as const : 'series' as const, id: String(raw.id) }
   const date = kind === 'movie' ? raw.release_date : raw.first_air_date
-  const title = raw.title ?? raw.name ?? raw.original_title ?? raw.original_name ?? 'Unknown title'
+  const englishTitle = raw.title ?? raw.name
+  const originalTitle = raw.original_title ?? raw.original_name
+  const title = englishTitle ?? originalTitle ?? 'Unknown title'
+  const rating = raw.vote_average != null && raw.vote_average > 0
+    ? { source: 'TMDB', score: raw.vote_average, scale: 10 as const, votes: raw.vote_count }
+    : undefined
   return {
     id: compatibilityMediaId(ref),
     catalog: ref,
     externalIds: { tmdb: raw.id },
     type: kind === 'movie' ? 'MOVIE' : 'SERIES',
     title: {
-      english: raw.title ?? raw.name,
-      native: raw.original_title ?? raw.original_name,
-      romaji: raw.original_title ?? raw.original_name ?? title,
+      english: englishTitle,
+      native: originalTitle,
+      // The global Romaji preference is meaningful for anime-native providers, but TMDB only
+      // supplies localized and original-script names. Keep TMDB cards on the English-localized
+      // name instead of treating a Japanese original_name as if it were Romaji.
+      romaji: englishTitle ?? originalTitle,
       userPreferred: title,
     },
     description: raw.overview,
     format: kind === 'movie' ? 'MOVIE' : 'TV',
     episodes: kind === 'movie' ? 1 : undefined,
     averageScore: raw.vote_average != null ? Math.round(raw.vote_average * 10) : undefined,
+    ratings: rating ? [rating] : undefined,
     popularity: raw.popularity != null ? Math.round(raw.popularity) : undefined,
     startDate: yearOf(date) ? { year: Number(yearOf(date)) } : undefined,
     countryOfOrigin: raw.origin_country?.[0],
+    originalLanguage: raw.original_language,
+    releaseDate: date,
     coverImage: {
       extraLarge: image(raw.poster_path, 'w780'),
       large: image(raw.poster_path, 'w342'),
@@ -229,7 +341,7 @@ function mapList(page: TmdbPage, forcedKind?: TmdbKind): Media[] {
 }
 
 async function list(path: string, kind: TmdbKind | undefined, signal?: AbortSignal, params: Record<string, string | number | boolean | undefined> = {}): Promise<Media[]> {
-  const page = await tmdb<TmdbPage>(path, { include_adult: get(showAdult), language: 'en-GB', page: 1, ...params }, signal)
+  const page = await tmdb<TmdbPage>(path, { include_adult: get(showAdult), language: TMDB_LANGUAGE, page: 1, ...params }, signal)
   return mapList(page, kind)
 }
 
@@ -346,7 +458,7 @@ export function tmdbDiscoverFilterParams(
   return {
     page: request.page ?? 1,
     include_adult: get(showAdult),
-    language: 'en-GB',
+    language: TMDB_LANGUAGE,
     sort_by: sortBy(kind, request.sort),
     with_genres: [animeOnly ? 16 : undefined, genre].filter((value) => value != null).join(',') || undefined,
     with_origin_country: request.country || (animeOnly && kind === 'tv' ? 'JP' : undefined),
@@ -367,8 +479,8 @@ async function discover(kind: TmdbKind, request: CatalogSearchRequest, animeOnly
 let genresPromise: Promise<{ movie: Map<string, number>; tv: Map<string, number> }> | null = null
 async function genreMaps(signal?: AbortSignal) {
   if (!genresPromise) genresPromise = Promise.all([
-    tmdb<{ genres?: { id?: number; name?: string }[] }>('/genre/movie/list', { language: 'en-GB' }, signal),
-    tmdb<{ genres?: { id?: number; name?: string }[] }>('/genre/tv/list', { language: 'en-GB' }, signal),
+    tmdb<{ genres?: { id?: number; name?: string }[] }>('/genre/movie/list', { language: TMDB_LANGUAGE }, signal),
+    tmdb<{ genres?: { id?: number; name?: string }[] }>('/genre/tv/list', { language: TMDB_LANGUAGE }, signal),
   ]).then(([movie, tv]) => ({
     movie: new Map((movie.genres ?? []).flatMap((genre) => genre.id != null && genre.name ? [[genre.name.toLowerCase(), genre.id]] : [])),
     tv: new Map((tv.genres ?? []).flatMap((genre) => genre.id != null && genre.name ? [[genre.name.toLowerCase(), genre.id]] : [])),
@@ -388,7 +500,7 @@ async function search(request: CatalogSearchRequest): Promise<CatalogPage> {
   if (query) {
     const path = request.type === 'movie' ? '/search/movie' : request.type === 'series' ? '/search/tv' : '/search/multi'
     result = await tmdb<TmdbPage>(path, {
-      query, page: pageNumber, include_adult: get(showAdult), language: 'en-GB',
+      query, page: pageNumber, include_adult: get(showAdult), language: TMDB_LANGUAGE,
       year: request.type === 'movie' ? request.year : undefined,
       first_air_date_year: request.type === 'series' ? request.year : undefined,
     }, request.signal)
@@ -482,7 +594,7 @@ async function televisionVideos(id: string, seasons: TmdbSeason[], signal?: Abor
     // the actual series rather than an OVA/recap entry.
     .sort((a, b) => ((a.season_number || Number.MAX_SAFE_INTEGER) - (b.season_number || Number.MAX_SAFE_INTEGER)))
   const pages = await mapConcurrent(numbered, 4, (season) =>
-    tmdb<TmdbSeasonDetail>(`/tv/${encodeURIComponent(id)}/season/${season.season_number}`, { language: 'en-GB' }, signal)
+    tmdb<TmdbSeasonDetail>(`/tv/${encodeURIComponent(id)}/season/${season.season_number}`, { language: TMDB_LANGUAGE }, signal)
       .catch(() => ({ season_number: season.season_number, episodes: [] })))
   let number = 0
   return pages.flatMap((season) => (season.episodes ?? []).map((episode) => ({
@@ -504,9 +616,12 @@ function detailedMedia(raw: TmdbDetail, kind: TmdbKind): Media | null {
   const trailer = raw.videos?.results?.find((video) => video.site === 'YouTube' && video.type === 'Trailer' && video.official)
     ?? raw.videos?.results?.find((video) => video.site === 'YouTube' && video.type === 'Trailer')
   media.status = status(raw.status)
+  media.tagline = raw.tagline?.trim() || undefined
   media.episodes = kind === 'movie' ? 1 : raw.number_of_episodes
   media.duration = raw.runtime ?? raw.episode_run_time?.[0]
   media.genres = (raw.genres ?? []).flatMap((genre) => genre.name ? [genre.name] : [])
+  media.tags = [...(raw.keywords?.keywords ?? raw.keywords?.results ?? [])]
+    .flatMap((keyword) => keyword.name ? [{ name: keyword.name }] : [])
   media.studios = { nodes: [...(raw.production_companies ?? []), ...(raw.networks ?? [])].flatMap((company) => company.name ? [{ id: company.id, name: company.name }] : []) }
   media.externalIds = {
     ...media.externalIds,
@@ -525,6 +640,10 @@ function detailedMedia(raw: TmdbDetail, kind: TmdbKind): Media | null {
   const recommendations = mapList(raw.recommendations ?? raw.similar ?? {}, kind)
   media.recommendations = { nodes: recommendations.map((item) => ({ mediaRecommendation: item })) }
   media.logoImage = pickTmdbLogo(raw.images)
+  const region = tmdbRegion()
+  media.contentRating = tmdbContentRating(raw, region)
+  media.watchRegion = region
+  media.watchProviders = tmdbWatchProviders(raw['watch/providers'], region)
   return media
 }
 
@@ -532,17 +651,22 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   if (ref.provider !== 'tmdb' || (ref.type !== 'movie' && ref.type !== 'series')) return null
   const kind: TmdbKind = ref.type === 'movie' ? 'movie' : 'tv'
   const append = kind === 'movie'
-    ? 'videos,credits,recommendations,similar,external_ids,images'
-    : 'videos,aggregate_credits,recommendations,similar,external_ids,images'
+    ? 'videos,credits,recommendations,similar,external_ids,images,watch/providers,release_dates,keywords'
+    : 'videos,aggregate_credits,recommendations,similar,external_ids,images,watch/providers,content_ratings,keywords'
   const raw = await tmdb<TmdbDetail>(`/${kind}/${encodeURIComponent(ref.id)}`, {
-    language: 'en-GB', include_image_language: 'en,null', append_to_response: append,
+    language: TMDB_LANGUAGE, include_image_language: 'en,null', append_to_response: append,
   }, signal)
   const media = detailedMedia(raw, kind)
   if (!media) return null
-  media.videos = kind === 'movie'
-    ? [{ id: media.externalIds?.imdb ?? `tmdb:${ref.id}`, number: 1, title: media.title.userPreferred }]
-    : await televisionVideos(ref.id, raw.seasons ?? [], signal)
-  return media
+  const [videos, externalRating] = await Promise.all([
+    kind === 'movie'
+      ? Promise.resolve([{ id: media.externalIds?.imdb ?? `tmdb:${ref.id}`, number: 1, title: media.title.userPreferred }])
+      : televisionVideos(ref.id, raw.seasons ?? [], signal),
+    media.externalIds?.imdb ? imdbRating(media.externalIds.imdb, kind, signal) : Promise.resolve(undefined),
+  ])
+  media.videos = videos
+  if (externalRating) media.ratings = [externalRating, ...(media.ratings ?? [])]
+  return enrichOmdbRatings(media, signal)
 }
 
 async function genres(signal?: AbortSignal): Promise<string[]> {

@@ -99,6 +99,18 @@ describe('multi-platform catalog entry points', () => {
     expect(catalogHome).toContain('>Retry</button>')
   })
 
+  it('takes TMDB configuration errors straight to the token setting', () => {
+    for (const file of ['./CatalogHome.svelte', './CatalogSearchPage.svelte', './CatalogMediaDetail.svelte']) {
+      const source = read(file)
+      expect(source).toContain('reason instanceof CatalogConfigurationError')
+      expect(source).toContain('href="/app/settings/catalog"')
+      expect(source).toContain('Add TMDB token')
+    }
+    const mergedHome = read('./MergedCatalogHome.svelte')
+    expect(mergedHome).toContain('reason instanceof CatalogConfigurationError')
+    expect(mergedHome).toContain('Add TMDB token')
+  })
+
   it('preserves the Aniyomi source when opening a Home row in search', () => {
     expect(read('./CatalogHome.svelte')).toContain("if (more.sourceId) params.set('source', more.sourceId)")
     expect(read('./MergedCatalogHome.svelte')).toContain("if (more.sourceId) params.set('source', more.sourceId)")

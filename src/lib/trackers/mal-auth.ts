@@ -1,5 +1,8 @@
 import { get } from 'svelte/store'
-import { malToken, malRefresh, malTokenExpiry, malClientId, malUserName, malUserAvatar } from './config'
+import {
+  malToken, malRefresh, malTokenExpiry, malClientId, malUserName, malUserAvatar,
+  connectedTrackerProviders, forgetTrackerConnection, recordTrackerConnection,
+} from './config'
 import { captureLogin, redirectUri } from './oauth'
 import { malHttpFetch } from './mal-http'
 
@@ -17,6 +20,7 @@ function verifier(): string {
   return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '').slice(0, 100)
 }
 export async function connectMal() {
+  const connectedBefore = connectedTrackerProviders()
   if (!malClientId) throw new Error('Missing MAL Client ID (set PUBLIC_MAL_CLIENT_ID in .env.local).')
   const codeVerifier = verifier() // MAL PKCE is 'plain' -> challenge === verifier
   const malAuthUrl = `https://myanimelist.net/v1/oauth2/authorize?response_type=code&client_id=${malClientId}&code_challenge=${codeVerifier}&code_challenge_method=plain&redirect_uri=${encodeURIComponent(redirectUri)}`
@@ -30,6 +34,7 @@ export async function connectMal() {
   const json = await res.json() as { access_token?: string; refresh_token?: string; expires_in?: number }
   if (!json.access_token) throw new Error('MAL token exchange failed.')
   persistMalTokens(json)
+  recordTrackerConnection('mal', connectedBefore)
   await refreshMalViewer()
   if (!get(malUserName)) malUserName.set('MAL user')
 }
@@ -44,7 +49,14 @@ export async function refreshMalViewer(): Promise<void> {
   malUserAvatar.set(w.picture ?? '')
 }
 
-export function disconnectMal() { malToken.set(null); malRefresh.set(null); malTokenExpiry.set(0); malUserName.set(''); malUserAvatar.set('') }
+export function disconnectMal() {
+  malToken.set(null)
+  malRefresh.set(null)
+  malTokenExpiry.set(0)
+  malUserName.set('')
+  malUserAvatar.set('')
+  forgetTrackerConnection('mal')
+}
 
 // One in-flight refresh at a time. MAL SINGLE-USES + ROTATES the refresh token, so a startup burst of
 // parallel 401s must NOT each fire a refresh — only the first would succeed and the rest would get

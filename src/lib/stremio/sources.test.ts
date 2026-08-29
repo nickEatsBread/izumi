@@ -3,6 +3,7 @@ import { get } from 'svelte/store'
 import {
   addonOriginId,
   addonUrls,
+  CINEMETA_BASE,
   disabledSources,
   enabledAddonUrls,
   normalizeBase,
@@ -51,5 +52,9 @@ describe('replaceAddonBase', () => {
       'https://addon.example/old',
       'stremio://addon.example/new/manifest.json',
     )).toEqual(['https://one.example', 'https://addon.example/new'])
+  })
+
+  it('installs the public keyless metadata catalog in normalized form', () => {
+    expect(replaceAddonBase([], undefined, `${CINEMETA_BASE}/manifest.json`)).toEqual([CINEMETA_BASE])
   })
 })

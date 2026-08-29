@@ -1,6 +1,7 @@
 import { get } from 'svelte/store'
 import {
   kitsuRefresh, kitsuToken, kitsuTokenExpiry, kitsuUserAvatar, kitsuUserId, kitsuUserName,
+  connectedTrackerProviders, forgetTrackerConnection, recordTrackerConnection,
 } from './config'
 import { trackerHttpFetch } from './tracker-http'
 
@@ -40,9 +41,11 @@ async function tokenRequest(body: Record<string, string>): Promise<KitsuTokenRep
 
 /** Kitsu's official first-party-client flow. The password is exchanged once and never persisted. */
 export async function connectKitsu(username: string, password: string): Promise<void> {
+  const connectedBefore = connectedTrackerProviders()
   if (!username.trim() || !password) throw new Error('Enter your Kitsu username/email and password.')
   const reply = await tokenRequest({ grant_type: 'password', username: username.trim(), password })
   persistTokens(reply)
+  recordTrackerConnection('kitsu', connectedBefore)
   await refreshKitsuViewer()
   if (!get(kitsuUserName)) kitsuUserName.set(username.trim())
 }
@@ -54,6 +57,7 @@ export function disconnectKitsu() {
   kitsuUserId.set('')
   kitsuUserName.set('')
   kitsuUserAvatar.set('')
+  forgetTrackerConnection('kitsu')
 }
 
 let refreshInFlight: Promise<string | null> | null = null

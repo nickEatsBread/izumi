@@ -1,7 +1,10 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { get } from 'svelte/store'
 import packageJson from '../../../package.json'
-import { simklClientId, simklToken, simklUserAvatar, simklUserName } from './config'
+import {
+  simklClientId, simklToken, simklUserAvatar, simklUserName,
+  connectedTrackerProviders, forgetTrackerConnection, recordTrackerConnection,
+} from './config'
 import { trackerHttpFetch } from './tracker-http'
 
 const API = 'https://api.simkl.com'
@@ -115,6 +118,7 @@ function clearSimklIdentity() {
   simklToken.set(null)
   simklUserName.set('')
   simklUserAvatar.set('')
+  forgetTrackerConnection('simkl')
 }
 
 export async function simklFetch(path: string, init: RequestInit = {}): Promise<Response | null> {
@@ -140,6 +144,7 @@ function authFailure(status: number): string {
 
 /** Start Simkl's TV/device PIN flow and wait for the user to approve it in their browser. */
 export async function connectSimkl(onPin?: (pin: SimklPin) => void): Promise<void> {
+  const connectedBefore = connectedTrackerProviders()
   if (!simklClientId) throw new Error('Missing Simkl Client ID (set PUBLIC_SIMKL_CLIENT_ID in .env.local).')
   const start = await request('/oauth/pin', {})
   const pin = await start.json().catch(() => ({})) as {
@@ -180,6 +185,7 @@ export async function connectSimkl(onPin?: (pin: SimklPin) => void): Promise<voi
     }
     if (reply.access_token) {
       simklToken.set(reply.access_token)
+      recordTrackerConnection('simkl', connectedBefore)
       await refreshSimklViewer()
       if (!get(simklUserName)) simklUserName.set('Simkl user')
       return

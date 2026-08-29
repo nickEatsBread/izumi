@@ -9,7 +9,7 @@ describe('catalog platform logos', () => {
     expect(source).toContain('/brand/anilist.svg')
     expect(source).not.toContain('https://anilist.co/img/icons/icon.svg')
     expect(source).toContain('https://avatars.githubusercontent.com/u/7648832')
-    expect(source).toContain('/brand/tmdb.svg')
+    expect(source).toContain('themoviedb.org/assets/v4/logos/v2/blue_square_2-')
     expect(source).toContain('https://www.stremio.com/website/favicon.ico')
     expect(source).toContain("platform === 'jvm'")
     expect(source).toContain('<Coffee')
@@ -25,8 +25,8 @@ describe('catalog platform logos', () => {
     expect(source.match(/size-10 shrink-0/g)).toHaveLength(6)
   })
 
-  it('fits the TMDB lockup inside the shared square canvas', () => {
-    expect(source).toContain('class="w-9 object-contain"')
+  it('fills the TMDB catalog tile with its official square mark', () => {
+    expect(source).toContain('class="absolute inset-0 size-10 object-cover"')
   })
 
   it('only reveals text fallbacks after errors from the active provider', () => {

@@ -126,6 +126,7 @@ export function mapKitsuMedia(raw: KitsuAnime, anilistId?: number): Media {
     episodes: a.episodeCount ?? null,
     duration: a.episodeLength ?? null,
     averageScore: score == null ? null : Math.round(score),
+    ratings: score == null ? undefined : [{ source: 'Kitsu', score, scale: 100 }],
     popularity: a.userCount ?? null,
     trending: null,
     genres: [],

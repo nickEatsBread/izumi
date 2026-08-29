@@ -31,6 +31,7 @@ interface JikanMedia {
   duration?: string | null
   rating?: string | null
   score?: number | null
+  scored_by?: number | null
   members?: number | null
   season?: string | null
   year?: number | null
@@ -154,6 +155,7 @@ export function mapJikanMedia(raw: JikanMedia, anilistId: number): Media {
     duration: durationMinutes(raw.duration) ?? null,
     source: raw.source?.toUpperCase().replaceAll(' ', '_') ?? null,
     averageScore: raw.score ? Math.round(raw.score * 10) : null,
+    ratings: raw.score ? [{ source: 'MyAnimeList', score: raw.score, scale: 10, votes: raw.scored_by ?? undefined }] : undefined,
     popularity: raw.members ?? null,
     trending: null,
     genres: genreNames,

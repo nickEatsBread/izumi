@@ -11,12 +11,13 @@
   import { nearViewport } from '$lib/util/near-viewport'
   import { gameMode } from '$lib/player/session'
   let {
-    title, userName, status, kind = 'anime',
+    title, userName, status, kind = 'anime', preferLinkedRating = false,
   }: {
     title: string
     userName: string
     status: string
     kind?: LibraryKind
+    preferLinkedRating?: boolean
   } = $props()
   const client = getContextClient()
   // Deferred like HomeRow. Anime previews use Page.mediaList(perPage:30), so a carousel never
@@ -50,7 +51,7 @@
   {:else if shown.length}
     <Carousel {title}>
       {#each shown as e (e.media.id)}
-        <SmallCard media={e.media} />
+        <SmallCard media={e.media} {preferLinkedRating} />
       {/each}
     </Carousel>
   {/if}

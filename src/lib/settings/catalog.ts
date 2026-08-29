@@ -144,5 +144,8 @@ export function selectCatalogProvider(provider: CatalogSelection): void {
  * Users may supply their own read token; packaged/private builds can instead set PUBLIC_TMDB_READ_TOKEN. */
 export const tmdbReadToken = persisted<string>('tmdb-read-token', '')
 
+/** Optional enrichment credential for IMDb, Rotten Tomatoes and Metacritic ratings. */
+export const omdbApiKey = persisted<string>('omdb-api-key', '')
+
 export const isLegacyAniListCatalog = (provider: CatalogSelection): boolean =>
   provider === 'auto' || provider === 'anilist'

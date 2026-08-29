@@ -26,6 +26,23 @@ export interface MediaCatalogIdentity {
   sourceLanguage?: string
 }
 
+/** A score kept in its provider's native scale so the UI can label it honestly. */
+export interface MediaRating {
+  source: string
+  score: number
+  scale: 5 | 10 | 100
+  votes?: number
+  url?: string
+}
+
+export interface MediaWatchProvider {
+  id?: number
+  name: string
+  logoImage?: string
+  kind: 'subscription' | 'free' | 'ads' | 'rent' | 'buy'
+  url?: string
+}
+
 /** Cross-database ids are optional capabilities, not the identity of the object. Consumers use
  * whichever namespace they understand (trackers, AniZip, Stremio stream add-ons, etc.). */
 export interface ExternalMediaIds {
@@ -83,6 +100,14 @@ export interface Media {
   countryOfOrigin?: string
   source?: string
   averageScore?: number
+  /** Provider-labelled scores; `averageScore` remains the normalized 0–100 sorting value. */
+  ratings?: MediaRating[]
+  contentRating?: string
+  tagline?: string
+  releaseDate?: string
+  originalLanguage?: string
+  watchRegion?: string
+  watchProviders?: MediaWatchProvider[]
   popularity?: number
   trending?: number
   genres?: string[]

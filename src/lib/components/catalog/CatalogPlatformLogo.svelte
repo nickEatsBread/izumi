@@ -48,11 +48,16 @@
     {/if}
   </span>
 {:else if platform === 'tmdb'}
-  <span class="relative grid size-10 shrink-0 place-items-center rounded-xl bg-[#032541]" aria-hidden="true">
+  <span class="relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-[#032541]" aria-hidden="true">
     {#if imageFailed}
       <span class="text-[8px] font-black text-[#56c5c9]">TMDB</span>
     {:else}
-      <img src="/brand/tmdb.svg" alt="" class="w-9 object-contain" onerror={showFallback} />
+      <img
+        src="https://www.themoviedb.org/assets/v4/logos/v2/blue_square_2-d537fb228cf3ded904ef09b136fe3fec72548ebc1fea3fbbd1ad9e36364db38b.svg"
+        alt=""
+        class="absolute inset-0 size-10 object-cover"
+        onerror={showFallback}
+      />
     {/if}
   </span>
 {:else if platform === 'jvm'}

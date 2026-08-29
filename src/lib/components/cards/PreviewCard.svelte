@@ -1,9 +1,15 @@
 <script lang="ts">
-  import type { Media } from '$lib/anilist/types'
+  import type { Media, MediaRating } from '$lib/anilist/types'
   import { banner, title, format, season, status, totalEpisodes, mediaHref } from '$lib/anilist/media'
   import { rememberDetail } from '$lib/anilist/detail-hint'
   import { goto } from '$app/navigation'
-  import { anilistToken } from '$lib/anilist/auth'
+  import {
+    anilistToken, kitsuToken, malToken, simklToken, trackerConnectionOrder,
+  } from '$lib/trackers/config'
+  import { preferredConnectedTracker } from '$lib/trackers/connection-order'
+  import {
+    communityRatingKey, loadProviderCommunityRating, providerRatingOnMedia,
+  } from '$lib/trackers/community-rating'
   import { toggleFavourite, setStatus, anyTrackerConnected } from '$lib/trackers'
   import YoutubeTrailer from './YoutubeTrailer.svelte'
   import Play from '@lucide/svelte/icons/play'
@@ -11,7 +17,9 @@
   import Plus from '@lucide/svelte/icons/plus'
   import BookOpen from '@lucide/svelte/icons/book-open'
   import CatalogSourceAttribution from '$lib/components/catalog/CatalogSourceAttribution.svelte'
-  let { media }: { media: Media } = $props()
+  import { compactRatingLabel, primaryRating } from '$lib/catalog/media-metadata'
+  import RatingSourceMark from '$lib/components/catalog/RatingSourceMark.svelte'
+  let { media, preferLinkedRating = false }: { media: Media; preferLinkedRating?: boolean } = $props()
 
   // YouTube trailers only; WebKitGTK (no `credentialless`) will just show the still.
   const trailerId = $derived(
@@ -39,8 +47,50 @@
           season(media),
           status(media),
         ]
-    if (media.averageScore != null) values.push(`${media.averageScore}%`)
     return [...new Set(values.filter(Boolean))].join(' · ')
+  })
+  const preferredRatingProvider = $derived(preferLinkedRating ? preferredConnectedTracker({
+    anilist: !!$anilistToken,
+    mal: !!$malToken,
+    kitsu: !!$kitsuToken,
+    simkl: !!$simklToken,
+  }, $trackerConnectionOrder) : undefined)
+  const embeddedPreferredRating = $derived(preferredRatingProvider
+    ? providerRatingOnMedia(media, preferredRatingProvider)
+    : undefined)
+  const preferredRatingKey = $derived(preferredRatingProvider
+    ? communityRatingKey(media, preferredRatingProvider)
+    : undefined)
+  let fetchedRating = $state<MediaRating | undefined>()
+  let fetchedRatingKey = $state('')
+  let fetchedRatingSettled = $state(false)
+
+  // Automatic anime cards follow the user's account-link order. Keep the rating empty during the
+  // first provider lookup so an AniList badge never flashes before the linked provider replaces it.
+  $effect(() => {
+    const provider = preferredRatingProvider
+    const embedded = embeddedPreferredRating
+    const key = preferredRatingKey
+    fetchedRating = undefined
+    fetchedRatingKey = key ?? ''
+    fetchedRatingSettled = !!embedded || !key
+    if (!provider || embedded || !key) return
+    let current = true
+    void loadProviderCommunityRating(media, provider).then((rating) => {
+      if (!current) return
+      fetchedRating = rating
+      fetchedRatingSettled = true
+    })
+    return () => { current = false }
+  })
+
+  const previewRating = $derived.by(() => {
+    const fallback = primaryRating(media)
+    if (!preferLinkedRating || !preferredRatingProvider) return fallback
+    if (embeddedPreferredRating) return embeddedPreferredRating
+    if (!preferredRatingKey) return fallback
+    if (fetchedRatingKey !== preferredRatingKey || !fetchedRatingSettled) return undefined
+    return fetchedRating ?? fallback
   })
   const openDetail = () => { rememberDetail(media); goto(mediaHref(media)) }
 </script>
@@ -80,7 +130,10 @@
         <CatalogSourceAttribution {media} />
       </div>
     {/if}
-    {#if metadata}<div class="mt-2 text-[11px] text-muted-foreground">{metadata}</div>{/if}
+    <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+      {#if previewRating}<span class="flex items-center gap-1 font-bold text-foreground/80" title={`${previewRating.source} rating`}><RatingSourceMark source={previewRating.source} />{compactRatingLabel(previewRating)}</span>{/if}
+      {#if metadata}<span>{metadata}</span>{/if}
+    </div>
     {#if media.creators?.length}<div class="mt-1 truncate text-[0.7rem] text-muted-foreground">By {media.creators.join(', ')}</div>{/if}
     {#if cleanDescription}
       <p class="mt-1 line-clamp-4 text-[0.7rem] text-muted-foreground">{cleanDescription}</p>

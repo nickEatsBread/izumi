@@ -7,7 +7,7 @@
   import { nearViewport } from '$lib/util/near-viewport'
   import { gameMode } from '$lib/player/session'
 
-  let { userName }: { userName: string } = $props()
+  let { userName, preferLinkedRating = false }: { userName: string; preferLinkedRating?: boolean } = $props()
   const client = getContextClient()
   let visible = $state(false)
   const reveal = () => { visible = true }
@@ -45,7 +45,7 @@
   {:else if recommendations.length}
     <Carousel title="Recommended for You">
       {#each recommendations as media (media.id)}
-        <div class="load-in shrink-0"><SmallCard {media} /></div>
+        <div class="load-in shrink-0"><SmallCard {media} {preferLinkedRating} /></div>
       {/each}
     </Carousel>
   {/if}

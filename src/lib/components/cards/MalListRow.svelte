@@ -14,11 +14,12 @@
   import { nearViewport } from '$lib/util/near-viewport'
 
   let {
-    title, status, kind = 'anime',
+    title, status, kind = 'anime', preferLinkedRating = false,
   }: {
     title: string
     status: string
     kind?: LibraryKind
+    preferLinkedRating?: boolean
   } = $props()
   const client = getContextClient()
   let medias = $state<Media[]>([])
@@ -78,7 +79,7 @@
   {:else if shown.length}
     <Carousel {title}>
       {#each shown as media (media.id)}
-        <SmallCard {media} />
+        <SmallCard {media} {preferLinkedRating} />
       {/each}
     </Carousel>
   {/if}

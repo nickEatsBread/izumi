@@ -7,6 +7,7 @@ import { catalogHomeLayouts, resolveCatalogHomeRows } from '../home-layout'
 import { CONTINUE_HOME_ROW } from '../home-options'
 import { compatibilityMediaId, type CatalogContentType, type MediaRef } from '../identity'
 import { CatalogConfigurationError, type CatalogHome, type CatalogHomeRowOption, type CatalogPage, type CatalogProvider, type CatalogSearchRequest } from '../types'
+import { enrichOmdbRatings } from './omdb'
 
 interface StremioVideo {
   id?: string
@@ -105,6 +106,9 @@ function mapMeta(raw: StremioMeta, base: string, forcedType?: string): Media | n
     episodes: ref.type === 'movie' ? 1 : videos.length || undefined,
     duration: runtimeMinutes(raw.runtime),
     averageScore: Number.isFinite(rating) && rating > 0 ? Math.round(rating * 10) : undefined,
+    ratings: Number.isFinite(rating) && rating > 0 && rating <= 10
+      ? [{ source: 'IMDb', score: rating, scale: 10 }]
+      : undefined,
     genres: raw.genres ?? [],
     startDate: releaseYear ? { year: releaseYear } : undefined,
     coverImage: { extraLarge: raw.poster, large: raw.poster, medium: raw.poster },
@@ -245,7 +249,8 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   const response = await getJson<{ meta?: StremioMeta }>(
     stremioMetaUrl(base, decoded.type, decoded.id), signal,
   )
-  return response.meta ? mapMeta(response.meta, base, decoded.type) : null
+  const media = response.meta ? mapMeta(response.meta, base, decoded.type) : null
+  return media ? enrichOmdbRatings(media, signal) : null
 }
 
 export const stremioCatalog: CatalogProvider = {

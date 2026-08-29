@@ -54,6 +54,27 @@ describe('catalog settings', () => {
     expect(source).toContain("{#if hasPlatform('jvm')}")
   })
 
+  it('opens an in-client guide for obtaining the TMDB read access token', () => {
+    expect(source).toContain('How to get a free token')
+    expect(source).toContain('showTmdbGuide = true')
+    expect(source).toContain('<TmdbCredentialGuide')
+  })
+
+  it('can switch from TMDB to a keyless IMDb-ID catalog', () => {
+    expect(source).toContain('function useKeylessCatalog()')
+    expect(source).toContain('replaceAddonBase($addonUrls, undefined, CINEMETA_BASE)')
+    expect(source).toContain("provider !== 'tmdb' && provider !== 'stremio'")
+    expect(source).toContain("selectCatalogProvider('stremio')")
+    expect(source).toContain('onUseKeyless={useKeylessCatalog}')
+  })
+
+  it('offers optional critic-rating enrichment without making it part of catalog identity', () => {
+    expect(source).toContain('Optional review ratings')
+    expect(source).toContain('Rotten Tomatoes, Metacritic, IMDb vote counts')
+    expect(source).toContain('https://www.omdbapi.com/apikey.aspx')
+    expect(source).toContain('bind:value={$omdbApiKey}')
+  })
+
   it('filters JVM catalog providers independently with their source artwork', () => {
     expect(source).toContain('installedJvmCatalogSources')
     expect(source).toContain('JvmCatalogSourceRow')

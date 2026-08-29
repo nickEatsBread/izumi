@@ -1,5 +1,10 @@
 import { persisted } from 'svelte-persisted-store'
 import { derived } from 'svelte/store'
+
+/** Public movie and series metadata catalog maintained for Stremio. It uses IMDb title ids and
+ * does not require a personal API credential. */
+export const CINEMETA_BASE = 'https://v3-cinemeta.strem.io'
+
 // No default sources — ever. A fresh install ships with an EMPTY source list; the user
 // adds their own stream addon URL(s) in Settings. Nothing is provided out of the box.
 export const addonUrls = persisted<string[]>('stremio-addon-urls', [])

@@ -10,7 +10,11 @@
   import { nearViewport } from '$lib/util/near-viewport'
   import { gameMode } from '$lib/player/session'
 
-  let { title, vars }: { title: string; vars: Record<string, unknown> } = $props()
+  let { title, vars, preferLinkedRating = false }: {
+    title: string
+    vars: Record<string, unknown>
+    preferLinkedRating?: boolean
+  } = $props()
 
   const client = getContextClient()
 
@@ -61,7 +65,7 @@
           <!-- load-in: one-shot slide-up+fade (gamemode-disabled in app.css). Cards animate in when
                this row's deferred query resolves — the per-row staggered reveal as you scroll. -->
           <div class="load-in shrink-0">
-            <SmallCard {media} />
+            <SmallCard {media} {preferLinkedRating} />
           </div>
         {/each}
       {/if}

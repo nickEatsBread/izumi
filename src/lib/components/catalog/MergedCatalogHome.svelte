@@ -19,7 +19,7 @@
     loadCatalogProvider,
     mergedCatalogHomeRowOptions,
   } from '$lib/catalog/registry'
-  import type { CatalogHome } from '$lib/catalog/types'
+  import { CatalogConfigurationError, type CatalogHome } from '$lib/catalog/types'
   import {
     catalogLabel,
     catalogProviders,
@@ -38,7 +38,8 @@
   let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})
   let optionsLoading = $state(true)
   let homeLoading = $state(false)
-  let errors = $state<Array<{ provider: CatalogSelection; message: string }>>([])
+  let errors = $state<Array<{ provider: CatalogSelection; message: string; configuration: boolean }>>([])
+  const tmdbNeedsConfiguration = $derived(errors.some((error) => error.provider === 'tmdb' && error.configuration))
   const listUser = $derived($anilistUserName || $anilistUser)
   const anilistSections = homeSections(new Date())
   const anilistSectionMap = new Map(anilistSections.map((section) => [section.key, section]))
@@ -90,6 +91,7 @@
         if (!abort.signal.aborted) errors = [...errors, {
           provider: selection,
           message: reason instanceof Error ? reason.message : String(reason),
+          configuration: reason instanceof CatalogConfigurationError,
         }]
       }
     })).finally(() => {
@@ -138,13 +140,13 @@
           {#if decoded.rowId === 'recent'}
             <RecentReleaseRow />
           {:else if decoded.rowId === 'list'}
-            {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" />{/key}{/if}
-            {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" />{/if}
+            {#if listUser}{#key listUser}<ListRow title="Your List · AniList" userName={listUser} status="PLANNING" preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
+            {#if $malToken || $malUser}<MalListRow title="Your List · MyAnimeList" status="plan_to_watch" preferLinkedRating={decoded.selection === 'auto'} />{/if}
           {:else if decoded.rowId === 'recommendations'}
-            {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} />{/key}{/if}
+            {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={decoded.selection === 'auto'} />{/key}{/if}
           {:else}
             {@const section = anilistSectionMap.get(decoded.rowId)}
-            {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} />{/if}
+            {#if section}<HomeRow title={`${section.title} · AniList`} vars={section.vars} preferLinkedRating={decoded.selection === 'auto'} />{/if}
           {/if}
         {:else if decoded}
           {@const section = homes[decoded.selection]?.sections.find((item) => item.id === decoded.rowId)}
@@ -172,6 +174,9 @@
       <div class="mx-4 rounded-xl border border-amber-500/25 bg-amber-500/10 p-4 text-sm sm:mx-8">
         <p class="font-black">Some catalogs couldn’t load</p>
         <p class="mt-1 text-muted-foreground">{errors.map((error) => catalogLabel(error.provider)).join(', ')} can be retried by refreshing Home.</p>
+        {#if tmdbNeedsConfiguration}
+          <a href="/app/settings/catalog" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 font-bold text-primary-foreground">Add TMDB token</a>
+        {/if}
       </div>
     {/if}
   </div>

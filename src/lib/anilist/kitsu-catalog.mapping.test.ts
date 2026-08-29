@@ -16,6 +16,7 @@ describe('native Kitsu media mapping', () => {
     expect(media.id).toBeLessThan(0)
     expect(media.catalog).toEqual({ provider: 'kitsu', type: 'anime', id: '42' })
     expect(media.externalIds).toEqual({ kitsu: 42, anilist: undefined })
+    expect(media.ratings).toEqual([{ source: 'Kitsu', score: 82.4, scale: 100 }])
   })
 
   it('keeps a supplied AniList mapping as an external id for compatibility fallback', () => {

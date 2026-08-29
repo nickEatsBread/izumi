@@ -12,7 +12,7 @@
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import type { CatalogContentType } from '$lib/catalog/identity'
   import { mediaKey } from '$lib/catalog/identity'
-  import type { CatalogAdvancedSearchFilters, CatalogSearchOptions } from '$lib/catalog/types'
+  import { CatalogConfigurationError, type CatalogAdvancedSearchFilters, type CatalogSearchOptions } from '$lib/catalog/types'
   import {
     installedJvmCatalogSources,
     jvmCatalogSourceFilters,
@@ -45,6 +45,7 @@
   let media = $state<Media[]>([])
   let loading = $state(false)
   let error = $state('')
+  let tmdbNeedsConfiguration = $state(false)
   let availableGenres = $state<string[]>([])
   let filterOptions = $state<CatalogSearchOptions>({})
   let showAdvanced = $state(false)
@@ -194,6 +195,7 @@
       pageNumber = 1
       hasNext = true
       error = ''
+      tmdbNeedsConfiguration = false
       resultTotal = undefined
       emptyPageStreak = 0
       requestGeneration++
@@ -267,6 +269,7 @@
     } catch (reason) {
       if (generation === requestGeneration && !abort?.signal.aborted) {
         error = reason instanceof Error ? reason.message : String(reason)
+        tmdbNeedsConfiguration = selection === 'tmdb' && reason instanceof CatalogConfigurationError
         hasNext = false
       }
     } finally {
@@ -378,7 +381,11 @@
   {#if error}
     <div class="mt-5 rounded-xl border border-destructive/30 bg-destructive/10 p-5">
       <p class="text-sm">{error}</p>
-      <button data-focusable onclick={() => { error = ''; hasNext = true; void loadMore() }} class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
+      {#if tmdbNeedsConfiguration}
+        <a href="/app/settings/catalog" data-focusable class="mt-3 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add TMDB token</a>
+      {:else}
+        <button data-focusable onclick={() => { error = ''; hasNext = true; void loadMore() }} class="mt-3 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
+      {/if}
     </div>
   {/if}
 </div>

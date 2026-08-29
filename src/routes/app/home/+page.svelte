@@ -232,14 +232,14 @@
         {#if !catalogUnavailable}<RecentReleaseRow />{/if}
       {:else if row === 'list'}
         {#if listUser}
-          {#key listUser}<ListRow title="Your List" userName={listUser} status="PLANNING" />{/key}
+          {#key listUser}<ListRow title="Your List" userName={listUser} status="PLANNING" preferLinkedRating={$catalogProvider === 'auto'} />{/key}
         {/if}
-        {#if $malToken || $malUser}<MalListRow title="Your List" status="plan_to_watch" />{/if}
+        {#if $malToken || $malUser}<MalListRow title="Your List" status="plan_to_watch" preferLinkedRating={$catalogProvider === 'auto'} />{/if}
       {:else if row === 'recommendations'}
-        {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} />{/key}{/if}
+        {#if listUser}{#key listUser}<PersonalizedRow userName={listUser} preferLinkedRating={$catalogProvider === 'auto'} />{/key}{/if}
       {:else}
         {@const section = sectionMap.get(row)}
-        {#if section && !catalogUnavailable}<HomeRow title={section.title} vars={section.vars} />{/if}
+        {#if section && !catalogUnavailable}<HomeRow title={section.title} vars={section.vars} preferLinkedRating={$catalogProvider === 'auto'} />{/if}
       {/if}
     {/each}
   </div>

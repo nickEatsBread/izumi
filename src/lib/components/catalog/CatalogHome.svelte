@@ -11,7 +11,7 @@
   import Carousel from '$lib/components/cards/Carousel.svelte'
   import SmallCard from '$lib/components/cards/SmallCard.svelte'
   import ContinueRow from '$lib/components/cards/ContinueRow.svelte'
-  import type { CatalogHome, CatalogHomeSection } from '$lib/catalog/types'
+  import { CatalogConfigurationError, type CatalogHome, type CatalogHomeSection } from '$lib/catalog/types'
   import { loadCatalogProvider } from '$lib/catalog/registry'
   import { catalogProvider, jvmCatalogSourceOverrides } from '$lib/settings/catalog'
   import { catalogHomeLayoutKey, catalogHomeLayouts, resolveCatalogHomeRows } from '$lib/catalog/home-layout'
@@ -27,6 +27,7 @@
   let home = $state.raw<CatalogHome | null>(null)
   let loading = $state(true)
   let error = $state('')
+  let tmdbNeedsConfiguration = $state(false)
   let retry = $state(0)
   const listUser = $derived($anilistUserName || $anilistUser)
   type ContentRow = { id: string; kind: 'continue' } | { id: string; kind: 'section'; section: CatalogHomeSection }
@@ -65,6 +66,7 @@
     home = initialHome
     loading = !initialHome
     error = ''
+    tmdbNeedsConfiguration = false
     if (cached?.complete && initialHome) return
     const publish = (result: CatalogHome, complete = false) => {
       if (abort.signal.aborted) return
@@ -75,7 +77,10 @@
     void loadCatalogProvider(selection).then((provider) => provider.home(abort.signal, undefined, publish)).then((result) => {
       publish(result, result.partial !== true)
     }).catch((reason) => {
-      if (!abort.signal.aborted) error = reason instanceof Error ? reason.message : String(reason)
+      if (!abort.signal.aborted) {
+        error = reason instanceof Error ? reason.message : String(reason)
+        tmdbNeedsConfiguration = selection === 'tmdb' && reason instanceof CatalogConfigurationError
+      }
     }).finally(() => { if (!abort.signal.aborted) loading = false })
     return () => abort.abort()
   })
@@ -113,7 +118,11 @@
       <div class="mx-4 rounded-xl border border-destructive/30 bg-destructive/10 p-5 sm:mx-8">
         <h2 class="font-black">Couldn’t load {$catalogProvider === 'stremio' ? 'Stremio metadata' : $catalogProvider === 'jvm' ? 'Aniyomi sources' : $catalogProvider.toUpperCase()}</h2>
         <p class="mt-1 text-sm text-muted-foreground">{error}</p>
-        <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
+        {#if tmdbNeedsConfiguration}
+          <a href="/app/settings/catalog" data-focusable class="mt-4 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground">Add TMDB token</a>
+        {:else}
+          <button data-focusable onclick={() => retry++} class="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-bold text-primary-foreground">Retry</button>
+        {/if}
       </div>
     {/if}
 

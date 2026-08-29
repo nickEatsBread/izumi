@@ -24,9 +24,11 @@
   import { previewPos, rootZoom } from './preview-pos'
   import { portal } from '$lib/util/portal'
   import AddonLogo from '$lib/components/player/AddonLogo.svelte'
+  import { compactRatingLabel, primaryRating } from '$lib/catalog/media-metadata'
+  import RatingSourceMark from '$lib/components/catalog/RatingSourceMark.svelte'
   // `fill`: fill the parent's width (for a responsive grid cell) instead of the fixed carousel
   // width. Used by the 3-up browse grid so tiles reach the screen edges (no dead right margin).
-  let { media, fill = false, badge, subline, simpleHover = false, showCatalogSource = true }: {
+  let { media, fill = false, badge, subline, simpleHover = false, showCatalogSource = true, showRating, preferLinkedRating = false }: {
     media: Media
     fill?: boolean
     /** Optional context owned by a specialized row (for example, the released episode number). */
@@ -37,6 +39,10 @@
     simpleHover?: boolean
     /** Home rows already name their Aniyomi source; avoid decoding its logo on every card. */
     showCatalogSource?: boolean
+    /** Anime poster ratings stay quiet by default; callers can opt in for rating-focused views. */
+    showRating?: boolean
+    /** Automatic anime hover previews use the first linked tracker's community score. */
+    preferLinkedRating?: boolean
   } = $props()
 
   let hovered = $state(false)
@@ -61,6 +67,8 @@
       .filter(Boolean).join(' · ')
     return compact || status(media)
   })
+  const animeCard = $derived(media.type === 'ANIME' || media.catalog?.type === 'anime')
+  const cardRating = $derived((showRating ?? !animeCard) ? primaryRating(media) : undefined)
 
   // Preview is rendered `fixed` (escapes the carousel's overflow clipping) and clamped to the
   // viewport so it never gets cut off by the sidebar or edges. The math is zoom-aware — see
@@ -151,6 +159,12 @@
       {#if badge}
         <span class="absolute bottom-2 left-2 rounded-md bg-black/85 px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-white shadow-lg backdrop-blur">{badge}</span>
       {/if}
+      {#if cardRating}
+        <span class="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-md bg-black/80 px-1.5 py-1 text-[0.65rem] font-black text-white shadow-lg backdrop-blur"
+          title={`${cardRating.source} rating`} aria-label={`${cardRating.source} rating ${compactRatingLabel(cardRating)} out of 10`}>
+          <RatingSourceMark source={cardRating.source} />{compactRatingLabel(cardRating)}
+        </span>
+      {/if}
     </div>
     <div class="mt-1 line-clamp-2 text-[0.8rem] font-black leading-tight">
       {#if dot(media)}<span class="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={`background:${dot(media)}`}></span>{/if}{title(media)}
@@ -180,6 +194,6 @@
   <div use:portal class="pointer-events-auto fixed z-50 will-change-[transform,opacity]" style={`left:${pos.left}px;top:${pos.top}px`}
        in:fade={{ duration: 140, easing: cubicOut }} out:fade={{ duration: 120, easing: cubicOut }}
        onpointerenter={keepOpen} onpointerleave={scheduleClose} onwheel={forwardPreviewWheel} role="presentation">
-    <PreviewCard {media} />
+    <PreviewCard {media} {preferLinkedRating} />
   </div>
 {/if}
