@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { streamingBrand } from './streaming-brands'
+import { orderStreamingServices, streamingBrand } from './streaming-brands'
 
 describe('streaming service visual identity', () => {
   it('assigns recognizable accents and bundled marks to major services', () => {
@@ -15,6 +15,29 @@ describe('streaming service visual identity', () => {
     expect(streamingBrand('Google Play Movies')).toMatchObject({ id: 'google-play', mark: '/brand/streaming/google-play.png' })
     expect(streamingBrand('FilmBox+')).toMatchObject({ id: 'filmbox-plus', mark: '/brand/streaming/filmbox-plus.png' })
     expect(streamingBrand('Sun NXT')).toMatchObject({ id: 'sun-nxt', mark: '/brand/streaming/sun-nxt.png' })
+  })
+
+  it('keeps the primary services ordered and collapses Apple store variants', () => {
+    const ordered = orderStreamingServices([
+      { title: 'A regional service' },
+      { title: 'Apple TV' },
+      { title: 'Crunchyroll' },
+      { title: 'Prime Video' },
+      { title: 'Netflix' },
+      { title: 'Peacock' },
+      { title: 'Disney+' },
+      { title: 'Apple TV Plus' },
+      { title: 'Max' },
+      { title: 'Hulu' },
+      { title: 'Paramount Plus' },
+      { title: 'Another regional service' },
+    ])
+
+    expect(ordered.map((service) => service.title)).toEqual([
+      'Netflix', 'Disney+', 'Hulu', 'Prime Video', 'Apple TV Plus', 'Max',
+      'Paramount Plus', 'Peacock', 'Crunchyroll',
+      'A regional service', 'Another regional service',
+    ])
   })
 
   it('uses a stable fallback for regional services', () => {

@@ -28,6 +28,21 @@ const GENERIC_BRAND: StreamingBrand = {
   secondary: '#4361ee',
 }
 
+const STREAMING_BRAND_PRIORITY: Partial<Record<StreamingBrandId, number>> = {
+  netflix: 0,
+  disney: 1,
+  hulu: 2,
+  'prime-video': 3,
+  'apple-tv': 4,
+  max: 5,
+  'paramount-plus': 6,
+  peacock: 7,
+  crunchyroll: 8,
+  'google-play': 9,
+  'filmbox-plus': 10,
+  'sun-nxt': 11,
+}
+
 /** Provider ids vary by region, while service names and marks remain recognizable. Known services
  * use bundled vector marks; every other service falls back to the live provider artwork. */
 export function streamingBrand(name: string): StreamingBrand {
@@ -70,4 +85,41 @@ export function streamingBrand(name: string): StreamingBrand {
   if (value.includes('paramount')) return { id: 'paramount-plus', primary: '#0064ff', secondary: '#10182a', mark: '/brand/streaming/paramount-plus.svg' }
   if (value.includes('peacock')) return { id: 'peacock', primary: '#ffd500', secondary: '#211e16', mark: '/brand/streaming/peacock.svg' }
   return GENERIC_BRAND
+}
+
+function serviceVariantPriority(name: string, brand: StreamingBrandId): number {
+  if (brand !== 'apple-tv') return 0
+  const value = name.toLowerCase()
+  if (value.includes('plus') || value.includes('+')) return 0
+  if (value.includes('store')) return 2
+  return 1
+}
+
+/** Keeps the requested service hierarchy stable across regional API responses and collapses
+ * store/subscription variants that share the same recognizable identity. */
+export function orderStreamingServices<T extends { title: string }>(services: readonly T[]): T[] {
+  const entries = services.map((service, index) => ({
+    service,
+    index,
+    brand: streamingBrand(service.title).id,
+  }))
+  const selectedBrands = new Map<StreamingBrandId, typeof entries[number]>()
+  const regional: typeof entries = []
+
+  for (const entry of entries) {
+    if (entry.brand === 'generic') {
+      regional.push(entry)
+      continue
+    }
+    const selected = selectedBrands.get(entry.brand)
+    if (!selected || serviceVariantPriority(entry.service.title, entry.brand) < serviceVariantPriority(selected.service.title, selected.brand)) {
+      selectedBrands.set(entry.brand, entry)
+    }
+  }
+
+  return [...selectedBrands.values(), ...regional]
+    .sort((left, right) =>
+      (STREAMING_BRAND_PRIORITY[left.brand] ?? 100) - (STREAMING_BRAND_PRIORITY[right.brand] ?? 100)
+      || left.index - right.index)
+    .map(({ service }) => service)
 }
