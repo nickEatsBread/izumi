@@ -7,7 +7,25 @@ const read = (relative: string) => readFileSync(fileURLToPath(new URL(relative, 
 describe('shared P2P status overlay', () => {
   it('is mounted by both built-in players', () => {
     expect(read('./PlayerOverlay.svelte')).toContain('<P2PStatusOverlay buffering={loading} firstFrameSeen={firstFrame} />')
-    expect(read('./AndroidPlayer.svelte')).toContain('<P2PStatusOverlay buffering={loading || recovering} {firstFrameSeen} />')
+    expect(read('./AndroidPlayer.svelte')).toContain('<P2PStatusOverlay buffering={loading || recovering} {firstFrameSeen} variant="android" />')
+  })
+
+  it('uses Android loading language instead of the desktop floating card', () => {
+    const overlay = read('./P2PStatusOverlay.svelte')
+    const rail = read('./AndroidConnectionStatus.svelte')
+    expect(overlay).toContain("variant?: 'desktop' | 'android'")
+    expect(overlay).toContain("variant === 'android' && buffering")
+    expect(overlay).toContain('<AndroidConnectionStatus')
+    expect(overlay).toContain('placement="player"')
+    expect(overlay).toContain('Loading from P2P peers')
+    expect(rail).toContain("placement?: 'preparing' | 'player'")
+    expect(rail).toContain('class="bar-loader h-full w-full"')
+  })
+
+  it('keeps Android always-visible stats compact and clear of the timeline', () => {
+    const overlay = read('./P2PStatusOverlay.svelte')
+    expect(overlay).toContain('This compact readout also stays clear of the timeline')
+    expect(overlay).toContain('top-3')
   })
 
   it('removes startup surfaces synchronously when native video makes WebKit hidden', () => {

@@ -1715,7 +1715,7 @@
       <BufferSpinner size={48} />
     </div>
   {/if}
-  <P2PStatusOverlay buffering={loading || recovering} {firstFrameSeen} />
+  <P2PStatusOverlay buffering={loading || recovering} {firstFrameSeen} variant="android" />
   <!-- Transient toast (auto-advance failures, recovery progress, "no later episode yet"). The
        desktop overlay renders $playerNotice; Android never did, so every one of those messages
        was written into the void and failures looked like silent no-ops. -->
