@@ -89,7 +89,8 @@ use subtitle_select::{preferred_full_subtitle_id, SemanticTrack};
 
 /// The mpv/libmpv version string, for the About page.
 pub fn libmpv_version() -> String {
-    headless::version()
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION.get_or_init(headless::version).clone()
 }
 
 /// An external subtitle track (VTT/ASS URL) the source provided alongside a raw
@@ -976,6 +977,84 @@ impl PlayerHandle {
         failed
     }
 
+    /// Store the encoded-audio and HDR/Dolby-Vision output policy and apply it to a live core.
+    /// This has its own stash because render presets are replaced wholesale and audio filters are
+    /// independently composed. An `ao-reload` makes a transport change take effect immediately;
+    /// it is best-effort because there is no AO before the first file starts.
+    pub fn set_dolby_opts(&self, opts: Vec<(String, String)>) -> Vec<String> {
+        if let Ok(mut stored) = DOLBY_OPTS.lock() {
+            *stored = opts.clone();
+        }
+        let mut failed = Vec::new();
+        if let Ok(guard) = self.mpv.lock() {
+            if let Some(mpv) = guard.as_ref() {
+                for (key, value) in &opts {
+                    if mpv.set_property(key.as_str(), value.as_str()).is_err() {
+                        failed.push(key.clone());
+                    }
+                }
+                if opts.iter().any(|(key, _)| key.starts_with("audio-")) {
+                    let _ = mpv.command("ao-reload", &[] as &[&str]);
+                }
+            }
+        }
+        failed
+    }
+
+    /// A truthful playback-capability snapshot. Desktop APIs do not provide one portable query
+    /// for the receiver's encoded formats, so those remain unknown until mpv opens the chosen AO;
+    /// explicit HDMI mode is the user override. Android supplies routed-device probes separately.
+    pub fn dolby_capabilities(&self) -> serde_json::Value {
+        let property = |name: &str| -> String {
+            self.mpv
+                .lock()
+                .ok()
+                .and_then(|guard| {
+                    guard
+                        .as_ref()
+                        .and_then(|mpv| mpv.get_property::<String>(name).ok())
+                })
+                .unwrap_or_default()
+        };
+        let vo = property("current-vo");
+        let platform = std::env::consts::OS;
+        let aware = vo == "gpu-next" || (vo.is_empty() && platform == "windows");
+        let mut limitations = vec![
+            "Desktop receiver formats cannot be proven until the selected output device accepts the IEC-61937 stream.".to_string(),
+            "Dolby Vision metadata is rendered or converted; this path does not emit a certified native Dolby Vision signal.".to_string(),
+        ];
+        if !aware {
+            limitations.push("The active video output is not gpu-next, so Dolby Vision reshaping is not guaranteed.".to_string());
+        }
+        serde_json::json!({
+            "platform": platform,
+            "engine": "libmpv",
+            "mpvVersion": libmpv_version(),
+            "audioConfidence": "unknown",
+            "audio": { "ac3": false, "eac3": false, "eac3Joc": false, "truehd": false, "mat": false },
+            "audioDevices": [],
+            "video": {
+                "hdr10Display": false,
+                "dolbyVisionDisplay": false,
+                "dolbyVisionDecoder": false,
+                "dolbyVisionNativePath": false,
+                "dolbyVisionAwareRenderer": aware,
+            },
+            "current": {
+                "ao": property("current-ao"),
+                "vo": vo,
+                "audioDevice": property("audio-device"),
+                "audioCodec": property("audio-codec-name"),
+                "audioFormat": property("audio-params/format"),
+                "videoFormat": property("video-format"),
+                "videoProfile": property("video-params/codec-profile"),
+                "videoPrimaries": property("video-params/primaries"),
+                "videoTransfer": property("video-params/gamma"),
+            },
+            "limitations": limitations,
+        })
+    }
+
     /// Add an external subtitle file to the LIVE core and select it. Mirrors the load-time
     /// `sub-add` loop in `load_file` but for a subtitle fetched mid-playback via the online-subtitle
     /// menu. mpv's arg order is `sub-add <url> <flags> <title> <lang>`, so `title` (the menu label)
@@ -1211,6 +1290,11 @@ static UI_LITE_HOLDERS: AtomicU32 = AtomicU32::new(0);
 /// option pushed only to a *live* core survived for exactly one playback session and was gone the
 /// moment the player closed.
 pub(crate) static ENHANCEMENT_OPTS: std::sync::Mutex<Vec<(String, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Encoded-audio passthrough plus HDR/Dolby-Vision output policy. Kept separate from quality
+/// presets so changing a scaler cannot silently clear the selected receiver transport.
+pub(crate) static DOLBY_OPTS: std::sync::Mutex<Vec<(String, String)>> =
     std::sync::Mutex::new(Vec::new());
 
 /// mpv's subtitle regex-filter option — a string LIST that needs the list API rather than a plain
@@ -1753,6 +1837,11 @@ fn new_mpv_libmpv(game_mode_wayland: bool) -> Result<Mpv, libmpv2::Error> {
                 let _ = init.set_option(k.as_str(), v.as_str());
             }
         }
+        if let Ok(opts) = DOLBY_OPTS.lock() {
+            for (k, v) in opts.iter() {
+                let _ = init.set_option(k.as_str(), v.as_str());
+            }
+        }
         let _ = init.set_option("screenshot-format", "png");
         // Name saved screenshots "izumi-shot0001.png" etc. (mpv's default is "mpv-shot%n").
         let _ = init.set_option("screenshot-template", "izumi-shot%n");
@@ -1954,6 +2043,11 @@ fn new_mpv_with_vo(vo: &str, wid: Option<i64>) -> Result<Mpv, libmpv2::Error> {
         // stored render options. Best-effort (`let _`) so an unknown option never aborts core init.
         // Empty on a fresh launch before the frontend's startup push → mpv defaults (smooth).
         if let Ok(opts) = RENDER_OPTS.lock() {
+            for (k, v) in opts.iter() {
+                let _ = init.set_option(k.as_str(), v.as_str());
+            }
+        }
+        if let Ok(opts) = DOLBY_OPTS.lock() {
             for (k, v) in opts.iter() {
                 let _ = init.set_option(k.as_str(), v.as_str());
             }

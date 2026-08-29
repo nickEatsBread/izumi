@@ -30,6 +30,16 @@ pub struct LoadRequest {
     /// HTTP headers shared by the video and sidecar requests.
     #[serde(default)]
     pub headers: std::collections::HashMap<String, String>,
+    #[serde(default = "default_true")]
+    pub autoplay: bool,
+    /// Ask Android to use the direct Media3/MediaCodec Surface path for a known Dolby Vision
+    /// source. The native plugin verifies the display and decoder before honoring it.
+    #[serde(default)]
+    pub prefer_native_dolby_vision: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// A raw mpv command, e.g. ["seek","10","relative"] or ["set","pause","yes"].

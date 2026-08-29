@@ -8,6 +8,8 @@ const COMMANDS: &[&str] = &[
     "mpv_get",
     "mpv_set",
     "mpv_set_render_opts",
+    "mpv_set_dolby_opts",
+    "mpv_dolby_capabilities",
     "mpv_stop",
     "mpv_pip",
     "mpv_auto_pip",

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
   import { directTorrentStats, bumpPlayerOverlay, gameMode } from '$lib/player/session'
+  import { classifyAudioOutput, classifyVideoOutput, dolbyCapabilities } from '$lib/player/dolby'
 
   let values = $state<Record<string, string>>({})
   const properties = [
@@ -36,6 +37,11 @@
   // it has nothing left to fetch, and it will shed its seeders — call that out rather than making
   // it inferable from a peer count.
   const p2p = $derived($directTorrentStats)
+  const dolbyAudio = $derived(classifyAudioOutput($dolbyCapabilities.current))
+  const dolbyVideo = $derived(classifyVideoOutput(
+    $dolbyCapabilities.current,
+    $dolbyCapabilities.video.dolbyVisionNativePath,
+  ))
 </script>
 
 <aside class="pointer-events-none absolute right-5 top-16 z-20 max-h-[calc(100vh-5rem)] w-72 overflow-hidden rounded-lg border border-white/15 bg-black/90 p-3 font-mono text-xs text-white shadow-2xl">
@@ -43,6 +49,11 @@
   {#each properties as [label]}
     <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">{label}</span><span class="truncate text-right">{values[label] ?? '—'}</span></div>
   {/each}
+  <div class="mt-2 border-t border-white/15 pt-2">
+    <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">Audio output</span><span class="truncate text-right">{dolbyAudio}</span></div>
+    <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">Video output</span><span class="truncate text-right">{dolbyVideo}</span></div>
+    <div class="flex justify-between gap-3 py-0.5"><span class="text-white/55">VO / AO</span><span class="truncate text-right">{$dolbyCapabilities.current.vo || '—'} / {$dolbyCapabilities.current.ao || '—'}</span></div>
+  </div>
 
   {#if p2p}
     <div class="mb-2 mt-3 border-t border-white/15 pt-2 font-sans text-xs font-black uppercase tracking-widest text-white/60">Direct P2P</div>

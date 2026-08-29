@@ -1138,6 +1138,22 @@ fn player_set_enhancement_opts(
     player.set_enhancement_opts(opts)
 }
 
+/// Apply and retain the home-theatre audio plus HDR/Dolby-Vision output policy.
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn player_set_dolby_opts(
+    opts: Vec<(String, String)>,
+    player: tauri::State<'_, player::PlayerHandle>,
+) -> Vec<String> {
+    player.set_dolby_opts(opts)
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command]
+fn player_dolby_capabilities(player: tauri::State<'_, player::PlayerHandle>) -> serde_json::Value {
+    player.dolby_capabilities()
+}
+
 /// Download (if needed) and return the local path of the upscale shader `variant`, for the Anime
 /// preset. The release endpoint is hardcoded. On any failure the frontend falls back to High Quality.
 #[cfg(not(target_os = "android"))]
@@ -2195,6 +2211,7 @@ function requestKeyboard(el){
   var mode=el.tagName==='TEXTAREA'||el.isContentEditable||el.getAttribute('role')==='textbox'?1:type==='email'?2:(type==='number'||el.inputMode==='numeric'||el.inputMode==='tel')?3:0;
   try{window.top.postMessage({type:'izumi-comments-focus-input',rect:{left:r.left,top:r.top,width:r.width,height:r.height},mode:mode},'*')}catch(_e){}
 }
+
 function focusComposer(hit,activate){
   if(!disqus)return;
   if(activate&&hit){redispatching=true;try{hit.click()}catch(_e){}finally{redispatching=false;}}
@@ -6051,6 +6068,8 @@ pub fn run() {
             set_player_cache,
             player_set_render_opts,
             player_set_enhancement_opts,
+            player_set_dolby_opts,
+            player_dolby_capabilities,
             ensure_upscale_shader,
             set_idle_inhibit,
             write_text_file,

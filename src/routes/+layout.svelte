@@ -10,6 +10,7 @@
   import { getCurrentWindow } from '@tauri-apps/api/window'
   import { startQualitySync } from '$lib/player/quality'
   import { startEnhancementSync } from '$lib/player/enhancements'
+  import { startDolbySync } from '$lib/player/dolby'
   import { startThemeSync } from '$lib/theme'
   import { scheduleBootWork } from '$lib/util/boot-work'
   import { initClientPerformance } from '$lib/performance/client'
@@ -30,6 +31,7 @@
     document.documentElement.dir = getTextDirection()
     startQualitySync()
     startEnhancementSync()
+    const stopDolbySync = startDolbySync()
     // Keep the DHT bootstrap away from the first paint. A Play action promotes this task, so a fast
     // user never waits for the speculative delay; ordinary launches get a quiet shell first.
     void scheduleBootWork('torrent', async () => {
@@ -41,7 +43,7 @@
       } catch { /* invalid proxy is shown in Settings and playback fails closed */ }
     }, 4500)
     const stopTheme = startThemeSync()
-    return () => { stopPerformance(); stopTheme() }
+    return () => { stopPerformance(); stopTheme(); stopDolbySync() }
   })
 </script>
 {@render children()}

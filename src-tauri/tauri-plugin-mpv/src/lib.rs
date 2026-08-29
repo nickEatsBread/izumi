@@ -47,6 +47,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::mpv_get,
             commands::mpv_set,
             commands::mpv_set_render_opts,
+            commands::mpv_set_dolby_opts,
+            commands::mpv_dolby_capabilities,
             commands::mpv_stop,
             commands::mpv_pip,
             commands::mpv_auto_pip,

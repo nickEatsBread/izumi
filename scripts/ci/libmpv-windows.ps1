@@ -1,7 +1,7 @@
 # Windows libmpv setup for CI builds.
 #
 # libmpv2-sys links `-l mpv` (needs an MSVC import lib, mpv.lib) and the app needs libmpv-2.dll at
-# runtime. Fetch the latest libmpv dev build from shinchiro, make mpv.lib from its exports, put the
+# runtime. Fetch a reviewed libmpv dev build from shinchiro, make mpv.lib from its exports, put the
 # directory on LIB, and stage the DLL for Tauri's resource bundling.
 #
 # Shared by the release matrix and the PR preview build so the two cannot drift. Requires MSVC
@@ -10,17 +10,22 @@
 $ErrorActionPreference = 'Stop'
 $dir = "$env:RUNNER_TEMP\libmpv"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$PinnedTag = '20260829'
+$PinnedAsset = 'mpv-dev-x86_64-20260829-git-e8673660ab.7z'
+$PinnedSha256 = 'e99b8c85e184463571088c79732f7e1e09ed4524c2945cdca177a4df70ba6f2e'
 # Authenticate requests so shared runner IPs do not hit GitHub's small anonymous limit.
 $hdr = @{
   'User-Agent' = 'izumi-ci'
   'Authorization' = "Bearer $env:GH_TOKEN"
   'Accept' = 'application/vnd.github+json'
 }
-$rel = Invoke-RestMethod 'https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/latest' -Headers $hdr
-$asset = $rel.assets | Where-Object { $_.name -like 'mpv-dev-x86_64-2*' -and $_.name -notlike '*v3*' } | Select-Object -First 1
-if (-not $asset) { throw 'no mpv-dev-x86_64 asset in latest release' }
+$rel = Invoke-RestMethod "https://api.github.com/repos/shinchiro/mpv-winbuild-cmake/releases/tags/$PinnedTag" -Headers $hdr
+$asset = $rel.assets | Where-Object { $_.name -eq $PinnedAsset } | Select-Object -First 1
+if (-not $asset) { throw "pinned libmpv asset missing: $PinnedAsset" }
 Write-Host "libmpv dev build: $($asset.name)"
 Invoke-WebRequest $asset.browser_download_url -OutFile "$dir\libmpv.7z" -Headers $hdr
+$actualSha256 = (Get-FileHash "$dir\libmpv.7z" -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actualSha256 -ne $PinnedSha256) { throw "libmpv SHA-256 mismatch: $actualSha256" }
 7z x "$dir\libmpv.7z" -o"$dir" -y
 $dll = (Get-ChildItem -Path $dir -Recurse -Filter 'libmpv-2.dll' | Select-Object -First 1).FullName
 if (-not $dll) { throw 'libmpv-2.dll not found in archive' }

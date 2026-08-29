@@ -129,6 +129,18 @@ impl<R: Runtime> Mpv<R> {
             .map_err(Into::into)
     }
 
+    pub fn set_dolby_opts(&self, payload: RenderOptsRequest) -> crate::Result<serde_json::Value> {
+        self.0
+            .run_mobile_plugin("setDolbyOpts", payload)
+            .map_err(Into::into)
+    }
+
+    pub fn dolby_capabilities(&self) -> crate::Result<serde_json::Value> {
+        self.0
+            .run_mobile_plugin("dolbyCapabilities", ())
+            .map_err(Into::into)
+    }
+
     pub fn snapshot(&self) -> crate::Result<serde_json::Value> {
         self.0.run_mobile_plugin("snapshot", ()).map_err(Into::into)
     }

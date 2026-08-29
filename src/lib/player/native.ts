@@ -4,6 +4,7 @@ import { getDrmEngine } from './drm'
 import { gifCapturePlan } from './gif-settings'
 import { nowPlayingStream } from './session'
 import { gifMaxSeconds, gifScale } from '$lib/settings/ui'
+import { setDolbyPlaybackSpeed } from './dolby'
 
 /** Route player IPC through the in-webview DRM engine when a stream is encrypted. */
 
@@ -11,14 +12,17 @@ function drmStream(): boolean {
   return !!get(nowPlayingStream).drm
 }
 
-export function playerCommand(name: string, args: string[] = []): Promise<void> {
+export async function playerCommand(name: string, args: string[] = []): Promise<void> {
   const drm = getDrmEngine()
   if (drm) {
     drm.command(name, args)
-    return Promise.resolve()
+    return
   }
-  if (drmStream()) return Promise.resolve()
-  return invoke('player_command', { name, args })
+  if (drmStream()) return
+  const speed = name === 'set' && args[0] === 'speed' ? Number(args[1]) : null
+  if (speed != null && speed !== 1) await setDolbyPlaybackSpeed(speed)
+  await invoke('player_command', { name, args })
+  if (speed === 1) await setDolbyPlaybackSpeed(speed)
 }
 
 export function playerGetProperty(name: string): Promise<string> {

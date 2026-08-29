@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-set-dolby-opts"
+description = "Enables the mpv_set_dolby_opts command without any pre-configured scope."
+commands.allow = ["mpv_set_dolby_opts"]
+
+[[permission]]
+identifier = "deny-mpv-set-dolby-opts"
+description = "Denies the mpv_set_dolby_opts command without any pre-configured scope."
+commands.deny = ["mpv_set_dolby_opts"]

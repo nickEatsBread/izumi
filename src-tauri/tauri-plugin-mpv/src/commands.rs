@@ -139,6 +139,21 @@ pub(crate) async fn mpv_thumb<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn mpv_set_dolby_opts<R: Runtime>(
+    app: AppHandle<R>,
+    payload: RenderOptsRequest,
+) -> Result<serde_json::Value> {
+    app.mpv().set_dolby_opts(payload)
+}
+
+#[command]
+pub(crate) async fn mpv_dolby_capabilities<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<serde_json::Value> {
+    app.mpv().dolby_capabilities()
+}
+
+#[command]
 pub(crate) async fn mpv_snapshot<R: Runtime>(app: AppHandle<R>) -> Result<serde_json::Value> {
     app.mpv().snapshot()
 }

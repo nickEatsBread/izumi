@@ -9,6 +9,8 @@ permissions = [
     "allow-mpv-get",
     "allow-mpv-set",
     "allow-mpv-set-render-opts",
+    "allow-mpv-set-dolby-opts",
+    "allow-mpv-dolby-capabilities",
     "allow-mpv-stop",
     "allow-mpv-pip",
     "allow-mpv-auto-pip",

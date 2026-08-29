@@ -16,7 +16,15 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.Icon
+import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.MediaCodecList
 import android.media.MediaMetadataRetriever
+import android.media.MediaFormat
+import android.net.Uri
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
@@ -33,6 +41,7 @@ import android.util.Log
 import android.util.Rational
 import org.json.JSONArray
 import android.view.OrientationEventListener
+import android.view.Display
 import android.view.PixelCopy
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -50,6 +59,23 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.Permission
@@ -78,11 +104,24 @@ class LoadArgs {
     var alang: String? = null
     var slang: String? = null
     var headers: Map<String, String> = emptyMap()
+    var autoplay: Boolean = true
+    /** Request direct MediaCodec/Surface playback for a known Dolby Vision source. The native side
+     * still verifies both the current display and an exact Dolby Vision decoder before using it. */
+    var preferNativeDolbyVision: Boolean = false
 }
 
 private data class PendingSubtitles(
     val url: String,
     val tracks: Array<SubtitleArgs>,
+)
+
+private data class NativeTrack(
+    val id: Int,
+    val type: Int,
+    val group: androidx.media3.common.TrackGroup,
+    val index: Int,
+    val format: Format,
+    val selected: Boolean,
 )
 
 @InvokeArg
@@ -226,6 +265,7 @@ private const val GIF_MAX_MS = 30_000L
  * (made-transparent) Tauri WebView, and forwards observed properties to JS as plugin events.
  * libmpv itself is thread-safe, so only view-hierarchy work (create/destroy) runs on the UI thread.
  */
+@UnstableApi
 @TauriPlugin(
     permissions = [
         Permission(strings = [Manifest.permission.POST_NOTIFICATIONS], alias = "notifications"),
@@ -234,6 +274,14 @@ private const val GIF_MAX_MS = 30_000L
 class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.EventObserver {
     private var mpv: MPVLib? = null
     private var view: IzumiMpvView? = null
+    /** Genuine Android Dolby Vision path: encoded DV samples go straight from Media3/MediaCodec to
+     * this Surface instead of being copied back through mpv's OpenGL renderer. */
+    private var nativeDvPlayer: ExoPlayer? = null
+    private var nativeDvView: PlayerView? = null
+    private var nativeDvLoad: LoadArgs? = null
+    private var nativeDvFirstFrame = false
+    private var nativeDvSeeking = false
+    private var nativeDvProgressTask: Runnable? = null
     private var preferredSubLanguage: String? = null
     private var pendingSubtitles: PendingSubtitles? = null
     /** The first load must wait for SurfaceView.surfaceCreated or mpv can initialize its VO with
@@ -280,6 +328,25 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     /** Frontend quality-preset keys, replayed at the next `ensureCore` the same way
      *  desktop `RENDER_OPTS` is. Replaced as a whole set so leaving High clears deband. */
     private val storedRenderOpts = LinkedHashMap<String, String>()
+    /** Encoded-audio transport and Dolby Vision output policy. Separate from quality because a
+     * scaler preset is replaced wholesale and must never clear the receiver configuration. */
+    private val storedDolbyOpts = LinkedHashMap<String, String>()
+    private var audioDeviceCallback: AudioDeviceCallback? = null
+
+    override fun load(webView: WebView) {
+        if (Build.VERSION.SDK_INT >= 23 && audioDeviceCallback == null) {
+            val manager = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioDeviceCallback = object : AudioDeviceCallback() {
+                override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+                    trigger("dolby", JSObject().put("reason", "audio-route-changed"))
+                }
+
+                override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+                    trigger("dolby", JSObject().put("reason", "audio-route-changed"))
+                }
+            }.also { manager.registerAudioDeviceCallback(it, Handler(Looper.getMainLooper())) }
+        }
+    }
 
     private fun cancelLandscapeReleaseTask() {
         landscapeReleaseTask?.let { activity.window.decorView.removeCallbacks(it) }
@@ -424,6 +491,9 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         for ((k, v) in storedRenderOpts) {
             m.setOptionString(k, v)
         }
+        for ((k, v) in storedDolbyOpts) {
+            m.setOptionString(k, v)
+        }
         // MUST be "yes", not "once": the core is cached across episodes (see `ensure`), and with
         // "once" mpv shuts itself down the moment the first file reaches EOF. Auto-advance and
         // "Change source" then issued `loadfile` against a dead core — the command silently
@@ -466,6 +536,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
 
     /** Attach the prepared core to a SurfaceView on first playback. UI thread only. */
     private fun ensure(): MPVLib {
+        if (nativeDvPlayer != null) releaseNativeDolbyVision(removeContainer = true)
         val m = ensureCore()
         if (view != null) return m
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
@@ -522,6 +593,210 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         installAutoPipHook()
         installResumeGuard()
         return m
+    }
+
+    private fun deviceSupportsNativeDolbyVision(): Boolean {
+        if (Build.VERSION.SDK_INT < 24 || !hasDolbyVisionDecoder()) return false
+        val hdrTypes = activity.display?.hdrCapabilities?.supportedHdrTypes ?: return false
+        return hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)
+    }
+
+    private fun subtitleMime(url: String): String = when {
+        url.substringBefore('?').endsWith(".ass", true) || url.substringBefore('?').endsWith(".ssa", true) -> MimeTypes.TEXT_SSA
+        url.substringBefore('?').endsWith(".srt", true) -> MimeTypes.APPLICATION_SUBRIP
+        else -> MimeTypes.TEXT_VTT
+    }
+
+    private fun publishNativeDolbyProgress() {
+        val player = nativeDvPlayer ?: return
+        val duration = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+        trigger("progress", JSObject().put("property", "time-pos").put("value", player.currentPosition / 1000.0))
+        trigger("progress", JSObject().put("property", "duration").put("value", duration / 1000.0))
+        trigger("progress", JSObject().put("property", "pause").put("value", !player.isPlaying))
+        trigger("progress", JSObject().put("property", "paused-for-cache").put("value", player.playbackState == Player.STATE_BUFFERING))
+        trigger("progress", JSObject().put("property", "seeking").put("value", nativeDvSeeking))
+        trigger("progress", JSObject().put("property", "core-idle").put("value", player.playbackState == Player.STATE_IDLE))
+        trigger("progress", JSObject().put("property", "demuxer-cache-time").put("value", player.bufferedPosition / 1000.0))
+    }
+
+    private fun startNativeDolbyProgress() {
+        nativeDvProgressTask?.let { activity.window.decorView.removeCallbacks(it) }
+        nativeDvProgressTask = object : Runnable {
+            override fun run() {
+                if (nativeDvPlayer == null) return
+                publishNativeDolbyProgress()
+                activity.window.decorView.postDelayed(this, 250L)
+            }
+        }.also { activity.window.decorView.post(it) }
+    }
+
+    private val nativeDolbyListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            when (playbackState) {
+                Player.STATE_BUFFERING -> {
+                    trigger("progress", JSObject().put("property", "paused-for-cache").put("value", true))
+                    trigger("progress", JSObject().put("property", "core-idle").put("value", true))
+                }
+                Player.STATE_READY -> {
+                    trigger("progress", JSObject().put("property", "paused-for-cache").put("value", false))
+                    trigger("progress", JSObject().put("property", "core-idle").put("value", false))
+                    trigger("event", JSObject().put("id", 8)) // MPV_EVENT_FILE_LOADED contract
+                }
+                Player.STATE_ENDED -> {
+                    trigger("progress", JSObject().put("property", "eof-reached").put("value", true))
+                    trigger("event", JSObject().put("id", 7))
+                }
+            }
+            publishNativeDolbyProgress()
+        }
+
+        override fun onRenderedFirstFrame() {
+            if (nativeDvFirstFrame) return
+            nativeDvFirstFrame = true
+            mediaLoaded = true
+            trigger("event", JSObject().put("id", 21)) // MPV_EVENT_PLAYBACK_RESTART contract
+            trigger("dolby", JSObject().put("reason", "native-dolby-vision-active"))
+            publishPipParams()
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            corePaused = !isPlaying
+            trigger("progress", JSObject().put("property", "pause").put("value", !isPlaying))
+            MediaController.setPlaying(isPlaying)
+            updatePipActions()
+        }
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            nativeDvSeeking = false
+            publishNativeDolbyProgress()
+        }
+
+        override fun onPlayerError(error: PlaybackException) {
+            val args = nativeDvLoad ?: return
+            Log.w("MpvPlugin", "native Dolby Vision path failed; falling back to mpv: ${error.message}")
+            trigger("dolby", JSObject().put("reason", "native-dolby-vision-fallback"))
+            activity.runOnUiThread {
+                releaseNativeDolbyVision(removeContainer = true)
+                loadWithMpv(args)
+            }
+        }
+    }
+
+    private fun setupVideoContainer(child: View): FrameLayout {
+        val content = activity.findViewById<ViewGroup>(android.R.id.content)
+        val web = findWebView(content)
+        webView = web
+        if (web != null) {
+            webViewHapticsWereEnabled = web.isHapticFeedbackEnabled
+            web.isHapticFeedbackEnabled = false
+            web.setBackgroundColor(Color.TRANSPARENT)
+            web.background = null
+        }
+        val playerContainer = FrameLayout(activity).apply {
+            setBackgroundColor(Color.BLACK)
+            clipChildren = true
+            clipToPadding = true
+            addView(child, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+        }
+        content.addView(playerContainer, 0, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        container = playerContainer
+        contentView = content
+        playerContainer.keepScreenOn = keepScreenAwakeOn
+        setImmersive(true)
+        installPipWatcher(content)
+        installAutoPipHook()
+        installResumeGuard()
+        return playerContainer
+    }
+
+    private fun loadNativeDolbyVision(args: LoadArgs) {
+        mpv?.command(arrayOf("stop"))
+        container?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        container = null
+        view = null
+        releaseNativeDolbyVision(removeContainer = false)
+
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(args.headers)
+            .setConnectTimeoutMs(30_000)
+            .setReadTimeoutMs(30_000)
+        val dataSourceFactory = DefaultDataSource.Factory(activity, httpFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+        val renderers = DefaultRenderersFactory(activity).setEnableDecoderFallback(true)
+        val player = ExoPlayer.Builder(activity, renderers, mediaSourceFactory).build()
+        val playerView = PlayerView(activity).apply {
+            useController = false
+            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+            this.player = player
+            setShutterBackgroundColor(Color.BLACK)
+        }
+        setupVideoContainer(playerView)
+        nativeDvPlayer = player
+        nativeDvView = playerView
+        nativeDvLoad = args
+        nativeDvFirstFrame = false
+        nativeDvSeeking = false
+        mediaLoaded = false
+        corePaused = args.autoplay.not()
+
+        val trackParameters = player.trackSelectionParameters.buildUpon()
+        args.alang?.trim()?.takeIf { it.isNotEmpty() && it != "auto" }?.let {
+            trackParameters.setPreferredAudioLanguage(it)
+        }
+        val subtitleLanguage = args.slang?.trim().orEmpty()
+        if (subtitleLanguage.equals("none", ignoreCase = true)) {
+            trackParameters.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+        } else if (subtitleLanguage.isNotEmpty() && !subtitleLanguage.equals("auto", ignoreCase = true)) {
+            trackParameters.setPreferredTextLanguage(subtitleLanguage)
+        }
+        player.trackSelectionParameters = trackParameters.build()
+
+        val subtitleConfigs = args.subtitles.map { subtitle ->
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitle.url))
+                .setMimeType(subtitleMime(subtitle.url))
+                .setLanguage(subtitle.lang)
+                .setLabel(subtitle.title)
+                .setSelectionFlags(if (subtitle.selected) C.SELECTION_FLAG_DEFAULT else 0)
+                .build()
+        }
+        val item = MediaItem.Builder()
+            .setUri(args.url)
+            .setSubtitleConfigurations(subtitleConfigs)
+            .build()
+        player.addListener(nativeDolbyListener)
+        trigger("event", JSObject().put("id", 6)) // MPV_EVENT_START_FILE contract
+        player.setMediaItem(item, (args.startPos * 1000.0).toLong().coerceAtLeast(0L))
+        player.prepare()
+        player.playWhenReady = args.autoplay
+        startNativeDolbyProgress()
+        publishPipParams()
+    }
+
+    private fun releaseNativeDolbyVision(removeContainer: Boolean) {
+        nativeDvProgressTask?.let { activity.window.decorView.removeCallbacks(it) }
+        nativeDvProgressTask = null
+        nativeDvPlayer?.removeListener(nativeDolbyListener)
+        nativeDvView?.player = null
+        nativeDvPlayer?.release()
+        nativeDvPlayer = null
+        nativeDvView = null
+        nativeDvLoad = null
+        nativeDvFirstFrame = false
+        nativeDvSeeking = false
+        if (removeContainer) {
+            container?.let { (it.parent as? ViewGroup)?.removeView(it) }
+            container = null
+        }
     }
 
     /** Pay libmpv and font initialization while the app is idle, without exposing a video view. */
@@ -603,6 +878,16 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     /** The PiP window's shape. Android rejects anything outside 1:2.39 … 2.39:1, so the video's own
      *  display aspect is clamped rather than passed through (and 16:9 stands in before it is known). */
     private fun pipAspect(): Rational {
+        nativeDvPlayer?.videoSize?.let { size ->
+            if (size.width > 0 && size.height > 0) {
+                val ratio = size.width.toDouble() / size.height.toDouble()
+                return when {
+                    ratio < 1.0 / 2.39 -> Rational(100, 239)
+                    ratio > 2.39 -> Rational(239, 100)
+                    else -> Rational(size.width, size.height)
+                }
+            }
+        }
         val m = mpv
         val width = m?.getPropertyString("video-params/dw")?.toIntOrNull() ?: 0
         val height = m?.getPropertyString("video-params/dh")?.toIntOrNull() ?: 0
@@ -618,7 +903,8 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     /** A single play/pause remote action. Without it the miniplayer is a picture you cannot stop. */
     private fun pipActions(): List<RemoteAction> {
         if (Build.VERSION.SDK_INT < 26) return emptyList()
-        val paused = mpv?.getPropertyString("pause") == "yes"
+        val paused = nativeDvPlayer?.let { !it.isPlaying }
+            ?: (mpv?.getPropertyString("pause") == "yes")
         val label = if (paused) "Play" else "Pause"
         val icon = Icon.createWithResource(
             activity,
@@ -674,7 +960,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // With no core there is nothing to shrink into a miniplayer, but the params the system still
         // holds from the last playback say auto-enter is armed — bailing out here left the WHOLE app
         // folding into a miniplayer on the next press of home. Disarm rather than return.
-        if (mpv == null) {
+        if (mpv == null && nativeDvPlayer == null) {
             if (Build.VERSION.SDK_INT >= 31) {
                 try {
                     activity.setPictureInPictureParams(
@@ -714,7 +1000,11 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.getIntExtra(PIP_EXTRA_CODE, 0) != PIP_CODE_PLAY_PAUSE) return
-                mpv?.command(arrayOf("cycle", "pause"))
+                if (nativeDvPlayer != null) {
+                    nativeDvPlayer?.playWhenReady = nativeDvPlayer?.playWhenReady != true
+                } else {
+                    mpv?.command(arrayOf("cycle", "pause"))
+                }
                 // The observed `pause` event also refreshes the button, but post one update so the
                 // icon flips even if the property observer is momentarily behind.
                 activity.window.decorView.postDelayed({ updatePipActions() }, 150L)
@@ -901,16 +1191,17 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
 
     private val mediaTransport = object : MediaTransport {
         override fun onPlay() {
-            mpv?.command(arrayOf("set", "pause", "no"))
+            nativeDvPlayer?.play() ?: mpv?.command(arrayOf("set", "pause", "no"))
         }
 
         override fun onPause() {
-            mpv?.command(arrayOf("set", "pause", "yes"))
+            nativeDvPlayer?.pause() ?: mpv?.command(arrayOf("set", "pause", "yes"))
         }
 
         override fun onSeekTo(positionMs: Long) {
             val seconds = (positionMs.coerceAtLeast(0L) / 1000.0)
-            mpv?.command(arrayOf("seek", seconds.toString(), "absolute+exact"))
+            nativeDvPlayer?.seekTo((seconds * 1000.0).toLong())
+                ?: mpv?.command(arrayOf("seek", seconds.toString(), "absolute+exact"))
         }
 
         override fun onSkipNext() {
@@ -924,7 +1215,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         override fun onStop() {
             // Silence it immediately rather than waiting for the web layer to wake up and unwind
             // the session; the JS side still gets the event and does the real teardown.
-            mpv?.command(arrayOf("set", "pause", "yes"))
+            nativeDvPlayer?.pause() ?: mpv?.command(arrayOf("set", "pause", "yes"))
             trigger("media", JSObject().put("action", "stop"))
             // Retire the transport here too. Dismissing the notification is a stop, and leaving the
             // session alive means the very next state update posts the notification straight back.
@@ -965,7 +1256,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun mediaSession(invoke: Invoke) {
         val a = invoke.parseArgs(MediaSessionArgs::class.java)
         activity.runOnUiThread {
-            if (!a.enabled || mpv == null) {
+            if (!a.enabled || (mpv == null && nativeDvPlayer == null)) {
                 teardownMediaSession()
                 invoke.resolve()
                 return@runOnUiThread
@@ -1068,30 +1359,162 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }
     }
 
+    private fun loadWithMpv(args: LoadArgs) {
+        val m = ensure()
+        // BaseMPVView from mpv-android follows the same rule: the first loadfile is retained until
+        // surfaceCreated has attached the Android Surface. Later loads can reuse it.
+        if (view?.surfaceReady == true) {
+            pendingSurfaceLoad = null
+            loadIntoCore(m, args)
+        } else {
+            pendingSurfaceLoad = args
+        }
+        publishPipParams()
+    }
+
     @Command
     fun load(invoke: Invoke) {
         val args = invoke.parseArgs(LoadArgs::class.java)
         activity.runOnUiThread {
-            val m = ensure()
-            // BaseMPVView from mpv-android follows the same rule: the first loadfile is retained
-            // until surfaceCreated has attached the Android Surface. Later loads can reuse it.
-            if (view?.surfaceReady == true) {
-                pendingSurfaceLoad = null
-                loadIntoCore(m, args)
+            if (args.preferNativeDolbyVision && deviceSupportsNativeDolbyVision()) {
+                loadNativeDolbyVision(args)
             } else {
-                // Keep only the newest request if the user changes source before the surface is
-                // ready. Invokes resolve immediately because the request has been accepted.
-                pendingSurfaceLoad = args
+                if (args.preferNativeDolbyVision) {
+                    trigger("dolby", JSObject().put("reason", "native-dolby-vision-unavailable"))
+                }
+                loadWithMpv(args)
             }
-            publishPipParams()
             invoke.resolve()
+        }
+    }
+
+    private fun nativeTracks(): List<NativeTrack> {
+        val player = nativeDvPlayer ?: return emptyList()
+        var id = 1
+        val result = mutableListOf<NativeTrack>()
+        for (group in player.currentTracks.groups) {
+            if (group.type != C.TRACK_TYPE_AUDIO && group.type != C.TRACK_TYPE_TEXT && group.type != C.TRACK_TYPE_VIDEO) continue
+            for (index in 0 until group.length) {
+                result += NativeTrack(
+                    id = id++,
+                    type = group.type,
+                    group = group.mediaTrackGroup,
+                    index = index,
+                    format = group.getTrackFormat(index),
+                    selected = group.isTrackSelected(index),
+                )
+            }
+        }
+        return result
+    }
+
+    private fun setNativeTrack(property: String, value: String) {
+        val player = nativeDvPlayer ?: return
+        val type = if (property == "aid") C.TRACK_TYPE_AUDIO else C.TRACK_TYPE_TEXT
+        val builder = player.trackSelectionParameters.buildUpon().clearOverridesOfType(type)
+        if (value == "no") {
+            builder.setTrackTypeDisabled(type, true)
+        } else {
+            val track = nativeTracks().firstOrNull { it.type == type && it.id == value.toIntOrNull() }
+            builder.setTrackTypeDisabled(type, false)
+            if (track != null) builder.setOverrideForType(TrackSelectionOverride(track.group, listOf(track.index)))
+        }
+        player.trackSelectionParameters = builder.build()
+    }
+
+    private fun handleNativeCommand(args: Array<String>): Boolean {
+        val player = nativeDvPlayer ?: return false
+        when (args.firstOrNull()) {
+            "cycle" -> if (args.getOrNull(1) == "pause") player.playWhenReady = !player.playWhenReady
+            "seek" -> {
+                val amount = args.getOrNull(1)?.toDoubleOrNull() ?: return true
+                nativeDvSeeking = true
+                val absolute = args.getOrNull(2)?.startsWith("absolute") == true
+                val target = if (absolute) amount else player.currentPosition / 1000.0 + amount
+                player.seekTo((target * 1000.0).toLong().coerceAtLeast(0L))
+            }
+            "set" -> {
+                val property = args.getOrNull(1).orEmpty()
+                val value = args.getOrNull(2).orEmpty()
+                when (property) {
+                    "pause" -> player.playWhenReady = value != "yes"
+                    "volume" -> player.volume = ((value.toFloatOrNull() ?: 100f) / 100f).coerceIn(0f, 1f)
+                    "mute" -> player.volume = if (value == "yes") 0f else 1f
+                    "speed" -> player.setPlaybackSpeed((value.toFloatOrNull() ?: 1f).coerceIn(0.25f, 4f))
+                    "aid", "sid" -> setNativeTrack(property, value)
+                    "keepaspect", "panscan" -> {
+                        nativeDvView?.resizeMode = if (property == "panscan" && value != "0") {
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                        } else AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                    // libass/audio filters are intentionally not emulated. Native DV is selected
+                    // only when those features are inactive; otherwise the frontend requests mpv.
+                    "af", "vf" -> Unit
+                }
+            }
+            "stop" -> player.stop()
+            else -> return false
+        }
+        return true
+    }
+
+    private fun nativeProperty(name: String): String? {
+        val player = nativeDvPlayer ?: return null
+        val video = player.videoFormat
+        val audio = player.audioFormat
+        val indexed = Regex("track-list/(\\d+)/(.*)").matchEntire(name)
+        if (indexed != null) {
+            val track = nativeTracks().getOrNull(indexed.groupValues[1].toInt()) ?: return null
+            return when (indexed.groupValues[2]) {
+                "id" -> track.id.toString()
+                "type" -> when (track.type) { C.TRACK_TYPE_AUDIO -> "audio"; C.TRACK_TYPE_TEXT -> "sub"; else -> "video" }
+                "title" -> track.format.label.orEmpty()
+                "lang" -> track.format.language.orEmpty()
+                "selected" -> if (track.selected) "yes" else "no"
+                "codec", "format-name" -> track.format.sampleMimeType.orEmpty()
+                "codec-profile" -> track.format.codecs.orEmpty()
+                "external-filename" -> ""
+                else -> ""
+            }
+        }
+        return when (name) {
+            "idle-active" -> "no"
+            "pause" -> if (player.playWhenReady) "no" else "yes"
+            "time-pos" -> (player.currentPosition / 1000.0).toString()
+            "duration" -> ((player.duration.takeIf { it != C.TIME_UNSET } ?: 0L) / 1000.0).toString()
+            "volume" -> (player.volume * 100f).toInt().toString()
+            "speed" -> player.playbackParameters.speed.toString()
+            "file-format" -> nativeDvLoad?.url?.substringBefore('?')?.substringAfterLast('.', "") ?: ""
+            "track-list/count" -> nativeTracks().size.toString()
+            "chapter-list/count" -> "0"
+            "video-params/dw", "video-params/w" -> player.videoSize.width.toString()
+            "video-params/dh", "video-params/h" -> player.videoSize.height.toString()
+            "video-format" -> video?.sampleMimeType.orEmpty()
+            "video-params/codec-profile" -> video?.codecs.orEmpty()
+            "video-params/primaries" -> when (video?.colorInfo?.colorSpace) {
+                C.COLOR_SPACE_BT2020 -> "bt.2020"
+                C.COLOR_SPACE_BT709 -> "bt.709"
+                else -> ""
+            }
+            "video-params/gamma" -> when (video?.colorInfo?.colorTransfer) {
+                C.COLOR_TRANSFER_ST2084 -> "pq"
+                C.COLOR_TRANSFER_HLG -> "hlg"
+                C.COLOR_TRANSFER_SDR -> "bt.1886"
+                else -> ""
+            }
+            "audio-codec-name" -> audio?.sampleMimeType.orEmpty()
+            "audio-params/format" -> audio?.sampleMimeType.orEmpty()
+            "current-vo" -> "mediacodec-surface"
+            "current-ao" -> "audiotrack"
+            "audio-device" -> "android-routed"
+            else -> ""
         }
     }
 
     @Command
     fun command(invoke: Invoke) {
         val a = invoke.parseArgs(CommandArgs::class.java)
-        mpv?.command(a.args) // libmpv command queue is thread-safe
+        if (!handleNativeCommand(a.args)) mpv?.command(a.args) // libmpv command queue is thread-safe
         invoke.resolve()
     }
 
@@ -1099,14 +1522,16 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
     fun get(invoke: Invoke) {
         val a = invoke.parseArgs(GetArgs::class.java)
         val ret = JSObject()
-        ret.put("value", mpv?.getPropertyString(a.property))
+        ret.put("value", nativeProperty(a.property) ?: mpv?.getPropertyString(a.property))
         invoke.resolve(ret)
     }
 
     @Command
     fun set(invoke: Invoke) {
         val a = invoke.parseArgs(SetArgs::class.java)
-        mpv?.setPropertyString(a.property, a.value)
+        if (!handleNativeCommand(arrayOf("set", a.property, a.value))) {
+            mpv?.setPropertyString(a.property, a.value)
+        }
         invoke.resolve()
     }
 
@@ -1143,6 +1568,11 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
      * Returns the window's safe-area insets as { top, right, bottom, left } physical pixels. Must
      * run on the UI thread.
      */
+    private fun setVideoZOrderOnTop(onTop: Boolean) {
+        view?.setZOrderOnTop(onTop)
+        (nativeDvView?.videoSurfaceView as? android.view.SurfaceView)?.setZOrderOnTop(onTop)
+    }
+
     private fun applyViewport(a: ViewportArgs): JSObject {
         setImmersive(a.immersive)
         val rootInsets = ViewCompat.getRootWindowInsets(activity.window.decorView)
@@ -1175,7 +1605,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
             playerContainer.layoutParams = params
             // Once browse content is painted again it would cover a behind-WebView SurfaceView.
             // Raise only the bounded mini rectangle; the adjacent HTML transport remains clickable.
-            view?.setZOrderOnTop(a.floating)
+            setVideoZOrderOnTop(a.floating)
             // A viewport settle returns the whole player rectangle to identity. The child
             // SurfaceView is never transformed independently.
             playerContainer.scaleX = 1f
@@ -1236,7 +1666,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
                 return@runOnUiThread
             }
             container?.let { playerContainer ->
-                view?.setZOrderOnTop(a.floating)
+                setVideoZOrderOnTop(a.floating)
                 playerContainer.pivotX = playerContainer.width / 2f
                 playerContainer.pivotY = playerContainer.height / 2f
                 val s = a.scale.toFloat().coerceIn(0.2f, 4f)
@@ -1349,12 +1779,176 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         }.start()
     }
 
+    /** Store and live-apply the complete encoded-audio/HDR output policy. */
+    @Command
+    fun setDolbyOpts(invoke: Invoke) {
+        val a = invoke.parseArgs(RenderOptsArgs::class.java)
+        activity.runOnUiThread {
+            storedDolbyOpts.clear()
+            val failed = JSONArray()
+            val live = mpv
+            for (opt in a.opts) {
+                val key = opt.key.trim()
+                if (key.isEmpty()) continue
+                storedDolbyOpts[key] = opt.value
+                if (live != null) {
+                    try {
+                        live.setPropertyString(key, opt.value)
+                    } catch (e: Exception) {
+                        failed.put(key)
+                    }
+                }
+            }
+            if (live != null && a.opts.any { it.key.startsWith("audio-") }) {
+                runCatching { live.command(arrayOf("ao-reload")) }
+            }
+            invoke.resolve(JSObject().put("failed", failed))
+        }
+    }
+
+    private fun encodingName(encoding: Int): String = when (encoding) {
+        AudioFormat.ENCODING_AC3 -> "ac3"
+        AudioFormat.ENCODING_E_AC3 -> "eac3"
+        AudioFormat.ENCODING_E_AC3_JOC -> "eac3-joc"
+        AudioFormat.ENCODING_DOLBY_TRUEHD -> "truehd"
+        AudioFormat.ENCODING_DOLBY_MAT -> "mat"
+        else -> encoding.toString()
+    }
+
+    private fun mediaAudioAttributes(): AudioAttributes =
+        AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build()
+
+    private fun routedAudioDevices(manager: AudioManager): List<AudioDeviceInfo> {
+        if (Build.VERSION.SDK_INT >= 33) {
+            return runCatching { manager.getAudioDevicesForAttributes(mediaAudioAttributes()) }
+                .getOrDefault(emptyList())
+        }
+        if (Build.VERSION.SDK_INT < 23) return emptyList()
+        // Android did not expose predicted media routing before API 33. Restrict the fallback to
+        // currently connected digital endpoints; never infer passthrough from the phone speaker or
+        // from a decoder/offload capability. The diagnostics label this result as inferred.
+        return manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).filter { device ->
+            device.type == AudioDeviceInfo.TYPE_HDMI ||
+                device.type == AudioDeviceInfo.TYPE_HDMI_ARC ||
+                (Build.VERSION.SDK_INT >= 29 && device.type == AudioDeviceInfo.TYPE_HDMI_EARC) ||
+                device.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                device.type == AudioDeviceInfo.TYPE_USB_HEADSET
+        }
+    }
+
+    private fun directAudioSupported(manager: AudioManager, encoding: Int): Boolean {
+        val routed = routedAudioDevices(manager)
+        if (routed.none { encoding in it.encodings }) return false
+        if (Build.VERSION.SDK_INT < 33) return true
+        val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build()
+        return listOf(
+            AudioFormat.CHANNEL_OUT_STEREO,
+            AudioFormat.CHANNEL_OUT_5POINT1,
+            AudioFormat.CHANNEL_OUT_7POINT1_SURROUND,
+        ).any { mask ->
+            runCatching {
+                val format = AudioFormat.Builder()
+                    .setEncoding(encoding)
+                    .setSampleRate(48_000)
+                    .setChannelMask(mask)
+                    .build()
+                val support = AudioManager.getDirectPlaybackSupport(format, attributes)
+                support and AudioManager.DIRECT_PLAYBACK_BITSTREAM_SUPPORTED != 0
+            }.getOrDefault(false)
+        }
+    }
+
+    private fun hasDolbyVisionDecoder(): Boolean = runCatching {
+        MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos.any { codec ->
+            !codec.isEncoder && codec.supportedTypes.any {
+                it.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true)
+            }
+        }
+    }.getOrDefault(false)
+
+    private fun dolbyCapabilitiesSnapshot(): JSObject {
+        val manager = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val devices = routedAudioDevices(manager)
+        val deviceJson = JSONArray()
+        for (device in devices) {
+            val encodings = JSONArray()
+            for (encoding in device.encodings) encodings.put(encodingName(encoding))
+            deviceJson.put(JSObject()
+                .put("id", device.id.toString())
+                .put("name", device.productName?.toString() ?: "Android output")
+                .put("encodings", encodings))
+        }
+        val ac3 = directAudioSupported(manager, AudioFormat.ENCODING_AC3)
+        val eac3 = directAudioSupported(manager, AudioFormat.ENCODING_E_AC3)
+        val joc = Build.VERSION.SDK_INT >= 28 &&
+            directAudioSupported(manager, AudioFormat.ENCODING_E_AC3_JOC)
+        val truehd = directAudioSupported(manager, AudioFormat.ENCODING_DOLBY_TRUEHD)
+        val mat = Build.VERSION.SDK_INT >= 29 &&
+            directAudioSupported(manager, AudioFormat.ENCODING_DOLBY_MAT)
+        val hdrTypes = if (Build.VERSION.SDK_INT >= 24) {
+            activity.display?.hdrCapabilities?.supportedHdrTypes ?: intArrayOf()
+        } else intArrayOf()
+        val dvDisplay = Build.VERSION.SDK_INT >= 24 &&
+            hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION)
+        val hdr10Display = Build.VERSION.SDK_INT >= 24 &&
+            hdrTypes.contains(Display.HdrCapabilities.HDR_TYPE_HDR10)
+        val decoder = hasDolbyVisionDecoder()
+        val nativeVideo = nativeDvPlayer?.videoFormat
+        val nativeDvActive = nativeDvPlayer != null &&
+            nativeVideo?.sampleMimeType == MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION
+        val currentVo = nativeProperty("current-vo") ?: mpv?.getPropertyString("current-vo").orEmpty()
+        val limitations = JSONArray()
+            .put("Android Atmos is IEC-61937 passthrough; the connected receiver performs object rendering.")
+        if (nativeDvActive) {
+            limitations.put("Native Dolby Vision is device/profile dependent; Profile 7 FEL is not claimed without hardware validation.")
+        } else {
+            limitations.put("The current mpv mediacodec-copy/gpu path cannot claim native Dolby Vision output.")
+        }
+        return JSObject()
+            .put("platform", "android")
+            .put("engine", if (nativeDvPlayer != null) "Media3/MediaCodec" else "libmpv/AudioTrack")
+            .put("mpvVersion", mpv?.getPropertyString("mpv-version").orEmpty())
+            .put("audioConfidence", if (Build.VERSION.SDK_INT >= 33) "reported" else "inferred")
+            .put("audio", JSObject()
+                .put("ac3", ac3).put("eac3", eac3).put("eac3Joc", joc)
+                .put("truehd", truehd).put("mat", mat))
+            .put("audioDevices", deviceJson)
+            .put("video", JSObject()
+                .put("hdr10Display", hdr10Display)
+                .put("dolbyVisionDisplay", dvDisplay)
+                .put("dolbyVisionDecoder", decoder)
+                .put("dolbyVisionNativePath", nativeDvActive)
+                .put("dolbyVisionAwareRenderer", currentVo == "gpu-next" || nativeDvActive))
+            .put("current", JSObject()
+                .put("ao", nativeProperty("current-ao") ?: mpv?.getPropertyString("current-ao").orEmpty())
+                .put("vo", currentVo)
+                .put("audioDevice", nativeProperty("audio-device") ?: mpv?.getPropertyString("audio-device").orEmpty())
+                .put("audioCodec", nativeProperty("audio-codec-name") ?: mpv?.getPropertyString("audio-codec-name").orEmpty())
+                .put("audioFormat", nativeProperty("audio-params/format") ?: mpv?.getPropertyString("audio-params/format").orEmpty())
+                .put("videoFormat", nativeProperty("video-format") ?: mpv?.getPropertyString("video-format").orEmpty())
+                .put("videoProfile", nativeProperty("video-params/codec-profile") ?: mpv?.getPropertyString("video-params/codec-profile").orEmpty())
+                .put("videoPrimaries", nativeProperty("video-params/primaries") ?: mpv?.getPropertyString("video-params/primaries").orEmpty())
+                .put("videoTransfer", nativeProperty("video-params/gamma") ?: mpv?.getPropertyString("video-params/gamma").orEmpty()))
+            .put("limitations", limitations)
+    }
+
+    @Command
+    fun dolbyCapabilities(invoke: Invoke) {
+        activity.runOnUiThread { invoke.resolve(dolbyCapabilitiesSnapshot()) }
+    }
+
     /** Capture the frame that is on the live player without publishing it to the gallery. The
      * subtitle editor uses this still as its background after pausing playback. Asking mpv for
      * `video` excludes the old subtitle line; PixelCopy remains a fallback for hardware surfaces
      * that cannot be read through mpv's software screenshot path. */
     @Command
     fun snapshot(invoke: Invoke) {
+        if (nativeDvPlayer != null) {
+            // Protected/secure Dolby surfaces intentionally cannot be read back. The subtitle
+            // editor remains available after choosing an mpv fallback source.
+            invoke.resolve(JSObject().apply { put("value", null as String?) })
+            return
+        }
         val m = mpv
         if (m == null) {
             invoke.resolve(JSObject().apply { put("value", null as String?) })
@@ -1487,6 +2081,10 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
 
     @Command
     fun gifStart(invoke: Invoke) {
+        if (nativeDvPlayer != null) {
+            invoke.reject("native-dolby-vision-capture-unavailable")
+            return
+        }
         val a = invoke.parseArgs(GifStartArgs::class.java)
         val m = mpv
         if (m == null) {
@@ -1679,6 +2277,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         // audio and auto-enter stays armed — pressing home in that window would still shrink the
         // app into a miniplayer. libmpv's command queue is thread-safe, so this needs no hop.
         mpv?.command(arrayOf("stop"))
+        nativeDvPlayer?.stop()
         // Disarm Android 12+ auto-enter immediately. Teardown may legitimately wait several
         // seconds for a GIF worker, during which the prepared core still exists.
         activity.runOnUiThread {
@@ -1731,6 +2330,7 @@ class MpvPlugin(private val activity: Activity) : Plugin(activity), MPVLib.Event
         keepScreenAwakeOn = false
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         container?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        releaseNativeDolbyVision(removeContainer = false)
         mpv?.let {
             it.command(arrayOf("stop"))
             it.removeObserver(this)

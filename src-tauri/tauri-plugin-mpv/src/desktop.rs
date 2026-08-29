@@ -45,6 +45,18 @@ impl<R: Runtime> Mpv<R> {
         Ok(serde_json::json!({ "failed": [] }))
     }
 
+    pub fn set_dolby_opts(&self, _payload: RenderOptsRequest) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::json!({ "failed": [] }))
+    }
+
+    pub fn dolby_capabilities(&self) -> crate::Result<serde_json::Value> {
+        Ok(serde_json::json!({
+            "platform": std::env::consts::OS,
+            "engine": "desktop-stub",
+            "audioConfidence": "unknown"
+        }))
+    }
+
     pub fn stop(&self) -> crate::Result<()> {
         Ok(())
     }

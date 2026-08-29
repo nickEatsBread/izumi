@@ -24,6 +24,13 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    // A direct Surface/MediaCodec path is required for genuine Dolby Vision signalling. libmpv's
+    // mediacodec-copy path reads decoded frames back into OpenGL and cannot preserve that signal.
+    val media3Version = "1.11.0"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-dash:$media3Version")
+    implementation("androidx.media3:media3-exoplayer-hls:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
     // The Tauri Android runtime (Plugin, Invoke, annotations). Resolved from the app's
     // included tauri-android build when the plugin is assembled by the CLI.
     implementation(project(":tauri-android"))

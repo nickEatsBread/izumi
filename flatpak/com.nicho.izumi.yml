@@ -108,7 +108,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/mpv-player/mpv.git
-        tag: v0.40.0
+        tag: v0.41.0
 
   # ----- izumi (Tauri app). Network build (self-hosted bundle, not Flathub → no vendoring).
   #       Builds the local checkout, so on the Deck: clone, cd flatpak, flatpak-builder. -----

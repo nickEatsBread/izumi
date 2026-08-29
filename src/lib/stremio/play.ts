@@ -108,7 +108,9 @@ import {
   autoplayNext, enableExternalPlayer, externalPlayerPath, debridKey, debridProvider, bingePreload,
   playerCacheMb, playerCacheBytes, torrentPlaybackMode,
   sourcePriority, sourcePriorityMode, continueSourcePreference, promoteToWatching, adaptiveSourceMode,
+  audioProcessing, dolbyVisionOutputMode, rawMpvOptions, videoQualityPreset,
 } from '$lib/settings/ui'
+import { userFilterChains } from '$lib/player/quality'
 import { applyPriorityFilter } from './source-priority'
 import { fillerEpisodes } from '$lib/anime/filler'
 import { applyContinuationState } from './continuation'
@@ -3026,6 +3028,13 @@ export async function playStream(
           slang: preferred,
           headers,
           autoplay,
+          // Native MediaCodec/Surface playback is the only Android path that can preserve a
+          // genuine Dolby Vision display signal. Keep libmpv when audio filtering is requested:
+          // the native route deliberately bypasses mpv/libavfilter.
+          preferNativeDolbyVision: describe(stream).hdr === 'DV'
+            && get(dolbyVisionOutputMode) === 'auto'
+            && get(audioProcessing) === 'off'
+            && !userFilterChains(get(videoQualityPreset), get(rawMpvOptions)).af,
         })
         if (await abandonIfStale()) return
         // This episode+source is now the one on screen, so the watchdog may recover against it.

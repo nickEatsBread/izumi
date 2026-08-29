@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-mpv-dolby-capabilities"
+description = "Enables the mpv_dolby_capabilities command without any pre-configured scope."
+commands.allow = ["mpv_dolby_capabilities"]
+
+[[permission]]
+identifier = "deny-mpv-dolby-capabilities"
+description = "Denies the mpv_dolby_capabilities command without any pre-configured scope."
+commands.deny = ["mpv_dolby_capabilities"]

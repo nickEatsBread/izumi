@@ -5,10 +5,17 @@
     scrubThumbnails, playerProgressAnimations, playerTitleTop, playerCacheMb, CACHE_UNCAPPED, keepAwakeWhilePlaying,
     videoQualityPreset, rawMpvOptions, gifIncludeSubtitles, gifScale, gifMaxSeconds, androidAutoPip,
     audioProcessing, windowsVsr, systemMediaControls, discordRichPresence, subtitleLineNavigation,
+    audioOutputMode, audioOutputDevice, audioExclusive,
+    audioPassthroughAc3, audioPassthroughEac3, audioPassthroughTruehd, dolbyVisionOutputMode,
     p2pStatusVisibility,
     continueSourcePreference,
   } from '$lib/settings/ui'
   import { qualityNotice, qualityFailedKeys } from '$lib/player/quality'
+  import {
+    classifyAudioOutput, classifyVideoOutput, dolbyCapabilities, dolbyCapabilityError,
+    refreshDolbyCapabilities,
+  } from '$lib/player/dolby'
+  import { drmDolbyStatus } from '$lib/player/drm-dolby'
   import Toggle from '$lib/components/settings/Toggle.svelte'
   import { open } from '@tauri-apps/plugin-dialog'
   import { isAndroid } from '$lib/platform'
@@ -41,6 +48,12 @@
       if (typeof path === 'string') $externalPlayerPath = path
     } catch { /* user cancelled */ }
   }
+
+  const audioOutput = $derived(classifyAudioOutput($dolbyCapabilities.current))
+  const videoOutput = $derived(classifyVideoOutput(
+    $dolbyCapabilities.current,
+    $dolbyCapabilities.video.dolbyVisionNativePath,
+  ))
 </script>
 
 <div class="p-4 sm:p-8">
@@ -139,8 +152,80 @@
       { value: 'night', label: 'Night mode' },
       { value: 'boost', label: 'Volume boost' },
     ]} />
-    <span class="text-xs text-muted-foreground">Dialogue evens out speech. Night mode compresses loud openings. Volume boost raises quiet rips and limits peaks. Disable passthrough on an external receiver when using a filter.</span>
+    <span class="text-xs text-muted-foreground">Dialogue evens out speech. Night mode compresses loud openings. Volume boost raises quiet rips and limits peaks. Izumi automatically falls back to decoded PCM while a filter is active.</span>
   </label>
+
+  <section class="mb-4 max-w-2xl rounded-md border border-border p-3">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h3 class="font-bold">Home-theatre audio</h3>
+        <p class="mt-1 text-xs text-muted-foreground">Atmos is preserved by sending the original E-AC3 or TrueHD stream to an Atmos receiver. Izumi does not perform Dolby object rendering itself.</p>
+      </div>
+      <button data-focusable class="shrink-0 rounded bg-secondary px-2 py-1 text-xs font-bold hover:bg-accent" onclick={() => void refreshDolbyCapabilities()}>Recheck</button>
+    </div>
+    <label class="mt-3 flex flex-col gap-1">
+      <span class="text-sm font-bold">Audio output</span>
+      <SelectMenu bind:value={$audioOutputMode} ariaLabel="Audio output" options={[
+        { value: 'pcm', label: 'Decoded PCM (safe)' },
+        { value: 'auto', label: 'Auto-detect receiver' },
+        { value: 'optical', label: 'Optical / S/PDIF' },
+        { value: 'hdmi', label: 'HDMI / eARC receiver' },
+      ]} />
+    </label>
+    {#if $audioOutputMode !== 'pcm'}
+      <div class="mt-3 grid gap-2 sm:grid-cols-3">
+        <Toggle label="Dolby Digital" desc="AC-3" value={$audioPassthroughAc3} onToggle={() => ($audioPassthroughAc3 = !$audioPassthroughAc3)} />
+        <Toggle label="Dolby Digital Plus" desc="E-AC3 / Atmos" value={$audioPassthroughEac3} onToggle={() => ($audioPassthroughEac3 = !$audioPassthroughEac3)} />
+        <Toggle label="Dolby TrueHD" desc="TrueHD / Atmos" value={$audioPassthroughTruehd} onToggle={() => ($audioPassthroughTruehd = !$audioPassthroughTruehd)} />
+      </div>
+      {#if $audioOutputMode === 'optical'}
+        <p class="mt-2 text-xs text-amber-500">Optical output is restricted to AC-3. Dolby Digital Plus and TrueHD Atmos require HDMI/eARC.</p>
+      {/if}
+      <div class="mt-3">
+        <Toggle label="Exclusive audio device" desc="Allow the player to open the output directly where the operating system supports it." value={$audioExclusive} onToggle={() => ($audioExclusive = !$audioExclusive)} />
+      </div>
+      {#if !$isAndroid}
+        <label class="mt-3 flex flex-col gap-1">
+          <span class="text-sm font-bold">mpv audio device</span>
+          <input data-focusable class="rounded-md bg-input px-3 py-2 text-sm" bind:value={$audioOutputDevice} placeholder="auto" />
+          <span class="text-xs text-muted-foreground">Use <code>auto</code> unless you know the mpv audio-device id for the HDMI receiver.</span>
+        </label>
+      {/if}
+    {/if}
+  </section>
+
+  <section class="mb-4 max-w-2xl rounded-md border border-border p-3">
+    <h3 class="font-bold">Dolby Vision source handling</h3>
+    <p class="mt-1 text-xs text-muted-foreground">This controls the signal produced from Dolby Vision metadata. “Auto” uses the display hint where gpu-next is available; it is not a claim of certified native Dolby Vision output.</p>
+    <label class="mt-3 flex flex-col gap-1">
+      <span class="text-sm font-bold">Output target</span>
+      <SelectMenu bind:value={$dolbyVisionOutputMode} ariaLabel="Dolby Vision output target" options={[
+        { value: 'auto', label: 'Auto display target' },
+        { value: 'hdr10', label: 'Convert to HDR10' },
+        { value: 'sdr', label: 'Tone-map to SDR' },
+      ]} />
+    </label>
+  </section>
+
+  <section class="mb-4 max-w-2xl rounded-md border border-border bg-secondary/35 p-3 text-xs">
+    <div class="flex items-center justify-between gap-3">
+      <h3 class="text-sm font-bold">Dolby capability diagnostics</h3>
+      <span class="rounded bg-background px-2 py-1 font-mono">{$dolbyCapabilities.engine}</span>
+    </div>
+    <div class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+      <span class="text-muted-foreground">mpv</span><span class="col-span-1 truncate font-mono sm:col-span-2">{$dolbyCapabilities.mpvVersion || 'not running'}</span>
+      <span class="text-muted-foreground">Audio output</span><span class="col-span-1 font-mono sm:col-span-2">{audioOutput}</span>
+      <span class="text-muted-foreground">Video output</span><span class="col-span-1 font-mono sm:col-span-2">{videoOutput}</span>
+      <span class="text-muted-foreground">Route probe</span><span class="col-span-1 font-mono sm:col-span-2">{$dolbyCapabilities.audioConfidence}</span>
+      <span class="text-muted-foreground">Atmos formats</span><span class="col-span-1 font-mono sm:col-span-2">E-AC3 JOC {$dolbyCapabilities.audio.eac3Joc ? 'yes' : 'no'} · TrueHD {$dolbyCapabilities.audio.truehd ? 'yes' : 'no'} · MAT {$dolbyCapabilities.audio.mat ? 'yes' : 'no'}</span>
+      <span class="text-muted-foreground">Dolby Vision</span><span class="col-span-1 font-mono sm:col-span-2">display {$dolbyCapabilities.video.dolbyVisionDisplay ? 'yes' : 'no'} · decoder {$dolbyCapabilities.video.dolbyVisionDecoder ? 'yes' : 'no'} · native path {$dolbyCapabilities.video.dolbyVisionNativePath ? 'yes' : 'no'}</span>
+      <span class="text-muted-foreground">DRM path</span><span class="col-span-1 font-mono sm:col-span-2">DV {$drmDolbyStatus.dolbyVision} · Atmos carrier {$drmDolbyStatus.atmos}{$drmDolbyStatus.fallbackApplied ? ' · fallback active' : ''}</span>
+    </div>
+    {#if $dolbyCapabilityError}<p class="mt-2 text-amber-500">Probe unavailable: {$dolbyCapabilityError}</p>{/if}
+    {#each $dolbyCapabilities.limitations as limitation}
+      <p class="mt-1 text-muted-foreground">• {limitation}</p>
+    {/each}
+  </section>
 
   <label class="mb-4 flex max-w-2xl flex-col gap-3 rounded-md border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
     <span class="min-w-0">

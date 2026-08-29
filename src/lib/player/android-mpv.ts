@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { addPluginListener, type PluginListener } from '@tauri-apps/api/core'
 import { writable, get } from 'svelte/store'
 import { currentResolveTrace, traceResolve } from '$lib/debug/resolve-trace'
+import { setDolbyPlaybackSpeed } from './dolby'
 
 // Embedded libmpv player on Android (the "full" flavor). The plugin (plugin:mpv|*) only exists
 // when the app was built with the `android-mpv` Cargo feature; on the "lite" flavor these invokes
@@ -21,6 +22,8 @@ export interface MpvLoad {
   slang?: string
   headers?: Record<string, string>
   autoplay?: boolean
+  /** Direct Android MediaCodec/Surface path for a positively identified Dolby Vision source. */
+  preferNativeDolbyVision?: boolean
 }
 
 /** True while the embedded player overlay is showing (drives the transparent hole + AndroidPlayer). */
@@ -296,6 +299,8 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
       alang: p.alang ?? null,
       slang: p.slang ?? null,
       headers: p.headers ?? {},
+      autoplay: p.autoplay !== false,
+      preferNativeDolbyVision: p.preferNativeDolbyVision === true,
     },
   })
   // The reusable core can be paused by keep-open at EOF. Reassert the
@@ -304,7 +309,10 @@ export async function mpvLoad(p: MpvLoad): Promise<void> {
 }
 
 export async function mpvCommand(args: string[]): Promise<void> {
+  const speed = args[0] === 'set' && args[1] === 'speed' ? Number(args[2]) : null
+  if (speed != null && speed !== 1) await setDolbyPlaybackSpeed(speed)
   await invoke('plugin:mpv|mpv_command', { payload: { args } })
+  if (speed === 1) await setDolbyPlaybackSpeed(speed)
 }
 
 export async function mpvGet(property: string): Promise<string | null> {

@@ -49,6 +49,13 @@
     type StreamDrm,
   } from '$lib/player/drm'
   import { langsEqual } from '$lib/stremio/sublang'
+  import {
+    assessDrmDolbyVariants,
+    chooseDrmDolbyFallback,
+    drmDolbyStatus,
+    summarizeDrmDolby,
+    type DrmDolbyVariant,
+  } from '$lib/player/drm-dolby'
 
   let {
     url,
@@ -119,6 +126,8 @@
   let qualityMode: 'auto' | number = 'auto'
   let lastGoodDur = 0
   let lastGoodPos = 0
+  let dolbyPolicySignature = ''
+  let dolbyPolicyGeneration = 0
 
   $effect(() => listenSafe<{ ok: boolean; error?: string }>('player-gif-save-complete', ({ payload }) => {
     if (payload.ok) {
@@ -419,12 +428,7 @@
     setAbrMaxHeight(abrMaxHeight(qualityMode, firstFrame))
   }
 
-  type ShakaVariant = {
-    id?: number
-    height?: number
-    bandwidth?: number
-    active?: boolean
-  }
+  type ShakaVariant = DrmDolbyVariant
 
   function variants(): ShakaVariant[] {
     return (player?.getVariantTracks?.() ?? []) as ShakaVariant[]
@@ -443,6 +447,37 @@
 
   function emitQualityInfo() {
     window.dispatchEvent(new CustomEvent('izumi-drm-quality', { detail: qualityInfo() }))
+  }
+
+  /** Ask the browser/CDM about the exact Dolby codecs Shaka exposed. Shaka already filters basic
+   * MSE incompatibilities; MediaCapabilities adds EME robustness, HDR metadata and spatial audio.
+   * A definitive rejection falls back to a non-rejected variant. An unavailable probe remains
+   * playable because several WebViews implement EME but not MediaCapabilities decodingInfo. */
+  async function enforceDrmDolbyPolicy(force = false) {
+    if (!player) return
+    const available = variants()
+    const relevant = available.filter((track) => track.videoCodec || track.audioCodec)
+    const signature = JSON.stringify(relevant.map((track) => [
+      track.id, track.active, track.videoCodec, track.audioCodec, track.width, track.height,
+    ]))
+    if (!force && signature === dolbyPolicySignature) return
+    dolbyPolicySignature = signature
+    const generation = ++dolbyPolicyGeneration
+    const assessments = await assessDrmDolbyVariants(relevant, drm)
+    if (generation !== dolbyPolicyGeneration || !player) return
+    const active = relevant.find((track) => track.active)
+    const activeAssessment = assessments.find((item) => item.id === active?.id)
+    const fallback = chooseDrmDolbyFallback(relevant, assessments)
+    if (fallback) {
+      // ABR can otherwise immediately select the rejected representation again. Manual quality
+      // remains available and a later source reload re-runs the capability probe from scratch.
+      setAbrEnabled(false)
+      try { player.selectVariantTrack(fallback, true) } catch { /* Shaka may already be switching */ }
+      drmDolbyStatus.set(summarizeDrmDolby(active, activeAssessment, true))
+      playerNotice.set('Dolby track is unsupported on this DRM/output path — using a compatible fallback')
+      return
+    }
+    drmDolbyStatus.set(summarizeDrmDolby(active, activeAssessment, false))
   }
 
   function selectManualQuality(height: number, clearBuffer: boolean) {
@@ -1313,6 +1348,9 @@
     skipHardReload = false
     lastGoodDur = 0
     lastGoodPos = 0
+    dolbyPolicySignature = ''
+    dolbyPolicyGeneration++
+    drmDolbyStatus.set({ checked: false, dolbyVision: 'inactive', atmos: 'inactive', fallbackApplied: false, detail: '' })
     previewTried = ''
     previewJob = undefined
     publish()
@@ -1407,8 +1445,12 @@
         syncAudioTracks()
         syncTextTracks()
         emitQualityInfo()
+        void enforceDrmDolbyPolicy()
       })
-      player.addEventListener('adaptation', emitQualityInfo)
+      player.addEventListener('adaptation', () => {
+        emitQualityInfo()
+        void enforceDrmDolbyPolicy()
+      })
       player.addEventListener('textchanged', () => syncTextTracks())
       // Overlay spinner is already showing. Waiting here lets preferredInitialManifest
       // pick a burned-in MPD before the first load, so the clock does not go
@@ -1431,6 +1473,7 @@
         activeManifest = fallback
         error = null
       }
+      await enforceDrmDolbyPolicy(true)
       booting = false
       if (gen !== loadGen) return
       try { await video.play() } catch { /* autoplay may wait for a gesture */ }
@@ -1460,6 +1503,8 @@
 
   onDestroy(() => {
     loadGen++
+    dolbyPolicyGeneration++
+    drmDolbyStatus.set({ checked: false, dolbyVision: 'inactive', atmos: 'inactive', fallbackApplied: false, detail: '' })
     setDrmEngine(null)
     void releasePlayback(activeReleaseUrl)
     void teardown()

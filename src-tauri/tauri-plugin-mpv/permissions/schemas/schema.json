@@ -331,6 +331,18 @@
           "markdownDescription": "Denies the mpv_command command without any pre-configured scope."
         },
         {
+          "description": "Enables the mpv_dolby_capabilities command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-dolby-capabilities",
+          "markdownDescription": "Enables the mpv_dolby_capabilities command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_dolby_capabilities command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-dolby-capabilities",
+          "markdownDescription": "Denies the mpv_dolby_capabilities command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_fullscreen command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-fullscreen",
@@ -499,6 +511,18 @@
           "markdownDescription": "Denies the mpv_set command without any pre-configured scope."
         },
         {
+          "description": "Enables the mpv_set_dolby_opts command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-set-dolby-opts",
+          "markdownDescription": "Enables the mpv_set_dolby_opts command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_set_dolby_opts command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-set-dolby-opts",
+          "markdownDescription": "Denies the mpv_set_dolby_opts command without any pre-configured scope."
+        },
+        {
           "description": "Enables the mpv_set_render_opts command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-set-render-opts",
@@ -511,18 +535,6 @@
           "markdownDescription": "Denies the mpv_set_render_opts command without any pre-configured scope."
         },
         {
-          "description": "Enables the mpv_stop command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-mpv-stop",
-          "markdownDescription": "Enables the mpv_stop command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the mpv_stop command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-mpv-stop",
-          "markdownDescription": "Denies the mpv_stop command without any pre-configured scope."
-        },
-        {
           "description": "Enables the mpv_snapshot command without any pre-configured scope.",
           "type": "string",
           "const": "allow-mpv-snapshot",
@@ -533,6 +545,18 @@
           "type": "string",
           "const": "deny-mpv-snapshot",
           "markdownDescription": "Denies the mpv_snapshot command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the mpv_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mpv-stop",
+          "markdownDescription": "Enables the mpv_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mpv_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mpv-stop",
+          "markdownDescription": "Denies the mpv_stop command without any pre-configured scope."
         },
         {
           "description": "Enables the mpv_thumb command without any pre-configured scope.",
@@ -595,10 +619,10 @@
           "markdownDescription": "Denies the removeListener command without any pre-configured scope."
         },
         {
-          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-prepare`\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-set-render-opts`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-keep-screen-awake`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-snapshot`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`",
+          "description": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-prepare`\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-set-render-opts`\n- `allow-mpv-set-dolby-opts`\n- `allow-mpv-dolby-capabilities`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-keep-screen-awake`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-snapshot`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-prepare`\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-set-render-opts`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-keep-screen-awake`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-snapshot`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`"
+          "markdownDescription": "Allow controlling the embedded libmpv player.\n#### This default permission set includes:\n\n- `allow-mpv-prepare`\n- `allow-mpv-load`\n- `allow-mpv-command`\n- `allow-mpv-get`\n- `allow-mpv-set`\n- `allow-mpv-set-render-opts`\n- `allow-mpv-set-dolby-opts`\n- `allow-mpv-dolby-capabilities`\n- `allow-mpv-stop`\n- `allow-mpv-pip`\n- `allow-mpv-auto-pip`\n- `allow-mpv-media-session`\n- `allow-mpv-request-notifications`\n- `allow-mpv-viewport`\n- `allow-mpv-fullscreen`\n- `allow-mpv-keep-screen-awake`\n- `allow-mpv-transform`\n- `allow-mpv-brightness`\n- `allow-mpv-haptic`\n- `allow-mpv-thumb`\n- `allow-mpv-snapshot`\n- `allow-mpv-gif-start`\n- `allow-mpv-gif-stop`\n- `allow-mpv-gif-abort`\n- `allow-mpv-gif-save`\n- `allow-registerListener`\n- `allow-removeListener`"
         }
       ]
     }

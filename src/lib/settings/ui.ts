@@ -224,6 +224,20 @@ export const videoQualityPreset = persisted<QualityPreset>('video-quality-preset
 export const rawMpvOptions = persisted<string>('video-raw-mpv-options', '')
 export type AudioProcessing = 'off' | 'dialogue' | 'night' | 'boost'
 export const audioProcessing = persisted<AudioProcessing>('player-audio-processing', 'off')
+/** Encoded home-theatre audio transport. PCM is deliberately the safe default: enabling an
+ * encoded stream makes software volume, speed correction and audio filters unavailable. */
+export type AudioOutputMode = 'pcm' | 'auto' | 'optical' | 'hdmi'
+export const audioOutputMode = persisted<AudioOutputMode>('player-audio-output-mode', 'pcm')
+/** mpv audio-device id. `auto` follows the OS default/routed device. */
+export const audioOutputDevice = persisted<string>('player-audio-output-device', 'auto')
+export const audioExclusive = persisted<boolean>('player-audio-exclusive', false)
+export const audioPassthroughAc3 = persisted<boolean>('player-audio-passthrough-ac3', true)
+export const audioPassthroughEac3 = persisted<boolean>('player-audio-passthrough-eac3', true)
+export const audioPassthroughTruehd = persisted<boolean>('player-audio-passthrough-truehd', true)
+/** Dolby Vision is rendered through gpu-next where available. `auto` follows the display,
+ * `hdr10` deliberately converts dynamic DV metadata to HDR10, and `sdr` tone-maps to BT.709. */
+export type DolbyVisionOutputMode = 'auto' | 'hdr10' | 'sdr'
+export const dolbyVisionOutputMode = persisted<DolbyVisionOutputMode>('player-dolby-vision-output', 'auto')
 export type WindowsVsr = 'off' | 'nvidia' | 'intel'
 export const windowsVsr = persisted<WindowsVsr>('player-windows-vsr', 'off')
 /** Play in an external player (mpv/VLC/…) instead of the embedded one. No progress
