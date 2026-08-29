@@ -25,14 +25,10 @@
     {#each section.media as media, index (media.catalog?.id ?? media.id)}
       {@const position = index + 1}
       <div class="relative flex shrink-0 items-end {position > 9 ? 'w-[15.25rem] sm:w-[16.5rem]' : 'w-[12.75rem] sm:w-[13.75rem]'}" aria-label={`Number ${position}`}>
-        <svg
+        <span
           aria-hidden="true"
-          viewBox={position > 9 ? '0 0 176 190' : '0 0 112 190'}
-          class="rank-number pointer-events-none h-[12rem] shrink-0 select-none overflow-visible sm:h-[13.25rem] {position > 9 ? 'w-[7.2rem] sm:w-[8rem]' : 'w-[5.2rem] sm:w-[5.8rem]'}"
-          preserveAspectRatio="none"
-        >
-          <text x={position > 9 ? 172 : 108} y="174" text-anchor="end" vector-effect="non-scaling-stroke">{position}</text>
-        </svg>
+          class="rank-number {position > 9 ? 'rank-number-wide w-[7.2rem] sm:w-[8rem]' : 'w-[5.2rem] sm:w-[5.8rem]'}"
+        >{position}</span>
         <div class="relative z-10 -ml-1.5 w-32 shrink-0 sm:w-36">
           <SmallCard {media} fill simpleHover {showCatalogSource} />
         </div>
@@ -47,15 +43,33 @@
 {/if}
 
 <style>
-  .rank-number text {
-    fill: color-mix(in srgb, hsl(var(--background)) 86%, hsl(var(--foreground)) 14%);
-    stroke: color-mix(in srgb, hsl(var(--foreground)) 48%, transparent);
-    stroke-width: 3;
-    paint-order: stroke fill;
-    font-family: Impact, Haettenschweiler, 'Arial Narrow Bold', 'Arial Black', sans-serif;
-    font-size: 180px;
-    font-weight: 900;
+  .rank-number {
+    pointer-events: none;
+    display: flex;
+    height: 12rem;
+    flex-shrink: 0;
+    align-items: flex-end;
+    justify-content: flex-end;
+    overflow: hidden;
+    padding-bottom: .9rem;
+    color: color-mix(in srgb, hsl(var(--foreground)) 19%, hsl(var(--background)));
+    font-family: 'Nunito Variable', sans-serif;
+    font-size: 10.75rem;
+    font-weight: 950;
+    font-variation-settings: 'wght' 950;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -2px;
+    font-feature-settings: 'tnum' 1;
+    letter-spacing: -.09em;
+    line-height: .72;
+    text-shadow: 0 10px 28px rgb(0 0 0 / .38);
+    user-select: none;
+  }
+  .rank-number-wide {
+    font-size: 9.4rem;
+    letter-spacing: -.16em;
+  }
+  @media (min-width: 640px) {
+    .rank-number { height: 13.25rem; font-size: 11.8rem; }
+    .rank-number-wide { font-size: 10.35rem; }
   }
 </style>
