@@ -129,7 +129,6 @@ interface TmdbDetail extends TmdbListItem {
   images?: TmdbImages
   release_dates?: { results?: TmdbReleaseCountry[] }
   content_ratings?: { results?: TmdbContentRating[] }
-  keywords?: { keywords?: { id?: number; name?: string }[]; results?: { id?: number; name?: string }[] }
 }
 
 interface TmdbSeasonDetail {
@@ -650,8 +649,6 @@ function detailedMedia(raw: TmdbDetail, kind: TmdbKind): Media | null {
   media.episodes = kind === 'movie' ? 1 : raw.number_of_episodes
   media.duration = raw.runtime ?? raw.episode_run_time?.[0]
   media.genres = (raw.genres ?? []).flatMap((genre) => genre.name ? [genre.name] : [])
-  media.tags = [...(raw.keywords?.keywords ?? raw.keywords?.results ?? [])]
-    .flatMap((keyword) => keyword.name ? [{ name: keyword.name }] : [])
   media.studios = { nodes: [...(raw.production_companies ?? []), ...(raw.networks ?? [])].flatMap((company) => company.name ? [{ id: company.id, name: company.name }] : []) }
   media.externalIds = {
     ...media.externalIds,
@@ -679,8 +676,8 @@ async function detail(ref: MediaRef, signal?: AbortSignal): Promise<Media | null
   if (ref.provider !== 'tmdb' || (ref.type !== 'movie' && ref.type !== 'series')) return null
   const kind: TmdbKind = ref.type === 'movie' ? 'movie' : 'tv'
   const append = kind === 'movie'
-    ? 'videos,credits,recommendations,similar,external_ids,images,release_dates,keywords'
-    : 'videos,aggregate_credits,recommendations,similar,external_ids,images,content_ratings,keywords'
+    ? 'videos,credits,recommendations,similar,external_ids,images,release_dates'
+    : 'videos,aggregate_credits,recommendations,similar,external_ids,images,content_ratings'
   const raw = await tmdb<TmdbDetail>(`/${kind}/${encodeURIComponent(ref.id)}`, {
     language: TMDB_LANGUAGE, include_image_language: 'en,null', append_to_response: append,
   }, signal)

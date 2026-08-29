@@ -133,6 +133,15 @@ describe('multi-platform catalog entry points', () => {
     expect(tmdb).toContain('append_to_response: append')
   })
 
+  it('does not expose spoiler-prone catalog keywords on non-anime detail pages', () => {
+    const detail = read('./CatalogMediaDetail.svelte')
+    const tmdb = read('../../catalog/providers/tmdb.ts')
+    expect(detail).not.toContain('aria-label="Keywords"')
+    expect(detail).not.toContain('>Keywords</h2>')
+    expect(tmdb).not.toContain('release_dates,keywords')
+    expect(tmdb).not.toContain('content_ratings,keywords')
+  })
+
   it('structures rich source descriptions instead of exposing Markdown as one paragraph', () => {
     const detail = read('./CatalogMediaDetail.svelte')
     expect(detail).toContain("import { parseCatalogDescription } from '$lib/catalog/description'")

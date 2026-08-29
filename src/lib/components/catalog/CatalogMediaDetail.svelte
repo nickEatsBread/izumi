@@ -224,13 +224,6 @@
       </section>
     {/if}
 
-    {#if media.tags?.length}
-      <section class="mt-6 px-5 sm:px-8" aria-label="Keywords">
-        <h2 class="mb-3 text-sm font-black uppercase tracking-wide text-muted-foreground">Keywords</h2>
-        <div class="flex max-w-5xl flex-wrap gap-1.5">{#each media.tags.slice(0, 18) as tag (tag.name)}<span class="rounded-md bg-secondary/60 px-2 py-1 text-xs text-foreground/75">{tag.name}</span>{/each}</div>
-      </section>
-    {/if}
-
     {#if !isMovie && videos.length}
       <section class="mt-8 px-5 sm:px-8">
         <h2 class="mb-4 text-xl font-black">Episodes <span class="text-sm font-normal text-muted-foreground">{videos.length}</span></h2>
