@@ -23,4 +23,9 @@ describe('merged catalog search', () => {
     expect(mergedSearch).not.toContain('SelectMenu')
     expect(providerSearch).toContain("if (embedded) params.set('provider', activeSelection)")
   })
+
+  it('uses one focus outline and keeps scoped searches aligned', () => {
+    expect(mergedSearch).toContain('focus:border-theme/70 focus-visible:outline-none')
+    expect(providerSearch).toContain("embedded ? 'px-4 pt-4 sm:px-8' : 'p-4 sm:p-8'")
+  })
 })

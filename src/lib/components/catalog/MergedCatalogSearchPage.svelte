@@ -108,7 +108,7 @@
       type="search"
       placeholder="Search every enabled catalog…"
       aria-label="Search all catalogs"
-      class="h-14 w-full rounded-2xl border border-border bg-card pl-12 pr-4 text-lg font-semibold shadow-sm outline-none transition-colors focus:border-theme/70"
+      class="h-14 w-full rounded-2xl border border-border bg-card pl-12 pr-4 text-lg font-semibold shadow-sm outline-none transition-colors focus:border-theme/70 focus-visible:outline-none"
     />
   </label>
   <p class="mt-2 px-1 text-xs text-muted-foreground">A fast title search with no cross-provider filters. Choose one catalog above for its full filter set.</p>
