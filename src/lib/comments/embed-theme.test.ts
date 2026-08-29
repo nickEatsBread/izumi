@@ -30,7 +30,7 @@ describe('DiscussAnime embed theming', () => {
     const android = read('../components/player/AndroidWatchDetails.svelte')
     const plugin = read('../../../src-tauri/tauri-plugin-extplayer/android/src/main/java/app/izumi/extplayer/ExtPlayerPlugin.kt')
 
-    expect(loader).toContain('html.izumi-expand, html.izumi-expand body { overflow: hidden; }')
+    expect(loader).toMatch(/html\.izumi-expand, html\.izumi-expand body\s*\{[^}]*overflow: hidden;[^}]*overscroll-behavior-y: auto;/s)
     expect(android).toMatch(/title="Episode comments"[^>]*scrolling="no"/)
     expect(android).toContain('style:height={`${disqusHeight}px`}')
     expect(android).not.toContain('min(70dvh')

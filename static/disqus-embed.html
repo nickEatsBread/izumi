@@ -54,7 +54,13 @@
     /* Android grows the host iframe to this document's reported height, leaving the watch page as
        the single vertical scroll owner. A nested scroller here makes swipes behave differently as
        soon as the finger crosses into the comments. */
-    html.izumi-expand, html.izumi-expand body { overflow: hidden; }
+    /* `contain` is useful while this document owns scrolling on desktop, but expanded mode is
+       deliberately not a scroll owner. Android must be allowed to chain a vertical gesture from
+       Disqus's full-height child frame through this document to the watch-page scroller. */
+    html.izumi-expand, html.izumi-expand body {
+      overflow: hidden;
+      overscroll-behavior-y: auto;
+    }
     html.izumi-expand #disqus_thread { overflow: visible; }
     /* Thin, themed scrollbar (this page is a separate doc, so the app's global scrollbar hiding doesn't
        reach it). STANDARD properties only — ::-webkit-scrollbar custom-painted scrollbars need a
