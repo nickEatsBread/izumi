@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { orderStreamingServices, streamingBrand } from './streaming-brands'
 
@@ -15,6 +17,14 @@ describe('streaming service visual identity', () => {
     expect(streamingBrand('Google Play Movies')).toMatchObject({ id: 'google-play', mark: '/brand/streaming/google-play.png' })
     expect(streamingBrand('FilmBox+')).toMatchObject({ id: 'filmbox-plus', mark: '/brand/streaming/filmbox-plus.png' })
     expect(streamingBrand('Sun NXT')).toMatchObject({ id: 'sun-nxt', mark: '/brand/streaming/sun-nxt.png' })
+  })
+
+  it('ships every assigned regional icon in the static bundle', () => {
+    for (const name of ['Google Play Movies', 'FilmBox+', 'Sun NXT']) {
+      const mark = streamingBrand(name).mark
+      expect(mark).toBeDefined()
+      expect(existsSync(fileURLToPath(new URL(`../../../static${mark}`, import.meta.url)))).toBe(true)
+    }
   })
 
   it('keeps the primary services ordered and collapses Apple store variants', () => {

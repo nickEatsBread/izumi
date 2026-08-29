@@ -69,13 +69,13 @@
       {/if}
       <span class="provider-shade pointer-events-none absolute inset-0"></span>
       <span class="provider-identity pointer-events-none absolute inset-0 z-10 grid place-items-center p-5">
-        {#if mark && !failedMarks[feature.id]}
+        {#if mark && (brand.mark || !failedMarks[feature.id])}
           <img
             src={mark}
             alt=""
             class:provider-mark-remote={!brand.mark}
             class="provider-mark absolute object-contain"
-            onerror={() => markFailed(feature.id)}
+            onerror={() => { if (!brand.mark) markFailed(feature.id) }}
           />
         {:else}
           <span class="provider-name max-w-[82%] text-center text-lg font-black tracking-tight text-white">{feature.title}</span>
@@ -169,9 +169,12 @@
   .brand-peacock .provider-mark { width: 44%; height: 50%; }
 
   .brand-disney .provider-mark,
+  .brand-prime-video .provider-mark,
   .brand-apple-tv .provider-mark,
   .brand-disney:hover .provider-mark,
   .brand-disney:focus-visible .provider-mark,
+  .brand-prime-video:hover .provider-mark,
+  .brand-prime-video:focus-visible .provider-mark,
   .brand-apple-tv:hover .provider-mark,
   .brand-apple-tv:focus-visible .provider-mark {
     filter: grayscale(1) brightness(0) invert(1);

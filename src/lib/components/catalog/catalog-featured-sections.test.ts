@@ -50,11 +50,13 @@ describe('featured TMDB home sections', () => {
   it('uses complete provider marks, lazy remote hover media, and direct navigation', () => {
     expect(streamingRow).toContain('streamingBrand(feature.title)')
     expect(streamingRow).toContain('brand.mark ?? feature.image')
+    expect(streamingRow).toContain('brand.mark || !failedMarks[feature.id]')
     expect(streamingRow).toContain('previewId === feature.id')
     expect(streamingRow).toContain('src={brand.preview}')
     expect(streamingRow).toContain('void goto(feature.href)')
     expect(streamingRow).not.toContain('provider-transition')
     expect(streamingRow).not.toContain('scene-a')
+    expect(streamingRow).toContain('.brand-prime-video:hover .provider-mark')
     expect(streamingRow).toContain('prefers-reduced-motion: reduce')
   })
 
