@@ -51,7 +51,7 @@
       onfocus={() => showPreview(feature)}
       onblur={() => hidePreview(feature)}
       class:has-preview={Boolean(brand.preview)}
-      class="provider-card brand-{brand.id} group relative aspect-[2/1] w-64 shrink-0 overflow-hidden rounded-xl border border-white/10 text-left transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.01] hover:border-white/25 hover:shadow-xl focus-visible:-translate-y-0.5 focus-visible:scale-[1.01] focus-visible:border-white/30 focus-visible:shadow-xl sm:w-80"
+      class="provider-card brand-{brand.id} group relative aspect-[2/1] w-64 shrink-0 origin-top overflow-hidden rounded-xl border border-white/10 text-left transition-[transform,border-color,box-shadow] duration-200 ease-out hover:scale-[1.01] hover:border-white/25 hover:shadow-xl focus-visible:scale-[1.01] focus-visible:border-white/30 focus-visible:shadow-xl sm:w-80"
       style={`--service-primary:${brand.primary};--service-secondary:${brand.secondary}`}
     >
       <span class="provider-fallback pointer-events-none absolute inset-0"></span>

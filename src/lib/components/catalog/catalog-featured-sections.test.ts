@@ -57,6 +57,8 @@ describe('featured TMDB home sections', () => {
     expect(streamingRow).not.toContain('provider-transition')
     expect(streamingRow).not.toContain('scene-a')
     expect(streamingRow).toContain('.brand-prime-video:hover .provider-mark')
+    expect(streamingRow).toContain('origin-top')
+    expect(streamingRow).not.toContain('hover:-translate-y-0.5')
     expect(streamingRow).toContain('prefers-reduced-motion: reduce')
   })
 
