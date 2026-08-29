@@ -14,7 +14,10 @@
   import {
     loadMySets, classifyMine, isMine, hasMySources, emptyMySets, type MySets, type MineKind,
   } from '$lib/anilist/my-shows'
-  import { getScheduleInfoMany, getWeeklySchedule, scheduleTitles, type ScheduleInfo } from '$lib/anime/animeschedule'
+  import {
+    delayPlaceholder, getScheduleInfoMany, getWeeklySchedule, mergeScheduleAirings, scheduleTitles,
+    type ScheduleInfo,
+  } from '$lib/anime/animeschedule'
   import { markAniListDegraded, markCatalogProvider, markJikanCatalogUnavailable } from '$lib/anilist/degraded'
   import { anilistUserName, malToken } from '$lib/trackers/config'
   import { anilistUser } from '$lib/anilist/account'
@@ -129,7 +132,37 @@
   // shows). Leaving viewTouched false keeps the default free to reassert itself next week.
   const showAllThisWeek = () => { view = 'all' }
 
-  const days = $derived(groupByDay(airings, start))
+  // AnimeSchedule delay overlay, looked up ONLY for the viewer's own shows: a week of the global
+  // feed lists well over a hundred titles, and a break only matters for something you're actually
+  // following — so the public API sees a handful of requests instead of a hundred. Rendered in the
+  // All view too, since these are the same titles that get the Watching/Planning border.
+  let lookedUpDelayInfo = $state<Map<number, ScheduleInfo>>(new Map())
+  const scheduledIds = $derived(new Set(airings.map((airing) => airing.media.id)))
+  // AniList moves a postponed episode straight to its new week. CURRENT list media fills that gap:
+  // only followed shows missing from this week's feed need to be checked for a delay placeholder.
+  const missingCurrentMedia = $derived([...sets.aniCurrentMedia.values()].filter((media) =>
+    !scheduledIds.has(media.id) && media.nextAiringEpisode?.episode,
+  ))
+  const scheduledMineMedia = $derived([...new Map(airings.filter((airing) => isMine(airing.media, sets))
+    .map((airing) => [airing.media.id, airing.media])).values()])
+  // Missing shows go first so the bounded public-API budget can never be consumed by ordinary
+  // schedule annotations before it reaches the exact case this restoration exists for.
+  const delayCandidates = $derived([...new Map([...missingCurrentMedia, ...scheduledMineMedia]
+    .map((media) => [media.id, media])).values()])
+  $effect(() => {
+    const wanted = delayCandidates
+    if (!wanted.length) { lookedUpDelayInfo = new Map(); return }
+    let cancelled = false
+    getScheduleInfoMany(wanted.map((m) => ({ id: m.id, titles: scheduleTitles(m.title) })))
+      .then((map) => { if (!cancelled) lookedUpDelayInfo = map })
+    return () => { cancelled = true }
+  })
+  const restoredDelays = $derived(missingCurrentMedia.flatMap((media) => {
+    const airing = delayPlaceholder(media, lookedUpDelayInfo.get(media.id) ?? null, start, end)
+    return airing ? [airing] : []
+  }))
+  const combinedAirings = $derived(mergeScheduleAirings(airings, restoredDelays))
+  const days = $derived(groupByDay(combinedAirings, start))
   const mineDays = $derived(days.map((d) => d.filter((a) => isMine(a.media, sets))))
   const shownDays = $derived(view === 'mine' ? mineDays : days)
   // mineCount is an OUTPUT, not shared state: making it bindable meant this component would read a
@@ -139,22 +172,7 @@
   const mineCount = $derived(mineDays.reduce((n, d) => n + d.length, 0))
   $effect(() => { onMineCount?.(mineCount) })
 
-  // AnimeSchedule delay overlay, looked up ONLY for the viewer's own shows: a week of the global
-  // feed lists well over a hundred titles, and a break only matters for something you're actually
-  // following — so the public API sees a handful of requests instead of a hundred. Rendered in the
-  // All view too, since these are the same titles that get the Watching/Planning border.
-  let delayInfo = $state<Map<number, ScheduleInfo>>(new Map())
-  // Deduped by id: a show with two airings in the week is ONE title to look up, and the batch cap is
-  // a budget of titles — letting repeats eat it would silently drop later days off the overlay.
-  const mineMedia = $derived([...new Map(mineDays.flat().map((a) => [a.media.id, a.media])).values()])
-  $effect(() => {
-    const wanted = mineMedia
-    if (!wanted.length) return
-    let cancelled = false
-    getScheduleInfoMany(wanted.map((m) => ({ id: m.id, titles: scheduleTitles(m.title) })))
-      .then((map) => { if (!cancelled && map.size) delayInfo = map })
-    return () => { cancelled = true }
-  })
+  const delayInfo = $derived(lookedUpDelayInfo)
   const infoOf = (m: Media): ScheduleInfo | null => delayInfo.get(m.id) ?? null
 
   // Today's column (local weekday) — only when the shown week IS the current week.

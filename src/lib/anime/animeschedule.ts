@@ -70,14 +70,32 @@ export interface ScheduleInfo {
   finished: boolean
 }
 
-// Every timestamp field is present even when it holds nothing, carrying Go's zero time. Parsed
-// naively that reads as a real date, which would put half the catalogue on a delay that ended in
-// the year 1.
-const ZERO_TIME = '0001-01-01'
+// Every timestamp field is present even when it holds nothing, carrying Go's zero time. The API
+// has emitted both ISO (`0001-01-01...`) and day-first (`01/01/0001 ...`) forms over time. Parsed
+// naively either can become a real date, which would put half the catalogue on an ancient delay.
+const ZERO_TIME = /^(?:0001-01-01|01\/01\/0001)/
+
+// Current responses use this culture-specific form even though older payloads were ISO. Browsers
+// do not consistently parse it, and the first component is unambiguously the day once it exceeds
+// 12. Treat it as UTC, matching the API's older timestamps and the release-slot semantics below.
+const DAY_FIRST_TIME = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/
 
 /** Epoch ms for an API timestamp, or null when it is unset or unparseable. */
 export function parseTime(value?: string): number | null {
-  if (!value || value.startsWith(ZERO_TIME)) return null
+  if (!value || ZERO_TIME.test(value)) return null
+  const dayFirst = DAY_FIRST_TIME.exec(value.trim())
+  if (dayFirst) {
+    const [, dayText, monthText, yearText, hourText = '0', minuteText = '0', secondText = '0', msText = '0'] = dayFirst
+    const [day, month, year, hour, minute, second, millisecond] = [
+      dayText, monthText, yearText, hourText, minuteText, secondText, msText.padEnd(3, '0'),
+    ].map(Number)
+    const date = new Date(0)
+    date.setUTCFullYear(year, month - 1, day)
+    date.setUTCHours(hour, minute, second, millisecond)
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day
+      || date.getUTCHours() !== hour || date.getUTCMinutes() !== minute || date.getUTCSeconds() !== second) return null
+    return date.getTime()
+  }
   const ms = Date.parse(value)
   return Number.isFinite(ms) ? ms : null
 }
@@ -348,6 +366,25 @@ export async function getWeeklySchedule(start: number, end: number): Promise<Air
   })
   if (!airings.length) throw new Error('AnimeSchedule could not map weekly titles to AniList')
   return airings.sort((a, b) => a.airingAt - b.airingAt)
+}
+
+/** Recreate the slot which AniList moves directly to its new date after a postponement. The caller
+ * supplies a CURRENT list record, so the title/poster remain available even though the episode is
+ * absent from this week's global airing feed. */
+export function delayPlaceholder(media: Media, info: ScheduleInfo | null, start: number, end: number): Airing | null {
+  const from = info?.delay?.from
+  const next = media.nextAiringEpisode
+  if (from == null || !next?.episode) return null
+  const airingAt = Math.floor(from / 1000)
+  if (airingAt < start || airingAt >= end) return null
+  return { airingAt, episode: next.episode, media, delayPlaceholder: true }
+}
+
+/** Add delay placeholders without duplicating an episode that the primary feed still carries. */
+export function mergeScheduleAirings(base: Airing[], delayed: Airing[]): Airing[] {
+  const seen = new Set(base.map((airing) => `${airing.media.id}:${airing.episode}`))
+  return [...base, ...delayed.filter((airing) => !seen.has(`${airing.media.id}:${airing.episode}`))]
+    .sort((a, b) => a.airingAt - b.airingAt)
 }
 
 /** Loose title key for the fallback match — the two databases disagree on case, punctuation and

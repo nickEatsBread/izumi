@@ -1,5 +1,11 @@
 import type { Media } from './types'
-export interface Airing { airingAt: number; episode: number; media: Media }
+export interface Airing {
+  airingAt: number
+  episode: number
+  media: Media
+  /** A skipped slot restored from the delay timetable rather than a real airing. */
+  delayPlaceholder?: boolean
+}
 // Week window anchored to the user's LOCAL Monday 00:00 (not UTC), so groupByDay's
 // start-relative day index buckets airings into the columns the user actually sees in their
 // timezone. Airing TIMES are already shown local (toLocaleTimeString in DayColumn).

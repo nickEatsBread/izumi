@@ -14,8 +14,9 @@
   // Upcoming first (soonest → latest), then the just-aired ones, capped. `now` is passed in (a store
   // tick) so the countdowns refresh without this component owning a timer.
   const items = $derived.by(() => {
-    const up = airings.filter((a) => a.airingAt * 1000 > now).sort((x, y) => x.airingAt - y.airingAt)
-    const just = airings
+    const realAirings = airings.filter((a) => !a.delayPlaceholder)
+    const up = realAirings.filter((a) => a.airingAt * 1000 > now).sort((x, y) => x.airingAt - y.airingAt)
+    const just = realAirings
       .filter((a) => a.airingAt * 1000 <= now && now - a.airingAt * 1000 <= RECENT)
       .sort((x, y) => y.airingAt - x.airingAt)
     return [...up, ...just].slice(0, 12)

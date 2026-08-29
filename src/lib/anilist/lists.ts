@@ -41,14 +41,22 @@ export const READING_LIST_QUERY = gql`
   }
   ${READING_MEDIA_FIELDS}`
 
-// Id-only list projection for callers that just need the SET of ids on a list (e.g. the
-// schedule's "my shows" highlighting), not card data. LIST_QUERY drags full MediaFields —
-// incl. a 100-node airingSchedule + synopsis — per entry, which is pure waste when the result
-// is reduced to `new Set(ids)`. This keeps a heavy planning list to a tiny payload.
+// Mostly-id-only projection for the schedule's My Shows highlighting. The second collection adds
+// a deliberately tiny card projection for CURRENT entries only: when an episode is postponed,
+// AniList moves it out of this week's global schedule and this is the only media record left from
+// which the schedule can restore a labelled placeholder. Planning/dropped lists stay id-only.
 export const LIST_IDS_QUERY = gql`
   query ListIds($userName: String!, $statuses: [MediaListStatus]) {
     MediaListCollection(userName: $userName, type: ANIME, status_in: $statuses) {
       lists { entries { status media { id idMal } } }
+    }
+    current: MediaListCollection(userName: $userName, type: ANIME, status: CURRENT) {
+      lists { entries { media {
+        id idMal status
+        title { romaji english native userPreferred }
+        coverImage { extraLarge large medium color }
+        nextAiringEpisode { episode airingAt timeUntilAiring }
+      } } }
     }
   }`
 

@@ -37,6 +37,13 @@ describe('list query shapes', () => {
     expect(source(LIST_STATUSES_QUERY)).toMatch(/status_in:\s*\$statuses/)
   })
 
+  it('keeps current-show card data available for moved delay slots', () => {
+    const query = source(LIST_IDS_QUERY)
+    expect(query).toMatch(/current:\s*MediaListCollection[\s\S]*status:\s*CURRENT/)
+    expect(query).toMatch(/nextAiringEpisode\s*\{\s*episode\s+airingAt/)
+    expect(query).toMatch(/coverImage\s*\{\s*extraLarge\s+large\s+medium/)
+  })
+
   it('caps carousel previews with the paginated MediaList field', () => {
     const query = source(LIST_PREVIEW_QUERY)
     expect(query).toMatch(/Page\(page:\s*1,\s*perPage:\s*30\)/)

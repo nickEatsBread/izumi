@@ -6,9 +6,10 @@ vi.mock('idb-keyval', () => ({ get: mocks.get, set: mocks.set, del: mocks.del })
 vi.mock('$lib/net/http', () => ({ phttp: mocks.phttp }))
 
 import {
-  activeDelay, anilistIdOf, delayLabel, delayLines, getScheduleInfo, getScheduleInfoMany,
+  activeDelay, anilistIdOf, delayLabel, delayLines, delayPlaceholder, getScheduleInfo, getScheduleInfoMany,
   getWeeklySchedule, isoWeek,
-  mapAnimeScheduleMedia, normalize, nextOccurrence, parseTime, parseTimetable, pickEntry, resolveRoute,
+  mapAnimeScheduleMedia, mergeScheduleAirings, normalize, nextOccurrence, parseTime, parseTimetable,
+  pickEntry, resolveRoute,
   scheduleTitles, slotLabel, slotLines, titleKey,
   type RawAnime,
 } from './animeschedule'
@@ -63,6 +64,19 @@ describe('weekly fallback mapping', () => {
       route: 'backup-anime', episode: 7,
       airingAt: new Date('2026-08-11T15:30+01:00').getTime() / 1000,
     }])
+  })
+
+  it('merges a missing delayed episode without duplicating one still in the main feed', () => {
+    const media = { id: 171110 } as never
+    const other = { id: 1 } as never
+    const base = [{ airingAt: 20, episode: 20, media }, { airingAt: 10, episode: 1, media: other }]
+    const delayed = [
+      { airingAt: 5, episode: 20, media, delayPlaceholder: true },
+      { airingAt: 15, episode: 21, media, delayPlaceholder: true },
+    ]
+    expect(mergeScheduleAirings(base, delayed)).toEqual([
+      base[1], delayed[1], base[0],
+    ])
   })
 
   it('renders AnimeSchedule results even when supplemental Kitsu pages are throttled', async () => {
@@ -134,11 +148,49 @@ const AFTER_DELAY = Date.parse('2026-08-01T00:00:00Z')
 
 describe('parseTime', () => {
   it('reads a real timestamp', () => expect(parseTime('2024-01-05T00:00:00Z')).toBe(Date.parse('2024-01-05T00:00:00Z')))
-  it('rejects the zero-time sentinel that stands in for "unset"', () => expect(parseTime(ZERO)).toBeNull())
+  it('reads current day-first API timestamps without swapping the day and month', () => {
+    expect(parseTime('29/08/2026 00:00:00')).toBe(Date.parse('2026-08-29T00:00:00Z'))
+    expect(parseTime('05/09/2026 00:00:00')).toBe(Date.parse('2026-09-05T00:00:00Z'))
+  })
+  it('rejects either zero-time sentinel that stands in for "unset"', () => {
+    expect(parseTime(ZERO)).toBeNull()
+    expect(parseTime('01/01/0001 00:00:00')).toBeNull()
+  })
   it('is null for a missing or unparseable value', () => {
     expect(parseTime(undefined)).toBeNull()
     expect(parseTime('')).toBeNull()
     expect(parseTime('not a date')).toBeNull()
+  })
+})
+
+describe('current delay payloads', () => {
+  it('normalizes a day-first one-week slip from the live API shape', () => {
+    const info = normalize({
+      route: 'bookworm', status: 'Delayed', delayedTimetable: 'Delayed',
+      delayedFrom: '29/08/2026 00:00:00', delayedUntil: '05/09/2026 00:00:00',
+      subDelayedFrom: '01/01/0001 00:00:00', subDelayedUntil: '01/01/0001 00:00:00',
+    }, Date.parse('2026-08-29T12:00:00Z'))
+    expect(info?.delay).toEqual({
+      kind: 'delayed',
+      from: Date.parse('2026-08-29T00:00:00Z'),
+      until: Date.parse('2026-09-05T00:00:00Z'),
+    })
+    expect(delayLines(info)).toEqual([`Delayed until ${new Date('2026-09-05T00:00:00Z').toLocaleDateString([], { month: 'short', day: 'numeric' })}`])
+  })
+
+  it('restores the moved next episode in the week where the delay began', () => {
+    const media = { id: 171110, nextAiringEpisode: { episode: 20, airingAt: 1788600600, timeUntilAiring: 0 } } as never
+    const info = normalize({
+      route: 'bookworm', status: 'Delayed', delayedTimetable: 'Delayed',
+      delayedFrom: '29/08/2026 00:00:00', delayedUntil: '05/09/2026 00:00:00',
+    }, Date.parse('2026-08-29T12:00:00Z'))
+    const start = Date.parse('2026-08-23T23:00:00Z') / 1000
+    const end = start + 7 * 86400
+    expect(delayPlaceholder(media, info, start, end)).toMatchObject({
+      episode: 20, media: { id: 171110 }, delayPlaceholder: true,
+      airingAt: Date.parse('2026-08-29T00:00:00Z') / 1000,
+    })
+    expect(delayPlaceholder(media, info, end, end + 7 * 86400)).toBeNull()
   })
 })
 

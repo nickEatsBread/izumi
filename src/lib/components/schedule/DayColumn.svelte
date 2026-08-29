@@ -31,17 +31,17 @@
             data-nav-left={nav.left}
             data-nav-right={nav.right}
             href={`/app/anime/${a.media.id}`}
-            class="flex min-w-0 items-center gap-3 rounded-xl border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) ? 'opacity-70' : ''} {mine ? 'border-border/80' : 'border-transparent'}"
+            class="flex min-w-0 items-center gap-3 rounded-xl border bg-secondary p-2.5 transition-colors hover:bg-accent {aired(a.airingAt) && !a.delayPlaceholder ? 'opacity-70' : ''} {mine ? 'border-border/80' : 'border-transparent'}"
           >
             <img src={cover(a.media)} alt="" loading="lazy" decoding="async"
                  class="{big ? 'h-20 w-14' : 'h-14 w-10'} shrink-0 rounded-lg object-cover" />
             <div class="min-w-0 flex-1">
               <p class="line-clamp-2 {big ? 'text-sm' : 'text-xs'} font-bold leading-tight">{title(a.media)}</p>
-              <p class="mt-1 text-[0.7rem] text-muted-foreground">Episode {a.episode} · <span class="font-bold tabular-nums text-foreground">{airTime(a.airingAt)}</span></p>
+              <p class="mt-1 text-[0.7rem] text-muted-foreground">Episode {a.episode}{#if !a.delayPlaceholder} · <span class="font-bold tabular-nums text-foreground">{airTime(a.airingAt)}</span>{/if}</p>
               {#if delay}<p class="mt-1 text-xs font-bold text-amber-400">{delay}</p>{/if}
               <div class="mt-2 flex items-center gap-2">
                 {#if mine}<span class="rounded-full bg-foreground/[0.08] px-2 py-1 text-[0.65rem] font-black uppercase tracking-wide text-foreground/70">{mine === 'watching' ? 'Watching' : 'Planning'}</span>{/if}
-                <span class="text-[0.7rem] font-bold {aired(a.airingAt) ? 'text-muted-foreground' : 'text-emerald-400'}">{aired(a.airingAt) ? 'Aired' : until(a.airingAt)}</span>
+                {#if !a.delayPlaceholder}<span class="text-[0.7rem] font-bold {aired(a.airingAt) ? 'text-muted-foreground' : 'text-emerald-400'}">{aired(a.airingAt) ? 'Aired' : until(a.airingAt)}</span>{/if}
               </div>
             </div>
           </a>

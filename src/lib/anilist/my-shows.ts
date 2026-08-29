@@ -28,12 +28,15 @@ export interface MySets {
   malPlanning: Set<number>
   malDropped: Set<number>
   local: Set<number>         // media ids from on-device history
+  /** Current AniList entries kept as media so a moved/delayed slot can still render a card. */
+  aniCurrentMedia: Map<number, Media>
 }
 
 export const emptyMySets = (): MySets => ({
   aniWatching: new Set(), aniPlanning: new Set(), aniDropped: new Set(),
   malWatching: new Set(), malPlanning: new Set(), malDropped: new Set(),
   local: new Set(),
+  aniCurrentMedia: new Map(),
 })
 
 /** Is this title on a tracker's Dropped list? */
@@ -64,6 +67,7 @@ const ANI_STATUSES = ['CURRENT', 'PLANNING', 'DROPPED'] as const
 type AniStatus = typeof ANI_STATUSES[number]
 type IdColl = {
   MediaListCollection?: { lists?: { entries?: { status?: string; media: { id: number } }[] }[] }
+  current?: { lists?: { entries?: { media: Media }[] }[] }
 }
 
 export function splitAniListIds(data: IdColl | undefined): Record<AniStatus, Set<number>> {
@@ -76,12 +80,20 @@ export function splitAniListIds(data: IdColl | undefined): Record<AniStatus, Set
   return out
 }
 
-async function aniIds(userName: string | undefined): Promise<Record<AniStatus, Set<number>>> {
-  if (!userName) return splitAniListIds(undefined)
+interface AniData {
+  ids: Record<AniStatus, Set<number>>
+  currentMedia: Map<number, Media>
+}
+
+async function aniIds(userName: string | undefined): Promise<AniData> {
+  if (!userName) return { ids: splitAniListIds(undefined), currentMedia: new Map() }
   try {
     const r = await anilist.query(LIST_IDS_QUERY, { userName, statuses: ANI_STATUSES }).toPromise()
-    return r.error ? splitAniListIds(undefined) : splitAniListIds(r.data as IdColl)
-  } catch { return splitAniListIds(undefined) }
+    if (r.error) return { ids: splitAniListIds(undefined), currentMedia: new Map() }
+    const data = r.data as IdColl
+    const media = (data.current?.lists ?? []).flatMap((list) => list.entries ?? []).map((entry) => entry.media)
+    return { ids: splitAniListIds(data), currentMedia: new Map(media.map((item) => [item.id, item])) }
+  } catch { return { ids: splitAniListIds(undefined), currentMedia: new Map() } }
 }
 
 /** Load every "my shows" source concurrently. Best-effort — a failing/absent source just contributes
@@ -101,10 +113,10 @@ export async function loadMySets(userName: string | undefined): Promise<MySets> 
   ])
   const local = new Set(Object.keys(get(localHistory)).map(Number))
   return {
-    aniWatching: new Set([...ani.CURRENT, ...kitsuW, ...simklW]),
-    aniPlanning: new Set([...ani.PLANNING, ...kitsuP, ...simklP]),
-    aniDropped: new Set([...ani.DROPPED, ...kitsuD, ...simklD]),
+    aniWatching: new Set([...ani.ids.CURRENT, ...kitsuW, ...simklW]),
+    aniPlanning: new Set([...ani.ids.PLANNING, ...kitsuP, ...simklP]),
+    aniDropped: new Set([...ani.ids.DROPPED, ...kitsuD, ...simklD]),
     malWatching: new Set(malW), malPlanning: new Set(malP), malDropped: new Set(malD),
-    local,
+    local, aniCurrentMedia: ani.currentMedia,
   }
 }
