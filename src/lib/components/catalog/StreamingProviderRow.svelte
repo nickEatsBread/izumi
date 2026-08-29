@@ -49,6 +49,7 @@
       onpointerleave={() => hidePreview(feature)}
       onfocus={() => showPreview(feature)}
       onblur={() => hidePreview(feature)}
+      class:has-preview={Boolean(brand.preview)}
       class="provider-card brand-{brand.id} group relative aspect-[2/1] w-64 shrink-0 overflow-hidden rounded-xl border border-white/10 text-left transition-[transform,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.01] hover:border-white/25 hover:shadow-xl focus-visible:-translate-y-0.5 focus-visible:scale-[1.01] focus-visible:border-white/30 focus-visible:shadow-xl sm:w-80"
       style={`--service-primary:${brand.primary};--service-secondary:${brand.secondary}`}
     >
@@ -91,8 +92,18 @@
   }
 
   .provider-fallback {
-    background: color-mix(in srgb, var(--service-secondary) 72%, #111318);
+    background: linear-gradient(
+      145deg,
+      color-mix(in srgb, var(--service-secondary) 90%, #0b0d12),
+      color-mix(in srgb, var(--service-secondary) 76%, var(--service-primary))
+    );
   }
+
+  .brand-disney .provider-fallback { background: linear-gradient(145deg, #102f68, #08172f); }
+  .brand-apple-tv .provider-fallback { background: linear-gradient(145deg, #424957, #171b23); }
+  .brand-google-play .provider-fallback { background: linear-gradient(145deg, #1b2938, #0d151e); }
+  .brand-filmbox-plus .provider-fallback { background: linear-gradient(145deg, #f7f7f6, #d8dbe1); }
+  .brand-sun-nxt .provider-fallback { background: linear-gradient(145deg, #59122a, #240712); }
 
   .provider-preview {
     opacity: 0;
@@ -110,8 +121,8 @@
     transition: background-color 200ms ease-out;
   }
 
-  .provider-card:hover .provider-shade,
-  .provider-card:focus-visible .provider-shade { background: rgb(0 0 0 / .38); }
+  .provider-card.has-preview:hover .provider-shade,
+  .provider-card.has-preview:focus-visible .provider-shade { background: rgb(0 0 0 / .38); }
 
   .provider-name { text-shadow: 0 2px 16px rgb(0 0 0 / .9); }
 
@@ -144,14 +155,32 @@
     filter: none;
   }
 
-  .brand-disney .provider-mark { width: 54%; height: 48%; }
+  .brand-disney .provider-mark { width: 64%; height: 58%; }
   .brand-prime-video .provider-mark { width: 48%; height: 54%; }
-  .brand-apple-tv .provider-mark { width: 52%; height: 46%; }
+  .brand-apple-tv .provider-mark { width: 54%; height: 50%; }
+  .brand-google-play .provider-mark { width: 34%; height: 64%; }
+  .brand-filmbox-plus .provider-mark { width: 68%; height: 66%; }
+  .brand-sun-nxt .provider-mark { width: 30%; height: 58%; }
   .brand-hulu .provider-mark { width: 48%; height: 44%; }
   .brand-max .provider-mark { width: 48%; height: 44%; }
   .brand-paramount-plus .provider-mark,
   .brand-crunchyroll .provider-mark,
   .brand-peacock .provider-mark { width: 44%; height: 50%; }
+
+  .brand-disney .provider-mark,
+  .brand-apple-tv .provider-mark,
+  .brand-disney:hover .provider-mark,
+  .brand-disney:focus-visible .provider-mark,
+  .brand-apple-tv:hover .provider-mark,
+  .brand-apple-tv:focus-visible .provider-mark {
+    filter: grayscale(1) brightness(0) invert(1);
+  }
+
+  .brand-google-play .provider-mark,
+  .brand-filmbox-plus .provider-mark,
+  .brand-sun-nxt .provider-mark {
+    filter: none;
+  }
 
   @media (prefers-reduced-motion: reduce) {
     .provider-card, .provider-preview, .provider-mark { transition-duration: .01ms; }

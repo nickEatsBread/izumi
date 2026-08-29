@@ -3,6 +3,9 @@ export type StreamingBrandId =
   | 'disney'
   | 'prime-video'
   | 'apple-tv'
+  | 'google-play'
+  | 'filmbox-plus'
+  | 'sun-nxt'
   | 'hulu'
   | 'max'
   | 'crunchyroll'
@@ -43,8 +46,17 @@ export function streamingBrand(name: string): StreamingBrand {
     preview: 'https://i.vimeocdn.com/video/1648130147-cac56007388a091bb59cc5f8b2da4dd4e1ee4a07deba61602287c010eacabf87-d?f=webp',
   }
   if (value.includes('apple')) return {
-    id: 'apple-tv', primary: '#f5f5f7', secondary: '#171719', mark: '/brand/streaming/apple-tv.svg',
+    id: 'apple-tv', primary: '#f5f5f7', secondary: '#242a38', mark: '/brand/streaming/apple-tv.svg',
     preview: 'https://tvark.org/media/2023/07/Apple_TV_Plus_Ident_a.jpg',
+  }
+  if (value.includes('google play')) return {
+    id: 'google-play', primary: '#34a853', secondary: '#151d29', mark: '/brand/streaming/google-play.png',
+  }
+  if (value.includes('filmbox') || value.includes('film box')) return {
+    id: 'filmbox-plus', primary: '#f21b27', secondary: '#e9eaed', mark: '/brand/streaming/filmbox-plus.png',
+  }
+  if (value.includes('sun nxt') || value.includes('sunnxt') || value.includes('sun next')) return {
+    id: 'sun-nxt', primary: '#ef3155', secondary: '#2a0a18', mark: '/brand/streaming/sun-nxt.png',
   }
   if (value.includes('hulu')) return {
     id: 'hulu', primary: '#1ce783', secondary: '#092118', mark: '/brand/streaming/hulu.svg',

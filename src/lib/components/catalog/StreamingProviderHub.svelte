@@ -146,7 +146,7 @@
       </a>
       <div class="flex items-center gap-4 sm:gap-5">
         {#if brand.mark || logo}
-          <div class="grid size-20 shrink-0 place-items-center rounded-[1.35rem] bg-black/30 p-3 shadow-2xl ring-1 ring-white/15 backdrop-blur sm:size-24 sm:p-4">
+          <div class="provider-hub-mark-shell grid size-20 shrink-0 place-items-center rounded-[1.35rem] bg-black/30 p-3 shadow-2xl ring-1 ring-white/15 backdrop-blur sm:size-24 sm:p-4">
             <img src={brand.mark ?? logo} alt="" class="provider-hub-mark size-full object-contain" />
           </div>
         {/if}
@@ -203,6 +203,12 @@
 <style>
   .provider-hub-mark { filter: brightness(0) invert(1); }
   :global(.brand-netflix) .provider-hub-mark { filter: none; }
+  :global(.brand-google-play) .provider-hub-mark,
+  :global(.brand-filmbox-plus) .provider-hub-mark,
+  :global(.brand-sun-nxt) .provider-hub-mark { filter: none; }
+  :global(.brand-google-play) .provider-hub-mark { width: 68%; height: 68%; }
+  :global(.brand-sun-nxt) .provider-hub-mark { width: 82%; height: 82%; }
+  :global(.brand-filmbox-plus) .provider-hub-mark-shell { background: #f2f3f5; }
   .provider-backdrop {
     background:
       radial-gradient(circle at 13% 34%, color-mix(in srgb, var(--service-primary) 34%, transparent), transparent 34%),
