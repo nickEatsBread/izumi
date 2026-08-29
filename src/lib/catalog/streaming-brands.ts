@@ -103,7 +103,6 @@ export function streamingBrand(name: string): StreamingBrand {
   }
   if (value.includes('max') || value.includes('hbo')) return {
     id: 'max', primary: '#2f55ff', secondary: '#10132b', mark: '/brand/streaming/max.svg',
-    preview: 'https://cdn.mos.cms.futurecdn.net/XXNTh2LJ7Kawpa6fk4Vdki.jpg',
   }
   if (value.includes('crunchyroll')) return { id: 'crunchyroll', primary: '#f47521', secondary: '#24140a', mark: '/brand/streaming/crunchyroll.svg' }
   if (value.includes('paramount')) return { id: 'paramount-plus', primary: '#0064ff', secondary: '#10182a', mark: '/brand/streaming/paramount-plus.svg' }

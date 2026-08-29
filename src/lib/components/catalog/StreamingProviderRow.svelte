@@ -102,6 +102,7 @@
 
   .brand-disney .provider-fallback { background: linear-gradient(145deg, #102f68, #08172f); }
   .brand-apple-tv .provider-fallback { background: linear-gradient(145deg, #424957, #171b23); }
+  .brand-max .provider-fallback { background: linear-gradient(145deg, #2b176d, #15123b); }
   .brand-google-play .provider-fallback { background: linear-gradient(145deg, #1b2938, #0d151e); }
   .brand-filmbox-plus .provider-fallback { background: linear-gradient(145deg, #f7f7f6, #d8dbe1); }
   .brand-sun-nxt .provider-fallback { background: linear-gradient(145deg, #59122a, #240712); }
@@ -156,13 +157,13 @@
     filter: none;
   }
 
-  .brand-disney .provider-mark { width: 64%; height: 58%; }
+  .brand-disney .provider-mark { width: 72%; height: 68%; }
   .brand-prime-video .provider-mark { width: 48%; height: 54%; }
   .brand-apple-tv .provider-mark { width: 54%; height: 50%; }
   .brand-google-play .provider-mark { width: 34%; height: 64%; }
   .brand-filmbox-plus .provider-mark { width: 68%; height: 66%; }
   .brand-sun-nxt .provider-mark { width: 30%; height: 58%; }
-  .brand-hulu .provider-mark { width: 48%; height: 44%; }
+  .brand-hulu .provider-mark { width: 62%; height: 54%; }
   .brand-max .provider-mark { width: 48%; height: 44%; }
   .brand-paramount-plus .provider-mark,
   .brand-crunchyroll .provider-mark,

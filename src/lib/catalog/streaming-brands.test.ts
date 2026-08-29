@@ -21,6 +21,7 @@ describe('streaming service visual identity', () => {
       expect(streamingBrand(service.name)).toMatchObject({ id: service.id, mark: service.mark })
     }
     expect(streamingBrand('Apple TV Plus')).toMatchObject({ primary: '#f5f5f7', secondary: '#242a38' })
+    expect(streamingBrand('Max').preview).toBeUndefined()
   })
 
   it('ships every primary service icon in the static bundle', () => {
