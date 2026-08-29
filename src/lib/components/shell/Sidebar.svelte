@@ -16,7 +16,7 @@
   import { anilistUser } from '$lib/anilist/account'
   import { incognito, toggleIncognito } from '$lib/stores/incognito'
   import { offlineMode } from '$lib/stores/offline'
-  import { catalogMode, catalogSwitcherPlacement, enabledCatalogProviders } from '$lib/settings/catalog'
+  import { catalogMode, catalogSwitcherPlacement, enabledCatalogProviders, resolveCatalogSwitcherPlacement } from '$lib/settings/catalog'
   import * as h from '$lib/haptics'
   import { m } from '$lib/paraglide/messages.js'
   // Nav items (top). Settings + profile are pinned to the BOTTOM.
@@ -63,6 +63,9 @@
   // No active-item highlight while a video plays — the rail is inert then (you're in the player,
   // not browsing), so highlighting the page you launched from (e.g. Home) reads as "selected".
   const active = (href: string) => !$playing && page.url.pathname.startsWith(href)
+  // This component only mounts in the desktop shell. Automatic therefore makes the brand itself
+  // the catalog trigger, while an explicit Below choice still gets its own rail row.
+  const switcherPlacement = $derived(resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, false))
 </script>
 
 <!-- Browse: soft scrim so the banner shows through and fades into the page. Hidden while playing. -->
@@ -82,7 +85,7 @@
   <!-- On Home, Integrated mode turns the brand into the catalog trigger. Everywhere else it stays
        predictable Home navigation; Below mode keeps the explicit provider row underneath. -->
   <div class="group mb-2 flex h-10 shrink-0 items-center gap-2 text-left">
-    {#if $catalogMode === 'separate' && $catalogSwitcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogProviders.length > 1}
+    {#if $catalogMode === 'separate' && switcherPlacement === 'integrated' && active('/app/home') && !$offlineMode && $enabledCatalogProviders.length > 1}
       <CatalogSwitcher display="brand" bind:open={catalogPickerOpen} className="ml-2 shrink-0" />
     {:else}
       <a href="/app/home" onclick={() => h.tap()} aria-label={m.nav_home()} title={m.nav_home()} tabindex={-1}
@@ -93,7 +96,7 @@
     <span class="whitespace-nowrap text-lg font-black transition-opacity duration-150 {open ? 'opacity-100' : 'opacity-0'}">izumi</span>
   </div>
 
-  {#if !$offlineMode && $catalogMode === 'separate' && $catalogSwitcherPlacement === 'below'}
+  {#if !$offlineMode && $catalogMode === 'separate' && switcherPlacement === 'below'}
     <CatalogSwitcher display="rail" bind:open={catalogPickerOpen} expanded={open} className="shrink-0" />
   {/if}
 

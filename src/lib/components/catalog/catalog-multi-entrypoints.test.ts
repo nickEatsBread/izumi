@@ -16,24 +16,27 @@ describe('multi-platform catalog entry points', () => {
     expect(search).not.toContain('CatalogProviderTabs')
   })
 
-  it('supports integrated and separate catalog pickers on Home without duplicating one above Search', () => {
+  it('supports responsive integrated and separate catalog pickers on Home without duplicating one above Search', () => {
     expect(home).toContain("import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'")
     expect(home).toContain('<CatalogSwitcher display="brand" showWordmark />')
-    expect(home).toContain('<CatalogSwitcher display="icon" />')
-    expect(home).toContain("$catalogSwitcherPlacement === 'integrated'")
-    expect(home).toContain("$catalogSwitcherPlacement === 'below'")
+    expect(home).toContain('<CatalogSwitcher display="value" appearance="surface" className="mt-2" />')
+    expect(home).toContain('resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, $isAndroid)')
+    expect(home).toContain("switcherPlacement === 'integrated'")
+    expect(home).toContain("switcherPlacement === 'below'")
     expect(search).not.toContain("import CatalogSwitcher from '$lib/components/catalog/CatalogSwitcher.svelte'")
     expect(search).not.toContain('<CatalogSwitcher')
     expect(sidebar).toContain('<CatalogSwitcher display="brand" bind:open={catalogPickerOpen}')
     expect(sidebar).toContain('<CatalogSwitcher display="rail" bind:open={catalogPickerOpen}')
+    expect(sidebar).toContain('resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, false)')
     expect(sidebar).toContain('expanded={open}')
     expect(sidebar).toContain("catalogPickerOpen ? 'overflow-visible' : 'overflow-hidden'")
   })
 
   it('persists the user-selected placement and exposes it in Catalog settings', () => {
-    expect(catalogStore).toContain("export type CatalogSwitcherPlacement = 'integrated' | 'below'")
+    expect(catalogStore).toContain("export type CatalogSwitcherPlacement = 'automatic' | 'integrated' | 'below'")
     expect(catalogStore).toContain("'catalog-switcher-placement'")
-    expect(catalogStore).toContain("'below',")
+    expect(catalogStore).toContain("'automatic',")
+    expect(catalogSettings).toContain('Automatic · desktop logo, below on Android')
     expect(catalogSettings).toContain('Integrated into Izumi logo')
     expect(catalogSettings).toContain('Below Izumi logo')
     expect(catalogSettings).toContain('settingKey="catalog-switcher-placement"')

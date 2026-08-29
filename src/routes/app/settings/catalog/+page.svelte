@@ -66,6 +66,7 @@
     { value: 'merged', label: 'Merged Home and Search' },
   ]
   const switcherPlacementOptions = [
+    { value: 'automatic', label: 'Automatic · desktop logo, below on Android' },
     { value: 'below', label: 'Below Izumi logo' },
     { value: 'integrated', label: 'Integrated into Izumi logo' },
   ]
@@ -120,7 +121,7 @@
   }
 
   function setSwitcherPlacement(value: string) {
-    if (value === 'integrated' || value === 'below') {
+    if (value === 'automatic' || value === 'integrated' || value === 'below') {
       $catalogSwitcherPlacement = value as CatalogSwitcherPlacement
     }
   }
@@ -217,7 +218,7 @@
       <SettingsRow
         settingKey="catalog-switcher-placement"
         title="Catalog switcher"
-        description="Integrate catalog selection into the Izumi logo, or show a more visible provider row below it."
+        description="Automatic integrates catalog selection into the Izumi logo on desktop and places it below the logo on Android."
         control={switcherPlacementControl}
         controlLayout="stack"
       />

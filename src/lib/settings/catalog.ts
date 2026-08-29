@@ -5,7 +5,7 @@ export type CatalogSelection = 'auto' | 'anilist' | 'kitsu' | 'tmdb' | 'stremio'
 export type CatalogDefaultSelection = CatalogSelection | 'adaptive'
 export type CatalogMode = 'separate' | 'merged'
 export type ContinueWatchingCatalogScope = 'provider' | 'all'
-export type CatalogSwitcherPlacement = 'integrated' | 'below'
+export type CatalogSwitcherPlacement = 'automatic' | 'integrated' | 'below'
 
 export const CATALOG_SELECTIONS: CatalogSelection[] = ['auto', 'anilist', 'kitsu', 'tmdb', 'stremio', 'jvm']
 
@@ -106,11 +106,20 @@ export const continueWatchingCatalogScope = persisted<ContinueWatchingCatalogSco
   'provider',
 )
 
+/** Resolve the responsive default without taking either explicit placement away from the user. */
+export function resolveCatalogSwitcherPlacement(
+  placement: unknown,
+  android: boolean,
+): Exclude<CatalogSwitcherPlacement, 'automatic'> {
+  if (placement === 'integrated' || placement === 'below') return placement
+  return android ? 'below' : 'integrated'
+}
+
 /** Controls whether Home's catalog picker shares the Izumi brand control or gets its own,
- * more explicit row below it. Keep the explicit row as the default for existing installs. */
+ * more explicit row below it. Automatic follows the native layout convention for each platform. */
 export const catalogSwitcherPlacement = persisted<CatalogSwitcherPlacement>(
   'catalog-switcher-placement',
-  'below',
+  'automatic',
 )
 
 /** Per-source catalog visibility is independent from source/package enablement. Missing entries

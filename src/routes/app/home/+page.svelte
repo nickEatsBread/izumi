@@ -11,7 +11,7 @@
   import Hero from '$lib/components/banner/Hero.svelte'
   import { anilistUser } from '$lib/anilist/account'
   import { anilistUserName, malToken, malUser } from '$lib/trackers/config'
-  import { isMacOS, isMobile } from '$lib/platform'
+  import { isAndroid, isMacOS, isMobile } from '$lib/platform'
   import { offlineMode } from '$lib/stores/offline'
   import DownloadedLibrary from '$lib/components/offline/DownloadedLibrary.svelte'
   import * as h from '$lib/haptics'
@@ -32,6 +32,7 @@
     mergedCatalogProviders,
     nextCatalogProvider,
     previousCatalogProvider,
+    resolveCatalogSwitcherPlacement,
     selectCatalogProvider,
   } from '$lib/settings/catalog'
   import CatalogHome from '$lib/components/catalog/CatalogHome.svelte'
@@ -94,6 +95,7 @@
   })
 
   const canCycleCatalog = $derived($catalogMode === 'separate' && $enabledCatalogProviders.length > 1)
+  const switcherPlacement = $derived(resolveCatalogSwitcherPlacement($catalogSwitcherPlacement, $isAndroid))
 
   function handleCatalogKeydown(event: KeyboardEvent) {
     if (event.defaultPrevented) return
@@ -146,20 +148,18 @@
        double-counted the status-bar inset and left a big black gap above the logo. -->
   <!-- The degraded strip is fixed at the same safe-area edge as this in-flow toolbar. Reserve its
        height while visible so the logo and top actions remain fully tappable on Android. -->
-  <div class="flex items-center justify-between px-4 pb-3 pt-3 {usesAniListHome && $anilistDegraded ? 'mt-7' : ''}">
-    {#if !$offlineMode && $catalogSwitcherPlacement === 'integrated' && canCycleCatalog}
-      <CatalogSwitcher display="brand" showWordmark />
-    {:else}
-      <div class="flex items-center gap-2" aria-label="izumi">
-        <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
-        <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
-      </div>
-    {/if}
-    {#if topNav.length || (!$offlineMode && $catalogMode === 'separate' && $catalogSwitcherPlacement === 'below')}
+  <div class="px-4 pb-3 pt-3 {usesAniListHome && $anilistDegraded ? 'mt-7' : ''}">
+    <div class="flex items-center justify-between">
+      {#if !$offlineMode && switcherPlacement === 'integrated' && canCycleCatalog}
+        <CatalogSwitcher display="brand" showWordmark />
+      {:else}
+        <div class="flex items-center gap-2" aria-label="izumi">
+          <img src="/brand/izumi-mark-color.svg" alt="" class="h-7 w-7" draggable="false" />
+          <img src="/brand/izumi-wordmark-white.svg" alt="izumi" class="home-wordmark h-5" draggable="false" />
+        </div>
+      {/if}
+      {#if topNav.length}
       <div class="flex items-center gap-1">
-        {#if !$offlineMode && $catalogMode === 'separate' && $catalogSwitcherPlacement === 'below'}
-          <CatalogSwitcher display="icon" />
-        {/if}
         {#each topNav as c (c.id)}
           {@const meta = NAV_META[c.id]}
           {@const Icon = meta.icon}
@@ -169,6 +169,10 @@
           </a>
         {/each}
       </div>
+      {/if}
+    </div>
+    {#if !$offlineMode && switcherPlacement === 'below' && canCycleCatalog}
+      <CatalogSwitcher display="value" appearance="surface" className="mt-2" />
     {/if}
   </div>
 {/if}

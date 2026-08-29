@@ -653,6 +653,10 @@
   // One seek "tap" while in (or entering) seek mode: accumulate on the same side, reverse on the other.
   function bumpSeek(side: 'l' | 'r') {
     const step = $seekDuration
+    // The first tap may have revealed the chrome before the second one established a double-tap.
+    // Once this is a seek sequence, keep the video clear through every accumulating tap.
+    clearTimeout(hideTimer)
+    controlsShown = false
     if (!seekActive || seekSide !== side) {
       seekActive = true; seekSide = side; seekFlash = { side, amt: step }
     } else {

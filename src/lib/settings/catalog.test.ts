@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
   catalogLabel, catalogLastProvider, catalogProvider, nextCatalogProvider,
-  isJvmCatalogSourceEnabled, mergedCatalogProviders, normalizeCatalogProviders, previousCatalogProvider, resolveCatalogStartup, selectCatalogProvider,
+  isJvmCatalogSourceEnabled, mergedCatalogProviders, normalizeCatalogProviders, previousCatalogProvider,
+  resolveCatalogStartup, resolveCatalogSwitcherPlacement, selectCatalogProvider,
 } from './catalog'
 
 describe('catalog platform selection', () => {
@@ -58,6 +59,13 @@ describe('catalog platform selection', () => {
 
   it('keeps a fixed default independent of the last selected platform', () => {
     expect(resolveCatalogStartup('anilist', 'tmdb', ['anilist', 'tmdb'])).toBe('anilist')
+  })
+
+  it('places the automatic catalog switcher in the desktop logo and below it on Android', () => {
+    expect(resolveCatalogSwitcherPlacement('automatic', false)).toBe('integrated')
+    expect(resolveCatalogSwitcherPlacement('automatic', true)).toBe('below')
+    expect(resolveCatalogSwitcherPlacement('below', false)).toBe('below')
+    expect(resolveCatalogSwitcherPlacement('integrated', true)).toBe('integrated')
   })
 
   it('records explicit switches as Adaptive startup state', () => {
