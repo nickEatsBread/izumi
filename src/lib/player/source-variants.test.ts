@@ -149,8 +149,8 @@ describe('variantLabel', () => {
   })
 
   it('falls back to the streaming host when the provider named no server', () => {
-    // videoSourceToStream drops a server called "default", and the Aniyomi bridge only recovers one
-    // from a strictly-shaped video title — so unnamed mirrors are common. Without the host they all
+    // videoSourceToStream drops a server called "default", and some Aniyomi titles carry no useful
+    // variant label — so unnamed mirrors are common. Without the host they all
     // render as a bare quality and the menu reads as a list of identical rows.
     const defaultServer = row({
       __server: 'default', __quality: '1080p',

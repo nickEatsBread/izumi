@@ -3,6 +3,7 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
 use std::net::SocketAddr;
@@ -82,6 +83,25 @@ struct Process {
     pending: Arc<Mutex<Pending>>,
     sequence: AtomicU64,
     logger: DeveloperLogger,
+}
+
+/// The bridge writes extension diagnostics and its own lifecycle messages to the same stderr
+/// stream. Preserve real failures as errors, but do not present Anikoto's optional mapper lookup
+/// as a failed resolve: that extractor catches it and continues through its HTML server list.
+fn classify_runtime_stderr(line: &str) -> (&'static str, Cow<'_, str>) {
+    if line.starts_with("ERROR: AnikotoExtractor: Mapper API failed:") {
+        return ("warn", Cow::Owned(line.replacen("ERROR:", "WARN:", 1)));
+    }
+    let level = if line.starts_with("ERROR:") || line.starts_with("[ERROR]") {
+        "error"
+    } else if line.starts_with("WARN:") || line.starts_with("[WARN]") {
+        "warn"
+    } else if line.starts_with("DEBUG:") {
+        "debug"
+    } else {
+        "info"
+    };
+    (level, Cow::Borrowed(line))
 }
 
 impl Process {
@@ -898,8 +918,9 @@ async fn start_process(
     tauri::async_runtime::spawn(async move {
         let mut lines = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = lines.next_line().await {
+            let (level, line) = classify_runtime_stderr(&line);
             eprintln!("[aniyomi-jvm] {line}");
-            error_logger.emit("aniyomi-jvm:stderr", "warn", &line);
+            error_logger.emit("aniyomi-jvm:stderr", level, &line);
         }
     });
 
@@ -1336,8 +1357,8 @@ pub async fn jvm_extension_reload(runtime: tauri::State<'_, Runtime>) -> Result<
 #[cfg(test)]
 mod tests {
     use super::{
-        apk_icon_data_url, java_home_from_executable, macos_homebrew_java_candidates,
-        parse_java_major, runtime_jvm_args,
+        apk_icon_data_url, classify_runtime_stderr, java_home_from_executable,
+        macos_homebrew_java_candidates, parse_java_major, runtime_jvm_args,
     };
     use base64::Engine;
     use std::io::{Cursor, Write};
@@ -1404,6 +1425,24 @@ mod tests {
         );
         assert_eq!(parse_java_major(r#"java version "1.8.0_451""#), Some(8));
         assert_eq!(parse_java_major("not a Java version"), None);
+    }
+
+    #[test]
+    fn classifies_optional_mapper_failures_as_recoverable_warnings() {
+        let (level, line) = classify_runtime_stderr(
+            "ERROR: AnikotoExtractor: Mapper API failed: Field 'url' was missing",
+        );
+        assert_eq!(level, "warn");
+        assert_eq!(
+            line,
+            "WARN: AnikotoExtractor: Mapper API failed: Field 'url' was missing"
+        );
+
+        assert_eq!(
+            classify_runtime_stderr("[ERROR] fetchVideoList failed").0,
+            "error"
+        );
+        assert_eq!(classify_runtime_stderr("DEBUG: server started").0, "debug");
     }
 
     #[test]

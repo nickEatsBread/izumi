@@ -79,6 +79,8 @@ describe('multi-platform catalog entry points', () => {
     expect(catalogHome).toContain('provider.home(abort.signal, undefined, publish)')
     expect(catalogHome).toContain('publish(result, result.partial !== true)')
     expect(catalogHome).toContain('if (result.hero.length || result.sections.length) loading = false')
+    expect(catalogHome).toContain('{:else if loading}')
+    expect(catalogHome).not.toContain("loading && $catalogProvider !== 'jvm'")
     expect(catalogHome).not.toContain("class:deferred-skeleton={$catalogProvider === 'jvm'}")
     expect(catalogHome).toContain("showCatalogSource={$catalogProvider !== 'jvm'}")
     expect(read('./MergedCatalogHome.svelte')).toContain('let homes = $state.raw<Partial<Record<CatalogSelection, CatalogHome>>>({})')

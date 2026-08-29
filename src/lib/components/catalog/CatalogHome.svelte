@@ -97,7 +97,7 @@
 <div class="pb-16">
   {#if home?.hero.length}
     <Hero medias={home.hero} onplay={(media) => goto(mediaHref(media))} oninfo={(media) => goto(mediaHref(media))} />
-  {:else if loading && $catalogProvider !== 'jvm'}
+  {:else if loading}
     <div class="relative mb-6 h-[50vh] overflow-hidden bg-muted">
       <div class="absolute inset-0 skeloader"></div>
       <div class="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent"></div>

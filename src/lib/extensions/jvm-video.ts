@@ -41,18 +41,32 @@ export function normalizeJvmSidecarUrl(value: unknown): string | undefined {
 
 /**
  * Aniyomi extractors commonly put the information we need in `Video.title`, for example
- * "HD-1 - Sub - 1080p". Keep the parser deliberately conservative so an unrelated title remains
- * a quality label instead of being split into invented metadata.
+ * "HD-1 - Sub - 1080p". Others use a leading variant label rather than an explicit server, such
+ * as AniDB's "Japanese - 1080p (1920x1080) - 543 KB/s". Preserve that literal label as the
+ * per-video server identity: the enclosing JVM result only names the provider, so dropping it
+ * makes genuinely different rows render as repeated "AniDB · 1080p" entries.
  */
 export function parseJvmVideoTitle(value: unknown): JvmVideoIdentity {
   const title = String(value ?? '').trim()
-  const match = title.match(/^(.+?)\s+-\s+(Sub|HSub|Dub)\s+-\s+(.+)$/i)
-  if (!match) return { quality: title || undefined }
-  const flavor = match[2].toLowerCase()
-  return {
-    server: match[1].trim(),
-    quality: match[3].trim(),
-    audio: flavor === 'dub' ? 'dub' : 'sub',
-    subtitleMode: flavor === 'hsub' ? 'hard' : 'soft',
+  if (!title) return {}
+
+  const structured = title.match(/^(.+?)\s+-\s+(Sub|S-Sub|HSub|H-Sub|Dub|A-Dub)\s+-\s+(.+)$/i)
+  if (structured) {
+    const flavor = structured[2].toLowerCase()
+    return {
+      server: structured[1].trim(),
+      quality: structured[3].trim(),
+      audio: flavor.includes('dub') ? 'dub' : 'sub',
+      subtitleMode: flavor.startsWith('h') ? 'hard' : 'soft',
+    }
   }
+
+  const quality = title.match(/\b\d{3,4}p\b/i)?.[0]
+  const leadingLabel = title.split(/\s+-\s+/, 1)[0]?.trim()
+  const server = title.includes(' - ')
+    && leadingLabel
+    && !/^(?:auto|original|source|video|\d{3,4}p)$/i.test(leadingLabel)
+    ? leadingLabel
+    : undefined
+  return { server, quality: quality ?? title }
 }

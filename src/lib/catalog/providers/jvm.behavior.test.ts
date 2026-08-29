@@ -117,7 +117,7 @@ describe('JVM catalog provider', () => {
     expect(home.hero).toHaveLength(1)
   })
 
-  it('publishes the first completed Home row without waiting for slower sources', async () => {
+  it('publishes the featured carousel and first Home row without waiting for slower sources', async () => {
     let releaseSlow!: () => void
     const slow = new Promise<void>((resolve) => { releaseSlow = resolve })
     mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
@@ -127,68 +127,55 @@ describe('JVM catalog provider', () => {
         hasNextPage: false,
       }
     })
-    const updates: Array<{ sections: Array<{ id: string }> }> = []
+    const updates: Array<{ hero: unknown[]; sections: Array<{ id: string }> }> = []
     const complete = jvmCatalog.home(undefined, undefined, (home) => updates.push(home))
 
     await vi.waitFor(() => expect(updates.some((home) =>
       home.sections.some((section) => section.id === 'popular:one'))).toBe(true))
+    expect(updates.at(-1)?.hero).toHaveLength(1)
     expect(updates.at(-1)?.sections.length).toBeLessThan(4)
 
     releaseSlow()
     await complete
   })
 
-  it('does not reconcile every previously published card again for each later Home row', async () => {
-    const updates: Array<{ sections: Array<{ id: string }> }> = []
+  it('publishes each lower Home row as soon as it completes', async () => {
+    const updates: Array<{ partial?: boolean; sections: Array<{ id: string }> }> = []
 
     const home = await jvmCatalog.home(undefined, undefined, (update) => updates.push(update))
 
-    expect(updates).toHaveLength(2)
-    expect(updates[0].sections).toHaveLength(1)
-    expect(updates[1].sections).toHaveLength(2)
+    expect(updates.map((update) => update.sections.length)).toEqual([1, 2, 3, 4])
+    expect(updates.every((update) => update.partial)).toBe(true)
     expect(home.sections).toHaveLength(4)
   })
 
-  it('gives every enabled source a primary Home attempt before loading second rows', async () => {
-    vi.useFakeTimers()
-    try {
-      const fourSources = Array.from({ length: 4 }, (_, index) => ({
-        id: `source-${index + 1}`,
-        name: `Source ${index + 1}`,
-        lang: 'en',
-        supportsPopular: true,
-        supportsLatest: true,
-      }))
-      const calls: Array<[string, string]> = []
-      mocks.sources.mockResolvedValue(fourSources)
-      mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
-        calls.push([sourceId, method])
-        if (method === 'getPopular') {
-          await new Promise((resolve) => setTimeout(resolve, 4_000))
-        }
-        return {
-          list: [{ title: `${method} ${sourceId}`, url: `/${method}/${sourceId}` }],
-          hasNextPage: false,
-        }
-      })
-      const updates: Array<{ sections: Array<{ id: string }> }> = []
-      const complete = jvmCatalog.home(undefined, undefined, (update) => updates.push(update))
+  it('loads JVM Home rows in the configured top-to-bottom order', async () => {
+    catalogHomeLayouts.set({
+      jvm: {
+        order: ['latest:two', 'popular:one', 'latest:one', 'popular:two', 'continue'],
+        disabled: [],
+      },
+    })
+    const calls: Array<[string, string]> = []
+    mocks.browse.mockImplementation(async (sourceId: string, method: string) => {
+      calls.push([sourceId, method])
+      return {
+        list: [{ title: `${method} ${sourceId}`, url: `/${method}/${sourceId}` }],
+        hasNextPage: false,
+      }
+    })
 
-      await vi.advanceTimersByTimeAsync(17_000)
-      const home = await complete
-      const firstLatest = calls.findIndex(([, method]) => method === 'getLatestUpdates')
+    const home = await jvmCatalog.home()
 
-      expect(firstLatest).toBe(4)
-      expect(calls.slice(0, firstLatest).map(([sourceId]) => sourceId)).toEqual(
-        fourSources.map((source) => source.id),
-      )
-      expect(updates.at(-1)?.sections.map((section) => section.id)).toEqual(
-        fourSources.map((source) => `popular:${source.id}`),
-      )
-      expect(home.sections).toHaveLength(8)
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(calls).toEqual([
+      ['two', 'getLatestUpdates'],
+      ['one', 'getPopular'],
+      ['one', 'getLatestUpdates'],
+      ['two', 'getPopular'],
+    ])
+    expect(home.sections.map((section) => section.id)).toEqual([
+      'latest:two', 'popular:one', 'latest:one', 'popular:two',
+    ])
   })
 
   it('never fans Home requests out across the JVM bridge', async () => {

@@ -69,8 +69,8 @@ const isDefaultServer = (server?: string) => !server || /^default$/i.test(server
 /** Host of the stream URL, as a stand-in server identity.
  *
  *  Plenty of sources reach the menu with no server name at all: videoSourceToStream drops a server
- *  the provider called "default", and the Aniyomi bridge only recovers one from a video title
- *  shaped exactly like "HD-1 - Sub - 1080p". Those rows are still genuinely DIFFERENT mirrors, and
+ *  the provider called "default", and some Aniyomi video titles contain no useful variant label.
+ *  Those rows are still genuinely DIFFERENT mirrors, and
  *  what actually distinguishes them is the host they stream from — so show that rather than
  *  repeating the quality on every row. `www.` is noise; a bare IP or unparseable URL yields
  *  nothing and falls through to the caller's next fallback. */

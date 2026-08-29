@@ -23,9 +23,26 @@ describe('JVM video metadata', () => {
       subtitleMode: 'hard',
     })
     expect(parseJvmVideoTitle('HD-1 - Dub - 360p').audio).toBe('dub')
+    expect(parseJvmVideoTitle('Kiwi - H-Sub - 480p')).toEqual({
+      server: 'Kiwi',
+      quality: '480p',
+      audio: 'sub',
+      subtitleMode: 'hard',
+    })
   })
 
-  it('does not invent structure for an unrelated title', () => {
+  it('keeps a literal leading JVM variant label when no explicit server field exists', () => {
+    expect(parseJvmVideoTitle('Japanese - 1080p (1920x1080) - 543.65 KB/s')).toEqual({
+      server: 'Japanese',
+      quality: '1080p',
+    })
+    expect(parseJvmVideoTitle('English - 720p (1280x720) - 323.10 KB/s')).toEqual({
+      server: 'English',
+      quality: '720p',
+    })
+  })
+
+  it('does not invent a server for a quality-only title', () => {
     expect(parseJvmVideoTitle('1080p')).toEqual({ quality: '1080p' })
   })
 

@@ -35,15 +35,10 @@ interface JvmHomeRequest {
   title: string
 }
 
-// The manager also protects the native bridge globally, but Home remains serial itself so it never
-// creates a large queue that can sit in front of a detail/search request after the user navigates.
-const JVM_HOME_CONCURRENCY = 1
+// Home remains serial so it never creates a large queue in front of detail/search requests. Each
+// completed row is still published immediately, which lets the configured Home paint top-down.
 const JVM_HOME_ROW_TIMEOUT_MS = 5_000
 const JVM_HOME_INIT_TIMEOUT_MS = 12_000
-// Every enabled source gets one fair Home attempt before optional second rows consume the
-// remaining budget. Above five sources, shorten each first attempt so one slow extension cannot
-// prevent sources later in the list from ever being queried.
-const JVM_HOME_PRIMARY_BUDGET_MS = 25_000
 const JVM_HOME_LOAD_BUDGET_MS = 30_000
 
 function waitForSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -63,30 +58,6 @@ function waitForSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
       (error) => { cleanup(); reject(error) },
     )
   })
-}
-
-async function settleWithConcurrency<T, R>(
-  values: T[],
-  concurrency: number,
-  load: (value: T) => Promise<R>,
-): Promise<PromiseSettledResult<R>[]> {
-  const results = new Array<PromiseSettledResult<R>>(values.length)
-  let cursor = 0
-  const worker = async () => {
-    while (cursor < values.length) {
-      const index = cursor++
-      try {
-        results[index] = { status: 'fulfilled', value: await load(values[index]) }
-      } catch (reason) {
-        results[index] = { status: 'rejected', reason }
-      }
-    }
-  }
-  await Promise.all(Array.from(
-    { length: Math.min(Math.max(1, concurrency), values.length) },
-    () => worker(),
-  ))
-  return results
 }
 
 const stringValue = (value: unknown): string | undefined => {
@@ -402,35 +373,17 @@ async function home(
   const selected = configured
     .filter((row) => row.enabled && row.id !== 'continue')
     .flatMap((row) => byId.get(row.id) ?? [])
-  // Keep one selected source available to the featured banner even when all of its rows are hidden.
-  const requests = available[0] && !selected.some((request) => request.id === available[0].id)
-    ? [available[0], ...selected]
-    : selected
-  // Requests are source-fair: one preferred row from every enabled source is attempted before a
-  // source can consume the bridge for its second row. The manager keeps the native JVM lane serial,
-  // so this changes scheduling without recreating the renderer/bridge fan-out that froze Home.
-  const primaryRequests: JvmHomeRequest[] = []
-  const secondaryRequests: JvmHomeRequest[] = []
-  const scheduledSources = new Set<string>()
-  for (const request of requests) {
-    if (scheduledSources.has(request.source.id)) secondaryRequests.push(request)
-    else {
-      scheduledSources.add(request.source.id)
-      primaryRequests.push(request)
-    }
-  }
-  const primaryRowTimeout = Math.min(
-    JVM_HOME_ROW_TIMEOUT_MS,
-    Math.max(1_000, Math.floor(JVM_HOME_PRIMARY_BUDGET_MS / Math.max(1, primaryRequests.length))),
-  )
+  // The first configured carousel also supplies the hero. When every carousel is hidden, retain a
+  // single provider request so Home can still show a featured banner.
+  const requests = selected.length ? selected : available.slice(0, 1)
   budgetTimer = setTimeout(() => {
     budgetExpired = true
     loadController.abort()
   }, JVM_HOME_LOAD_BUDGET_MS)
   const loaded = new Map<string, Media[]>()
   let hero: Media[] = []
-  let publishedUsableHome = false
   let publishedSectionCount = 0
+  let publishedHero: Media[] | undefined
   let rowsComplete = false
   const snapshot = (partial = false): CatalogHome => {
     const sections = selected.flatMap((request) => {
@@ -455,43 +408,33 @@ async function home(
       ...(partial ? { partial: true } : {}),
     }
   }
-  const publishFirstUsableHome = () => {
-    if (publishedUsableHome || signal?.aborted) return
-    const current = snapshot()
-    if (!current.hero.length && !current.sections.length) return
-    publishedUsableHome = true
-    publishedSectionCount = current.sections.length
-    onUpdate?.(current)
-  }
-  const publishPrimarySources = () => {
+  const publishProgress = () => {
     if (signal?.aborted) return
-    const current = snapshot()
+    const current = snapshot(true)
     if (!current.hero.length && !current.sections.length) return
-    // This is the only additional progressive reconciliation: it reveals the other providers
-    // together after the fair first pass, rather than replacing every mounted row one-by-one.
-    if (publishedUsableHome && current.sections.length <= publishedSectionCount) return
-    publishedUsableHome = true
+    if (current.hero === publishedHero && current.sections.length <= publishedSectionCount) return
+    publishedHero = current.hero
     publishedSectionCount = current.sections.length
     onUpdate?.(current)
   }
-  const loadRows = (phase: JvmHomeRequest[], timeoutMs: number) => settleWithConcurrency(
-    phase,
-    JVM_HOME_CONCURRENCY,
-    async (request) => {
-      const page = await homeSourcePage(request, loadController.signal, timeoutMs)
-      loaded.set(request.id, page.media)
-      if (!hero.length && page.media.length) hero = page.media.slice(0, 10)
-      publishFirstUsableHome()
-      return { request, page }
-    },
-  )
+  const loadRows = async (): Promise<PromiseSettledResult<{ request: JvmHomeRequest }>[]> => {
+    const results: PromiseSettledResult<{ request: JvmHomeRequest }>[] = []
+    for (const request of requests) {
+      if (loadController.signal.aborted) break
+      try {
+        const page = await homeSourcePage(request, loadController.signal, JVM_HOME_ROW_TIMEOUT_MS)
+        loaded.set(request.id, page.media)
+        if (!hero.length && page.media.length) hero = page.media.slice(0, 10)
+        publishProgress()
+        results.push({ status: 'fulfilled', value: { request } })
+      } catch (reason) {
+        results.push({ status: 'rejected', reason })
+      }
+    }
+    return results
+  }
   try {
-    const primaryResults = await loadRows(primaryRequests, primaryRowTimeout)
-    publishPrimarySources()
-    const secondaryResults = loadController.signal.aborted
-      ? []
-      : await loadRows(secondaryRequests, JVM_HOME_ROW_TIMEOUT_MS)
-    const results = [...primaryResults, ...secondaryResults]
+    const results = await loadRows()
     rowsComplete = results.length === requests.length
       && results.every((result) => result.status === 'fulfilled')
     throwIfAborted(signal)
